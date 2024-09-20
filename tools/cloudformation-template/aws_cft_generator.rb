@@ -7,10 +7,14 @@ permission_json_filepath = "../../data/policy_permissions_list/master_policy_per
 template_filepath = "./aws_cft_generator.template.txt"
 output_filepath = "./FlexeraAutomationPolicies.template"
 
-# Get list of deprecated policies
+# Get list of deprecated and generally recommended policies
 activepolicy_json = JSON.parse(File.read(activepolicy_json_filepath))
+
 deprecated_policies = activepolicy_json["policies"].select { |policy| policy["deprecated"] == true }
 deprecated_names = deprecated_policies.map { |policy| policy["name"] }
+
+recommended_policies = activepolicy_json["policies"].select { |policy| policy["generally_recommended"] == true }
+recommended_names = recommended_policies.map { |policy| policy["name"] }
 
 # Read AWS permissions data
 permission_json = JSON.parse(File.read(permission_json_filepath))
@@ -51,8 +55,11 @@ permission_json['values'].each do |item|
   end
 end
 
-# Sort alphabetically
+# Sort alphabetically and by whether policy is recommended or not
 sorted_permission_list = permission_list.sort_by { |policy| policy["name"] }
+recommended_list = sorted_permission_list.select { |policy| recommended_names.include?(policy["name"]) }
+other_list = sorted_permission_list.select { |policy| !recommended_names.include?(policy["name"]) }
+final_permission_list = recommended_list + other_list
 
 # Create strings to insert into template
 parameter_groups = ""
@@ -62,7 +69,7 @@ conditions = ""
 mappings = ""
 resources = ""
 
-sorted_permission_list.each do |policy|
+final_permission_list.each do |policy|
   # Entry for __PLACEHOLDER_FOR_PARAMETER_GROUPS__
   parameter_groups += "          ## " + policy["name"] + "\n"
   parameter_groups += "          - paramPerms" + policy["short_name"] + "\n"
@@ -70,16 +77,33 @@ sorted_permission_list.each do |policy|
   # Entry for __PLACEHOLDER_FOR_PARAMETER_LABELS__
   parameter_labels += "      ## " + policy["name"] + "\n"
   parameter_labels += "      paramPerms" + policy["short_name"] + ":\n"
-  parameter_labels += "        default: \"Permissions for Policy Template: " + policy["name"] + "\"\n"
+
+  if recommended_names.include?(policy["name"])
+    parameter_labels += "        default: \"[RECOMMENDED] Permissions for Policy Template: " + policy["name"] + "\"\n"
+  else
+    parameter_labels += "        default: \"Permissions for Policy Template: " + policy["name"] + "\"\n"
+  end
 
   # Entry for __PLACEHOLDER_FOR_PARAMETER_GROUP_DEFINITIONS__
   parameter_group_definitions += "  ## " + policy["name"] + "\n"
 
   parameter_group_definitions += "  paramPerms" + policy["short_name"] + ":\n"
-  parameter_group_definitions += "    Description: 'What permissions should policies using \"" + policy["name"] + "\" Policy Template be granted on the IAM Role that will be created?'\n"
+
+  if recommended_names.include?(policy["name"])
+    parameter_group_definitions += "    Description: '[RECOMMENDED] What permissions should policies using \"" + policy["name"] + "\" Policy Template be granted on the IAM Role that will be created?'\n"
+  else
+    parameter_group_definitions += "    Description: 'What permissions should policies using \"" + policy["name"] + "\" Policy Template be granted on the IAM Role that will be created?'\n"
+  end
+
   parameter_group_definitions += "    Type: String\n"
-  parameter_group_definitions += "    Default: Read Only\n" unless policy["read"].empty?
-  parameter_group_definitions += "    Default: No Access\n" if policy["read"].empty?
+
+  # Only default to access if policy has read permissions and is a recommended policy
+  if policy["read"].empty? || !recommended_names.include?(policy["name"])
+    parameter_group_definitions += "    Default: No Access\n"
+  else
+    parameter_group_definitions += "    Default: Read Only\n"
+  end
+
   parameter_group_definitions += "    AllowedValues:\n"
   parameter_group_definitions += "      - No Access\n"
   parameter_group_definitions += "      - Read Only\n" unless policy["read"].empty?
