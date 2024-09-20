@@ -1,6 +1,6 @@
 # Azure Reserved Instances Utilization MCA
 
-## What it does
+## What It Does
 
 This Policy Template leverages the [Azure API for Reserved Instance Utilization and Details](https://learn.microsoft.com/en-us/rest/api/reserved-vm-instances/reservation/list-all). It will notify only if utilization of a RI falls below the value specified in the `Show Reservations with utilization below this value (%)` field. It examines the RI utilization for the prior 7 days or 30 days.
 
@@ -21,17 +21,12 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
+- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.Capacity/reservations/read`
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
-
-Provider tag value to match this policy: `azure_rm`
-
-Required permissions in the provider:
-
-- Microsoft.Capacity/reservationorders/read
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
@@ -40,4 +35,3 @@ Required permissions in the provider:
 ## Cost
 
 This Policy Template does not launch any instances, and so does not incur any cloud costs.
-
