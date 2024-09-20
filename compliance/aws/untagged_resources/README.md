@@ -4,7 +4,7 @@
 
 This policy template checks for AWS resources missing the user-specified tags. An incident is raised containing the untagged resources, and the user has the option to tag them.
 
-## Functional Details
+## How It Works
 
 - The policy leverages the AWS Tagging API to retrieve a list of all resources in the AWS estate.
 - The policy then filters that list based on user-specified parameters.
@@ -17,6 +17,7 @@ This policy template checks for AWS resources missing the user-specified tags. A
 - *Include Savings* - Whether or not to include the total estimated savings opportunities for each resource in the results. Disabling this can speed up policy execution but will result in the relevant fields in the report being empty.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Include Account Tags* - Whether or not to include the AWS account itself as a resource whose tags are checked and reported on.
 - *Tags* - The policy will report resources missing the specified tags. The following formats are supported:
   - `Key` - Find all resources missing the specified tag key.
   - `Key==Value` - Find all resources missing the specified tag key:value pair and all resources missing the specified tag key.
@@ -51,6 +52,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `ec2:DescribeRegions`
   - `tag:GetResources`
   - `tag:TagResources`*
+  - `organizations:TagResources`*
 
   \* Only required for taking action (adding tags); the policy will still function in a read-only capacity without these permissions.
 
@@ -66,7 +68,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
                   "sts:GetCallerIdentity",
                   "ec2:DescribeRegions",
                   "tag:GetResources",
-                  "tag:TagResources"
+                  "tag:TagResources",
+                  "organizations:TagResources"
               ],
               "Resource": "*"
           }

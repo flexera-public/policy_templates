@@ -1,10 +1,10 @@
-# AWS Open Buckets
+# AWS Open S3 Buckets
 
 ## What It Does
 
 This policy checks all the S3 buckets in an AWS Account for public permissions. The user is emailed a list of offending buckets.
 
-## Functional Details
+## How It Works
 
 - The policy leverages the AWS API to retrieve a list of all S3 buckets and their ACLs.
 - The policy identifies all S3 buckets whose grantees contain the URI `http://acs.amazonaws.com/groups/global/AllUsers`
