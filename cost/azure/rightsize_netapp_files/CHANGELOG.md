@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.2.1
+
+- Fixed issue where policy template would fail to complete if some subscriptions and resources are inaccessible due to credential permissions.
+
 ## v1.2
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.

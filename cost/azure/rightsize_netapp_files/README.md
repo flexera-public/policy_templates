@@ -1,8 +1,8 @@
 # Azure Rightsize NetApp Files
 
-## What it does
+## What It Does
 
-This policy checks NetApp capacity pools and volumes in Azure Subscriptions. Based on the capacity pool and volume space used and provided thresholds, capacity pools and volumes can be recommended to resize to meet a desired used percentage. For instance, for a volume of 200 GiB with a used capacity of 80 GiB and a threshold of 80%, the recommended volume size will be 100 GiB. Information for capacity pools and volumes recommended to resize will be sent to the user-specified email addresses.
+This policy template checks NetApp capacity pools and volumes in Azure Subscriptions. Based on the capacity pool and volume space used and provided thresholds, capacity pools and volumes can be recommended to resize to meet a desired used percentage. For instance, for a volume of 200 GiB with a used capacity of 80 GiB and a threshold of 80%, the recommended volume size will be 100 GiB. Information for capacity pools and volumes recommended to resize will be sent to the user-specified email addresses.
 
 ### Policy Saving Details
 
@@ -10,9 +10,9 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 - The `Estimated Monthly Savings` is calculated by obtaining the price of the reserved capacity and tier of the pool per month from the Azure Pricing API.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
-- The policy can recommend increasing or decreasing the capacity of a resource (capacity pool or volume) to match a user-specified usage threshold; the policy will only show savings for capacity pool downsize recommendations. Downsizing volumes will not immediately lead to savings, as usage is billed based on the pool's provisioned capacity. We recommend downsizing volumes and then capacity pools to achieve maximum savings. A user can suppress the upsize recommendations using the policy's parameter *Show upsize recommendations*.
+- The policy template can recommend increasing or decreasing the capacity of a resource (capacity pool or volume) to match a user-specified usage threshold; the policy template will only show savings for capacity pool downsize recommendations. Downsizing volumes will not immediately lead to savings, as usage is billed based on the pool's provisioned capacity. We recommend downsizing volumes and then capacity pools to achieve maximum savings. A user can suppress the upsize recommendations using the policy template's parameter *Show upsize recommendations*.
 
-## Input parameters
+## Input Parameters
 
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
@@ -48,7 +48,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `Microsoft.NetApp/netAppAccounts/capacityPools/volumes/write` *
   - `Microsoft.Insights/metrics/read`
 
-\* Only required for taking action (changing the size); the policy will still function in a read-only capacity without these permissions.
+  \* Only required for taking action (changing the size); the policy will still function in a read-only capacity without these permissions.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*).
 
