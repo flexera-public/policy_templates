@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This meta parent policy template consolidates the results of all of the associated child policy templates to provide a single report of all AWS accounts in the Flexera organization. Each AWS account in the consolidated incident report will contain a status field with one of the following values:
+This meta parent policy template consolidates the results of all of the associated child policy templates to provide reports of all AWS accounts in the Flexera organization. Each AWS account will be presented in one of three reports based on their status, which will be one of the below values:
 
 - *Passed* - The AWS cross-account role exists and the child applied policy was able to successfully make a GetCallerIdentity request to AWS STS with it.
 - *Failed* - Either the AWS cross-account role does not exist or is not configured correctly, resulting in failure when making a GetCallerIdentity request to AWS STS with it.
