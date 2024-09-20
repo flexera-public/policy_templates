@@ -83,7 +83,7 @@ As you follow the official docs, you can use the recommended configurations belo
 
   - At bottom, under **Capabilities**, check the box next to `I acknowledge that AWS CloudFormation might create IAM resources with custom names` and click **Submit** button to create the StackSet
 
-    This acknowledgement is required because AWS CloudFormation will create an IAM Role and an IAM Policy (as expected).
+    This acknowledgment is required because AWS CloudFormation will create an IAM Role and an IAM Policy (as expected).
 
   - Allow Stack instances to deploy and get to *"Current"* Status.  If any fail, you can review the details of the failed Stack instances and take action as needed.
 
@@ -98,7 +98,7 @@ As you follow the official docs, you can use the recommended configurations belo
      - `<AWS Account ID>` is the AWS Account ID of the account the CloudFormation Stack instance has been deployed to.
      - `<IAM Role Name>` is the value of the *IAM Role Name* parameter provided to the CloudFormation StackSet.
 
-    For example, if the Stack instance was depoyed to AWS Account `123456789012` and the *IAM Role Name* parameter was `FlexeraAutomationPolicies-Org12345`, then the IAM Role ARN to input in Flexera Platform would be `arn:aws:iam::123456789012:role/FlexeraAutomationPolicies-Org12345`.
+    For example, if the Stack instance was deployed to AWS Account `123456789012` and the *IAM Role Name* parameter was `FlexeraAutomationPolicies-Org12345`, then the IAM Role ARN to input in Flexera Platform would be `arn:aws:iam::123456789012:role/FlexeraAutomationPolicies-Org12345`.
 
     **See [Flexera Docs > Automation > AWS STS Multi-Account Credential Usage](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1136870) for more information.**
 
