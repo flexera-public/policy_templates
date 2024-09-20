@@ -3,6 +3,7 @@
 ## v1.2.1
 
 - Fixed issue where policy template would fail to complete if some subscriptions and resources are inaccessible due to credential permissions.
+- Fixed issue where tag filtering was not working as intended.
 
 ## v1.2
 

@@ -281,57 +281,6 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
 EOS
 end
 
-script "js_objects_region_filtered", type: "javascript" do
-  parameters "ds_objects", "param_regions_allow_or_deny", "param_regions_list"
-  result "result"
-  code <<-EOS
-  if (param_regions_list.length > 0) {
-    result = _.filter(ds_objects, function(o) {
-      include_o = _.contains(param_regions_list, o.region)
-
-      if (param_regions_allow_or_deny == "Deny") {
-        include_o = !include_o
-      }
-
-      return include_o
-    })
-  } else {
-    result = ds_objects
-  }
-EOS
-end
-
-script "js_objects_tag_filtered", type: "javascript" do
-  parameters "ds_objects", "param_exclusion_tags"
-  result "result"
-  code <<-EOS
-  if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_objects, function(o) {
-      o_tags = []
-
-      if (typeof(o['tags']) == 'object') {
-        _.each(Object.keys(o['tags']), function(key) {
-          o_tags.push([key, ":", o['tags'][key]].join(''))
-          o_tags.push([key, ":*"].join(''))
-        })
-      }
-
-      exclude_o = false
-
-      _.each(param_exclusion_tags, function(exclusion_tag) {
-        if (_.contains(o_tags, exclusion_tag)) {
-          exclude_o = true
-        }
-      })
-
-      return exclude_o
-    })
-  } else {
-    result = ds_objects
-  }
-EOS
-end
-
 datasource "ds_naf_accounts" do
   iterate $ds_azure_subscriptions_filtered
   request do
@@ -356,6 +305,26 @@ end
 
 datasource "ds_naf_accounts_region_filtered" do
   run_script $js_objects_region_filtered, $ds_naf_accounts, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_objects_region_filtered", type: "javascript" do
+  parameters "ds_objects", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_objects, function(o) {
+      include_o = _.contains(param_regions_list, o.region)
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_o = !include_o
+      }
+
+      return include_o
+    })
+  } else {
+    result = ds_objects
+  }
+EOS
 end
 
 datasource "ds_naf_accounts_tag_filtered" do
@@ -395,6 +364,37 @@ end
 
 datasource "ds_naf_capacity_pools_tag_filtered" do
   run_script $js_objects_tag_filtered, $ds_naf_capacity_pools, $param_exclusion_tags
+end
+
+script "js_objects_tag_filtered", type: "javascript" do
+  parameters "ds_objects", "param_exclusion_tags"
+  result "result"
+  code <<-EOS
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_objects, function(o) {
+      o_tags = []
+
+      if (typeof(o['tags']) == 'object') {
+        _.each(Object.keys(o['tags']), function(key) {
+          o_tags.push([key, ":", o['tags'][key]].join(''))
+          o_tags.push([key, ":*"].join(''))
+        })
+      }
+
+      exclude_o = false
+
+      _.each(param_exclusion_tags, function(exclusion_tag) {
+        if (_.contains(o_tags, exclusion_tag)) {
+          exclude_o = true
+        }
+      })
+
+      return exclude_o
+    })
+  } else {
+    result = ds_objects
+  }
+EOS
 end
 
 datasource "ds_naf_pool_metrics" do
@@ -530,7 +530,7 @@ datasource "ds_naf_volumes_tag_filtered" do
 end
 
 datasource "ds_naf_volume_metrics" do
-  iterate $ds_naf_volumes
+  iterate $ds_naf_volumes_tag_filtered
   request do
     run_script $js_naf_volume_metrics_request, val(iter_item, "naf_volume_id"), $param_azure_endpoint
   end
@@ -589,11 +589,11 @@ EOS
 end
 
 datasource "ds_naf_oversized_pools" do
-  run_script $js_naf_oversized_pools, $ds_naf_pool_metrics, $param_stats_underutil_threshold_pool_value, $ds_naf_get_costs, $param_min_savings, $ds_currency, $param_recommendation_mode, $param_show_size_increment_recommendations, $ds_applied_policy
+  run_script $js_naf_oversized_pools, $ds_naf_pool_metrics, $ds_naf_get_costs, $ds_currency, $ds_applied_policy, $param_stats_underutil_threshold_pool_value, $param_min_savings, $param_recommendation_mode, $param_show_size_increment_recommendations
 end
 
 script "js_naf_oversized_pools", type: "javascript" do
-  parameters "ds_naf_pool_metrics", "param_stats_underutil_threshold_pool_value", "ds_naf_get_costs", "param_min_savings", "ds_currency", "param_recommendation_mode", "param_show_size_increment_recommendations", "ds_applied_policy"
+  parameters "ds_naf_pool_metrics", "ds_naf_get_costs", "ds_currency", "ds_applied_policy", "param_stats_underutil_threshold_pool_value", "param_min_savings", "param_recommendation_mode", "param_show_size_increment_recommendations"
   result "result"
   code <<-'EOS'
 
@@ -754,11 +754,11 @@ EOS
 end
 
 datasource "ds_naf_oversized_volumes" do
-  run_script $js_naf_oversized_volumes, $ds_naf_volume_metrics, $ds_naf_pool_metrics, $param_stats_underutil_threshold_pool_value, $param_stats_underutil_threshold_volume_value, $ds_naf_get_costs, $param_min_savings, $ds_currency, $param_recommendation_mode, $param_show_size_increment_recommendations, $ds_applied_policy
+  run_script $js_naf_oversized_volumes, $ds_naf_volume_metrics, $ds_naf_pool_metrics, $ds_naf_get_costs, $ds_currency, $ds_applied_policy, $param_stats_underutil_threshold_pool_value, $param_stats_underutil_threshold_volume_value, $param_min_savings, $param_recommendation_mode, $param_show_size_increment_recommendations
 end
 
 script "js_naf_oversized_volumes", type: "javascript" do
-  parameters "ds_naf_volume_metrics", "ds_naf_pool_metrics", "param_stats_underutil_threshold_pool_value", "param_stats_underutil_threshold_volume_value", "ds_naf_get_costs", "param_min_savings", "ds_currency", "param_recommendation_mode", "param_show_size_increment_recommendations", "ds_applied_policy"
+  parameters "ds_naf_volume_metrics", "ds_naf_pool_metrics", "ds_naf_get_costs", "ds_currency", "ds_applied_policy", "param_stats_underutil_threshold_pool_value", "param_stats_underutil_threshold_volume_value", "param_min_savings", "param_recommendation_mode", "param_show_size_increment_recommendations"
   result "result"
   code <<-'EOS'
 
@@ -1308,7 +1308,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
