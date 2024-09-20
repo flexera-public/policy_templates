@@ -1,16 +1,10 @@
 # Scheduled Report with Markups & Markdowns
 
-## What it does
+## What It Does
 
-This Policy Template leverages the the RightScale cost APIs to import Cloud vendor services import service costs and add a markup or markdown by category.
+This Policy Template leverages the the Flexera Cloud Cost Optimization APIs to import Cloud vendor services import service costs and add a markup or markdown by category.
 
-## Prerequisites
-
-- As this policy invokes the RightScale APIs, the user invoking the policy must have access to the Optima module and and components.
-
-## Categories
-
-For a detailed explanation regarding categories and their mapping to the different cloud service please check the following link: [RightScale categories](https://helpnet.flexerasoftware.com/Optima/#helplibrary/RightScale_generated_Cost_Dimension__Category.htm#)
+For a detailed explanation regarding categories and their mapping to the different cloud service please check the following link: [Flexera Cloud Cost Optimization categories](https://docs.flexera.com/flexera/EN/Optima/costdimcat.htm#optimabilling_2682776915_1151644)
 
 ## Cost Metrics
 
@@ -26,8 +20,7 @@ There are four cost metrics to choose from.
 This policy has the following input parameters required when launching the policy.
 
 - *Email list* - Email addresses of the recipients you wish to notify
-- *Billing Center List* - List of top level Billing Center names you want to report on.  Names must be exactly as shown in Optima.
-Leave the field blank to report on all top level Billing Centers.
+- *Billing Center List* - List of top level Billing Center names you want to report on.  Names must be exactly as shown in Flexera Cloud Cost Optimization. Leave the field blank to report on all top level Billing Centers.
 - *Cost Metric* - See cost metrics above for details on selection.
 - *Compute markup or markdown percentage* - markup for the compute category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
 - *Application Service markup or markdown percentage* - markup for the Application service category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
@@ -45,11 +38,20 @@ Leave the field blank to report on all top level Billing Centers.
 - *IOT markup or markdown percentage* - markup for the IOT category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
 - *Other markup or markdown percentage* - markup for the Other category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
 
-## Required Permissions
+## Policy Actions
 
-This policy requires permissions to access RightScale resources (Optima).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
+The following policy actions are taken on any resources found to be out of compliance.
 
-- Optima - billing_center_viewer
+- Send an email report
+
+## Prerequisites
+
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
