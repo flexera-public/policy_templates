@@ -178,7 +178,7 @@ def compile_meta_parent_policy(file_path)
   publish = "true"
   publish = publish_scan[0][0] if !publish_scan.empty?
   # get the deprecated string if it exists, defaulting to false if not present
-  deprecated_scan = pt.scan(/publish: "(.*?)"/)
+  deprecated_scan = pt.scan(/deprecated: "(.*?)"/)
   deprecated = "false"
   deprecated = deprecated_scan[0][0] if !deprecated_scan.empty?
   # print("Name: #{name}\n")

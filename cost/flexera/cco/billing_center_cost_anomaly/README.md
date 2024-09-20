@@ -1,6 +1,8 @@
 # Billing Center Cost Anomaly Policy
 
-**NOTE:** This policy is be deprecated and replaced by this [new version](../cloud_cost_anomaly_alerts)
+## Deprecated
+
+This policy template is no longer being updated and has been superseded by the [Cloud Cost Anomaly Alerts](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cloud_cost_anomaly_alerts) policy template.
 
 ## What it does
 
