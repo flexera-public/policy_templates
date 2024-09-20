@@ -39,7 +39,7 @@ parameter "param_stats_underutil_threshold_pool_value" do
   type "number"
   category "Statistics"
   label "Pool Allocated to Volume Threshold (%)"
-  description "The desired level of pool capacity allocated to volumes."
+  description "The allocation threshold at which to consider a NetApp pool to be 'oversized' and therefore be flagged for downsizing."
   min_value 0
   max_value 100
   default 50
@@ -49,7 +49,7 @@ parameter "param_stats_underutil_threshold_volume_value" do
   type "number"
   category "Statistics"
   label "Volume Consumed Capacity Threshold (%)"
-  description "The desired level of volume capacity usage."
+  description "The capacity usage threshold at which to consider a NetApp volume to be 'oversized' and therefore be flagged for downsizing."
   min_value 0
   max_value 100
   default 50
@@ -58,10 +58,18 @@ end
 parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
-  label "Exclusion Tags (Key:Value)"
-  description "Cloud native tags to ignore resources that you don't want to consider for downsizing. Format: Key:Value"
-  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_subscriptions_allow_or_deny" do
@@ -102,9 +110,18 @@ parameter "param_show_size_increment_recommendations" do
   type "string"
   category "Filters"
   label "Show Upsize Recommendations"
-  description "Include or suppress upsize recommendations for pools and volumes."
+  description "Whether or not to include upsize recommendations for pools and volumes"
   allowed_values "Yes", "No"
   default "No"
+end
+
+parameter "param_resource_types" do
+  type "string"
+  category "Filter"
+  label "Resource Types"
+  description "Whether to produce recommendations only for pools or for both pools and volumes"
+  allowed_values "Pools", "Pools and Volumes"
+  default "Pools"
 end
 
 parameter "param_min_savings" do
@@ -114,15 +131,6 @@ parameter "param_min_savings" do
   description "Minimum potential savings required to generate a recommendation"
   min_value 0
   default 0
-end
-
-parameter "param_recommendation_mode" do
-  type "string"
-  category "Statistics"
-  label "Recommendation Mode"
-  description "Choose between scanning only pools or pools and volumes."
-  allowed_values "Resize Pools", "Resize Pools and Volumes"
-  default "Resize Pools"
 end
 
 parameter "param_automatic_action" do
@@ -355,36 +363,78 @@ datasource "ds_naf_capacity_pools" do
 end
 
 datasource "ds_naf_capacity_pools_tag_filtered" do
-  run_script $js_objects_tag_filtered, $ds_naf_capacity_pools, $param_exclusion_tags
+  run_script $js_objects_tag_filtered, $ds_naf_capacity_pools, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_objects_tag_filtered", type: "javascript" do
-  parameters "ds_objects", "param_exclusion_tags"
+  parameters "objects_to_filter", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
   if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_objects, function(item) {
-      item_tags = []
+    result = _.reject(objects_to_filter, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
 
-      if (typeof(item['tags']) == 'object') {
-        _.each(Object.keys(item['tags']), function(key) {
-          item_tags.push([key, ":", item['tags'][key]].join(''))
-          item_tags.push([key, ":*"].join(''))
-        })
-      }
+      // Store a list of found tags
+      found_tags = []
 
-      exclude_item = false
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
 
-      _.each(param_exclusion_tags, function(exclusion_tag) {
-        if (_.contains(item_tags, exclusion_tag)) {
-          exclude_item = true
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
         }
       })
 
-      return exclude_item
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
     })
   } else {
-    result = ds_objects
+    result = objects_to_filter
   }
 EOS
 end
@@ -486,8 +536,24 @@ script "js_naf_get_costs", type: "javascript" do
 EOS
 end
 
+datasource "ds_naf_capacity_pools_option_filtered" do
+  run_script $js_naf_capacity_pools_option_filtered, $ds_naf_capacity_pools_tag_filtered, $param_resource_types
+end
+
+script "js_naf_capacity_pools_option_filtered", type: "javascript" do
+  parameters "ds_naf_capacity_pools_tag_filtered", "param_resource_types"
+  result "result"
+  code <<-EOS
+  result = []
+
+  if (param_resource_types == "Pools and Volumes") {
+    result = ds_naf_capacity_pools_tag_filtered
+  }
+EOS
+end
+
 datasource "ds_naf_volumes" do
-  iterate $ds_naf_capacity_pools_tag_filtered
+  iterate $ds_naf_capacity_pools_option_filtered
   request do
     auth $auth_azure
     host $param_azure_endpoint
@@ -519,7 +585,7 @@ datasource "ds_naf_volumes" do
 end
 
 datasource "ds_naf_volumes_tag_filtered" do
-  run_script $js_objects_tag_filtered, $ds_naf_volumes, $param_exclusion_tags
+  run_script $js_objects_tag_filtered, $ds_naf_volumes, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 datasource "ds_naf_volume_metrics" do
@@ -582,11 +648,11 @@ EOS
 end
 
 datasource "ds_naf_oversized_pools" do
-  run_script $js_naf_oversized_pools, $ds_naf_pool_metrics, $ds_naf_get_costs, $ds_currency, $ds_applied_policy, $param_stats_underutil_threshold_pool_value, $param_min_savings, $param_recommendation_mode, $param_show_size_increment_recommendations
+  run_script $js_naf_oversized_pools, $ds_naf_pool_metrics, $ds_naf_get_costs, $ds_currency, $ds_applied_policy, $param_stats_underutil_threshold_pool_value, $param_min_savings, $param_resource_types, $param_show_size_increment_recommendations
 end
 
 script "js_naf_oversized_pools", type: "javascript" do
-  parameters "ds_naf_pool_metrics", "ds_naf_get_costs", "ds_currency", "ds_applied_policy", "param_stats_underutil_threshold_pool_value", "param_min_savings", "param_recommendation_mode", "param_show_size_increment_recommendations"
+  parameters "ds_naf_pool_metrics", "ds_naf_get_costs", "ds_currency", "ds_applied_policy", "param_stats_underutil_threshold_pool_value", "param_min_savings", "param_resource_types", "param_show_size_increment_recommendations"
   result "result"
   code <<-'EOS'
   // Variables
@@ -656,7 +722,7 @@ script "js_naf_oversized_pools", type: "javascript" do
   }
 
   // Main Logic
-  if (param_recommendation_mode == "Resize Pools") {
+  if (param_resource_types == "Pools") {
     _.each(ds_naf_pool_metrics, function(pool){
       _.each(pool.naf_pool_metrics, function (metric) {
         filteredTimeseries = _.filter(metric.timeseries[0].data, function(point) { return point.average != undefined })
@@ -725,52 +791,52 @@ script "js_naf_oversized_pools", type: "javascript" do
         }
       }
     })
+  }
 
-    if (result.length > 0) {
-      result[0].total_savings = total_savings.toFixed(2)
-      result[0].savings_currency = "USD"
-      result[0].message = "Pools shown here meet the following conditions:\n\n"
-      result[0].message += "- A " + (param_show_size_increment_recommendations == "Yes" ? "different" : "lower") + " value than " + param_stats_underutil_threshold_pool_value + "% of used capacity.\n"
-      result[0].message += "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
-      result[0].policy_name = ds_applied_policy.name
-    } else {
-      result = [{
-        accountID: "",
-        accountName: "",
-        resourceID: "",
-        resourceGroup: "",
-        resourceName: "",
-        size: "",
-        allocatedUsed: "",
-        consumedPercentage: "",
-        createdAt: "",
-        threshold: "",
-        recommendedSize: "",
-        savings: "",
-        id: "",
-        region: "",
-        resourceTier: "",
-        resourceType: "",
-        tags: "",
-        savingsCurrency: "",
-        service: "",
-        recommendationDetails: "",
-        total_savings: "",
-        savings_currency: "",
-        message: "",
-        policy_name: ""
-      }]
-    }
+  if (result.length > 0) {
+    result[0].total_savings = total_savings.toFixed(2)
+    result[0].savings_currency = "USD"
+    result[0].message = "Pools shown here meet the following conditions:\n\n"
+    result[0].message += "- A " + (param_show_size_increment_recommendations == "Yes" ? "different" : "lower") + " value than " + param_stats_underutil_threshold_pool_value + "% of used capacity.\n"
+    result[0].message += "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
+    result[0].policy_name = ds_applied_policy.name
+  } else {
+    result = [{
+      accountID: "",
+      accountName: "",
+      resourceID: "",
+      resourceGroup: "",
+      resourceName: "",
+      size: "",
+      allocatedUsed: "",
+      consumedPercentage: "",
+      createdAt: "",
+      threshold: "",
+      recommendedSize: "",
+      savings: "",
+      id: "",
+      region: "",
+      resourceTier: "",
+      resourceType: "",
+      tags: "",
+      savingsCurrency: "",
+      service: "",
+      recommendationDetails: "",
+      total_savings: "",
+      savings_currency: "",
+      message: "",
+      policy_name: ""
+    }]
   }
 EOS
 end
 
 datasource "ds_naf_oversized_volumes" do
-  run_script $js_naf_oversized_volumes, $ds_naf_volume_metrics, $ds_naf_pool_metrics, $ds_naf_get_costs, $ds_currency, $ds_applied_policy, $param_stats_underutil_threshold_pool_value, $param_stats_underutil_threshold_volume_value, $param_min_savings, $param_recommendation_mode, $param_show_size_increment_recommendations
+  run_script $js_naf_oversized_volumes, $ds_naf_volume_metrics, $ds_naf_pool_metrics, $ds_naf_get_costs, $ds_currency, $ds_applied_policy, $param_stats_underutil_threshold_pool_value, $param_stats_underutil_threshold_volume_value, $param_min_savings, $param_resource_types, $param_show_size_increment_recommendations
 end
 
 script "js_naf_oversized_volumes", type: "javascript" do
-  parameters "ds_naf_volume_metrics", "ds_naf_pool_metrics", "ds_naf_get_costs", "ds_currency", "ds_applied_policy", "param_stats_underutil_threshold_pool_value", "param_stats_underutil_threshold_volume_value", "param_min_savings", "param_recommendation_mode", "param_show_size_increment_recommendations"
+  parameters "ds_naf_volume_metrics", "ds_naf_pool_metrics", "ds_naf_get_costs", "ds_currency", "ds_applied_policy", "param_stats_underutil_threshold_pool_value", "param_stats_underutil_threshold_volume_value", "param_min_savings", "param_resource_types", "param_show_size_increment_recommendations"
   result "result"
   code <<-'EOS'
   // Variables
@@ -865,7 +931,7 @@ script "js_naf_oversized_volumes", type: "javascript" do
   }
 
   // Main logic
-  if (param_recommendation_mode == "Resize Pools and Volumes") {
+  if (param_resource_types == "Pools and Volumes") {
     _.each(ds_naf_volume_metrics, function(volume) {
       volume.volume_allocated_size = bytesToGibibytes(volume.naf_usage_threshold)
       _.each(volume.naf_volume_metrics, function(metric) {
@@ -1018,47 +1084,47 @@ script "js_naf_oversized_volumes", type: "javascript" do
         }
       }
     })
+  }
 
-    if (result.length > 0) {
-      result[0].total_savings = total_savings.toFixed(2)
-      result[0].savings_currency = "USD"
-      var comparisonWord = (param_show_size_increment_recommendations == "Yes" ? "different" : "lower")
-      result[0].message = "Resources shown here meet the following conditions:\n\n"
-      result[0].message += "- Pools that have a " + comparisonWord + " value than " + param_stats_underutil_threshold_pool_value + "% of used capacity.\n"
-      result[0].message += "- Volumes that have a " + comparisonWord + " value than " + param_stats_underutil_threshold_volume_value + "% of used capacity.\n"
-      result[0].message += "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
-      result[0].policy_name = ds_applied_policy.name
-    } else {
-      result = [{
-        accountID: "",
-        accountName: "",
-        resourceGroup: "",
-        service: "",
-        resourceID: "",
-        resourceName: "",
-        resourceType: "",
-        resourceTier: "",
-        region: "",
-        tags: "",
-        size: "",
-        sizeUnit: "",
-        allocatedUsed: "",
-        allocatedUsedUnit: "",
-        consumedPercentage: "",
-        threshold: "",
-        recommendedSize: "",
-        recommendedSizeUnit: "",
-        savings: "",
-        savingsCurrency: "",
-        id: "",
-        createdAt: "",
-        recommendationDetails: "",
-        total_savings: "",
-        savings_currency: "",
-        message: "",
-        policy_name: ""
-      }]
-    }
+  if (result.length > 0) {
+    result[0].total_savings = total_savings.toFixed(2)
+    result[0].savings_currency = "USD"
+    var comparisonWord = (param_show_size_increment_recommendations == "Yes" ? "different" : "lower")
+    result[0].message = "Resources shown here meet the following conditions:\n\n"
+    result[0].message += "- Pools that have a " + comparisonWord + " value than " + param_stats_underutil_threshold_pool_value + "% of used capacity.\n"
+    result[0].message += "- Volumes that have a " + comparisonWord + " value than " + param_stats_underutil_threshold_volume_value + "% of used capacity.\n"
+    result[0].message += "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
+    result[0].policy_name = ds_applied_policy.name
+  } else {
+    result = [{
+      accountID: "",
+      accountName: "",
+      resourceGroup: "",
+      service: "",
+      resourceID: "",
+      resourceName: "",
+      resourceType: "",
+      resourceTier: "",
+      region: "",
+      tags: "",
+      size: "",
+      sizeUnit: "",
+      allocatedUsed: "",
+      allocatedUsedUnit: "",
+      consumedPercentage: "",
+      threshold: "",
+      recommendedSize: "",
+      recommendedSizeUnit: "",
+      savings: "",
+      savingsCurrency: "",
+      id: "",
+      createdAt: "",
+      recommendationDetails: "",
+      total_savings: "",
+      savings_currency: "",
+      message: "",
+      policy_name: ""
+    }]
   }
 EOS
 end
