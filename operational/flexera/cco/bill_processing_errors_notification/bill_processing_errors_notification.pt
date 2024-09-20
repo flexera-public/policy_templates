@@ -7,7 +7,7 @@ category "Operational"
 severity "high"
 default_frequency "daily"
 info(
-  version: "2.3.0",
+  version: "2.4.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization"
@@ -29,8 +29,16 @@ parameter "param_processing_limit" do
   type "number"
   category "Policy Settings"
   label "Processing Time (Hours)"
-  description "Amount of time in hours to consider a bill connection in an error state if it has failed to complete processing of a bill."
+  description "Amount of time in hours to consider a Bill Connection in an error state if it has failed to complete processing of a bill."
   default 24
+end
+
+parameter "param_ignore_list" do
+  type "list"
+  category "Policy Settings"
+  label "Bill Connection Ignore List"
+  description "A list of Bill Connection IDs to never check for errors or report on. Leave blank to check all Bill Connections."
+  default []
 end
 
 ###############################################################################
@@ -219,15 +227,15 @@ EOS
 end
 
 datasource "ds_bad_bill_connections" do
-  run_script $js_bad_bill_connections, $ds_bill_connections_combined
+  run_script $js_bad_bill_connections, $ds_bill_connections_combined, $param_ignore_list
 end
 
 script "js_bad_bill_connections", type: "javascript" do
-  parameters "ds_bill_connections_combined"
+  parameters "ds_bill_connections_combined", "param_ignore_list"
   result "result"
   code <<-'EOS'
   result = _.reject(ds_bill_connections_combined, function(item) {
-    return item["valid"] && item["errors"] == ""
+    return (item["valid"] && item["errors"] == "") || _.contains(param_ignore_list, item['id']) || _.contains(param_ignore_list, item['name'])
   })
 EOS
 end
