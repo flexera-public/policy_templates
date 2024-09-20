@@ -170,8 +170,4 @@ resource "aws_cloudformation_stack" "FlexeraAutomationAccessRole" {
 
 ## For Maintainers
 
-New releases are created by copying the latest version of template to `releases/` and appending a version number (using [Semantic Versioning](https://semver.org/) strategies).  Files under `releases/` should not be modified once they are merged and committed to default branch.
-
-Publishing releases and latest Template files to S3 is handled by GitHub Actions workflow [
-Publish CloudFormation Templates
-](../../.github/workflows/cfn-publish.yaml) and triggered when [Test CloudFormation Templates](../../.github/workflows/cfn-test.yaml) finishes successfully after commit to the default branch.
+New releases are created automatically by the `tools/cloudformation-template/aws_cft_generator.rb` script. This script runs automatically via GitHub Actions whenever a change is made to the master branch. This script uses the permissions file `data/policy_permissions_list/master_policy_permissions_list.json` to obtain the information needed to generate the CloudFormation Template. This file, in turn, is sourced through its own automation that scrapes policy template README files.
