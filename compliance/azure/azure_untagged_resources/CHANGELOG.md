@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.0
+
+- Added option to include Azure subscriptions and resource groups in the results alongside Azure resources
+
 ## v3.1
 
 - Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.
