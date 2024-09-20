@@ -1,4 +1,4 @@
-# Azure Rightsize NetApp Files
+# Azure Rightsize NetApp Resources
 
 ## What It Does
 
@@ -42,9 +42,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.NetApp/netAppAccounts/capacityPools/read`
-  - `Microsoft.NetApp/netAppAccounts/capacityPools/write` *
+  - `Microsoft.NetApp/netAppAccounts/capacityPools/write`*
   - `Microsoft.NetApp/netAppAccounts/capacityPools/volumes/read`
-  - `Microsoft.NetApp/netAppAccounts/capacityPools/volumes/write` *
+  - `Microsoft.NetApp/netAppAccounts/capacityPools/volumes/write`*
   - `Microsoft.Insights/metrics/read`
 
   \* Only required for taking action (changing the size); the policy will still function in a read-only capacity without these permissions.

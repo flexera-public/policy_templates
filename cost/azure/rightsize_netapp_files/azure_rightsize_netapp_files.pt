@@ -1,4 +1,4 @@
-name "Azure Rightsize NetApp Files"
+name "Azure Rightsize NetApp Resources"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks for oversized NetApp capacity pools and suggests recommendations for rightsizing the capacity pools and volumes to optimize efficiency and reduce costs. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_netapp_files/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "1.2.1",
+  version: "1.3.0",
   provider: "Azure",
   service: "NetApp Files",
   policy_set: "Rightsize Storage",
@@ -239,7 +239,7 @@ datasource "ds_azure_subscriptions" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version","2020-01-01"
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
@@ -304,10 +304,10 @@ datasource "ds_naf_accounts" do
 end
 
 datasource "ds_naf_accounts_region_filtered" do
-  run_script $js_objects_region_filtered, $ds_naf_accounts, $param_regions_allow_or_deny, $param_regions_list
+  run_script $js_naf_accounts_region_filtered, $ds_naf_accounts, $param_regions_allow_or_deny, $param_regions_list
 end
 
-script "js_objects_region_filtered", type: "javascript" do
+script "js_naf_accounts_region_filtered", type: "javascript" do
   parameters "ds_objects", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-EOS
@@ -400,7 +400,7 @@ end
 datasource "ds_naf_pool_metrics" do
   iterate $ds_naf_capacity_pools_tag_filtered
   request do
-    run_script $js_naf_pool_metrics_request, val(iter_item, "naf_pool_id"), $param_azure_endpoint
+    run_script $js_naf_pool_metrics, val(iter_item, "naf_pool_id"), $param_azure_endpoint
   end
   result do
     encoding "json"
@@ -423,7 +423,7 @@ datasource "ds_naf_pool_metrics" do
   end
 end
 
-script "js_naf_pool_metrics_request", type: "javascript" do
+script "js_naf_pool_metrics", type: "javascript" do
   parameters "poolId", "param_azure_endpoint"
   result "request"
   code <<-EOS
@@ -532,7 +532,7 @@ end
 datasource "ds_naf_volume_metrics" do
   iterate $ds_naf_volumes_tag_filtered
   request do
-    run_script $js_naf_volume_metrics_request, val(iter_item, "naf_volume_id"), $param_azure_endpoint
+    run_script $js_naf_volume_metrics, val(iter_item, "naf_volume_id"), $param_azure_endpoint
   end
   result do
     encoding "json"
@@ -556,7 +556,7 @@ datasource "ds_naf_volume_metrics" do
   end
 end
 
-script "js_naf_volume_metrics_request", type: "javascript" do
+script "js_naf_volume_metrics", type: "javascript" do
   parameters "volId", "param_azure_endpoint"
   result "request"
   code <<-EOS
@@ -1025,7 +1025,7 @@ end
 
 policy "pol_azure_rightsize_netapp_files" do
   validate $ds_naf_oversized_pools do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure NetApp Pools Found"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Oversized NetApp Pools Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}${{ .total_savings }} {{ .savings_currency }}
 
@@ -1082,6 +1082,9 @@ policy "pol_azure_rightsize_netapp_files" do
       field "threshold" do
         label "Allocated Used Threshold %"
       end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
       field "recommendedSize" do
         label "Recommended Size (TiB)"
       end
@@ -1097,7 +1100,7 @@ policy "pol_azure_rightsize_netapp_files" do
     end
   end
   validate $ds_naf_oversized_volumes do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure NetApp Resources Found"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Oversized NetApp Resources Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}${{ .total_savings }} {{ .savings_currency }}
 
@@ -1159,6 +1162,9 @@ policy "pol_azure_rightsize_netapp_files" do
       end
       field "threshold" do
         label "Allocated Used Threshold %"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
       end
       field "recommendedSize" do
         label "Recommended Size"
@@ -1300,7 +1306,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do
