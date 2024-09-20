@@ -88,13 +88,7 @@ final_permission_list.each do |policy|
   parameter_group_definitions += "  ## " + policy["name"] + "\n"
 
   parameter_group_definitions += "  paramPerms" + policy["short_name"] + ":\n"
-
-  if recommended_names.include?(policy["name"])
-    parameter_group_definitions += "    Description: '[RECOMMENDED] What permissions should policies using \"" + policy["name"] + "\" Policy Template be granted on the IAM Role that will be created?'\n"
-  else
-    parameter_group_definitions += "    Description: 'What permissions should policies using \"" + policy["name"] + "\" Policy Template be granted on the IAM Role that will be created?'\n"
-  end
-
+  parameter_group_definitions += "    Description: 'What permissions should policies using \"" + policy["name"] + "\" Policy Template be granted on the IAM Role that will be created?'\n"
   parameter_group_definitions += "    Type: String\n"
 
   # Only default to access if policy has read permissions and is a recommended policy
