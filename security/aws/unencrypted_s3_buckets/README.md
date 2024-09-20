@@ -31,11 +31,11 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `sts:GetCallerIdentity`
-  - `s3:ListBuckets`
+  - `s3:ListAllMyBuckets`
   - `s3:GetBucketLocation`
   - `s3:GetBucketTagging`
-  - `s3:GetBucketEncryption`
-  - `s3:PutBucketEncryption`*
+  - `s3:GetEncryptionConfiguration`
+  - `s3:PutEncryptionConfiguration`*
   - `s3:DeleteBucket`*
 
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
@@ -50,11 +50,11 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
               "Effect": "Allow",
               "Action": [
                   "sts:GetCallerIdentity",
-                  "s3:ListBuckets",
+                  "s3:ListAllMyBuckets",
                   "s3:GetBucketLocation",
                   "s3:GetBucketTagging",
-                  "s3:GetBucketEncryption",
-                  "s3:PutBucketEncryption",
+                  "s3:GetEncryptionConfiguration",
+                  "s3:PutEncryptionConfiguration",
                   "s3:DeleteBucket"
               ],
               "Resource": "*"
