@@ -1,16 +1,16 @@
 name "Azure Expiring Savings Plans"
 rs_pt_ver 20180301
 type "policy"
-short_description "A policy that sends email notifications before Azure Savings Plan expire. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/savings_plan/expiration) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports on Azure Savings Plans that have or will soon expire. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/savings_plan/expiration) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "medium"
 category "Cost"
+severity "medium"
 default_frequency "daily"
 info(
-  version: "1.0",
-  provider: "Flexera Optima",
-  service: "",
-  policy_set: ""
+  version: "0.1.0",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Savings Plan"
 )
 
 ###############################################################################
@@ -34,13 +34,13 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_days_until_expiry" do
+parameter "param_days_expiration" do
   type "number"
   category "Policy Settings"
   label "Days Until Expiration"
-  description "The number of days before the Azure Savings Plan expires. All Savings Plans set to expire in fewer days than the specified value will be included in the report."
+  description "The number of days until expiration to include a Savings Plan in the report. Set to '0' to only report expired Savings Plans."
   min_value 0
-  default 7
+  default 15
 end
 
 ###############################################################################
@@ -125,11 +125,11 @@ datasource "ds_azure_savings_plans" do
 end
 
 datasource "ds_azure_expiring_savings_plans" do
-  run_script $js_azure_expiring_savings_plans, $ds_azure_savings_plans, $ds_applied_policy, $param_days_until_expiry
+  run_script $js_azure_expiring_savings_plans, $ds_azure_savings_plans, $ds_applied_policy, $param_days_expiration
 end
 
 script "js_azure_expiring_savings_plans", type: "javascript" do
-  parameters "ds_azure_savings_plans", "ds_applied_policy", "param_days_until_expiry"
+  parameters "ds_azure_savings_plans", "ds_applied_policy", "param_days_expiration"
   result "result"
   code <<-'EOS'
   result = []
@@ -140,7 +140,7 @@ script "js_azure_expiring_savings_plans", type: "javascript" do
     daysUntilExpiration = Math.round((expirationDate - today) / 1000 / 60 / 60 / 24)
     if (daysUntilExpiration < 0) { daysUntilExpiration = 0 }
 
-    if (daysUntilExpiration <= param_days_until_expiry) {
+    if (daysUntilExpiration <= param_days_expiration) {
       result.push({
         id: sp['id'],
         name: sp['name'],
@@ -148,7 +148,7 @@ script "js_azure_expiring_savings_plans", type: "javascript" do
         term: sp['term'],
         expirationDate: expirationDate.toISOString(),
         daysUntilExpiration: daysUntilExpiration,
-        lookbackPeriod: param_days_until_expiry,
+        lookbackPeriod: param_days_expiration,
         policyName: ds_applied_policy['name'],
         message: ""
       })
@@ -167,13 +167,13 @@ script "js_azure_expiring_savings_plans", type: "javascript" do
     if (expiring_sp_total == 1) { verb = "is" }
 
     day = "days"
-    if (param_days_until_expiry == 1) { day = "day" }
+    if (param_days_expiration == 1) { day = "day" }
 
     findings = [
       "Out of ", sp_total, " Azure ", noun, " analyzed, ",
       expiring_sp_total, " (", expiring_sp_percentage,
       ") ", verb, " going to expire within ",
-      param_days_until_expiry, " ", day, ".\n\n"
+      param_days_expiration, " ", day, ".\n\n"
     ].join('')
 
     disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
