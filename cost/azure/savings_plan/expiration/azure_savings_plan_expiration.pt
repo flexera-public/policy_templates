@@ -88,6 +88,49 @@ datasource "ds_applied_policy" do
   end
 end
 
+# Get list of Billing Accounts
+datasource "ds_billing_accounts" do
+  request do
+    auth $auth_azure
+    host $param_azure_endpoint
+    path "/providers/Microsoft.Billing/billingAccounts"
+    query "api-version", "2024-04-01"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "agreementType", jmes_path(col_item, "properties.agreementType")
+      field "currency", jmes_path(col_item, "enrollmentDetails.currency")
+    end
+  end
+end
+
+# Get list of Billing Profiles (if Type is Microsoft Customer Agreement)
+datasource "ds_billing_profiles" do
+  iterate $ds_billing_accounts
+  request do
+    auth $auth_azure
+    host $param_azure_endpoint
+    path join(["/providers/Microsoft.Billing/billingAccounts/", val(iter_item, "name"), "/billingProfiles" ])
+    query "api-version", "2020-05-01"
+    ignore_status [400]   # Required for policy to not error for EA Customers (as EA Customers do not have concept of billing profile)
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "billingAccountId", val(iter_item, "id")
+      field "billingAccountName", val(iter_item, "name")
+      field "agreementType", val(iter_item, "agreementType")
+      field "billingAccountCurrency", val(iter_item, "currency")
+      field "billingProfileId", jmes_path(col_item, "id")
+      field "billingProfileName", jmes_path(col_item, "name")
+      field "billingProfileCurrency", jmes_path(col_item, "properties.currency")
+    end
+  end
+end
+
 datasource "ds_azure_savings_plans" do
   request do
     auth $auth_azure
