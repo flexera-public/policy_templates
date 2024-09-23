@@ -7,14 +7,10 @@ permission_json_filepath = "../../data/policy_permissions_list/master_policy_per
 template_filepath = "./aws_cft_generator.template.txt"
 output_filepath = "./FlexeraAutomationPolicies.template"
 
-# Get list of deprecated and generally recommended policies
+# Get list of deprecated policies
 activepolicy_json = JSON.parse(File.read(activepolicy_json_filepath))
-
 deprecated_policies = activepolicy_json["policies"].select { |policy| policy["deprecated"] == true }
 deprecated_names = deprecated_policies.map { |policy| policy["name"] }
-
-recommended_policies = activepolicy_json["policies"].select { |policy| policy["generally_recommended"] == true }
-recommended_names = recommended_policies.map { |policy| policy["name"] }
 
 # Read AWS permissions data
 permission_json = JSON.parse(File.read(permission_json_filepath))
@@ -55,11 +51,24 @@ permission_json['values'].each do |item|
   end
 end
 
+# Create special entry for all AWS policy templates
+special_permission_list = []
+
+all_read = permission_list.map { |policy| policy["read"] }.flatten.uniq.sort
+all_action = permission_list.map { |policy| policy["action"] }.flatten.uniq.sort
+
+special_permission_list << {
+  "id" => "all_policy_templates",
+  "name" => "All AWS Policy Templates",
+  "short_name" => "AllAWSPolicyTemplates",
+  "version" => "1.0",
+  "read" => all_read,
+  "action" => all_action
+}
+
 # Sort alphabetically and by whether policy is recommended or not
 sorted_permission_list = permission_list.sort_by { |policy| policy["name"] }
-recommended_list = sorted_permission_list.select { |policy| recommended_names.include?(policy["name"]) }
-other_list = sorted_permission_list.select { |policy| !recommended_names.include?(policy["name"]) }
-final_permission_list = recommended_list + other_list
+final_permission_list = special_permission_list + sorted_permission_list
 
 # Create strings to insert into template
 parameter_groups = ""
@@ -78,8 +87,8 @@ final_permission_list.each do |policy|
   parameter_labels += "      ## " + policy["name"] + "\n"
   parameter_labels += "      paramPerms" + policy["short_name"] + ":\n"
 
-  if recommended_names.include?(policy["name"])
-    parameter_labels += "        default: \"[RECOMMENDED] Permissions for Policy Template: " + policy["name"] + "\"\n"
+  if policy["id"] == "all_policy_templates"
+    parameter_labels += "        default: \"Permissions for all AWS Policy Templates\"\n"
   else
     parameter_labels += "        default: \"Permissions for Policy Template: " + policy["name"] + "\"\n"
   end
@@ -88,14 +97,19 @@ final_permission_list.each do |policy|
   parameter_group_definitions += "  ## " + policy["name"] + "\n"
 
   parameter_group_definitions += "  paramPerms" + policy["short_name"] + ":\n"
-  parameter_group_definitions += "    Description: 'What permissions should policies using \"" + policy["name"] + "\" Policy Template be granted on the IAM Role that will be created?'\n"
+
+  if policy["id"] == "all_policy_templates"
+    parameter_group_definitions += "    Description: 'What permissions for all AWS Policy Templates should be granted on the AWS Role that will be created?'\n"
+  else
+    parameter_group_definitions += "    Description: 'What permissions for the \"" + policy["name"] + "\" Policy Template should be granted on the AWS Role that will be created?'\n"
+  end
+
   parameter_group_definitions += "    Type: String\n"
 
-  # Only default to access if policy has read permissions and is a recommended policy
-  if policy["read"].empty? || !recommended_names.include?(policy["name"])
-    parameter_group_definitions += "    Default: No Access\n"
-  else
+  if policy["id"] == "all_policy_templates"
     parameter_group_definitions += "    Default: Read Only\n"
+  else
+    parameter_group_definitions += "    Default: No Access\n"
   end
 
   parameter_group_definitions += "    AllowedValues:\n"
