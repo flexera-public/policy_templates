@@ -169,41 +169,135 @@ script "js_billing_details", type: "javascript" do
   EOS
 end
 
-datasource "ds_azure_savings_plans" do
+# Get list of Savings Plan Order details
+datasource "ds_savings_plan_details" do
+  iterate $ds_billing_details
   request do
-    auth $auth_azure
-    pagination $pagination_azure
-    host $param_azure_endpoint
-    path "/providers/Microsoft.BillingBenefits/savingsPlans"
-    query "api-version", "2022-11-01"
-    header "User-Agent", "RS Policies"
+    run_script $js_savings_plan_details, iter_item, $param_azure_endpoint
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "name", jmes_path(col_item, "name")
-      field "type", jmes_path(col_item, "type")
-      field "sku", jmes_path(col_item, "sku.name")
-      field "appliedScopeProperties", jmes_path(col_item, "properties.appliedScopeProperties")
-      field "appliedScopeType", jmes_path(col_item, "properties.appliedScopeType")
-      field "billingScopeId", jmes_path(col_item, "properties.billingScopeId")
-      field "billingProfileId", jmes_path(col_item, "properties.billingProfileId")
-      field "billingAccountId", jmes_path(col_item, "properties.billingAccountId")
-      field "commitment", jmes_path(col_item, "properties.commitment")
-      field "displayName", jmes_path(col_item, "properties.displayName")
-      field "displayProvisioningState", jmes_path(col_item, "properties.displayProvisioningState")
-      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
-      field "renew", jmes_path(col_item, "properties.renew")
+      field "billingAccountId", val(iter_item, "billingAccountId")
+      field "billingAccountName", val(iter_item, "billingAccountName")
+      field "billingProfileId", val(iter_item, "billingProfileId")
+      field "billingProfileName", val(iter_item, "billingProfileName")
+      field "agreementType", val(iter_item, "agreementType")
+      field "savingsPlanOrderId", jmes_path(col_item, "id")
+      field "savingsPlanOrderName", jmes_path(col_item, "name")
+    end  
+  end
+end
+
+script "js_savings_plan_details", type: "javascript" do
+  parameters "ds_billing_detail", "param_azure_endpoint"
+  result "request"
+  code <<-EOS
+
+  // Define whether $filter query_param is required (only required if MCA)
+  filter_query = ""
+
+  if (ds_billing_detail.billingProfileId && ds_billing_detail.billingProfileId != "N/A") {
+    filter_query = "properties/billingProfileId eq '" + ds_billing_detail.billingProfileId + "'"
+  }
+
+  query_params = {
+    "api-version": "2024-04-01"
+  }
+
+  if (filter_query != "") {
+    query_params["$filter"] = filter_query
+  }
+
+  // Create API request
+  var request = {
+    auth: "auth_azure",
+    pagination: "pagination_azure",
+    host: param_azure_endpoint,
+    path: ds_billing_detail.billingAccountId + "/savingsPlanOrders",
+    query_params: query_params,
+    headers: {
+      "User-Agent": "RS Policies"
+    }
+  }
+  EOS
+end
+
+# Get list of Savings Plans for each Savings Plan Order
+datasource "ds_savings_plan_order_details" do
+  iterate $ds_savings_plan_details
+  request do
+    auth $auth_azure
+    host $param_azure_endpoint
+    path join([val(iter_item, "savingsPlanOrderId"), "/savingsPlans"])
+    query "api-version", "2024-04-01"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "billingAccountId", val(iter_item, "billingAccountId")
+      field "billingAccountName", val(iter_item, "billingAccountName")
+      field "billingProfileId", val(iter_item, "billingProfileId")
+      field "billingProfileName", val(iter_item, "billingProfileName")
+      field "agreementType", val(iter_item, "agreementType")
+      field "savingsPlanOrderId", val(iter_item, "savingsPlanOrderId")
+      field "savingsPlanOrderName", val(iter_item, "savingsPlanOrderName")
+      field "billingPlan", jmes_path(col_item, "properties.billingPlan")
+      field "skuName", jmes_path(col_item, "sku.name")
+      field "productCode", jmes_path(col_item, "properties.productCode")
       field "term", jmes_path(col_item, "properties.term")
-      field "userFriendlyAppliedScopeType", jmes_path(col_item, "properties.userFriendlyAppliedScopeType")
-      field "expiryDateTime", jmes_path(col_item, "properties.expiryDateTime")
-      field "purchaseDateTime", jmes_path(col_item, "properties.purchaseDateTime")
-      field "effectiveDateTime", jmes_path(col_item, "properties.effectiveDateTime")
+      field "scopeType", jmes_path(col_item, "properties.userFriendlyAppliedScopeType")
+      field "scopeProperties", jmes_path(col_item, "properties.appliedScopeProperties")
+      field "purchaseDate", jmes_path(col_item, "properties.purchaseDateTime")
+      field "benefitStartDate", jmes_path(col_item, "properties.benefitStartTime")
+      field "effectiveDate", jmes_path(col_item, "properties.effectiveDate")
+      field "expirationDate", jmes_path(col_item, "properties.expiryDateTime")
+      field "savingsPlanId", jmes_path(col_item, "id")
+      field "savingsPlanName", jmes_path(col_item, "name")
+      field "commitmentAmount", jmes_path(col_item, "properties.commitment.amount")
+      field "commitmentGranularity", jmes_path(col_item, "properties.commitment.grain")
+      field "commitmentCurrency", jmes_path(col_item, "properties.commitment.currencyCode")
+      field "autoRenew", jmes_path(col_item, "properties.renew")
       field "utilization", jmes_path(col_item, "properties.utilization")
     end
   end
 end
+
+# datasource "ds_azure_savings_plans" do
+#   request do
+#     auth $auth_azure
+#     pagination $pagination_azure
+#     host $param_azure_endpoint
+#     path "/providers/Microsoft.BillingBenefits/savingsPlans"
+#     query "api-version", "2022-11-01"
+#     header "User-Agent", "RS Policies"
+#   end
+#   result do
+#     encoding "json"
+#     collect jmes_path(response, "value[*]") do
+#       field "id", jmes_path(col_item, "id")
+#       field "name", jmes_path(col_item, "name")
+#       field "type", jmes_path(col_item, "type")
+#       field "sku", jmes_path(col_item, "sku.name")
+#       field "appliedScopeProperties", jmes_path(col_item, "properties.appliedScopeProperties")
+#       field "appliedScopeType", jmes_path(col_item, "properties.appliedScopeType")
+#       field "billingScopeId", jmes_path(col_item, "properties.billingScopeId")
+#       field "billingProfileId", jmes_path(col_item, "properties.billingProfileId")
+#       field "billingAccountId", jmes_path(col_item, "properties.billingAccountId")
+#       field "commitment", jmes_path(col_item, "properties.commitment")
+#       field "displayName", jmes_path(col_item, "properties.displayName")
+#       field "displayProvisioningState", jmes_path(col_item, "properties.displayProvisioningState")
+#       field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+#       field "renew", jmes_path(col_item, "properties.renew")
+#       field "term", jmes_path(col_item, "properties.term")
+#       field "userFriendlyAppliedScopeType", jmes_path(col_item, "properties.userFriendlyAppliedScopeType")
+#       field "expiryDateTime", jmes_path(col_item, "properties.expiryDateTime")
+#       field "purchaseDateTime", jmes_path(col_item, "properties.purchaseDateTime")
+#       field "effectiveDateTime", jmes_path(col_item, "properties.effectiveDateTime")
+#       field "utilization", jmes_path(col_item, "properties.utilization")
+#     end
+#   end
+# end
 
 datasource "ds_azure_expiring_savings_plans" do
   run_script $js_azure_expiring_savings_plans, $ds_azure_savings_plans, $ds_applied_policy, $param_days_expiration
