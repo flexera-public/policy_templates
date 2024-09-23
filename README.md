@@ -755,8 +755,7 @@ These templates can generate savings estimates for your environment.
   Rightsize Storage: 2
   Rightsize Synapse SQL Pools: 1
   Rightsize Volumes: 2
-  Savings Plan: 1
-  Savings Plans: 5
+  Savings Plans: 6
   Savings Realized: 1
   Schedule Instance: 3
   Schedule Report: 2
