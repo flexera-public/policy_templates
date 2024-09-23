@@ -6,7 +6,7 @@ This Policy Template obtains a list of all Savings Plans in the Azure estate and
 
 ## Functional Details
 
-- The policy leverages the Azure Resource Manager API to obtain a list of Savings Plans from the `/providers/Microsoft.BillingBenefits/savingsPlans` API endpoint.
+- The policy leverages the Azure Resource Manager API to obtain a list of Savings Plans from the `/providers/Microsoft.BillingAccounts/savingsPlanOrders/savingsPlans` API endpoint.
 - The policy then compares the `properties.expiryDateTime` field of each Savings Plan to today's date to determine how many days from expiration each Savings Plan is.
 - The policy then raises an incident with a list of any Savings Plans set to expire in fewer days than the user specified via the `Days Until Expiration` parameter.
 
@@ -29,7 +29,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
-  - `Microsoft.BillingBenefits/savingsPlanOrders/savingsPlans/read`
+  - `Microsoft.Billing/billingAccounts/read`
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
