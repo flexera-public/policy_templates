@@ -131,6 +131,44 @@ datasource "ds_billing_profiles" do
   end
 end
 
+# Identify whether Billing Account is Enterprise Agreement (EA) or Microsoft Customer Agreement (MCA)
+datasource "ds_billing_details" do
+  run_script $js_billing_details, $ds_billing_profiles, $ds_billing_accounts
+end
+
+script "js_billing_details", type: "javascript" do
+  parameters "ds_billing_details", "ds_billing_accounts"
+  result "result"
+  code <<-EOS
+    result = []
+
+    _.each(ds_billing_accounts, function(acc) {
+      if (acc.agreementType == "EnterpriseAgreement") {
+        result.push({
+          "billingAccountId": acc.id,
+          "billingAccountName": acc.name,
+          "billingProfileId": "N/A",
+          "billingProfileName": "N/A",
+          "agreementType": acc.agreementType,
+          "currency": acc.currency
+        })
+      } else {
+        var billing_profiles = _.filter(ds_billing_details, function(prof) { return acc.name == prof.billingAccountName })
+        _.each(billing_profiles, function(prof) {
+          result.push({
+            "billingAccountId": prof.billingAccountId,
+            "billingAccountName": prof.billingAccountName,
+            "billingProfileId": prof.billingProfileId,
+            "billingProfileName": prof.billingProfileName,
+            "agreementType": prof.agreementType,
+            "currency": prof.billingProfileCurrency
+          })
+        })
+      }
+    })
+  EOS
+end
+
 datasource "ds_azure_savings_plans" do
   request do
     auth $auth_azure
