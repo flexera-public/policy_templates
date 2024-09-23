@@ -1,13 +1,13 @@
-name "AWS Ensure CloudTrail S3 Buckets Have Access Logging"
+name "AWS CloudTrail S3 Buckets Without Access Logging"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if CloudTrail stores logs in S3 bucket(s) without access logging enabled. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/log_ensure_cloudtrail_bucket_access_logging) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Report S3 buckets used by CloudTrail that do not have access logging enabled. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/log_ensure_cloudtrail_bucket_access_logging) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "2.1",
+  version: "3.0.0",
   provider: "AWS",
   service: "CloudTrail",
   policy_set: "CIS",
@@ -20,13 +20,23 @@ info(
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
   type "list"
-  label "Email Address"
-  description "Email addresses of the recipients you wish to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify."
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
 end
 
 ###############################################################################
@@ -34,25 +44,129 @@ end
 ###############################################################################
 
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
 
 datasource "ds_trail_list" do
   request do
     auth $auth_aws
-    verb "GET"
     host "cloudtrail.us-east-1.amazonaws.com"
     path "/"
+    query "Action", "DescribeTrails"
     header "User-Agent", "RS Policies"
     header "Accept", "application/json"
-    query "Action", "DescribeTrails"
   end
   result do
     encoding "json"
@@ -69,91 +183,100 @@ datasource "ds_aws_buckets_with_region" do
   iterate $ds_trail_list
   request do
     auth $auth_aws
-    host "s3.amazonaws.com"
-    path join(["/", val(iter_item, "s3_bucket")])
-    query "location", ""
+    host join([val(iter_item, "s3_bucket"), ".s3.amazonaws.com"])
+    path "/?location"
     header "User-Agent", "RS Policies"
+    ignore_status [403, 404]
   end
   result do
     encoding "xml"
+    field "region", xpath(response, "//LocationConstraint")
     field "trail_name", val(iter_item, "name")
     field "trail_arn", val(iter_item, "arn")
     field "trail_region", val(iter_item, "homeregion")
     field "id", val(iter_item, "s3_bucket")
-    field "region", response
   end
 end
 
-# https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketLocation.html
-# "Buckets in Region us-east-1 have a LocationConstraint of null."
-# This is to clean up the data and replace that null value with us-east-1
 datasource "ds_aws_buckets_with_region_cleaned" do
   run_script $js_aws_buckets_with_region_cleaned, $ds_aws_buckets_with_region
 end
 
-datasource "ds_aws_buckets_with_access_logging" do
+script "js_aws_buckets_with_region_cleaned", type:"javascript" do
+  parameters "ds_aws_buckets_with_region"
+  result "result"
+  code <<-EOS
+  result = _.map(ds_aws_buckets_with_region, function(bucket) {
+    if (typeof(bucket['region']) != 'string' || bucket['region'] == '') {
+      region = "us-east-1"
+      host = "s3-external-1.amazonaws.com"
+    } else if (bucket['region'].toLowerCase().trim() == "eu") {
+      region = "eu-west-1"
+      host = "s3-eu-west-1.amazonaws.com"
+    } else {
+      region = bucket['region']
+      host = "s3-" + region + ".amazonaws.com"
+    }
+
+    return {
+      trail_name: bucket['trail_name'],
+      trail_arn: bucket['trail_arn'],
+      trail_region: bucket['trail_region'],
+      id: bucket['id'],
+      region: region,
+      host: host
+    }
+  })
+EOS
+end
+
+datasource "ds_aws_buckets_with_access_logging_status" do
   iterate $ds_aws_buckets_with_region_cleaned
   request do
     auth $auth_aws
-    host val(iter_item, "host")
-    path join(["/", val(iter_item, "id")])
-    query "logging", ""
+    host join([val(iter_item, "id"), ".s3.amazonaws.com"])
+    path "/?logging"
     header "User-Agent", "RS Policies"
+    ignore_status [403, 404]
   end
   result do
     encoding "xml"
+    field "logging_bucket", xpath(response, "//BucketLoggingStatus/LoggingEnabled/TargetBucket")
     field "trail_name", val(iter_item, "trail_name")
     field "trail_arn", val(iter_item, "trail_arn")
     field "trail_region", val(iter_item, "trail_region")
     field "id", val(iter_item, "id")
     field "region", val(iter_item, "region")
     field "host", val(iter_item, "host")
-    field "logging_bucket", xpath(response, "//BucketLoggingStatus/LoggingEnabled/TargetBucket")
   end
 end
 
 datasource "ds_aws_buckets_without_access_logging" do
-  run_script $js_aws_buckets_without_access_logging, $ds_aws_buckets_with_access_logging
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_aws_buckets_with_region_cleaned", type:"javascript" do
-  parameters "ds_aws_buckets_with_region"
-  result "result"
-  code <<-EOS
-    result = []
-
-    for ( i = 0; i < ds_aws_buckets_with_region.length; i++ ) {
-      if (ds_aws_buckets_with_region[i].region == "\\n") {
-        ds_aws_buckets_with_region[i].region = "us-east-1"
-        ds_aws_buckets_with_region[i].host = "s3-external-1.amazonaws.com"
-      } else if (ds_aws_buckets_with_region[i].region == "EU" || ds_aws_buckets_with_region[i].region == "\\nEU") {
-        ds_aws_buckets_with_region[i].region = "eu-west-1"
-        ds_aws_buckets_with_region[i].host = "s3-" + ds_aws_buckets_with_region[i]["region"] + ".amazonaws.com"
-      } else {
-        ds_aws_buckets_with_region[i].region = ds_aws_buckets_with_region[i].region.substring(1)
-        ds_aws_buckets_with_region[i].host = "s3-" + ds_aws_buckets_with_region[i]["region"] + ".amazonaws.com"
-      }
-
-      result.push(ds_aws_buckets_with_region[i])
-    }
-EOS
+  run_script $js_aws_buckets_without_access_logging, $ds_aws_buckets_with_access_logging_status, $ds_aws_account, $ds_applied_policy
 end
 
 script "js_aws_buckets_without_access_logging", type:"javascript" do
-  parameters "ds_aws_buckets_with_access_logging"
+  parameters "ds_aws_buckets_with_access_logging_status", "ds_aws_account", "ds_applied_policy"
   result "result"
-  code <<-EOS
-    result = []
+  code <<-'EOS'
+  bad_buckets = _.filter(ds_aws_buckets_with_access_logging_status, function(bucket) {
+    return typeof(bucket['logging_bucket']) != 'string' || bucket['logging_bucket'] == ""
+  })
 
-    _.each(ds_aws_buckets_with_access_logging, function(bucket) {
-      if (bucket.logging_bucket == "") {
-        result.push(bucket)
-      }
-    })
+  result = _.map(bad_buckets, function(bucket) {
+    return {
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      id: bucket['id'],
+      region: bucket['region'],
+      host: bucket['host'],
+      name: bucket['trail_name'],
+      arn: bucket['trail_arn'],
+      trail_region: bucket['trail_region'],
+      logging_bucket: bucket['logging_bucket'],
+      policy_name: ds_applied_policy['name']
+    }
+  })
 EOS
 end
 
@@ -161,17 +284,23 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_aws_buckets_without_access_logging" do
-  validate $ds_aws_buckets_without_access_logging do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} CloudTrails Found With Buckets Without Access Logging"
-    escalate $esc_report_aws_buckets_without_access_logging
-    check eq(size(data),0)
+policy "pol_aws_buckets_without_access_logging" do
+  validate_each $ds_aws_buckets_without_access_logging do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS CloudTrail S3 Buckets Without Access Logging Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
     export do
       resource_level true
-      field "trail_name" do
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "name" do
         label "CloudTrail Name"
       end
-      field "trail_arn" do
+      field "arn" do
         label "CloudTrail ARN"
       end
       field "id" do
@@ -188,7 +317,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_report_aws_buckets_without_access_logging" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"

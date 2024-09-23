@@ -1,5 +1,13 @@
 # Changelog
 
+## v5.4.1
+
+- Modified internal template name for ARN incident field to match other policy templates. Functionality unchanged.
+
+## v5.4.0
+
+- Added memory and network throughput metrics to incident output for underutilized RDS instances
+
 ## v5.3.1
 
 - Unused RDS Instances incident now includes a `Recommended Instance Size` field with a value of `Terminate RDS Instance` for ease of analyzing recommendations from the Flexera Optimization dashboard

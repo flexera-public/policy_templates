@@ -8,6 +8,8 @@
 ### Ruby lint test
 # Return false if Ruby linter finds no problems
 def code_ruby_errors?(file)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing Ruby file using standard linter..."
+
   linter = `ruby -c #{file}`
 
   # Return the problems found if applicable
@@ -17,19 +19,22 @@ end
 
 ### Rubocop lint test
 # Return false if Rubocop linter finds no problems
-def code_rubocop_problems?(file)
-  linter = `rubocop #{file}`
+# Currently not in use due to extremely verbose and thorough output
+# def code_rubocop_problems?(file)
+#   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing Ruby file using Rubocop linter..."
 
-  fail_message = ""
+#   linter = `rubocop #{file}`
 
-  linter.each_line do |line|
-    fail_message += line.strip + "\n" if line.start_with?(file)
-  end
+#   fail_message = ""
 
-  # Return the problems found if applicable
-  return "Rubocop linting found problems:\n\n#{fail_message}" if !fail_message.empty?
-  return false
-end
+#   linter.each_line do |line|
+#     fail_message += line.strip + "\n" if line.start_with?(file)
+#   end
+
+#   # Return the problems found if applicable
+#   return "Rubocop linting found problems:\n\n#{fail_message}" if !fail_message.empty?
+#   return false
+# end
 
 ###############################################################################
 # Methods: Python
@@ -38,6 +43,8 @@ end
 ### Python lint test
 # Return false if Python linter finds no problems
 def code_python_errors?(file)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing Python file using pylint linter..."
+
   linter = `pylint --errors-only #{file}`
 
   fail_message = ""
@@ -56,6 +63,8 @@ end
 ###############################################################################
 
 def code_json_bad_location?(file)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing JSON file location..."
+
   fail_message = ""
 
   if file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/")
@@ -67,6 +76,8 @@ def code_json_bad_location?(file)
 end
 
 def code_yaml_bad_location?(file)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing YAML file location..."
+
   fail_message = ""
 
   if file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/")
@@ -78,6 +89,8 @@ def code_yaml_bad_location?(file)
 end
 
 def code_json_errors?(file)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Linting JSON file..."
+
   linter = `jsonlint #{file}`
 
   # Return the problems found if applicable
@@ -86,6 +99,8 @@ def code_json_errors?(file)
 end
 
 def code_yaml_errors?(file)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Linting YAML file..."
+
   linter = `yaml-lint -q #{file}`
 
   # Return the problems found if applicable

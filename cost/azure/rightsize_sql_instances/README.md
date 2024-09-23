@@ -41,6 +41,8 @@ The policy includes the estimated monthly savings. The estimated monthly savings
   - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
+- *Threshold Statistic* - Statistic to use when determining if a SQL instance is underutilized.
+- *Statistic Interval* - The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets.
 - *Statistic Lookback Period* - How many days back to look at connection and CPU utilization data for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
 - *Report Unused or Underutilized* - Whether to report on unused instances, underutilized instances, or both. If both are selected, unused instances will not appear in the list of underutilized instances regardless of CPU usage.
 - *Underutilized Instance CPU Threshold (%)* - The CPU threshold at which to consider an instance to be underutilized and therefore be flagged for downsizing.

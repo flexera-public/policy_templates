@@ -1,46 +1,79 @@
-name "GitHub.com Available Seats Report"
+name "GitHub Available Seats"
 rs_pt_ver 20180301
-short_description "Gets the number of available seats for a licensed GitHub Org and creates an incident if they are out of the policy range.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/github/available_seats) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+type "policy"
+short_description "Reports on GitHub organizations that have too many or too few available seats.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/github/available_seats) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "medium"
 category "Compliance"
+default_frequency "weekly"
 info(
-  version: "2.4",
+  version: "3.0.0",
   provider: "GitHub",
-  service: "",
+  service: "Git",
   policy_set: ""
 )
 
+###############################################################################
+# Parameters
+###############################################################################
+
 parameter "param_email" do
-  label "Email addresses of the recipients you wish to notify"
   type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_orgs" do
   type "list"
-  label "GitHub.com Organizations to check"
+  category "Policy Settings"
+  label "GitHub Organizations"
+  description "A list of GitHub Organizations to check."
+  # No default value, user input required
 end
 
 parameter "param_min_seats" do
-  type "string"
-  label "Allowed Minimum Available Seats"
-  default "10"
+  type "number"
+  category "Policy Settings"
+  label "Minimum Available Seats Required"
+  description "The minimum number of available seats to require. Set to '0' to not require any minimum."
+  min_value 0
+  default 10
 end
 
 parameter "param_max_seats" do
-  type "string"
-  label "Allowed Maximum Available Seats"
-  default "50"
+  type "number"
+  category "Policy Settings"
+  label "Maximum Available Seats Allowed"
+  description "The maximum number of available seats to allow. Set to '-1' to have no maximum."
+  min_value -1
+  default 50
 end
+
+###############################################################################
+# Authentication
+###############################################################################
 
 credentials "auth_github" do
   schemes "api_key"
   label "GitHub"
-  description "Select the Github Credential from the list."
+  description "Select the GitHub Credential from the list."
   tags "provider=github"
 end
 
-pagination "github_pagination" do
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_github" do
   get_page_marker do
     header "Link"
   end
@@ -49,91 +82,192 @@ pagination "github_pagination" do
   end
 end
 
-datasource "ds_orgs_array" do
-  run_script $js_orgs_array, $param_orgs
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
 end
 
-script "js_orgs_array", type: "javascript" do
+datasource "ds_org_list" do
+  run_script $js_org_list, $param_orgs
+end
+
+script "js_org_list", type: "javascript" do
   parameters "param_orgs"
-  result "orgs_array"
-  code <<-EOS
-var orgs_array = param_orgs;
-EOS
+  result "result"
+  code "result = param_orgs"
 end
 
 datasource "ds_github_orgs" do
-  iterate $ds_orgs_array
+  iterate $ds_org_list
   request do
     auth $auth_github
-    pagination $github_pagination
+    pagination $pagination_github
     host "api.github.com"
-    # https://developer.github.com/v3/orgs/#get-an-organization
-    path join(["/orgs/",iter_item])
+    path join(["/orgs/", iter_item])
+    header "X-GitHub-Api-Version", "2022-11-28"
   end
   result do
     encoding "json"
-    collect jmes_path(response, "[@]") do
-      field "id", jmes_path(col_item, "id")
-      field "org", jmes_path(col_item, "login")
-      field "total_seats", jmes_path(col_item, "plan.seats")
-      field "used_seats", jmes_path(col_item, "plan.filled_seats")
-      field "available_seats", dec( to_n(jmes_path(col_item, "plan.seats")) , to_n(jmes_path(col_item, "plan.filled_seats")) )
-    end
+    field "id", jmes_path(response, "id")
+    field "name", jmes_path(response, "login")
+    field "company", jmes_path(response, "company")
+    field "blog", jmes_path(response, "blog")
+    field "location", jmes_path(response, "location")
+    field "email", jmes_path(response, "email")
+    field "html_url", jmes_path(response, "html_url")
+    field "created_at", jmes_path(response, "created_at")
+    field "type", jmes_path(response, "type")
+    field "total_seats", jmes_path(response, "plan.seats")
+    field "used_seats", jmes_path(response, "plan.filled_seats")
   end
 end
 
-policy "policy_available_seats" do
-  validate_each $ds_github_orgs do
-    summary_template "GitHub Orgs with low available seats"
-    check gt(to_n(val(item,"available_seats")),to_n($param_min_seats))
-    ### Policy Min Seat Count: {{parameters.param_min_seats}}
-    escalate $email_report
+datasource "ds_cleaned_orgs" do
+  run_script $js_cleaned_orgs, $ds_github_orgs, $ds_applied_policy, $param_min_seats, $param_max_seats
+end
+
+script "js_cleaned_orgs", type: "javascript" do
+  parameters "ds_github_orgs", "ds_applied_policy", "param_min_seats", "param_max_seats"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_github_orgs, function(org) {
+    return {
+      id: org["id"],
+      name: org["name"],
+      company: org["company"],
+      blog: org["blog"],
+      location: org["location"],
+      email: org["email"],
+      html_url: org["html_url"],
+      created_at: org["created_at"],
+      type: org["type"],
+      total_seats: Number(org["total_seats"]),
+      used_seats: Number(org["used_seats"]),
+      available_seats: Number(org["total_seats"]) - Number(org["used_seats"]),
+      org_link: "Organization||" + org["html_url"],
+      policy_name: ds_applied_policy["name"],
+      min_seats: param_min_seats,
+      max_seats: param_max_seats
+    }
+  })
+EOS
+end
+
+datasource "ds_orgs_below_min" do
+  run_script $js_orgs_below_min, $ds_cleaned_orgs, $param_min_seats
+end
+
+script "js_orgs_below_min", type: "javascript" do
+  parameters "ds_cleaned_orgs", "param_min_seats"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_cleaned_orgs, function(org) {
+    return org["available_seats"] < param_min_seats
+  })
+EOS
+end
+
+datasource "ds_orgs_above_max" do
+  run_script $js_orgs_above_max, $ds_cleaned_orgs, $param_max_seats
+end
+
+script "js_orgs_above_max", type: "javascript" do
+  parameters "ds_cleaned_orgs", "param_max_seats"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_cleaned_orgs, function(org) {
+    return org["available_seats"] > param_max_seats && param_max_seats != -1
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_available_seats" do
+  validate_each $ds_orgs_below_min do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} GitHub Organizations Below Minimum Available Seats Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
     export do
       resource_level true
-      field "org" do
-        label "Organization Name"
+      field "id" do
+        label "ID"
       end
-      field "available_seats" do
-        label "Available Seats"
+      field "name" do
+        label "Name"
       end
-      field "used_seats" do
-        label "Used Seats"
+      field "created_at" do
+        label "Created At"
       end
       field "total_seats" do
         label "Total Seats"
       end
-      field "id" do
-        label "Id"
-      end
-    end
-  end
-  validate_each $ds_github_orgs do
-    summary_template "GitHub Orgs with too many available seats"
-    check lt(to_n(val(item,"available_seats")),to_n($param_max_seats))
-    escalate $email_report
-    #### Policy Max Seat Count: {{parameters.param_max_seats}}
-    export do
-      resource_level true
-      field "org" do
-        label "Organization Name"
+      field "used_seats" do
+        label "Used Seats"
       end
       field "available_seats" do
         label "Available Seats"
       end
-      field "used_seats" do
-        label "Used Seats"
+      field "min_seats" do
+        label "Minimum Available Seats Required"
+      end
+      field "org_link" do
+        label "Link"
+        format "link-external"
+      end
+    end
+  end
+  validate_each $ds_orgs_above_max do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} GitHub Organizations Above Maximum Available Seats Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    export do
+      resource_level true
+      field "id" do
+        label "ID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "created_at" do
+        label "Created At"
       end
       field "total_seats" do
         label "Total Seats"
       end
-      field "id" do
-        label "Id"
+      field "used_seats" do
+        label "Used Seats"
+      end
+      field "available_seats" do
+        label "Available Seats"
+      end
+      field "max_seats" do
+        label "Maximum Available Seats Allowed"
+      end
+      field "org_link" do
+        label "Link"
+        format "link-external"
       end
     end
   end
 end
 
-escalation "email_report" do
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"

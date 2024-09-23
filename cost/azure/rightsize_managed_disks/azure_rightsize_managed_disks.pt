@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "2.0.3",
+  version: "2.4.0",
   provider: "Azure",
   service: "Managed Disks",
   policy_set: "Rightsize Storage",
@@ -95,6 +95,14 @@ parameter "param_regions_list" do
   default []
 end
 
+parameter "param_sku_ignore_list" do
+  type "list"
+  category "Filters"
+  label "SKU Ignore List"
+  description "A list of disk SKUs to ignore and not include in the results. To remove HDDs from the results, add 'Standard_LRS' and 'Standard_ZRS' to this list. Leave blank to produce recommendations for all SKUs."
+  default []
+end
+
 parameter "param_min_used_disk_iops_pct" do
   type "number"
   category "Filters"
@@ -110,7 +118,7 @@ parameter "param_stats_aggregation_for_disk_iops" do
   category "Statistics"
   label "IOPS Threshold Statistic"
   description "Statistic to use for IOPS when determining if a managed disk is underutilized."
-  allowed_values "Average", "Maximum"
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
   default "Maximum"
 end
 
@@ -129,8 +137,17 @@ parameter "param_stats_aggregation_for_disk_throughput" do
   category "Statistics"
   label "Throughput Threshold Statistic"
   description "Statistic to use for throughput when determining if a managed disk is underutilized."
-  allowed_values "Average", "Maximum"
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
   default "Maximum"
+end
+
+parameter "param_stats_interval" do
+  type "string"
+  category "Statistics"
+  label "Statistic Interval"
+  description "The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets."
+  allowed_values "1 Minute", "5 Minutes", "15 Minutes", "30 Minutes", "1 Hour", "6 Hours", "12 Hours", "1 Day"
+  default "15 Minutes"
 end
 
 parameter "param_stats_lookback" do
@@ -141,6 +158,15 @@ parameter "param_stats_lookback" do
   min_value 1
   max_value 90
   default 30
+end
+
+parameter "param_recommend_hdd_tier" do
+  type "string"
+  category "Filters"
+  label "Recommend HDD tier"
+  description "When this value is set to Yes, the policy will consider the Standard HDD tier for making recommendations."
+  allowed_values "Yes", "No"
+  default "Yes"
 end
 
 ###############################################################################
@@ -200,6 +226,33 @@ datasource "ds_azure_subscriptions" do
       field "state", jmes_path(col_item, "state")
     end
   end
+end
+
+datasource "ds_stats_interval" do
+  run_script $js_stats_interval, $param_stats_interval
+end
+
+script "js_stats_interval", type: "javascript" do
+  parameters "param_stats_interval"
+  result "result"
+  code <<-EOS
+  // Tables to convert human-readable parameter values to their API equivalents
+  interval_table = {
+    "1 Minute": "PT1M",
+    "5 Minutes": "PT5M",
+    "15 Minutes": "PT15M",
+    "30 Minutes": "PT30M",
+    "1 Hour": "PT1H",
+    "6 Hours": "PT6H",
+    "12 Hours": "PT12H",
+    "1 Day": "P1D"
+  }
+
+  result = {
+    pretty: param_stats_interval,
+    api: interval_table[param_stats_interval]
+  }
+EOS
 end
 
 datasource "ds_applied_policy" do
@@ -280,16 +333,34 @@ datasource "ds_azure_disks" do
   end
 end
 
+datasource "ds_azure_disks_sku_filtered" do
+  run_script $js_azure_disks_sku_filtered, $ds_azure_disks, $param_sku_ignore_list
+end
+
+script "js_azure_disks_sku_filtered", type: "javascript" do
+  parameters "ds_azure_disks", "param_sku_ignore_list"
+  result "result"
+  code <<-EOS
+  if (param_sku_ignore_list.length > 0) {
+    result = _.reject(ds_azure_disks, function(disk) {
+      return _.contains(param_sku_ignore_list, disk['tier'])
+    })
+  } else {
+    result = ds_azure_disks
+  }
+EOS
+end
+
 datasource "ds_azure_disks_region_filtered" do
-  run_script $js_azure_disks_region_filtered, $ds_azure_disks, $param_regions_allow_or_deny, $param_regions_list
+  run_script $js_azure_disks_region_filtered, $ds_azure_disks_sku_filtered, $param_regions_allow_or_deny, $param_regions_list
 end
 
 script "js_azure_disks_region_filtered", type: "javascript" do
-  parameters "ds_azure_disks", "param_regions_allow_or_deny", "param_regions_list"
+  parameters "ds_azure_disks_sku_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-EOS
   if (param_regions_list.length > 0) {
-    result = _.filter(ds_azure_disks, function(disk) {
+    result = _.filter(ds_azure_disks_sku_filtered, function(disk) {
       include_disk = _.contains(param_regions_list, disk['region'])
 
       if (param_regions_allow_or_deny == "Deny") {
@@ -299,7 +370,7 @@ script "js_azure_disks_region_filtered", type: "javascript" do
       return include_disk
     })
   } else {
-    result = ds_azure_disks
+    result = ds_azure_disks_sku_filtered
   }
 EOS
 end
@@ -461,7 +532,7 @@ end
 datasource "ds_azure_virtual_machines_with_metrics" do
   iterate $ds_azure_virtual_machines_with_disks
   request do
-    run_script $js_azure_virtual_machines_with_metrics, val(iter_item, "vmId"), $param_azure_endpoint, $param_stats_lookback
+    run_script $js_azure_virtual_machines_with_metrics, val(iter_item, "vmId"), $ds_stats_interval, $param_azure_endpoint, $param_stats_lookback
   end
   result do
     encoding "json"
@@ -471,7 +542,7 @@ datasource "ds_azure_virtual_machines_with_metrics" do
 end
 
 script "js_azure_virtual_machines_with_metrics", type: "javascript" do
-  parameters "vmId", "param_azure_endpoint", "param_stats_lookback"
+  parameters "vmId", "ds_stats_interval", "param_azure_endpoint", "param_stats_lookback"
   result "request"
   code <<-EOS
   var end_date = new Date()
@@ -498,8 +569,8 @@ script "js_azure_virtual_machines_with_metrics", type: "javascript" do
       "metricnames": "OS Disk IOPS Consumed Percentage,OS Disk Bandwidth Consumed Percentage,Data Disk IOPS Consumed Percentage,Data Disk Bandwidth Consumed Percentage",
       "timespan": timespan,
       "$filter": "LUN eq '*'",
-      "aggregation": "Average, Maximum",
-      "interval": "FULL",
+      "aggregation": "Average, Maximum, Minimum",
+      "interval": ds_stats_interval.api,
     },
     headers: {
       "User-Agent": "RS Policies",
@@ -528,6 +599,46 @@ script "js_azure_disks_with_metrics", type: "javascript" do
   parameters "ds_azure_virtual_machines_with_metrics", "ds_azure_virtual_machines_with_disks", "ds_azure_virtual_machines_with_disk_space"
   result "result"
   code <<-EOS
+  // Returns an array of single values sorted.
+  function sortArray(array) {
+    return array.sort(function (a, b) {
+      return a - b;
+    });
+  }
+
+  function percentile(sortedArray, p) {
+    if (sortedArray.length === 0) return 0
+    var index = (p / 100) * sortedArray.length
+    var result = sortedArray[Math.ceil(index) - 1]
+    return result
+  }
+
+  function getMinValues(data) {
+    var minValues = _.filter(data, function(data) { return data.minimum != undefined && data.minimum != null })
+    minValues = _.map(minValues, function(v) { return v.minimum })
+    return minValues
+  }
+
+  function getMaxValues(data) {
+    var maxValues = _.filter(data, function(data) { return data.maximum != undefined && data.maximum != null })
+    maxValues = _.map(maxValues, function(v) { return v.maximum })
+    return sortArray(maxValues)
+  }
+
+  function getAvgValues(data) {
+    var avgValues = _.filter(data, function(data) { return data.average != undefined && data.average != null })
+    avgValues = _.map(avgValues, function(v) { return v.average })
+    return avgValues
+  }
+
+  function getAverage(data) {
+    var sum = 0.0
+    for (var i = 0; i < data.length; i++) {
+      sum += data[i]
+    }
+    return sum / data.length
+  }
+
   function findMetricsForDataDisk(metrics, metricName, lun) {
     for (var i in metrics) {
       var metric = metrics[i]
@@ -539,9 +650,26 @@ script "js_azure_disks_with_metrics", type: "javascript" do
         )
       })
       if (correspondingTs === undefined) {
-        return { average: -1, maximum: -1 }
+        return {
+          average: -1,
+          maximum: -1,
+          p90: -1,
+          p95: -1,
+          p99: -1
+        }
       } else {
-        return { average: correspondingTs.data[0].average, maximum: correspondingTs.data[0].maximum }
+        var minValues = getMinValues(correspondingTs.data)
+        var maxValues = getMaxValues(correspondingTs.data)
+        var avgValues = getAvgValues(correspondingTs.data)
+        var allValues = sortArray(minValues.concat(maxValues).concat(avgValues))
+        var r = {
+          average: getAverage(avgValues),
+          maximum: _.last(maxValues),
+          p90: percentile(allValues, 90),
+          p95: percentile(allValues, 95),
+          p99: percentile(allValues, 99),
+        }
+        return r
       }
     }
   }
@@ -557,20 +685,40 @@ script "js_azure_disks_with_metrics", type: "javascript" do
       if (vmWithDisk.osDisk === null || vmWithDisk.osDisk === undefined) continue;
       if (metric.name.value === "OS Disk IOPS Consumed Percentage") {
         try {
-          vmWithDisk.osDisk.iopsConsumedPctAvg = metric.timeseries[0].data[0].average
-          vmWithDisk.osDisk.iopsConsumedPctMax = metric.timeseries[0].data[0].maximum
+          var minValues = getMinValues(metric.timeseries[0].data)
+          var maxValues = getMaxValues(metric.timeseries[0].data)
+          var avgValues = getAvgValues(metric.timeseries[0].data)
+          var allValues = sortArray(minValues.concat(maxValues).concat(avgValues))
+          vmWithDisk.osDisk.iopsConsumedPctAvg = getAverage(avgValues)
+          vmWithDisk.osDisk.iopsConsumedPctMax = _.last(maxValues)
+          vmWithDisk.osDisk.iopsConsumedPctP90 = percentile(allValues, 90)
+          vmWithDisk.osDisk.iopsConsumedPctP95 = percentile(allValues, 95)
+          vmWithDisk.osDisk.iopsConsumedPctP99 = percentile(allValues, 99)
         } catch (err) {
           vmWithDisk.osDisk.iopsConsumedPctAvg = -1
           vmWithDisk.osDisk.iopsConsumedPctMax = -1
+          vmWithDisk.osDisk.iopsConsumedPctP90 = -1
+          vmWithDisk.osDisk.iopsConsumedPctP95 = -1
+          vmWithDisk.osDisk.iopsConsumedPctP99 = -1
         }
       }
       if (metric.name.value === "OS Disk Bandwidth Consumed Percentage") {
         try {
-          vmWithDisk.osDisk.bandwithConsumedPctAvg = metric.timeseries[0].data[0].average
-          vmWithDisk.osDisk.bandwithConsumedPctMax = metric.timeseries[0].data[0].maximum
+          var minValues = getMinValues(metric.timeseries[0].data)
+          var maxValues = getMaxValues(metric.timeseries[0].data)
+          var avgValues = getAvgValues(metric.timeseries[0].data)
+          var allValues = sortArray(minValues.concat(maxValues).concat(avgValues))
+          vmWithDisk.osDisk.bandwithConsumedPctAvg = getAverage(avgValues)
+          vmWithDisk.osDisk.bandwithConsumedPctMax = _.last(maxValues)
+          vmWithDisk.osDisk.bandwithConsumedPctP90 = percentile(allValues, 90)
+          vmWithDisk.osDisk.bandwithConsumedPctP95 = percentile(allValues, 95)
+          vmWithDisk.osDisk.bandwithConsumedPctP99 = percentile(allValues, 99)
         } catch (err) {
           vmWithDisk.osDisk.bandwithConsumedPctAvg = -1
           vmWithDisk.osDisk.bandwithConsumedPctMax = -1
+          vmWithDisk.osDisk.bandwithConsumedPctP90 = -1
+          vmWithDisk.osDisk.bandwithConsumedPctP95 = -1
+          vmWithDisk.osDisk.bandwithConsumedPctP99 = -1
         }
       }
     }
@@ -585,6 +733,9 @@ script "js_azure_disks_with_metrics", type: "javascript" do
       )
       dataDisk.iopsConsumedPctAvg = correspondingIopsMetrics.average
       dataDisk.iopsConsumedPctMax = correspondingIopsMetrics.maximum
+      dataDisk.iopsConsumedPctP90 = correspondingIopsMetrics.p90
+      dataDisk.iopsConsumedPctP95 = correspondingIopsMetrics.p95
+      dataDisk.iopsConsumedPctP99 = correspondingIopsMetrics.p99
       // Bandwith
       var correspondingBandwidthMetrics = findMetricsForDataDisk(
         correspondingVmWithMetrics.metrics,
@@ -593,6 +744,9 @@ script "js_azure_disks_with_metrics", type: "javascript" do
       )
       dataDisk.bandwithConsumedPctAvg = correspondingBandwidthMetrics.average
       dataDisk.bandwithConsumedPctMax = correspondingBandwidthMetrics.maximum
+      dataDisk.bandwithConsumedPctP90 = correspondingBandwidthMetrics.p90
+      dataDisk.bandwithConsumedPctP95 = correspondingBandwidthMetrics.p95
+      dataDisk.bandwithConsumedPctP99 = correspondingBandwidthMetrics.p99
     }
   }
 
@@ -641,7 +795,17 @@ script "js_azure_disks_with_metrics_thresholds_filtered", type: "javascript" do
   code <<-EOS
   var result = _.filter(ds_azure_disks_with_metrics, function(disk) {
     // Filter the disk if we do not have IOPS and throughput data for the disk
-    if (disk.iopsConsumedPctAvg === -1 || disk.iopsConsumedPctMax === -1 || disk.bandwithConsumedPctAvg === -1 || disk.bandwithConsumedPctMax === -1) {
+    if ( disk.iopsConsumedPctAvg === -1
+      || disk.iopsConsumedPctMax === -1
+      || disk.iopsConsumedPctP90 === -1
+      || disk.iopsConsumedPctP95 === -1
+      || disk.iopsConsumedPctP99 === -1
+      || disk.bandwithConsumedPctAvg === -1
+      || disk.bandwithConsumedPctMax === -1
+      || disk.bandwithConsumedPctP90 === -1
+      || disk.bandwithConsumedPctP95 === -1
+      || disk.bandwithConsumedPctP99 === -1
+    ) {
       return false
     }
     if (ds_min_used_disk_space_pct != -1) {
@@ -653,13 +817,47 @@ script "js_azure_disks_with_metrics_thresholds_filtered", type: "javascript" do
       }
     }
     if (param_min_used_disk_iops_pct != -1) {
-      var usedMetricPct = param_stats_aggregation_for_disk_iops === "Average" ? disk.iopsConsumedPctAvg : disk.iopsConsumedPctMax
+      var usedMetricPct = null
+      switch (param_stats_aggregation_for_disk_iops) {
+        case "Average":
+          usedMetricPct = disk.iopsConsumedPctAvg
+          break;
+        case "Maximum":
+          usedMetricPct = disk.iopsConsumedPctMax
+          break;
+        case "p90":
+          usedMetricPct = disk.iopsConsumedPctP90
+          break;
+        case "p95":
+          usedMetricPct = disk.iopsConsumedPctP95
+          break;
+        case "p99":
+          usedMetricPct = disk.iopsConsumedPctP99
+          break;
+      }
       if (usedMetricPct > param_min_used_disk_iops_pct) {
         return false
       }
     }
     if (param_min_used_disk_throughput_pct != -1) {
-      var usedMetricPct = param_stats_aggregation_for_disk_throughput === "Average" ? disk.bandwithConsumedPctAvg : disk.bandwithConsumedPctMax
+      var usedMetricPct = null
+      switch (param_stats_aggregation_for_disk_throughput) {
+        case "Average":
+          usedMetricPct = disk.bandwithConsumedPctAvg
+          break;
+        case "Maximum":
+          usedMetricPct = disk.bandwithConsumedPctMax
+          break;
+        case "p90":
+          usedMetricPct = disk.bandwithConsumedPctP90
+          break;
+        case "p95":
+          usedMetricPct = disk.bandwithConsumedPctP95
+          break;
+        case "p99":
+          usedMetricPct = disk.bandwithConsumedPctP99
+          break;
+      }
       if (usedMetricPct > param_min_used_disk_throughput_pct) {
         return false
       }
@@ -685,12 +883,120 @@ datasource "ds_azure_md_pricing" do
   end
 end
 
+# Gather local currency info
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency_target" do
+  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency_target", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  // Default to USD if currency is not found
+  result = ds_currency_reference['USD']
+
+  if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
+    result = ds_currency_reference[ds_currency_code['value']]
+  }
+EOS
+end
+
+# Branching logic:
+# This datasource returns an empty array if the target currency is USD.
+# This prevents ds_currency_conversion from running if it's not needed.
+datasource "ds_conditional_currency_conversion" do
+  run_script $js_conditional_currency_conversion, $ds_currency_target
+end
+
+script "js_conditional_currency_conversion", type: "javascript" do
+  parameters "ds_currency_target"
+  result "result"
+  code <<-EOS
+  result = []
+  // Make the request only if the target currency is not USD
+  if (ds_currency_target['code'] != 'USD') {
+    result = [1]
+  }
+EOS
+end
+
+datasource "ds_currency_conversion" do
+  # Only make a request if the target currency is not USD
+  iterate $ds_conditional_currency_conversion
+  request do
+    host "api.xe-auth.flexeraeng.com"
+    path "/prod/{proxy+}"
+    query "from", "USD"
+    query "to", val($ds_currency_target, 'code')
+    query "amount", "1"
+    # Ignore currency conversion if API has issues
+    ignore_status [400, 404, 502]
+  end
+  result do
+    encoding "json"
+    field "from", jmes_path(response, "from")
+    field "to", jmes_path(response, "to")
+    field "amount", jmes_path(response, "amount")
+    field "year", jmes_path(response, "year")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_target", "ds_currency_conversion"
+  result "result"
+  code <<-EOS
+  result = ds_currency_target
+  result['exchange_rate'] = 1
+
+  if (ds_currency_conversion.length > 0) {
+    currency_code = ds_currency_target['code']
+    current_month = parseInt(new Date().toISOString().split('-')[1])
+
+    conversion_block = _.find(ds_currency_conversion[0]['to'][currency_code], function(item) {
+      return item['month'] == current_month
+    })
+
+    if (conversion_block != undefined) {
+      result['exchange_rate'] = conversion_block['monthlyAverage']
+    }
+  }
+EOS
+end
+
 datasource "ds_disk_rightsizing_recommendations" do
-  run_script $js_disk_rightsizing_recommendations, $ds_azure_disks_with_metrics_thresholds_filtered, $ds_azure_md_tier_types, $ds_azure_md_pricing, $ds_applied_policy, $ds_min_used_disk_space_pct, $param_stats_lookback, $param_min_savings, $param_min_used_disk_iops_pct, $param_min_used_disk_throughput_pct, $param_stats_aggregation_for_disk_iops, $param_stats_aggregation_for_disk_throughput
+  run_script $js_disk_rightsizing_recommendations, $ds_currency, $ds_azure_disks_with_metrics_thresholds_filtered, $ds_azure_md_tier_types, $ds_azure_md_pricing, $ds_applied_policy, $ds_min_used_disk_space_pct, $param_stats_lookback, $param_min_savings, $param_min_used_disk_iops_pct, $param_min_used_disk_throughput_pct, $param_stats_aggregation_for_disk_iops, $param_stats_aggregation_for_disk_throughput, $param_recommend_hdd_tier
 end
 
 script "js_disk_rightsizing_recommendations", type: "javascript" do
-  parameters "ds_azure_disks_with_metrics_thresholds_filtered", "ds_azure_md_tier_types", "ds_azure_md_pricing", "ds_applied_policy", "ds_min_used_disk_space_pct", "param_stats_lookback", "param_min_savings", "param_min_used_disk_iops_pct", "param_min_used_disk_throughput_pct", "param_stats_aggregation_for_disk_iops", "param_stats_aggregation_for_disk_throughput"
+  parameters "ds_currency", "ds_azure_disks_with_metrics_thresholds_filtered", "ds_azure_md_tier_types", "ds_azure_md_pricing", "ds_applied_policy", "ds_min_used_disk_space_pct", "param_stats_lookback", "param_min_savings", "param_min_used_disk_iops_pct", "param_min_used_disk_throughput_pct", "param_stats_aggregation_for_disk_iops", "param_stats_aggregation_for_disk_throughput", "param_recommend_hdd_tier"
   result "result"
   code <<-'EOS'
   var hddDiskSizes = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32767]
@@ -731,7 +1037,6 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       diskTier = diskTier.split("_")[0]
       diskSizeGB = findDiskSize(diskTier, diskSizeGB)
     } catch (err) {
-      console.log("Error inside findDiskName for "+diskTier +" "+diskSizeGB)
       return undefined
     }
     for (diskName in ds_azure_md_tier_types) {
@@ -763,8 +1068,9 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
         pricePerUnit: Math.round( premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.pricePerUnit * 720 * currentUsedGB ),
         currencyCode: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.currencyCode,
         sizeGiB: currentUsedGB,
-        IOPS: currentUsedIops,
-        throughput: currentUsedThroughput,
+        // Premium SSD v2 provides a baseline performance of 3,000 IOPS and 125 MB/s for any disk size
+        IOPS: 3000,
+        throughput: 125,
         unitOfMeasure: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.unitOfMeasure
       }
     }
@@ -827,6 +1133,10 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     if (currentDiskData.downgrades.tier != null) {
       var nextDiskName = currentDiskData.downgrades.tier
       var nextDiskData = ds_azure_md_tier_types[nextDiskName]
+      // If the next disk is HDD tier and HDD tier recommendations are not allowed, we return the current disk.
+      if (nextDiskData.tier == "Standard" && param_recommend_hdd_tier == "No") {
+        return currentDiskName
+      }
       if (
         currentUsedIops <= nextDiskData.IOPS
         && currentUsedThroughput <= nextDiskData.throughput
@@ -843,7 +1153,6 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     var disk = ds_azure_disks_with_metrics_thresholds_filtered[i]
     var currentDiskName = findDiskName(disk.tier, disk.diskSizeGB)
     if (currentDiskName === undefined) {
-     console.log("Current disk name is undefined ", JSON.stringify(disk));
      continue;
     }
     var currentDiskData = ds_azure_md_tier_types[currentDiskName]
@@ -859,7 +1168,6 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       var currentDiskPrice = findDiskPrice(currentDiskName, currentDiskRedundancy, disk.region)
       var fittingDiskPrice = findDiskPrice(fittingDiskName, currentDiskRedundancy, disk.region)
     } catch (err) {
-      console.log("Error while calculating the currentDiskPrice or fittingDiskPrice ", JSON.stringify(disk), JSON.stringify(currentDiskData));
       if (currentDiskData.tier != "Ultra") {
         continue
       }
@@ -929,24 +1237,30 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       resourceTypeGiB: currentDiskData.sizeGiB,
       resourceTypeIOPS: currentDiskData.IOPS,
       resourceTypeThroughput: currentDiskData.throughput,
-      resourceTypeMonthlyPrice: currentDiskPrice.pricePerUnit,
-      resourceTypePriceCurrency: currentDiskPrice.currencyCode,
+      resourceTypeMonthlyPrice: currentDiskPrice.pricePerUnit * ds_currency.exchange_rate,
+      resourceTypePriceCurrency: ds_currency.code,
       newResourceType: newResourceType,
       newResourceTypeRedundancy: newResourceTypeRedundancy,
       newResourceTypeGiB: newResourceTypeGiB,
       newResourceTypeIOPS: newResourceTypeIOPS,
       newResourceTypeThroughput: newResourceTypeThroughput,
-      newResourceTypeMonthlyPrice: newResourceTypeMonthlyPrice,
-      newResourceTypePriceCurrency: newResourceTypePriceCurrency,
+      newResourceTypeMonthlyPrice: newResourceTypeMonthlyPrice * ds_currency.exchange_rate,
+      newResourceTypePriceCurrency: ds_currency.code,
       resourceKind: disk.resourceType,
       region: disk.region,
-      monthlySavings: monthlySavings.toFixed(2),
-      savingsCurrency: currentDiskPrice.currencyCode,
+      monthlySavings: monthlySavings.toFixed(2) * ds_currency.exchange_rate,
+      savingsCurrency: ds_currency.code,
       iopsPctMaximum: Math.round(disk.iopsConsumedPctMax),
       iopsPctAverage: Math.round(disk.iopsConsumedPctAvg),
+      iopsPctP90: Math.round(disk.iopsConsumedPctP90),
+      iopsPctP95: Math.round(disk.iopsConsumedPctP95),
+      iopsPctP99: Math.round(disk.iopsConsumedPctP99),
       iopsThreshold: param_min_used_disk_iops_pct,
       throughputPctMaximum: Math.round(disk.bandwithConsumedPctMax),
       throughputPctAverage: Math.round(disk.bandwithConsumedPctAvg),
+      throughputPctP90: Math.round(disk.bandwithConsumedPctP90),
+      throughputPctP95: Math.round(disk.bandwithConsumedPctP95),
+      throughputPctP99: Math.round(disk.bandwithConsumedPctP99),
       throughputThreshold: param_min_used_disk_throughput_pct,
       sizeGB: disk.diskSizeGB,
       usedGBPct: disk.diskUsedGB != undefined ? Math.round(disk.diskUsedGB * 100 / disk.diskSizeGB) : "Unknown",
@@ -974,7 +1288,9 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
       recommendations[0].message += "- This policy was applied with **Minimum used disk IOPS percentage** and **Minimum used disk throughput percentage** set to -1. As a result, any disk with any activity or throughput will be considered oversized.\n"
     }
     recommendations[0].message += "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
     recommendations[0].totalSavings = totalMonthlySavings.toFixed(2)
+
     recommendations[0].policyName = ds_applied_policy.name
   }
 
@@ -1091,6 +1407,15 @@ EOS
         label "IOPS Average %"
         path "iopsPctAverage"
       end
+      field "iopsPctP90" do
+        label "IOPS p90"
+      end
+      field "iopsPctP95" do
+        label "IOPS p95"
+      end
+      field "iopsPctP99" do
+        label "IOPS p99"
+      end
       field "iopsThreshold" do
         label "IOPS Threshold %"
       end
@@ -1099,6 +1424,15 @@ EOS
       end
       field "throughputPctAverage" do
         label "Throughput Average %"
+      end
+      field "throughputPctP90" do
+        label "Throughput p90"
+      end
+      field "throughputPctP95" do
+        label "Throughput p95"
+      end
+      field "throughputPctP99" do
+        label "Throughput p99"
       end
       field "throughputThreshold" do
         label "Throughput Threshold %"

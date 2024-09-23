@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.1.0",
+  version: "0.2.0",
   provider: "Azure",
   service: "Compute",
   policy_set: ""
@@ -194,6 +194,60 @@ datasource "ds_applied_policy" do
     path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
     header "Api-Version", "1.0"
   end
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
 end
 
 datasource "ds_azure_subscriptions" do
@@ -629,11 +683,11 @@ EOS
 end
 
 datasource "ds_instances_poweredoff_report" do
-  run_script $js_instances_poweredoff_report, $ds_azure_instances_status_filtered, $ds_instance_bill_data_grouped, $ds_applied_policy, $param_lookback, $param_max_threshold, $param_min_threshold
+  run_script $js_instances_poweredoff_report, $ds_azure_instances_status_filtered, $ds_instance_bill_data_grouped, $ds_currency, $ds_applied_policy, $param_lookback, $param_max_threshold, $param_min_threshold
 end
 
 script "js_instances_poweredoff_report", type: "javascript" do
-  parameters "ds_azure_instances_status_filtered", "ds_instance_bill_data_grouped", "ds_applied_policy", "param_lookback", "param_max_threshold", "param_min_threshold"
+  parameters "ds_azure_instances_status_filtered", "ds_instance_bill_data_grouped", "ds_currency", "ds_applied_policy", "param_lookback", "param_max_threshold", "param_min_threshold"
   result "result"
   code <<-'EOS'
   timespan_hours = param_lookback * 24
@@ -644,6 +698,7 @@ script "js_instances_poweredoff_report", type: "javascript" do
 
     if (instance_bill_data != undefined) {
       hours_poweredoff = timespan_hours - instance_bill_data['usage']
+      if (hours_poweredoff < 0) { hours_poweredoff = 0 }
       percentage_poweredoff = (hours_poweredoff / timespan_hours) * 100
 
       if (percentage_poweredoff > param_max_threshold || percentage_poweredoff < param_min_threshold) {
@@ -654,6 +709,12 @@ script "js_instances_poweredoff_report", type: "javascript" do
           _.each(Object.keys(instance['tags']), function(key) {
             tags.push(key + '=' + instance['tags'][key])
           })
+        }
+
+        hourly_cost = 0.0
+
+        if (instance_bill_data['usage'] != 0) {
+          hourly_cost = instance_bill_data['cost'] / instance_bill_data['usage']
         }
 
         status_codes = _.pluck(instance['statuses'], 'code')
@@ -683,6 +744,8 @@ script "js_instances_poweredoff_report", type: "javascript" do
           lookbackPeriod: param_lookback,
           threshold: param_max_threshold,
           min_threshold: param_min_threshold,
+          hourly_cost: Math.round(hourly_cost * 1000) / 1000,
+          currency: ds_currency['symbol'],
           message: ""
         })
       }
@@ -738,6 +801,8 @@ script "js_instances_poweredoff_report", type: "javascript" do
     lookbackPeriod: "",
     threshold: "",
     min_threshold: "",
+    hourly_cost: "",
+    currency: "",
     message: ""
   })
 
@@ -757,7 +822,7 @@ policy "pol_instances_poweredoff_report" do
     escalate $esc_email
     escalate $esc_poweroff_instances
     escalate $esc_delete_instances
-    hash_exclude "message", "tags", "usage_hours", "hours_poweredoff", "percentage_poweredoff"
+    hash_exclude "message", "tags", "usage_hours", "hours_poweredoff", "percentage_poweredoff", "hourly_cost"
     export do
       resource_level true
       field "accountID" do
@@ -816,6 +881,12 @@ policy "pol_instances_poweredoff_report" do
       end
       field "threshold" do
         label "Maximum Time Powered Off (%)"
+      end
+      field "hourly_cost" do
+        label "Estimated Hourly Cost"
+      end
+      field "currency" do
+        label "Currency"
       end
       field "lookbackPeriod" do
         label "Look Back Period (Days)"

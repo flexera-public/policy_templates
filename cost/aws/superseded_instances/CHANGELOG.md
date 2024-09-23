@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.3.0
+
+- Added `Resource ARN` to incident table.
+
+## v2.2.0
+
+- Fixed bug where invalid recommendations with no new resource type would sometimes be included in results
+- Added `Fallback Instance Type Category` parameter to provide alternate recommendations when the selected category is not available
+
 ## v2.1
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.
