@@ -99,7 +99,7 @@ final_permission_list.each do |policy|
   parameter_group_definitions += "  paramPerms" + policy["short_name"] + ":\n"
 
   if policy["id"] == "all_policy_templates"
-    parameter_group_definitions += "    Description: 'What permissions for all AWS Policy Templates should be granted on the AWS Role that will be created?'\n"
+    parameter_group_definitions += "    Description: 'What permissions for all AWS Policy Templates should be granted on the AWS Role that will be created? Note that the more granular permissions below only need to be enabled if this option is disabled or you want to grant access to take actions only for specific policy templates.'\n"
   else
     parameter_group_definitions += "    Description: 'What permissions for the \"" + policy["name"] + "\" Policy Template should be granted on the AWS Role that will be created?'\n"
   end
@@ -109,11 +109,11 @@ final_permission_list.each do |policy|
   if policy["id"] == "all_policy_templates"
     parameter_group_definitions += "    Default: Read Only\n"
   else
-    parameter_group_definitions += "    Default: No Access\n"
+    parameter_group_definitions += "    Default: None\n"
   end
 
   parameter_group_definitions += "    AllowedValues:\n"
-  parameter_group_definitions += "      - No Access\n"
+  parameter_group_definitions += "      - None\n"
   parameter_group_definitions += "      - Read Only\n" unless policy["read"].empty?
   parameter_group_definitions += "      - Read and Take Action\n" unless policy["action"].empty?
 
@@ -124,7 +124,7 @@ final_permission_list.each do |policy|
     conditions += "  CreatePolicy" + policy["short_name"] + "Read: !Not\n"
     conditions += "    - !Equals\n"
     conditions += "      - !Ref paramPerms" + policy["short_name"] + "\n"
-    conditions += "      - No Access\n"
+    conditions += "      - None\n"
   end
 
   unless policy["action"].empty?
