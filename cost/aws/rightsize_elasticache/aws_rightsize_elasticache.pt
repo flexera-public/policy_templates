@@ -97,14 +97,24 @@ parameter "param_stats_threshold" do
   default "Average"
 end
 
-parameter "param_stats_cpu_target" do
+parameter "param_stats_threshold_cpu_value" do
   type "number"
   category "Statistics"
-  label "Maximum CPU Usage Target (%)"
-  description "Maximum predicted CPU usage for recommended node types. For example, if set to '90', only recommendations where the new size would not result in > 90% CPU usage will be included in the results."
-  min_value 1
+  label "CPU Threshold (%)"
+  description "The CPU threshold at which to consider a cluster to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization"
+  min_value -1
   max_value 100
-  default 90
+  default 40
+end
+
+parameter "param_stats_threshold_mem_value" do
+  type "number"
+  category "Statistics"
+  label "Freeable Memory Threshold (%)"
+  description "The freeable memory threshold at which to consider a cluster to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore memory utilization"
+  min_value -1
+  max_value 100
+  default 60
 end
 
 parameter "param_automatic_action" do
@@ -112,7 +122,7 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Downsize Redshift Nodes"]
+  allowed_values ["Downsize ElastiCache Nodes"]
   default []
 end
 
@@ -439,11 +449,7 @@ script "js_tag_requests", type:"javascript" do
 
     for (var i = 0; i < clusters_by_region[region].length; i++) {
       if ((i + 1) % 100 == 0) {
-        result.push({
-          arns: arns,
-          region: region
-        })
-
+        result.push({ arns: arns, region: region })
         arns = []
       } else {
         arn = [
@@ -475,7 +481,7 @@ datasource "ds_resources_with_tags" do
   result do
     encoding "json"
     collect jmes_path(response, "ResourceTagMappingList[*]") do
-      field "id", jmes_path(col_item, "ResourceARN")
+      field "arn", jmes_path(col_item, "ResourceARN")
       field "tags" do
         collect jmes_path(col_item, "Tags[*]") do
           field "key", jmes_path(col_item, "Key")
@@ -485,4 +491,1000 @@ datasource "ds_resources_with_tags" do
       field "region", val(iter_item, "region")
     end
   end
+end
+
+datasource "ds_elasticache_clusters_with_tags" do
+  run_script $js_elasticache_clusters_with_tags, $ds_elasticache_clusters, $ds_resources_with_tags, $ds_aws_account
+end
+
+script "js_elasticache_clusters_with_tags", type:"javascript" do
+  parameters "ds_elasticache_clusters", "ds_resources_with_tags", "ds_aws_account"
+  result "result"
+  code <<-EOS
+  tags_by_arn = {}
+  _.each(ds_resources_with_tags, function(resource) { tags_by_arn[resource['arn']] = resource['tags'] })
+
+  result = _.map(ds_elasticache_clusters, function(cluster) {
+    arn = [
+      "arn:aws:elasticache:", cluster["region"], ":", ds_aws_account["id"],
+      ":cluster:", cluster["id"]
+    ].join('')
+
+    tags = {}
+    if (tags_by_arn[arn]) { _.each(tags_by_arn[arn], function(item) { tags[item["key"]] = item["value"] }) }
+
+    return {
+      id: cluster["id"],
+      status: cluster["status"],
+      nodeType: cluster["nodeType"],
+      numberOfNodes: cluster["numberOfNodes"],
+      autoMinorVersionUpgrade: cluster["autoMinorVersionUpgrade"],
+      availabilityZone: cluster["availabilityZone"],
+      createTime: cluster["createTime"],
+      engine: cluster["engine"],
+      engineVersion: cluster["engineVersion"],
+      region: cluster["region"],
+      arn: arn,
+      tags: tags
+    }
+  })
+EOS
+end
+
+datasource "ds_elasticache_clusters_tag_filtered" do
+  run_script $js_elasticache_clusters_tag_filtered, $ds_elasticache_clusters_with_tags, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_elasticache_clusters_tag_filtered", type: "javascript" do
+  parameters "ds_elasticache_clusters_with_tags", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_elasticache_clusters_with_tags, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_elasticache_clusters_with_tags
+  }
+EOS
+end
+
+datasource "ds_elasticache_size_list" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/elasticache_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_aws_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+# Filter out any clusters where a smaller size isn't available since we can't downsize them anyway
+datasource "ds_elasticache_clusters_resize_filtered" do
+  run_script $js_elasticache_clusters_resize_filtered, $ds_elasticache_clusters_tag_filtered, $ds_elasticache_size_list, $ds_aws_instance_size_map
+end
+
+script "js_elasticache_clusters_resize_filtered", type: "javascript" do
+  parameters "ds_elasticache_clusters_tag_filtered", "ds_elasticache_size_list", "ds_aws_instance_size_map"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_elasticache_clusters_tag_filtered, function(cluster) {
+    normalizedType = cluster["nodeType"].split("cache.")[1]
+    downType = null
+
+    if (ds_aws_instance_size_map[normalizedType] && ds_aws_instance_size_map[normalizedType]["down"]) {
+      if (_.contains(ds_elasticache_size_list, ds_aws_instance_size_map[normalizedType]["down"]) {
+        downType = "cache." + ds_aws_instance_size_map[normalizedType]["down"]
+      }
+    }
+
+    if (downType) {
+      result.push({
+        id: cluster["id"],
+        resourceID: cluster["id"],
+        resourceName: cluster["id"],
+        resourceARN: cluster["arn"],
+        tags: cluster["tags"],
+        status: cluster["status"],
+        numberOfNodes: cluster["numberOfNodes"],
+        autoMinorVersionUpgrade: cluster["autoMinorVersionUpgrade"],
+        availabilityZone: cluster["availabilityZone"],
+        createTime: cluster["createTime"],
+        engine: cluster["engine"],
+        engineVersion: cluster["engineVersion"],
+        region: cluster["region"],
+        resourceType: cluster["nodeType"],
+        newResourceType: downType
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_cloudwatch_queries" do
+  run_script $js_cloudwatch_queries, $ds_elasticache_clusters_resize_filtered, $param_stats_lookback
+end
+
+script "js_cloudwatch_queries", type: "javascript" do
+  parameters "ds_elasticache_clusters_resize_filtered", "param_stats_lookback"
+  result "result"
+  code <<-EOS
+  // Create the various queries we're going to send to CloudWatch for each instance
+  result = {}
+
+  _.each(ds_elasticache_clusters_resize_filtered, function(cluster) {
+    // Make sure the queries object has an array for the region to push items to
+    if (result[cluster['region']] == undefined || result[cluster['region']] == null) {
+      result[cluster['region']] = []
+    }
+
+    metrics = ["CPUUtilization", "FreeableMemory"]
+    stats = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
+    lookback = param_stats_lookback * 86400
+
+    _.each(metrics, function(metric) {
+      _.each(stats, function(stat) {
+        id_metric = "cpu"
+        if (metric == "FreeableMemory") { id_metric = "mem" }
+
+        query = {
+          "Id": cluster['id'].replace('-', '_') + "___" + id_metric + "___" + stat,
+          "MetricStat": {
+            "Metric": {
+              "Namespace": "AWS/Redshift",
+              "MetricName": metric,
+              "Dimensions": [
+                { "Name": "ClusterIdentifier", "Value": cluster['id'] }
+              ]
+            },
+            "Period": lookback,
+            "Stat": stat
+          },
+          "ReturnData": true
+        }
+
+        result[cluster['region']].push(query)
+      })
+    })
+  })
+EOS
+end
+
+# Combine queries into 500 item blocks so we can make bulk requests to Cloudwatch
+datasource "ds_cloudwatch_requests" do
+  run_script $js_cloudwatch_requests, $ds_cloudwatch_queries, $param_stats_lookback
+end
+
+script "js_cloudwatch_requests", type: "javascript" do
+  parameters "ds_cloudwatch_queries", "param_stats_lookback"
+  result "result"
+  code <<-EOS
+  // Organize the queries into discrete requests to send in.
+  // Queries are first sorted by region and then split into 500 item blocks.
+  result = []
+  query_block_size = 500
+
+  // Round down to beginning of the hour to avoid getting multiple values
+  // from CloudWatch due to how the data is sliced
+  end_date = new Date()
+  end_date.setMinutes(0, 0, 0)
+  end_date = parseInt(end_date.getTime() / 1000)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date.setMinutes(0, 0, 0)
+  start_date = parseInt(start_date.getTime() / 1000)
+
+  _.each(_.keys(ds_cloudwatch_queries), function(region) {
+    for (i = 0; i < ds_cloudwatch_queries[region].length; i += query_block_size) {
+      chunk = ds_cloudwatch_queries[region].slice(i, i + query_block_size)
+
+      result.push({
+        body: {
+          "StartTime": start_date,
+          "EndTime": end_date,
+          "MetricDataQueries": chunk
+        },
+        region: region
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_cloudwatch_data" do
+  iterate $ds_cloudwatch_requests
+  request do
+    run_script $js_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
+script "js_cloudwatch_data", type: "javascript" do
+  parameters "region", "body"
+  result "request"
+  code <<-EOS
+  // Slow down rate of requests to prevent
+  api_wait = 5
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  var request = {
+    auth: "auth_aws",
+    host: 'monitoring.' + region + '.amazonaws.com',
+    pagination: "pagination_aws_getmetricdata",
+    verb: "POST",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    query_params: {
+      'Action': 'GetMetricData',
+      'Version': '2010-08-01'
+    },
+    body: JSON.stringify(body)
+  }
+EOS
+end
+
+datasource "ds_cloudwatch_data_sorted" do
+  run_script $js_cloudwatch_data_sorted, $ds_cloudwatch_data
+end
+
+script "js_cloudwatch_data_sorted", type: "javascript" do
+  parameters "ds_cloudwatch_data"
+  result "result"
+  code <<-EOS
+  // Sort the CloudWatch data into an object with keys for regions and instance names.
+  // This eliminates the need to "double loop" later on to match it with our instances list.
+  result = {}
+
+  _.each(ds_cloudwatch_data, function(item) {
+    region = item['region']
+    id = item['id'].split('___')[0]
+    metric = item['id'].split('___')[1]
+    stat = item['id'].split('___')[2]
+
+    // Grabbing index 0 SHOULD be safe because we should only get one result.
+    // Just in case AWS slices the data weirdly and returns 2 results, we make
+    // sure we grab the last item every time, which contains the actual data we need.
+    value = item['values'][item['values'].length - 1]
+
+    if (result[region] == undefined) { result[region] = {} }
+    if (result[region][id] == undefined) { result[region][id] = {} }
+    if (result[region][id][metric] == undefined) { result[region][id][metric] = {} }
+
+    result[region][id][metric][stat] = value
+  })
+EOS
+end
+
+datasource "ds_elasticache_clusters_with_metrics" do
+  run_script $js_elasticache_clusters_with_metrics, $ds_elasticache_clusters_resize_filtered, $ds_cloudwatch_data_sorted
+end
+
+script "js_elasticache_clusters_with_metrics", type: "javascript" do
+  parameters "ds_elasticache_clusters_resize_filtered", "ds_cloudwatch_data_sorted"
+  result "result"
+  code <<-EOS
+  result = _.map(ds_elasticache_clusters_resize_filtered, function(cluster) {
+    metrics = null
+
+    cpuAverage = null
+    cpuMinimum = null
+    cpuMaximum = null
+    cpuP90 = null
+    cpuP95 = null
+    cpuP99 = null
+
+    memAverage = null
+    memMinimum = null
+    memMaximum = null
+    memP90 = null
+    memP95 = null
+    memP99 = null
+
+    if (ds_cloudwatch_data_sorted[cluster['region']] && ds_cloudwatch_data_sorted[region][cluster['id']]) {
+      metrics = ds_cloudwatch_data_sorted[cluster['region']][cluster['id']]
+    }
+
+    if (metrics) {
+      if (metrics["cpu"]) {
+        if (metrics["cpu"]["Average"]) { cpuAverage = metrics["cpu"]["Average"] }
+        if (metrics["cpu"]["Minimum"]) { cpuMinimum = metrics["cpu"]["Minimum"] }
+        if (metrics["cpu"]["Maximum"]) { cpuMaximum = metrics["cpu"]["Maximum"] }
+        if (metrics["cpu"]["p90"]) { cpuP90 = metrics["cpu"]["p90"] }
+        if (metrics["cpu"]["p95"]) { cpuP95 = metrics["cpu"]["p95"] }
+        if (metrics["cpu"]["p99"]) { cpuP99 = metrics["cpu"]["p99"] }
+      }
+
+      if (metrics["mem"]) {
+        if (metrics["mem"]["Average"]) { memAverage = metrics["mem"]["Average"] }
+        if (metrics["mem"]["Minimum"]) { memMinimum = metrics["mem"]["Minimum"] }
+        if (metrics["mem"]["Maximum"]) { memMaximum = metrics["mem"]["Maximum"] }
+        if (metrics["mem"]["p90"]) { memP90 = metrics["mem"]["p90"] }
+        if (metrics["mem"]["p95"]) { memP95 = metrics["mem"]["p95"] }
+        if (metrics["mem"]["p99"]) { memP99 = metrics["mem"]["p99"] }
+      }
+    }
+
+    return {
+      id: cluster["id"],
+      resourceID: cluster["resourceID"],
+      resourceName: cluster["resourceName"],
+      resourceARN: cluster["resourceARN"],
+      tags: cluster["tags"],
+      status: cluster["status"],
+      numberOfNodes: cluster["numberOfNodes"],
+      autoMinorVersionUpgrade: cluster["autoMinorVersionUpgrade"],
+      availabilityZone: cluster["availabilityZone"],
+      createTime: cluster["createTime"],
+      engine: cluster["engine"],
+      engineVersion: cluster["engineVersion"],
+      region: cluster["region"],
+      resourceType: cluster["resourceType"],
+      newResourceType: cluster["newResourceType"],
+      cpuAverage: cpuAverage,
+      cpuMinimum: cpuMinimum,
+      cpuMaximum: cpuMaximum,
+      cpuP90: cpuP90,
+      cpuP95: cpuP95,
+      cpuP99: cpuP99,
+      memAverage: memAverage,
+      memMinimum: memMinimum,
+      memMaximum: memMaximum,
+      memP90: memP90,
+      memP95: memP95,
+      memP99: memP99
+    }
+  })
+EOS
+end
+
+datasource "ds_cluster_costs" do
+  request do
+    run_script $js_cluster_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceId", jmes_path(col_item, "dimensions.resource_id")
+      field "resourceType", jmes_path(col_item, "dimensions.resource_type")
+      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "adjustmentName", jmes_path(col_item, "dimensions.adjustment_name")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_cluster_costs", type: "javascript" do
+  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id", "vendor_account_name", "resource_type", "adjustment_name"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        type: "and",
+        expressions: [
+          {
+            dimension: "service",
+            type: "equal",
+            value: "AmazonElastiCache"
+          },
+          {
+            dimension: "vendor_account",
+            type: "equal",
+            value: ds_aws_account['id']
+          },
+          {
+            type: "not",
+            expression: {
+              dimension: "adjustment_name",
+              type: "substring",
+              substring: "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_cluster_costs_grouped" do
+  run_script $js_cluster_costs_grouped, $ds_cluster_costs
+end
+
+script "js_cluster_costs_grouped", type: "javascript" do
+  parameters "ds_cluster_costs"
+  result "result"
+  code <<-EOS
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_instance_costs, function(item) {
+    id = item['resourceId'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_underutilized_elasticache_clusters" do
+  run_script $js_underutilized_elasticache_clusters, $ds_elasticache_clusters_with_metrics, $ds_cluster_costs_grouped, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_stats_threshold, $param_stats_threshold_cpu_value, $param_stats_threshold_mem_value, $param_min_savings
+end
+
+script "js_underutilized_elasticache_clusters", type: "javascript" do
+  parameters "ds_elasticache_clusters_with_metrics", "ds_cluster_costs_grouped", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_stats_threshold", "param_stats_threshold_cpu_value", "param_stats_threshold_mem_value", "param_min_savings"
+  result "result"
+  code <<-'EOS'
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator){
+    numString = number.toString()
+    values = numString.split(".")
+    formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  result = []
+  total_savings = 0.0
+
+  // Find specs for current and potential downsize in the size map
+  _.each(ds_elasticache_clusters_with_metrics, function(cluster) {
+    // Determine if the resource is underutilized based on user inputs
+    cpu_stat = null
+    mem_stat = null
+
+    if (param_stats_threshold == "Average") {
+      cpu_stat = cluster["cpuAverage"]
+      mem_stat = cluster["memAverage"]
+    }
+
+    if (param_stats_threshold == "Maximum") {
+      cpu_stat = cluster["cpuMaximum"]
+      mem_stat = cluster["memMaximum"]
+    }
+
+    if (param_stats_threshold == "p90") {
+      cpu_stat = cluster["cpuP90"]
+      mem_stat = cluster["memP90"]
+    }
+
+    if (param_stats_threshold == "p95") {
+      cpu_stat = cluster["cpuP95"]
+      mem_stat = cluster["memP95"]
+    }
+
+    if (param_stats_threshold == "p99") {
+      cpu_stat = cluster["cpuP99"]
+      mem_stat = cluster["memP99"]
+    }
+
+    cpu_underutilized = cpu_stat < param_stats_threshold_cpu_value || param_stats_threshold_cpu_value == -1
+    mem_underutilized = mem_stat > param_stats_threshold_mem_value || param_stats_threshold_mem_value == -1
+
+    // Calculate estimated savings
+    savings = 0.0
+    if (ds_cluster_costs_grouped[cluster['id']]) { savings = ds_cluster_costs_grouped[cluster['id']] / 2 }
+
+    // Check if cluster is underutilized and if savings is above threshold
+    if (cpu_underutilized && mem_underutilized && savings >= param_min_savings) {
+      total_savings += savings
+
+      recommendationDetails = [
+        "Change node type of ElastiCache cluster ", cluster['id'], " ",
+        "in AWS Account ", ds_aws_account['name'], " ",
+        "(", ds_aws_account['id'], ") ",
+        "from ", cluster['resourceType'], " ",
+        "to ", cluster['newResourceType']
+      ].join('')
+
+      result.push({
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        id: cluster["id"],
+        resourceID: cluster["resourceID"],
+        resourceName: cluster["resourceName"],
+        resourceARN: cluster["resourceARN"],
+        tags: cluster["tags"],
+        status: cluster["status"],
+        numberOfNodes: cluster["numberOfNodes"],
+        autoMinorVersionUpgrade: cluster["autoMinorVersionUpgrade"],
+        availabilityZone: cluster["availabilityZone"],
+        createTime: cluster["createTime"],
+        engine: cluster["engine"],
+        engineVersion: cluster["engineVersion"],
+        region: cluster["region"],
+        resourceType: cluster["resourceType"],
+        newResourceType: cluster["newResourceType"],
+        cpuAverage: cluster["cpuAverage"],
+        cpuMinimum: cluster["cpuMinimum"],
+        cpuMaximum: cluster["cpuMaximum"],
+        cpuP90: cluster["cpuP90"],
+        cpuP95: cluster["cpuP95"],
+        cpuP99: cluster["cpuP99"],
+        memAverage: cluster["memAverage"],
+        memMinimum: cluster["memMinimum"],
+        memMaximum: cluster["memMaximum"],
+        memP90: cluster["memP90"],
+        memP95: cluster["memP95"],
+        memP99: cluster["memP99"],
+        service: "AmazonElastiCache",
+        recommendationDetails: recommendationDetails,
+        savings: Math.round(savings * 1000) / 1000,
+        savingsCurrency: ds_currency['symbol'],
+        policy_name: ds_applied_policy['name'],
+        // These are to avoid errors when we hash_exclude these fields
+        message: "",
+        total_savings: ""
+      })
+    }
+  })
+
+  // Message for incident output
+  total_clusters = ds_elasticache_clusters_with_metrics.length.toString()
+  total_oversized = result.length.toString()
+  oversized_percentage = (total_oversized / total_clusters * 100).toFixed(2).toString() + '%'
+
+  cluster_noun = "cluster"
+  if (total_clusters > 1) { cluster_noun += "s" }
+
+  cluster_verb = "is"
+  if (total_oversized > 1) { cluster_verb = "are" }
+
+  findings = [
+    "Out of ", total_clbs, " AWS ElastiCache ", cluster_noun, " analyzed, ",
+    total_oversized, " (", oversized_percentage,
+    ") ", cluster_verb, " underutilized and recommended for downsizing. "
+  ].join('')
+
+  settings = ""
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  total_savings = ds_currency['symbol'] + ' ' + formatNumber(Math.round(total_savings * 100) / 100, ds_currency['separator'])
+
+  // Dummy item to ensure the policy's check statement always executes at least once
+  result.push({
+    accountID: "",
+    accountName: "",
+    id: "",
+    resourceID: "",
+    resourceName: "",
+    resourceARN: "",
+    tags: "",
+    status: "",
+    numberOfNodes: "",
+    autoMinorVersionUpgrade: "",
+    availabilityZone: "",
+    createTime: "",
+    engine: "",
+    engineVersion: "",
+    region: "",
+    resourceType: "",
+    newResourceType: "",
+    cpuAverage: "",
+    cpuMinimum: "",
+    cpuMaximum: "",
+    cpuP90: "",
+    cpuP95: "",
+    cpuP99: "",
+    memAverage: "",
+    memMinimum: "",
+    memMaximum: "",
+    memP90: "",
+    memP95: "",
+    memP99: "",
+    service: "",
+    recommendationDetails: "",
+    savings: "",
+    savingsCurrency: "",
+    policy_name: "",
+    message: "",
+    total_savings: ""
+  })
+
+  result[0]['message'] = findings + settings + disclaimer
+  result[0]['total_savings'] = total_savings
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_underutilized_elasticache_clusters" do
+  validate_each $ds_underutilized_elasticache_clusters do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Underutilized ElastiCache Clusters Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_resize_clusters
+    hash_exclude "message", "total_savings", "tags", "savings", "savingsCurrency"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Cluster ID"
+      end
+      field "region" do
+        label "Cluster Region"
+      end
+      field "tags" do
+        label "Cluster Tags"
+      end
+      field "numberOfNodes" do
+        label "Nodes (#)"
+      end
+      field "resourceType" do
+        label "Node Type"
+      end
+      field "newResourceType" do
+        label "Recommended Node Type"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "cpuP99" do
+        label "CPU p99"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+      end
+      field "cpuP90" do
+        label "CPU p90"
+      end
+      field "memMaximum" do
+        label "Freeable Memory Maximum %"
+      end
+      field "memMinimum" do
+        label "Freeable Memory Minimum %"
+      end
+      field "memAverage" do
+        label "Freeable Memory Average %"
+      end
+      field "memP99" do
+        label "Freeable Memory p99"
+      end
+      field "memP95" do
+        label "Freeable Memory p95"
+      end
+      field "memP90" do
+        label "Freeable Memory p90"
+      end
+      field "status" do
+        label "Cluster Status"
+      end
+      field "engine" do
+        label "Engine"
+      end
+      field "engineVersion" do
+        label "Engine Version"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "resourceARN" do
+        label "Resource ARN"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "id" do
+        label "ID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_resize_clusters" do
+  automatic contains($param_automatic_action, "Downsize ElastiCache Nodes")
+  label "Downsize ElastiCache Nodes"
+  description "Approval to downsize nodes in all selected ElastiCache clusters"
+  run "resize_clusters", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define resize_clusters($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $clb in $data do
+    sub on_error: handle_error() do
+      call resize_cluster($cluster) retrieve $response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define resize_cluster($cluster) return $response do
+  $host = "elasticache." + $cluster["region"] + ".amazonaws.com"
+  $href = "/"
+  $params = "?Action=ModifyCacheCluster&Version=2015-02-02&ApplyImmediately=true&CacheClusterId=" + $cluster["resourceID"] + "&CacheNodeType=" + $cluster["newResourceType"]
+  $url = $host + $href + $params
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    query_strings: {
+      "Action": "ModifyCacheCluster",
+      "Version": "2015-02-02",
+      "CacheClusterId": $cluster["resourceID"],
+      "CacheNodeType": $cluster["newResourceType"],
+      "ApplyImmediately": "true"
+    }
+  )
+
+  task_label("POST AWS ElastiCache cluster response: " + $cluster["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response from POST AWS ElastiCache cluster: "+ $cluster["resourceID"] + " " + to_json($response)
+  else
+    task_label("POST AWS ElastiCache cluster successful: " + $cluster["resourceID"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end
