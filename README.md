@@ -274,6 +274,7 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Compute Instances Time Powered Off Report](./operational/azure/compute_poweredoff_report)
   - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
+  - [Azure Expiring Savings Plans](./cost/azure/savings_plan/expiration)
   - [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
   - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
   - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances)
@@ -494,6 +495,7 @@ These templates can generate savings estimates for your environment.
 
 - Automation
 
+  - [Applied Policy Template Errors](./operational/flexera/automation/applied_policy_error_notification)
   - [Flexera Automation Outdated Applied Policies](./automation/flexera/outdated_applied_policies)
 
 - Cloud Cost Optimization
@@ -700,15 +702,15 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 129
-  Operational: 29
+  Cost: 130
+  Operational: 30
   SaaS Management: 11
   Security: 74
 :optimization_count: 67
 :policy_sets:
   '': 46
   Allocate VMs: 3
-  Automation: 1
+  Automation: 2
   Autoscaling: 1
   Burstable Compute Instances: 1
   CIS: 61
@@ -753,7 +755,7 @@ These templates can generate savings estimates for your environment.
   Rightsize Storage: 2
   Rightsize Synapse SQL Pools: 1
   Rightsize Volumes: 2
-  Savings Plans: 5
+  Savings Plans: 6
   Savings Realized: 1
   Schedule Instance: 3
   Schedule Report: 2
@@ -772,9 +774,9 @@ These templates can generate savings estimates for your environment.
   Usage Report: 10
 :providers:
   AWS: 100
-  Azure: 102
+  Azure: 103
   Azure China: 1
-  Flexera: 38
+  Flexera: 39
   Flexera Optima: 1
   GCE: 2
   GitHub: 7
@@ -789,11 +791,11 @@ These templates can generate savings estimates for your environment.
   AKS: 2
   All: 6
   App Service: 1
-  Automation: 1
+  Automation: 2
   Cloud Cost Optimization: 19
   CloudTrail: 8
   Common Bill Ingestion: 3
-  Compute: 78
+  Compute: 79
   Config: 1
   DBS: 1
   Databricks: 1
@@ -825,7 +827,7 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 2
   Tags: 3
   Usage Discount: 6
-:total_count: 277
+:total_count: 279
 -->
 <!-- End Policy Template Stats -->
 

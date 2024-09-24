@@ -6,6 +6,123 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2621](https://github.com/flexera-public/policy_templates/pull/2621): POL-1345 Azure Untagged Resources: Subscription/Resource Group Support
+
+#### Description
+
+> Adds support for reporting untagged Azure Subscriptions and Resource Groups to the `Azure Untagged Resources` policy template.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources/README.md), [Meta Parent: Azure Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources/README.md)
+- **Merged At**: 2024-09-20 13:57:01 UTC
+
+---
+
+### PR [#2647](https://github.com/flexera-public/policy_templates/pull/2647): POL-1360 Meta Parent: Fix Deprecation Status
+
+#### Description
+
+> This fixes an issue where the "deprecated" field in the info() blocks of generated meta parent policy templates did not match the child.
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2647) for these details.
+- **Merged At**: 2024-09-20 12:23:46 UTC
+
+---
+
+### PR [#2610](https://github.com/flexera-public/policy_templates/pull/2610): POL-1338 Validated Permissions
+
+#### Description
+
+> This PR makes several changes related to tracking policy permissions:
+>
+> - Several policy templates that were missing have been validated and added. Where appropriate, these policy templates and their associated README files were updated.
+> - Automation has been added to track every non-deprecated policy template that is not in the validation list. This is to assist in completing this project by getting all of the missing policy templates added.
+> - A couple of deprecated policy templates were missing the deprecated: "true" field in the info block. This has been fixed.
+> - Minor tweaks made to changed files to pass current Dangerfile tests
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2610) for these details.
+- **Merged At**: 2024-09-20 12:03:15 UTC
+
+---
+
+### PR [#2642](https://github.com/flexera-public/policy_templates/pull/2642): POL-1358 AWS Rule-Based Dimension From Account Tags: Tag Casing Fix
+
+#### Description
+
+> This updates the `AWS Rule-Based Dimension From Account Tags` policy template to fix an issue where tag keys were being ignored if they contained upper case letters.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2642) for details about unpublished policies.
+- **Merged At**: 2024-09-19 17:53:06 UTC
+
+---
+
+### PR [#2622](https://github.com/flexera-public/policy_templates/pull/2622): POL-1348 Cloud Bill Processing Error Notification: Ignore List
+
+#### Description
+
+> Cloud Bill Processing Error Notification: Added `Bill Connection Ignore List` parameter to allow user to ignore specific bill connections.
+>
+
+#### Metadata
+
+- **Policies**: [Cloud Bill Processing Error Notification](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/bill_processing_errors_notification/README.md)
+- **Merged At**: 2024-09-19 13:06:52 UTC
+
+---
+
+### PR [#2634](https://github.com/flexera-public/policy_templates/pull/2634): POL-1353 New Policy: Azure Unused Load Balancers
+
+#### Description
+
+> New policy that reports on Azure Unused Load Balancers
+>
+
+#### Metadata
+
+- **Policies**: [Azure Unused Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_load_balancers/README.md), [Meta Parent: Azure Unused Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_load_balancers/README.md)
+- **Merged At**: 2024-09-17 17:19:02 UTC
+
+---
+
+### PR [#2565](https://github.com/flexera-public/policy_templates/pull/2565): POL-1327 New Policy: AWS Lambda Functions Without Provisioned Concurrency
+
+#### Description
+
+> New template `AWS Lambda Functions Without Provisioned Concurrency` does what it says on the tin.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Lambda Functions Without Provisioned Concurrency](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/lambda_provisioned_concurrency/README.md), [Meta Parent: AWS Lambda Functions Without Provisioned Concurrency](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/lambda_provisioned_concurrency/README.md)
+- **Merged At**: 2024-09-16 17:17:03 UTC
+
+---
+
+### PR [#2556](https://github.com/flexera-public/policy_templates/pull/2556): POL-793 Azure MySQL Policy Templates
+
+#### Description
+
+> Two new policy templates: `Azure Rightsize MySQL Single Servers` and `Azure Rightsize MySQL Flexible Servers`
+>
+> Two templates because of substantial differences between API requests and metrics between the two kinds of MySQL instances. Single servers are also an increasingly outdated instance type, so most users can likely just get away with using the latter policy template only.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2556) for these details.
+- **Merged At**: 2024-09-16 12:11:48 UTC
+
+---
+
 ### PR [#2617](https://github.com/flexera-public/policy_templates/pull/2617): POL-1344 Account Support for AWS Untagged Resources Policy Template
 
 #### Description
@@ -1681,156 +1798,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Usage Report - Instance Time Used](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_usage_report/README.md), [Azure Usage Report - Instance Time Used](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/total_instance_usage_report/README.md)
 - **Merged At**: 2024-05-30 08:13:31 UTC
-
----
-
-### PR [#2253](https://github.com/flexera-public/policy_templates/pull/2253): FOPTS-4039 Bug fix for unitofMeasure for ultra sized disk
-
-#### Description
-
-> Updated /corrected for Ultra pricing
->
-> There is a bug in calculation of the Ultra Price as logic errors out at the unitOfMeasure calculation. This PR fixes the bug
->
-> <!-- Describe what this change achieves below -->
->
-> ### Issues Resolved
-> Issue with unitOfMeasure calculation and errors indicator by the static checks
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md), [Meta Parent: Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md)
-- **Merged At**: 2024-05-29 20:31:07 UTC
-
----
-
-### PR [#2237](https://github.com/flexera-public/policy_templates/pull/2237): POL-1243 New Policy: Azure Compute Instances Time Powered Off Report
-
-#### Description
-
-> This is a new policy that reports on all Azure VMs that are powered off for a user-specified percentage of time. The policy can report instances powered off for less than a certain percentage of time, more than a certain percentage, or both.
->
-> This PR also includes a couple of very small fixes for the equivalent AWS policy that I spotted while building out the Azure equivalent.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2237) for these details.
-- **Merged At**: 2024-05-29 12:26:53 UTC
-
----
-
-### PR [#2246](https://github.com/flexera-public/policy_templates/pull/2246): POL-1244 Update 'resourceType' Incident Fields
-
-#### Description
-
-> This removes the `resourceType` field from policies where this field does not indicate a discrete instance size/capacity/etc. In most cases, it was renamed to the `type` field. This is to prevent issues with how scaped data is presented in the Optimization dashboard.
->
-> Additionally, other minor changes were made to bring affected files into compliance with Dangerfile tests.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2246) for these details.
-- **Merged At**: 2024-05-28 13:30:34 UTC
-
----
-
-### PR [#2249](https://github.com/flexera-public/policy_templates/pull/2249): FOPTS-4009 add cumulative report option
-
-#### Description
-
-> This change address the request at [SQ-8125](https://flexera.atlassian.net/browse/SQ-8125)
->
-> ### Issues Resolved
->
-> - Added Cumulative report option
-> - Cumulative chart should show cumulative monthly data
-> - Cumulative table should show cumulative based on groups
-> - For cumulative report shows a note to indicate that budget, Spend, OverSpend columns shows cumulative data
-> - Exclude future data in charts
-> - Not include currency sign in the table
-> - Chart axis shows accurate currency sign
->
-> The history of request changes and also proof of test could be found in the task : [FOPTS-4009](https://flexera.atlassian.net/jira/software/c/projects/FOPTS/boards/398?assignee=712020%3A90605881-06e4-4701-9150-efda16878a29&selectedIssue=FOPTS-4009)
->
-
-#### Metadata
-
-- **Policies**: [Budget vs Actual Spend Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_v_actual_spend_report/README.md)
-- **Merged At**: 2024-05-27 17:23:34 UTC
-
----
-
-### PR [#2247](https://github.com/flexera-public/policy_templates/pull/2247): fix: Meta Parent template `$action_options` check type is array
-
-#### Description
-
-> Fixes issue where $action_options is null instead of a list, which results in an error
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2247) for these details.
-- **Merged At**: 2024-05-23 18:30:43 UTC
-
----
-
-### PR [#2136](https://github.com/flexera-public/policy_templates/pull/2136): POL-1215 Azure Web Apps With Unoptimized Scaling
-
-#### Description
-
-> This is a new policy to find Azure Web Apps that either don't have autoscaling configured or have poor autoscaling settings that are likely to provision excessive resources.
->
-
-#### Metadata
-
-- **Policies**: [Azure Web Apps With Unoptimized Scaling](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unoptimized_web_app_scaling/README.md), [Meta Parent: Azure Web Apps With Unoptimized Scaling](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unoptimized_web_app_scaling/README.md)
-- **Merged At**: 2024-05-22 14:08:06 UTC
-
----
-
-### PR [#2225](https://github.com/flexera-public/policy_templates/pull/2225): POL-1231 New Policy: Azure Usage Report - Instance Time Used
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This is a new policy, `Azure Usage Report - Instance Time Used`, that replaces the following policies that are being deprecated as part of this same change:
->
-> - `Azure Usage Report - Number of Instance Hours Used`
-> - `Azure Usage Report - Number of Instance vCPUs Used`
-> - `Azure Usage Report - Amount of Instance Memory Used`
->
-> This was done because these policies were almost identical; as a consequence, it really didn't make sense to maintain 3 separate policies for something that could be a simple user parameter. The READMEs of these policies have been updated to direct users to this policy.
->
-> The new policy contains all of the functionality of the above, allowing the user to simply select which unit they want to report against. Additionally, the following improvements have been made:
->
-> The user can choose which unit of time to normalize the unit against. Default is Hours. Ambiguous units, such as Months, are defined explicitly in the README.
-> The user can decide how many months back to generate the report for. Still limited to 12 but can be less than 12 if desired.
-> The incident output has been cleaned up. Months no longer have unnecessary hours/minutes/seconds attached to them, and the normalized numbers are rounded to the 100th.
-> Code in general has been rewritten and optimized to be more readable, more efficient, and have good comments explaining what is happening within the policy.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2225) for these details.
-- **Merged At**: 2024-05-21 12:33:46 UTC
-
----
-
-### PR [#2238](https://github.com/flexera-public/policy_templates/pull/2238): fix: Meta Parent Consolidated Incidents Only "state=triggered" filter
-
-#### Description
-
-> Fixes an issue that is causing results from non-current incidents to appear in the Consolidated Incident.. which then reflects an inaccurate resource count.
->
-> This fixes an issue with the datasource that gets the incidents for the meta parent policy
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2238) for these details.
-- **Merged At**: 2024-05-20 17:12:07 UTC
 
 ---
 

@@ -1,22 +1,15 @@
-# Applied Policy Error Notification
+# Applied Policy Template Errors
 
 ## What It Does
 
-Collects all currently applied policies and raises an incident for any in an error state.
-
-## How It Works
-
-This policy collects all currently applied policies and checks the state of the policies. If any are in `error` it will raise an incident and send an email.
+This policy template checks all of the applied policy templates in the Flexera One project and reports any that are in an error state. Optionally, this report can be emailed.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Email Addresses* - A list of email addresses to notify.
+- *Applied Policy Template Ignore List* - A list of applied policy template names and IDs to ignore and never include in the results. Leave blank to report on all applied policy templates in an error state.
 
 ## Policy Actions
-
-The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report
 
@@ -35,7 +28,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Supported Clouds
 
-- NA
+- Flexera
 
 ## Cost
 
