@@ -10,11 +10,11 @@ This policy uses the schedule label value (default key: `schedule`) for scheduli
 
 ### Example Schedule Labels
 
- - `schedule` = `0000-1200_sa-sun`
-   Start at 12am (midnight) and stop at 12pm (noon) on Saturday and Sunday (UTC timezone)
- - `schedule` = `0815-1730_mo-tu-we-th-fr_america-new_york`
- - `schedule` = `0815-1730_mo-tu-we-th-fr_america-new_york`
-    Start at 8:15am and stop at 5:30pm every weekday in US Eastern Time (America/New York)
+- `schedule` = `0000-1200_sa-sun`
+  Start at 12am (midnight) and stop at 12pm (noon) on Saturday and Sunday (UTC timezone)
+- `schedule` = `0815-1730_mo-tu-we-th-fr_america-new_york`
+- `schedule` = `0815-1730_mo-tu-we-th-fr_america-new_york`
+  Start at 8:15am and stop at 5:30pm every weekday in US Eastern Time (America/New York)
     
 ### Schedule Label Format
 
