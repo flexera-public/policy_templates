@@ -9,7 +9,7 @@ This policy template checks the AWS Redshift clusters in the AWS account for low
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the underutilized cluster is downsized.
 
 - The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the cluster for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
-- The savings is the difference in cost between the current cluster cost and the estimated cost of the recommended cluster node size.
+- The savings is the difference in cost between the current cluster cost and the estimated cost of the recommended cluster node size. The estimated cost of the recommended cluster node size is calculated based on the number of cores it has relative to the current cluster node size and its cost.
 - Since the costs of individual clusters are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
 - If the cluster cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
 - The incident message detail includes the sum of each cluster `Estimated Monthly Savings` as `Potential Monthly Savings`.
@@ -40,7 +40,7 @@ For example if a user selects the "Downsize Redshift Nodes" action while applyin
 ## Policy Actions
 
 - Sends an email notification
-- Downsize Redshift clusters after approval
+- Downsize Redshift cluster nodes after approval
 
 ## Prerequisites
 
