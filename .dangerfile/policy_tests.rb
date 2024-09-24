@@ -69,7 +69,7 @@ def policy_bad_directory?(file)
     fail_message += "Policy is not located within a subdirectory specific to the cloud provider or service it is applicable for. For example, AWS cost policies should be in the `/cost/aws` subdirectory, Azure operational policies in the `/operational/azure` subdirectory, etc.\n\n"
   end
 
-  if (parts[1] == 'flexera' && parts[3].include?('.pt')) && parts[0] != "tools"
+  if (parts[1] == 'flexera' && parts[3].include?('.pt')) && parts[0] != "tools" && parts[0] != "automation"
     fail_message += "Flexera policy is not contained in a subdirectory specific to the Flexera service it is for. For example, Flexera CCO cost policies should be in the `/cost/flexera/cco` subdirectory.\n\n"
   end
 
