@@ -4,6 +4,12 @@
 
 Template to create a CloudFormation Stack with IAM Role and Permission Policy resources required by [Flexera Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm).
 
+Three versions are provided as options:
+
+- [FlexeraAutomationPolicies.template](https://github.com/flexera-public/policy_templates/blob/master/tools/cloudformation-template/FlexeraAutomationPolicies.template): Template to add either read or read/action permissions for either all policy templates or per-template. Recommended for most use cases; the below options do not offer any functionality not offered by this template.
+- [FlexeraAutomationPoliciesReadOnly.template](https://github.com/flexera-public/policy_templates/blob/master/tools/cloudformation-template/FlexeraAutomationPoliciesReadOnly.template): Identical to the above but with only read only permissions. Recommended when there are concerns over the template having options for more than just read-only access.
+- [FlexeraAutomationPoliciesSimple.template](https://github.com/flexera-public/policy_templates/blob/master/tools/cloudformation-template/FlexeraAutomationPoliciesSimple.template): Template that simply attaches the built-in `arn:aws:iam::aws:policy/ReadOnlyAccess` AWS policy by default with the option to add other policies by name manually via parameter. Recommended when custom inline policies are not desired.
+
 ## Amazon S3 Template URL
 
 **`https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_latest.template`**
