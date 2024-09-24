@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.2.1
+
+- Fixed issue where policy actions were not properly reporting errors
+
 ## v5.2.0
 
 - Added `Resource Hourly Cost` to incident table for added context
