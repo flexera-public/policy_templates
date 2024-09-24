@@ -1,6 +1,62 @@
 require "json"
 require "time"
 
+# Method for generating permission list
+def create_permissions(perm_json, deprecated, perm_type = "action")
+  permission_list = []
+
+  perm_json['values'].each do |item|
+    read = []
+    action = []
+
+    if item["providers"]
+      item["providers"].each do |provider|
+        if provider["name"] == "aws"
+          provider["permissions"].each do |permission|
+            if permission["read_only"]
+              read << permission["name"]
+            else
+              action << permission["name"] if perm_type != "read"
+            end
+          end
+        end
+      end
+    end
+
+    # Skip deprecated policies and policies with no permissions needed
+    unless (read.empty? && action.empty?) || deprecated.include?(item["name"])
+      short_name = item["name"].gsub(/[^a-zA-Z0-9]/, '')
+
+      permission_list << {
+        "id" => item["id"],
+        "name" => item["name"],
+        "short_name" => short_name,
+        "version" => item["version"],
+        "read" => read,
+        "action" => action
+      }
+    end
+  end
+
+  special_permission_list = []
+
+  all_read = permission_list.map { |policy| policy["read"] }.flatten.uniq.sort
+  all_action = permission_list.map { |policy| policy["action"] }.flatten.uniq.sort
+
+  special_permission_list << {
+    "id" => "all_policy_templates",
+    "name" => "All AWS Policy Templates",
+    "short_name" => "AllAWSPolicyTemplates",
+    "version" => "1.0",
+    "read" => all_read,
+    "action" => all_action
+  }
+
+  sorted_permission_list = permission_list.sort_by { |policy| policy["name"] }
+
+  return special_permission_list + sorted_permission_list
+end
+
 # Method for generating template
 def create_template(perm_list, template_path)
   # Create strings to insert into template
@@ -168,89 +224,12 @@ deprecated_names = deprecated_policies.map { |policy| policy["name"] }
 permission_json = JSON.parse(File.read(permission_json_filepath))
 
 # Remap data for easy parsing
-permission_list = []
-readonly_permission_list = []
+permission_list = create_permissions(permission_json, deprecated_names)
+readonly_permission_list = create_permissions(permission_json, deprecated_names, "read")
 
-permission_json['values'].each do |item|
-  read = []
-  action = []
-
-  if item["providers"]
-    item["providers"].each do |provider|
-      if provider["name"] == "aws"
-        provider["permissions"].each do |permission|
-          if permission["read_only"]
-            read << permission["name"]
-          else
-            action << permission["name"]
-          end
-        end
-      end
-    end
-  end
-
-  # Skip deprecated policies and policies with no permissions needed
-  unless (read.empty? && action.empty?) || deprecated_names.include?(item["name"])
-    short_name = item["name"].gsub(/[^a-zA-Z0-9]/, '')
-
-    permission_list << {
-      "id" => item["id"],
-      "name" => item["name"],
-      "short_name" => short_name,
-      "version" => item["version"],
-      "read" => read,
-      "action" => action
-    }
-  end
-
-  unless read.empty? || deprecated_names.include?(item["name"])
-    short_name = item["name"].gsub(/[^a-zA-Z0-9]/, '')
-
-    readonly_permission_list << {
-      "id" => item["id"],
-      "name" => item["name"],
-      "short_name" => short_name,
-      "version" => item["version"],
-      "read" => read,
-      "action" => []
-    }
-  end
-end
-
-# Create special entry for all AWS policy templates
-special_permission_list = []
-readonly_special_permission_list = []
-
-all_read = permission_list.map { |policy| policy["read"] }.flatten.uniq.sort
-all_action = permission_list.map { |policy| policy["action"] }.flatten.uniq.sort
-
-special_permission_list << {
-  "id" => "all_policy_templates",
-  "name" => "All AWS Policy Templates",
-  "short_name" => "AllAWSPolicyTemplates",
-  "version" => "1.0",
-  "read" => all_read,
-  "action" => all_action
-}
-
-readonly_special_permission_list << {
-  "id" => "all_policy_templates",
-  "name" => "All AWS Policy Templates",
-  "short_name" => "AllAWSPolicyTemplates",
-  "version" => "1.0",
-  "read" => all_read,
-  "action" => []
-}
-
-# Sort alphabetically and by whether policy is recommended or not
-sorted_permission_list = permission_list.sort_by { |policy| policy["name"] }
-final_permission_list = special_permission_list + sorted_permission_list
-
-readonly_sorted_permission_list = readonly_permission_list.sort_by { |policy| policy["name"] }
-readonly_final_permission_list = readonly_special_permission_list + readonly_sorted_permission_list
-
-final_template = create_template(final_permission_list, template_filepath)
-readonly_final_template = create_template(readonly_final_permission_list, template_filepath)
+# Create template text
+final_template = create_template(permission_list, template_filepath)
+readonly_final_template = create_template(readonly_permission_list, template_filepath)
 
 # Write new CloudFormation Templates to disk
 output_file = File.open(output_filepath, "w")
