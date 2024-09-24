@@ -15,7 +15,7 @@ This policy uses the schedule label value (default key: `schedule`) for scheduli
 - `schedule` = `0815-1730_mo-tu-we-th-fr_america-new_york`
 - `schedule` = `0815-1730_mo-tu-we-th-fr_america-new_york`
   Start at 8:15am and stop at 5:30pm every weekday in US Eastern Time (America/New York)
-    
+
 ### Schedule Label Format
 
 `<Schedule Label>` = `<Hours>_<Days of the Week>[_<Optional Timezone>]`
@@ -59,6 +59,10 @@ The following policy actions are taken on any resources found to be out of compl
 - *Delete Instances* - Delete the resources.
 
 ## Prerequisites
+
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+### Credential configuration
 
 This Policy Template requires that several APIs be enabled in your Google Cloud environment:
 
