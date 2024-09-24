@@ -139,6 +139,15 @@ end
 # Pagination
 ###############################################################################
 
+pagination "pagination_aws_tagging" do
+  get_page_marker do
+    body_path jmes_path(response, "PaginationToken")
+  end
+  set_page_marker do
+    body_field "PaginationToken"
+  end
+end
+
 pagination "pagination_aws_getmetricdata" do
   get_page_marker do
     body_path "NextToken"
@@ -390,7 +399,7 @@ datasource "ds_elasticache_clusters" do
     auth $auth_aws
     host join(["elasticache.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
-    query "Action", "DescribeClusters"
+    query "Action", "DescribeCacheClusters"
     query "Version", "2015-02-02"
     header "User-Agent", "RS Policies"
     header "Content-Type", "text/xml"
@@ -398,20 +407,79 @@ datasource "ds_elasticache_clusters" do
   result do
     encoding "xml"
     collect xpath(response, "//DescribeCacheClustersResponse/DescribeCacheClustersResult/CacheClusters/CacheCluster", "array") do
-      field "id", xpath(col_item, "ClusterIdentifier")
+      field "id", xpath(col_item, "CacheClusterId")
+      field "status", xpath(col_item, "CacheClusterStatus")
+      field "nodeType", xpath(col_item, "CacheNodeType")
+      field "numberOfNodes", xpath(col_item, "NumCacheNodes")
+      field "autoMinorVersionUpgrade", xpath(col_item, "AutoMinorVersionUpgrade")
+      field "availabilityZone", xpath(col_item, "PreferredAvailabilityZone")
+      field "createTime", xpath(col_item, "CacheClusterCreateTime")
+      field "engine", xpath(col_item, "Engine")
+      field "engineVersion", xpath(col_item, "EngineVersion")
+      field "region", val(iter_item, "region")
+    end
+  end
+end
 
-      field "vpcId", xpath(col_item, "VpcId")
+datasource "ds_tag_requests" do
+  run_script $js_tag_requests, $ds_elasticache_clusters, $ds_aws_account
+end
+
+script "js_tag_requests", type:"javascript" do
+  parameters "ds_elasticache_clusters", "ds_aws_account"
+  result "result"
+  code <<-EOS
+  result = []
+
+  // Sort clusters by region
+  clusters_by_region = _.groupBy(ds_elasticache_clusters, "region")
+
+  _.each(_.keys(clusters_by_region), function(region) {
+    arns = []
+
+    for (var i = 0; i < clusters_by_region[region].length; i++) {
+      if ((i + 1) % 100 == 0) {
+        result.push({
+          arns: arns,
+          region: region
+        })
+
+        arns = []
+      } else {
+        arn = [
+          "arn:aws:elasticache:", region, ":", ds_aws_account["id"],
+          ":cluster:", clusters_by_region[region][i]["id"]
+        ].join('')
+
+        arns.push(arn)
+      }
+    }
+  })
+EOS
+end
+
+datasource "ds_resources_with_tags" do
+  iterate $ds_tag_requests
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_tagging
+    verb "POST"
+    host join(["tagging.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    header "X-Amz-Target", "ResourceGroupsTaggingAPI_20170126.GetResources"
+    header "Content-Type", "application/x-amz-json-1.1"
+    body_field "ResourceARNList", val(iter_item, "arns")
+    body_field "ResourcesPerPage", 100
+    body_field "ExcludeCompliantResources", "false"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "ResourceTagMappingList[*]") do
+      field "id", jmes_path(col_item, "ResourceARN")
       field "tags" do
-        collect xpath(col_item, "Tags/item") do
-          field "key", xpath(col_item, "Key")
-          field "value", xpath(col_item, "Value")
-        end
-      end
-      field "nodes" do
-        collect xpath(col_item, "ClusterNodes/member") do
-          field "privateIPAddress", xpath(col_item, "PrivateIPAddress")
-          field "nodeRole", xpath(col_item, "NodeRole")
-          field "publicIPAddress", xpath(col_item, "PublicIPAddress")
+        collect jmes_path(col_item, "Tags[*]") do
+          field "key", jmes_path(col_item, "Key")
+          field "value", jmes_path(col_item, "Value")
         end
       end
       field "region", val(iter_item, "region")
