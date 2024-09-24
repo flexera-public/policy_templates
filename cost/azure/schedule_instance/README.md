@@ -18,9 +18,9 @@ This policy uses the schedule tag value (default key: schedule) for scheduling t
 
 ### Schedule Label Format
 
-`<Schedule Label>` = `<Hours>;<Days of the Week>[;Optional Timezone]`
+`<Schedule Label>` = `<Hours>;<Days of the Week>[;<Optional Timezone>]`
 
-The Schedule Label value is a string consisting of 2 or 3 semicolin-separated (`;`) substrings (Hours, Days of the Week, and optional Timezone) with the following format:
+The Schedule Label value is a string consisting of 2 or 3 semicolon-separated (`;`) substrings (Hours, Days of the Week, and optional Timezone) with the following format:
 
 - *Hours* - Start and stop hours are 24 hour format. For example, a value of `8:15-17:30` will start instances at 8:15 and stop them at 17:30 (5:30 pm). If the minute field is left blank, the minute value of `00` will be assumed.
 - *Days of the Week* - Comma-separated list of days indicated by their two-letter abbreviation value from the following list: SU,MO,TU,WE,TH,FR,SA. For example, a value of `MO,TU,WE,TH,FR` will start and stop the instances on weekdays but not on weekends.
@@ -64,9 +64,9 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-### Credential configuration
-
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+### Credential configuration
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Compute/virtualMachines/read`
