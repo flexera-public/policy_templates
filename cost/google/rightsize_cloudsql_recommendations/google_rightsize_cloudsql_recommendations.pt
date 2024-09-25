@@ -1,18 +1,17 @@
-name "Google Idle Cloud SQL Instance Recommender"
+name "Google Rightsize Cloud SQL Recommender"
 rs_pt_ver 20180301
 type "policy"
-short_description "**Deprecated: This policy is no longer being updated. Please see [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cloud_sql_idle_instance_recommendations) for more details.**  This Policy finds Google Idle Cloud SQL Instance Recommendations and reports when it finds them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cloud_sql_idle_instance_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This Policy finds underutilized and idle Google Cloud SQL instances and downsizes, stops, or deletes them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.1.1",
-  provider:"Google",
-  service: "SQL",
-  policy_set: "Unused Database Services",
-  recommendation_type: "Usage Reduction",
-  deprecated: "true"
+  version: "0.1.0",
+  provider: "Google",
+  service: "Compute",
+  policy_set: "Rightsize Database Instances",
+  recommendation_type: "Usage Reduction"
 )
 
 ###############################################################################
@@ -87,12 +86,21 @@ parameter "param_exclusion_labels_boolean" do
   default "Any"
 end
 
+parameter "param_idle_or_underutilized" do
+  type "string"
+  category "Filters"
+  label "Report Idle or Underutilized"
+  description "Whether to report on idle Cloud SQL instances, underutilized Cloud SQL instances, or both."
+  allowed_values "Idle & Underutilized", "Idle", "Underutilized"
+  default "Idle & Underutilized"
+end
+
 parameter "param_automatic_action" do
   type "list"
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Stop Cloud SQL Instances", "Delete Cloud SQL Instances"]
+  allowed_values ["Downsize Cloud SQL Instances", "Stop Cloud SQL Instances", "Delete Cloud SQL Instances"]
   default []
 end
 
@@ -241,24 +249,24 @@ datasource "ds_cloudsql_instances" do
   end
   result do
     encoding "json"
-    collect jmes_path(response,"items[*]") do
+    collect jmes_path(response, "items[*]") do
       field "resourceID", jmes_path(col_item, "name")
       field "resourceName", jmes_path(col_item, "name")
       field "region", jmes_path(col_item, "region")
       field "state", jmes_path(col_item, "state")
       field "selfLink", jmes_path(col_item, "selfLink")
-      field "resourceType", jmes_path(col_item, "instanceType")
+      field "instanceType", jmes_path(col_item, "instanceType")
       field "backendType", jmes_path(col_item, "backendType")
       field "platform", jmes_path(col_item, "databaseVersion")
       field "createTime", jmes_path(col_item, "createTime")
-      field "size", jmes_path(col_item,"settings.dataDiskSizeGb")
-      field "tier", jmes_path(col_item, "settings.tier")
-      field "labels", jmes_path(col_item,"settings.userLabels")
-      field "diskType", jmes_path(col_item,"settings.dataDiskType")
-      field "edition", jmes_path(col_item,"settings.edition")
-      field "availabilityType", jmes_path(col_item,"settings.availabilityType")
-      field "replicationType", jmes_path(col_item,"settings.replicationType")
-      field "pricingPlan", jmes_path(col_item,"settings.pricingPlan")
+      field "size", jmes_path(col_item, "settings.dataDiskSizeGb")
+      field "resourceType", jmes_path(col_item, "settings.tier")
+      field "labels", jmes_path(col_item, "settings.userLabels")
+      field "diskType", jmes_path(col_item, "settings.dataDiskType")
+      field "edition", jmes_path(col_item, "settings.edition")
+      field "availabilityType", jmes_path(col_item, "settings.availabilityType")
+      field "replicationType", jmes_path(col_item, "settings.replicationType")
+      field "pricingPlan", jmes_path(col_item, "settings.pricingPlan")
       field "projectId", val(iter_item, "id")
       field "projectName", val(iter_item, "name")
       field "projectNumber", val(iter_item, "number")
@@ -367,34 +375,64 @@ script "js_cloudsql_instances_region_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_recommender_requests" do
-  run_script $js_recommender_requests, $ds_cloudsql_instances_region_filtered
+datasource "ds_idle_recommender_requests" do
+  run_script $js_idle_recommender_requests, $ds_cloudsql_instances_region_filtered, $param_idle_or_underutilized
 end
 
-script "js_recommender_requests", type: "javascript" do
-  parameters "ds_cloudsql_instances_region_filtered"
+script "js_idle_recommender_requests", type: "javascript" do
+  parameters "ds_cloudsql_instances_region_filtered", "param_idle_or_underutilized"
   result "result"
   code <<-EOS
   result = []
 
-  _.each(ds_cloudsql_instances_region_filtered, function(instance) {
-    request = {
-      projectId: instance['projectId'],
-      region: instance['region']
-    }
+  // Skip gathering recommendations for idle instances if the user opted not to
+  if (param_idle_or_underutilized != "Underutilized") {
+    _.each(ds_cloudsql_instances_region_filtered, function(instance) {
+      request = {
+        projectId: instance['projectId'],
+        region: instance['region']
+      }
 
-    if (_.findWhere(result, request) == undefined) {
-      request['number'] = result.length + 1
-      result.push(request)
-    }
-  })
+      if (_.findWhere(result, request) == undefined) {
+        request['number'] = result.length + 1
+        result.push(request)
+      }
+    })
+  }
 EOS
 end
 
-datasource "ds_recommendations" do
-  iterate $ds_recommender_requests
+datasource "ds_underutil_recommender_requests" do
+  run_script $js_underutil_recommender_requests, $ds_cloudsql_instances_region_filtered, $param_idle_or_underutilized
+end
+
+script "js_underutil_recommender_requests", type: "javascript" do
+  parameters "ds_cloudsql_instances_region_filtered", "param_idle_or_underutilized"
+  result "result"
+  code <<-EOS
+  result = []
+
+  // Skip gathering recommendations for underutilized instances if the user opted not to
+  if (param_idle_or_underutilized != "Idle") {
+    _.each(ds_cloudsql_instances_region_filtered, function(instance) {
+      request = {
+        projectId: instance['projectId'],
+        region: instance['region']
+      }
+
+      if (_.findWhere(result, request) == undefined) {
+        request['number'] = result.length + 1
+        result.push(request)
+      }
+    })
+  }
+EOS
+end
+
+datasource "ds_idle_recommendations" do
+  iterate $ds_idle_recommender_requests
   request do
-    run_script $js_recommendations, val(iter_item, "projectId"), val(iter_item, "region"), val(iter_item, "number")
+    run_script $js_recommendations, val(iter_item, "projectId"), val(iter_item, "region"), val(iter_item, "number"), "IdleRecommender"
   end
   result do
     encoding "json"
@@ -405,6 +443,36 @@ datasource "ds_recommendations" do
       field "description", jmes_path(col_item, "description")
       field "resourceLink", jmes_path(col_item, "content.overview.resource")
       field "resourceName", jmes_path(col_item, "content.overview.resourceName")
+      field "recommendedMachineType", jmes_path(col_item, "content.overview.recommendedMachineType")
+      field "currentMachineType", jmes_path(col_item, "content.overview.currentMachineType")
+      field "primaryImpact", jmes_path(col_item, "primaryImpact")
+      field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
+      field "costNanos", jmes_path(col_item, "primaryImpact.costProjection.cost.nanos")
+      field "duration", jmes_path(col_item, "primaryImpact.costProjection.duration")
+      field "currency", jmes_path(col_item, "primaryImpact.costProjection.cost.currencyCode")
+      field "priority", jmes_path(col_item, "priority")
+      field "recommenderSubtype", jmes_path(col_item, "recommenderSubtype")
+      field "state", jmes_path(col_item, "stateInfo.state")
+    end
+  end
+end
+
+datasource "ds_underutil_recommendations" do
+  iterate $ds_underutil_recommender_requests
+  request do
+    run_script $js_recommendations, val(iter_item, "projectId"), val(iter_item, "region"), val(iter_item, "number"), "OverprovisionedRecommender"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "recommendations[*]") do
+      field "projectId", val(iter_item, "projectId")
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "resourceLink", jmes_path(col_item, "content.overview.resource")
+      field "resourceName", jmes_path(col_item, "content.overview.resourceName")
+      field "recommendedMachineType", jmes_path(col_item, "content.overview.recommendedMachineType")
+      field "currentMachineType", jmes_path(col_item, "content.overview.currentMachineType")
       field "primaryImpact", jmes_path(col_item, "primaryImpact")
       field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
       field "costNanos", jmes_path(col_item, "primaryImpact.costProjection.cost.nanos")
@@ -418,7 +486,7 @@ datasource "ds_recommendations" do
 end
 
 script "js_recommendations", type: "javascript" do
-  parameters "projectId", "region", "number"
+  parameters "projectId", "region", "number", "type"
   result "request"
   code <<-EOS
   // If 100 requests have been made, wait 1 minute to avoid throttling
@@ -433,7 +501,7 @@ script "js_recommendations", type: "javascript" do
     pagination: "pagination_google",
     host: "recommender.googleapis.com",
     ignore_status: 403,
-    path: "/v1/projects/"+ projectId + "/locations/" + region + "/recommenders/google.cloudsql.instance.IdleRecommender/recommendations",
+    path: "/v1/projects/"+ projectId + "/locations/" + region + "/recommenders/google.cloudsql.instance." + type + "/recommendations",
     query_strings: { alt: "json" }
   }
 EOS
@@ -443,18 +511,22 @@ end
 # This datasource returns an empty array if the target currency is USD.
 # This prevents ds_currency_conversion from running if it's not needed.
 datasource "ds_conditional_currency_conversion" do
-  run_script $js_conditional_currency_conversion, $ds_currency_target, $ds_recommendations
+  run_script $js_conditional_currency_conversion, $ds_currency_target, $ds_idle_recommendations, $ds_underutil_recommendations
 end
 
 script "js_conditional_currency_conversion", type: "javascript" do
-  parameters "ds_currency_target", "ds_recommendations"
+  parameters "ds_currency_target", "ds_idle_recommendations", "ds_underutil_recommendations"
   result "result"
   code <<-EOS
   result = []
   from_currency = "USD"
 
-  if (ds_recommendations.length > 0) {
-    from_currency = ds_recommendations[0]["currency"]
+  if (ds_idle_recommendations.length > 0) {
+    from_currency = ds_idle_recommendations[0]["currency"]
+  }
+
+  if (ds_underutil_recommendations.length > 0) {
+    from_currency = ds_underutil_recommendations[0]["currency"]
   }
 
   // Make the request only if the target currency is not USD
@@ -511,12 +583,215 @@ script "js_currency", type:"javascript" do
 EOS
 end
 
-datasource "ds_recommendations_incident" do
-  run_script $js_recommendations_incident, $ds_cloudsql_instances_region_filtered, $ds_recommendations, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings
+datasource "ds_sorted_recommendations" do
+  run_script $js_sorted_recommendations, $ds_cloudsql_instances_region_filtered, $ds_idle_recommendations, $ds_underutil_recommendations, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings, $param_idle_or_underutilized
 end
 
-script "js_recommendations_incident", type:"javascript" do
-  parameters "ds_cloudsql_instances_region_filtered", "ds_recommendations", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings"
+script "js_sorted_recommendations", type:"javascript" do
+  parameters "ds_cloudsql_instances_region_filtered", "ds_idle_recommendations", "ds_underutil_recommendations", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings", "param_idle_or_underutilized"
+  result "result"
+  code <<-'EOS'
+  instance_object = {}
+
+  _.each(ds_cloudsql_instances_region_filtered, function(instance) {
+    selfLink = instance['selfLink'].replace("https://www.googleapis.com/compute/v1/", "")
+    instance_object[selfLink] = instance
+  })
+
+  idle_result = []
+  underutil_result = []
+
+  idle_total_savings = 0.0
+  underutil_total_savings = 0.0
+
+  if (param_idle_or_underutilized != "Underutilized") {
+    _.each(ds_idle_recommendations, function(recommendation) {
+      resource_link = recommendation['resourceLink'].replace("//compute.googleapis.com/", "")
+
+      instance = null
+      if (typeof(instance_object[resource_link]) == 'object') { instance = instance_object[resource_link] }
+
+      if (instance != null) {
+        costNanos = recommendation['costNanos']
+        if (costNanos == null || costNanos == undefined) { costNanos = 0 }
+        if (costNanos != null && costNanos != undefined) { costNanos = Number(costNanos) * -1 }
+
+        costUnits = recommendation['costUnits']
+        if (costUnits == null || costUnits == undefined) { costUnits = 0 }
+        if (costUnits != null && costUnits != undefined) { costUnits = Number(costUnits) * -1 }
+
+        savings = 0.0
+        duration = 0
+
+        if (recommendation['duration'] != null) {
+          duration = parseFloat(recommendation['duration'].replace("s", "")) / 2628288
+        }
+
+        if (duration != 0) { savings = (costUnits + costNanos * Math.pow(10, -9)) / duration * ds_currency['exchange_rate']}
+
+        if (savings >= param_min_savings) {
+          idle_total_savings += savings
+
+          labels = []
+
+          if (typeof(instance['labels']) == 'object') {
+            _.each(Object.keys(instance['labels']), function(key) {
+              labels.push([key, "=", instance['labels'][key]].join(''))
+            })
+          }
+
+          resourceType = null
+
+          // REPLACE WITH CORRECT THING FOR CLOUDSQL
+          if (typeof(instance['machineType']) == 'string') {
+            resourceType = instance['machineType'].split('/')[10]
+          }
+
+          idle_result.push({
+            accountID: instance['projectId'],
+            accountName: instance['projectName'],
+            projectNumber: instance['projectNumber'],
+            resourceID: instance['resourceID'],
+            resourceName: instance['resourceName'],
+            status: instance['state'],
+            selfLink: instance['selfLink'],
+            instanceType: instance['instanceType'],
+            region: instance['region'],
+            platform: instance['platform'],
+            resourceType: instance['resourceType'],
+            newResourceType: "Stop Cloud SQL Instance",
+            backendType: instance['backendType'],
+            size: instance['size'],
+            diskType: instance['diskType'],
+            edition: instance['edition'],
+            availabilityType: instance['availabilityType'],
+            replicationType: instance['replicationType'],
+            pricingPlan: instance['pricingPlan'],
+            timeCreated: new Date(instance['createTime']).toISOString(),
+            priority: recommendation['priority'],
+            primaryImpact: recommendation['primaryImpact'],
+            primaryImpactCategory: recommendation['primaryImpact']['category'],
+            recommendationDetails: recommendation['description'],
+            recommenderSubtype: recommendation['recommenderSubtype'],
+            state: recommendation['state'],
+            policy_name: ds_applied_policy['name'],
+            tags: labels.join(', '),
+            savings: parseFloat(savings.toFixed(3)),
+            savingsCurrency: ds_currency['symbol'],
+            service: "Cloud SQL",
+            total_savings: "",
+            message: ""
+          })
+        }
+      }
+    })
+  }
+
+  if (param_idle_or_underutilized != "Idle") {
+    idle_resources = _.pluck(idle_result, "resourceID")
+
+    _.each(ds_underutil_recommendations, function(recommendation) {
+      resource_link = recommendation['resourceLink'].replace("//compute.googleapis.com/", "")
+
+      instance = null
+      if (typeof(instance_object[resource_link]) == 'object') { instance = instance_object[resource_link] }
+
+      if (instance != null) {
+        costNanos = recommendation['costNanos']
+        if (costNanos == null || costNanos == undefined) { costNanos = 0 }
+        if (costNanos != null && costNanos != undefined) { costNanos = Number(costNanos) * -1 }
+
+        costUnits = recommendation['costUnits']
+        if (costUnits == null || costUnits == undefined) { costUnits = 0 }
+        if (costUnits != null && costUnits != undefined) { costUnits = Number(costUnits) * -1 }
+
+        savings = 0.0
+        duration = 0
+
+        if (recommendation['duration'] != null) {
+          duration = parseFloat(recommendation['duration'].replace("s", "")) / 2628288
+        }
+
+        if (duration != 0) { savings = (costUnits + costNanos * Math.pow(10, -9)) / duration * ds_currency['exchange_rate']}
+
+        if (savings >= param_min_savings && _.contains(idle_resources, instance['id']) == false) {
+          underutil_total_savings += savings
+
+          labels = []
+
+          if (typeof(instance['labels']) == 'object') {
+            _.each(Object.keys(instance['labels']), function(key) {
+              labels.push([key, "=", instance['labels'][key]].join(''))
+            })
+          }
+
+          // REPLACE WITH CORRECT THING FOR CLOUDSQL
+          resourceType = null
+          newResourceType = null
+
+          if (typeof(recommendation['currentMachineType']) == 'object') {
+            resourceType = recommendation['currentMachineType']['name']
+          }
+
+          if (typeof(recommendation['recommendedMachineType']) == 'object') {
+            newResourceType = recommendation['recommendedMachineType']['name']
+          }
+
+          underutil_result.push({
+            accountID: instance['projectId'],
+            accountName: instance['projectName'],
+            projectNumber: instance['projectNumber'],
+            resourceID: instance['resourceID'],
+            resourceName: instance['resourceName'],
+            status: instance['state'],
+            selfLink: instance['selfLink'],
+            instanceType: instance['instanceType'],
+            region: instance['region'],
+            platform: instance['platform'],
+            backendType: instance['backendType'],
+            size: instance['size'],
+            diskType: instance['diskType'],
+            edition: instance['edition'],
+            availabilityType: instance['availabilityType'],
+            replicationType: instance['replicationType'],
+            pricingPlan: instance['pricingPlan'],
+            timeCreated: new Date(instance['createTime']).toISOString(),
+            priority: recommendation['priority'],
+            primaryImpact: recommendation['primaryImpact'],
+            primaryImpactCategory: recommendation['primaryImpact']['category'],
+            recommendationDetails: recommendation['description'],
+            recommenderSubtype: recommendation['recommenderSubtype'],
+            state: recommendation['state'],
+            resourceType: resourceType,
+            newResourceType: newResourceType,
+            policy_name: ds_applied_policy['name'],
+            tags: labels.join(', '),
+            savings: parseFloat(savings.toFixed(3)),
+            savingsCurrency: ds_currency['symbol'],
+            service: "Cloud SQL",
+            total_savings: "",
+            message: ""
+          })
+        }
+      }
+    })
+  }
+
+  result = {
+    idle_result: idle_result,
+    underutil_result: underutil_result,
+    idle_total_savings: idle_total_savings,
+    underutil_total_savings: underutil_total_savings
+  }
+EOS
+end
+
+datasource "ds_idle_incident" do
+  run_script $js_idle_incident, $ds_sorted_recommendations, $ds_cloudsql_instances_region_filtered, $ds_currency, $param_idle_or_underutilized
+end
+
+script "js_idle_incident", type:"javascript" do
+  parameters "ds_sorted_recommendations", "ds_cloudsql_instances_region_filtered", "ds_currency", "param_idle_or_underutilized"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -538,128 +813,182 @@ script "js_recommendations_incident", type:"javascript" do
     return formatted_number + "." + values[1]
   }
 
-  instance_object = {}
-
-  _.each(ds_cloudsql_instances_region_filtered, function(instance) {
-    selfLink = instance['selfLink'].replace("https://www.googleapis.com/compute/v1/", "")
-    instance_object[selfLink] = instance
-  })
-
-  result = []
-  total_savings = 0.0
-
-  _.each(ds_recommendations, function(recommendation) {
-    resource_link = recommendation['resourceLink'].replace("//compute.googleapis.com/", "")
-
-    instance = null
-    if (typeof(instance_object[resource_link]) == 'object') { instance = instance_object[resource_link] }
-
-    if (instance != null) {
-      costNanos = recommendation['costNanos']
-      if (costNanos == null || costNanos == undefined) { costNanos = 0 }
-      if (costNanos != null && costNanos != undefined) { costNanos = Number(costNanos) * -1 }
-
-      costUnits = recommendation['costUnits']
-      if (costUnits == null || costUnits == undefined) { costUnits = 0 }
-      if (costUnits != null && costUnits != undefined) { costUnits = Number(costUnits) * -1 }
-
-      savings = 0.0
-      duration = parseFloat(recommendation['duration'].replace("s", "")) / 2628288
-      if (duration != 0) { savings = (costUnits + costNanos * Math.pow(10, -9)) / duration * ds_currency['exchange_rate'] }
-
-      if (savings >= param_min_savings) {
-        total_savings += savings
-
-        labels = []
-
-        if (typeof(instance['labels']) == 'object') {
-          _.each(Object.keys(instance['labels']), function(key) {
-            labels.push([key, "=", instance['labels'][key]].join(''))
-          })
-        }
-
-        result.push({
-          accountID: instance['projectId'],
-          accountName: instance['projectName'],
-          projectNumber: instance['projectNumber'],
-          resourceID: instance['resourceID'],
-          resourceName: instance['resourceName'],
-          status: instance['state'],
-          selfLink: instance['selfLink'],
-          tier: instance['tier'],
-          region: instance['region'],
-          platform: instance['platform'],
-          resourceType: instance['resourceType'],
-          backendType: instance['backendType'],
-          size: instance['size'],
-          diskType: instance['diskType'],
-          edition: instance['edition'],
-          availabilityType: instance['availabilityType'],
-          replicationType: instance['replicationType'],
-          pricingPlan: instance['pricingPlan'],
-          timeCreated: new Date(instance['createTime']).toISOString(),
-          priority: recommendation['priority'],
-          primaryImpact: recommendation['primaryImpact'],
-          primaryImpactCategory: recommendation['primaryImpact']['category'],
-          recommendationDetails: recommendation['description'],
-          recommenderSubtype: recommendation['recommenderSubtype'],
-          state: recommendation['state'],
-          policy_name: ds_applied_policy['name'],
-          tags: labels.join(', '),
-          savings: parseFloat(savings.toFixed(3)),
-          savingsCurrency: ds_currency['symbol'],
-          service: "Cloud SQL",
-          total_savings: "",
-          message: ""
-        })
-      }
-    }
-  })
-
   // Sort by descending order of savings value
-  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+  result = _.sortBy(ds_sorted_recommendations['idle_result'], function(item) { return item['savings'] * -1 })
 
   savings_message = [
     ds_currency['symbol'], ' ',
-    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['t_separator'])
+    formatNumber(parseFloat(ds_sorted_recommendations['idle_total_savings']).toFixed(2),
+    ds_currency['t_separator'])
   ].join('')
 
   // Message for incident output
   total_instances = ds_cloudsql_instances_region_filtered.length.toString()
   total_idle_instances = result.length.toString()
-  idle_instances_percentage = (total_idle_instances / total_instances * 100).toFixed(2).toString() + '%'
+  idle_percentage = (total_idle_instances / total_instances * 100).toFixed(2).toString() + '%'
 
-  sql_noun = "instance"
-  if (total_instances > 1) { ip_noun = "instances" }
+  instance_noun = "instance"
+  if (total_instances > 1) { instance_noun = "instances" }
 
-  sql_verb = "is"
-  if (total_idle_instances > 1) { ip_verb = "are" }
+  instance_verb = "is"
+  if (total_idle_instances > 1) { instance_verb = "are" }
 
   findings = [
-    "Out of ", total_instances , " Cloud SQL ", sql_noun, " analyzed, ",
-    total_idle_instances, " (", idle_instances_percentage,
-    ") ", sql_verb, " idle and recommended for stopping.\n\n"
+    "Out of ", total_instances, " Google Cloud SQL ", instance_noun, " analyzed, ",
+    total_idle_instances, " (", idle_percentage,
+    ") ", instance_verb, " idle and recommended for stopping.\n\n"
   ].join('')
+
+  if (param_idle_or_underutilized == "Idle") {
+    type_disclaimer = "Policy has been configured to only report idle instances. This setting can be modified by editing the applied policy and changing the 'Report Idle or Underutilized' parameter.\n\n"
+  } else {
+    type_disclaimer = "Policy has been configured to report both idle and underutilized instances. This setting can be modified by editing the applied policy and changing the 'Report Idle or Underutilized' parameter.\n\n"
+  }
 
   disclaimer = "Recommendations are generated by Google Cloud. Please refer to Google's documentation if different recommendations are desired."
 
   // Dummy item to ensure that the check statement in the policy executes at least once
   result.push({
-    accountID: "",                accountName: "",              projectNumber: "",
-    resourceID: "",               resourceName: "",             status: "",
-    selfLink: "",                 tier: "",                     region: "",
-    platform: "",                 resourceType: "",             backendType: "",
-    size: "",                     diskType: "",                 edition: "",
-    availabilityType: "",         replicationType: "",          pricingPlan: "",
-    timeCreated: "",              priority: "",                 primaryImpact: "",
-    primaryImpactCategory: "",    recommendationDetails: "",    recommenderSubtype: "",
-    state: "",                    policy_name: "",              tags: "",
-    savings: "",                  savingsCurrency: "",          service: "",
-    total_savings: "",            message: ""
+    accountID: "",
+    accountName: "",
+    projectNumber: "",
+    resourceID: "",
+    resourceName: "",
+    status: "",
+    selfLink: "",
+    tier: "",
+    region: "",
+    platform: "",
+    resourceType: "",
+    newResourceType: "",
+    backendType: "",
+    size: "",
+    diskType: "",
+    edition: "",
+    availabilityType: "",
+    replicationType: "",
+    pricingPlan: "",
+    timeCreated: "",
+    priority: "",
+    primaryImpact: "",
+    primaryImpactCategory: "",
+    recommendationDetails: "",
+    recommenderSubtype: "",
+    state: "",
+    policy_name: "",
+    tags: "",
+    savings: "",
+    savingsCurrency: "",
+    service: "",
+    total_savings: "",
+    message: ""
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + disclaimer
+  result[0]['message'] = findings + type_disclaimer + disclaimer
+EOS
+end
+
+datasource "ds_underutil_incident" do
+  run_script $js_underutil_incident, $ds_sorted_recommendations, $ds_cloudsql_instances_region_filtered, $ds_currency, $param_idle_or_underutilized
+end
+
+script "js_underutil_incident", type:"javascript" do
+  parameters "ds_sorted_recommendations", "ds_cloudsql_instances_region_filtered", "ds_currency", "param_idle_or_underutilized"
+  result "result"
+  code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  // Sort by descending order of savings value
+  result = _.sortBy(ds_sorted_recommendations['underutil_result'], function(item) { return item['savings'] * -1 })
+
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(ds_sorted_recommendations['underutil_total_savings']).toFixed(2),
+    ds_currency['t_separator'])
+  ].join('')
+
+  // Message for incident output
+  total_instances = ds_cloudsql_instances_region_filtered.length.toString()
+  total_underutil_instances = result.length.toString()
+  underutil_percentage = (total_underutil_instances / total_instances * 100).toFixed(2).toString() + '%'
+
+  instance_noun = "instance"
+  if (total_instances > 1) { instance_noun = "instances" }
+
+  instance_verb = "is"
+  if (total_underutil_instances > 1) { instance_verb = "are" }
+
+  findings = [
+    "Out of ", total_instances, " Google Cloud SQL ", instance_noun, " analyzed, ",
+    total_underutil_instances, " (", underutil_percentage,
+    ") ", instance_verb, " underutilized and recommended for downsizing.\n\n"
+  ].join('')
+
+  if (param_idle_or_underutilized == "Underutilized") {
+    type_disclaimer = "Policy has been configured to only report underutilized instances. This setting can be modified by editing the applied policy and changing the 'Report Idle or Underutilized' parameter.\n\n"
+  } else {
+    type_disclaimer = "Policy has been configured to report both idle and underutilized instances. This setting can be modified by editing the applied policy and changing the 'Report Idle or Underutilized' parameter.\n\n"
+  }
+
+  disclaimer = "Recommendations are generated by Google Cloud. Please refer to Google's documentation if different recommendations are desired."
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    accountID: "",
+    accountName: "",
+    projectNumber: "",
+    resourceID: "",
+    resourceName: "",
+    status: "",
+    selfLink: "",
+    tier: "",
+    region: "",
+    platform: "",
+    resourceType: "",
+    newResourceType: "",
+    backendType: "",
+    size: "",
+    diskType: "",
+    edition: "",
+    availabilityType: "",
+    replicationType: "",
+    pricingPlan: "",
+    timeCreated: "",
+    priority: "",
+    primaryImpact: "",
+    primaryImpactCategory: "",
+    recommendationDetails: "",
+    recommenderSubtype: "",
+    state: "",
+    policy_name: "",
+    tags: "",
+    savings: "",
+    savingsCurrency: "",
+    service: "",
+    total_savings: "",
+    message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + type_disclaimer + disclaimer
 EOS
 end
 
@@ -667,8 +996,105 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_recommendations" do
-  validate_each $ds_recommendations_incident do
+policy "pol_cloudsql_recommendations" do
+  validate_each $ds_underutil_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Underutilized Cloud SQL Instances Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_downsize_instances
+    hash_exclude "tags", "savings", "savingsCurrency", "total_savings", "message"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Project ID"
+      end
+      field "accountName" do
+        label "Project Name"
+      end
+      field "projectNumber" do
+        label "Project Number"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceType" do
+        label "Resource Tier"
+      end
+      field "newResourceType" do
+        label "Recommended Resource Tier"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "timeCreated" do
+        label "Created At"
+      end
+      field "primaryImpactCategory" do
+        label "Primary Impact Category"
+      end
+      field "tags" do
+        label "Labels"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "pricingPlan" do
+        label "Pricing Plan"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Currency"
+      end
+      field "priority" do
+        label "Priority"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "recommenderSubtype" do
+        label "Recommendation Sub Type"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "diskType" do
+        label "Disk Type"
+      end
+      field "size" do
+        label "Disk Size (GB)"
+      end
+      field "availabilityType" do
+        label "Availability"
+      end
+      field "replicationType" do
+        label "Replication"
+      end
+      field "state" do
+        label "State"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "selfLink" do
+        label "Resource Link"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+  validate_each $ds_idle_incident do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Idle Cloud SQL Instances Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
@@ -695,7 +1121,10 @@ policy "policy_recommendations" do
         label "Resource ID"
       end
       field "resourceType" do
-        label "Resource Type"
+        label "Resource Tier"
+      end
+      field "newResourceType" do
+        label "Recommended Resource Tier"
       end
       field "region" do
         label "Region"
@@ -776,6 +1205,13 @@ escalation "esc_email" do
   email $param_email
 end
 
+escalation "esc_downsize_instances" do
+  automatic contains($param_automatic_action, "Downsize Cloud SQL Instances")
+  label "Downsize VM Instances"
+  description "Approval to downsize all selected Cloud SQL instances"
+  run "downsize_instances", data
+end
+
 escalation "esc_stop_instances" do
   automatic contains($param_automatic_action, "Stop Cloud SQL Instances")
   label "Stop Cloud SQL Instances"
@@ -794,6 +1230,20 @@ end
 # Cloud Workflow
 ###############################################################################
 
+define downsize_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call resize_instance($instance) retrieve $resize_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
 define stop_instances($data) return $all_responses do
   $$all_responses = []
 
@@ -804,7 +1254,7 @@ define stop_instances($data) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -818,7 +1268,42 @@ define delete_instances($data) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
+  end
+end
+
+define resize_instance($instance) return $response do
+  # Update with appropriate code for a Cloud SQL Instance
+  task_label("POST " + $instance['selfLink'] + '/setMachineType')
+
+  $body = '{ machineType: "zones/' + $instance['zone'] + '/machineTypes/' + $instance['newResourceType'] + '" }'
+
+  $response = http_post(
+    url: $instance['selfLink'] + '/setMachineType',
+    auth: $$auth_google,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: $body
+  )
+
+  task_label("Post Google VM instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $instance['selfLink'] + '/setMachineType', "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response posting Google VM instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("Post Google VM instance successful: " + $instance["resourceName"])
+  end
+
+  sleep(5)
+  call get_instance_state($instance) retrieve $state_response, $current_state
+  sleep(5)
+
+  while $current_state != "STOPPED" && $current_state != "TERMINATED" do
+    call get_instance_state($instance) retrieve $state_response, $current_state
+    sleep(5)
   end
 end
 
@@ -891,7 +1376,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do
