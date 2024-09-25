@@ -34,7 +34,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `ec2:DescribeInstances`
-  - `ec2:DescribeInstanceStatus`
+  - `ec2:DescribeInstanceStatus`†
   - `ec2:DescribeRegions`
   - `sts:GetCallerIdentity`‡
 
