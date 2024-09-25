@@ -285,7 +285,8 @@ def readme_invalid_credentials?(file, file_lines)
           footnote_symbols["†"] = true if line.strip.end_with?("\u2020")
           footnote_symbols["‡"] = true if line.strip.end_with?("\u2021")
 
-          permission_action = line.strip.split(/\s{2}-\s+/)[1]
+          # permission_action = line.strip.split(/\s{2}-\s+/)[1]
+          permission_action = line.split("  - ")[1]
           if permission_action.nil? || !permission_action.match?(aws_perm_tester)
             fail_message += "Line #{line_number.to_s}: AWS permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
             fail_message += "```  - `rds:DeleteDBSnapshot`*```\n"
