@@ -22,8 +22,7 @@ This policy uses the schedule label value (default key: `schedule`) for scheduli
 The Schedule Label value is a string consisting of 2 or 3 underscore-separated (`_`) substrings (Hours, Days of the Week, and optional Timezone) with the following format:
 
 - *Hours* - Start and stop hours are in 4-digit 24-hour format without any colons or other separator (`HHMM-HHMM`). For example, a value of `0815-1730` will start instances at 8:15am and stop them at 17:30 (5:30 pm). If the minute field is left blank, the minute value of `00` will be assumed.
-- *Days of the Week* - Hyphen-separated (`-`) list of days indicated by their two-letter abbreviation value from the following list: `su`,`mo`,`tu`,`we`,`th`,`fr`,`sa`.
-  For example, a value of `mo-tu-we-th-fr` will start and stop the instances on weekdays (Monday-Friday) but not on weekends (Saturday or Sunday).
+- *Days of the Week* - Hyphen-separated (`-`) list of days indicated by their two-letter abbreviation value from the following list: `su`,`mo`,`tu`,`we`,`th`,`fr`,`sa`. For example, a value of `mo-tu-we-th-fr` will start and stop the instances on weekdays (Monday-Friday) but not on weekends (Saturday or Sunday).
 - Optional: *Timezone* - Timezone in [tz database format](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones).  Due to limitations for Google Labels the `/` character is replaced with a hyphen (`-`), spaces (` `) replaced with underscores (`_`), and all characters converted to lowercase. For example, a schedule label value of `america-new_york` would translate to `America/New York`. Defaults to UTC if no Timezone value is defined in schedule.
 
 ## Input Parameters
