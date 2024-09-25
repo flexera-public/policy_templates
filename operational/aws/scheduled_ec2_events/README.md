@@ -40,6 +40,8 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
   ‡ Only required for taking action (terminating or downsizing); the policy will still function in a read-only capacity without these permissions.
 
+  † Only required for `Terminate Instance` Action; the policy will still start/stop instance without this permission.
+
   Example IAM Permission Policy:
 
   ```json

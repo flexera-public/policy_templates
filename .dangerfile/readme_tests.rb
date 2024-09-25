@@ -269,7 +269,6 @@ def readme_invalid_credentials?(file, file_lines)
     # Hash to track the presence of each footnote symbol in the permission list
     footnote_symbols = { "*" => false,  "†" => false, "‡" => false }
 
-    # footnote_symbol_found = 0
     permission_list_found = 0
 
     aws_permission_text.each_with_index do |line, index|
@@ -285,7 +284,6 @@ def readme_invalid_credentials?(file, file_lines)
           footnote_symbols["†"] = true if line.strip.end_with?("\u2020")
           footnote_symbols["‡"] = true if line.strip.end_with?("\u2021")
 
-          # permission_action = line.strip.split(/\s{2}-\s+/)[1]
           permission_action = line.split("  - ")[1]
           if permission_action.nil? || !permission_action.match?(aws_perm_tester)
             fail_message += "Line #{line_number.to_s}: AWS permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
@@ -296,7 +294,6 @@ def readme_invalid_credentials?(file, file_lines)
           end
         end
       end
-      # footnote_symbol_found = 2 if footnote_symbol_found == 1 && line.start_with?('  \* ', '  † ', '  ‡ ')
     end
 
     # Check for missing footnotes for any symbols that were found in the permissions list
@@ -325,12 +322,6 @@ def readme_invalid_credentials?(file, file_lines)
       fail_message += "```  - `sts:GetCallerIdentity` ```\n"
       fail_message += "```  - `cloudtrail:LookupEvents` ```\n\n"
     end
-
-    # if footnote_symbol_found == 1
-    #   fail_message += "AWS permission list contains a permission with a footnote symbol (e.g., an asterisk, dagger or crossed dagger) but no footnote explaining why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][footnote symbol][space] like so:\n\n"
-    #   fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
-    #   fail_message += "```  ‡ Only required if using Customer Managed KMS Key on Volumes mounted by EC2 Instance(s)```\n\n"
-    # end
   end
 
   if azure_permission_line
