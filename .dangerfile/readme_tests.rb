@@ -264,7 +264,7 @@ def readme_invalid_credentials?(file, file_lines)
       fail_message += "```- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:```\n\n"
     end
 
-    aws_perm_tester = /`[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*:[a-zA-Z0-9]+`(?:\*)?$/
+    aws_perm_tester = /`[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*:[a-zA-Z0-9]+`(?:[\*\u2020\u2021])?$/
     footnote_symbol_found = 0
     permission_list_found = 0
 
@@ -277,7 +277,7 @@ def readme_invalid_credentials?(file, file_lines)
         if !line.start_with?("  - ")
           permission_list_found = 2
         else
-          footnote_symbol_found = 1 if line.strip.end_with?("*", "\u2020", "‡")
+          footnote_symbol_found = 1 if line.strip.end_with?("*", "\u2020", "\u2021")
 
           if !line.split("  - ")[1].match?(aws_perm_tester)
             fail_message += "Line #{line_number.to_s}: AWS permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
@@ -313,7 +313,7 @@ def readme_invalid_credentials?(file, file_lines)
       fail_message += "```- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:```\n\n"
     end
 
-    azure_perm_tester = /^`Microsoft\.[a-zA-Z]+\/[a-zA-Z]+\/[a-zA-Z]+(?:\/[a-zA-Z]+)*`(?:\*)?$/
+    azure_perm_tester = /^`Microsoft\.[a-zA-Z]+\/[a-zA-Z]+\/[a-zA-Z]+(?:\/[a-zA-Z]+)*`(?:[\*\u2020\u2021])?$/
     footnote_symbol_found = 0
     permission_list_found = 0
 
@@ -359,7 +359,7 @@ def readme_invalid_credentials?(file, file_lines)
       fail_message += "```- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:```\n\n"
     end
 
-    google_perm_tester = /^`[a-zA-Z]+\.[a-zA-Z]+\.[a-zA-Z]+(?:\.[a-zA-Z]+)*`(?:\*)?$/
+    google_perm_tester = /^`[a-zA-Z]+\.[a-zA-Z]+\.[a-zA-Z]+(?:\.[a-zA-Z]+)*`(?:[\*\u2020\u2021])?$/
     footnote_symbol_found = 0
     permission_list_found = 0
 
@@ -408,7 +408,7 @@ def readme_invalid_credentials?(file, file_lines)
       fail_message += "```- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:```\n\n"
     end
 
-    flexera_perm_tester = /^`[a-zA-Z0-9\-_\.]+`(?:\*)?$/
+    flexera_perm_tester = /^`[a-zA-Z0-9\-_\.]+`(?:[\*\u2020\u2021])?$/
     footnote_symbol_found = 0
     permission_list_found = 0
 
