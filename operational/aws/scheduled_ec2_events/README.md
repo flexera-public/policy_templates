@@ -36,9 +36,11 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `ec2:DescribeInstances`
   - `ec2:DescribeInstanceStatus`
   - `ec2:DescribeRegions`
-  - `sts:GetCallerIdentity`k
+  - `sts:GetCallerIdentity`‡
 
 \* Only required for taking action (terminating or downsizing); the policy will still function in a read-only capacity without these permissions.
+
+‡ Only required if using Customer Managed KMS Key on Volumes mounted by EC2 Instance(s)
 
   Example IAM Permission Policy:
 
