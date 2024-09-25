@@ -99,7 +99,7 @@ def extract_permissions_from_readme(readme_content)
       # Extract the text from this section
       section_text = readme_content[section_start..-1]
 
-      # Find the line starting with '/*' or '†' to get any specific notes around permissions from the README
+      # Find the line starting with '/*', '†' or '‡' to get any specific notes around permissions from the README
       list_of_notes = []
       # note = ""
       section_text.each_line do |line|
@@ -111,6 +111,9 @@ def extract_permissions_from_readme(readme_content)
         elsif line.strip.start_with?("\u2020")
           dagger_note = line.strip.sub(/^\†\s*/, '')
           list_of_notes << { symbol: "†", detail: dagger_note }
+        elsif line.strip.start_with?("\u2021")
+          cross_dagger_note = line.strip.sub(/^\‡\s*/, '')
+          list_of_notes << { symbol: "‡", detail: cross_dagger_note }
         end
       end
 
