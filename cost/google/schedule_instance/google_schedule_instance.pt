@@ -14,7 +14,7 @@ info(
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
@@ -136,6 +136,73 @@ datasource "ds_applied_policy" do
     path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
     header "Api-Version", "1.0"
   end
+end
+
+# Get Child policies incidents
+datasource "ds_applied_policy_action_status" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/action_status"])
+    header "Api-Version", "1.0"
+    query "applied_policy_id", policy_id
+    query "view", "extended"
+  end
+  result do
+    encoding "json"
+    collect jq(response, 'select(.count > 0) | .items[] | select(.name == "esc_execute_schedules") | .action_items[]') do
+      # // field "id", jq(col_item, ".id")
+      # // field "status", jq(col_item, ".status")
+      # // field "name", jq(col_item, ".name")
+      # // field "label", jq(col_item, ".label")
+      # // field "action_items", jq(col_item, ".action_items", "array")
+      # // field "automatic", jq(col_item, ".automatic")
+      # // field "type", jq(col_item, ".type")
+      # // field "started_at", jq(col_item, ".started_at")
+      # // field "finished_at", jq(col_item, ".finished_at")
+      # // field "run_by_email", jq(col_item, ".run_by.email")
+      # // field "run_by_name", jq(col_item, ".run_by.name")
+      # // field "run_by_id", jq(col_item, ".run_by.id")
+      field "process_href", jq(col_item, ".process_href")
+    end
+  end
+end
+
+# Get Child policies incidents
+datasource "ds_action_details" do
+  iterate $ds_applied_policy_action_status
+  request do
+    run_script $js_action_details, iter_item
+  end
+end
+
+# curl 'https://cloud-workflow3.rightscale.com/cwf/v1/accounts/136976/processes/66f1021128c42f0f470bee26?view=expanded' -H 'X-Api-Version: 1.0' ...
+# curl 'https://cloud-workflow3.rightscale.com/cwf/v1/accounts/136976/processes/66f1021128c42f0f470bee26/profile' -H 'X-Api-Version: 1.0'
+script "js_action_details", type: "javascript" do
+  parameters "iter_item"
+  result "request"
+  code <<-EOS
+  var process_href = iter_item['process_href']
+  // Protocol is everything before the first ://
+  var protocol = process_href.split('://')[0]
+  // Host is everything between the first :// and the first / (so 3rd element)
+  var host = process_href.split('/')[2]
+  // Path is everything after the host
+  var path = '/' + process_href.split('/').slice(3).join('/')
+  // Construct the request object
+  var request = {
+    auth: "auth_flexera",
+    host: host,
+    path: path,
+    headers: {
+      "X-Api-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+    query_params: {
+      view: "expanded"
+    }
+  }
+EOS
 end
 
 datasource "ds_google_projects" do
@@ -504,6 +571,11 @@ end
 ###############################################################################
 
 policy "pol_schedule_instance" do
+  validate $ds_action_details do
+    summary_template "Google Scheduled VM Instances - Action Status"
+    detail_template "{{ data }}"
+    check false # Create incident if there is at least one action status
+  end
   validate_each $ds_instances_schedule_result do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Scheduled VM Instances"
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
