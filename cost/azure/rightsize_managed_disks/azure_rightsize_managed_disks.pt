@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "2.4.0",
+  version: "2.4.1",
   provider: "Azure",
   service: "Managed Disks",
   policy_set: "Rightsize Storage",
@@ -1060,42 +1060,52 @@ script "js_disk_rightsizing_recommendations", type: "javascript" do
     return priceData
   }
 
+  // When looking at the findPremSsdV2Price function check: https://learn.microsoft.com/es-es/azure/virtual-machines/disks-types#premium-ssd-v2-performance
   function findPremSsdV2Price(diskRegion, currentUsedGB, currentUsedIops, currentUsedThroughput) {
     var premSsdV2Pricing = ds_azure_md_pricing[diskRegion]
     if (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY === undefined) { return }
-    if (currentUsedIops <= 3000 && currentUsedThroughput <= 3000) {
+    if (currentUsedIops <= 3000 && currentUsedThroughput <= 125) {
       return {
         pricePerUnit: Math.round( premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.pricePerUnit * 720 * currentUsedGB ),
         currencyCode: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.currencyCode,
         sizeGiB: currentUsedGB,
-        // Premium SSD v2 provides a baseline performance of 3,000 IOPS and 125 MB/s for any disk size
+        // Premium SSD v2 provides a baseline performance of 3000 IOPS and 125 MB/s for any disk size without extra charge.
         IOPS: 3000,
         throughput: 125,
         unitOfMeasure: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.unitOfMeasure
       }
     }
-    var diskIopsAndThroughputDontFitInDiskSize = true
     var suggestedDiskSize = currentUsedGB
     var maxIops = 0
     var maxThroughput = 0
-    while (diskIopsAndThroughputDontFitInDiskSize) {
-      maxIops = suggestedDiskSize * 500
-      maxThroughput = maxIops * 0.25
+    while (true) {
+      if (suggestedDiskSize <= 6) {
+        maxIops = 3000
+      } else {
+        maxIops = 3000 + (suggestedDiskSize - 6) * 500
+        if (maxIops > 80000) {
+          maxIops = 80000
+        }
+      }
+      maxThroughput = maxIops / 4
+      if (maxThroughput > 1250) {
+        maxThroughput = 1250
+      }
       if (currentUsedIops <= maxIops && currentUsedThroughput <= maxThroughput) {
-        diskIopsAndThroughputDontFitInDiskSize = false
+        break
       }
       suggestedDiskSize += 1
     }
     return {
       pricePerUnit: Math.round(
-          (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.pricePerUnit * 720 * suggestedDiskSize)
-        + (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_IOPS.pricePerUnit * 720 * currentUsedIops)
-        + (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_THROUGHPUT_MBPS.pricePerUnit * 720 * currentUsedThroughput)
+          (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.pricePerUnit        * 720 * suggestedDiskSize)
+        + (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_IOPS.pricePerUnit            * 720 * (currentUsedIops - 3000))       // At this point currentUsedIops is greater than 3000.
+        + (premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_THROUGHPUT_MBPS.pricePerUnit * 720 * (currentUsedThroughput - 125))  // At this point currentUsedThroughput is greater than 125.
       ),
       currencyCode: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.currencyCode,
       sizeGiB: suggestedDiskSize,
-      IOPS: maxIops,
-      throughput: maxThroughput,
+      IOPS: currentUsedIops,
+      throughput: currentUsedThroughput,
       unitOfMeasure: premSsdV2Pricing.PREMIUM_LRS_PROVISIONED_CAPACITY.unitOfMeasure,
     }
   }
