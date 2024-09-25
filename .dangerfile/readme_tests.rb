@@ -268,7 +268,6 @@ def readme_invalid_credentials?(file, file_lines)
 
     # Hash to track the presence of each footnote symbol in the permission list
     footnote_symbols = { "*" => false,  "†" => false, "‡" => false }
-
     permission_list_found = 0
 
     aws_permission_text.each_with_index do |line, index|
@@ -331,7 +330,9 @@ def readme_invalid_credentials?(file, file_lines)
     end
 
     azure_perm_tester = /^`Microsoft\.[a-zA-Z]+\/[a-zA-Z]+\/[a-zA-Z]+(?:\/[a-zA-Z]+)*`(?:[\*\u2020\u2021])?$/
-    footnote_symbol_found = 0
+
+    # Hash to track the presence of each footnote symbol in the permission list
+    footnote_symbols = { "*" => false,  "†" => false, "‡" => false }
     permission_list_found = 0
 
     azure_permission_text.each_with_index do |line, index|
@@ -343,9 +344,12 @@ def readme_invalid_credentials?(file, file_lines)
         if !line.start_with?("  - ")
           permission_list_found = 2
         else
-          footnote_symbol_found = 1 if line.strip.end_with?("*", "\u2020", "\u2021")
+          footnote_symbols["*"] = true if line.strip.end_with?("*")
+          footnote_symbols["†"] = true if line.strip.end_with?("\u2020")
+          footnote_symbols["‡"] = true if line.strip.end_with?("\u2021")
 
-          if !line.split("  - ")[1].match?(azure_perm_tester)
+          permission_action = line.split("  - ")[1]
+          if permission_action.nil? || !permission_action.match?(azure_perm_tester)
             fail_message += "Line #{line_number.to_s}: Azure permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
             fail_message += "```  - `Microsoft.Compute/snapshots/delete`*```\n"
             fail_message += "```  - `Microsoft.Compute/snapshots/read` ```\n"
@@ -353,20 +357,32 @@ def readme_invalid_credentials?(file, file_lines)
           end
         end
       end
-
-      footnote_symbol_found = 2 if footnote_symbol_found == 1 && line.start_with?('  \* ', '  † ', '  ‡ ')
     end
 
+    # Check for missing footnotes for any symbols that were found in the permissions list
+    footnote_symbols.each do |symbol, found|
+      next unless found # Only check if the symbol was found in the permission list
+
+      # Search for corresponding footnote explanation
+      if symbol == "*"
+        if !azure_permission_text.any? { |line| line.strip.start_with?("\\*") }
+          fail_message += "Permission list contains a permission with an asterisk (*), but no corresponding footnote explaining it. Please add a footnote starting with `  \\* ` like so:\n\n"
+          fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
+        end
+      else
+        if !azure_permission_text.any? { |line| line.strip.start_with?(symbol) }
+          fail_message += "Permission list contains a permission with an #{symbol} symbol, but no corresponding footnote explaining it. Please add a footnote starting with `  #{symbol} ` like so:\n\n"
+          fail_message += "```  #{symbol} Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
+        end
+      end
+    end
+
+    # Check if no permission list was found
     if permission_list_found == 0
       fail_message += "Azure permission list missing or formatted incorrectly. Please ensure there is a list of permissions beneath the Azure permission statement. Each list item should begin with [space][space][hyphen][space] like so:\n\n"
       fail_message += "```  - `Microsoft.Compute/snapshots/delete`*```\n"
       fail_message += "```  - `Microsoft.Compute/snapshots/read` ```\n"
       fail_message += "```  - `Microsoft.Insights/metrics/read` ```\n\n"
-    end
-
-    if footnote_symbol_found == 1
-      fail_message += "Azure permission list contains a permission with a footnote symbol (e.g., an asterisk, dagger or crossed dagger) but no footnote explaining why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][footnote symbol][space] like so:\n\n"
-      fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n\n"
     end
   end
 
