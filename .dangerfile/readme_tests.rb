@@ -277,7 +277,7 @@ def readme_invalid_credentials?(file, file_lines)
         if !line.start_with?("  - ")
           permission_list_found = 2
         else
-          footnote_symbol_found = 1 if line.strip.end_with?("*", "†", "‡")
+          footnote_symbol_found = 1 if line.strip.end_with?("*", "\u2020", "‡")
 
           if !line.split("  - ")[1].match?(aws_perm_tester)
             fail_message += "Line #{line_number.to_s}: AWS permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
@@ -326,7 +326,7 @@ def readme_invalid_credentials?(file, file_lines)
         if !line.start_with?("  - ")
           permission_list_found = 2
         else
-          footnote_symbol_found = 1 if line.strip.end_with?("*", "†", "‡")
+          footnote_symbol_found = 1 if line.strip.end_with?("*", "\u2020", "‡")
 
           if !line.split("  - ")[1].match?(azure_perm_tester)
             fail_message += "Line #{line_number.to_s}: Azure permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
@@ -372,7 +372,7 @@ def readme_invalid_credentials?(file, file_lines)
         if !line.start_with?("  - ")
           permission_list_found = 2
         else
-          footnote_symbol_found = 1 if line.strip.end_with?("*", "†", "‡")
+          footnote_symbol_found = 1 if line.strip.end_with?("*", "\u2020", "‡")
 
           if !line.split("  - ")[1].match?(google_perm_tester)
             fail_message += "Line #{line_number.to_s}: Google permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
@@ -421,7 +421,7 @@ def readme_invalid_credentials?(file, file_lines)
         if !line.start_with?("  - ")
           permission_list_found = 2
         else
-          footnote_symbol_found = 1 if line.strip.end_with?("*", "†", "‡")
+          footnote_symbol_found = 1 if line.strip.end_with?("*", "\u2020", "‡")
 
           if !line.split("  - ")[1].match?(flexera_perm_tester)
             fail_message += "Line #{line_number.to_s}: Flexera permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
