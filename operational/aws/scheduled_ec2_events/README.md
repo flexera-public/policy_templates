@@ -36,7 +36,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `ec2:DescribeInstances`
   - `ec2:DescribeInstanceStatus`
   - `ec2:DescribeRegions`
-  - `sts:GetCallerIdentity`
+  - `sts:GetCallerIdentity`k
 
 \* Only required for taking action (terminating or downsizing); the policy will still function in a read-only capacity without these permissions.
 
