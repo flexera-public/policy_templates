@@ -277,30 +277,33 @@ def readme_invalid_credentials?(file, file_lines)
         if !line.start_with?("  - ")
           permission_list_found = 2
         else
-          asterix_found = 1 if line.strip.end_with?("*")
+          asterix_found = 1 if line.strip.end_with?("*", "†", "‡")
 
           if !line.split("  - ")[1].match?(aws_perm_tester)
             fail_message += "Line #{line_number.to_s}: AWS permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
             fail_message += "```  - `rds:DeleteDBSnapshot`*```\n"
+            fail_message += "```  - `ec2:TerminateInstances`†```\n"
             fail_message += "```  - `sts:GetCallerIdentity` ```\n"
             fail_message += "```  - `cloudtrail:LookupEvents` ```\n\n"
           end
         end
       end
 
-      asterix_found = 2 if asterix_found == 1 && line.start_with?('  \* ')
+      asterix_found = 2 if asterix_found == 1 && line.start_with?('  \* ', '  † ', '  ‡ ')
     end
 
     if permission_list_found == 0
       fail_message += "AWS permission list missing or formatted incorrectly. Please ensure there is a list of permissions beneath the AWS permission statement. Each list item should begin with [space][space][hyphen][space] like so:\n\n"
       fail_message += "```  - `rds:DeleteDBSnapshot`*```\n"
+      fail_message += "```  - `ec2:TerminateInstances`†```\n"
       fail_message += "```  - `sts:GetCallerIdentity` ```\n"
       fail_message += "```  - `cloudtrail:LookupEvents` ```\n\n"
     end
 
     if asterix_found == 1
-      fail_message += "AWS permission list contains a permission with an asterix but no footnote explaning why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][asterix][space] like so:\n\n"
-      fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n\n"
+      fail_message += "AWS permission list contains a permission with a footnote symbol (e.g., an asterisk, dagger or crossed dagger) but no footnote explaining why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][footnote symbol][space] like so:\n\n"
+      fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
+      fail_message += "```  ‡ Only required if using Customer Managed KMS Key on Volumes mounted by EC2 Instance(s)```\n\n"
     end
   end
 
@@ -323,7 +326,7 @@ def readme_invalid_credentials?(file, file_lines)
         if !line.start_with?("  - ")
           permission_list_found = 2
         else
-          asterix_found = 1 if line.strip.end_with?("*")
+          asterix_found = 1 if line.strip.end_with?("*", "†", "‡")
 
           if !line.split("  - ")[1].match?(azure_perm_tester)
             fail_message += "Line #{line_number.to_s}: Azure permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
@@ -345,7 +348,7 @@ def readme_invalid_credentials?(file, file_lines)
     end
 
     if asterix_found == 1
-      fail_message += "Azure permission list contains a permission with an asterix but no footnote explaning why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][asterix][space] like so:\n\n"
+      fail_message += "Azure permission list contains a permission with a footnote symbol (e.g., an asterisk, dagger or crossed dagger) but no footnote explaining why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][footnote symbol][space] like so:\n\n"
       fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n\n"
     end
   end
@@ -391,7 +394,7 @@ def readme_invalid_credentials?(file, file_lines)
     end
 
     if asterix_found == 1
-      fail_message += "Google permission list contains a permission with an asterix but no footnote explaning why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][asterix][space] like so:\n\n"
+      fail_message += "Google permission list contains a permission with a footnote symbol (e.g., an asterisk, dagger or crossed dagger) but no footnote explaining why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][footnote symbol][space] like so:\n\n"
       fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n\n"
     end
   end
@@ -433,7 +436,7 @@ def readme_invalid_credentials?(file, file_lines)
     end
 
     if asterix_found == 1
-      fail_message += "Flexera permission list contains a permission with an asterix but no footnote explaning why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][asterix][space] like so:\n\n"
+      fail_message += "Flexera permission list contains a permission with a footnote symbol (e.g., an asterisk, dagger or crossed dagger) but no footnote explaining why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][footnote symbol][space] like so:\n\n"
       fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n\n"
     end
   end
