@@ -337,7 +337,7 @@ def readme_invalid_credentials?(file, file_lines)
         end
       end
 
-      asterix_found = 2 if asterix_found == 1 && line.start_with?('  \* ')
+      asterix_found = 2 if asterix_found == 1 && line.start_with?('  \* ', '  † ', '  ‡ ')
     end
 
     if permission_list_found == 0
@@ -383,7 +383,7 @@ def readme_invalid_credentials?(file, file_lines)
         end
       end
 
-      asterix_found = 2 if asterix_found == 1 && line.start_with?('  \* ')
+      asterix_found = 2 if asterix_found == 1 && line.start_with?('  \* ', '  † ', '  ‡ ')
     end
 
     if permission_list_found == 0
@@ -427,7 +427,7 @@ def readme_invalid_credentials?(file, file_lines)
         end
       end
 
-      asterix_found = 2 if asterix_found == 1 && line.start_with?('  \* ')
+      asterix_found = 2 if asterix_found == 1 && line.start_with?('  \* ', '  † ', '  ‡ ')
     end
 
     if permission_list_found == 0
