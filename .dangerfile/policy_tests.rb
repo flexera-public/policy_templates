@@ -1229,7 +1229,7 @@ def policy_bad_comma_spacing?(file, file_lines)
     line_number = index + 1
     line = line.strip
     if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")') && !line.include?("jq(") && !line.include?("/,/")
-      if line.match(/,\s{2,}/) || line.match(/\s,/) || line.match(/,[^\s]/) && !(line.match(/\',\'/) || line.match(/\",\"/))
+      if line.match(/,\s{2,}/) || line.match(/\s,/) || line.match(/,[^\s]/) && !(line.match(/\',\'/) || line.match(/\",\"/) || line.match(/\`,\`/))
         if fail_message.empty?
           fail_message += "\n\n"
         end
