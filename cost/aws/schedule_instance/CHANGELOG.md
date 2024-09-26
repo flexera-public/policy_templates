@@ -1,5 +1,9 @@
 # Changelog
 
+## V7.0.1
+
+- Minor changes to policy template to pass lint tests. No functional changes.
+
 ## v7.0.0
 
 - Remove `next_stop`, `next_start` label requirements
