@@ -334,7 +334,7 @@ end
     fields = [] # Provide a default value, which is no fields declared
     # Check if export_block is length > 0
     if export_block.length > 0
-      fields = export_block[0].scan(/field\s+"[^"]+"/).flatten
+      fields = export_block[0].scan(/(^.*field\s+\".*?\".*?end)/m).flatten
     end
     fields.each do |field|
       # Remove path from the field output in the meta parent
