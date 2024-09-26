@@ -514,9 +514,9 @@ script "js_azure_sql_instances_metrics", type: "javascript" do
     verb: "GET",
     path: resource_id + "/providers/microsoft.insights/metrics",
     query_params: {
-      "api-version": "2023-03-01",
+      "api-version": "2024-02-01",
       "timespan": timespan,
-      "metricnames": "storage",
+      "metricnames": "storage_space_used_mb",
       "aggregation": "total",
       "interval": "PT1M"
     },
@@ -529,46 +529,64 @@ script "js_azure_sql_instances_metrics", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_sql_instances_with_used_space" do
-  run_script $js_azure_sql_instances_with_used_space, $ds_azure_sql_instances_metrics
+datasource "ds_oversized_azure_sql_instances" do
+  run_script $js_oversized_azure_sql_instances, $ds_azure_sql_instances_metrics, $param_recommendation_threshold
 end
 
-script "js_azure_sql_instances_with_used_space", type: "javascript" do
-  parameters "ds_azure_sql_instances_metrics"
+script "js_oversized_azure_sql_instances", type: "javascript" do
+  parameters "ds_azure_sql_instances_metrics", "param_recommendation_threshold"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   _.each(ds_azure_sql_instances_metrics, function(db) {
-    metrics = _.sortBy(db["value"][0]["timeseries"][0]["data"], "timeStamp").reverse()
-    usedSpace = metrics[0]["total"]
+    raw_metrics = []
+    if (db["value"][0]["timeseries"][0]["data"]) { raw_metrics = db["value"][0]["timeseries"][0]["data"] }
+    metrics = _.compact(_.pluck(_.sortBy(raw_metrics, "timeStamp").reverse(), "total"))
 
-    tags = []
+    usedSpaceGB = null
+    if (metrics.length > 0) { usedSpaceGB = metrics[0] / 1024 }
 
-    if (typeof(db['tags']) == 'object') {
-      tags = _.map(_.keys(db['tags']), function(key) { return [key, db['tags'][key]].join('=') })
+    if (usedSpaceGB && db["storageSizeInGB"] > 32) {
+      // Calculate smallest size that meets threshold requirement
+      newSizeGB = db["storageSizeInGB"]
+      threshold = (100 - param_recommendation_threshold) / 100
+
+      while (usedSpaceGB / newSizeGB < threshold) { newSizeGB -= 32 }
+      newSizeGB += 32
+      if (newSizeGB < 32) { newSizeGB = 32 }
+
+      if (newSizeGB < db["storageSizeInGB"]) {
+        tags = []
+
+        if (typeof(db['tags']) == 'object') {
+          tags = _.map(_.keys(db['tags']), function(key) { return [key, db['tags'][key]].join('=') })
+        }
+
+        result.push({
+          id: db["id"],
+          name: db["name"],
+          type: db["type"],
+          region: db["region"],
+          sku: db["sku"],
+          collation: db["collation"],
+          dnsZone: db["dnsZone"],
+          state: db["state"],
+          storageSizeInGB: db["storageSizeInGB"],
+          subnetId: db["subnetId"],
+          vCores: db["vCores"],
+          resourceGroup: db["resourceGroup"],
+          accountID: db["subscriptionID"],
+          accountName: db["subscriptionName"],
+          usedSpaceGB: usedSpaceGB,
+          usedSpaceMB: metrics[0],
+          newSizeGB: newSizeGB,
+          service: "Microsoft.Sql",
+          platform: "Azure SQL Managed Instance"
+          tags: tags.join(", ")
+        })
+      }
     }
-
-    result.push({
-      id: db["id"],
-      name: db["name"],
-      type: db["type"],
-      region: db["region"],
-      sku: db["sku"],
-      tags: tags.join(", "),
-      collation: db["collation"],
-      dnsZone: db["dnsZone"],
-      state: db["state"],
-      storageSizeInGB: db["storageSizeInGB"],
-      subnetId: db["subnetId"],
-      vCores: db["vCores"],
-      resourceGroup: db["resourceGroup"],
-      accountID: db["subscriptionID"],
-      accountName: db["subscriptionName"],
-      usedSpace: usedSpace,
-      service: "Microsoft.Sql",
-      platform: "Azure SQL Managed Instance"
-    })
   })
 EOS
 end
@@ -583,11 +601,11 @@ datasource "ds_azure_db_storage_cost_map" do
 end
 
 datasource "ds_azure_sql_instances_incident" do
-  run_script $js_azure_sql_instances_incident, $ds_azure_sql_instances_with_used_space, $ds_azure_db_storage_cost_map, $ds_currency, $ds_applied_policy, $param_recommendation_threshold, $param_min_savings
+  run_script $js_azure_sql_instances_incident, $ds_oversized_azure_sql_instances, $ds_azure_db_storage_cost_map, $ds_currency, $ds_applied_policy, $param_recommendation_threshold, $param_min_savings
 end
 
 script "js_azure_sql_instances_incident", type: "javascript" do
-  parameters "ds_azure_sql_instances_with_used_space", "ds_azure_db_storage_cost_map", "ds_currency", "ds_applied_policy", "param_recommendation_threshold", "param_min_savings"
+  parameters "ds_oversized_azure_sql_instances", "ds_azure_db_storage_cost_map", "ds_currency", "ds_applied_policy", "param_recommendation_threshold", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -611,66 +629,54 @@ script "js_azure_sql_instances_incident", type: "javascript" do
   result = []
   total_savings = 0.0
 
-  _.each(ds_azure_sql_instances_with_used_space, function(db) {
-    // 32 GB is the minimum size, so we can ignore anything already at the smallest size
-    if (db["storageSizeInGB"] > 32) {
-      usedSpace = db["usedSpace"] / 1073741824
-      newSize = db["storageSizeInGB"]
-      threshold = param_recommendation_threshold / 100
+  _.each(ds_oversized_azure_sql_instances, function(db) {
+    cost = ds_azure_db_storage_cost_map[db["region"]][db["sku"]["tier"]]["unitPrice"]
+    savings = ((db["storageSizeInGB"] * cost) - (db["newSizeGB"] * cost)) * ds_currency["exchange_rate"]
 
-      while (usedSpace / newSize > threshold) { newSize -= 32 }
-      newSize += 32
+    if (savings >= param_min_savings) {
+      total_savings += savings
 
-      if (newSize < db["storageSizeInGB"] && newSize >= 32) {
-        cost = ds_azure_db_storage_cost_map[db['region']][db["sku"]["tier"]]["unitPrice"]
-        savings = ((db["storageSizeInGB"] * cost) - (newSize * cost)) * ds_currency['exchange_rate']
+      recommendationDetails = [
+        "Downsize storage for Azure SQL Managed Instance ", db["name"], " ",
+        "in Azure Subscription ", db["accountName"], " ",
+        "(", db["accountID"], ") ",
+        "from ", db["storageSizeInGB"], " GiB ",
+        "to ", db["newSizeGB"], " GiB"
+      ].join('')
 
-        if (savings >= param_min_savings) {
-          total_savings += savings
-
-          recommendationDetails = [
-            "Downsize storage for Azure SQL Managed Instance ", db["name"], " ",
-            "in Azure Subscription ", db["accountName"], " ",
-            "(", db["accountID"], ") ",
-            "from ", db["storageSizeInGB"], " GiB ",
-            "to ", newSize, " GiB"
-          ].join('')
-
-          result.push({
-            id: db["id"],
-            resourceID: db["id"],
-            resourceName: db["name"],
-            type: db["type"],
-            region: db["region"],
-            sku: db["sku"],
-            skuName: db["sku"]["name"],
-            skuTier: db["sku"]["tier"],
-            skuCapacity: db["sku"]["capacity"],
-            skuFamily: db["sku"]["family"],
-            tags: db["tags"],
-            collation: db["collation"],
-            dnsZone: db["dnsZone"],
-            state: db["state"],
-            subnetId: db["subnetId"],
-            vCores: db["vCores"],
-            resourceGroup: db["resourceGroup"],
-            accountID: db["accountID"],
-            accountName: db["accountName"],
-            usedSpace: Math.round(db["usedSpace"] / 1073741824 * 100) / 100,
-            service: db["service"],
-            platform: db["platform"],
-            resourceType: db["storageSizeInGB"],
-            newResourceType: newSize,
-            recommendationDetails: recommendationDetails,
-            savings: Math.round(savings * 1000) / 1000,
-            savingsCurrency: ds_currency['symbol'],
-            policy_name: ds_applied_policy["name"],
-            threshold: param_recommendation_threshold,
-            message: "",
-            total_savings: ""
-          })
-        }
-      }
+      result.push({
+        id: db["id"],
+        resourceID: db["id"],
+        resourceName: db["name"],
+        type: db["type"],
+        region: db["region"],
+        sku: db["sku"],
+        skuName: db["sku"]["name"],
+        skuTier: db["sku"]["tier"],
+        skuCapacity: db["sku"]["capacity"],
+        skuFamily: db["sku"]["family"],
+        tags: db["tags"],
+        collation: db["collation"],
+        dnsZone: db["dnsZone"],
+        state: db["state"],
+        subnetId: db["subnetId"],
+        vCores: db["vCores"],
+        resourceGroup: db["resourceGroup"],
+        accountID: db["accountID"],
+        accountName: db["accountName"],
+        usedSpaceGB: Math.round(db["usedSpaceGB"] * 100) / 100,
+        service: db["service"],
+        platform: db["platform"],
+        resourceType: db["storageSizeInGB"],
+        newResourceType: db["newSizeGB"],
+        recommendationDetails: recommendationDetails,
+        savings: Math.round(savings * 1000) / 1000,
+        savingsCurrency: ds_currency['symbol'],
+        policy_name: ds_applied_policy["name"],
+        threshold: param_recommendation_threshold,
+        message: "",
+        total_savings: ""
+      })
     }
   })
 
@@ -683,7 +689,7 @@ script "js_azure_sql_instances_incident", type: "javascript" do
     formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['t_separator'])
   ].join('')
 
-  total_dbs = ds_azure_sql_instances_with_used_space.length.toString()
+  total_dbs = ds_oversized_azure_sql_instances.length.toString()
   total_overprovisioned = result.length.toString()
   overprovisioned_percentage = (total_overprovisioned / total_dbs * 100).toFixed(2).toString() + '%'
 
@@ -725,7 +731,7 @@ script "js_azure_sql_instances_incident", type: "javascript" do
     resourceGroup: "",
     accountID: "",
     accountName: "",
-    usedSpace: "",
+    usedSpaceGB: "",
     service: "",
     platform: "",
     resourceType: "",
@@ -760,7 +766,7 @@ policy "pol_azure_sql_utilization" do
     check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     escalate $esc_email
     escalate $esc_downsize_sqlmi_storage
-    hash_exclude "tags", "usedSpace", "policy_name", "total_savings", "message"
+    hash_exclude "tags", "usedSpaceGB", "policy_name", "total_savings", "message"
     export do
       resource_level true
       field "accountID" do
@@ -802,7 +808,7 @@ policy "pol_azure_sql_utilization" do
       field "type" do
         label "Type"
       end
-      field "usedSpace" do
+      field "usedSpaceGB" do
         label "Used Storage Space (GiB)"
       end
       field "resourceType" do
