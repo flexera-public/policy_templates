@@ -1229,16 +1229,16 @@ def policy_bad_comma_spacing?(file, file_lines)
     line_number = index + 1
     line = line.strip
     if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")') && !line.include?("jq(") && !line.include?("/,/")
-      if line.match(/,\s{2,}/) || line.match(/\s,/) || line.match(/,[^\s]/) && !line.match(/\',\'/)
+      if line.match(/,\s{2,}/) || line.match(/\s,/) || line.match(/,[^\s]/) && !(line.match(/\',\'/) || line.match(/\",\"/))
         if fail_message.empty?
-          fail_message += "Possible invalid spacing between comma-separated items found.\n\n"
+          fail_message += "\n\n"
         end
         fail_message += "Line #{line_number.to_s}: `"+line+"`\n\n"
       end
     end
   end
 
-  fail_message = "Issues with comma-separation found:\n\n" + fail_message + "\n\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear" if !fail_message.empty?
+  fail_message = "Possible invalid spacing between comma-separated items found:\n\n" + fail_message + "\n\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear" if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
