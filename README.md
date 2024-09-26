@@ -97,6 +97,7 @@ These templates can generate savings estimates for your environment.
 - [Google Idle VM Recommender](./cost/google/idle_vm_recommendations)
 - [Google Old Snapshots](./cost/google/old_snapshots)
 - [Google Recommenders](./cost/google/recommender)
+- [Google Rightsize Cloud SQL Recommender](./cost/google/rightsize_cloudsql_recommendations)
 - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
 - [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/google)
 - [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/google)
@@ -411,6 +412,7 @@ These templates can generate savings estimates for your environment.
   - [Google Expiring Committed Use Discounts (CUD)](./cost/google/cud_expiration)
   - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
   - [Google Idle VM Recommender](./cost/google/idle_vm_recommendations)
+  - [Google Rightsize Cloud SQL Recommender](./cost/google/rightsize_cloudsql_recommendations)
   - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
   - [Google Schedule Instance](./cost/google/schedule_instance)
   - [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/google)
@@ -702,11 +704,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 130
+  Cost: 131
   Operational: 30
   SaaS Management: 11
   Security: 74
-:optimization_count: 67
+:optimization_count: 68
 :policy_sets:
   '': 46
   Allocate VMs: 3
@@ -750,7 +752,7 @@ These templates can generate savings estimates for your environment.
   Rightsize Clusters: 1
   Rightsize Compute Instances: 6
   Rightsize Containers: 1
-  Rightsize Database Instances: 8
+  Rightsize Database Instances: 9
   Rightsize Database Services: 1
   Rightsize Storage: 2
   Rightsize Synapse SQL Pools: 1
@@ -780,7 +782,7 @@ These templates can generate savings estimates for your environment.
   Flexera Optima: 1
   GCE: 2
   GitHub: 7
-  Google: 20
+  Google: 21
   Kubecost: 2
   Microsoft: 1
   Okta: 1
@@ -795,7 +797,7 @@ These templates can generate savings estimates for your environment.
   Cloud Cost Optimization: 19
   CloudTrail: 8
   Common Bill Ingestion: 3
-  Compute: 79
+  Compute: 80
   Config: 1
   DBS: 1
   Databricks: 1
@@ -827,7 +829,7 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 2
   Tags: 3
   Usage Discount: 6
-:total_count: 279
+:total_count: 280
 -->
 <!-- End Policy Template Stats -->
 

@@ -1,15 +1,15 @@
-name "Meta Parent: Google Idle Cloud SQL Instance Recommender"
+name "Meta Parent: Google Rightsize Cloud SQL Recommender"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Google Idle Cloud SQL Instance Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cloud_sql_idle_instance_recommendations) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Google Rightsize Cloud SQL Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_recommendations) Policies."
 severity "low"
 category "Meta"
 default_frequency "15 minutes"
 info(
   provider: "Google",
-  version: "4.1.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "0.1.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "true",
-  deprecated: "true"
+  deprecated: "false"
 )
 
 ##############################################################################
@@ -62,7 +62,7 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"Google Idle Cloud SQL Instance Recommender\" Policy Template from Catalog.  Optionally, you can use the \"Google Idle Cloud SQL Instance Recommender\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"Google Rightsize Cloud SQL Recommender\" Policy Template from Catalog.  Optionally, you can use the \"Google Rightsize Cloud SQL Recommender\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
@@ -111,12 +111,21 @@ parameter "param_exclusion_labels_boolean" do
   default "Any"
 end
 
+parameter "param_idle_or_underutilized" do
+  type "string"
+  category "Filters"
+  label "Report Idle or Underutilized"
+  description "Whether to report on idle Cloud SQL instances, underutilized Cloud SQL instances, or both."
+  allowed_values "Idle & Underutilized", "Idle", "Underutilized"
+  default "Idle & Underutilized"
+end
+
 parameter "param_automatic_action" do
   type "list"
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Stop Cloud SQL Instances", "Delete Cloud SQL Instances"]
+  allowed_values ["Downsize Cloud SQL Instances", "Stop Cloud SQL Instances", "Delete Cloud SQL Instances"]
   default []
 end
 
@@ -259,7 +268,7 @@ script "js_published_child_policy_information", type: "javascript" do
   result "result"
   code <<-EOS
   result = _.filter(ds_get_published_child_policy_information, function(item) {
-    return item['name'] == "Google Idle Cloud SQL Instance Recommender" && item['created_by'] == "support@flexera.com"
+    return item['name'] == "Google Rightsize Cloud SQL Recommender" && item['created_by'] == "support@flexera.com"
   })
 EOS
 end
@@ -292,7 +301,7 @@ script "js_project_child_policy_information", type: "javascript" do
   result "result"
   code <<-EOS
   result = _.filter(ds_get_project_child_policy_information, function(item) {
-    return item['name'] == "Google Idle Cloud SQL Instance Recommender"
+    return item['name'] == "Google Rightsize Cloud SQL Recommender"
   })
 EOS
 end
@@ -857,11 +866,33 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_recommendations_incident_combined_incidents" do
-  run_script $js_ds_recommendations_incident_combined_incidents, $ds_child_incident_details
+datasource "ds_underutil_incident_combined_incidents" do
+  run_script $js_ds_underutil_incident_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_recommendations_incident_combined_incidents", type: "javascript" do
+script "js_ds_underutil_incident_combined_incidents", type: "javascript" do
+  parameters "ds_child_incident_details"
+  result "result"
+  code <<-EOS
+  result = []
+  _.each(ds_child_incident_details, function(incident) {
+    s = incident["summary"];
+    // If the incident summary contains "Google Underutilized Cloud SQL Instances Found" then include it in the filter result
+    if (s.indexOf("Google Underutilized Cloud SQL Instances Found") > -1) {
+      _.each(incident["violation_data"], function(violation) {
+        violation["incident_id"] = incident["id"];
+        result.push(violation);
+      });
+    }
+  });
+EOS
+end
+
+datasource "ds_idle_incident_combined_incidents" do
+  run_script $js_ds_idle_incident_combined_incidents, $ds_child_incident_details
+end
+
+script "js_ds_idle_incident_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
@@ -879,6 +910,20 @@ script "js_ds_recommendations_incident_combined_incidents", type: "javascript" d
 EOS
 end
 
+
+# Escalation for Downsize VM Instances
+escalation "esc_downsize_instances" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
+  label "Downsize VM Instances"
+  description "Approval to downsize all selected Cloud SQL instances"
+
+  # Run declaration should go at end, after any parameters that may exist
+  run "esc_downsize_instances", data, rs_governance_host, rs_project_id
+end
+define esc_downsize_instances($data, $governance_host, $rs_project_id) do
+  $actions_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Downsize VM Instances", $action_options)
+end
 
 # Escalation for Stop Cloud SQL Instances
 escalation "esc_stop_instances" do
@@ -915,8 +960,103 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Google Idle Cloud SQL Instances Found
-  validate $ds_recommendations_incident_combined_incidents do
+    # Consolidated incident for Google Underutilized Cloud SQL Instances Found
+  validate $ds_underutil_incident_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Google Underutilized Cloud SQL Instances Found"
+    escalate $esc_email
+    escalate $esc_downsize_instances
+    check eq(size(data), 0)
+    export do
+      resource_level true
+      field "accountID" do
+        label "Project ID"
+      end
+      field "accountName" do
+        label "Project Name"
+      end
+      field "projectNumber" do
+        label "Project Number"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceType" do
+        label "Resource Tier"
+      end
+      field "newResourceType" do
+        label "Recommended Resource Tier"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "timeCreated" do
+        label "Created At"
+      end
+      field "primaryImpactCategory" do
+        label "Primary Impact Category"
+      end
+      field "tags" do
+        label "Labels"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "pricingPlan" do
+        label "Pricing Plan"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Currency"
+      end
+      field "priority" do
+        label "Priority"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "recommenderSubtype" do
+        label "Recommendation Sub Type"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "diskType" do
+        label "Disk Type"
+      end
+      field "size" do
+        label "Disk Size (GB)"
+      end
+      field "availabilityType" do
+        label "Availability"
+      end
+      field "replicationType" do
+        label "Replication"
+      end
+      field "state" do
+        label "State"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "selfLink" do
+        label "Resource Link"
+      end
+      field "id" do
+        label "ID"
+      end
+      field "incident_id" do
+        label "Child Incident ID"
+      end
+    end
+  end
+
+  # Consolidated incident for Google Idle Cloud SQL Instances Found
+  validate $ds_idle_incident_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} Google Idle Cloud SQL Instances Found"
     escalate $esc_email
     escalate $esc_stop_instances
@@ -937,7 +1077,10 @@ policy "policy_scheduled_report" do
         label "Resource ID"
       end
       field "resourceType" do
-        label "Resource Type"
+        label "Resource Tier"
+      end
+      field "newResourceType" do
+        label "Recommended Resource Tier"
       end
       field "region" do
         label "Region"
