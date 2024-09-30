@@ -1,4 +1,4 @@
-# AWS Cheaper Regions
+# AWS Cheaper Regionss
 
 ## What It Does
 
