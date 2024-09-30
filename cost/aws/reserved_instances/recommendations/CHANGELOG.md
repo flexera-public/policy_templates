@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.6.0
+
+- Added support for DynamoDB and MemoryDB reservation recommendations
+
 ## v3.5
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.

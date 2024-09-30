@@ -2,7 +2,10 @@
 
 ## What It Does
 
-This policy checks all applied policies against the same policy in the catalog to determine if the applied policy is using an outdated version of the catalog policy. An email is sent and an incident is raised with all outdated policies. Optionally, outdated policies can automatically be updated.
+This policy template checks all applied policies for the following:
+
+- Whether the policy template is an older version than the current version in the policy catalog.
+- Whether the policy template has been deprecated.
 
 The following policy types will always be ignored and not reported on by this policy:
 
@@ -20,19 +23,30 @@ The list of outdated policies is generated as follows:
 - The list of catalog policies are obtained using the [Active Policy List JSON file](https://github.com/flexera-public/policy_templates/blob/master/data/active_policy_list/active_policy_list.json) in the [policy-templates Github Repository](https://github.com/flexera-public/policy_templates).
 - The list of applied policies is filtered for just those applied policies that were applied from a catalog policy and whose version number does not match the version number in the catalog.
 
+The list of deprecated policies is generated as follows:
+
+- The list of applied policies are obtained using the [Flexera Policy API](https://reference.rightscale.com/governance-policies/).
+- The list of catalog policies are obtained using the [Active Policy List JSON file](https://github.com/flexera-public/policy_templates/blob/master/data/active_policy_list/active_policy_list.json) in the [policy-templates Github Repository](https://github.com/flexera-public/policy_templates).
+- The list of applied policies is filtered for just those applied policies marked as deprecated in the [Active Policy List JSON file](https://github.com/flexera-public/policy_templates/blob/master/data/active_policy_list/active_policy_list.json).
+
 Updating an outdated policy is done as follows:
 
-- The [major version](https://semver.org/) of the applied policy is compared to the catalog policy. If the major version has changed, an error is raised indicating that the update should be done manually. This is because a major version change usually involves major changes in functionality and input parameters that would require the user to intelligently determine how to apply the updated policy.
-- If the major version has not changed, the catalog policy is applied with the exact same configuration and settings as the existing applied policy.
+- The [major version](https://semver.org/) of the applied policy is compared to the catalog policy. If the major version has changed, and the `Allow Automated Major Version Updates` parameter is set to "Do Not Allow", an error is raised indicating that the update should be done manually. This is because a major version change usually involves major changes in functionality and input parameters that would require the user to intelligently determine how to apply the updated policy.
+- If the major version has not changed, or the `Allow Automated Major Version Updates` parameter is set to "Allow", the catalog policy is applied with the exact same configuration and settings as the existing applied policy.
 - If the above action was successful, the existing applied policy is deleted. If the above action failed, an error is raised and the existing applied policy remains in place so that the user can manually update as needed.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
 - *Email Addresses* - A list of email addresses to notify.
 - *Policy Ignore List* - A list of applied policy names and/or IDs to ignore and not report on. Leave blank to assess all applied policies.
+- *Policy Templates To Report* - Whether to report outdated policy templates, deprecated policy templates, or both. Separate incidents will be raised/emailed if both are selected and found.
+- *Allow Automated Major Version Updates* - Whether to allow actions to automatically update outdated policy templates when there's been a major version change. This is not recommended in most cases.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+## Policy Actions
+
+- Send an email report
+- Update applied policy to the newest version after approval
 
 ## Prerequisites
 
@@ -41,18 +55,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 ### Credential Configuration
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `governance:published_template:index`
-  - `governance:published_template:show`
-  - `governance:policy_aggregate:index`
-  - `governance:policy_aggregate:show`
-  - `governance:applied_policy:index`
-  - `governance:applied_policy:show`
-  - `governance:policy_aggregate:create`*
-  - `governance:policy_aggregate:delete`*
-  - `governance:applied_policy:create`*
-  - `governance:applied_policy:delete`*
+  - `policy_viewer`
+  - `policy_manager`*
 
-\* Only required for taking action (updating applied policies); the policy will still function in a read-only capacity without these permissions.
+  \* Only required for taking action (updating applied policies); the policy will still function in a read-only capacity without these permissions.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
