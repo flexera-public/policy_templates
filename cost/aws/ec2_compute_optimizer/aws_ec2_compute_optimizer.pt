@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.0",
+  version: "0.3.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -22,7 +22,7 @@ info(
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses to notify"
+  label "Email Addresses"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
   default []
 end
@@ -42,24 +42,6 @@ parameter "param_min_savings" do
   description "Minimum potential savings required to generate a recommendation. This is based on the value of the 'Estimated Monthly Savings' field."
   min_value 0
   default 0
-end
-
-parameter "param_arm_recommendations" do
-  type "string"
-  category "Policy Settings"
-  label "Include ARM Recommendations"
-  description "Whether or not to include recommendations that would involve migrating from x86-64 instances to ARM instances."
-  allowed_values "Yes", "No"
-  default "No"
-end
-
-parameter "param_multi_recommendations" do
-  type "string"
-  category "Policy Settings"
-  label "Show Multiple Recommendations"
-  description "Whether or not to show multiple recommendations for a single instance or to only show the one with the most savings potential. Note that including multiple recommendations per instance may skew metrics around potential savings in the Flexera One platform and is not recommended in most cases."
-  allowed_values "No", "Yes"
-  default "No"
 end
 
 parameter "param_exclusion_tags" do
@@ -95,6 +77,33 @@ parameter "param_regions_list" do
   description "A list of allowed or denied regions. See the README for more details"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
+end
+
+parameter "param_recommendations_cpu" do
+  type "list"
+  category "Filters"
+  label "CPU Family"
+  description "CPU family recommendations to include. Recommendations for CPU families not listed here will not be included in the results."
+  allowed_values ["x86-64 (Intel/AMD)", "ARM (Graviton)"]
+  default ["x86-64 (Intel/AMD)"]
+end
+
+parameter "param_recommendations_os" do
+  type "list"
+  category "Filters"
+  label "Operating System Family"
+  description "Which operating system families to include. EC2 instances not running one of the specified operating system families will not be included in the results."
+  allowed_values ["Windows", "Linux", "Other"]
+  default ["Windows", "Linux", "Other"]
+end
+
+parameter "param_multi_recommendations" do
+  type "string"
+  category "Filters"
+  label "Show Multiple Recommendations"
+  description "Whether or not to show multiple recommendations for a single instance or to only show the one with the most savings potential. Note that including multiple recommendations per instance may skew metrics around potential savings in the Flexera One platform and is not recommended in most cases."
+  allowed_values "No", "Yes"
+  default "No"
 end
 
 parameter "param_automatic_action" do
@@ -474,7 +483,7 @@ end
 datasource "ds_optimizer_recs" do
   iterate $ds_optimizer_requests
   request do
-    run_script $js_optimizer_recs, val(iter_item, 'region'), val(iter_item, 'arns'), $ds_aws_account, $param_arm_recommendations
+    run_script $js_optimizer_recs, val(iter_item, 'region'), val(iter_item, 'arns'), $ds_aws_account, $param_recommendations_cpu
   end
   result do
     encoding "json"
@@ -495,11 +504,13 @@ datasource "ds_optimizer_recs" do
 end
 
 script "js_optimizer_recs", type: "javascript" do
-  parameters "region", "arns", "ds_aws_account", "param_arm_recommendations"
+  parameters "region", "arns", "ds_aws_account", "param_recommendations_cpu"
   result "request"
   code <<-'EOS'
-  cpuVendorArchitectures = [ "CURRENT" ]
-  if (param_arm_recommendations == "Yes") { cpuVendorArchitectures.push("AWS_ARM64") }
+  cpuVendorArchitectures = _.map(param_recommendations_cpu, function(item) {
+    if (item == "x86-64 (Intel/AMD)") { return "CURRENT" }
+    if (item == "ARM (Graviton)") { return "AWS_ARM64" }
+  })
 
   var request = {
     auth: "auth_aws",
@@ -596,11 +607,11 @@ EOS
 end
 
 datasource "ds_recommendations_merged" do
-  run_script $js_recommendations_merged, $ds_optimizer_recs, $ds_instances, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_arm_recommendations, $param_multi_recommendations, $param_min_savings
+  run_script $js_recommendations_merged, $ds_optimizer_recs, $ds_instances, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_recommendations_cpu, $param_recommendations_os, $param_multi_recommendations, $param_min_savings
 end
 
 script "js_recommendations_merged", type: "javascript" do
-  parameters "ds_optimizer_recs", "ds_instances", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_arm_recommendations", "param_multi_recommendations", "param_min_savings"
+  parameters "ds_optimizer_recs", "ds_instances", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_recommendations_cpu", "param_recommendations_os", "param_multi_recommendations", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -713,7 +724,12 @@ script "js_recommendations_merged", type: "javascript" do
           savings = option['savingsOpportunity']['estimatedMonthlySavings']['value'] * ds_currency['exchange_rate']
           savings_after_discount = option['savingsOpportunityAfterDiscounts']['estimatedMonthlySavings']['value'] * ds_currency['exchange_rate']
 
-          if (savings >= param_min_savings) {
+          // Exclude OS families the user has opted not to include
+          os_family = "Other"
+          if (instance['platform'] && instance['platform'].indexOf("Windows") != -1) { os_family = "Windows" }
+          if (instance['platform'] && instance['platform'].indexOf("Linux") != -1) { os_family = "Linux" }
+
+          if (savings >= param_min_savings && _.contains(param_recommendations_os, os_family)) {
             total_savings += savings
 
             recommendationDetails = [
@@ -788,10 +804,20 @@ script "js_recommendations_merged", type: "javascript" do
     multi_message = "When AWS returned multiple recommendations for an EC2 instance, all recommendations were included in the results. The 'Recommendation Rank' field indicates which recommendation is most recommended, with rank 1 being the recommendation with the most potential savings. "
   }
 
-  arm_message = "ARM recommendations were omitted from the results.\n\n"
+  os_message = "The following operating system families were included in the results: " + param_recommendations_os.join(', ') + ". "
 
-  if (param_arm_recommendations == "Yes") {
-    arm_message = "ARM recommendations were included in the results where applicable.\n\n"
+  arm_message = "\n\n"
+
+  if (_.contains(param_recommendations_cpu, "ARM (Graviton)") && _.contains(param_recommendations_cpu, "x86-64 (Intel/AMD)")) {
+    arm_message = "Both x86-64 (Intel/AMD) and ARM (Graviton) recommendations were included in the results.\n\n"
+  }
+
+  if (_.contains(param_recommendations_cpu, "ARM (Graviton)") && !_.contains(param_recommendations_cpu, "x86-64 (Intel/AMD)")) {
+    arm_message = "Only ARM (Graviton) recommendations were included in the results.\n\n"
+  }
+
+  if (!_.contains(param_recommendations_cpu, "ARM (Graviton)") && _.contains(param_recommendations_cpu, "x86-64 (Intel/AMD)")) {
+    arm_message = "Only x86-64 (Intel/AMD) recommendations were included in the results.\n\n"
   }
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
@@ -837,7 +863,7 @@ script "js_recommendations_merged", type: "javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + multi_message + arm_message + disclaimer
+  result[0]['message'] = findings + multi_message + os_message + arm_message + disclaimer
 EOS
 end
 
