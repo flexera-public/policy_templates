@@ -96,7 +96,7 @@ def policy_readme_correct_name?(file, file_parsed)
   readme_name = File.read(readme_file_path).split("\n")[0].split("# ")[1].strip()
 
   if (template_name != readme_name)
-    fail_message = "Policy Template name `" + template_name "` does not match the first line of the README.md file. Please ensure that README.md has the correct policy template name on the first line."
+    fail_message = "Policy Template name `" + template_name + "` does not match the first line of the README.md file. Please ensure that README.md has the correct policy template name on the first line."
   end
 
   return fail_message.strip if !fail_message.empty?
