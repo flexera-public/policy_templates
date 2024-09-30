@@ -26,6 +26,7 @@ default_child_policy_template_files = [
   "../../cost/aws/rightsize_rds_instances/aws_rightsize_rds_instances.pt",
   "../../cost/aws/rds_instance_license_info/rds_instance_license_info.pt",
   "../../cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt",
+  "../../cost/aws/rightsize_elasticache/aws_rightsize_elasticache.pt",
   "../../cost/aws/s3_bucket_size/aws_bucket_size.pt",
   "../../cost/aws/s3_storage_policy/aws_s3_bucket_policy_check.pt",
   "../../cost/aws/schedule_instance/aws_schedule_instance.pt",
