@@ -82,7 +82,7 @@ parameter "param_stats_lookback" do
   type "number"
   category "Statistics"
   label "Statistic Lookback Period"
-  description "How many days back to look at CPU data for clusters. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
+  description "How many days back to look at CPU and memory usage data for clusters. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
   min_value 1
   max_value 90
   default 30
@@ -431,104 +431,109 @@ datasource "ds_elasticache_clusters" do
   end
 end
 
-datasource "ds_tag_requests" do
-  run_script $js_tag_requests, $ds_elasticache_clusters, $ds_aws_account
+datasource "ds_elasticache_size_list" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/elasticache_types.json"
+    header "User-Agent", "RS Policies"
+  end
 end
 
-script "js_tag_requests", type:"javascript" do
-  parameters "ds_elasticache_clusters", "ds_aws_account"
+datasource "ds_aws_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+# Filter out any clusters where a smaller size isn't available since we can't downsize them anyway
+datasource "ds_elasticache_clusters_resize_filtered" do
+  run_script $js_elasticache_clusters_resize_filtered, $ds_elasticache_clusters, $ds_elasticache_size_list, $ds_aws_instance_size_map, $ds_aws_account
+end
+
+script "js_elasticache_clusters_resize_filtered", type: "javascript" do
+  parameters "ds_elasticache_clusters", "ds_elasticache_size_list", "ds_aws_instance_size_map", "ds_aws_account"
   result "result"
   code <<-EOS
   result = []
 
-  // Sort clusters by region
-  clusters_by_region = _.groupBy(ds_elasticache_clusters, "region")
+  _.each(ds_elasticache_clusters, function(cluster) {
+    normalizedType = cluster["nodeType"].split("cache.")[1]
+    downType = null
 
-  _.each(_.keys(clusters_by_region), function(region) {
-    arns = []
-
-    for (var i = 0; i < clusters_by_region[region].length; i++) {
-      if ((i + 1) % 100 == 0) {
-        result.push({ arns: arns, region: region })
-        arns = []
-      } else {
-        arn = [
-          "arn:aws:elasticache:", region, ":", ds_aws_account["id"],
-          ":cluster:", clusters_by_region[region][i]["id"]
-        ].join('')
-
-        arns.push(arn)
+    if (ds_aws_instance_size_map[normalizedType] && ds_aws_instance_size_map[normalizedType]["down"]) {
+      if (_.contains(ds_elasticache_size_list, ds_aws_instance_size_map[normalizedType]["down"])) {
+        downType = "cache." + ds_aws_instance_size_map[normalizedType]["down"]
       }
+    }
+
+    if (downType) {
+      resourceARN = [
+        "arn:aws:elasticache:", cluster["region"], ":",
+        ds_aws_account["id"], ":cluster:", cluster["id"]
+      ].join("")
+
+      result.push({
+        id: cluster["id"],
+        statId: cluster["id"].replace(/-/g, '_'),
+        resourceID: cluster["id"],
+        resourceName: cluster["id"],
+        resourceARN: resourceARN,
+        status: cluster["status"],
+        numberOfNodes: cluster["numberOfNodes"],
+        autoMinorVersionUpgrade: cluster["autoMinorVersionUpgrade"],
+        availabilityZone: cluster["availabilityZone"],
+        createTime: cluster["createTime"],
+        engine: cluster["engine"],
+        engineVersion: cluster["engineVersion"],
+        region: cluster["region"],
+        resourceType: cluster["nodeType"],
+        newResourceType: downType,
+        vcpu: ds_aws_instance_size_map[normalizedType]["vcpu"],
+        memory: ds_aws_instance_size_map[normalizedType]["memory"]
+      })
     }
   })
 EOS
-end
-
-datasource "ds_resources_with_tags" do
-  iterate $ds_tag_requests
-  request do
-    auth $auth_aws
-    pagination $pagination_aws_tagging
-    verb "POST"
-    host join(["tagging.", val(iter_item, "region"), ".amazonaws.com"])
-    path "/"
-    header "X-Amz-Target", "ResourceGroupsTaggingAPI_20170126.GetResources"
-    header "Content-Type", "application/x-amz-json-1.1"
-    body_field "ResourceARNList", val(iter_item, "arns")
-    body_field "ResourcesPerPage", 100
-    body_field "ExcludeCompliantResources", "false"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "ResourceTagMappingList[*]") do
-      field "arn", jmes_path(col_item, "ResourceARN")
-      field "tags" do
-        collect jmes_path(col_item, "Tags[*]") do
-          field "key", jmes_path(col_item, "Key")
-          field "value", jmes_path(col_item, "Value")
-        end
-      end
-      field "region", val(iter_item, "region")
-    end
-  end
 end
 
 datasource "ds_elasticache_clusters_with_tags" do
-  run_script $js_elasticache_clusters_with_tags, $ds_elasticache_clusters, $ds_resources_with_tags, $ds_aws_account
-end
-
-script "js_elasticache_clusters_with_tags", type:"javascript" do
-  parameters "ds_elasticache_clusters", "ds_resources_with_tags", "ds_aws_account"
-  result "result"
-  code <<-EOS
-  tags_by_arn = {}
-  _.each(ds_resources_with_tags, function(resource) { tags_by_arn[resource['arn']] = resource['tags'] })
-
-  result = _.map(ds_elasticache_clusters, function(cluster) {
-    arn = [
-      "arn:aws:elasticache:", cluster["region"], ":", ds_aws_account["id"],
-      ":cluster:", cluster["id"]
-    ].join('')
-
-    tags = {}
-    if (tags_by_arn[arn]) { _.each(tags_by_arn[arn], function(item) { tags[item["key"]] = item["value"] }) }
-
-    return {
-      id: cluster["id"],
-      status: cluster["status"],
-      nodeType: cluster["nodeType"],
-      numberOfNodes: cluster["numberOfNodes"],
-      autoMinorVersionUpgrade: cluster["autoMinorVersionUpgrade"],
-      availabilityZone: cluster["availabilityZone"],
-      createTime: cluster["createTime"],
-      engine: cluster["engine"],
-      engineVersion: cluster["engineVersion"],
-      region: cluster["region"],
-      arn: arn,
-      tags: tags
-    }
-  })
-EOS
+  iterate $ds_elasticache_clusters_resize_filtered
+  request do
+    auth $auth_aws
+    host join(["elasticache.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "ResourceName", val(iter_item, "resourceARN")
+    query "Action", "ListTagsForResource"
+    query "Version", "2015-02-02"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
+    header "Accept", "application/json"
+  end
+  result do
+    encoding "json"
+    field "tags", jmes_path(response, "ListTagsForResourceResponse.ListTagsForResourceResult.TagList")
+    field "id", val(iter_item, "id")
+    field "statId", val(iter_item, "statId")
+    field "resourceID", val(iter_item, "resourceID")
+    field "resourceName", val(iter_item, "resourceName")
+    field "resourceARN", val(iter_item, "resourceARN")
+    field "status", val(iter_item, "status")
+    field "numberOfNodes", val(iter_item, "numberOfNodes")
+    field "autoMinorVersionUpgrade", val(iter_item, "autoMinorVersionUpgrade")
+    field "availabilityZone", val(iter_item, "availabilityZone")
+    field "createTime", val(iter_item, "createTime")
+    field "engine", val(iter_item, "engine")
+    field "engineVersion", val(iter_item, "engineVersion")
+    field "region", val(iter_item, "region")
+    field "resourceType", val(iter_item, "resourceType")
+    field "newResourceType", val(iter_item, "newResourceType")
+    field "vcpu", val(iter_item, "vcpu")
+    field "memory", val(iter_item, "memory")
+  end
 end
 
 datasource "ds_elasticache_clusters_tag_filtered" do
@@ -572,7 +577,12 @@ script "js_elasticache_clusters_tag_filtered", type: "javascript" do
   if (param_exclusion_tags.length > 0) {
     result = _.reject(ds_elasticache_clusters_with_tags, function(resource) {
       resource_tags = {}
-      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      if (typeof(resource['tags']) == 'object') {
+        _.each(resource['tags'], function(tag) {
+          resource_tags[tag['Key']] = tag['Value']
+        })
+      }
 
       // Store a list of found tags
       found_tags = []
@@ -608,80 +618,18 @@ script "js_elasticache_clusters_tag_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_elasticache_size_list" do
-  request do
-    verb "GET"
-    host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/aws/elasticache_types.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
-datasource "ds_aws_instance_size_map" do
-  request do
-    verb "GET"
-    host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
-# Filter out any clusters where a smaller size isn't available since we can't downsize them anyway
-datasource "ds_elasticache_clusters_resize_filtered" do
-  run_script $js_elasticache_clusters_resize_filtered, $ds_elasticache_clusters_tag_filtered, $ds_elasticache_size_list, $ds_aws_instance_size_map
-end
-
-script "js_elasticache_clusters_resize_filtered", type: "javascript" do
-  parameters "ds_elasticache_clusters_tag_filtered", "ds_elasticache_size_list", "ds_aws_instance_size_map"
-  result "result"
-  code <<-EOS
-  result = []
-
-  _.each(ds_elasticache_clusters_tag_filtered, function(cluster) {
-    normalizedType = cluster["nodeType"].split("cache.")[1]
-    downType = null
-
-    if (ds_aws_instance_size_map[normalizedType] && ds_aws_instance_size_map[normalizedType]["down"]) {
-      if (_.contains(ds_elasticache_size_list, ds_aws_instance_size_map[normalizedType]["down"]) {
-        downType = "cache." + ds_aws_instance_size_map[normalizedType]["down"]
-      }
-    }
-
-    if (downType) {
-      result.push({
-        id: cluster["id"],
-        resourceID: cluster["id"],
-        resourceName: cluster["id"],
-        resourceARN: cluster["arn"],
-        tags: cluster["tags"],
-        status: cluster["status"],
-        numberOfNodes: cluster["numberOfNodes"],
-        autoMinorVersionUpgrade: cluster["autoMinorVersionUpgrade"],
-        availabilityZone: cluster["availabilityZone"],
-        createTime: cluster["createTime"],
-        engine: cluster["engine"],
-        engineVersion: cluster["engineVersion"],
-        region: cluster["region"],
-        resourceType: cluster["nodeType"],
-        newResourceType: downType
-      })
-    }
-  })
-EOS
-end
-
 datasource "ds_cloudwatch_queries" do
-  run_script $js_cloudwatch_queries, $ds_elasticache_clusters_resize_filtered, $param_stats_lookback
+  run_script $js_cloudwatch_queries, $ds_elasticache_clusters_tag_filtered, $param_stats_lookback
 end
 
 script "js_cloudwatch_queries", type: "javascript" do
-  parameters "ds_elasticache_clusters_resize_filtered", "param_stats_lookback"
+  parameters "ds_elasticache_clusters_tag_filtered", "param_stats_lookback"
   result "result"
   code <<-EOS
   // Create the various queries we're going to send to CloudWatch for each instance
   result = {}
 
-  _.each(ds_elasticache_clusters_resize_filtered, function(cluster) {
+  _.each(ds_elasticache_clusters_tag_filtered, function(cluster) {
     // Make sure the queries object has an array for the region to push items to
     if (result[cluster['region']] == undefined || result[cluster['region']] == null) {
       result[cluster['region']] = []
@@ -697,13 +645,13 @@ script "js_cloudwatch_queries", type: "javascript" do
         if (metric == "FreeableMemory") { id_metric = "mem" }
 
         query = {
-          "Id": cluster['id'].replace('-', '_') + "___" + id_metric + "___" + stat,
+          "Id": cluster['statId'] + "___" + id_metric + "___" + stat,
           "MetricStat": {
             "Metric": {
-              "Namespace": "AWS/Redshift",
+              "Namespace": "AWS/ElastiCache",
               "MetricName": metric,
               "Dimensions": [
-                { "Name": "ClusterIdentifier", "Value": cluster['id'] }
+                { "Name": "CacheClusterId", "Value": cluster['id'] }
               ]
             },
             "Period": lookback,
@@ -772,6 +720,7 @@ datasource "ds_cloudwatch_data" do
       field "region", val(iter_item, "region")
       field "id", jmes_path(col_item, "Id")
       field "label", jmes_path(col_item, "Label")
+      field "statusCode", jmes_path(col_item, "StatusCode")
       field "values", jmes_path(col_item, "Values")
     end
   end
@@ -841,14 +790,16 @@ EOS
 end
 
 datasource "ds_elasticache_clusters_with_metrics" do
-  run_script $js_elasticache_clusters_with_metrics, $ds_elasticache_clusters_resize_filtered, $ds_cloudwatch_data_sorted
+  run_script $js_elasticache_clusters_with_metrics, $ds_elasticache_clusters_tag_filtered, $ds_cloudwatch_data_sorted
 end
 
 script "js_elasticache_clusters_with_metrics", type: "javascript" do
-  parameters "ds_elasticache_clusters_resize_filtered", "ds_cloudwatch_data_sorted"
+  parameters "ds_elasticache_clusters_tag_filtered", "ds_cloudwatch_data_sorted"
   result "result"
   code <<-EOS
-  result = _.map(ds_elasticache_clusters_resize_filtered, function(cluster) {
+  result = _.map(ds_elasticache_clusters_tag_filtered, function(cluster) {
+    memoryBytes = cluster["memory"] * 1024 * 1024 * 1024
+
     metrics = null
 
     cpuAverage = null
@@ -865,8 +816,10 @@ script "js_elasticache_clusters_with_metrics", type: "javascript" do
     memP95 = null
     memP99 = null
 
-    if (ds_cloudwatch_data_sorted[cluster['region']] && ds_cloudwatch_data_sorted[region][cluster['id']]) {
-      metrics = ds_cloudwatch_data_sorted[cluster['region']][cluster['id']]
+    if (ds_cloudwatch_data_sorted[cluster['region']]) {
+      if (ds_cloudwatch_data_sorted[cluster['region']][cluster['statId']]) {
+        metrics = ds_cloudwatch_data_sorted[cluster['region']][cluster['statId']]
+      }
     }
 
     if (metrics) {
@@ -880,17 +833,18 @@ script "js_elasticache_clusters_with_metrics", type: "javascript" do
       }
 
       if (metrics["mem"]) {
-        if (metrics["mem"]["Average"]) { memAverage = metrics["mem"]["Average"] }
-        if (metrics["mem"]["Minimum"]) { memMinimum = metrics["mem"]["Minimum"] }
-        if (metrics["mem"]["Maximum"]) { memMaximum = metrics["mem"]["Maximum"] }
-        if (metrics["mem"]["p90"]) { memP90 = metrics["mem"]["p90"] }
-        if (metrics["mem"]["p95"]) { memP95 = metrics["mem"]["p95"] }
-        if (metrics["mem"]["p99"]) { memP99 = metrics["mem"]["p99"] }
+        if (metrics["mem"]["Average"]) { memAverage = metrics["mem"]["Average"] / memoryBytes * 100 }
+        if (metrics["mem"]["Minimum"]) { memMinimum = metrics["mem"]["Minimum"] / memoryBytes * 100 }
+        if (metrics["mem"]["Maximum"]) { memMaximum = metrics["mem"]["Maximum"] / memoryBytes * 100 }
+        if (metrics["mem"]["p90"]) { memP90 = metrics["mem"]["p90"] / memoryBytes * 100 }
+        if (metrics["mem"]["p95"]) { memP95 = metrics["mem"]["p95"] / memoryBytes * 100 }
+        if (metrics["mem"]["p99"]) { memP99 = metrics["mem"]["p99"] / memoryBytes * 100 }
       }
     }
 
     return {
       id: cluster["id"],
+      statId: cluster["statId"],
       resourceID: cluster["resourceID"],
       resourceName: cluster["resourceName"],
       resourceARN: cluster["resourceARN"],
@@ -905,6 +859,8 @@ script "js_elasticache_clusters_with_metrics", type: "javascript" do
       region: cluster["region"],
       resourceType: cluster["resourceType"],
       newResourceType: cluster["newResourceType"],
+      vcpu: cluster["vcpu"],
+      memory: cluster["memory"],
       cpuAverage: cpuAverage,
       cpuMinimum: cpuMinimum,
       cpuMaximum: cpuMaximum,
@@ -1011,11 +967,13 @@ script "js_cluster_costs_grouped", type: "javascript" do
   // Group cost data by resourceId for later use
   result = {}
 
-  _.each(ds_instance_costs, function(item) {
-    id = item['resourceId'].toLowerCase()
+  _.each(ds_cluster_costs, function(item) {
+    if (typeof(item['resourceId']) == 'string' && item['resourceId'].indexOf("cluster:") == 0) {
+      id = item['resourceId'].split("cluster:")[1].toLowerCase()
 
-    if (result[id] == undefined) { result[id] = 0.0 }
-    result[id] += item['cost'] * cost_multiplier
+      if (result[id] == undefined) { result[id] = 0.0 }
+      result[id] += item['cost'] * cost_multiplier
+    }
   })
 EOS
 end
@@ -1099,6 +1057,12 @@ script "js_underutilized_elasticache_clusters", type: "javascript" do
         "to ", cluster['newResourceType']
       ].join('')
 
+      tags = []
+
+      if (typeof(cluster['tags']) == 'object') {
+        tags = _.map(cluster['tags'], function(tag) { return [tag['Key'], tag['Value']].join('=') })
+      }
+
       result.push({
         accountID: ds_aws_account['id'],
         accountName: ds_aws_account['name'],
@@ -1106,7 +1070,6 @@ script "js_underutilized_elasticache_clusters", type: "javascript" do
         resourceID: cluster["resourceID"],
         resourceName: cluster["resourceName"],
         resourceARN: cluster["resourceARN"],
-        tags: cluster["tags"],
         status: cluster["status"],
         numberOfNodes: cluster["numberOfNodes"],
         autoMinorVersionUpgrade: cluster["autoMinorVersionUpgrade"],
@@ -1117,18 +1080,19 @@ script "js_underutilized_elasticache_clusters", type: "javascript" do
         region: cluster["region"],
         resourceType: cluster["resourceType"],
         newResourceType: cluster["newResourceType"],
-        cpuAverage: cluster["cpuAverage"],
-        cpuMinimum: cluster["cpuMinimum"],
-        cpuMaximum: cluster["cpuMaximum"],
-        cpuP90: cluster["cpuP90"],
-        cpuP95: cluster["cpuP95"],
-        cpuP99: cluster["cpuP99"],
-        memAverage: cluster["memAverage"],
-        memMinimum: cluster["memMinimum"],
-        memMaximum: cluster["memMaximum"],
-        memP90: cluster["memP90"],
-        memP95: cluster["memP95"],
-        memP99: cluster["memP99"],
+        tags: tags.join(', '),
+        cpuAverage: Math.round(cluster["cpuAverage"] * 100) / 100,
+        cpuMinimum: Math.round(cluster["cpuMinimum"] * 100) / 100,
+        cpuMaximum: Math.round(cluster["cpuMaximum"] * 100) / 100,
+        cpuP90: Math.round(cluster["cpuP90"] * 100) / 100,
+        cpuP95: Math.round(cluster["cpuP95"] * 100) / 100,
+        cpuP99: Math.round(cluster["cpuP99"] * 100) / 100,
+        memAverage: Math.round(cluster["memAverage"] * 100) / 100,
+        memMinimum: Math.round(cluster["memMinimum"] * 100) / 100,
+        memMaximum: Math.round(cluster["memMaximum"] * 100) / 100,
+        memP90: Math.round(cluster["memP90"] * 100) / 100,
+        memP95: Math.round(cluster["memP95"] * 100) / 100,
+        memP99: Math.round(cluster["memP99"] * 100) / 100,
         service: "AmazonElastiCache",
         recommendationDetails: recommendationDetails,
         savings: Math.round(savings * 1000) / 1000,
@@ -1153,7 +1117,7 @@ script "js_underutilized_elasticache_clusters", type: "javascript" do
   if (total_oversized > 1) { cluster_verb = "are" }
 
   findings = [
-    "Out of ", total_clbs, " AWS ElastiCache ", cluster_noun, " analyzed, ",
+    "Out of ", total_clusters, " AWS ElastiCache ", cluster_noun, " analyzed, ",
     total_oversized, " (", oversized_percentage,
     ") ", cluster_verb, " underutilized and recommended for downsizing. "
   ].join('')
