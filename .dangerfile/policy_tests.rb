@@ -1225,18 +1225,20 @@ def policy_bad_comma_spacing?(file, file_lines)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has improper comma spacing..."
 
   fail_message = ""
-
   file_lines.each_with_index do |line, index|
     line_number = index + 1
-
+    line = line.strip
     if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")') && !line.include?("jq(") && !line.include?("/,/")
-      if line.strip.match(/,\s{2,}/) || line.strip.match(/\s,/) || line.strip.match(/,[^\s]/)
-        fail_message += "Line #{line_number.to_s}: Possible invalid spacing between comma-separated items found.\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear\n\n"
+      if line.match(/,\s{2,}/) || line.match(/\s,/) || line.match(/,[^\s]/) && !(line.match(/\',\'/) || line.match(/\",\"/) || line.match(/\`,\`/))
+        if fail_message.empty?
+          fail_message += "\n\n"
+        end
+        fail_message += "Line #{line_number.to_s}: `"+line+"`\n\n"
       end
     end
   end
 
-  fail_message = "Issues with comma-separation found:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "Possible invalid spacing between comma-separated items found:\n\n" + fail_message + "\n\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear" if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
