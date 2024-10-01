@@ -400,7 +400,6 @@ datasource "ds_redshift_clusters" do
     collect xpath(response, "//DescribeClustersResponse/DescribeClustersResult/Clusters/Cluster", "array") do
       field "id", xpath(col_item, "ClusterIdentifier")
       field "automatedSnapshotRetentionPeriod", xpath(col_item, "AutomatedSnapshotRetentionPeriod")
-      field "availabilityZone", xpath(col_item, "availabilityZone")
       field "dbName", xpath(col_item, "DBName")
       field "encrypted", xpath(col_item, "Encrypted")
       field "enhancedVpcRouting", xpath(col_item, "EnhancedVpcRouting")
@@ -414,7 +413,7 @@ datasource "ds_redshift_clusters" do
       field "version", xpath(col_item, "ClusterVersion")
       field "vpcId", xpath(col_item, "VpcId")
       field "tags" do
-        collect xpath(col_item, "Tags/item") do
+        collect xpath(col_item, "Tags/Tag", "array") do
           field "key", xpath(col_item, "Key")
           field "value", xpath(col_item, "Value")
         end
@@ -431,12 +430,36 @@ datasource "ds_redshift_clusters" do
   end
 end
 
+datasource "ds_aws_redshift_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/redshift_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+# Filter out resources that have no smaller size available to avoid wasting time getting metrics for them
+datasource "ds_redshift_clusters_resize_filtered" do
+  run_script $js_redshift_clusters_resize_filtered, $ds_redshift_clusters, $ds_aws_redshift_size_map
+end
+
+script "js_redshift_clusters_resize_filtered", type: "javascript" do
+  parameters "ds_redshift_clusters", "ds_aws_redshift_size_map"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_redshift_clusters, function(cluster) {
+    return ds_aws_redshift_size_map[cluster['nodeType']] && ds_aws_redshift_size_map[cluster['nodeType']]['down']
+  })
+EOS
+end
+
 datasource "ds_redshift_clusters_tag_filtered" do
-  run_script $js_redshift_clusters_tag_filtered, $ds_redshift_clusters, $param_exclusion_tags, $param_exclusion_tags_boolean
+  run_script $js_redshift_clusters_tag_filtered, $ds_redshift_clusters_resize_filtered, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_redshift_clusters_tag_filtered", type: "javascript" do
-  parameters "ds_clbs", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  parameters "ds_redshift_clusters_resize_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -470,7 +493,7 @@ script "js_redshift_clusters_tag_filtered", type: "javascript" do
   })
 
   if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_redshift_clusters, function(resource) {
+    result = _.reject(ds_redshift_clusters_resize_filtered, function(resource) {
       resource_tags = {}
 
       if (typeof(resource['tags']) == 'object') {
@@ -508,7 +531,7 @@ script "js_redshift_clusters_tag_filtered", type: "javascript" do
       return all_tags_found || any_tags_found
     })
   } else {
-    result = ds_redshift_clusters
+    result = ds_redshift_clusters_resize_filtered
   }
 EOS
 end
@@ -530,32 +553,31 @@ script "js_cloudwatch_queries", type: "javascript" do
       result[cluster['region']] = []
     }
 
-    //We want to collect each of these list of statistics we care about
+    // We want to collect each of these list of statistics we care about
     stats = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
     lookback = param_stats_lookback * 86400
 
-    // Only query for CPU usage if we're actually checking it
-    if (param_avg_cpu != -1) {
-      _.each(stats, function(stat) {
-        query = {
-          "Id": cluster['id'].replace('-', '_') + "___cpu" + stat,
-          "MetricStat": {
-            "Metric": {
-              "Namespace": "AWS/Redshift",
-              "MetricName": "CPUUtilization",
-              "Dimensions": [
-                { "Name": "ClusterIdentifier", "Value": cluster['id'] }
-              ]
-            },
-            "Period": lookback,
-            "Stat": stat
-          },
-          "ReturnData": true
-        }
+    statId = cluster['id'].replace(/-/g, '_')
 
-        result[cluster['region']].push(query)
-      })
-    }
+    _.each(stats, function(stat) {
+      query = {
+        "Id": statId + "___cpu" + stat,
+        "MetricStat": {
+          "Metric": {
+            "Namespace": "AWS/Redshift",
+            "MetricName": "CPUUtilization",
+            "Dimensions": [
+              { "Name": "ClusterIdentifier", "Value": cluster['id'] }
+            ]
+          },
+          "Period": lookback,
+          "Stat": stat
+        },
+        "ReturnData": true
+      }
+
+      result[cluster['region']].push(query)
+    })
   })
 EOS
 end
@@ -689,7 +711,7 @@ script "js_redshift_clusters_with_metrics", type: "javascript" do
   code <<-EOS
   result = _.map(ds_redshift_clusters_tag_filtered, function(cluster) {
     region = cluster['region']
-    id = cluster['id']
+    statId = cluster['id'].replace(/-/g, '_')
 
     metrics = null
     cpuAverage = null
@@ -699,8 +721,8 @@ script "js_redshift_clusters_with_metrics", type: "javascript" do
     cpuP95 = null
     cpuP99 = null
 
-    if (ds_cloudwatch_data_sorted[region] && ds_cloudwatch_data_sorted[region][id]) {
-      metrics = ds_cloudwatch_data_sorted[region][id]
+    if (ds_cloudwatch_data_sorted[region] && ds_cloudwatch_data_sorted[region][statId]) {
+      metrics = ds_cloudwatch_data_sorted[region][statId]
     }
 
     if (metrics && metrics["cpuAverage"]) { cpuAverage = metrics["cpuAverage"] }
@@ -710,16 +732,15 @@ script "js_redshift_clusters_with_metrics", type: "javascript" do
     if (metrics && metrics["cpup95"]) { cpuP95 = metrics["cpup95"] }
     if (metrics && metrics["cpup99"]) { cpuP99 = metrics["cpup99"] }
 
-    tags = {}
+    tags = []
 
     if (typeof(cluster['tags']) == 'object') {
-      _.each(cluster['tags'], function(tag) { tags[tag['key']] = tag['value'] })
+      tags = _.map(_.keys(cluster['tags']), function(key) { return [ key, cluster['tags'][key] ].join('=') })
     }
 
     return {
       id: cluster['id'],
       automatedSnapshotRetentionPeriod: cluster['automatedSnapshotRetentionPeriod'],
-      availabilityZone: cluster['availabilityZone'],
       dbName: cluster['dbName'],
       encrypted: cluster['encrypted'],
       enhancedVpcRouting: cluster['enhancedVpcRouting'],
@@ -734,7 +755,7 @@ script "js_redshift_clusters_with_metrics", type: "javascript" do
       version: cluster['version'],
       vpcId: cluster['vpcId'],
       region: cluster['region'],
-      tags: tags,
+      tags: tags.join(', '),
       cpuAverage: cpuAverage,
       cpuMinimum: cpuMinimum,
       cpuMaximum: cpuMaximum,
@@ -835,22 +856,15 @@ script "js_cluster_costs_grouped", type: "javascript" do
   // Group cost data by resourceId for later use
   result = {}
 
-  _.each(ds_instance_costs, function(item) {
-    id = item['resourceId'].toLowerCase()
+  _.each(ds_cluster_costs, function(item) {
+    if (typeof(item['resourceId']) == 'string' && item['resourceId'].indexOf("cluster:") == 0) {
+      id = item['resourceId'].split("cluster:")[1].toLowerCase()
 
-    if (result[id] == undefined) { result[id] = 0.0 }
-    result[id] += item['cost'] * cost_multiplier
+      if (result[id] == undefined) { result[id] = 0.0 }
+      result[id] += item['cost'] * cost_multiplier
+    }
   })
 EOS
-end
-
-datasource "ds_aws_redshift_size_map" do
-  request do
-    verb "GET"
-    host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/aws/redshift_types.json"
-    header "User-Agent", "RS Policies"
-  end
 end
 
 datasource "ds_underutilized_redshift_clusters" do
@@ -914,7 +928,7 @@ script "js_underutilized_redshift_clusters", type: "javascript" do
     }
 
     // Calculate estimated savings
-    cost = ds_cluster_costs_grouped[cluster['id']]
+    cost = ds_cluster_costs_grouped[cluster['id'].toLowerCase()]
     savings = 0.0
 
     if (cost && rawThreshold) {
@@ -946,7 +960,6 @@ script "js_underutilized_redshift_clusters", type: "javascript" do
         resourceID: cluster['id'],
         resourceName: cluster['id'],
         automatedSnapshotRetentionPeriod: cluster['automatedSnapshotRetentionPeriod'],
-        availabilityZone: cluster['availabilityZone'],
         dbName: cluster['dbName'],
         encrypted: cluster['encrypted'],
         enhancedVpcRouting: cluster['enhancedVpcRouting'],
@@ -961,12 +974,12 @@ script "js_underutilized_redshift_clusters", type: "javascript" do
         vpcId: cluster['vpcId'],
         region: cluster['region'],
         tags: cluster['tags'],
-        cpuAverage: cluster['cpuAverage'],
-        cpuMinimum: cluster['cpuMinimum'],
-        cpuMaximum: cluster['cpuMaximum'],
-        cpuP90: cluster['cpuP90'],
-        cpuP95: cluster['cpuP95'],
-        cpuP99: cluster['cpuP99'],
+        cpuAverage: Math.round(cluster['cpuAverage'] * 100) / 100,
+        cpuMinimum: Math.round(cluster['cpuMinimum'] * 100) / 100,
+        cpuMaximum: Math.round(cluster['cpuMaximum'] * 100) / 100,
+        cpuP90: Math.round(cluster['cpuP90'] * 100) / 100,
+        cpuP95: Math.round(cluster['cpuP95'] * 100) / 100,
+        cpuP99: Math.round(cluster['cpuP99'] * 100) / 100,
         resourceType: cluster['nodeType'],
         newResourceType: newResourceType,
         resourceARN: resourceARN,
@@ -994,12 +1007,15 @@ script "js_underutilized_redshift_clusters", type: "javascript" do
   if (total_oversized > 1) { cluster_verb = "are" }
 
   findings = [
-    "Out of ", total_clbs, " AWS Redshift ", cluster_noun, " analyzed, ",
+    "Out of ", total_clusters, " AWS Redshift ", cluster_noun, " analyzed, ",
     total_oversized, " (", oversized_percentage,
     ") ", cluster_verb, " underutilized and recommended for downsizing. "
   ].join('')
 
-  settings = ""
+  settings = [
+    "A cluster is consider underutilized if there exists a smaller size whose estimated ",
+    param_stats_threshold.toLowerCase(), " CPU usage would be below ", param_stats_cpu_target, "%.\n\n"
+  ].join('')
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
 
@@ -1013,7 +1029,6 @@ script "js_underutilized_redshift_clusters", type: "javascript" do
     resourceID: "",
     resourceName: "",
     automatedSnapshotRetentionPeriod: "",
-    availabilityZone: "",
     dbName: "",
     encrypted: "",
     enhancedVpcRouting: "",
