@@ -1,13 +1,13 @@
-name "Meta Parent: Azure Rightsize NetApp Files"
+name "Meta Parent: Azure Rightsize NetApp Resources"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Rightsize NetApp Files](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_netapp_files) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Rightsize NetApp Resources](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_netapp) Policies."
 severity "low"
 category "Meta"
 default_frequency "15 minutes"
 info(
   provider: "Azure",
-  version: "1.2", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "2.0.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "true",
   deprecated: "false"
 )
@@ -62,7 +62,7 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"Azure Rightsize NetApp Files\" Policy Template from Catalog.  Optionally, you can use the \"Azure Rightsize NetApp Files\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"Azure Rightsize NetApp Resources\" Policy Template from Catalog.  Optionally, you can use the \"Azure Rightsize NetApp Resources\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
@@ -81,7 +81,7 @@ parameter "param_stats_underutil_threshold_pool_value" do
   type "number"
   category "Statistics"
   label "Pool Allocated to Volume Threshold (%)"
-  description "The desired level of pool capacity allocated to volumes."
+  description "The allocation threshold at which to consider a NetApp pool to be 'oversized' and therefore be flagged for downsizing."
   min_value 0
   max_value 100
   default 50
@@ -91,7 +91,7 @@ parameter "param_stats_underutil_threshold_volume_value" do
   type "number"
   category "Statistics"
   label "Volume Consumed Capacity Threshold (%)"
-  description "The desired level of volume capacity usage."
+  description "The capacity usage threshold at which to consider a NetApp volume to be 'oversized' and therefore be flagged for downsizing."
   min_value 0
   max_value 100
   default 50
@@ -100,10 +100,18 @@ end
 parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
-  label "Exclusion Tags (Key:Value)"
-  description "Cloud native tags to ignore resources that you don't want to consider for downsizing. Format: Key:Value"
-  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -127,9 +135,18 @@ parameter "param_show_size_increment_recommendations" do
   type "string"
   category "Filters"
   label "Show Upsize Recommendations"
-  description "Include or suppress upsize recommendations for pools and volumes."
+  description "Whether or not to include upsize recommendations for pools and volumes"
   allowed_values "Yes", "No"
   default "No"
+end
+
+parameter "param_resource_types" do
+  type "string"
+  category "Filter"
+  label "Resource Types"
+  description "Whether to produce recommendations only for pools or for both pools and volumes"
+  allowed_values "Pools", "Pools and Volumes"
+  default "Pools"
 end
 
 parameter "param_min_savings" do
@@ -141,21 +158,12 @@ parameter "param_min_savings" do
   default 0
 end
 
-parameter "param_recommendation_mode" do
-  type "string"
-  category "Statistics"
-  label "Recommendation Mode"
-  description "Choose between scanning only pools or pools and volumes."
-  allowed_values "Resize Pools", "Resize Pools and Volumes"
-  default "Resize Pools"
-end
-
 parameter "param_automatic_action" do
   type "list"
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Rightsize recommended pools and volumes"]
+  allowed_values ["Rightsize NetApp Resources"]
   default []
 end
 
@@ -298,7 +306,7 @@ script "js_published_child_policy_information", type: "javascript" do
   result "result"
   code <<-EOS
   result = _.filter(ds_get_published_child_policy_information, function(item) {
-    return item['name'] == "Azure Rightsize NetApp Files" && item['created_by'] == "support@flexera.com"
+    return item['name'] == "Azure Rightsize NetApp Resources" && item['created_by'] == "support@flexera.com"
   })
 EOS
 end
@@ -331,7 +339,7 @@ script "js_project_child_policy_information", type: "javascript" do
   result "result"
   code <<-EOS
   result = _.filter(ds_get_project_child_policy_information, function(item) {
-    return item['name'] == "Azure Rightsize NetApp Files"
+    return item['name'] == "Azure Rightsize NetApp Resources"
   })
 EOS
 end
@@ -907,8 +915,8 @@ script "js_ds_naf_oversized_pools_combined_incidents", type: "javascript" do
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Azure NetApp Pools Found" then include it in the filter result
-    if (s.indexOf("Azure NetApp Pools Found") > -1) {
+    // If the incident summary contains "Azure Oversized NetApp Pools Found" then include it in the filter result
+    if (s.indexOf("Azure Oversized NetApp Pools Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -929,8 +937,8 @@ script "js_ds_naf_oversized_volumes_combined_incidents", type: "javascript" do
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Azure NetApp Resources Found" then include it in the filter result
-    if (s.indexOf("Azure NetApp Resources Found") > -1) {
+    // If the incident summary contains "Azure Oversized NetApp Pools" then include it in the filter result
+    if (s.indexOf("Azure Oversized NetApp Pools") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -941,18 +949,18 @@ EOS
 end
 
 
-# Escalation for Rightsize resources
+# Escalation for Rightsize NetApp Resources
 escalation "esc_rightsize_resources" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Rightsize resources"
-  description "Approval to rightsize all the selected resources."
+  label "Rightsize NetApp Resources"
+  description "Approval to rightsize all selected NetApp resources"
 
   # Run declaration should go at end, after any parameters that may exist
   run "esc_rightsize_resources", data, rs_governance_host, rs_project_id
 end
 define esc_rightsize_resources($data, $governance_host, $rs_project_id) do
   $actions_options = []
-  call child_run_action($data, $governance_host, $rs_project_id, "Rightsize resources", $action_options)
+  call child_run_action($data, $governance_host, $rs_project_id, "Rightsize NetApp Resources", $action_options)
 end
 
 
@@ -962,9 +970,9 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Azure NetApp Pools Found
+    # Consolidated incident for Azure Oversized NetApp Pools Found
   validate $ds_naf_oversized_pools_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Azure NetApp Pools Found"
+    summary_template "Consolidated Incident: {{ len data }} Azure Oversized NetApp Pools Found"
     escalate $esc_email
     escalate $esc_rightsize_resources
     check eq(size(data), 0)
@@ -1015,6 +1023,9 @@ policy "policy_scheduled_report" do
       field "threshold" do
         label "Allocated Used Threshold %"
       end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
       field "recommendedSize" do
         label "Recommended Size (TiB)"
       end
@@ -1033,9 +1044,9 @@ policy "policy_scheduled_report" do
     end
   end
 
-  # Consolidated incident for Azure NetApp Resources Found
+  # Consolidated incident for Azure Oversized NetApp Pools
   validate $ds_naf_oversized_volumes_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Azure NetApp Resources Found"
+    summary_template "Consolidated Incident: {{ len data }} Azure Oversized NetApp Pools"
     escalate $esc_email
     escalate $esc_rightsize_resources
     check eq(size(data), 0)
@@ -1091,6 +1102,9 @@ policy "policy_scheduled_report" do
       end
       field "threshold" do
         label "Allocated Used Threshold %"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
       end
       field "recommendedSize" do
         label "Recommended Size"

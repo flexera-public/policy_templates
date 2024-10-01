@@ -1,13 +1,13 @@
-name "Azure Rightsize NetApp Files"
+name "Azure Rightsize NetApp Resources"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for oversized NetApp capacity pools and suggests recommendations for rightsizing the capacity pools and volumes to optimize efficiency and reduce costs. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_netapp_files/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports oversized NetApp capacity pools and volumes and, optionally, rezies them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_netapp/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "1.2",
+  version: "2.0.0",
   provider: "Azure",
   service: "NetApp Files",
   policy_set: "Rightsize Storage",
@@ -39,7 +39,7 @@ parameter "param_stats_underutil_threshold_pool_value" do
   type "number"
   category "Statistics"
   label "Pool Allocated to Volume Threshold (%)"
-  description "The desired level of pool capacity allocated to volumes."
+  description "The allocation threshold at which to consider a NetApp pool to be 'oversized' and therefore be flagged for downsizing."
   min_value 0
   max_value 100
   default 50
@@ -49,7 +49,7 @@ parameter "param_stats_underutil_threshold_volume_value" do
   type "number"
   category "Statistics"
   label "Volume Consumed Capacity Threshold (%)"
-  description "The desired level of volume capacity usage."
+  description "The capacity usage threshold at which to consider a NetApp volume to be 'oversized' and therefore be flagged for downsizing."
   min_value 0
   max_value 100
   default 50
@@ -58,10 +58,18 @@ end
 parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
-  label "Exclusion Tags (Key:Value)"
-  description "Cloud native tags to ignore resources that you don't want to consider for downsizing. Format: Key:Value"
-  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_subscriptions_allow_or_deny" do
@@ -102,9 +110,18 @@ parameter "param_show_size_increment_recommendations" do
   type "string"
   category "Filters"
   label "Show Upsize Recommendations"
-  description "Include or suppress upsize recommendations for pools and volumes."
+  description "Whether or not to include upsize recommendations for pools and volumes"
   allowed_values "Yes", "No"
   default "No"
+end
+
+parameter "param_resource_types" do
+  type "string"
+  category "Filter"
+  label "Resource Types"
+  description "Whether to produce recommendations only for pools or for both pools and volumes"
+  allowed_values "Pools", "Pools and Volumes"
+  default "Pools"
 end
 
 parameter "param_min_savings" do
@@ -116,21 +133,12 @@ parameter "param_min_savings" do
   default 0
 end
 
-parameter "param_recommendation_mode" do
-  type "string"
-  category "Statistics"
-  label "Recommendation Mode"
-  description "Choose between scanning only pools or pools and volumes."
-  allowed_values "Resize Pools", "Resize Pools and Volumes"
-  default "Resize Pools"
-end
-
 parameter "param_automatic_action" do
   type "list"
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Rightsize recommended pools and volumes"]
+  allowed_values ["Rightsize NetApp Resources"]
   default []
 end
 
@@ -239,11 +247,13 @@ datasource "ds_azure_subscriptions" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version","2020-01-01"
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
     header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -266,66 +276,11 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
-
-      if (param_subscriptions_allow_or_deny == "Deny") {
-        include_subscription = !include_subscription
-      }
-
+      if (param_subscriptions_allow_or_deny == "Deny") { include_subscription = !include_subscription }
       return include_subscription
     })
   } else {
     result = ds_azure_subscriptions
-  }
-EOS
-end
-
-script "js_objects_region_filtered", type: "javascript" do
-  parameters "ds_objects", "param_regions_allow_or_deny", "param_regions_list"
-  result "result"
-  code <<-EOS
-  if (param_regions_list.length > 0) {
-    result = _.filter(ds_objects, function(o) {
-      include_o = _.contains(param_regions_list, o.region)
-
-      if (param_regions_allow_or_deny == "Deny") {
-        include_o = !include_o
-      }
-
-      return include_o
-    })
-  } else {
-    result = ds_objects
-  }
-EOS
-end
-
-script "js_objects_tag_filtered", type: "javascript" do
-  parameters "ds_objects", "param_exclusion_tags"
-  result "result"
-  code <<-EOS
-  if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_objects, function(o) {
-      o_tags = []
-
-      if (typeof(o['tags']) == 'object') {
-        _.each(Object.keys(o['tags']), function(key) {
-          o_tags.push([key, ":", o['tags'][key]].join(''))
-          o_tags.push([key, ":*"].join(''))
-        })
-      }
-
-      exclude_o = false
-
-      _.each(param_exclusion_tags, function(exclusion_tag) {
-        if (_.contains(o_tags, exclusion_tag)) {
-          exclude_o = true
-        }
-      })
-
-      return exclude_o
-    })
-  } else {
-    result = ds_objects
   }
 EOS
 end
@@ -337,6 +292,7 @@ datasource "ds_naf_accounts" do
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.NetApp/netAppAccounts"])
     query "api-version", "2023-05-01"
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -352,11 +308,27 @@ datasource "ds_naf_accounts" do
 end
 
 datasource "ds_naf_accounts_region_filtered" do
-  run_script $js_objects_region_filtered, $ds_naf_accounts, $param_regions_allow_or_deny, $param_regions_list
+  run_script $js_naf_accounts_region_filtered, $ds_naf_accounts, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_naf_accounts_region_filtered", type: "javascript" do
+  parameters "ds_objects", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_objects, function(item) {
+      include_item = _.contains(param_regions_list, item['region'])
+      if (param_regions_allow_or_deny == "Deny") { include_item = !include_item }
+      return include_item
+    })
+  } else {
+    result = ds_objects
+  }
+EOS
 end
 
 datasource "ds_naf_accounts_tag_filtered" do
-  run_script $js_objects_tag_filtered, $ds_naf_accounts_region_filtered, $param_exclusion_tags
+  run_script $js_objects_tag_filtered, $ds_naf_accounts_region_filtered, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 datasource "ds_naf_capacity_pools" do
@@ -366,6 +338,7 @@ datasource "ds_naf_capacity_pools" do
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "subscription_id"), "/resourceGroups/", val(iter_item, "resource_group_name"), "/providers/Microsoft.NetApp/netAppAccounts/", val(iter_item, "naf_account_name"), "/capacityPools"])
     query "api-version", "2023-05-01"
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -390,13 +363,86 @@ datasource "ds_naf_capacity_pools" do
 end
 
 datasource "ds_naf_capacity_pools_tag_filtered" do
-  run_script $js_objects_tag_filtered, $ds_naf_capacity_pools, $param_exclusion_tags
+  run_script $js_objects_tag_filtered, $ds_naf_capacity_pools, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_objects_tag_filtered", type: "javascript" do
+  parameters "objects_to_filter", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(objects_to_filter, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = objects_to_filter
+  }
+EOS
 end
 
 datasource "ds_naf_pool_metrics" do
   iterate $ds_naf_capacity_pools_tag_filtered
   request do
-    run_script $js_naf_pool_metrics_request, val(iter_item, "naf_pool_id"), $param_azure_endpoint
+    run_script $js_naf_pool_metrics, val(iter_item, "naf_pool_id"), $param_azure_endpoint
   end
   result do
     encoding "json"
@@ -419,7 +465,7 @@ datasource "ds_naf_pool_metrics" do
   end
 end
 
-script "js_naf_pool_metrics_request", type: "javascript" do
+script "js_naf_pool_metrics", type: "javascript" do
   parameters "poolId", "param_azure_endpoint"
   result "request"
   code <<-EOS
@@ -446,7 +492,7 @@ script "js_naf_pool_metrics_request", type: "javascript" do
     headers: {
       "User-Agent": "RS Policies",
     },
-    ignore_status: [400, 403, 404],
+    ignore_status: [400, 403, 404]
   }
 EOS
 end
@@ -471,30 +517,49 @@ script "js_naf_get_costs", type: "javascript" do
   code <<-EOS
   var locations = []
   var location = ""
+
   _.each(ds_naf_capacity_pools_tag_filtered, function(pool){
     locations.push("armRegionName eq '" + pool.naf_pool_region + "'")
   })
-  if (locations.length > 0) {
-    location = " and (" + locations.join(" or ") + ")"
-  }
+
+  if (locations.length > 0) { location = " and (" + locations.join(" or ") + ")" }
+
   var request = {
     host: "prices.azure.com"
     path: "/api/retail/prices"
     query_params: {
       "api-version": "2021-10-01-preview"
       "$filter": "serviceName eq 'Azure NetApp Files'" + location + " and priceType eq 'Consumption' and endsWith(meterName, 'Capacity') and (contains(skuName, 'Standard') or contains(skuName, 'Premium') or contains(skuName, 'Ultra'))"
-    }
+    },
+    ignore_status: [400, 403, 404]
+  }
+EOS
+end
+
+datasource "ds_naf_capacity_pools_option_filtered" do
+  run_script $js_naf_capacity_pools_option_filtered, $ds_naf_capacity_pools_tag_filtered, $param_resource_types
+end
+
+script "js_naf_capacity_pools_option_filtered", type: "javascript" do
+  parameters "ds_naf_capacity_pools_tag_filtered", "param_resource_types"
+  result "result"
+  code <<-EOS
+  result = []
+
+  if (param_resource_types == "Pools and Volumes") {
+    result = ds_naf_capacity_pools_tag_filtered
   }
 EOS
 end
 
 datasource "ds_naf_volumes" do
-  iterate $ds_naf_capacity_pools_tag_filtered
+  iterate $ds_naf_capacity_pools_option_filtered
   request do
     auth $auth_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "subscription_id"), "/resourceGroups/", val(iter_item, "resource_group_name"), "/providers/Microsoft.NetApp/netAppAccounts/", val(iter_item, "naf_account_name"), "/capacityPools/", val(iter_item, "naf_pool_name"), "/volumes"])
     query "api-version", "2023-05-01"
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -520,13 +585,13 @@ datasource "ds_naf_volumes" do
 end
 
 datasource "ds_naf_volumes_tag_filtered" do
-  run_script $js_objects_tag_filtered, $ds_naf_volumes, $param_exclusion_tags
+  run_script $js_objects_tag_filtered, $ds_naf_volumes, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 datasource "ds_naf_volume_metrics" do
-  iterate $ds_naf_volumes
+  iterate $ds_naf_volumes_tag_filtered
   request do
-    run_script $js_naf_volume_metrics_request, val(iter_item, "naf_volume_id"), $param_azure_endpoint
+    run_script $js_naf_volume_metrics, val(iter_item, "naf_volume_id"), $param_azure_endpoint
   end
   result do
     encoding "json"
@@ -550,7 +615,7 @@ datasource "ds_naf_volume_metrics" do
   end
 end
 
-script "js_naf_volume_metrics_request", type: "javascript" do
+script "js_naf_volume_metrics", type: "javascript" do
   parameters "volId", "param_azure_endpoint"
   result "request"
   code <<-EOS
@@ -577,72 +642,55 @@ script "js_naf_volume_metrics_request", type: "javascript" do
     headers: {
       "User-Agent": "RS Policies",
     },
-    ignore_status: [400, 403, 404],
+    ignore_status: [400, 403, 404]
   }
 EOS
 end
 
 datasource "ds_naf_oversized_pools" do
-  run_script $js_naf_oversized_pools, $ds_naf_pool_metrics, $param_stats_underutil_threshold_pool_value, $ds_naf_get_costs, $param_min_savings, $ds_currency, $param_recommendation_mode, $param_show_size_increment_recommendations, $ds_applied_policy
+  run_script $js_naf_oversized_pools, $ds_naf_pool_metrics, $ds_naf_get_costs, $ds_currency, $ds_applied_policy, $param_stats_underutil_threshold_pool_value, $param_min_savings, $param_resource_types, $param_show_size_increment_recommendations
 end
 
 script "js_naf_oversized_pools", type: "javascript" do
-  parameters "ds_naf_pool_metrics", "param_stats_underutil_threshold_pool_value", "ds_naf_get_costs", "param_min_savings", "ds_currency", "param_recommendation_mode", "param_show_size_increment_recommendations", "ds_applied_policy"
+  parameters "ds_naf_pool_metrics", "ds_naf_get_costs", "ds_currency", "ds_applied_policy", "param_stats_underutil_threshold_pool_value", "param_min_savings", "param_resource_types", "param_show_size_increment_recommendations"
   result "result"
   code <<-'EOS'
-
   // Variables
-
   result = []
   var minPoolSize = 2048
   var maxPoolSize = 1024000
   var total_savings = 0.0
 
   // Functions
+  function bytesToGibibytes(bytes) { return Math.ceil(bytes * 9.3132257461548e-10) }
 
-  function bytesToGibibytes(bytes) {
-    return Math.ceil(bytes * 9.3132257461548e-10)
-  }
-
-  function gibibytesToTebibytes(gibibytes) {
-    return Math.ceil(gibibytes / 1024)
-  }
+  function gibibytesToTebibytes(gibibytes) { return Math.ceil(gibibytes / 1024) }
 
   function poolCanBeResized(size, recommendedSize, param_show_size_increment_recommendations) {
     var sizeChangeGiB = Math.abs(size - recommendedSize)
     // Azure only admits 1 TiB steps
-    if (sizeChangeGiB < 1024) {
-      return false
-    }
-    if (recommendedSize == size) {
-      return false
-    }
-    if (recommendedSize > size && param_show_size_increment_recommendations == "No") {
-      return false
-    }
-    if (size == minPoolSize && recommendedSize < minPoolSize) {
-      return false
-    }
-    if (size == maxPoolSize && recommendedSize > maxPoolSize) {
-      return false
-    }
+    if (sizeChangeGiB < 1024) { return false }
+    if (recommendedSize == size) { return false }
+    if (recommendedSize > size && param_show_size_increment_recommendations == "No") { return false }
+    if (size == minPoolSize && recommendedSize < minPoolSize) { return false }
+    if (size == maxPoolSize && recommendedSize > maxPoolSize) { return false }
     return true
   }
 
   function objectTagsToArrayTags(tags) {
     var arrayTags = []
+
     if (typeof(tags) == 'object') {
-      _.each(Object.keys(tags), function(key) {
-        arrayTags.push([key, "=", tags[key]].join(''))
-      })
+      _.each(Object.keys(tags), function(key) { arrayTags.push([key, "=", tags[key]].join('')) })
     }
+
     return arrayTags
   }
 
   function getMonthlyCost(pool, poolSize) {
     var monthlyCost = 0.0
     _.each(ds_naf_get_costs, function(cost){
-      if(pool.naf_pool_region == cost.region) {
+      if (pool.naf_pool_region == cost.region) {
         if (pool.naf_pool_service == "Standard" && cost['skuName'].indexOf("Standard") > -1) {
           if (pool.naf_pool_cool == false && pool.naf_pool_encryption == "Single" && cost['skuName'] == "Standard") {
             monthlyCost = cost.retailPrice * poolSize * 730
@@ -652,6 +700,7 @@ script "js_naf_oversized_pools", type: "javascript" do
             monthlyCost = cost.retailPrice * poolSize * 730
           }
         }
+
         if (pool.naf_pool_service == "Premium" && cost['skuName'].indexOf("Premium") > -1) {
           if (pool.naf_pool_encryption == "Single" && cost['skuName'] == "Premium") {
             monthlyCost = cost.retailPrice * poolSize * 730
@@ -659,6 +708,7 @@ script "js_naf_oversized_pools", type: "javascript" do
             monthlyCost = cost.retailPrice * poolSize * 730
           }
         }
+
         if (pool.naf_pool_service == "Ultra" && cost['skuName'].indexOf("Ultra") > -1) {
           if (pool.naf_pool_encryption == "Single" && cost['skuName'] == "Ultra") {
             monthlyCost = cost.retailPrice * poolSize * 730
@@ -672,8 +722,7 @@ script "js_naf_oversized_pools", type: "javascript" do
   }
 
   // Main Logic
-
-  if (param_recommendation_mode == "Resize Pools") {
+  if (param_resource_types == "Pools") {
     _.each(ds_naf_pool_metrics, function(pool){
       _.each(pool.naf_pool_metrics, function (metric) {
         filteredTimeseries = _.filter(metric.timeseries[0].data, function(point) { return point.average != undefined })
@@ -681,23 +730,20 @@ script "js_naf_oversized_pools", type: "javascript" do
         switch (metric.name.value) {
           case "VolumePoolAllocatedUsed":
             pool.consumedSize = bytesToGibibytes(lastPointInTS)
-            break;
+            break
           case "VolumePoolAllocatedSize":
             pool.allocatedSize = bytesToGibibytes(lastPointInTS)
-            break;
+            break
         }
       })
+
       if (pool.allocatedSize != undefined && pool.consumedSize != undefined) {
         var poolConsumedPercentage = Math.round(pool.consumedSize * 100 / pool.allocatedSize)
         if (poolConsumedPercentage != param_stats_underutil_threshold_pool_value) {
           var poolRecommendedSize = Math.ceil(Math.ceil(pool.consumedSize * 100 / param_stats_underutil_threshold_pool_value) / 1024) * 1024
           if (poolCanBeResized(pool.allocatedSize, poolRecommendedSize, param_show_size_increment_recommendations)) {
-            if (poolRecommendedSize < minPoolSize) {
-              poolRecommendedSize = minPoolSize
-            }
-            if (poolRecommendedSize > maxPoolSize) {
-              poolRecommendedSize = maxPoolSize
-            }
+            if (poolRecommendedSize < minPoolSize) { poolRecommendedSize = minPoolSize }
+            if (poolRecommendedSize > maxPoolSize) { poolRecommendedSize = maxPoolSize }
 
             var allocatedSizeCost = getMonthlyCost(pool, pool.allocatedSize)
             var recommendedSizeCost = getMonthlyCost(pool, poolRecommendedSize)
@@ -706,18 +752,30 @@ script "js_naf_oversized_pools", type: "javascript" do
             var savings = (allocatedSizeCost-recommendedSizeCost) < 0 ? 0 : (allocatedSizeCost-recommendedSizeCost)
             if (savings >= param_min_savings) {
               total_savings += savings
+
+              size = Math.round(pool['allocatedSize'] / 1024)
+              recommendedSize = gibibytesToTebibytes(poolRecommendedSize)
+
+              recommendationDetails = [
+                "Downsize Azure NetApp Pool ", pool['naf_pool_name'], " ",
+                "in Azure Subscription ", pool['subscription_name'], " ",
+                "(", pool['subscription_id'], ") ",
+                "from ", size, " TiB ",
+                "to ", recommendedSize, " TiB"
+              ].join('')
+
               result.push({
                 accountID: pool['subscription_id'],
                 accountName: pool['subscription_name'],
                 resourceID: pool['naf_pool_id'],
                 resourceGroup: pool['resource_group_name'],
                 resourceName: pool['naf_pool_name'],
-                size: Math.round(pool['allocatedSize'] / 1024),
+                size: size,
                 allocatedUsed: (pool['consumedSize'] / 1024).toFixed(3),
                 consumedPercentage: poolConsumedPercentage,
                 createdAt: pool['naf_pool_created_at'],
                 threshold: param_stats_underutil_threshold_pool_value,
-                recommendedSize: gibibytesToTebibytes(poolRecommendedSize),
+                recommendedSize: recommendedSize,
                 savings: parseFloat(savings.toFixed(3))
                 id: pool['naf_pool_id'],
                 region: pool['naf_pool_region'],
@@ -726,39 +784,62 @@ script "js_naf_oversized_pools", type: "javascript" do
                 tags: objectTagsToArrayTags(pool.tags),
                 savingsCurrency: "USD",
                 service: pool['service_type'],
+                recommendationDetails: recommendationDetails
               })
             }
           }
         }
       }
     })
+  }
 
-    if (result.length > 0) {
-      result[0].total_savings = total_savings.toFixed(2)
-      result[0].savings_currency = "USD"
-      result[0].message = "Pools shown here meet the following conditions:\n\n"
-      result[0].message += "- A " + (param_show_size_increment_recommendations == "Yes" ? "different" : "lower") + " value than " + param_stats_underutil_threshold_pool_value + "% of used capacity.\n"
-      result[0].message += "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
-      result[0].policy_name = ds_applied_policy.name
-    } else {
-      result = []
-    }
+  if (result.length > 0) {
+    result[0].total_savings = total_savings.toFixed(2)
+    result[0].savings_currency = "USD"
+    result[0].message = "Pools shown here meet the following conditions:\n\n"
+    result[0].message += "- A " + (param_show_size_increment_recommendations == "Yes" ? "different" : "lower") + " value than " + param_stats_underutil_threshold_pool_value + "% of used capacity.\n"
+    result[0].message += "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
+    result[0].policy_name = ds_applied_policy.name
+  } else {
+    result = [{
+      accountID: "",
+      accountName: "",
+      resourceID: "",
+      resourceGroup: "",
+      resourceName: "",
+      size: "",
+      allocatedUsed: "",
+      consumedPercentage: "",
+      createdAt: "",
+      threshold: "",
+      recommendedSize: "",
+      savings: "",
+      id: "",
+      region: "",
+      resourceTier: "",
+      resourceType: "",
+      tags: "",
+      savingsCurrency: "",
+      service: "",
+      recommendationDetails: "",
+      total_savings: "",
+      savings_currency: "",
+      message: "",
+      policy_name: ""
+    }]
   }
 EOS
 end
 
-
 datasource "ds_naf_oversized_volumes" do
-  run_script $js_naf_oversized_volumes, $ds_naf_volume_metrics, $ds_naf_pool_metrics, $param_stats_underutil_threshold_pool_value, $param_stats_underutil_threshold_volume_value, $ds_naf_get_costs, $param_min_savings, $ds_currency, $param_recommendation_mode, $param_show_size_increment_recommendations, $ds_applied_policy
+  run_script $js_naf_oversized_volumes, $ds_naf_volume_metrics, $ds_naf_pool_metrics, $ds_naf_get_costs, $ds_currency, $ds_applied_policy, $param_stats_underutil_threshold_pool_value, $param_stats_underutil_threshold_volume_value, $param_min_savings, $param_resource_types, $param_show_size_increment_recommendations
 end
 
 script "js_naf_oversized_volumes", type: "javascript" do
-  parameters "ds_naf_volume_metrics", "ds_naf_pool_metrics", "param_stats_underutil_threshold_pool_value", "param_stats_underutil_threshold_volume_value", "ds_naf_get_costs", "param_min_savings", "ds_currency", "param_recommendation_mode", "param_show_size_increment_recommendations", "ds_applied_policy"
+  parameters "ds_naf_volume_metrics", "ds_naf_pool_metrics", "ds_naf_get_costs", "ds_currency", "ds_applied_policy", "param_stats_underutil_threshold_pool_value", "param_stats_underutil_threshold_volume_value", "param_min_savings", "param_resource_types", "param_show_size_increment_recommendations"
   result "result"
   code <<-'EOS'
-
   // Variables
-
   result = []
   var minPoolSize = 2048
   var maxPoolSize = 1024000
@@ -767,42 +848,31 @@ script "js_naf_oversized_volumes", type: "javascript" do
   var total_savings = 0.0
 
   // Functions
-
   function poolCanBeResized(size, recommendedSize, param_show_size_increment_recommendations) {
     var sizeChangeGiB = Math.abs(size - recommendedSize)
     // Azure only admits 1 TiB steps
-    if (sizeChangeGiB < 1024) {
-      return false
-    }
-    if (recommendedSize == size) {
-      return false
-    }
-    if (recommendedSize > size && param_show_size_increment_recommendations == "No") {
-      return false
-    }
-    if (size == minPoolSize && recommendedSize < minPoolSize) {
-      return false
-    }
-    if (size == maxPoolSize && recommendedSize > maxPoolSize) {
-      return false
-    }
+    if (sizeChangeGiB < 1024) { return false }
+    if (recommendedSize == size) { return false }
+    if (recommendedSize > size && param_show_size_increment_recommendations == "No") { return false }
+    if (size == minPoolSize && recommendedSize < minPoolSize) { return false }
+    if (size == maxPoolSize && recommendedSize > maxPoolSize) { return false }
     return true
   }
 
   function objectTagsToArrayTags(tags) {
     var arrayTags = []
+
     if (typeof(tags) == 'object') {
-      _.each(Object.keys(tags), function(key) {
-        arrayTags.push([key, "=", tags[key]].join(''))
-      })
+      _.each(Object.keys(tags), function(key) { arrayTags.push([key, "=", tags[key]].join('')) })
     }
+
     return arrayTags
   }
 
   function getMonthlyCost(pool, poolSize) {
     var monthlyCost = 0.0
     _.each(ds_naf_get_costs, function(cost){
-      if(pool.naf_pool_region == cost.region) {
+      if (pool.naf_pool_region == cost.region) {
         if (pool.naf_pool_service == "Standard" && cost['skuName'].indexOf("Standard") > -1) {
           if (pool.naf_pool_cool == false && pool.naf_pool_encryption == "Single" && cost['skuName'] == "Standard") {
             monthlyCost = cost.retailPrice * poolSize * 730
@@ -812,6 +882,7 @@ script "js_naf_oversized_volumes", type: "javascript" do
             monthlyCost = cost.retailPrice * poolSize * 730
           }
         }
+
         if (pool.naf_pool_service == "Premium" && cost['skuName'].indexOf("Premium") > -1) {
           if (pool.naf_pool_encryption == "Single" && cost['skuName'] == "Premium") {
             monthlyCost = cost.retailPrice * poolSize * 730
@@ -819,6 +890,7 @@ script "js_naf_oversized_volumes", type: "javascript" do
             monthlyCost = cost.retailPrice * poolSize * 730
           }
         }
+
         if (pool.naf_pool_service == "Ultra" && cost['skuName'].indexOf("Ultra") > -1) {
           if (pool.naf_pool_encryption == "Single" && cost['skuName'] == "Ultra") {
             monthlyCost = cost.retailPrice * poolSize * 730
@@ -848,27 +920,18 @@ script "js_naf_oversized_volumes", type: "javascript" do
     return formatted_number + "." + values[1]
   }
 
-  function bytesToGibibytes(bytes) {
-    return Math.ceil(bytes * 9.3132257461548e-10)
-  }
+  function bytesToGibibytes(bytes) { return Math.ceil(bytes * 9.3132257461548e-10) }
 
-  function gibibytesToTebibytes(gibibytes) {
-    return Math.ceil(gibibytes / 1024)
-  }
+  function gibibytesToTebibytes(gibibytes) { return Math.ceil(gibibytes / 1024) }
 
   function volumeCanBeResized(size, recommendedSize) {
-    if (size == minVolSize && recommendedSize < minVolSize) {
-      return false
-    }
-    if (size == maxVolSize && recommendedSize > maxVolSize) {
-      return false
-    }
+    if (size == minVolSize && recommendedSize < minVolSize) { return false }
+    if (size == maxVolSize && recommendedSize > maxVolSize) { return false }
     return true
   }
 
   // Main logic
-
-  if (param_recommendation_mode == "Resize Pools and Volumes") {
+  if (param_resource_types == "Pools and Volumes") {
     _.each(ds_naf_volume_metrics, function(volume) {
       volume.volume_allocated_size = bytesToGibibytes(volume.naf_usage_threshold)
       _.each(volume.naf_volume_metrics, function(metric) {
@@ -877,10 +940,10 @@ script "js_naf_oversized_volumes", type: "javascript" do
         switch (metric.name.value) {
           case "VolumeLogicalSize":
             volume.volume_logical_size = bytesToGibibytes(lastPointInTS)
-            break;
+            break
           case "VolumeConsumedSizePercentage":
             volume.volume_consumed_size_percentage = Math.round(lastPointInTS)
-            break;
+            break
         }
       })
 
@@ -890,12 +953,8 @@ script "js_naf_oversized_volumes", type: "javascript" do
         if (volume.volume_consumed_size_percentage != param_stats_underutil_threshold_volume_value) {
           var recommendedVolumeAllocatedSize = Math.ceil(volume.volume_logical_size * 100 / param_stats_underutil_threshold_volume_value)
           if (volumeCanBeResized(volume.volume_allocated_size, recommendedVolumeAllocatedSize)) {
-            if (recommendedVolumeAllocatedSize < minVolSize) {
-              recommendedVolumeAllocatedSize = minVolSize
-            }
-            if (recommendedVolumeAllocatedSize > maxVolSize) {
-              recommendedVolumeAllocatedSize = maxVolSize
-            }
+            if (recommendedVolumeAllocatedSize < minVolSize) { recommendedVolumeAllocatedSize = minVolSize }
+            if (recommendedVolumeAllocatedSize > maxVolSize) { recommendedVolumeAllocatedSize = maxVolSize }
             volume.recommendedAllocatedSize = recommendedVolumeAllocatedSize
           }
         }
@@ -905,23 +964,28 @@ script "js_naf_oversized_volumes", type: "javascript" do
       pool.naf_pool_volumes = []
       var recommendedPoolAllocatedUsed = 0
       _.each(ds_naf_volume_metrics, function(volume) {
-        if(pool.naf_pool_id == volume.naf_pool_id) {
-          if (volume.recommendedAllocatedSize != volume.volume_allocated_size && volume.volume_logical_size != undefined) { pool.naf_pool_volumes.push(volume) }
+        if (pool.naf_pool_id == volume.naf_pool_id) {
+          if (volume.recommendedAllocatedSize != volume.volume_allocated_size && volume.volume_logical_size != undefined) {
+            endpool.naf_pool_volumes.push(volume)
+          }
           recommendedPoolAllocatedUsed += volume.recommendedAllocatedSize
         }
       })
+
       _.each(pool.naf_pool_metrics, function (metric) {
         filteredTimeseries = _.filter(metric.timeseries[0].data, function(point) { return point.average != undefined })
         var lastPointInTS = _.last(filteredTimeseries).average
+
         switch (metric.name.value) {
           case "VolumePoolAllocatedUsed":
             pool.consumedSize = bytesToGibibytes(lastPointInTS)
-            break;
+            break
           case "VolumePoolAllocatedSize":
             pool.allocatedSize = bytesToGibibytes(lastPointInTS)
-            break;
+            break
         }
       })
+
       if (pool.allocatedSize != undefined && pool.consumedSize != undefined) {
         var poolConsumedPercentage = Math.round(recommendedPoolAllocatedUsed * 100 / pool.allocatedSize)
         var poolOldConsumedPercentage = Math.round(pool.consumedSize * 100 / pool.allocatedSize)
@@ -942,54 +1006,77 @@ script "js_naf_oversized_volumes", type: "javascript" do
             var savings = (allocatedSizeCost-recommendedSizeCost) < 0 ? 0 : (allocatedSizeCost-recommendedSizeCost)
             if (savings >= param_min_savings) {
               total_savings += savings
+
+              size = Math.round(pool['allocatedSize'] / 1024)
+              recommendedSize = gibibytesToTebibytes(poolRecommendedSize)
+
+              recommendationDetails = [
+                "Downsize Azure NetApp Pool ", pool['naf_pool_name'], " ",
+                "in Azure Subscription ", pool['subscription_name'], " ",
+                "(", pool['subscription_id'], ") ",
+                "from ", size, " TiB ",
+                "to ", recommendedSize, " TiB"
+              ].join('')
+
               result.push({
-                  accountID: pool['subscription_id'],
-                  accountName: pool['subscription_name'],
-                  resourceGroup: pool['resource_group_name'],
-                  service: pool['service_type'],
-                  resourceID: pool['naf_pool_id'],
-                  resourceName: pool['naf_pool_name'],
-                  resourceType: pool['resource_kind'],
-                  resourceTier: pool['naf_pool_service'],
-                  region: pool['naf_pool_region'],
-                  tags: objectTagsToArrayTags(pool.tags),
-                  size: Math.round(pool['allocatedSize'] / 1024),
-                  sizeUnit: 'TiB',
-                  allocatedUsed: (pool['consumedSize'] / 1024).toFixed(3),
-                  allocatedUsedUnit: 'TiB',
-                  consumedPercentage: poolOldConsumedPercentage,
-                  threshold: param_stats_underutil_threshold_pool_value,
-                  recommendedSize: gibibytesToTebibytes(poolRecommendedSize),
-                  recommendedSizeUnit: 'TiB',
-                  savings: parseFloat(savings.toFixed(3)),
-                  savingsCurrency: "USD",
-                  id: pool['naf_pool_id'],
-                  createdAt: pool['naf_pool_created_at'],
+                accountID: pool['subscription_id'],
+                accountName: pool['subscription_name'],
+                resourceGroup: pool['resource_group_name'],
+                service: pool['service_type'],
+                resourceID: pool['naf_pool_id'],
+                resourceName: pool['naf_pool_name'],
+                resourceType: pool['resource_kind'],
+                resourceTier: pool['naf_pool_service'],
+                region: pool['naf_pool_region'],
+                tags: objectTagsToArrayTags(pool.tags),
+                size: size,
+                sizeUnit: 'TiB',
+                allocatedUsed: (pool['consumedSize'] / 1024).toFixed(3),
+                allocatedUsedUnit: 'TiB',
+                consumedPercentage: poolOldConsumedPercentage,
+                threshold: param_stats_underutil_threshold_pool_value,
+                recommendedSize: recommendedSize,
+                recommendedSizeUnit: 'TiB',
+                savings: parseFloat(savings.toFixed(3)),
+                savingsCurrency: "USD",
+                id: pool['naf_pool_id'],
+                createdAt: pool['naf_pool_created_at'],
+                recommendationDetails: recommendationDetails
               })
+
               _.each(pool.naf_pool_volumes, function(vol) {
+                recommendationDetails = [
+                  "Downsize Azure NetApp Volume ", vol['naf_volume_name'], " ",
+                  "in Azure Subscription ", pool['subscription_name'], " ",
+                  "(", pool['subscription_id'], ") ",
+                  "from ", vol['volume_allocated_size'], " GiB ",
+                  "to ", vol['recommendedAllocatedSize'], " GiB"
+                ].join('')
+
                 result.push({
                   accountID: pool['subscription_id'],
                   accountName: pool['subscription_name'],
                   resourceGroup: pool['resource_group_name'],
                   service: pool['service_type'],
-                  resourceID: vol.naf_volume_id,
-                  resourceName: vol.naf_volume_name,
-                  resourceType: vol.resource_kind,
+                  resourceID: vol['naf_volume_id'],
+                  resourceName: vol['naf_volume_name'],
+                  resourceType: vol['resource_kind'],
                   resourceTier: pool['naf_pool_service'],
                   region: pool['naf_pool_region'],
-                  tags: objectTagsToArrayTags(vol.tags),
-                  size: vol.volume_allocated_size,
+                  tags: objectTagsToArrayTags(vol['tags']),
+                  size: vol['volume_allocated_size'],
                   sizeUnit: 'GiB',
-                  allocatedUsed: vol.volume_logical_size,
+                  allocatedUsed: vol['volume_logical_size'],
                   allocatedUsedUnit: 'GiB',
-                  consumedPercentage: vol.volume_consumed_size_percentage,
+                  consumedPercentage: vol['volume_consumed_size_percentage'],
                   threshold: param_stats_underutil_threshold_volume_value,
-                  recommendedSize: vol.recommendedAllocatedSize,
+                  recommendedSize: vol['recommendedAllocatedSize'],
                   recommendedSizeUnit: 'GiB',
                   savings: 0,
                   savingsCurrency: "USD",
-                  id: vol.naf_volume_id,
-                  createdAt: vol.naf_volume_created_at,
+                  id: vol['naf_volume_id'],
+                  createdAt: vol['naf_volume_created_at'],
+                  recommendationDetails: recommendationDetails
                 })
               })
             }
@@ -997,19 +1084,47 @@ script "js_naf_oversized_volumes", type: "javascript" do
         }
       }
     })
+  }
 
-    if (result.length > 0) {
-      result[0].total_savings = total_savings.toFixed(2)
-      result[0].savings_currency = "USD"
-      var comparisonWord = (param_show_size_increment_recommendations == "Yes" ? "different" : "lower")
-      result[0].message = "Resources shown here meet the following conditions:\n\n"
-      result[0].message += "- Pools that have a " + comparisonWord + " value than " + param_stats_underutil_threshold_pool_value + "% of used capacity.\n"
-      result[0].message += "- Volumes that have a " + comparisonWord + " value than " + param_stats_underutil_threshold_volume_value + "% of used capacity.\n"
-      result[0].message += "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
-      result[0].policy_name = ds_applied_policy.name
-    } else {
-      result = []
-    }
+  if (result.length > 0) {
+    result[0].total_savings = total_savings.toFixed(2)
+    result[0].savings_currency = "USD"
+    var comparisonWord = (param_show_size_increment_recommendations == "Yes" ? "different" : "lower")
+    result[0].message = "Resources shown here meet the following conditions:\n\n"
+    result[0].message += "- Pools that have a " + comparisonWord + " value than " + param_stats_underutil_threshold_pool_value + "% of used capacity.\n"
+    result[0].message += "- Volumes that have a " + comparisonWord + " value than " + param_stats_underutil_threshold_volume_value + "% of used capacity.\n"
+    result[0].message += "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
+    result[0].policy_name = ds_applied_policy.name
+  } else {
+    result = [{
+      accountID: "",
+      accountName: "",
+      resourceGroup: "",
+      service: "",
+      resourceID: "",
+      resourceName: "",
+      resourceType: "",
+      resourceTier: "",
+      region: "",
+      tags: "",
+      size: "",
+      sizeUnit: "",
+      allocatedUsed: "",
+      allocatedUsedUnit: "",
+      consumedPercentage: "",
+      threshold: "",
+      recommendedSize: "",
+      recommendedSizeUnit: "",
+      savings: "",
+      savingsCurrency: "",
+      id: "",
+      createdAt: "",
+      recommendationDetails: "",
+      total_savings: "",
+      savings_currency: "",
+      message: "",
+      policy_name: ""
+    }]
   }
 EOS
 end
@@ -1019,15 +1134,15 @@ end
 ###############################################################################
 
 policy "pol_azure_rightsize_netapp_files" do
-  validate $ds_naf_oversized_pools do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure NetApp Pools Found"
+  validate_each $ds_naf_oversized_pools do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Oversized NetApp Pools Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}${{ .total_savings }} {{ .savings_currency }}
 
     {{ .message }}{{ end }}
     EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_rightsize_resources
     export do
@@ -1077,6 +1192,9 @@ policy "pol_azure_rightsize_netapp_files" do
       field "threshold" do
         label "Allocated Used Threshold %"
       end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
       field "recommendedSize" do
         label "Recommended Size (TiB)"
       end
@@ -1091,15 +1209,15 @@ policy "pol_azure_rightsize_netapp_files" do
       end
     end
   end
-  validate $ds_naf_oversized_volumes do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure NetApp Resources Found"
+  validate_each $ds_naf_oversized_volumes do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Oversized NetApp Pools & Volumes Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}${{ .total_savings }} {{ .savings_currency }}
 
     {{ .message }}{{ end }}
     EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_rightsize_resources
     export do
@@ -1155,6 +1273,9 @@ policy "pol_azure_rightsize_netapp_files" do
       field "threshold" do
         label "Allocated Used Threshold %"
       end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
       field "recommendedSize" do
         label "Recommended Size"
       end
@@ -1186,9 +1307,9 @@ escalation "esc_email" do
 end
 
 escalation "esc_rightsize_resources" do
-  automatic contains($param_automatic_action, "Rightsize recommended pools and volumes")
-  label "Rightsize resources"
-  description "Approval to rightsize all the selected resources."
+  automatic contains($param_automatic_action, "Rightsize NetApp Resources")
+  label "Rightsize NetApp Resources"
+  description "Approval to rightsize all selected NetApp resources"
   run "set_sizes", data, $param_azure_endpoint
 end
 
@@ -1196,91 +1317,103 @@ end
 # Cloud Workflow
 ###############################################################################
 
+define set_sizes($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  # Resize volumes first, so pools can be resized to the recommended by the policy.
+  foreach $resource in $data do
+    if $resource["resourceType"] == "Microsoft.NetApp/netAppAccounts/capacityPools/volumes"
+      sub on_error: handle_error() do
+        call set_volume_size($resource, $param_azure_endpoint) retrieve $set_size_response
+      end
+    end
+  end
+
+  # Resize pools.
+  foreach $resource in $data do
+    if $resource["resourceType"] == "Microsoft.NetApp/netAppAccounts/capacityPools"
+      sub on_error: handle_error() do
+        call set_pool_size($resource, $param_azure_endpoint) retrieve $set_size_response
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define set_pool_size($resource, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $resource["resourceID"]
+  $params = "?api-version=2023-05-01"
+  $url = $host + $href + $params
+  task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "patch",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2023-05-01" },
+    body: {
+      "properties": {
+        "size": $resource["recommendedSize"] * (2 ^ 30)
+      }
+    }
+  )
+
+  task_label("Patch Azure NetApp capacity pool response: " + $resource["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({ "req": "PATCH " + $url, "resp": $response })
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response patching Azure NetApp capacity pool: " + $resource["resourceID"] + " " + to_json($response)
+  else
+    task_label("Patch Azure NetApp capacity pool successful: " + $resource["resourceID"])
+  end
+end
+
+define set_volume_size($resource, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $resource["resourceID"]
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "patch",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2023-07-01" },
+    body: {
+      "properties": {
+        "usageThreshold": $resource["recommendedSize"] * (2 ^ 40)
+      }
+    }
+  )
+
+  task_label("Patch Azure NetApp volume response: " + $resource["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({ "req": "PATCH " + $url, "resp": $response })
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response patching Azure NetApp volume: " + $resource["resourceID"] + " " + to_json($response)
+  else
+    task_label("Patch Azure NetApp volume successful: " + $resource["resourceID"])
+  end
+end
+
 define handle_error() do
   if !$$errors
     $$errors = []
   end
+
   $$errors << $_error["type"] + ": " + $_error["message"]
   # We check for errors at the end, and raise them all together
   # Skip errors handled by this definition
   $_error_behavior = "skip"
-end
-
-define set_pool_size($pool_id, $size_bytes, $param_azure_endpoint) return $response do
-  $url = $param_azure_endpoint + $pool_id + "api-version=2023-05-01"
-  task_label("PATCH" + $url)
-  $response = http_request(
-    auth: $$auth_azure,
-    https: true,
-    verb: "patch",
-    host: $param_azure_endpoint,
-    href: $pool_id,
-    query_strings: { "api-version": "2023-05-01" },
-    body: {
-      "properties": {
-        "size": $size_bytes
-      }
-    }
-  )
-  task_label("Patch Azure NetApp capacity pool response: " + $pool_id + " " + to_json($response))
-  $$all_responses << to_json({ "req": "PATCH " + $url, "resp": $response })
-  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response patching Azure NetApp capacity pool: " + $pool_id + " " + to_json($response)
-  else
-    task_label("Patch Azure NetApp capacity pool successful: " + $pool_id)
-  end
-end
-
-define set_volume_size($vol_id, $size_bytes, $param_azure_endpoint) return $response do
-  $url = $param_azure_endpoint + $vol_id + "api-version=2023-07-01"
-  task_label("PATCH" + $url)
-  $response = http_request(
-    auth: $$auth_azure,
-    https: true,
-    verb: "patch",
-    host: $param_azure_endpoint,
-    href: $vol_id,
-    query_strings: { "api-version": "2023-07-01" },
-    body: {
-      "properties": {
-        "usageThreshold": $size_bytes
-      }
-    }
-  )
-  task_label("Patch Azure NetApp volume response: " + $vol_id + " " + to_json($response))
-  $$all_responses << to_json({ "req": "PATCH " + $url, "resp": $response })
-  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response patching Azure NetApp volume: " + $vol_id + " " + to_json($response)
-  else
-    task_label("Patch Azure NetApp volume successful: " + $vol_id)
-  end
-end
-
-define set_sizes($data, $param_azure_endpoint) return $all_responses do
-  $$all_responses = []
-  # Resize volumes first, so pools can be resized to the recommended by the policy.
-  foreach $res in $data do
-    if $res["resourceType"] == "Microsoft.NetApp/netAppAccounts/capacityPools/volumes"
-      sub on_error: handle_error() do
-        # Remember that recommendedSize for volumes is in GiB
-        $recommended_size_bytes = $res["recommendedSize"] * (2 ^ 30)
-        call set_volume_size($res["resourceID"], $recommended_size_bytes, $param_azure_endpoint) retrieve $set_size_response
-      end
-    end
-  end
-  # Resize pools.
-  foreach $res in $data do
-    if $res["resourceType"] == "Microsoft.NetApp/netAppAccounts/capacityPools"
-      sub on_error: handle_error() do
-        # Remember that recommendedSize for pools is in TiB
-        $recommended_size_bytes = $res["recommendedSize"] * (2 ^ 40)
-        call set_pool_size($res["resourceID"], $recommended_size_bytes, $param_azure_endpoint) retrieve $set_size_response
-      end
-    end
-  end
-  if inspect($$errors) != "null"
-    raise join($$errors, "\n")
-  end
 end
 
 ###############################################################################
@@ -1295,7 +1428,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do
@@ -1303,7 +1436,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
@@ -1335,7 +1467,7 @@ script "js_make_terminate_request", type: "javascript" do
   code <<-EOS
 
   var request = {
-    auth:  'auth_flexera',
+    auth: 'auth_flexera',
     host: rs_governance_host,
     path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
     headers: {
