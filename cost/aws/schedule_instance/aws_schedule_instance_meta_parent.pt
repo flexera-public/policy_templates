@@ -7,7 +7,7 @@ category "Meta"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "6.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "7.0.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "true",
   deprecated: "false"
 )
@@ -76,22 +76,6 @@ parameter "param_tag_schedule" do
   default "schedule"
 end
 
-parameter "param_tag_next_start" do
-  type "string"
-  category "Tag Keys"
-  label "Next Start Tag Key"
-  description "Tag key to use for scheduling instance to start. Default is recommended for most use cases."
-  default "next_start"
-end
-
-parameter "param_tag_next_stop" do
-  type "string"
-  category "Tag Keys"
-  label "Next Stop Tag Key"
-  description "Tag key to use for scheduling instance to stop. Default is recommended for most use cases."
-  default "next_stop"
-end
-
 parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
@@ -122,8 +106,8 @@ parameter "param_regions_list" do
   type "list"
   category "Filters"
   label "Allow/Deny Regions List"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
 end
 
@@ -133,7 +117,7 @@ parameter "param_automatic_action" do
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Execute Schedules"]
-  default []
+  default ["Execute Schedules"]
 end
 
 ###############################################################################
@@ -863,11 +847,11 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_instances_to_schedule_combined_incidents" do
-  run_script $js_ds_instances_to_schedule_combined_incidents, $ds_child_incident_details
+datasource "ds_instances_schedule_result_combined_incidents" do
+  run_script $js_ds_instances_schedule_result_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_instances_to_schedule_combined_incidents", type: "javascript" do
+script "js_ds_instances_schedule_result_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
@@ -910,6 +894,7 @@ escalation "esc_update_schedules" do
     category "Policy Actions"
     label "New Schedule"
     description "Enter a new value for the schedule tag. See README for more details"
+    # No default value, user input required
   end
   # Run declaration should go at end, after any parameters that may exist
   run "esc_update_schedules", data, rs_governance_host, rs_project_id, $param_schedule
@@ -983,7 +968,7 @@ end
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
     # Consolidated incident for AWS Scheduled EC2 Instances
-  validate $ds_instances_to_schedule_combined_incidents do
+  validate $ds_instances_schedule_result_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} AWS Scheduled EC2 Instances"
     escalate $esc_email
     escalate $esc_execute_schedules
@@ -1036,6 +1021,9 @@ policy "policy_scheduled_report" do
       end
       field "id" do
         label "ID"
+      end
+      field "event_active" do
+        label "Event Active"
       end
       field "incident_id" do
         label "Child Incident ID"

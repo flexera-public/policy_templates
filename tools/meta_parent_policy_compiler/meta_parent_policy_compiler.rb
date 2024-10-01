@@ -78,9 +78,10 @@ default_child_policy_template_files = [
   "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
   "../../cost/azure/rightsize_managed_disks/azure_rightsize_managed_disks.pt",
   "../../cost/azure/rightsize_managed_sql/azure_rightsize_managed_sql.pt",
+  "../../cost/azure/rightsize_managed_sql_storage/azure_rightsize_managed_sql_storage.pt",
   "../../cost/azure/rightsize_mysql_flexible/azure_rightsize_mysql_flexible.pt",
   "../../cost/azure/rightsize_mysql_single/azure_rightsize_mysql_single.pt",
-  "../../cost/azure/rightsize_netapp_files/azure_rightsize_netapp_files.pt",
+  "../../cost/azure/rightsize_netapp/azure_rightsize_netapp.pt",
   "../../cost/azure/rightsize_sql_instances/azure_rightsize_sql_instances.pt",
   "../../cost/azure/rightsize_sql_storage/azure_rightsize_sql_storage.pt",
   #"../../cost/azure/rightsize_synapse_sql_pools/azure_rightsize_synapse_sql_pools.pt",
@@ -144,6 +145,7 @@ default_child_policy_template_files = [
   "../../cost/google/cloud_sql_idle_instance_recommendations/google_sql_idle_instance_recommendations.pt",
   "../../cost/google/idle_ip_address_recommendations/google_idle_ip_address_recommendations.pt",
   "../../cost/google/idle_persistent_disk_recommendations/google_idle_persistent_disk_recommendations.pt",
+  "../../cost/google/rightsize_cloudsql_recommendations/google_rightsize_cloudsql_recommendations.pt",
   "../../cost/google/object_storage_optimization/google_object_storage_optimization.pt",
   "../../cost/google/recommender/recommender.pt",
   "../../cost/google/rightsize_vm_recommendations/google_rightsize_vm_recommendations.pt",
@@ -331,7 +333,11 @@ end
     # print(export_block)
     # print("\n---\n")
     # From the export block, capture the field blocks
-    fields = export_block[0].scan(/(^.*field\s+\".*?\".*?end)/m).flatten
+    fields = [] # Provide a default value, which is no fields declared
+    # Check if export_block is length > 0
+    if export_block.length > 0
+      fields = export_block[0].scan(/(^.*field\s+\".*?\".*?end)/m).flatten
+    end
     fields.each do |field|
       # Remove path from the field output in the meta parent
       field.gsub!(/\n.*?path.*?\n/, "\n")

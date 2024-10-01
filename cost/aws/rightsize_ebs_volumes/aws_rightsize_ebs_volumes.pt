@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.0",
+  version: "0.3.0",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes",
@@ -113,6 +113,14 @@ parameter "param_exclusion_tags_boolean" do
   description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
   allowed_values "Any", "All"
   default "Any"
+end
+
+parameter "param_exclusion_types" do
+  type "list"
+  category "Filters"
+  label "Exclusion Types"
+  description "A list of volume types to always exclude from the results. Leave blank to consider all volume types when producing recommendations. Examples: sc1, gp2"
+  default []
 end
 
 parameter "param_take_snapshot" do
@@ -474,12 +482,28 @@ script "js_volumes_list", type: "javascript" do
 EOS
 end
 
+datasource "ds_volumes_type_filtered" do
+  run_script $js_volumes_type_filtered, $ds_volumes_list, $param_exclusion_types
+end
+
+script "js_volumes_type_filtered", type: "javascript" do
+  parameters "ds_volumes_list", "param_exclusion_types"
+  result "result"
+  code <<-EOS
+  exclusion_types = _.map(param_exclusion_types, function(item) { return item.toLowerCase().trim() })
+
+  result = _.reject(ds_volumes_list, function(volume) {
+    return _.contains(exclusion_types, volume['volume_type'].toLowerCase().trim())
+  })
+EOS
+end
+
 datasource "ds_volumes_tag_filtered" do
-  run_script $js_volumes_tag_filtered, $ds_volumes_list, $param_exclusion_tags, $param_exclusion_tags_boolean
+  run_script $js_volumes_tag_filtered, $ds_volumes_type_filtered, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_volumes_tag_filtered", type: "javascript" do
-  parameters "ds_volumes_list", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  parameters "ds_volumes_type_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -513,7 +537,7 @@ script "js_volumes_tag_filtered", type: "javascript" do
   })
 
   if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_volumes_list, function(resource) {
+    result = _.reject(ds_volumes_type_filtered, function(resource) {
       resource_tags = {}
 
       if (typeof(resource['tags']) == 'object') {
@@ -551,7 +575,7 @@ script "js_volumes_tag_filtered", type: "javascript" do
       return all_tags_found || any_tags_found
     })
   } else {
-    result = ds_volumes_list
+    result = ds_volumes_type_filtered
   }
 EOS
 end
