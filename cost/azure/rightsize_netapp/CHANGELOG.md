@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.1
+
+- Fixed issue affecting incidents in meta parent policy. Base policy functionality is unchanged.
+
 ## v2.0.0
 
 - Renamed policy template to `Azure Rightsize NetApp Resources` to better reflect its functionality
