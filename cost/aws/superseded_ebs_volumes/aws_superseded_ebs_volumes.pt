@@ -1,5 +1,4 @@
-
-name "AWS Superseded EBS Volumes"
+name "AWS Superseded EBS Volumes - TEST Pricing API Fix"
 rs_pt_ver 20180301
 type "policy"
 short_description "This policy finds AWS GP2 volume types and recommends them for an upgrade to GP3 if this would result in savings. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/superseded_ebs_volumes/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -565,20 +564,47 @@ script "js_volumes_tag_filtered", type: "javascript" do
 EOS
 end
 
+# Get list of Volume regions for Pricing API requests
+datasource "ds_volume_regions_list" do
+  run_script $js_volume_regions_list, $ds_volumes_tag_filtered
+end
+
+script "js_volume_regions_list", type: "javascript" do
+  parameters "ds_volumes_tag_filtered"
+  result "result"
+  code <<-EOS
+  result = _.uniq(_.pluck(ds_volumes_tag_filtered, "region"))
+  EOS
+end
+
 datasource "ds_gp2_prices" do
+  iterate $ds_volume_regions_list
   request do
-    run_script $js_volume_prices, $ds_aws_api_hosts, "gp2"
+    run_script $js_volume_prices, $ds_aws_api_hosts, iter_item, "gp2"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "PriceList") do
+      field "priceList", jmes_path(col_item, "@")
+    end
   end
 end
 
 datasource "ds_gp3_prices" do
+  iterate $ds_volume_regions_list
   request do
-    run_script $js_volume_prices, $ds_aws_api_hosts, "gp3"
+    run_script $js_volume_prices, $ds_aws_api_hosts, iter_item, "gp3"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "PriceList") do
+      field "priceList", jmes_path(col_item, "@")
+    end
   end
 end
 
 script "js_volume_prices", type: "javascript" do
-  parameters "ds_aws_api_hosts", "volumeApiName"
+  parameters "ds_aws_api_hosts", "volume_region", "volumeApiName"
   result "request"
   code <<-EOS
   var request = {
@@ -603,6 +629,11 @@ script "js_volume_prices", type: "javascript" do
           "Type": "TERM_MATCH",
           "Field": "volumeApiName",
           "Value": volumeApiName
+        },
+        {
+          "Type": "TERM_MATCH",
+          "Field": "regionCode",
+          "Value": volume_region
         }
       ],
       "FormatVersion": "aws_v1",
@@ -623,11 +654,11 @@ script "js_volumes_with_prices", type: "javascript" do
   result "result"
   code <<-EOS
   // Function to convert price lists to proper JSON
-  function convertPriceList(priceList) {
+  function convertPriceList(prices) {
     convertedPriceList = {}
 
-    _.each(priceList, function(price) {
-      entry = JSON.parse(price.replace(/\\"/g, '"'))
+    _.each(prices, function(price) {
+      entry = JSON.parse(price.priceList.replace(/\\"/g, '"'))
       region = entry['product']['attributes']['regionCode']
 
       if (convertedPriceList[region] == undefined) {
@@ -636,7 +667,7 @@ script "js_volumes_with_prices", type: "javascript" do
 
       convertedPriceList[region].push(entry)
     })
-
+    
     return convertedPriceList
   }
 
@@ -687,6 +718,8 @@ script "js_volumes_with_prices", type: "javascript" do
       throughput = Number(instance['throughput'])
     }
 
+    console.log(size, "GB", iops, "IOPS", throughput, "Throughput")
+
     foundPrice = 0.0
 
     if (priceList[region] != undefined) {
@@ -704,14 +737,17 @@ script "js_volumes_with_prices", type: "javascript" do
         })
 
         if (item['product']['productFamily'] == "System Operation") {
+          console.log(prePrice, "IOPS Price")
           foundPrice += prePrice * (iops - 3000)
         }
 
         if (item['product']['productFamily'] == "Provisioned Throughput") {
+          console.log(prePrice, "Throughput Price")
           foundPrice += prePrice * (throughput - 125)
         }
 
         if (item['product']['productFamily'] == "Storage") {
+          console.log(prePrice, "Storage Price")
           foundPrice += prePrice * size
         }
       })
@@ -721,8 +757,8 @@ script "js_volumes_with_prices", type: "javascript" do
   }
 
   result = []
-  gp2_pricelist = convertPriceList(ds_gp2_prices['PriceList'])
-  gp3_pricelist = convertPriceList(ds_gp3_prices['PriceList'])
+  gp2_pricelist = convertPriceList(ds_gp2_prices)
+  gp3_pricelist = convertPriceList(ds_gp3_prices)
 
   _.each(ds_volumes_tag_filtered, function(volume) {
     gp2_price = getGP2Price(volume, gp2_pricelist) * ds_currency['exchange_rate']
