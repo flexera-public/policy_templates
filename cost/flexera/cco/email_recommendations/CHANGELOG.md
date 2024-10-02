@@ -3,7 +3,7 @@
 ## v0.6.0
 
 - Added support for additional recommendation policy templates
-- Changed "Disks" option to "Storage" for `Recommendation List` parameter to better reflect functionality
+- Changed "Disk" option to "Storage" for `Recommendation List` parameter to better reflect functionality
 - Added "PaaS" option to `Recommendation List` parameter
 
 ## v0.5.0
