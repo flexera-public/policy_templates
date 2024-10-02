@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy creates adjustment rules that convert the currency of the cost associated with the Cloud Vendor of choice. It utilizes xe.com to retrieve the latest exchange rates.
+This policy template creates adjustment rules that convert the currency of the costs associated with the cost dimension of choice. It utilizes xe.com to retrieve the latest exchange rates.
 
 ## How It Works
 
@@ -20,8 +20,7 @@ This policy has the following input parameters required when launching the polic
 - *Backfill Adjustments* - Whether to add/modify currency conversion to just the current month or to backfill previous months.
 - *Backfill Start Date* - The month and year in YYYY-MM format to backfill adjustments to. Only applicable if `Backfill Previous Months` is selected for the `Backfill Adjustments` parameter.
 - *Backfill Exchange Rates* - Whether or not to use the current exchange rate, or the exchange rate at the time, when applying currency conversion to previous months. Only applicable if `Backfill Previous Months` is selected for the `Backfill Adjustments` parameter.
-- *Cloud Provider* - Cloud provider costs that you want to apply currency conversion to. Select 'Other' to specify the name of a cloud provider manually.
-- *Cloud Provider Name* - Name of the cloud provider to apply currency conversion to. Only applicable if 'Other' is selected for Cloud Provider. This should correspond to the Cloud Vendor field in the Flexera One UI or the 'vendor' field in Optima.
+- *Dimension* - The Flexera CCO cost dimension name/id and value to apply the currency conversion to in 'Dimension=Value' format. Example: Cloud Vendor=AWS
 - *Currency From* - Currency you want to convert from (based on ISO 4217 codes - e.g., 'USD' for US Dollar)
 - *Currency To* - Currency you want to convert to (based on ISO 4217 codes - e.g., 'EUR' for Euro)
 - *Set Organization Currency* - Whether or not to configure the Flexera CCO user interface to present costs in the currency specified in the `Currency To` parameter. If set to `Yes`, this will be done, and all costs in Flexera CCO for this organization will be presented in the currency costs are converted to.
@@ -45,4 +44,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

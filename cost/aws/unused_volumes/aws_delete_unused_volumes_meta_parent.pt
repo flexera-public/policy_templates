@@ -7,9 +7,9 @@ category "Meta"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "8.2.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "8.3.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "true",
-  deprecated: "false"
+  deprecated: "true"
 )
 
 ##############################################################################
@@ -246,9 +246,8 @@ script "js_format_self", type: "javascript" do
   EOS
 end
 
-
 # Get Pulished Policy Details
-datasource "ds_published_child_policy_information" do
+datasource "ds_get_published_child_policy_information" do
   request do
     auth $auth_flexera
     host rs_governance_host
@@ -257,17 +256,32 @@ datasource "ds_published_child_policy_information" do
   end
   result do
     encoding "json"
-    # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "AWS Unused Volumes" and .created_by.email == "support@flexera.com")' ) do
+    collect jmes_path(response, "items[*]") do
       field "name", jmes_path(col_item, "name")
+      field "created_by", jmes_path(col_item, "created_by.email")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
     end
   end
 end
 
+# Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
+datasource "ds_published_child_policy_information" do
+  run_script $js_published_child_policy_information, $ds_get_published_child_policy_information
+end
+
+script "js_published_child_policy_information", type: "javascript" do
+  parameters "ds_get_published_child_policy_information"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_get_published_child_policy_information, function(item) {
+    return item['name'] == "AWS Unused Volumes" && item['created_by'] == "support@flexera.com"
+  })
+EOS
+end
+
 # Get Uploaded Policy Details
-datasource "ds_project_child_policy_information" do
+datasource "ds_get_project_child_policy_information" do
   request do
     auth $auth_flexera
     host rs_governance_host
@@ -276,13 +290,27 @@ datasource "ds_project_child_policy_information" do
   end
   result do
     encoding "json"
-    # Select the uploaded policy that matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "AWS Unused Volumes")' ) do
+    collect jmes_path(response, "items[*]") do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
     end
   end
+end
+
+# Select the uploaded policy that matches the name of the child policy template
+datasource "ds_project_child_policy_information" do
+  run_script $js_project_child_policy_information, $ds_get_project_child_policy_information
+end
+
+script "js_project_child_policy_information", type: "javascript" do
+  parameters "ds_get_project_child_policy_information"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_get_project_child_policy_information, function(item) {
+    return item['name'] == "AWS Unused Volumes"
+  })
+EOS
 end
 
 datasource "ds_get_billing_centers" do
@@ -434,12 +462,13 @@ datasource "ds_get_existing_policies" do
     query "meta_parent_policy_id", policy_id
   end
   result do
-    collect jq(response, '.items[]?') do
-      field "name", jq(col_item, ".name")
-      field "applied_policy_id", jq(col_item, ".id")
-      field "options", jq(col_item, ".options")
-      field "updated_at", jq(col_item, ".updated_at")
-      field "status", jq(col_item, ".status")
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "applied_policy_id", jmes_path(col_item, "id")
+      field "options", jmes_path(col_item, "options")
+      field "updated_at", jmes_path(col_item, "updated_at")
+      field "status", jmes_path(col_item, "status")
     end
   end
 end
@@ -455,14 +484,15 @@ datasource "ds_get_existing_policies_incidents" do
     query "state", "triggered"
   end
   result do
-    collect jq(response, '.items[]?') do
-      field "incident_id", jq(col_item, ".id")
-      field "applied_policy_id", jq(col_item, ".applied_policy.id")
-      field "summary", jq(col_item, ".summary")
-      field "state", jq(col_item, ".state")
-      field "violation_data_count", jq(col_item, ".violation_data_count")
-      field "updated_at", jq(col_item, ".updated_at")
-      field "meta_parent_policy_id", jq(col_item, ".meta_parent_policy_id")
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "incident_id", jmes_path(col_item, "id")
+      field "applied_policy_id", jmes_path(col_item, "applied_policy.id")
+      field "summary", jmes_path(col_item, "summary")
+      field "state", jmes_path(col_item, "state")
+      field "violation_data_count", jmes_path(col_item, "violation_data_count")
+      field "updated_at", jmes_path(col_item, "updated_at")
+      field "meta_parent_policy_id", jmes_path(col_item, "meta_parent_policy_id")
     end
   end
 end
@@ -941,6 +971,9 @@ policy "policy_scheduled_report" do
       end
       field "service" do
         label "Service"
+      end
+      field "resourceARN" do
+        label "Resource ARN"
       end
       field "id" do
         label "ID"

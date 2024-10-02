@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "3.0.0",
+  version: "3.1.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization"
@@ -319,11 +319,11 @@ EOS
 end
 
 datasource "ds_costs_sorted" do
-  run_script $js_costs_sorted, $ds_costs, $ds_dimension, $ds_billing_centers, $ds_currency, $ds_applied_policy, $param_cost_metric, $param_usage_days, $param_threshold
+  run_script $js_costs_sorted, $ds_costs, $ds_dimension, $ds_billing_centers, $ds_currency, $ds_applied_policy, $param_cost_metric, $param_usage_days, $param_threshold, rs_org_id, rs_optima_host
 end
 
 script "js_costs_sorted", type: "javascript" do
-  parameters "ds_costs", "ds_dimension", "ds_billing_centers", "ds_currency", "ds_applied_policy", "param_cost_metric", "param_usage_days", "param_threshold"
+  parameters "ds_costs", "ds_dimension", "ds_billing_centers", "ds_currency", "ds_applied_policy", "param_cost_metric", "param_usage_days", "param_threshold", "rs_org_id", "rs_optima_host"
   result "result"
   code <<-EOS
   cost_metric_table = {
@@ -342,10 +342,7 @@ script "js_costs_sorted", type: "javascript" do
   start_date = start_date.toISOString().substring(0, 10)
 
   billing_center_names = {}
-
-  _.each(ds_billing_centers, function(bc) {
-    billing_center_names[bc['id']] = bc['name']
-  })
+  _.each(ds_billing_centers, function(bc) { billing_center_names[bc['id']] = bc['name'] })
 
   spend_by_value = {}
 
@@ -363,7 +360,24 @@ script "js_costs_sorted", type: "javascript" do
     spend_by_value[value]['vendors'].push(item['dimensions']['vendor'])
   })
 
+  url_prefix_table = {
+    "api.optima.flexeraeng.com": "https://app.flexera.com/",
+    "api.optima-eu.flexeraeng.com": "https://app.flexera.eu/",
+    "api.optima-apac.flexeraeng.com": "https://app.flexera.au/"
+  }
+
+  url_prefix = url_prefix_table[rs_optima_host]
+
   result = _.map(_.keys(spend_by_value), function(key) {
+    resource_list = [
+      "Resources||", url_prefix, "orgs/", rs_org_id, "/optima/dashboards?",
+      "dashboardID=resource-analyzer&granularity=Daily&",
+      "costType=", cost_metric_table[param_cost_metric], "&",
+      "startDate=", start_date, "&",
+      "endDate=", end_date, "&",
+      "filterBy=filters.", ds_dimension['id'], ".", encodeURI(key)
+    ].join('')
+
     return {
       dimension: ds_dimension['name'],
       id: key,
@@ -374,7 +388,8 @@ script "js_costs_sorted", type: "javascript" do
       end_date: end_date,
       policy_name: ds_applied_policy['name'],
       currency: ds_currency['symbol'],
-      threshold: param_threshold
+      threshold: param_threshold,
+      resource_list: resource_list
     }
   })
 EOS
@@ -433,6 +448,10 @@ policy "pol_low_usage" do
       end
       field "threshold" do
         label "Spend Threshold"
+      end
+      field "resource_list" do
+        label "Resources"
+        format "link-external"
       end
     end
   end

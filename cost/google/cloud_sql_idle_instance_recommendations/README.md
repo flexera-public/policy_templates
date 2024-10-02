@@ -1,5 +1,9 @@
 # Google Idle Cloud SQL Instance Recommender
 
+## Deprecated
+
+This policy is no longer being updated. The [Google Rightsize Cloud SQL Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_recommendations/) policy produces recommendations for both idle and underutilized Cloud SQL instances and should be used instead.
+
 ## What It Does
 
 This policy reports on any idle Cloud SQL instances identified by the Google Recommender service. The user can then choose to stop or delete the Cloud SQL instance if desired. Optionally, the user can filter results by label, project ID/name, or region.

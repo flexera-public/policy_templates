@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.2.0
+
+- Added `Resource ARN` to incident table.
+
 ## v5.1.2
 
 - Fix bug preventing Memory metrics from being included in result for some EC2 Instances created by Autoscaling Group

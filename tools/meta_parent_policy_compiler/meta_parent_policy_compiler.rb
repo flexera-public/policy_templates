@@ -38,6 +38,7 @@ default_child_policy_template_files = [
   "../../cost/aws/unused_volumes/aws_delete_unused_volumes.pt",
   "../../operational/aws/ec2_stopped_report/aws_ec2_stopped_report.pt",
   "../../operational/aws/lambda_functions_with_high_error_rate/lambda_functions_with_high_error_rate.pt",
+  "../../operational/aws/lambda_provisioned_concurrency/aws_lambda_provisioned_concurrency.pt",
   "../../operational/aws/long_running_instances/long_running_instances.pt",
   "../../operational/aws/scheduled_ec2_events/aws_scheduled_ec2_events.pt",
   "../../operational/aws/tag_cardinality/aws_tag_cardinality.pt",
@@ -59,6 +60,7 @@ default_child_policy_template_files = [
   "../../cost/aws/superseded_ebs_volumes/aws_superseded_ebs_volumes.pt",
   "../../cost/aws/rightsize_ebs_volumes/aws_rightsize_ebs_volumes.pt",
   # Azure Policy Templates
+  "../../compliance/azure/advisor_carbon/azure_advisor_carbon.pt",
   "../../compliance/azure/azure_disallowed_regions/azure_disallowed_regions.pt",
   "../../compliance/azure/azure_policy_audit/azure_policy_audit.pt",
   "../../compliance/azure/azure_untagged_vms/untagged_vms.pt",
@@ -75,15 +77,21 @@ default_child_policy_template_files = [
   "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
   "../../cost/azure/rightsize_managed_disks/azure_rightsize_managed_disks.pt",
   "../../cost/azure/rightsize_managed_sql/azure_rightsize_managed_sql.pt",
-  "../../cost/azure/rightsize_netapp_files/azure_rightsize_netapp_files.pt",
+  "../../cost/azure/rightsize_managed_sql_storage/azure_rightsize_managed_sql_storage.pt",
+  "../../cost/azure/rightsize_mysql_flexible/azure_rightsize_mysql_flexible.pt",
+  "../../cost/azure/rightsize_mysql_single/azure_rightsize_mysql_single.pt",
+  "../../cost/azure/rightsize_netapp/azure_rightsize_netapp.pt",
   "../../cost/azure/rightsize_sql_instances/azure_rightsize_sql_instances.pt",
   "../../cost/azure/rightsize_sql_storage/azure_rightsize_sql_storage.pt",
   #"../../cost/azure/rightsize_synapse_sql_pools/azure_rightsize_synapse_sql_pools.pt",
   "../../cost/azure/unoptimized_web_app_scaling/azure_unoptimized_web_app_scaling.pt",
   "../../cost/azure/sql_servers_without_elastic_pool/azure_sql_servers_without_elastic_pool.pt",
+  "../../cost/azure/unused_app_service_plans/azure_unused_app_service_plans.pt",
   "../../cost/azure/unused_firewalls/azure_unused_firewalls.pt",
   "../../cost/azure/unused_ip_addresses/azure_unused_ip_addresses.pt",
+  "../../cost/azure/unused_load_balancers/azure_unused_load_balancers.pt",
   "../../cost/azure/unused_sql_databases/azure_unused_sql_databases.pt",
+  "../../cost/azure/unused_vngs/azure_unused_vngs.pt",
   "../../cost/azure/unused_volumes/azure_unused_volumes.pt",
   "../../cost/azure/hybrid_use_benefit/azure_hybrid_use_benefit.pt",
   "../../cost/azure/hybrid_use_benefit_linux/ahub_linux.pt",
@@ -136,6 +144,7 @@ default_child_policy_template_files = [
   "../../cost/google/cloud_sql_idle_instance_recommendations/google_sql_idle_instance_recommendations.pt",
   "../../cost/google/idle_ip_address_recommendations/google_idle_ip_address_recommendations.pt",
   "../../cost/google/idle_persistent_disk_recommendations/google_idle_persistent_disk_recommendations.pt",
+  "../../cost/google/rightsize_cloudsql_recommendations/google_rightsize_cloudsql_recommendations.pt",
   "../../cost/google/object_storage_optimization/google_object_storage_optimization.pt",
   "../../cost/google/recommender/recommender.pt",
   "../../cost/google/rightsize_vm_recommendations/google_rightsize_vm_recommendations.pt",
@@ -170,7 +179,7 @@ def compile_meta_parent_policy(file_path)
   publish = "true"
   publish = publish_scan[0][0] if !publish_scan.empty?
   # get the deprecated string if it exists, defaulting to false if not present
-  deprecated_scan = pt.scan(/publish: "(.*?)"/)
+  deprecated_scan = pt.scan(/deprecated: "(.*?)"/)
   deprecated = "false"
   deprecated = deprecated_scan[0][0] if !deprecated_scan.empty?
   # print("Name: #{name}\n")
@@ -323,7 +332,11 @@ end
     # print(export_block)
     # print("\n---\n")
     # From the export block, capture the field blocks
-    fields = export_block[0].scan(/(^.*field\s+\".*?\".*?end)/m).flatten
+    fields = [] # Provide a default value, which is no fields declared
+    # Check if export_block is length > 0
+    if export_block.length > 0
+      fields = export_block[0].scan(/(^.*field\s+\".*?\".*?end)/m).flatten
+    end
     fields.each do |field|
       # Remove path from the field output in the meta parent
       field.gsub!(/\n.*?path.*?\n/, "\n")
