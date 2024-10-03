@@ -390,6 +390,9 @@ changed_pt_files.each do |file|
     # Raise warning if policy changed but readme has not been
     rd_test = policy_unmodified_readme?(file, changed_readme_files); warnings << rd_test if rd_test
 
+    # Raise error if policy template name does not match name in README file
+    test = policy_readme_correct_name?(file, file_parsed); failures << test if test
+
     # Raise error if policy is not in the master permissions file.
     # Raise warning if policy is in this file, but datasources have been added.
     # Only raise the above warning if the more general warning about updating the README doesn't exist.
