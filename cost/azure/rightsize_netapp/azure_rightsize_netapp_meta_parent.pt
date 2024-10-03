@@ -1,13 +1,13 @@
-name "Meta Parent: Azure Schedule Instance"
+name "Meta Parent: Azure Rightsize NetApp Resources"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/schedule_instance) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Rightsize NetApp Resources](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_netapp) Policies."
 severity "low"
 category "Meta"
 default_frequency "15 minutes"
 info(
   provider: "Azure",
-  version: "6.0.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "2.0.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "true",
   deprecated: "false"
 )
@@ -62,7 +62,7 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"Azure Schedule Instance\" Policy Template from Catalog.  Optionally, you can use the \"Azure Schedule Instance\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"Azure Rightsize NetApp Resources\" Policy Template from Catalog.  Optionally, you can use the \"Azure Rightsize NetApp Resources\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
@@ -77,12 +77,24 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_tag_schedule" do
-  type "string"
-  category "Tag Keys"
-  label "Schedule Tag Key"
-  description "Tag key that schedule information is stored in. Default is recommended for most use cases."
-  default "schedule"
+parameter "param_stats_underutil_threshold_pool_value" do
+  type "number"
+  category "Statistics"
+  label "Pool Allocated to Volume Threshold (%)"
+  description "The allocation threshold at which to consider a NetApp pool to be 'oversized' and therefore be flagged for downsizing."
+  min_value 0
+  max_value 100
+  default 50
+end
+
+parameter "param_stats_underutil_threshold_volume_value" do
+  type "number"
+  category "Statistics"
+  label "Volume Consumed Capacity Threshold (%)"
+  description "The capacity usage threshold at which to consider a NetApp volume to be 'oversized' and therefore be flagged for downsizing."
+  min_value 0
+  max_value 100
+  default 50
 end
 
 parameter "param_exclusion_tags" do
@@ -106,7 +118,7 @@ parameter "param_regions_allow_or_deny" do
   type "string"
   category "Filters"
   label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details."
+  description "Allow or deny entered regions. See the README for more details."
   allowed_values "Allow", "Deny"
   default "Allow"
 end
@@ -119,13 +131,31 @@ parameter "param_regions_list" do
   default []
 end
 
-parameter "param_skipshutdown" do
+parameter "param_show_size_increment_recommendations" do
   type "string"
-  category "Actions"
-  label "Power Off Type"
-  description "Whether to perform a graceful shutdown or a forced shutdown when powering off instances."
-  allowed_values "Graceful", "Forced"
-  default "Graceful"
+  category "Filters"
+  label "Show Upsize Recommendations"
+  description "Whether or not to include upsize recommendations for pools and volumes"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_resource_types" do
+  type "string"
+  category "Filter"
+  label "Resource Types"
+  description "Whether to produce recommendations only for pools or for both pools and volumes"
+  allowed_values "Pools", "Pools and Volumes"
+  default "Pools"
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
 end
 
 parameter "param_automatic_action" do
@@ -133,8 +163,8 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Execute Schedules"]
-  default ["Execute Schedules"]
+  allowed_values ["Rightsize NetApp Resources"]
+  default []
 end
 
 ###############################################################################
@@ -276,7 +306,7 @@ script "js_published_child_policy_information", type: "javascript" do
   result "result"
   code <<-EOS
   result = _.filter(ds_get_published_child_policy_information, function(item) {
-    return item['name'] == "Azure Schedule Instance" && item['created_by'] == "support@flexera.com"
+    return item['name'] == "Azure Rightsize NetApp Resources" && item['created_by'] == "support@flexera.com"
   })
 EOS
 end
@@ -309,7 +339,7 @@ script "js_project_child_policy_information", type: "javascript" do
   result "result"
   code <<-EOS
   result = _.filter(ds_get_project_child_policy_information, function(item) {
-    return item['name'] == "Azure Schedule Instance"
+    return item['name'] == "Azure Rightsize NetApp Resources"
   })
 EOS
 end
@@ -874,19 +904,41 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_instances_schedule_result_combined_incidents" do
-  run_script $js_ds_instances_schedule_result_combined_incidents, $ds_child_incident_details
+datasource "ds_naf_oversized_pools_combined_incidents" do
+  run_script $js_ds_naf_oversized_pools_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_instances_schedule_result_combined_incidents", type: "javascript" do
+script "js_ds_naf_oversized_pools_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Azure Scheduled Instances" then include it in the filter result
-    if (s.indexOf("Azure Scheduled Instances") > -1) {
+    // If the incident summary contains "Azure Oversized NetApp Pools Found" then include it in the filter result
+    if (s.indexOf("Azure Oversized NetApp Pools Found") > -1) {
+      _.each(incident["violation_data"], function(violation) {
+        violation["incident_id"] = incident["id"];
+        result.push(violation);
+      });
+    }
+  });
+EOS
+end
+
+datasource "ds_naf_oversized_volumes_combined_incidents" do
+  run_script $js_ds_naf_oversized_volumes_combined_incidents, $ds_child_incident_details
+end
+
+script "js_ds_naf_oversized_volumes_combined_incidents", type: "javascript" do
+  parameters "ds_child_incident_details"
+  result "result"
+  code <<-EOS
+  result = []
+  _.each(ds_child_incident_details, function(incident) {
+    s = incident["summary"];
+    // If the incident summary contains "Azure Oversized NetApp Pools And Volumes Found" then include it in the filter result
+    if (s.indexOf("Azure Oversized NetApp Pools And Volumes Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -897,94 +949,18 @@ EOS
 end
 
 
-# Escalation for Execute Schedules
-escalation "esc_execute_schedules" do
+# Escalation for Rightsize NetApp Resources
+escalation "esc_rightsize_resources" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Execute Schedules"
-  description "Approval to start or stop all selected instances based on schedule"
+  label "Rightsize NetApp Resources"
+  description "Approval to rightsize all selected NetApp resources"
 
   # Run declaration should go at end, after any parameters that may exist
-  run "esc_execute_schedules", data, rs_governance_host, rs_project_id
+  run "esc_rightsize_resources", data, rs_governance_host, rs_project_id
 end
-define esc_execute_schedules($data, $governance_host, $rs_project_id) do
+define esc_rightsize_resources($data, $governance_host, $rs_project_id) do
   $actions_options = []
-  call child_run_action($data, $governance_host, $rs_project_id, "Execute Schedules", $action_options)
-end
-
-# Escalation for Update Schedules
-escalation "esc_update_schedules" do
-  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Update Schedules"
-  description "Approval to update the schedule tags on all selected instances"
-  parameter "param_schedule" do
-    type "string"
-    category "Policy Actions"
-    label "New Schedule"
-    description "Enter a new value for the schedule tag. See README for more details"
-    # No default value, user input required
-  end
-  # Run declaration should go at end, after any parameters that may exist
-  run "esc_update_schedules", data, rs_governance_host, rs_project_id, $param_schedule
-end
-define esc_update_schedules($data, $governance_host, $rs_project_id, $param_schedule) do
-  $actions_options = [{ "name": "param_schedule", "value": $param_schedule }]
-  call child_run_action($data, $governance_host, $rs_project_id, "Update Schedules", $action_options)
-end
-
-# Escalation for Delete Schedules
-escalation "esc_delete_schedules" do
-  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Delete Schedules"
-  description "Approval to delete the schedule tags on all selected instances"
-
-  # Run declaration should go at end, after any parameters that may exist
-  run "esc_delete_schedules", data, rs_governance_host, rs_project_id
-end
-define esc_delete_schedules($data, $governance_host, $rs_project_id) do
-  $actions_options = []
-  call child_run_action($data, $governance_host, $rs_project_id, "Delete Schedules", $action_options)
-end
-
-# Escalation for Power On Instances
-escalation "esc_start_instances" do
-  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Power On Instances"
-  description "Approval to power on all selected instances"
-
-  # Run declaration should go at end, after any parameters that may exist
-  run "esc_start_instances", data, rs_governance_host, rs_project_id
-end
-define esc_start_instances($data, $governance_host, $rs_project_id) do
-  $actions_options = []
-  call child_run_action($data, $governance_host, $rs_project_id, "Power On Instances", $action_options)
-end
-
-# Escalation for Power Off Instances
-escalation "esc_stop_instances" do
-  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Power Off Instances"
-  description "Approval to power off all selected instances"
-
-  # Run declaration should go at end, after any parameters that may exist
-  run "esc_stop_instances", data, rs_governance_host, rs_project_id
-end
-define esc_stop_instances($data, $governance_host, $rs_project_id) do
-  $actions_options = []
-  call child_run_action($data, $governance_host, $rs_project_id, "Power Off Instances", $action_options)
-end
-
-# Escalation for Delete Instances
-escalation "esc_delete_instances" do
-  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Delete Instances"
-  description "Approval to delete all selected instances"
-
-  # Run declaration should go at end, after any parameters that may exist
-  run "esc_delete_instances", data, rs_governance_host, rs_project_id
-end
-define esc_delete_instances($data, $governance_host, $rs_project_id) do
-  $actions_options = []
-  call child_run_action($data, $governance_host, $rs_project_id, "Delete Instances", $action_options)
+  call child_run_action($data, $governance_host, $rs_project_id, "Rightsize NetApp Resources", $action_options)
 end
 
 
@@ -994,69 +970,156 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Azure Scheduled Instances
-  validate $ds_instances_schedule_result_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Azure Scheduled Instances"
+    # Consolidated incident for Azure Oversized NetApp Pools Found
+  validate $ds_naf_oversized_pools_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Azure Oversized NetApp Pools Found"
     escalate $esc_email
-    escalate $esc_execute_schedules
-    escalate $esc_update_schedules
-    escalate $esc_delete_schedules
-    escalate $esc_start_instances
-    escalate $esc_stop_instances
-    escalate $esc_delete_instances
+    escalate $esc_rightsize_resources
     check eq(size(data), 0)
     export do
       resource_level true
       field "accountID" do
-        label "Subscription ID"
+        label "Account ID"
       end
       field "accountName" do
-        label "Subscription Name"
+        label "Account Name"
       end
       field "resourceGroup" do
         label "Resource Group"
       end
-      field "resourceName" do
-        label "Resource Name"
+      field "service" do
+        label "Service"
       end
       field "resourceID" do
         label "Resource ID"
       end
-      field "tags" do
-        label "Resource Tags"
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "createdAt" do
+        label "Date/Time Created"
       end
       field "resourceType" do
-        label "Instance Size"
+        label "Resource Type"
       end
-      field "resourceKind" do
-        label "Resource Kind"
+      field "resourceTier" do
+        label "Resource Tier"
       end
       field "region" do
         label "Region"
       end
-      field "osType" do
-        label "Operating System"
+      field "tags" do
+        label "Tags"
       end
-      field "service" do
-        label "Service"
+      field "size" do
+        label "Size (TiB)"
       end
-      field "schedule" do
-        label "Schedule"
+      field "allocatedUsed" do
+        label "Allocated Used (TiB)"
       end
-      field "next_start" do
-        label "Next Start"
+      field "consumedPercentage" do
+        label "Allocated Used %"
       end
-      field "next_stop" do
-        label "Next Stop"
+      field "threshold" do
+        label "Allocated Used Threshold %"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "recommendedSize" do
+        label "Recommended Size (TiB)"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
       end
       field "id" do
         label "ID"
       end
-      field "tags_object" do
-        label "Tags (Object)"
+      field "incident_id" do
+        label "Child Incident ID"
       end
-      field "event_active" do
-        label "Event Active"
+    end
+  end
+
+  # Consolidated incident for Azure Oversized NetApp Pools And Volumes Found
+  validate $ds_naf_oversized_volumes_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Azure Oversized NetApp Pools And Volumes Found"
+    escalate $esc_email
+    escalate $esc_rightsize_resources
+    check eq(size(data), 0)
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "createdAt" do
+        label "Date/Time Created"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "resourceTier" do
+        label "Resource Tier"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "size" do
+        label "Size"
+      end
+      field "sizeUnit" do
+        label "Size Unit"
+      end
+      field "allocatedUsed" do
+        label "Allocated Used"
+      end
+      field "allocatedUsedUnit" do
+        label "Allocated Used Unit"
+      end
+      field "consumedPercentage" do
+        label "Allocated Used %"
+      end
+      field "threshold" do
+        label "Allocated Used Threshold %"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "recommendedSize" do
+        label "Recommended Size"
+      end
+      field "recommendedSizeUnit" do
+        label "Recommended Size Unit"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "id" do
+        label "ID"
       end
       field "incident_id" do
         label "Child Incident ID"

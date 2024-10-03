@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.0.1
+
+- Removed datasource that was not necessary for results
+
 ## v5.0.0
 
 - Remove `next_stop`, `next_start` label requirements

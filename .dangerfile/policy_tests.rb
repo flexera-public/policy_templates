@@ -77,6 +77,32 @@ def policy_bad_directory?(file)
   return false
 end
 
+### README Name Match test
+# Verify that the policy template name field matches first line of README
+def policy_readme_correct_name?(file, file_parsed)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template name matches first line of README.md..."
+
+  fail_message = ""
+
+  # Get policy template name from parsed data
+  template_name = file_parsed.parsed_name
+
+  # Get file path for readme file
+  file_sections = file.split('/')
+  file_sections.pop
+  readme_file_path = file_sections.join('/') + "/README.md"
+
+  # Get first line of README.md and remove #
+  readme_name = File.read(readme_file_path).split("\n")[0].split("# ")[1].strip()
+
+  if (template_name != readme_name)
+    fail_message = "Policy Template name `" + template_name + "` does not match the first line of the README.md file. Please ensure that README.md has the correct policy template name on the first line."
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Unmodified README test
 # Verify that .pt file also has an updated README
 def policy_unmodified_readme?(file, changed_readme_files)
@@ -1225,18 +1251,20 @@ def policy_bad_comma_spacing?(file, file_lines)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has improper comma spacing..."
 
   fail_message = ""
-
   file_lines.each_with_index do |line, index|
     line_number = index + 1
-
+    line = line.strip
     if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")') && !line.include?("jq(") && !line.include?("/,/")
-      if line.strip.match(/,\s{2,}/) || line.strip.match(/\s,/) || line.strip.match(/,[^\s]/)
-        fail_message += "Line #{line_number.to_s}: Possible invalid spacing between comma-separated items found.\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear\n\n"
+      if line.match(/,\s{2,}/) || line.match(/\s,/) || line.match(/,[^\s]/) && !(line.match(/\',\'/) || line.match(/\",\"/) || line.match(/\`,\`/))
+        if fail_message.empty?
+          fail_message += "\n\n"
+        end
+        fail_message += "Line #{line_number.to_s}: `"+line+"`\n\n"
       end
     end
   end
 
-  fail_message = "Issues with comma-separation found:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "Possible invalid spacing between comma-separated items found:\n\n" + fail_message + "\n\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear" if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false

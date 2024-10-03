@@ -64,9 +64,10 @@ These templates can generate savings estimates for your environment.
 - [Azure Rightsize Managed Disks](./cost/azure/rightsize_managed_disks)
 - [Azure Rightsize MySQL Flexible Servers](./cost/azure/rightsize_mysql_flexible)
 - [Azure Rightsize MySQL Single Servers](./cost/azure/rightsize_mysql_single)
-- [Azure Rightsize NetApp Files](./cost/azure/rightsize_netapp_files)
+- [Azure Rightsize NetApp Resources](./cost/azure/rightsize_netapp)
 - [Azure Rightsize SQL Database Storage](./cost/azure/rightsize_sql_storage)
 - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
+- [Azure Rightsize SQL Managed Instance Storage](./cost/azure/rightsize_managed_sql_storage)
 - [Azure Rightsize SQL Managed Instances](./cost/azure/rightsize_managed_sql)
 - [Azure Rightsize Synapse SQL Pools](./cost/azure/rightsize_synapse_sql_pools)
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
@@ -312,7 +313,7 @@ These templates can generate savings estimates for your environment.
 
 - NetApp Files
 
-  - [Azure Rightsize NetApp Files](./cost/azure/rightsize_netapp_files)
+  - [Azure Rightsize NetApp Resources](./cost/azure/rightsize_netapp)
 
 - Network
 
@@ -330,6 +331,7 @@ These templates can generate savings estimates for your environment.
   - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   - [Azure Rightsize SQL Database Storage](./cost/azure/rightsize_sql_storage)
   - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
+  - [Azure Rightsize SQL Managed Instance Storage](./cost/azure/rightsize_managed_sql_storage)
   - [Azure Rightsize SQL Managed Instances](./cost/azure/rightsize_managed_sql)
   - [Azure Rightsize Synapse SQL Pools](./cost/azure/rightsize_synapse_sql_pools)
   - [Azure SQL Servers Without Elastic Pools](./cost/azure/sql_servers_without_elastic_pool)
@@ -704,11 +706,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 131
+  Cost: 132
   Operational: 30
   SaaS Management: 11
   Security: 74
-:optimization_count: 68
+:optimization_count: 69
 :policy_sets:
   '': 46
   Allocate VMs: 3
@@ -752,7 +754,7 @@ These templates can generate savings estimates for your environment.
   Rightsize Clusters: 1
   Rightsize Compute Instances: 6
   Rightsize Containers: 1
-  Rightsize Database Instances: 9
+  Rightsize Database Instances: 10
   Rightsize Database Services: 1
   Rightsize Storage: 2
   Rightsize Synapse SQL Pools: 1
@@ -776,7 +778,7 @@ These templates can generate savings estimates for your environment.
   Usage Report: 10
 :providers:
   AWS: 100
-  Azure: 103
+  Azure: 104
   Azure China: 1
   Flexera: 39
   Flexera Optima: 1
@@ -822,14 +824,14 @@ These templates can generate savings estimates for your environment.
   PostgreSQL: 4
   RDS: 6
   S3: 1
-  SQL: 19
+  SQL: 20
   SaaS Manager: 8
   Security: 3
   Storage: 28
   Storage Accounts: 2
   Tags: 3
   Usage Discount: 6
-:total_count: 280
+:total_count: 281
 -->
 <!-- End Policy Template Stats -->
 

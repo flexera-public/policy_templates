@@ -1,4 +1,4 @@
-# AWS Rightsize EBS Volumes
+# AWS Superseded EBS Volumes
 
 ## What It Does
 
