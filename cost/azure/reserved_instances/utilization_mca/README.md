@@ -1,5 +1,9 @@
 # Azure Reserved Instances Utilization MCA
 
+## Deprecated
+
+This policy template is no longer being updated. The [Azure Reserved Instances Utilization](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/utilization/) policy template now supports both EA (Enterprise Agreement) and MCA (Microsoft Customer Agreement) bill connections and is recommended for this use case.
+
 ## What It Does
 
 This Policy Template leverages the [Azure API for Reserved Instance Utilization and Details](https://learn.microsoft.com/en-us/rest/api/reserved-vm-instances/reservation/list-all). It will notify only if utilization of a RI falls below the value specified in the `Show Reservations with utilization below this value (%)` field. It examines the RI utilization for the prior 7 days or 30 days.
