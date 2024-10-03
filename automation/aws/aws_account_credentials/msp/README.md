@@ -35,6 +35,10 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
+### MSP Requirements
+
+The Flexera Credential listed above must be for a Flexera user that has the listed roles for all child organizations. Your MSP automation should ensure such a user exists and is added with the appropriate roles to every child organization you wish to monitor.
+
 ## Supported Clouds
 
 - AWS
