@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.0
+
+- Added batch processing for large datasources.
+
 ## v4.0
 
 - Several parameters altered to be more descriptive and human-readable

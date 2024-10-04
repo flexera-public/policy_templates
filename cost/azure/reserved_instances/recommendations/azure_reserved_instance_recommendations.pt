@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "4.1.0",
+  version: "4.2.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Reserved Instances",
@@ -42,6 +42,15 @@ parameter "param_min_savings" do
   description "Minimum potential savings required to generate a recommendation."
   min_value 0
   default 0
+end
+
+parameter "param_delay_time_between_requests" do
+  type "number"
+  category "Policy Settings"
+  label "Delay time between requests"
+  description "It is the number of seconds we want to wait between each request to avoid rate limit issues."
+  min_value 1
+  default 5
 end
 
 parameter "param_subscriptions_allow_or_deny" do
@@ -230,6 +239,7 @@ EOS
 end
 
 datasource "ds_azure_billing_accounts" do
+  batch true
   request do
     auth $auth_azure
     pagination $pagination_azure
@@ -262,7 +272,7 @@ script "js_azure_currency_code", type:"javascript" do
   // Default to currency in Flexera org if API call fails
   result = { code: ds_currency_target['code'] }
 
-  _.each(ds_azure_billing_accounts, function(account) {
+  getIterator(ds_azure_billing_accounts).Each(function(account, idx) {
     if (typeof(account['currency']) == 'string') {
       result['code'] = account['currency']
     } else {
@@ -430,6 +440,7 @@ datasource "ds_azure_resource_groups" do
 end
 
 datasource "ds_ri_requests" do
+  batch true
   run_script $js_ri_requests, $ds_azure_subscriptions_filtered, $ds_azure_resource_groups, $ds_service_table, $param_service, $param_scope
 end
 
@@ -437,7 +448,6 @@ script "js_ri_requests", type: "javascript" do
   parameters "ds_azure_subscriptions_filtered", "ds_azure_resource_groups", "ds_service_table", "param_service", "param_scope"
   result "result"
   code <<-EOS
-  result = []
 
   if (param_scope == "Shared") {
     // Remove subscriptions that don't contain actual resources
@@ -446,7 +456,7 @@ script "js_ri_requests", type: "javascript" do
     })
 
     _.each(param_service, function(service) {
-      result.push({
+      appendToResult({
         service: ds_service_table[service],
         id: good_subs[0]['id'],
         name: good_subs[0]['name']
@@ -457,7 +467,7 @@ script "js_ri_requests", type: "javascript" do
   if (param_scope == "Subscription") {
     _.each(ds_azure_subscriptions_filtered, function(subscription) {
       _.each(param_service, function(service) {
-        result.push({
+        appendToResult({
           service: ds_service_table[service],
           id: subscription['id'],
           name: subscription['name']
@@ -469,7 +479,7 @@ script "js_ri_requests", type: "javascript" do
   if (param_scope == "Resource Group") {
     _.each(ds_azure_resource_groups, function(rg) {
       _.each(param_service, function(service) {
-        result.push({
+        appendToResult({
           service: ds_service_table[service],
           id: rg['id'],
           name: rg['name'],
@@ -482,9 +492,10 @@ EOS
 end
 
 datasource "ds_ri_recommendations" do
+  batch true
   iterate $ds_ri_requests
   request do
-    run_script $js_ri_recommendations, iter_item, $param_days, $param_scope, $param_azure_endpoint
+    run_script $js_ri_recommendations, iter_item, $param_days, $param_scope, $param_azure_endpoint, $param_delay_time_between_requests
   end
   result do
     encoding "json"
@@ -514,11 +525,11 @@ datasource "ds_ri_recommendations" do
 end
 
 script "js_ri_recommendations", type: "javascript" do
-  parameters "account", "param_days", "param_scope", "param_azure_endpoint"
+  parameters "account", "param_days", "param_scope", "param_azure_endpoint", "param_delay_time_between_requests"
   result "request"
   code <<-EOS
   // Slow down rate of requests to prevent throttling
-  api_wait = 5
+  api_wait = param_delay_time_between_requests
   var now = new Date().getTime()
   while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
 
@@ -539,7 +550,7 @@ script "js_ri_recommendations", type: "javascript" do
     pagination: "pagination_azure",
     host: param_azure_endpoint,
     // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status: [400, 403, 404, 422],
+    ignore_status: [400, 401, 403, 404, 422],
     path: path_prefix + "/providers/Microsoft.Consumption/reservationRecommendations",
     query_params: { "api-version": "2023-05-01", "$filter": filter },
     headers: { "User-Agent": "RS Policies" }
@@ -548,6 +559,7 @@ EOS
 end
 
 datasource "ds_ri_recommendations_region_filtered" do
+  batch true
   run_script $js_ri_recommendations_region_filtered, $ds_ri_recommendations, $param_regions_allow_or_deny, $param_regions_list
 end
 
@@ -556,17 +568,19 @@ script "js_ri_recommendations_region_filtered", type: "javascript" do
   result "result"
   code <<-EOS
   if (param_regions_list.length > 0) {
-    result = _.filter(ds_ri_recommendations, function(recommendation) {
+    getIterator(ds_ri_recommendations).Each(function(recommendation, idx) {
       include_recommendation = _.contains(param_regions_list, recommendation['region'])
 
       if (param_regions_allow_or_deny == "Deny") {
         include_recommendation = !include_recommendation
       }
 
-      return include_recommendation
+      if (include_recommendation) {
+        appendToResult(recommendation)
+      }
     })
   } else {
-    result = ds_ri_recommendations
+    getIterator(ds_ri_recommendations).Each(appendToResult)
   }
 EOS
 end
@@ -605,7 +619,7 @@ script "js_ri_incident", type: "javascript" do
   term_table = { "1 Year": "P1Y", "3 Year": "P3Y" }
   term_filter = term_table[param_term]
 
-  _.each(ds_ri_recommendations_region_filtered, function(recommendation) {
+  getIterator(ds_ri_recommendations_region_filtered).Each(function(recommendation, idx) {
     if (recommendation['kind'] == 'legacy') {
       costWithNoRI = recommendation["costWithNoRI"]
       totalCostWithRI = recommendation["totalCostWithRI"]
@@ -708,7 +722,8 @@ script "js_ri_incident", type: "javascript" do
 
   result[0]['total_savings'] = savings_message
   result[0]['message'] = conversion_message + message + disclaimer + empty_fields
-EOS
+
+  EOS
 end
 
 ###############################################################################
