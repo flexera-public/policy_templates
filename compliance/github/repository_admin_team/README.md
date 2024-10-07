@@ -1,4 +1,4 @@
-# GitHub Repositories without Admin Team
+# GitHub Repositories Without Admin Team
 
 ## What It Does
 
