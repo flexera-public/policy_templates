@@ -40,6 +40,6 @@
 
 - Adding subscription filter to deal with timeout
 
-## 2.0
+## v2.0
 
 - Initial Release

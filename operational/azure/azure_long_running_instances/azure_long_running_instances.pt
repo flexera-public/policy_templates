@@ -39,8 +39,8 @@ parameter "param_minimum_age" do
   category "Policy Settings"
   label "Minimum Age (Days)"
   description "The minimum age, in days, to consider an instance to be long running"
-  default 180
   min_value 0
+  default 180
 end
 
 parameter "param_subscriptions_allow_or_deny" do
@@ -162,9 +162,9 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -194,7 +194,6 @@ script "js_top_level_bcs", type: "javascript" do
   result = _.compact(_.pluck(filtered_bcs, 'id'))
 EOS
 end
-
 
 datasource "ds_currency_reference" do
   request do
@@ -323,8 +322,8 @@ datasource "ds_azure_instances" do
       field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "provisioningState", jmes_path(col_item, "properties.provisioningState")
       field "tags", jmes_path(col_item, "tags")
-      field "subscriptionId",val(iter_item, "id")
-      field "subscriptionName",val(iter_item, "name")
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
     end
   end
 end
@@ -656,7 +655,6 @@ script "js_instance_costs_grouped", type: "javascript" do
 EOS
 end
 
-
 datasource "ds_long_running_instances_incident" do
   run_script $js_long_running_instances_incident, $ds_azure_instances_region_filtered, $ds_long_running_instances, $ds_instance_costs_grouped, $ds_applied_policy, $ds_currency, $param_minimum_age
 end
@@ -731,14 +729,29 @@ script "js_long_running_instances_incident", type: "javascript" do
 
   // Add a dummy entry to ensure that the policy's check statement executes at least once
   result.push({
-    id: "",                  resourceGroup: "",     resourceKind: "",
-    resourceName: "",        region: "",            statuses: "",
-    platform: "",            resourceType: "",      accountID: "",
-    accountName: "",         tags: "",              age: "",
-    status: "",              launchTime: "",        lookbackPeriod: "",
-    policy_name: "",         costCurrency: "",      cost: "",
-    operating_system: "",    billing_center: "",    purchase_option: "",
-    service: "",             message: ""
+    id: "",
+    resourceGroup: "",
+    resourceKind: "",
+    resourceName: "",
+    region: "",
+    statuses: "",
+    platform: "",
+    resourceType: "",
+    accountID: "",
+    accountName: "",
+    tags: "",
+    age: "",
+    status: "",
+    launchTime: "",
+    lookbackPeriod: "",
+    policy_name: "",
+    costCurrency: "",
+    cost: "",
+    operating_system: "",
+    billing_center: "",
+    purchase_option: "",
+    service: "",
+    message: ""
   })
 
   result[0]['message'] = findings + disclaimer
@@ -755,10 +768,10 @@ policy "pol_utilization" do
     detail_template <<-'EOS'
     {{ with index data 0 }}{{ .message }}{{ end }}
     EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     escalate $esc_email
     escalate $esc_poweroff_instances
     escalate $esc_delete_instances
-    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     hash_exclude "tags", "cost", "costCurrency", "age", "billing_center", "lookbackPeriod", "policy_name", "message"
     export do
       resource_level true
@@ -860,7 +873,7 @@ define poweroff_instances($data, $param_azure_endpoint, $param_skipshutdown) ret
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -907,7 +920,7 @@ define delete_instances($data, $param_azure_endpoint) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -959,7 +972,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do

@@ -46,8 +46,8 @@ parameter "param_regions_list" do
   type "list"
   category "Filters"
   label "Allow/Deny Regions List"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
 end
 
@@ -56,8 +56,8 @@ parameter "param_minimum_age" do
   category "Policy Settings"
   label "Minimum Age (Days)"
   description "The minimum age, in days, to consider an instance to be long running"
-  default 180
   min_value 0
+  default 180
 end
 
 parameter "param_exclusion_tags" do
@@ -82,8 +82,8 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "The policy will automatically take the selected action"
-  default "No Automatic Actions"
   allowed_values "No Automatic Actions", "Stop Instances", "Terminate Instances"
+  default "No Automatic Actions"
 end
 
 ###############################################################################
@@ -190,12 +190,11 @@ end
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
-    verb "GET"
     host "sts.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
@@ -233,9 +232,9 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -371,19 +370,19 @@ datasource "ds_instance_sets" do
     pagination $pagination_aws_xml
     host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
     path '/'
-    header 'User-Agent', 'RS Policies'
-    header 'Content-Type', 'text/xml'
     query "Action", "DescribeInstances"
     query "Version", "2016-11-15"
     query 'Filter.1.Name', 'instance-state-name'
     query 'Filter.1.Value.1', 'running'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
   end
   result do
     encoding "xml"
     collect xpath(response, "//DescribeInstancesResponse/reservationSet/item", "array") do
       field "instances_set" do
-        collect xpath(col_item,"instancesSet/item","array") do
-          field "region",val(iter_item, "region")
+        collect xpath(col_item, "instancesSet/item", "array") do
+          field "region", val(iter_item, "region")
           field "instanceId", xpath(col_item, "instanceId")
           field "ipAddress", xpath(col_item, "ipAddress")
           field "ipv6Address", xpath(col_item, "ipv6Address")
@@ -393,7 +392,7 @@ datasource "ds_instance_sets" do
           field "privateDnsName", xpath(col_item, "privateDnsName")
           field "launchTime", xpath(col_item, "launchTime")
           field "tags" do
-            collect xpath(col_item,"tagSet/item", "array") do
+            collect xpath(col_item, "tagSet/item", "array") do
               field "key", xpath(col_item, "key")
               field "value", xpath(col_item, "value")
             end
@@ -730,14 +729,29 @@ script "js_long_running_instances_incident", type: "javascript" do
 
   // Add a dummy entry to ensure that the policy's check statement executes at least once
   result.push({
-    resourceID: "",      resourceName: "",     region: "",
-    imageId: "",         ipAddress: "",        ipv6Address: "",
-    resourceType: "",    platform: "",         privateDnsName: "",
-    hostname: "",        launchTime: "",       age: "",
-    tags: "",            accountID: "",        accountName: "",
-    policy_name: "",     costCurrency: "",     lookbackPeriod: "",
-    cost: "",            operating_system: "", billing_center: "",
-    purchase_option: "", service: ""
+    resourceID: "",
+    resourceName: "",
+    region: "",
+    imageId: "",
+    ipAddress: "",
+    ipv6Address: "",
+    resourceType: "",
+    platform: "",
+    privateDnsName: "",
+    hostname: "",
+    launchTime: "",
+    age: "",
+    tags: "",
+    accountID: "",
+    accountName: "",
+    policy_name: "",
+    costCurrency: "",
+    lookbackPeriod: "",
+    cost: "",
+    operating_system: "",
+    billing_center: "",
+    purchase_option: "",
+    service: ""
   })
 
   result[0]['message'] = findings + disclaimer
@@ -754,10 +768,10 @@ policy "pol_utilization" do
     detail_template <<-'EOS'
     {{ with index data 0 }}{{ .message }}{{ end }}
     EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_stop_instances
     escalate $esc_terminate_instances
-    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     hash_exclude "tags", "cost", "costCurrency", "resourceName", "age", "billing_center", "hostname", "ipAddress", "ipv6Address", "lookbackPeriod", "policy_name", "message"
     export do
       resource_level true
@@ -874,7 +888,7 @@ define stop_instances($data) do
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -892,7 +906,7 @@ define terminate_instances($data) do
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1012,7 +1026,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do
