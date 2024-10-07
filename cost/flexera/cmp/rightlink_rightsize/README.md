@@ -4,13 +4,13 @@
 
 This policy is no longer being updated.
 
-## What it does
+
 
 This policy checks Flexera CMP for inefficient instance utilization using
 provided CPU and Memory thresholds and RightLink 10 monitoring metrics.  Instances
 matching the criteria can be resized after user approval.
 
-## Functional Details
+## How It Works
 
 The policy leverages the CMP monitoring metics API to identify inefficient instances using the provided CPU and Memory thresholds.  If the instance can be rightsized the incident escalation will automatically change the instance size after the users approval.
 

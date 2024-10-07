@@ -6,7 +6,7 @@ This policy template checks for Azure virtual machines missing the user-specifie
 
 NOTE: This policy is specific to virtual machines (Microsoft.Compute/virtualMachines). The [Azure Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources/) policy is recommended for finding untagged resources that are not virtual machines.
 
-## Functional Details
+## How It Works
 
 - The policy leverages the Azure API to retrieve a list of all virtual machines in the Azure estate.
 - The policy then filters that list based on user-specified parameters.

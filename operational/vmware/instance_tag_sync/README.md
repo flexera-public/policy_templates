@@ -4,11 +4,11 @@
 
 This policy is no longer being updated.
 
-## What it does
+
 
 This Policy Template is used to automatically synchronize the CMP Tags to VMWare.
 
-## Functional Details
+## How It Works
 
 This policy has the following requirements to function properly. You will need to setup a wstunnel to the vsphere server. There is a 1:1 relationship between RCAV's and this policy.
 

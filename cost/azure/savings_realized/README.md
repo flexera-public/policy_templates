@@ -1,6 +1,6 @@
 # Azure Savings Realized from Reservations
 
-## What it does
+
 
 This Policy uses Optima to determine a view of total savings realized from using Compute Reservations in Azure, for the entire Organization or specified billing centers across a period of historical months.
 
@@ -13,7 +13,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-## Functional Details
+## How It Works
 
 - This policy currently supports only a view of savings realized from Azure Reserved Instances.
 - This policy supports a view of savings realized for a list of specific billing centers or for the entire Organization.

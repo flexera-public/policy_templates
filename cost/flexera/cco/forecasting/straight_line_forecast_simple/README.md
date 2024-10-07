@@ -4,7 +4,7 @@
 
 This policy is no longer being updated. The [Cloud Spend Forecast - Straight-Line](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/forecasting/straight_line_forecast/) policy has superseded this one and includes significantly more functionality.
 
-## What it does
+
 
 This Policy uses Optima to determine a cloud spend forecast for a Billing Center or the entire Organization. The policy uses the specified previous number of months, not including the current month to determine a straight-line forecast using a simple model.
 
@@ -17,7 +17,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-## Functional Details
+## How It Works
 
 - This policy supports a group of Billing Centers or the entire Organization.
 - This policy uses the last month before current to guarantee full data.

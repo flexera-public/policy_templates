@@ -4,11 +4,11 @@
 
 This policy is no longer being updated.
 
-## What it does
+
 
 This policy checks all running instances for disallowed cloud images. The user is given the option to Terminate the instance after approval.
 
-## Functional Details
+## How It Works
 
 The policy leverages the CMP API to check all instances not using the provided list of cloud image resource_uids. Running instance states include any instance with state: running, operational and provisioned. Found instances are terminated after user approval.
 

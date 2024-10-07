@@ -4,7 +4,7 @@
 
 This policy checks all the virtual machines in an Azure account to determine if the instance type has been superseded. If it has, the virtual machine is recommended for resizing to a more modern instance type. An incident listing all of these superseded virtual machines is emailed to the user.
 
-## Functional Details
+## How It Works
 
 - The policy leverages the Azure API to retrieve all virtual machines and then checks them against our internal database to see if their instance type has been superseded.
 - Flexera Cloud Cost Optimization (CCO) billing data is pulled for these instances to assess the current cost of the instance as well as grab additional metadata about the instance, such as operating system, needed to calculate savings.

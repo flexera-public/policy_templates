@@ -4,7 +4,7 @@
 
 This policy template is no longer being updated and has been superseded by the [Cloud Cost Anomaly Alerts](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cloud_cost_anomaly_alerts) policy template.
 
-## What it does
+
 
 The Cost Anomaly Policy will analyze the spend of all Billing Centers in an Organization over a specified time period.  If the percentage change of the most recent period compared to the previous period exceeds the specified threshold, then an Incident will be raised.
 
@@ -18,7 +18,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-## Functional Details
+## How It Works
 
 - The policy polls all Billing Centers, looking for any that have exceeded the Percent Change threshold and the Minimum Period Spend requirement
 - The last 2 days are not included in the analysis, due to potential delays of the cloud providers updating their billing data

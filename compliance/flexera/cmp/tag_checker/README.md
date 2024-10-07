@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-## What it does
+## What It Does
 
 This policy will check all instances in state operational, running and provisioned, and all volumes and check for the tags listed in the *Tags' Namespace:Keys List* field.  For each resource that doesn't include the tags in the field they will be included in the policy incident report.   As new resources are added or tags and included on the resource the incident report will be updated to exclude the resource.  For more information on working with tags in RightScale please refer to the [Tagging](https://docs.rightscale.com/cm/rs101/tagging.html#what-is-a-tag-) page.
 

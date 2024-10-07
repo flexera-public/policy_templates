@@ -4,12 +4,12 @@
 
 This policy is no longer being updated.
 
-## What it does
+
 
 This Policy Template is used to automatically update the AWS IAM keys used to connect the RightScale account to the applicable AWS account.
 When applied, the policy updates the credentials immediately and then updates the credentials thereafter every `X number of days` where X is specified by the user.
 
-## Functional Details
+## How It Works
 
 This policy performs the following actions:
 

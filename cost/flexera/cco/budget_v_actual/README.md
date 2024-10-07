@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-## What it does
+
 
 This policy allows you to set up scheduled reports that will provide monthly actual v. budgeted cloud cost across all resources in the Billing Center(s) you specify, delivered to any email addresses you specify.
 
@@ -17,7 +17,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-## Functional Details
+## How It Works
 
 The policy will provide a report with a bar chart of actual v. budgeted spend for the current month. We recommend running this policy on a weekly cadence and applying it to your master account.
 

@@ -4,7 +4,7 @@
 
 This policy analyzes the stored billing data for Microsoft Azure from 2 days ago to a user-specified number of days back and reports on the number of VMs using the Bring-Your-Own-License (BYOL) feature each day. The report includes daily numbers and percentages as well as the peak total BYOL usage and peak percentage BYOL usage and is emailed to a user-specified list of email addresses.
 
-## Functional Details
+## How It Works
 
 - The policy leverages the Flexera Optima API to retrieve amortized costs and metadata for Azure virtual machines on a per-subscription basis. Costs for the most recent 2 days are ignored due to the high likelihood of cost data this recent being incomplete.
 - The `Operating System` dimension is used to determine if each virtual machine is using Bring-Your-Own-License (BYOL) or not. The following values for this dimension are considered BYOL: Red Hat BYOS, SUSE BYOS, Windows Server BYOL, Windows Client BYOL

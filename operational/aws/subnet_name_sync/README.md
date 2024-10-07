@@ -4,12 +4,12 @@
 
 This policy is no longer being updated.
 
-## What it does
+
 
 This Policy Template is used to automatically synchronize the AWS Subnet names to Cloud Management.
 When applied, the policy will iterate through all VPCs in all AWS regions and ensure the matching subnet reference in Cloud Management has the correct name.
 
-## Functional Details
+## How It Works
 
 This policy performs the following action:
 

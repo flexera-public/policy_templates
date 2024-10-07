@@ -1,6 +1,6 @@
 # Azure Tag Resources with Resource Group Name
 
-## What it does
+
 
 This Policy Template will scan all resources in an Azure Resource Manager Subscription, and will raise an incident if any resources are not properly tagged with their corresponding Resource Group name.  When an incident is raised, the Policy escalation will execute Cloud Workflow to tag the resources with the correct Resource Group name.
 

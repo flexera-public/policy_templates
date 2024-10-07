@@ -4,7 +4,7 @@
 
 This policy is no longer being updated. The [Low Usage Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/low_usage/) policy has superseded this one and includes significantly more functionality.
 
-## What it does
+
 
 This Policy Template reports on services with low usage. Low usage of a specific service in a region by an account is often indicative of tests or experiments by users, which often are forgotten and left running. Investigate this usage to determine if it should be terminated or potentially consolidated into a larger account/region for ease of management.
 
@@ -20,7 +20,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-## Functional Details
+## How It Works
 
 - This policy queries optima data to determine low account usage.
 

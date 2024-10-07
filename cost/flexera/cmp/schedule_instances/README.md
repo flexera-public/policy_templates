@@ -4,11 +4,11 @@
 
 This policy is no longer being updated.
 
-## What it does
+
 
 This Policy Template allows you to schedule start and stop times for your compute.
 
-## Functional Details
+## How It Works
 
 This policy relies on a RightScale tag 'instance:schedule' to stop and start instances based on a schedule.  The tag value defines the schedule with a start hour, stop hour and days of the week.  The start and stop hour are in 24 hour format, and the days of the week are two character abbreviation for example: MO, TU, WE. See full example below..  Use a Timezone TZ value to indicate a timezone to stop/start the instance(s)
 

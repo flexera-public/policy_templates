@@ -4,11 +4,11 @@
 
 This policy is no longer being updated.
 
-## What it does
+
 
 This policy checks all the resources in the Azure Subscription with a public IP address, so that those IP's can be removed.
 
-## Functional Details
+## How It Works
 
 The policy leverages the Azure API to identify the resources that have public IP address associated with them and them produces the report of these instances.
 

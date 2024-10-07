@@ -4,7 +4,7 @@
 
 This policy checks all virtual machines in Azure to determine how many are using AHUB and raises an incident when that number does not match a user-specified number of licenses.
 
-## Functional Details
+## How It Works
 
 The policy leverages the Azure Resource Manager API to get data for all virtual machines and compares that to the user-specified number of licenses. Each license is good for one virtual machine with up to 16 cores or two virtual machines with up to 8 cores.
 

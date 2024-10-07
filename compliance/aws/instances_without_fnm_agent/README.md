@@ -1,12 +1,12 @@
 # AWS EC2 Instances not running FlexNet Inventory Agent
 
-## What it does
+## What It Does
 
 This policy uses the SOAP version of the FlexNet Manager Cloud APIs, checks all EC2 instances running in AWS to determine if the FlexNet Inventory Agent is running on the instance, and reports on any that are missing the agent.
 
 The policy is a recommendation only policy, no action is taken during the Policy Escalation.
 
-## Functional Description
+## How It Works
 
 The policy leverages the cloud API to get all current EC2 instances and the FlexNet Manager report (Custom view) API to get all AWS cloud instances with agent. It cross-checks the two lists to determine if any instances are running on the cloud that aren't known to FlexNet Manager.  The policy matches the InstanceCloudID from FlexNet Manager System and the instanceId from AWS.
 

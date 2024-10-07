@@ -4,7 +4,7 @@
 
 This policy template checks for unused and underutilized RDS instances by reviewing CloudWatch metrics for each RDS instance in the AWS account. Incidents are raised containing unused and underutilized RDS instances, and the user has the option to terminate unused instances or downsize underutilized instances.
 
-## Functional Details
+## How It Works
 
 - The policy leverages the AWS API to check all AWS RDS instances and then checks the number of connections and CPU utilization over a user-specified number of days.
 - The policy identifies all instances that have had no connections over a user-specified number of days and provides the relevant recommendation.

@@ -4,7 +4,7 @@
 
 This Policy finds Azure snapshots older than the specified number of days and raises an incident with a list of said snapshots. Optionally, it will delete them.
 
-## Functional Details
+## How It Works
 
 The policy makes use of the Azure Resource Manager API to obtain a list of snapshots and their ages in order to produce a list of recommendations.
 

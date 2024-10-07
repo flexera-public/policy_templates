@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-## What it does
+
 
 This Policy Template is used to automatically resize instances based on user-defined standards.  For example, the Policy uses a Disallowed Instance Type and its corresponding Superseded Instance Type.  If any Instances are found using the Disallowed type, they will be included in the corresponing Policy Incident.  Upon approval, Cloud Workflow will resize the Instance to the Superseded type.
 
@@ -15,7 +15,7 @@ The following RightScale Permissions
 - Cloud Management - `Actor`
 - Cloud Management - `Observer`
 
-## Functional Details
+## How It Works
 
 - This policy supports a single old-to-new instance type mapping.  To apply this policy for multiple old-to-new instance type scenarios, the policy will need to be applied multiple times.  This will allow for flexibility in managing applied policies.
 - For Example:

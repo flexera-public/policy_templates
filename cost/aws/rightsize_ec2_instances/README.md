@@ -4,7 +4,7 @@
 
 This policy checks all the instances in an AWS Account for CPU and Memory usage over a user-specified number of days. If the usage is less than the user provided Idle Instance CPU/Memory percentage threshold then the Virtual Machine is recommended for termination. If the usage is less than the user provided Underutilized Instance CPU/Memory percentage threshold then the Virtual Machine is recommended for downsizing. Both sets of Virtual Machines returned from this policy are emailed to the user.
 
-## Functional Details
+## How It Works
 
 - The policy leverages the AWS API to retrieve all instances and then uses the AWS CloudWatch API to check the instance average CPU and Memory utilization over a specified number of days.
 - The utilization data is provided for the following statistics: Average, Maximum, Minimum, 99th percentile, 95th percentile, 90th percentile.

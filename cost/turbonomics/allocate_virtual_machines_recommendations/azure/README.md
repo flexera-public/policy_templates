@@ -4,7 +4,7 @@
 
 The Turbonomic Allocate Virtual Machines Recommendations Azure policy utilizes Turbonomic (POST `https://turbonomic.com/api/v3/markets/{market_uuid}/actions`) endpoint to provide Azure VM allocation recommendations for Reserved Instance coverage. From these recommendations we provide monthly savings estimates based on Turbonomic per hour costs
 
-## Functional Details
+## How It Works
 
 - The policy queries the /api/v3/markets/{market_uuid}/actions endpoint for the Turbonomic API and based on action will return action details and savings for on-boarded cloud instances
 

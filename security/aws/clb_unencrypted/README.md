@@ -4,13 +4,13 @@
 
 This policy is no longer being updated. The [AWS Elastic Load Balancers With Unencrypted Listeners](https://github.com/flexera-public/policy_templates/tree/master/security/aws/elb_unencrypted/) policy now includes this functionality.
 
-## What it does
+
 
 Checks for unecrypted listeners on Classic Load Balancers. If an internet-facing listener is using an unecrypted protocol (eg: NOT HTTPS, SSL, or TLS) an incident report will show for the listener and an email will be sent to the user-specified email address.
 
 Note: Elastic Load Balancing (ELB) supports three types of load balancers: Classic Load Balancers, Application Load Balancers, and Network Load Balancers. There is a separate policy for Application and Network Load Balancers with unencrypted internet-facing listeners.
 
-## Functional Details
+## How It Works
 
 The policy leverages the AWS elasticloadbalancing API to examine listener details. When an unencrypted internet-facing listener is detected, an email action is triggered automatically to notify the specified users of the incident.
 

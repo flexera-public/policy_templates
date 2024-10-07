@@ -1,10 +1,10 @@
 # AWS New Marketplace Products
 
-## What it does
+## What It Does
 
 This policy compares AWS billing data from 3 days ago to billing data from a user-specified number of days ago (10 by default) to see if any new Marketplace products have been purchased since then. A list of the new products and their estimated monthly cost is raised as an incident and, optionally, emailed.
 
-## Functional Details
+## How It Works
 
 - The policy leverages the Flexera Optima API to retrieve aggregated amortized costs. Costs are filtered for only those costs whose Bill Entity is AWS Marketplace. Results are split by the Service dimension.
 - The list of Services (analogous to the name of the product purchased on the AWS Marketplace) from 3 days ago is compared to the older list to find any new items and their cost.

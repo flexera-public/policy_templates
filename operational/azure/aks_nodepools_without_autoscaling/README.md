@@ -1,10 +1,10 @@
 # AKS Node Pools Without Autoscaling
 
-## What it does
+
 
 This policy will raise an incident if there are any AKS clusters with user node pools that do not have autoscaling enabled.
 
-## Functional Details
+## How It Works
 
 This policy checks all the user node pools associated with each AKS cluster. If the 'enableAutoScaling' value for a node pool is set to 'false', that node pool is added to the list of problematic pools, and an incident is raised if this list contains any items.
 

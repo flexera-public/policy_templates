@@ -1,6 +1,6 @@
 # Check For New Instance Types
 
-## What it does
+
 
 The Policy finds instance/machine types across the AWS, Azure, Google cloud vendors and compares them with the existing machine/instance types in our data file. Incident will be created if any new machine/instance type if found, containing missing machine/instance type name and vendor details.
 

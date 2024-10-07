@@ -1,6 +1,6 @@
 # Google Cloud Run Anomaly Detection
 
-## What it does
+
 
 This Policy uses Google Cloud Metrics data to identify anomalies for Cloud Run services using the [Standard Score (aka `Z-score`)](https://en.wikipedia.org/wiki/Standard_score) statistical method.
 

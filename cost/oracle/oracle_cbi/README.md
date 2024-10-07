@@ -1,10 +1,10 @@
 # Oracle Cloud Common Bill Ingestion
 
-## What it does
+
 
 This Policy Template is used to automatically take Cost Reports from Oracle Cloud (OCI) and send them to Flexera CBI so that Oracle Cloud costs are visible in Flexera One. An incident is raised on every execution of the policy to provide status information to the user.
 
-## Functional Details
+## How It Works
 
 - The policy uses the Oracle Cloud Object Storage API to connect to the bucket containing the Cost & Usage Reports and obtain the relevant reports for the specified month (or current month if none is specified.)
 - The policy then sends those reports, unmodified, into a Flexera CBI endpoint so that they can be ingested and then visible on the platform.

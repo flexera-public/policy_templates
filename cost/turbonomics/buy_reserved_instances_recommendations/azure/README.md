@@ -4,7 +4,7 @@
 
 The Turbonomic Buy Reserved Instances Recommendations AWS policy utilizes Turbonomic Actions API endpoint (POST `https://turbonomic.com/api/v3/markets/{market_uuid}/actions`) to provide AWS RI purchase recommendations.
 
-## Functional Details
+## How It Works
 
 - The policy queries the /api/v3/markets/{market_uuid}/actions endpoint for the Turbonomic api and based on action will return action details and savings for on-boarded cloud instances
 

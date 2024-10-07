@@ -1,6 +1,6 @@
 # Schedule ITAM Report
 
-## What it does
+
 
 This policy uses the [REST version of the Flexera ITAM Cloud APIs](https://docs.flexera.com/FlexeraOneAPI/ITAMDataAPI/#api-Reports-reportsExecute), will run a report (Custom view), and send the result via email.
 

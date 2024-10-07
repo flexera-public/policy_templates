@@ -4,11 +4,11 @@
 
 This policy is no longer being updated.
 
-## What it does
+
 
 This policy checks whether the number of running instances in a given account has crossed a threshold of change compared to the prior period.
 
-## Functional Details
+## How It Works
 
 The policy uses CMP to determine changes in running instance count by comparing the last 30 days to the previous 30 days.  When the percentage of changes reaches the specified threshold an incident is created.
 
