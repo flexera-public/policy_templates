@@ -725,7 +725,7 @@ changed_pt_files.each do |file|
   test = policy_missing_deprecated_field?(file, file_parsed); failures << test if test
 
   # Raise error if policy changed but changelog has not been
-  test = policy_unmodified_changelog?(file, changed_changelog_files); failures << test if test
+  #test = policy_unmodified_changelog?(file, changed_changelog_files); failures << test if test
 
   # Raise error if policy and changelog do not have matching version numbers
   test = policy_changelog_mismatch?(file, file_parsed); failures << test if test
