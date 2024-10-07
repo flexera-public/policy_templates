@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v3.0
 
 - Several parameters altered to be more descriptive and human-readable
