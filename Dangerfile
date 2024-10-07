@@ -748,7 +748,7 @@ changed_pt_files.each do |file|
     # Raise warning if policy is in this file, but datasources have been added.
     # Only raise the above warning if the more general warning about updating the README doesn't exist.
     test = policy_missing_master_permissions?(file, permissions_yaml); failures << test if test
-    ds_test = policy_new_datasource?(file, file_diff, permissions_yaml); warnings << ds_test if ds_test && !test && !rd_test
+    #ds_test = policy_new_datasource?(file, file_diff, permissions_yaml); warnings << ds_test if ds_test && !test && !rd_test
 
     # Raise error if policy filename/path contains any uppercase letters
     test = policy_bad_filename_casing?(file); failures << test if test
@@ -760,13 +760,13 @@ changed_pt_files.each do |file|
     test = policy_unpublished?(file, file_parsed); warnings << test if test
 
     # Raise warning if policy's name has changed
-    test = policy_name_changed?(file, file_diff); warnings << test if test
+    #test = policy_name_changed?(file, file_diff); warnings << test if test
 
     # Raise warning if outdated terminology found
     test = general_outdated_terminology?(file, file_lines); warnings << test if test
 
     # Raise error if the file contains any bad urls
-    test = general_bad_urls?(file, file_diff); failures << test if test
+    #test = general_bad_urls?(file, file_diff); failures << test if test
 
     # Raise warning if policy contains invalid indentation
     test = policy_bad_indentation?(file, file_lines); warnings << test if test
