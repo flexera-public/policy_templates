@@ -61,4 +61,4 @@ This policy template supports the following clouds:
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

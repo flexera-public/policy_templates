@@ -45,4 +45,4 @@ For example if a user selects the "Update Instances" action while applying the p
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

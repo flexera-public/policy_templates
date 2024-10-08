@@ -94,4 +94,4 @@ If the policy detects two keys already exist for the IAM user, the policy will d
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

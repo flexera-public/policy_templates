@@ -40,4 +40,4 @@ This policy requires permissions to access RightScale resources (instances and t
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

@@ -61,4 +61,4 @@ The following permissions must be allowed for the policy to run.
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

@@ -76,7 +76,7 @@ Once saved, note the report number in the URL field : ![Alt text][ReportNumber] 
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.
 
 <!-- Image referances -->
 [APIToken]: images/APIToken.png "APIToken"

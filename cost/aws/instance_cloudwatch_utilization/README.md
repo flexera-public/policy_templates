@@ -105,4 +105,4 @@ Depending on the number of days you choose to collect metrics for, you may need 
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

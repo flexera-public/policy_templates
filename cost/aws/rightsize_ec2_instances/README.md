@@ -137,4 +137,4 @@ To enable Windows support, add the following to your Cloudwatch config.json and 
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

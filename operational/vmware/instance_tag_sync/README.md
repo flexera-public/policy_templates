@@ -70,4 +70,4 @@ This policy requires permissions to access Cloud Management resources; Clouds an
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.
