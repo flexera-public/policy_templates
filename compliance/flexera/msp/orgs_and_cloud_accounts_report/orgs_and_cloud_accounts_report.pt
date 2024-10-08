@@ -5,10 +5,11 @@ short_description "This policy generates a list of cross organization Cloud Vend
 the bill connection settings for Azure and Google, as well as full list of AWS accounts under the payer account connected for each Flexera Organization.\n
 See [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/msp/orgs_and_cloud_accounts_report) for more details"
 long_description ""
-severity "low"
 category "Compliance"
+severity "low"
+default_frequency "weekly"
 info(
-  version: "1.6.1",
+  version: "2.0.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Managed Service Provider",
@@ -16,50 +17,51 @@ info(
 )
 
 ###############################################################################
-# Permissions
-###############################################################################
-
-###############################################################################
 # Parameters
 ###############################################################################
+
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email List"
   description "Email addresses of the recipients you wish to notify"
+  default []
 end
 
 parameter "param_exclude_organizations" do
   type "list"
+  category "Policy Settings"
   label "Excluded Organizations"
-  description "Names of organizations to exclude. \n
-  NOTE: use only either 'Excluded Organizations' or 'Exclucded organizations IDs', not both"
+  description "Names of organizations to exclude. NOTE: use only either 'Excluded Organizations' or 'Exclucded organizations IDs', not both"
+  default []
 end
 
 parameter "param_exclude_organizations_ids" do
   type "list"
+  category "Policy Settings"
   label "Excluded Organizations IDs"
-  description "IDs of organizations to exclude. \n
-  NOTE: use only either 'Excluded Organizations' or 'Exclucded organizations IDs', not both"
+  description "IDs of organizations to exclude. NOTE: use only either 'Excluded Organizations' or 'Exclucded organizations IDs', not both"
+  default []
 end
-
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-auth "auth_rs", type: "rightscale"
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credentials"
+  tags "provider=flexera"
+end
 
 ###############################################################################
-# Resources
-###############################################################################
-
-###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 datasource "ds_session" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_cm_host
     path "/api/sessions"
     header "X-Api-Version", "1.5"
@@ -84,14 +86,45 @@ datasource "ds_current_user_organizations" do
   end
 end
 
+script "js_current_user_organizations", type: "javascript" do
+  parameters "ds_session"
+  result "request"
+  code <<-EOS
+  var request = {
+    "auth": "auth_flexera",
+    "verb": "GET",
+    "host": "governance.rightscale.com",
+    "path": ds_session["userid"],
+    "headers": {"X-Api-Version": "2.0" },
+    "query_params":{"view":"extended"}
+  }
+EOS
+end
+
 datasource "ds_filtered_user_organizations" do
   run_script $js_filter_organizations, $ds_current_user_organizations, $param_exclude_organizations, $param_exclude_organizations_ids
+end
+
+script "js_filter_organizations", type: "javascript" do
+  parameters "ds_current_user_organizations", "param_exclude_organizations", "param_exclude_organizations_ids"
+  result "results"
+  code <<-EOS
+  var results = _.reject(ds_current_user_organizations, function(org){
+    return _.contains(param_exclude_organizations, org["name"])
+  })
+
+  if ( param_exclude_organizations_ids.length > 0) {
+    var results = _.reject(ds_current_user_organizations, function(org){
+      return _.contains(param_exclude_organizations_ids, org["org_id"])
+    })
+  }
+EOS
 end
 
 datasource "ds_bill_connects" do
   iterate $ds_filtered_user_organizations
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host "onboarding.rightscale.com"
     path join(["/api/onboarding/orgs/",val(iter_item,"org_id"),"/bill_connects"])
     header "Api-Version", "1.0"
@@ -111,7 +144,7 @@ end
 datasource "ds_bill_connects_csp" do
   iterate $ds_filtered_user_organizations
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/",val(iter_item,"org_id"),"/azure_csp_partners"])
     header "Api-Version", "1.0"
@@ -131,7 +164,7 @@ end
 datasource "ds_aws_cloud_vendor_accounts" do
   iterate $ds_filtered_user_organizations
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/bill-analysis/orgs/",val(iter_item,"org_id"),"/cloud_vendor_accounts"])
     header "Api-Version", "0.1"
@@ -153,86 +186,44 @@ datasource "ds_bill_connects_without_aws_payer" do
   run_script $js_bill_connects_without_aws_payer, $ds_bill_connects
 end
 
+script "js_bill_connects_without_aws_payer", type: "javascript" do
+  parameters "ds_bill_connects"
+  result "result"
+  code <<-EOS
+  var cloud_vendor_to_exclude = ["aws"]
+  var result = _.reject(ds_bill_connects, function(account){
+    return _.contains(cloud_vendor_to_exclude, account["cloud_vendor_id"])
+  })
+EOS
+end
+
 datasource "ds_combined_cloud_accounts" do
   run_script $js_combine_cloud_accounts, $ds_bill_connects_without_aws_payer, $ds_bill_connects_csp, $ds_aws_cloud_vendor_accounts
+end
+
+script "js_combine_cloud_accounts", type: "javascript" do
+  parameters "ds_bill_connects_csp", "ds_bill_connects_without_aws_payer", "ds_aws_cloud_vendor_accounts"
+  result "result"
+  code <<-EOS
+  var result = ""
+  if ( ds_bill_connects_csp.length > 0 ) {
+    result = ds_bill_connects_csp.concat(ds_bill_connects_without_aws_payer)
+  }
+  else {
+    result = ds_bill_connects_without_aws_payer
+  }
+  result = result.concat(ds_aws_cloud_vendor_accounts)
+EOS
 end
 
 datasource "ds_normalized_cloud_vendor_ids" do
   run_script $js_normalize_cloud_vendor_ids, $ds_combined_cloud_accounts
 end
 
-
-###############################################################################
-# Scripts
-###############################################################################
-script "js_current_user_organizations", type: "javascript" do
-  parameters "ds_session"
-  result "request"
-  code <<-EOF
-    var request = {
-      "auth": "auth_rs",
-      "verb": "GET",
-      "host": "governance.rightscale.com",
-      "path": ds_session["userid"],
-      "headers": {"X-Api-Version": "2.0" },
-      "query_params":{"view":"extended"}
-    }
-  EOF
-end
-
-script "js_filter_organizations", type: "javascript" do
-  parameters "ds_current_user_organizations", "param_exclude_organizations", "param_exclude_organizations_ids"
-  result "results"
-  code <<-EOF
-    var results = _.reject(ds_current_user_organizations, function(org){
-      return _.contains(param_exclude_organizations, org["name"])
-    })
-  if ( param_exclude_organizations_ids.length > 0) {
-    var results = _.reject(ds_current_user_organizations, function(org){
-      return _.contains(param_exclude_organizations_ids, org["org_id"])
-    })
-  }
-  EOF
-end
-
-script "js_generate_report", type: "javascript" do
-  parameters "ds_previous_six_month_costs","param_cost_metric","ds_report","param_graph_dimension","ds_currency_code","ds_currency_reference"
-  result "report"
-  code <<-EOS
-  EOS
-end
-
-# We exclude AWS account from the bill connection as it will later already be listed already in ds_aws_cloud_vendor_accounts
-script "js_bill_connects_without_aws_payer", type: "javascript" do
-  parameters "ds_bill_connects"
-  result "result"
-  code <<-EOF
-    var cloud_vendor_to_exclude = ["aws"]
-    var result = _.reject(ds_bill_connects, function(account){
-      return _.contains(cloud_vendor_to_exclude, account["cloud_vendor_id"])
-    })
-  EOF
-end
-
-script "js_combine_cloud_accounts", type: "javascript" do
-  parameters "ds_bill_connects_csp", "ds_bill_connects_without_aws_payer", "ds_aws_cloud_vendor_accounts"
-  result "result"
-  code <<-EOF
-    var result = ""
-    if ( ds_bill_connects_csp.length > 0 ) {
-      result = ds_bill_connects_csp.concat(ds_bill_connects_without_aws_payer)
-    }
-    else {
-      result = ds_bill_connects_without_aws_payer
-    }
-    result = result.concat(ds_aws_cloud_vendor_accounts)
-  EOF
-end
-
 script "js_normalize_cloud_vendor_ids", type: "javascript" do
   parameters "ds_combined_cloud_accounts"
   result "result"
-  code <<-EOF
+  code <<-EOS
   function dedup(arr) {
     var hashTable = {};
     return arr.filter(function (el) {
@@ -246,17 +237,21 @@ script "js_normalize_cloud_vendor_ids", type: "javascript" do
   }
   var result = dedup(ds_combined_cloud_accounts);
   result = _.sortBy(result, 'org_id');
-  EOF
+EOS
 end
 
-policy "policy_scheduled_report" do
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_scheduled_report" do
   validate_each $ds_normalized_cloud_vendor_ids do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Cloud Accounts Found"
     detail_template <<-EOS
       {{ len data }} Cloud Accounts have been generated from: {{ rs_project_name }} (ID: {{ rs_project_id }}) \n
     EOS
-    escalate $escalation_send_email
-    check eq(0,1)
+    check eq(0, 1)
+    escalate $esc_email
     export do
       field "org_id" do
         label "Flexera Org ID"
@@ -278,13 +273,9 @@ end
 # Escalations
 ###############################################################################
 
-escalation "escalation_send_email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
-
-###############################################################################
-# Cloud Workflow
-###############################################################################
