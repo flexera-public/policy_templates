@@ -1,0 +1,835 @@
+name "Flexera Automation Outdated Applied Policies"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports any applied policies in Flexera Automation that are not using the latest version of that policy from the catalog and, optionally, updates them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/outdated_applied_policies) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Operational"
+default_frequency "weekly"
+info(
+  version: "0.2.0",
+  provider: "Flexera",
+  service: "Automation",
+  policy_set: "Automation"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_ignore_list" do
+  type "list"
+  category "Filters"
+  label "Policy Ignore List"
+  description "A list of applied policy names and/or IDs to ignore and not report on. Leave blank to assess all applied policies."
+  default []
+end
+
+parameter "param_report_filter" do
+  type "string"
+  category "Filters"
+  label "Policy Templates To Report"
+  description "Whether to report outdated policy templates, deprecated policy templates, or both. Separate incidents will be raised/emailed if both are selected and found."
+  allowed_values "Both", "Report Outdated Only", "Report Deprecated Only"
+  default "Both"
+end
+
+parameter "param_allow_major" do
+  type "string"
+  category "Actions"
+  label "Allow Automated Major Version Updates"
+  description "Whether to allow actions to automatically update outdated policy templates when there's been a major version change. This is not recommended in most cases."
+  allowed_values "Allow", "Do Not Allow"
+  default "Do Not Allow"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Update Applied Policies"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_self_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_applied_policies" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "href", jmes_path(col_item, "href")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "category", jmes_path(col_item, "category")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "created_by", jmes_path(col_item, "created_by.email")
+      field "frequency", jmes_path(col_item, "frequency")
+      field "category", jmes_path(col_item, "category")
+      field "credentials", jmes_path(col_item, "credentials")
+      field "options", jmes_path(col_item, "options")
+      field "severity", jmes_path(col_item, "severity")
+      field "skip_approvals", jmes_path(col_item, "skip_approvals")
+      field "scope", jmes_path(col_item, "scope")
+      field "dry_run", jmes_path(col_item, "dry_run")
+      field "log_level", jmes_path(col_item, "log_level")
+      field "version", jmes_path(col_item, "info.version")
+      field "policy_template", jmes_path(col_item, "policy_template")
+      field "published_template", jmes_path(col_item, "published_template")
+    end
+  end
+end
+
+datasource "ds_policy_aggregates" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/orgs/", rs_org_id, "/policy_aggregates"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "href", jmes_path(col_item, "href")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "category", jmes_path(col_item, "category")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "created_by", jmes_path(col_item, "created_by.email")
+      field "frequency", jmes_path(col_item, "frequency")
+      field "category", jmes_path(col_item, "category")
+      field "credentials", jmes_path(col_item, "credentials")
+      field "options", jmes_path(col_item, "options")
+      field "severity", jmes_path(col_item, "severity")
+      field "skip_approvals", jmes_path(col_item, "skip_approvals")
+      field "dry_run", jmes_path(col_item, "dry_run")
+      field "running_project_ids", jmes_path(col_item, "running_project_ids")
+      field "published_template", jmes_path(col_item, "published_template")
+    end
+  end
+end
+
+datasource "ds_catalog_policies" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/active_policy_list/active_policy_list.json"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "policies[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "file_name", jmes_path(col_item, "file_name")
+      field "version", jmes_path(col_item, "version")
+      field "change_log", jmes_path(col_item, "change_log")
+      field "description", jmes_path(col_item, "description")
+      field "category", jmes_path(col_item, "category")
+      field "severity", jmes_path(col_item, "severity")
+      field "readme", jmes_path(col_item, "readme")
+      field "provider", jmes_path(col_item, "provider")
+      field "service", jmes_path(col_item, "service")
+      field "policy_set", jmes_path(col_item, "policy_set")
+      field "recommendation_type", jmes_path(col_item, "recommendation_type")
+      field "updated_at", jmes_path(col_item, "updated_at")
+      field "generally_recommended", jmes_path(col_item, "generally_recommended")
+      field "deprecated", jmes_path(col_item, "deprecated")
+    end
+  end
+end
+
+datasource "ds_outdated_policies" do
+  run_script $js_outdated_policies, $ds_applied_policies, $ds_catalog_policies, $ds_policy_aggregates, $ds_self_policy, $param_ignore_list, $param_report_filter, rs_org_id, rs_project_id, policy_id, rs_optima_host
+end
+
+script "js_outdated_policies", type: "javascript" do
+  parameters "ds_applied_policies", "ds_catalog_policies", "ds_policy_aggregates", "ds_self_policy", "param_ignore_list", "param_report_filter", "rs_org_id", "rs_project_id", "policy_id", "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  tld_table = {
+    "api.optima.flexeraeng.com": "app.flexera.com",
+    "api.optima-eu.flexeraeng.com": "app.flexera.eu",
+    "api.optima-apac.flexeraeng.com": "app.flexera.au"
+  }
+
+  tld = tld_table[rs_optima_host]
+
+  aggregate_object = {}
+
+  _.each(ds_policy_aggregates, function(agg) {
+    if (typeof(agg['running_project_ids']) == 'object') {
+      if (agg['running_project_ids'].length == 1 && agg['running_project_ids'][0] == rs_project_id) {
+        aggregate_object[agg['name']] = agg['href']
+      }
+    }
+  })
+
+  catalog_object = {}
+
+  _.each(ds_catalog_policies, function(policy) {
+    catalog_object[policy['name']] = policy
+  })
+
+  filtered_policies = _.reject(ds_applied_policies, function(policy) {
+    reject_policy = false
+
+    // Exclude this policy to avoid the policy trying to terminate itself if the user actions on it
+    if (policy['id'] == policy_id) {
+      reject_policy = true
+    }
+
+    // Exclude policies on the user-provided ignore list
+    ignore_list = _.map(param_ignore_list, function(item) { return item.toLowerCase().trim() })
+
+    if (!reject_policy && (_.contains(ignore_list, policy['name'].toLowerCase()) || _.contains(ignore_list, policy['id'].toLowerCase()))) {
+      reject_policy = true
+    }
+
+    // Exclude policies that were not applied from the catalog
+    if (!reject_policy && policy['published_template'] == null) {
+      reject_policy = true
+    } else if (!reject_policy) {
+      // Exclude policies where we did not find a corresponding entry in the active policy list
+      if (catalog_object[policy['published_template']['name']] == undefined) {
+        reject_policy = true
+      }
+
+      // Exclude policies applied from a catalog other than the Flexera one
+      if (!reject_policy && policy['published_template']['updated_by']['email'] != 'support@flexera.com') {
+        reject_policy = true
+      }
+    }
+
+    // Exclude all policies if the user opted not to report on outdated policies
+    if (!reject_policy && param_report_filter == "Report Deprecated Only") {
+      reject_policy = true
+    }
+
+    return reject_policy
+  })
+
+  combined_data = _.map(filtered_policies, function(policy) {
+    catalog_policy = catalog_object[policy['published_template']['name']]
+    policy_url = "https://" + tld + "/orgs/" + rs_org_id + "/automation/applied-policies/projects/" + rs_project_id + "?policyId=" + policy['id']
+
+    rec_verb = "Update"
+
+    if (policy['version'].split('.')[0] != catalog_policy['version'].split('.')[0]) {
+      rec_verb = "Manually update"
+    }
+
+    recommendationDetails = [
+      rec_verb, " applied policy ", policy['name'], " (", policy['id'], ") ",
+      "from version ", policy['version'], " to version ", catalog_policy['version']
+    ].join('')
+
+    href = null
+
+    if (policy['scope'] == 'org' && typeof(aggregate_object[policy['name']]) == 'string') {
+      href = aggregate_object[policy['name']]
+    }
+
+    if (policy['scope'] != 'org') {
+      href = policy['href']
+    }
+
+    update_body = {
+      credentials: policy['credentials'],
+      description: policy['description'],
+      dry_run: policy['dry_run'],
+      frequency: policy['frequency'],
+      log_level: policy['log_level'],
+      name: policy['name'],
+      options: policy['options'],
+      severity: policy['severity'],
+      skip_approvals: policy['skip_approvals'],
+      template_href: policy['published_template']['href']
+    }
+
+    catalog_recommendation_type = ""
+
+    if (typeof(catalog_policy['recommendation_type']) == 'string') {
+      catalog_recommendation_type = catalog_policy['recommendation_type']
+    }
+
+    boolean_table = { "true": "True", "false": "False" }
+
+    catalog_url = "https://github.com/flexera-public/policy_templates/tree/master/" + catalog_policy['readme']
+
+    return {
+      id: policy['id'],
+      name: policy['name'] + "||" + policy_url,
+      name_without_link: policy['name'],
+      description: policy['description'],
+      category: policy['category'],
+      created_at: policy['created_at'],
+      created_by: policy['created_by'],
+      frequency: policy['frequency'],
+      version: policy['version'],
+      credentials: policy['credentials'],
+      options: policy['options'],
+      severity: policy['severity'],
+      skip_approvals: policy['skip_approvals'],
+      scope: policy['scope'],
+      dry_run: policy['dry_run'],
+      log_level: policy['log_level'],
+      catalog_id: policy['published_template']['id'],
+      catalog_href: policy['published_template']['href'],
+      catalog_name: catalog_policy['name']  + "||" + catalog_url,
+      catalog_file_name: catalog_policy['file_name'],
+      catalog_version: catalog_policy['version'],
+      catalog_change_log: catalog_policy['change_log'],
+      catalog_description: catalog_policy['description'],
+      catalog_category: catalog_policy['category'],
+      catalog_severity: catalog_policy['severity'],
+      catalog_readme: catalog_policy['readme'],
+      catalog_provider: catalog_policy['provider'],
+      catalog_service: catalog_policy['service'],
+      catalog_policy_set: catalog_policy['policy_set'],
+      catalog_recommendation_type: catalog_recommendation_type,
+      catalog_updated_at: catalog_policy['updated_at'],
+      catalog_generally_recommended: boolean_table[catalog_policy['generally_recommended'].toString()],
+      catalog_deprecated: boolean_table[catalog_policy['deprecated'].toString()],
+      self_policy_name: ds_self_policy['name'],
+      href: href,
+      update_body: update_body,
+      recommendationDetails: recommendationDetails,
+      message: ''
+    }
+  })
+
+  result = _.filter(combined_data, function(policy) {
+    return policy['version'] != policy['catalog_version'] && typeof(policy['catalog_version']) == 'string' && policy['href'] != null
+  })
+
+  if (result.length > 0) {
+    total_applied_policies = ds_applied_policies.length.toString()
+    total_outdated = result.length.toString()
+    outdated_percentage = (total_outdated / total_applied_policies * 100).toFixed(2).toString() + '%'
+
+    pol_noun = "policies"
+    if (total_applied_policies == 1) { pol_noun = "policy" }
+
+    pol_verb = "are outdated"
+    if (total_outdated == 1) { pol_verb = "is outdated" }
+
+    pol_action = "recommended to be replaced with the latest version from the Catalog"
+
+    message = [
+      "Out of ", total_applied_policies, " ", pol_noun, " analyzed, ",
+      total_outdated, " (", outdated_percentage,
+      ") ", pol_verb, " and ", pol_action, ".\n\n"
+    ].join('')
+
+    settings = "No policies were filtered from this report.\n\n"
+
+    if (param_ignore_list.length > 0) {
+      settings = "The following policies were filtered from this report: " + param_ignore_list.join(', ') + "\n\n"
+    }
+
+    disclaimer = "Filtering can be adjusted by editing the applied policy and changing the appropriate parameters."
+
+    result[0]['message'] = message + settings + disclaimer
+  }
+EOS
+end
+
+datasource "ds_deprecated_policies" do
+  run_script $js_deprecated_policies, $ds_applied_policies, $ds_catalog_policies, $ds_policy_aggregates, $ds_self_policy, $param_ignore_list, $param_report_filter, rs_org_id, rs_project_id, policy_id, rs_optima_host
+end
+
+script "js_deprecated_policies", type: "javascript" do
+  parameters "ds_applied_policies", "ds_catalog_policies", "ds_policy_aggregates", "ds_self_policy", "param_ignore_list", "param_report_filter", "rs_org_id", "rs_project_id", "policy_id", "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  tld_table = {
+    "api.optima.flexeraeng.com": "app.flexera.com",
+    "api.optima-eu.flexeraeng.com": "app.flexera.eu",
+    "api.optima-apac.flexeraeng.com": "app.flexera.au"
+  }
+
+  tld = tld_table[rs_optima_host]
+
+  aggregate_object = {}
+
+  _.each(ds_policy_aggregates, function(agg) {
+    if (typeof(agg['running_project_ids']) == 'object') {
+      if (agg['running_project_ids'].length == 1 && agg['running_project_ids'][0] == rs_project_id) {
+        aggregate_object[agg['name']] = agg['href']
+      }
+    }
+  })
+
+  catalog_object = {}
+
+  _.each(ds_catalog_policies, function(policy) {
+    catalog_object[policy['name']] = policy
+  })
+
+  filtered_policies = _.reject(ds_applied_policies, function(policy) {
+    reject_policy = false
+
+    // Exclude this policy to avoid the policy trying to terminate itself if the user actions on it
+    if (policy['id'] == policy_id) {
+      reject_policy = true
+    }
+
+    // Exclude policies on the user-provided ignore list
+    ignore_list = _.map(param_ignore_list, function(item) { return item.toLowerCase().trim() })
+
+    if (!reject_policy && (_.contains(ignore_list, policy['name'].toLowerCase()) || _.contains(ignore_list, policy['id'].toLowerCase()))) {
+      reject_policy = true
+    }
+
+    // Exclude policies that were not applied from the catalog
+    if (!reject_policy && policy['published_template'] == null) {
+      reject_policy = true
+    } else if (!reject_policy) {
+      // Exclude policies where we did not find a corresponding entry in the active policy list
+      if (catalog_object[policy['published_template']['name']] == undefined) {
+        reject_policy = true
+      }
+
+      // Exclude policies applied from a catalog other than the Flexera one
+      if (!reject_policy && policy['published_template']['updated_by']['email'] != 'support@flexera.com') {
+        reject_policy = true
+      }
+    }
+
+    // Exclude all policies if the user opted not to report on deprecated policies
+    if (!reject_policy && param_report_filter == "Report Outdated Only") {
+      reject_policy = true
+    }
+
+    // Exclude non-deprecated policies
+    if (!reject_policy && !catalog_object[policy['published_template']['name']]['deprecated']) {
+      reject_policy = true
+    }
+
+    return reject_policy
+  })
+
+  result = _.map(filtered_policies, function(policy) {
+    catalog_policy = catalog_object[policy['published_template']['name']]
+    policy_url = "https://" + tld + "/orgs/" + rs_org_id + "/automation/applied-policies/projects/" + rs_project_id + "?policyId=" + policy['id']
+
+    recommendationDetails = [
+      "Terminate applied policy ", policy['name'], " (", policy['id'], ")"
+    ].join('')
+
+    href = null
+
+    if (policy['scope'] == 'org' && typeof(aggregate_object[policy['name']]) == 'string') {
+      href = aggregate_object[policy['name']]
+    }
+
+    if (policy['scope'] != 'org') {
+      href = policy['href']
+    }
+
+    update_body = {
+      credentials: policy['credentials'],
+      description: policy['description'],
+      dry_run: policy['dry_run'],
+      frequency: policy['frequency'],
+      log_level: policy['log_level'],
+      name: policy['name'],
+      options: policy['options'],
+      severity: policy['severity'],
+      skip_approvals: policy['skip_approvals'],
+      template_href: policy['published_template']['href']
+    }
+
+    catalog_recommendation_type = ""
+
+    if (typeof(catalog_policy['recommendation_type']) == 'string') {
+      catalog_recommendation_type = catalog_policy['recommendation_type']
+    }
+
+    boolean_table = { "true": "True", "false": "False" }
+
+    catalog_url = "https://github.com/flexera-public/policy_templates/tree/master/" + catalog_policy['readme']
+
+    return {
+      id: policy['id'],
+      name: policy['name'] + "||" + policy_url,
+      name_without_link: policy['name'],
+      description: policy['description'],
+      category: policy['category'],
+      created_at: policy['created_at'],
+      created_by: policy['created_by'],
+      frequency: policy['frequency'],
+      version: policy['version'],
+      credentials: policy['credentials'],
+      options: policy['options'],
+      severity: policy['severity'],
+      skip_approvals: policy['skip_approvals'],
+      scope: policy['scope'],
+      dry_run: policy['dry_run'],
+      log_level: policy['log_level'],
+      catalog_id: policy['published_template']['id'],
+      catalog_href: policy['published_template']['href'],
+      catalog_name: catalog_policy['name']  + "||" + catalog_url,
+      catalog_file_name: catalog_policy['file_name'],
+      catalog_version: catalog_policy['version'],
+      catalog_change_log: catalog_policy['change_log'],
+      catalog_description: catalog_policy['description'],
+      catalog_category: catalog_policy['category'],
+      catalog_severity: catalog_policy['severity'],
+      catalog_readme: catalog_policy['readme'],
+      catalog_provider: catalog_policy['provider'],
+      catalog_service: catalog_policy['service'],
+      catalog_policy_set: catalog_policy['policy_set'],
+      catalog_recommendation_type: catalog_recommendation_type,
+      catalog_updated_at: catalog_policy['updated_at'],
+      catalog_generally_recommended: boolean_table[catalog_policy['generally_recommended'].toString()],
+      catalog_deprecated: boolean_table[catalog_policy['deprecated'].toString()],
+      self_policy_name: ds_self_policy['name'],
+      href: href,
+      update_body: update_body,
+      recommendationDetails: recommendationDetails,
+      message: ''
+    }
+  })
+
+  if (result.length > 0) {
+    total_applied_policies = ds_applied_policies.length.toString()
+    total_deprecated = result.length.toString()
+    deprecated_percentage = (total_deprecated / total_applied_policies * 100).toFixed(2).toString() + '%'
+
+    pol_noun = "policies"
+    if (total_applied_policies == 1) { pol_noun = "policy" }
+
+    pol_verb = "are deprecated"
+    if (total_deprecated == 1) { pol_verb = "is deprecated" }
+
+    pol_action = [
+      "recommended for termination. ",
+      "Please consult the policy template README for information on what policy template to use instead. ",
+      "The README can be accessed by clicking on the link in the 'Catalog Policy Name' field"
+    ].join('')
+
+    message = [
+      "Out of ", total_applied_policies, " ", pol_noun, " analyzed, ",
+      total_deprecated, " (", deprecated_percentage,
+      ") ", pol_verb, " and ", pol_action, ".\n\n"
+    ].join('')
+
+    settings = "No policies were filtered from this report.\n\n"
+
+    if (param_ignore_list.length > 0) {
+      settings = "The following policies were filtered from this report: " + param_ignore_list.join(', ') + "\n\n"
+    }
+
+    disclaimer = "Filtering can be adjusted by editing the applied policy and changing the appropriate parameters."
+
+    result[0]['message'] = message + settings + disclaimer
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_outdated_policies" do
+  validate_each $ds_outdated_policies do
+    summary_template "{{ with index data 0 }}{{ .self_policy_name }}{{ end }}: {{ len data }} Outdated Policies Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    escalate $esc_update_policies
+    export do
+      resource_level true
+      field "name" do
+        label "Applied Policy Name"
+        format "link-external"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "created_at" do
+        label "Date Applied"
+      end
+      field "catalog_updated_at" do
+        label "Date Catalog Updated"
+      end
+      field "catalog_deprecated" do
+        label "Deprecated"
+      end
+      field "version" do
+        label "Applied Policy Version"
+      end
+      field "catalog_version" do
+        label "Catalog Policy Version"
+      end
+      field "catalog_id" do
+        label "Catalog Policy ID"
+      end
+      field "catalog_name" do
+        label "Catalog Policy Name"
+        format "link-external"
+      end
+      field "catalog_href" do
+        label "Catalog Policy HREF"
+      end
+      field "id" do
+        label "Applied Policy ID"
+      end
+      field "href" do
+        label "Applied Policy HREF"
+      end
+      field "description" do
+        label "Applied Policy Description"
+      end
+      field "frequency" do
+        label "Applied Policy Frequency"
+      end
+      field "severity" do
+        label "Applied Policy Severity"
+      end
+      field "skip_approvals" do
+        label "Applied Policy Skip Approvals"
+      end
+      field "scope" do
+        label "Applied Policy Scope"
+      end
+      field "dry_run" do
+        label "Applied Policy Dry Run"
+      end
+      field "log_level" do
+        label "Applied Policy Log Level"
+      end
+      field "name_without_link" do
+        label "Applied Policy Name (Unlinked)"
+      end
+      field "update_body" do
+        label "Applied Policy Details"
+      end
+    end
+  end
+  validate_each $ds_deprecated_policies do
+    summary_template "{{ with index data 0 }}{{ .self_policy_name }}{{ end }}: {{ len data }} Deprecated Policies Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    export do
+      resource_level true
+      field "name" do
+        label "Applied Policy Name"
+        format "link-external"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "created_at" do
+        label "Date Applied"
+      end
+      field "catalog_updated_at" do
+        label "Date Catalog Updated"
+      end
+      field "catalog_deprecated" do
+        label "Deprecated"
+      end
+      field "version" do
+        label "Applied Policy Version"
+      end
+      field "catalog_version" do
+        label "Catalog Policy Version"
+      end
+      field "catalog_id" do
+        label "Catalog Policy ID"
+      end
+      field "catalog_name" do
+        label "Catalog Policy Name"
+        format "link-external"
+      end
+      field "catalog_href" do
+        label "Catalog Policy HREF"
+      end
+      field "id" do
+        label "Applied Policy ID"
+      end
+      field "href" do
+        label "Applied Policy HREF"
+      end
+      field "description" do
+        label "Applied Policy Description"
+      end
+      field "frequency" do
+        label "Applied Policy Frequency"
+      end
+      field "severity" do
+        label "Applied Policy Severity"
+      end
+      field "skip_approvals" do
+        label "Applied Policy Skip Approvals"
+      end
+      field "scope" do
+        label "Applied Policy Scope"
+      end
+      field "dry_run" do
+        label "Applied Policy Dry Run"
+      end
+      field "log_level" do
+        label "Applied Policy Log Level"
+      end
+      field "name_without_link" do
+        label "Applied Policy Name (Unlinked)"
+      end
+      field "update_body" do
+        label "Applied Policy Details"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_update_policies" do
+  automatic contains($param_automatic_action, "Update Applied Policies")
+  label "Update Applied Policies"
+  description "Approval to update all selected applied policies to the latest version"
+  run "update_policies", data, $param_allow_major, rs_governance_host, rs_project_id
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define update_policies($data, $param_allow_major, $rs_governance_host, $rs_project_id) return $all_responses do
+  $$all_responses = []
+
+  foreach $policy in $data do
+    sub on_error: handle_error() do
+
+      if split($policy['version'], '.')[0] == split($policy['catalog_version'], '.')[0] || $param_allow_major == "Allow"
+        call apply_policy($policy, $rs_governance_host, $rs_project_id) retrieve $apply_response, $code
+
+        if $code == 204 || $code == 202 || $code == 200
+          call delete_policy($policy, $rs_governance_host) retrieve $delete_response
+        end
+      else
+        $policy_name = $policy["name_without_link"] + " (" + $policy["id"] + ")"
+        raise "Applied Policy " + $policy_name + " was not updated due to a major version change. Please update manually."
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define apply_policy($policy, $rs_governance_host, $rs_project_id) return $response, $code do
+  $host = $rs_governance_host
+  $href = "/api/governance/projects/" + $rs_project_id + "/applied_policies"
+  $url = $host + $href
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_flexera,
+    host: $host,
+    href: $href,
+    https: true,
+    verb: "post",
+    headers: { "Api-Version": "1.0" },
+    body: $policy["update_body"]
+  )
+
+  $code = $response["code"]
+  $policy_name = $policy["catalog_name"] + " (" + $policy["catalog_id"] + ")"
+
+  task_label("Apply Catalog Policy response: " + $policy_name + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response applying Catalog Policy: " + $policy_name + " " + to_json($response)
+  else
+    task_label("Apply Catalog Policy successful: " + $policy_name)
+  end
+end
+
+define delete_policy($policy, $rs_governance_host) return $response do
+  $host = $rs_governance_host
+  $href = $policy['href']
+  $url = $host + $href
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_flexera,
+    host: $host,
+    href: $href,
+    https: true,
+    verb: "delete",
+    headers: { "Api-Version": "1.0" }
+  )
+
+  $policy_name = $policy["name_without_link"] + " (" + $policy["id"] + ")"
+
+  task_label("Delete Applied Policy response: " + $policy_name + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Applied Policy: " + $policy_name + " " + to_json($response)
+  else
+    task_label("Delete Applied Policy successful: " + $policy_name)
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end

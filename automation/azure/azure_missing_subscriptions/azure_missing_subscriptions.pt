@@ -1,0 +1,340 @@
+name "Azure Missing Subscriptions"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports any Azure Subscriptions present in Flexera One that are not accessible via the Azure Resource Manager automation credential. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/azure/azure_missing_subscriptions) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "weekly"
+info(
+  version: "0.1",
+  provider: "Flexera",
+  service: "Optima",
+  policy_set: "Automation",
+  publish: "false"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_report_selection" do
+  type "string"
+  category "Policy Settings"
+  label "Report Selection"
+  description "Whether to report Subscriptions missing in the Azure API but present in CCO data, the opposite, or both."
+  allowed_values "Missing in Azure API", "Missing in CCO", "Both"
+  default "Missing in Azure API"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Subscriptions Ignore List"
+  description "A list of Subscription IDs/names to never include in the results. Leave blank to not filter results."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_flexera_cco_data" do
+  request do
+    run_script $js_flexera_cco_data, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "bill_source", jmes_path(col_item, "dimensions.bill_source")
+      field "vendor_account", jmes_path(col_item, "dimensions.vendor_account")
+      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+    end
+  end
+end
+
+script "js_flexera_cco_data", type: "javascript" do
+  parameters "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      dimensions: ["bill_source", "vendor_account", "vendor_account_name"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        "type": "or",
+        "expressions": [
+          { "dimension": "vendor", "type": "equal", "value": "Azure" },
+          { "dimension": "vendor", "type": "equal", "value": "azure" },
+          { "dimension": "vendor", "type": "equal", "value": "Microsoft Azure" },
+          { "dimension": "vendor", "type": "equal", "value": "microsoft azure" }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version","2020-01-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_missing_subscriptions_api" do
+  run_script $js_missing_subscriptions_api, $ds_flexera_cco_data, $ds_azure_subscriptions, $ds_applied_policy, $param_subscriptions_list, $param_report_selection
+end
+
+script "js_missing_subscriptions_api", type: "javascript" do
+  parameters "ds_flexera_cco_data", "ds_azure_subscriptions", "ds_applied_policy", "param_subscriptions_list", "param_report_selection"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (param_report_selection != 'Missing in CCO') {
+    automation_ids = _.map(ds_azure_subscriptions, function(sub) {
+      return sub['id'].toLowerCase().trim()
+    })
+
+    missing_subs = _.reject(ds_flexera_cco_data, function(sub) {
+      return _.contains(automation_ids, sub['vendor_account'].toLowerCase().trim())
+    })
+
+    result = _.map(missing_subs, function(sub) {
+      return {
+        accountID: sub['vendor_account'].toLowerCase().trim(),
+        accountName: sub['vendor_account_name'],
+        bill_source: sub['bill_source'],
+        policy_name: ds_applied_policy['name']
+      }
+    })
+
+    // Remove filtered results
+    result = _.reject(result, function(sub) {
+      return _.contains(param_subscriptions_list, sub['accountID']) || _.contains(param_subscriptions_list, sub['accountName'])
+    })
+
+    result = _.sortBy(result, 'accountID')
+    result = _.sortBy(result, 'bill_source')
+  }
+EOS
+end
+
+datasource "ds_missing_subscriptions_cco" do
+  run_script $js_missing_subscriptions_cco, $ds_flexera_cco_data, $ds_azure_subscriptions, $ds_applied_policy, $param_subscriptions_list, $param_report_selection
+end
+
+script "js_missing_subscriptions_cco", type: "javascript" do
+  parameters "ds_flexera_cco_data", "ds_azure_subscriptions", "ds_applied_policy", "param_subscriptions_list", "param_report_selection"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (param_report_selection != 'Missing in Azure API') {
+    cco_ids = _.map(ds_flexera_cco_data, function(sub) {
+      return sub['vendor_account'].toLowerCase().trim()
+    })
+
+    missing_subs = _.reject(ds_azure_subscriptions, function(sub) {
+      return _.contains(cco_ids, sub['id'].toLowerCase().trim())
+    })
+
+    result = _.map(missing_subs, function(sub) {
+      return {
+        accountID: sub['id'].toLowerCase().trim(),
+        accountName: sub['name'],
+        policy_name: ds_applied_policy['name']
+      }
+    })
+
+    // Remove filtered results
+    result = _.reject(result, function(sub) {
+      return _.contains(param_subscriptions_list, sub['accountID']) || _.contains(param_subscriptions_list, sub['accountName'])
+    })
+
+    result = _.sortBy(result, 'accountID')
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_missing_subscriptions" do
+  validate_each $ds_missing_subscriptions_api do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure API Missing Subscriptions"
+    check eq(val(item, "accountID"), "")
+    escalate $esc_email
+    export do
+      resource_level false
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "bill_source" do
+        label "Bill Connection"
+      end
+    end
+  end
+  validate_each $ds_missing_subscriptions_cco do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure CCO Missing Subscriptions"
+    check eq(val(item, "accountID"), "")
+    escalate $esc_email
+    export do
+      resource_level false
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
