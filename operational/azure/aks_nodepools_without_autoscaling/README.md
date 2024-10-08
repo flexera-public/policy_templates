@@ -1,6 +1,6 @@
 # AKS Node Pools Without Autoscaling
 
-
+## What It Does
 
 This policy will raise an incident if there are any AKS clusters with user node pools that do not have autoscaling enabled.
 

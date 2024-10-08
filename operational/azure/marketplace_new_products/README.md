@@ -1,6 +1,6 @@
 # Azure New Marketplace Products
 
-
+## What It Does
 
 This policy compares Azure billing data from 3 days ago to billing data from a user-specified number of days ago (10 by default) to see if any new Marketplace products have been purchased since then. A list of the new products and their estimated monthly cost is raised as an incident and, optionally, emailed.
 

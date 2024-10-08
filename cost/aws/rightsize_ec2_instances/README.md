@@ -77,7 +77,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `cloudwatch:ListMetrics`
   - `sts:GetCallerIdentity`
 
-\* Only required for taking action (terminating or downsizing); the policy will still function in a read-only capacity without these permissions.
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
   Example IAM Permission Policy:
 
