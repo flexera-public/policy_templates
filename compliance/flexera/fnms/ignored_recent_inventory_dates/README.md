@@ -9,7 +9,7 @@ if it has reported in during that time period an incident is triggered.
 
 This policy has the following input parameters required when launching the policy.
 
-- *Days since last inventory* - Number of days since Last Invenotry
+- *Days since last inventory* - Number of days since Last Inventory
 - *Email addresses of the recipients you wish to notify* - A list of email addresse(s) to notify
 
 ## Policy Actions
