@@ -45,4 +45,4 @@ This policy has the following input parameters required when launching the polic
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This policy template does not incur any cloud costs.

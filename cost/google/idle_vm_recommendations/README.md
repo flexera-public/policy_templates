@@ -78,7 +78,7 @@ Required roles in the provider:
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This policy template does not incur any cloud costs.
 
 ### API Quotas
 

@@ -23,7 +23,7 @@ This policy has the following input parameters required when launching the polic
 - *Azure Endpoint* - Azure Endpoint to access resources
 - *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked
 
-## Actions
+## Policy Actions
 
 - Sends an email notification
 

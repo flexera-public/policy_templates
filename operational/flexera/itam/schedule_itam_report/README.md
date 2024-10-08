@@ -13,21 +13,6 @@ Current limitations:
 
 - Report output is recommended to max 100,000 rows.  This is due to the limitation in e-mail body size.
 
-## Prerequisites
-
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
-
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `fnms_user`
-
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
-
-## How to setup ITAM Custom View for this policy
-
-Create a custom view in ITAM that could look like this: ![Alt text][FNMSReport]
-
-Once saved note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the Policy
-
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
@@ -40,9 +25,28 @@ This policy has the following input parameters required when launching the polic
 
 - Send an email
 
+## Prerequisites
+
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `fnms_user`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
+## Configure ITAM Custom View
+
+Create a custom view in ITAM that could look like this: ![Alt text][FNMSReport]
+
+Once saved note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the policy template.
+
+## Supported Clouds
+
+- Flexera
+
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This policy template does not incur any cloud costs.
 
 <!-- Image references -->
 [emailoutput]: images/email_output.png "email output"
