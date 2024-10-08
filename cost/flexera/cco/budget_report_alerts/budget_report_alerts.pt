@@ -2,12 +2,13 @@ name "Budget Alerts"
 rs_pt_ver 20180301
 type "policy"
 short_description "This policy utilizes the Flexera Budget API to detect if budget threshold has been exceeded for a selected budget. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_report_alerts/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
 severity "medium"
 category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "3.3",
+  version: "3.3.1",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization"
@@ -18,54 +19,65 @@ info(
 ###############################################################################
 
 parameter "param_budget_name_id" do
+  type "string"
+  category "Policy Settings"
   label "Budget Name or ID"
   description "Provide the name or id of a Budget"
-  min_length 1
-  type "string"
   constraint_description "Budget Name or ID is a required field"
+  min_length 1
+  # No default value, user input required
 end
 
 parameter "param_threshold_percentage" do
-  label "Threshold Percentage"
   type "number"
+  category "Policy Settings"
+  label "Threshold Percentage"
   description "Percentage of budget amount to alert on"
-  default 90
   min_value 1
+  default 90
 end
 
 parameter "param_type" do
-  label "Budget Alert Type"
   type "string"
-  allowed_values "Actual Spend","Forecasted Spend"
+  category "Policy Settings"
+  label "Budget Alert Type"
   description "Actual Spend alerts are based off incurred costs. Forecasted Spend alerts are based off monthly runrates."
+  allowed_values "Actual Spend", "Forecasted Spend"
   default "Actual Spend"
 end
 
 parameter "param_use_groups" do
   type "string"
+  category "Policy Settings"
   label "Degree of Summarization"
-  allowed_values "Summarized","By dimensions"
-  default "Summarized"
   description "Use this parameter to specify how to group the data"
+  allowed_values "Summarized", "By dimensions"
+  default "Summarized"
 end
 
 parameter "param_filter" do
   type "list"
+  category "Policy Settings"
   label "Filter Group By Dimension(s)"
   description "Enable budget tracking for specific dimensions and values. Only supports dimensions provided in the group previously defined in the budget"
+  default []
 end
 
 parameter "param_unbudgeted" do
-  label "Unbudgeted spend"
   type "string"
-  allowed_values "Exclude unbudgeted spend","Include unbudgeted spend"
-  default "Exclude unbudgeted spend"
+  category "Policy Settings"
+  label "Unbudgeted Spend"
+  description "Whether to include or exclude Unbudgeted Spend"
+  allowed_values "Exclude Unbudgeted Spend", "Include Unbudgeted Spend"
+  default "Exclude Unbudgeted Spend"
 end
 
 parameter "param_email" do
-  label "Email addresses"
   type "list"
+  category "Policy Settings"
+  label "Email Addresses"
   description "A list of email addresses to notify"
+  default []
 end
 
 ###############################################################################
@@ -95,14 +107,14 @@ datasource "ds_currency_code" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
   end
 end
 
@@ -110,7 +122,7 @@ datasource "ds_get_dimensions" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/dimensions"])
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
   end
@@ -125,10 +137,10 @@ datasource "ds_get_dimensions" do
 end
 
 datasource "ds_dimensions" do
-  run_script $js_filter_dimensions, $ds_get_dimensions
+  run_script $js_dimensions, $ds_get_dimensions
 end
 
-script "js_filter_dimensions", type: "javascript" do
+script "js_dimensions", type: "javascript" do
   parameters "ds_get_dimensions"
   result "result"
   code <<-EOS
@@ -143,27 +155,27 @@ datasource "ds_budgets" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/budgets"])
+    path join(["/bill-analysis/orgs/", rs_org_id, "/budgets"])
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "metric", jmes_path(col_item,"metric")
-      field "dimensions", jmes_path(col_item,"dimensions")
-      field "budgetYearMonths", jmes_path(col_item,"yearMonths")
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "metric", jmes_path(col_item, "metric")
+      field "dimensions", jmes_path(col_item, "dimensions")
+      field "budgetYearMonths", jmes_path(col_item, "yearMonths")
     end
   end
 end
 
 datasource "ds_filtered_budgets" do
-  run_script $js_filter_budgets, $ds_budgets, $param_budget_name_id
+  run_script $js_filtered_budgets, $ds_budgets, $param_budget_name_id
 end
 
-script "js_filter_budgets", type: "javascript" do
+script "js_filtered_budgets", type: "javascript" do
   parameters "budgets", "budget_name_id"
   result "results"
   code <<-EOS
@@ -190,25 +202,25 @@ end
 datasource "ds_reports" do
   iterate $ds_filtered_budgets
   request do
-    run_script $js_report_request, rs_optima_host, rs_org_id, $param_use_groups, $param_unbudgeted, iter_item
+    run_script $js_reports, iter_item, $param_use_groups, $param_unbudgeted, rs_optima_host, rs_org_id
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
+    collect jmes_path(response, "[*]") do
       field "b_id", val(iter_item, "id")
       field "name", val(iter_item, "name")
       field "dimensionsIDs", val(iter_item, "dimensions")
       field "metric", val(iter_item, "metric")
-      field "timestamp", jmes_path(col_item,"timestamp")
-      field "dimensions", jmes_path(col_item,"dimensions")
-      field "budgetAmount", jmes_path(col_item,"metrics.budgetAmount")
-      field "spendAmount", jmes_path(col_item,"metrics.spendAmount")
+      field "timestamp", jmes_path(col_item, "timestamp")
+      field "dimensions", jmes_path(col_item, "dimensions")
+      field "budgetAmount", jmes_path(col_item, "metrics.budgetAmount")
+      field "spendAmount", jmes_path(col_item, "metrics.spendAmount")
     end
   end
 end
 
-script "js_report_request", type: "javascript" do
-  parameters "rs_optima_host", "org", "use_groups", "unbudgeted", "budget"
+script "js_reports", type: "javascript" do
+  parameters "budget", "use_groups", "unbudgeted", "rs_optima_host", "rs_org_id"
   result "request"
   code <<-EOS
   var current = new Date();
@@ -220,12 +232,12 @@ script "js_report_request", type: "javascript" do
     auth: "auth_flexera",
     host: rs_optima_host,
     verb: "POST",
-    path: "/bill-analysis/orgs/" + org + "/budgets/" + budget.id + "/report",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/budgets/" + budget.id + "/report",
     body_fields: {
       "dimensions": use_groups == "Summarized" ? [] : budget.dimensions,
       "endAt": end_date,
       "startAt": start_date,
-      "includeUnbudgeted": unbudgeted == "Include unbudgeted spend",
+      "includeUnbudgeted": unbudgeted == "Include Unbudgeted Spend",
     },
     headers: {
       "User-Agent": "RS Policies",
@@ -236,11 +248,11 @@ script "js_report_request", type: "javascript" do
 end
 
 datasource "ds_aggregated" do
-  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type, f1_app_host, $param_budget_name_id, $ds_dimensions, $param_filter
+  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $ds_dimensions, $param_threshold_percentage, $param_type, $param_budget_name_id, $param_filter, f1_app_host
 end
 
 script "js_aggregated", type: "javascript" do
-  parameters "reports", "currency_code", "currency_reference", "threshold_percent", "param_type", "f1_app_host", "budget_name_id", "ds_dimensions", "param_filter"
+  parameters "reports", "currency_code", "currency_reference", "ds_dimensions", "threshold_percent", "param_type", "budget_name_id", "param_filter", "f1_app_host"
   result "results"
   code <<-EOS
   var results = {
@@ -448,8 +460,8 @@ policy "pol_budget_alert" do
   - {{parameters.param_budget_name_id}}
   \n
 EOS
+    check eq(size(val(data, "invalid")), 0)
     escalate $esc_budget_alert
-    check eq(size(val(data, "invalid")),0)
   end
 
   validate $ds_only_exceeded do
@@ -475,8 +487,8 @@ Target Groups: \n
 
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 EOS
+    check eq(size(data), 0)
     escalate $esc_budget_alert
-    check eq(size(data),0)
     export do
       field "group" do
         label "Group"
@@ -504,7 +516,7 @@ EOS
 
   validate $ds_only_forecasted do
     summary_template "{{with index data 0}}{{ .name }}{{end}}: {{parameters.param_threshold_percentage}}% Budget Threshold Is Exceeded ({{ parameters.param_type }})"
-  detail_template <<-EOS
+    detail_template <<-EOS
 # {{with index data 0}}{{ .name }}{{end}}: Budget Exceeded
 Budget Alert Type: **{{ parameters.param_type }}**
 
@@ -525,8 +537,8 @@ Target Groups: \n
 
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 EOS
+    check eq(size(data), 0)
     escalate $esc_budget_alert
-    check eq(size(data),0)
     export do
       field "group" do
         label "Group"
