@@ -1,4 +1,4 @@
-# Azure Hybrid Use Benefit Policy for SQL
+# Azure Hybrid Use Benefit for SQL
 
 ## What It Does
 

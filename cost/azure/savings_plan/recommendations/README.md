@@ -1,4 +1,4 @@
-# Azure Savings Plan Recommendation
+# Azure Savings Plan Recommendations
 
 ## What It Does
 
