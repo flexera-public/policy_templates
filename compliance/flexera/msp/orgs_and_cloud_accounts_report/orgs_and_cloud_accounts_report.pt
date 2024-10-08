@@ -1,7 +1,7 @@
 name "Orgs and Clouds Vendor Accounts"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy generates a list of cross organization Cloud Vendor Accounts connected to Flexera Optima based on
+short_description "This policy generates a list of cross organization Cloud Vendor Accounts connected to Flexera CCO based on
 the bill connection settings for Azure and Google, as well as full list of AWS accounts under the payer account connected for each Flexera Organization.\n
 See [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/msp/orgs_and_cloud_accounts_report) for more details"
 long_description ""
@@ -64,11 +64,11 @@ datasource "ds_session" do
     auth $auth_flexera
     host rs_cm_host
     path "/api/sessions"
-    header "X-Api-Version", "1.5"
     query "view", "whoami"
+    header "X-Api-Version", "1.5"
   end
   result do
-    field "userid", join(["/grs/users/",last(split(first(jmes_path(response, "links[?rel == 'user'].href")),'/'))])
+    field "userid", join(["/grs/users/", last(split(first(jmes_path(response, "links[?rel == 'user'].href")), '/'))])
   end
 end
 
@@ -79,7 +79,7 @@ datasource "ds_current_user_organizations" do
   result do
     collect jmes_path(response, "orgs") do
       field "href", jmes_path(col_item, "href")
-      field "org_id", last(split(jmes_path(col_item, "href"),"/"))
+      field "org_id", last(split(jmes_path(col_item, "href"), "/"))
       field "name", jmes_path(col_item, "name")
       field "cluster", jmes_path(col_item, "starts_with(legacy.account_url, 'https://us-3') && '3' || starts_with(legacy.account_url, 'https://us-4') && '4'")
     end
@@ -102,10 +102,10 @@ EOS
 end
 
 datasource "ds_filtered_user_organizations" do
-  run_script $js_filter_organizations, $ds_current_user_organizations, $param_exclude_organizations, $param_exclude_organizations_ids
+  run_script $js_filtered_user_organizations, $ds_current_user_organizations, $param_exclude_organizations, $param_exclude_organizations_ids
 end
 
-script "js_filter_organizations", type: "javascript" do
+script "js_filtered_user_organizations", type: "javascript" do
   parameters "ds_current_user_organizations", "param_exclude_organizations", "param_exclude_organizations_ids"
   result "results"
   code <<-EOS
@@ -126,16 +126,16 @@ datasource "ds_bill_connects" do
   request do
     auth $auth_flexera
     host "onboarding.rightscale.com"
-    path join(["/api/onboarding/orgs/",val(iter_item,"org_id"),"/bill_connects"])
+    path join(["/api/onboarding/orgs/", val(iter_item, "org_id"), "/bill_connects"])
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "id", jmes_path(col_item,"id")
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
       field "cloud_vendor_id", jmes_path(col_item, "cloud_vendor_id")
-      field "org_id", val(iter_item,"org_id")
+      field "org_id", val(iter_item, "org_id")
       field "aws_cloud_vendor_account_name", ""
     end
   end
@@ -146,16 +146,16 @@ datasource "ds_bill_connects_csp" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/analytics/orgs/",val(iter_item,"org_id"),"/azure_csp_partners"])
+    path join(["/analytics/orgs/", val(iter_item, "org_id"), "/azure_csp_partners"])
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "id", jmes_path(col_item,"id")
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
       field "cloud_vendor_id", "azure_csp_partners"
-      field "org_id", val(iter_item,"org_id")
+      field "org_id", val(iter_item, "org_id")
       field "aws_cloud_vendor_account_name", ""
     end
   end
@@ -166,18 +166,18 @@ datasource "ds_aws_cloud_vendor_accounts" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",val(iter_item,"org_id"),"/cloud_vendor_accounts"])
+    path join(["/bill-analysis/orgs/", val(iter_item, "org_id"), "/cloud_vendor_accounts"])
+    query "cloud_vendor", "aws"
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
-    query "cloud_vendor", "aws"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "id", join(["aws-",jmes_path(col_item,"id")])
+    collect jmes_path(response, "[*]") do
+      field "id", join(["aws-", jmes_path(col_item, "id")])
       field "cloud_vendor_id", "aws"
-      field "org_id", val(iter_item,"org_id")
-      field "aws_cloud_vendor_account_name", jmes_path(col_item,"name")
+      field "org_id", val(iter_item, "org_id")
+      field "aws_cloud_vendor_account_name", jmes_path(col_item, "name")
     end
   end
 end
@@ -198,10 +198,10 @@ EOS
 end
 
 datasource "ds_combined_cloud_accounts" do
-  run_script $js_combine_cloud_accounts, $ds_bill_connects_without_aws_payer, $ds_bill_connects_csp, $ds_aws_cloud_vendor_accounts
+  run_script $js_combined_cloud_accounts, $ds_bill_connects_without_aws_payer, $ds_bill_connects_csp, $ds_aws_cloud_vendor_accounts
 end
 
-script "js_combine_cloud_accounts", type: "javascript" do
+script "js_combined_cloud_accounts", type: "javascript" do
   parameters "ds_bill_connects_csp", "ds_bill_connects_without_aws_payer", "ds_aws_cloud_vendor_accounts"
   result "result"
   code <<-EOS
@@ -217,10 +217,10 @@ EOS
 end
 
 datasource "ds_normalized_cloud_vendor_ids" do
-  run_script $js_normalize_cloud_vendor_ids, $ds_combined_cloud_accounts
+  run_script $js_normalized_cloud_vendor_ids, $ds_combined_cloud_accounts
 end
 
-script "js_normalize_cloud_vendor_ids", type: "javascript" do
+script "js_normalized_cloud_vendor_ids", type: "javascript" do
   parameters "ds_combined_cloud_accounts"
   result "result"
   code <<-EOS
