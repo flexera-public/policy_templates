@@ -4,11 +4,11 @@
 
 This policy is no longer being updated. Group Sync for Azure Active Directory is now [natively supported in the Flexera platform](https://docs.flexera.com/flexera/EN/Administration/GroupSync.htm).
 
-## What it does
+## What It Does
 
 This policy collects groups and their members from AzureAD and synchronizes them to the Flexera Cloud Management Platform.
 
-## Functional Details
+## How It Works
 
 This policy leverages the [Microsoft Graph API](https://docs.microsoft.com/en-us/graph/api/overview?toc=./ref/toc.json&view=graph-rest-1.0) to collect groups and their members based on a filter prefix. It then compares them to the groups and members that currently exist in the Flexera CMP and updates the CMP groups to reflect the current membership in AzureAD.
 
@@ -69,4 +69,4 @@ Required permissions in the provider:
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

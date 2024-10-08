@@ -1,10 +1,10 @@
 # AKS Node Pools Without Autoscaling
 
-## What it does
+## What It Does
 
 This policy will raise an incident if there are any AKS clusters with user node pools that do not have autoscaling enabled.
 
-## Functional Details
+## How It Works
 
 This policy checks all the user node pools associated with each AKS cluster. If the 'enableAutoScaling' value for a node pool is set to 'false', that node pool is added to the list of problematic pools, and an incident is raised if this list contains any items.
 
@@ -23,7 +23,7 @@ This policy has the following input parameters required when launching the polic
 - *Azure Endpoint* - Azure Endpoint to access resources
 - *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked
 
-## Actions
+## Policy Actions
 
 - Sends an email notification
 
@@ -46,4 +46,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

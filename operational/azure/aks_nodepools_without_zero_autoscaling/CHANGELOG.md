@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v3.1
 
 - fixed link to README in policy description
@@ -36,6 +40,6 @@
 
 - Adding subscription filter to deal with timeout
 
-## 2.0
+## v2.0
 
 - Initial Release

@@ -4,11 +4,11 @@
 
 This policy is no longer being updated.
 
-## What it does
+## What It Does
 
 This policy checks all Servers in Cloud Management and reports on any that have stranded during the boot process. It provides the option to terminate any stranded servers after approval.
 
-## Functional Details
+## How It Works
 
 The policy leverages Cloud Management APIs to identify servers that have not successfully completed their boot sequence (i.e. have "stranded in booting"). Servers can optionally be terminated after approval.
 
@@ -40,4 +40,4 @@ This policy requires permissions to access RightScale resources (instances and t
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

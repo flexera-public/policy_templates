@@ -52,7 +52,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `ec2:TerminateInstances`*
   - `sts:GetCallerIdentity`
 
-\* Only required for taking action (stopping or terminating instances); the policy will still function in a read-only capacity without these permissions.
+  \* Only required for taking action (stopping or terminating instances); the policy will still function in a read-only capacity without these permissions.
 
   Example IAM Permission Policy:
 
@@ -87,6 +87,6 @@ This policy template supports the following clouds:
 
 - AWS
 
-## Costs
+## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.
