@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-
+## What It Does
 
 This policy checks for instances that are using instance types that are not in the specified list and stops them after approval.
 

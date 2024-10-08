@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-
+## What It Does
 
 This Policy will collect the resources from a RISC Foundations assessment and seed Azure Migrate with the discovered servers.
 

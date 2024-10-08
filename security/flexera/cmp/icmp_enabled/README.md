@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-
+## What It Does
 
 This Policy Template reviews your security group and alerts if any security group have ICMP types `0,3,8` enabled.
 

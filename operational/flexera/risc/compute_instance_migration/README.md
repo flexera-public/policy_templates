@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-
+## What It Does
 
 This Policy Template will analyze RISC CloudScape data and will generate recommendations for migrating application stacks to the most cost effective cloud providers & regions.
 

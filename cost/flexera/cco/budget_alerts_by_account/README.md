@@ -25,7 +25,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 - First 3 days of the month are not reported until after the 4th day to insure all bill data is retrieved before creating an incident.
 - Cost data isn't fully retrieved from the cloud bill for 2-3 days.  Therefore this policy will evaluate Optima data 3 days earlier than the run date.
 
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 

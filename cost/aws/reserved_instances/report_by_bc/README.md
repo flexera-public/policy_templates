@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-
+## What It Does
 
 This Policy Template generates a custom Reserved Instances report.  The Policy will index all Reserved Instances and then report on only the Reserved Instances that exist within an AWS Account that has been allocated to a specific Billing Center. Currently, only top-level Billing Centers are supported.
 

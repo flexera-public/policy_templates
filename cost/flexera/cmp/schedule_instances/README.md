@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-
+## What It Does
 
 This Policy Template allows you to schedule start and stop times for your compute.
 
@@ -27,7 +27,7 @@ Times are UTC unless the Timezone field is provided.
 
 Use the [Untagged Resource Policy](https://github.com/flexera-public/policy_templates/tree/master/compliance/tags/tag_checker) to automate creating the instance:schedule tag.
 
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 

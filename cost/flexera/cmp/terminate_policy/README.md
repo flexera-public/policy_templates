@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-
+## What It Does
 
 This Policy allows you to set a tag with a timestamp and terminate an instance at a specific time. It will not terminate locked instances.
 

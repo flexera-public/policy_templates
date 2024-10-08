@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-
+## What It Does
 
 This Policy Template uses user defined tags to determine if it can decrease the size of your running instance after user approval.
 

@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-
+## What It Does
 
 This policy allows you to set up scheduled reports that will provide monthly actual v. budgeted cloud cost across all resources in the Billing Center(s) you specify, delivered to any email addresses you specify.
 

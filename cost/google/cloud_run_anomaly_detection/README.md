@@ -8,7 +8,7 @@ This Policy uses Google Cloud Metrics data to identify anomalies for Cloud Run s
 
 This policy only uses Google Cloud Metric data and is designed to notify of anomalies <24 hours -- specifically before cost and usage data is available.
 
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 

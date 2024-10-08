@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-
+## What It Does
 
 This policy checks Flexera CMP for inefficient instance utilization using
 provided CPU and Memory thresholds and RightLink 10 monitoring metrics.  Instances

@@ -4,7 +4,7 @@
 
 This policy is no longer being updated. The [Google Idle Cloud SQL Instance Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cloud_sql_idle_instance_recommendations/) policy should be used instead.
 
-
+## What It Does
 
 This Policy Template checks for unused CloudSQL instance in Google Compute Engine and then terminates them upon approval.
 

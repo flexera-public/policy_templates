@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-
+## What It Does
 
 This policy checks whether the number of running instances in a given account has crossed a threshold of change compared to the prior period.
 

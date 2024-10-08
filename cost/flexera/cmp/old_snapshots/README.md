@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-
+## What It Does
 
 This Policy Template will create a list old snapshots in the cloud account. The age of snapshots to list is provided in the *Number of days old snapshot to delete* parameter.
 

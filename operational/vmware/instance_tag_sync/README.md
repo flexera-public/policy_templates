@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-
+## What It Does
 
 This Policy Template is used to automatically synchronize the CMP Tags to VMWare.
 
