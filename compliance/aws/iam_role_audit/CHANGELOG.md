@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.2
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v3.0.1
 
 - Add default value for `IAM Role Names/IDs/ARNs` param
