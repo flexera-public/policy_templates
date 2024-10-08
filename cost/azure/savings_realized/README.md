@@ -22,6 +22,10 @@ This policy has the following input parameters required when launching the polic
 - *Chart Type* - The type of bar chart to view savings realized data by
 - *Chart currency format* - The format to show the currency in the chart
 
+## Policy Actions
+
+- Sends an email notification
+
 ## Prerequisites
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).

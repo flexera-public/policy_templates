@@ -61,6 +61,8 @@ changed_yaml_files = changed_files.select{ |file| file.end_with?(".yaml") || fil
 new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
 
 # Temporary for testing
+changed_readme_files = []
+
 changed_pt_files = [
   "saas/office365/security_alerts/o365_security_alerts.pt",
   "saas/fsm/user_status_change/fsm-user_status_change.pt",

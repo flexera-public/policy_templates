@@ -1,4 +1,4 @@
-# SaaS Manager - Redundant Apps
+# SaaS Manager - SaaS App User Report by Category
 
 ## What It Does
 
