@@ -1,10 +1,10 @@
 # Azure Databricks Rightsize Compute Instances
 
-## What it does
+
 
 This policy checks all the instances associated with Azure Databricks workspaces in Azure Subscriptions for the average or maximum CPU and/or memory usage over a user-specified number of days. If the usage is less than the user provided Idle Instance CPU and/or memory percentage threshold then the Virtual Machine is recommended for deletion. If the usage is less than the user provided Underutilized Instance CPU and/or Memory percentage threshold then the Virtual Machine is recommended for downsizing. Both sets of Virtual Machines returned from this policy are emailed to the user.
 
-## Functional Details
+## How It Works
 
 - The policy identifies all Virtual Machine resources using the bill data from Flexera API
 - The policy uses Azure API to get all utilization metrics for those resources during the lookback period.
@@ -12,7 +12,7 @@ This policy checks all the instances associated with Azure Databricks workspaces
 - The recommendation provided for Idle Instances is a deletion action. The cluster or workspace can likely be deleted.
 - The recommendation provided for Underutilized Instances is a downsize action. The cluster or workspace can likely be downsized.
 
-### Policy savings details
+### Policy Savings Details
 
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is deleted or downsized. Cost data from Flexera is used to retrieve and calculate the estimated savings.
 
