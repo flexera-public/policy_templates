@@ -79,9 +79,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `compute.instances.delete`†
   - `compute.instances.setLabels`*
 
-† Only required for `Terminate Instance` Action; the policy will still start/stop instance without this permission.
+  \* Only required for `Update Schedule` Action; the policy will still start/stop instance without this permission.
 
-\* Only required for `Update Schedule` Action; the policy will still start/stop instance without this permission.
+  † Only required for `Terminate Instance` Action; the policy will still start/stop instance without this permission.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`

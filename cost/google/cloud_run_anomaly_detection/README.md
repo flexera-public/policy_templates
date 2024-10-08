@@ -32,12 +32,10 @@ This policy has the following input parameters required when launching the polic
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
-
-  - Permissions
-    - `resourcemanager.projects.get`
-    - `compute.regions.list`
-    - `run.services.list`
-    - `monitoring.timeSeries.list`
+  - `resourcemanager.projects.get`
+  - `compute.regions.list`
+  - `run.services.list`
+  - `monitoring.timeSeries.list`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 

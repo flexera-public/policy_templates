@@ -27,41 +27,35 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 ## Prerequisites
 
-This Policy Template requires that several APIs be enabled in your Google Cloud environment:
-
-- [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
-- [Compute Engine API](https://console.cloud.google.com/flows/enableapi?apiid=compute.googleapis.com)
-- [Recommender API](https://console.cloud.google.com/flows/enableapi?apiid=recommender.googleapis.com)
-
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
-  - Roles
-    - `Monitoring Viewer`
-    - `Compute Recommender Viewer`
-    - `Compute Recommender Admin`*
+  - `recommender.computeInstanceMachineTypeRecommendations.list`†
+  - `recommender.computeInstanceIdleResourceRecommendations.list`†
+  - `resourcemanager.projects.get`
+  - `monitoring.metricDescriptors.list`
+  - `monitoring.timeSeries.list`
+  - `compute.instances.list`
+  - `compute.instances.get`
+  - `compute.instances.start`*
+  - `compute.instances.stop`*
+  - `compute.instances.setMachineType`*
+  - `compute.instances.delete`*
 
-  - Permissions
-    - `recommender.computeInstanceMachineTypeRecommendations.list`†
-    - `recommender.computeInstanceIdleResourceRecommendations.list`†
-    - `resourcemanager.projects.get`
-    - `monitoring.metricDescriptors.list`
-    - `monitoring.timeSeries.list`
-    - `compute.instances.list`
-    - `compute.instances.get`
-    - `compute.instances.start`*
-    - `compute.instances.stop`*
-    - `compute.instances.setMachineType`*
-    - `compute.instances.delete`*
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
-† Only the permissions needed for the specific recommendations you're looking to produce are required. If using this policy only for idle recommendations, for example, `recommender.computeInstanceMachineTypeRecommendations.list` is not needed.
-
-\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
+  † Only the permissions needed for the specific recommendations you're looking to produce are required. If using this policy only for idle recommendations, for example, `recommender.computeInstanceMachineTypeRecommendations.list` is not needed.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
+Additionally, this Policy Template requires that several APIs be enabled in your Google Cloud environment:
+
+- [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
+- [Compute Engine API](https://console.cloud.google.com/flows/enableapi?apiid=compute.googleapis.com)
+- [Recommender API](https://console.cloud.google.com/flows/enableapi?apiid=recommender.googleapis.com)
 
 ## Input Parameters
 

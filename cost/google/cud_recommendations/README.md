@@ -38,27 +38,26 @@ The following policy actions are taken for any recommendations:
 
 ## Prerequisites
 
-This Policy Template requires that several APIs be enabled in your Google Cloud environment:
-
-- [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
-- [Recommender API](https://console.cloud.google.com/flows/enableapi?apiid=recommender.googleapis.com)
-
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
-  - Permissions
-    - `resourcemanager.projects.get`
-    - `compute.regions.list`
-    - `recommender.usageCommitmentRecommendations.list`
-    - `billing.resourceCosts.get`*
-    - `billing.accounts.getSpendingInformation`*
+  - `resourcemanager.projects.get`
+  - `compute.regions.list`
+  - `recommender.usageCommitmentRecommendations.list`
+  - `billing.resourceCosts.get`*
+  - `billing.accounts.getSpendingInformation`*
 
-\* Needed for recommendations to reflect custom contract pricing. Otherwise, recommendations will use list pricing.
+  \* Needed for recommendations to reflect custom contract pricing. Otherwise, recommendations will use list pricing.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
+Additionally, this policy template requires that several APIs be enabled in your Google Cloud environment:
+
+- [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
+- [Recommender API](https://console.cloud.google.com/flows/enableapi?apiid=recommender.googleapis.com)
 
 ## Supported Clouds
 
