@@ -6,12 +6,12 @@ This policy compares AWS billing data from 3 days ago to billing data from a use
 
 ## How It Works
 
-- The policy leverages the Flexera Optima API to retrieve aggregated amortized costs. Costs are filtered for only those costs whose Bill Entity is AWS Marketplace. Results are split by the Service dimension.
+- The policy leverages the Flexera Cloud Cost Optimization (CCO) APIs to retrieve aggregated amortized costs. Costs are filtered for only those costs whose Bill Entity is AWS Marketplace. Results are split by the Service dimension.
 - The list of Services (analogous to the name of the product purchased on the AWS Marketplace) from 3 days ago is compared to the older list to find any new items and their cost.
 
 ### Policy Cost Reporting Details
 
-The policy includes the estimated monthly cost. Optima is used to retrieve the cost of the Marketplace product for a full day (3 days ago) which is then multiplied by 30.44 (the average number of days in a month). The cost is displayed in the Estimated Monthly Cost column. The incident message detail includes the sum of each product *Estimated Monthly Cost* as *Potential Monthly Cost*.
+The policy includes the estimated monthly cost. Flexera Cloud Cost Optimization (CCO) is used to retrieve the cost of the Marketplace product for a full day (3 days ago) which is then multiplied by 30.44 (the average number of days in a month). The cost is displayed in the Estimated Monthly Cost column. The incident message detail includes the sum of each product *Estimated Monthly Cost* as *Potential Monthly Cost*.
 
 ## Input Parameters
 

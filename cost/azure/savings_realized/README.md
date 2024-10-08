@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This Policy uses Optima to determine a view of total savings realized from using Compute Reservations in Azure, for the entire Organization or specified billing centers across a period of historical months.
+This Policy uses Flexera Cloud Cost Optimization (CCO) to determine a view of total savings realized from using Compute Reservations in Azure, for the entire Organization or specified billing centers across a period of historical months.
 
 ## How It Works
 

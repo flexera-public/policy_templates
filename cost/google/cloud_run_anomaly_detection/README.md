@@ -20,7 +20,7 @@ This policy has the following input parameters required when launching the polic
 - *Lookback Aggregation Period* - The time period to aggregate the metric data
 - *Metric Name* - The name of the metric to monitor for anomalies
 - *Threshold For Z-score* - The threshold for Z-scale, which is the number of consequent anomaly events to trigger an incident (i.e. 1, 2, 3)
-- *Threshold For Consequtive Anomalies* - Number of Consqutive Anomalies to trigger an incident
+- *Threshold For Consecutive Anomalies* - Number of Consecutive Anomalies to trigger an incident
 - *Email addresses* - A list of email addresses to notify
 
 ## Policy Actions

@@ -25,7 +25,7 @@ Example: instance:schedule=8-17;MO,TU,WE,TH,FR;America/New_York. Stops instances
 Instances are off during the weekend and start back up on Monday morning and are off at 5p every weekday.
 Times are UTC unless the Timezone field is provided.
 
-Use the [Untagged Resource Policy](https://github.com/flexera-public/policy_templates/tree/master/compliance/tags/tag_checker) to automate creating the instance:schedule tag.
+Use the [Untagged Resource Policy](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/cmp/tag_checker) to automate creating the instance:schedule tag.
 
 ## Input Parameters
 

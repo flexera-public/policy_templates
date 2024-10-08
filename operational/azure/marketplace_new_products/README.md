@@ -6,13 +6,13 @@ This policy compares Azure billing data from 3 days ago to billing data from a u
 
 ## How It Works
 
-- The policy leverages the Flexera Optima API to retrieve aggregated amortized costs from each Azure bill source.
+- The policy leverages the Flexera Cloud Cost Optimization (CCO) APIs to retrieve aggregated amortized costs from each Azure bill source.
 - Costs are filtered accordingly based on the kind of Azure bill source. Old bill sources pull the `usage_type` dimension and filter by the `Microsoft.Marketplace` service, while newer bill sources pull the `resource_type` dimension and filter by `manufacturer_name` not containing the substring "Microsoft".
 - The list of products from 3 days ago is compared to the older list to find any new items and their cost.
 
 ### Policy Cost Reporting Details
 
-The policy includes the estimated monthly cost. Optima is used to retrieve the cost of the Marketplace product for a full day (3 days ago) which is then multiplied by 30.44 (the average number of days in a month). The cost is displayed in the Estimated Monthly Cost column. The incident message detail includes the sum of each product *Estimated Monthly Cost* as *Potential Monthly Cost*.
+The policy includes the estimated monthly cost. Flexera Cloud Cost Optimization (CCO) is used to retrieve the cost of the Marketplace product for a full day (3 days ago) which is then multiplied by 30.44 (the average number of days in a month). The cost is displayed in the Estimated Monthly Cost column. The incident message detail includes the sum of each product *Estimated Monthly Cost* as *Potential Monthly Cost*.
 
 ## Input Parameters
 

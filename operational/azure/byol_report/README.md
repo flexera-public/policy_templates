@@ -6,7 +6,7 @@ This policy analyzes the stored billing data for Microsoft Azure from 2 days ago
 
 ## How It Works
 
-- The policy leverages the Flexera Optima API to retrieve amortized costs and metadata for Azure virtual machines on a per-subscription basis. Costs for the most recent 2 days are ignored due to the high likelihood of cost data this recent being incomplete.
+- The policy leverages the Flexera Cloud Cost Optimization (CCO) API to retrieve amortized costs and metadata for Azure virtual machines on a per-subscription basis. Costs for the most recent 2 days are ignored due to the high likelihood of cost data this recent being incomplete.
 - The `Operating System` dimension is used to determine if each virtual machine is using Bring-Your-Own-License (BYOL) or not. The following values for this dimension are considered BYOL: Red Hat BYOS, SUSE BYOS, Windows Server BYOL, Windows Client BYOL
 - The total number of virtual machines, the number using BYOL, and the percentage using BYOL are calculated for each day based on the above data.
 
