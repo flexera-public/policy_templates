@@ -92,7 +92,7 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This policy template does not incur any cloud costs.
 
 ## API Quotas
 

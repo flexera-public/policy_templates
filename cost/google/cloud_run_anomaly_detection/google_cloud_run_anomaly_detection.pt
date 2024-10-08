@@ -8,7 +8,7 @@ category "Cost"
 default_frequency "daily"
 info(
   publish: "false",
-  version: "0.1.1",
+  version: "0.1.3",
   provider: "Google",
   service: "Cloud Run",
   policy_set: "Anomaly Detection"
@@ -19,15 +19,14 @@ info(
 ###############################################################################
 
 parameter "param_email" do
-  category "Policy Settings"
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
   default []
 end
 
 parameter "param_projects_allow_or_deny" do
-  category "Filters"
   type "string"
   category "Filters"
   label "Allow/Deny Projects"
@@ -37,7 +36,6 @@ parameter "param_projects_allow_or_deny" do
 end
 
 parameter "param_projects_list" do
-  category "Filters"
   type "list"
   category "Filters"
   label "Allow/Deny Projects List"
@@ -46,7 +44,6 @@ parameter "param_projects_list" do
 end
 
 parameter "param_regions_allow_or_deny" do
-  category "Filters"
   type "string"
   category "Filters"
   label "Allow/Deny Regions"
@@ -56,7 +53,6 @@ parameter "param_regions_allow_or_deny" do
 end
 
 parameter "param_regions_list" do
-  category "Filters"
   type "list"
   category "Filters"
   label "Allow/Deny Regions List"
@@ -65,48 +61,48 @@ parameter "param_regions_list" do
 end
 
 parameter "param_metric_lookback_time" do
+  type "string"
   category "Statistics"
   label "Lookback Time Period"
-  type "string"
   description "The time period to look back for anomalies. The longer the time period, the more accurate the anomaly detection will be."
-  default "Last 1 day"
   allowed_values ["Last 15 minutes", "Last 30 minutes", "Last 1 hour", "Last 3 hours", "Last 6 hours", "Last 12 hours", "Last 1 day", "Last 2 days", "Last 7 days", "Last 14 days"]
+  default "Last 1 day"
 end
 
 parameter "param_metric_aggregation" do
+  type "string"
   category "Statistics"
   label "Lookback Aggregation Period"
-  type "string"
   description "The time period to aggregate the metric data"
-  default "1 minute"
   allowed_values ["1 minute", "5 minutes", "10 minutes", "15 minutes", "30 minutes", "1 hour", "3 hours", "6 hours", "12 hours", "1 day"]
+  default "1 minute"
 end
 
 parameter "param_threshold_metric_name" do
+  type "string"
   category "Statistics"
   label "Metric Name"
-  type "string"
   description "The name of the metric to monitor for anomalies"
-  default "run.googleapis.com/container/billable_instance_time"
   allowed_values ["run.googleapis.com/container/billable_instance_time", "run.googleapis.com/container/instance_count", "run.googleapis.com/container/memory", "run.googleapis.com/container/cpu"]
+  default "run.googleapis.com/container/billable_instance_time"
 end
 
 parameter "param_threshold_zscore" do
+  type "number"
   category "Filters"
   label "Threshold For Z-Score"
-  type "number"
   description "The Z-score is the number of standard deviations by which the value of a raw score (i.e., an observed value or data point) is above or below the mean value of what is being observed or measured"
-  default 3
   min_value 0
+  default 3
 end
 
 parameter "param_threshold_consequtive_anomalies" do
-  category "Filters"
-  label "Threshold For Consequtive Anomalies"
   type "number"
-  description "Number of Consequtive Anomalies to trigger an incident"
-  default 0
+  category "Filters"
+  label "Threshold For Consecutive Anomalies"
+  description "Number of Consecutive Anomalies to trigger an incident"
   min_value 0
+  default 0
 end
 
 ###############################################################################
@@ -317,10 +313,9 @@ datasource "ds_google_cloud_run_services" do
   iterate $ds_google_regions_filtered
   request do
     auth $auth_google
-    host "run.googleapis.com" # v2 can use Global endpoint https://cloud.google.com/run/docs/reference/rest#rest_endpoints
-    verb "GET"
-    path join(["/v2/projects/", val(iter_item, "projectId"), "/locations/", val(iter_item, "region"), "/services"])
     pagination $pagination_google
+    host "run.googleapis.com" # v2 can use Global endpoint https://cloud.google.com/run/docs/reference/rest#rest_endpoints
+    path join(["/v2/projects/", val(iter_item, "projectId"), "/locations/", val(iter_item, "region"), "/services"])
   end
   result  do
     encoding "json"
@@ -341,14 +336,14 @@ datasource "ds_cloud_run_utilization" do
   request do
     auth $auth_google
     host "monitoring.googleapis.com"
-    path join(["/v3/projects/",val(iter_item,"projectId"),"/timeSeries"])
-    query "aggregation.alignmentPeriod", join(['+',val($ds_param_values,"aggregation"),"s"],"")
+    path join(["/v3/projects/", val(iter_item, "projectId"), "/timeSeries"])
+    query "aggregation.alignmentPeriod", join(['+', val($ds_param_values, "aggregation"), "s"], "")
     query "aggregation.crossSeriesReducer", "REDUCE_SUM"
     query "aggregation.groupByFields", 'resource.label."service_name"'
     query "aggregation.perSeriesAligner", "ALIGN_RATE"
-    query "filter", join(['metric.type="',$param_threshold_metric_name,'" resource.type="cloud_run_revision" resource.label."service_name"="',last(split(val(iter_item, "name"), "/services/")),'" AND resource.labels."location"="',val(iter_item, "region"),'" AND resource.labels."service_name"="',last(split(val(iter_item, "name"), "/services/")),'"'],"")
+    query "filter", join(['metric.type="', $param_threshold_metric_name, '" resource.type="cloud_run_revision" resource.label."service_name"="', last(split(val(iter_item, "name"), "/services/")), '" AND resource.labels."location"="', val(iter_item, "region"), '" AND resource.labels."service_name"="', last(split(val(iter_item, "name"), "/services/")), '"'], "")
     query "interval.startTime", val($ds_param_values, "start_time")
-    query "interval.endTime",   val($ds_param_values, "end_time")
+    query "interval.endTime", val($ds_param_values, "end_time")
   end
   result do
     encoding "json"
@@ -437,14 +432,9 @@ policy "pol_utilization" do
   validate_each $ds_cloud_run_utilization_anomalies do
     summary_template "Google Cloud Run Anomaly Detection: {{ len data }} Anomalies In {{ parameters.param_metric_lookback_time }} For {{ parameters.param_threshold_metric_name }} Metric"
     detail_template " "
-    check lt(  val(val(item, "value"), "consequtiveAnomalyIndex")  , $param_threshold_consequtive_anomalies) # Check that the consequtiveAnomalyIndex is less than the param_consequtiveAnomaly_threshold
-    escalate $email
+    check lt(val(val(item, "value"), "consequtiveAnomalyIndex"), $param_threshold_consequtive_anomalies) # Check that the consequtiveAnomalyIndex is less than the param_consequtiveAnomaly_threshold
+    escalate $esc_email
     export do
-      # resource_level true
-      # field "id" do
-      #   label "Resource ID"
-      #   path "service_name"
-      # end
       field "param_threshold_consequtive_anomalies" do
         label "Policy Parameter Threshold Consequtive Anomalies"
         path "parameters.param_threshold_consequtive_anomalies"
@@ -497,12 +487,11 @@ policy "pol_utilization" do
   end
 end
 
-
 ###############################################################################
 # Escalations
 ###############################################################################
 
-escalation "email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"

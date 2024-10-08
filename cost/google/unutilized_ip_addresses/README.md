@@ -4,11 +4,11 @@
 
 This policy is no longer being updated. The [Google Idle IP Address Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/idle_ip_address_recommendations/) policy should be used instead.
 
-## What it does
+## What It Does
 
 Checks Google for Unutilized IP Addresses and deletes them after approval.
 
-## Functional Details
+## How It Works
 
 - If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
 - This policy uses Google Cloud to get a list of external IP addresses that are not in use.
@@ -53,4 +53,4 @@ Required permissions in the provider:
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

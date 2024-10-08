@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v4.2
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.

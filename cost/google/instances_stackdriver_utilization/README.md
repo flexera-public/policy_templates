@@ -60,4 +60,4 @@ Replace the `30` wherever you see `"start_date": new Date(new Date().setDate(new
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.
