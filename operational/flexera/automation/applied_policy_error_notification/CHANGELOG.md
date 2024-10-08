@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.0
+
+- Added support for reporting when the child policies of meta parent policies are in error
+
 ## v3.0.0
 
 - Renamed to `Applied Policy Template Errors` to conform to policy template naming conventions
