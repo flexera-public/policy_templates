@@ -56,7 +56,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   }
   ```
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+- [**Flexera ITAM Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `Web Service` or equivalent role in IT Asset Accounts (for calling ITAM SOAP APIs)
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.

@@ -225,7 +225,7 @@ def readme_invalid_credentials?(file, file_lines)
 
     flexera_permission_scanning = false if line.start_with?("- [") && (!line.include?("Flexera") && !line.include?("flexera"))
     flexera_permission_scanning = false if aws_permission_scanning || azure_permission_scanning || google_permission_scanning
-    flexera_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !flexera_permission_stop_scanning && !flexera_permission_scanning && prereq_line_number > 0 && (line.include?("[**Flexera") || line.include?("[**flexera")) && (!line.include?("AWS") && !line.include?("aws")) && (!line.include?("Azure") && !line.include?("azure")) && (!line.include?("Google") && !line.include?("google")) && !file.start_with?("saas/fsm/")
+    flexera_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !flexera_permission_stop_scanning && !flexera_permission_scanning && prereq_line_number > 0 && (line.include?("[**Flexera") || line.include?("[**flexera")) && !line.include?("ITAM")) && (!line.include?("AWS") && !line.include?("aws")) && (!line.include?("Azure") && !line.include?("azure")) && (!line.include?("Google") && !line.include?("google")) && !file.start_with?("saas/fsm/")
     flexera_permission_line = line_number if !flexera_permission_line && flexera_permission_scanning
     flexera_permission_text << line if flexera_permission_scanning
   end
