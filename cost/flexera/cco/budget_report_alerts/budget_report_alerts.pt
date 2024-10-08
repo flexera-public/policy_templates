@@ -2,12 +2,13 @@ name "Budget Alerts"
 rs_pt_ver 20180301
 type "policy"
 short_description "This policy utilizes the Flexera Budget API to detect if budget threshold has been exceeded for a selected budget. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_report_alerts/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
 severity "medium"
 category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "3.3",
+  version: "3.3.1",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization"
@@ -18,54 +19,65 @@ info(
 ###############################################################################
 
 parameter "param_budget_name_id" do
+  type "string"
+  category "Policy Settings"
   label "Budget Name or ID"
   description "Provide the name or id of a Budget"
-  min_length 1
-  type "string"
   constraint_description "Budget Name or ID is a required field"
+  min_length 1
+  # No default value, user input required
 end
 
 parameter "param_threshold_percentage" do
-  label "Threshold Percentage"
   type "number"
+  category "Policy Settings"
+  label "Threshold Percentage"
   description "Percentage of budget amount to alert on"
-  default 90
   min_value 1
+  default 90
 end
 
 parameter "param_type" do
-  label "Budget Alert Type"
   type "string"
-  allowed_values "Actual Spend","Forecasted Spend"
+  category "Policy Settings"
+  label "Budget Alert Type"
   description "Actual Spend alerts are based off incurred costs. Forecasted Spend alerts are based off monthly runrates."
+  allowed_values "Actual Spend", "Forecasted Spend"
   default "Actual Spend"
 end
 
 parameter "param_use_groups" do
   type "string"
+  category "Policy Settings"
   label "Degree of Summarization"
-  allowed_values "Summarized","By dimensions"
-  default "Summarized"
   description "Use this parameter to specify how to group the data"
+  allowed_values "Summarized", "By dimensions"
+  default "Summarized"
 end
 
 parameter "param_filter" do
   type "list"
+  category "Policy Settings"
   label "Filter Group By Dimension(s)"
   description "Enable budget tracking for specific dimensions and values. Only supports dimensions provided in the group previously defined in the budget"
+  default []
 end
 
 parameter "param_unbudgeted" do
-  label "Unbudgeted spend"
   type "string"
-  allowed_values "Exclude unbudgeted spend","Include unbudgeted spend"
-  default "Exclude unbudgeted spend"
+  category "Policy Settings"
+  label "Unbudgeted Spend"
+  description "Whether to include or exclude Unbudgeted Spend"
+  allowed_values "Exclude Unbudgeted Spend", "Include Unbudgeted Spend"
+  default "Exclude Unbudgeted Spend"
 end
 
 parameter "param_email" do
-  label "Email addresses"
   type "list"
+  category "Policy Settings"
+  label "Email Addresses"
   description "A list of email addresses to notify"
+  default []
 end
 
 ###############################################################################
@@ -225,7 +237,7 @@ script "js_report_request", type: "javascript" do
       "dimensions": use_groups == "Summarized" ? [] : budget.dimensions,
       "endAt": end_date,
       "startAt": start_date,
-      "includeUnbudgeted": unbudgeted == "Include unbudgeted spend",
+      "includeUnbudgeted": unbudgeted == "Include Unbudgeted Spend",
     },
     headers: {
       "User-Agent": "RS Policies",
@@ -448,8 +460,8 @@ policy "pol_budget_alert" do
   - {{parameters.param_budget_name_id}}
   \n
 EOS
+    check eq(size(val(data, "invalid")), 0)
     escalate $esc_budget_alert
-    check eq(size(val(data, "invalid")),0)
   end
 
   validate $ds_only_exceeded do
@@ -504,7 +516,7 @@ EOS
 
   validate $ds_only_forecasted do
     summary_template "{{with index data 0}}{{ .name }}{{end}}: {{parameters.param_threshold_percentage}}% Budget Threshold Is Exceeded ({{ parameters.param_type }})"
-  detail_template <<-EOS
+    detail_template <<-EOS
 # {{with index data 0}}{{ .name }}{{end}}: Budget Exceeded
 Budget Alert Type: **{{ parameters.param_type }}**
 
@@ -525,8 +537,8 @@ Target Groups: \n
 
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 EOS
+    check eq(size(data), 0)
     escalate $esc_budget_alert
-    check eq(size(data),0)
     export do
       field "group" do
         label "Group"

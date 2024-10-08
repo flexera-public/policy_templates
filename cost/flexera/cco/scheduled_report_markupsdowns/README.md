@@ -1,4 +1,4 @@
-# Scheduled Report with Markups & Markdowns
+# Scheduled Report with Markups and Markdowns
 
 ## What It Does
 

@@ -1,4 +1,4 @@
-# Budget Alerts Policy
+# Budget Alerts
 
 ## What It Does
 
