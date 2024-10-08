@@ -4,7 +4,7 @@
 
 This Policy Template obtains a list of all Savings Plans in the Azure estate and reports on any that have expired or are set to expire within a user-specified number of days. An email is sent containing a list of the offending Savings Plans.
 
-## Functional Details
+## How It Works
 
 - The policy leverages the Azure Resource Manager API to obtain a list of Savings Plans from the `/providers/Microsoft.BillingAccounts/savingsPlanOrders/savingsPlans` API endpoint.
 - The policy then compares the `properties.expiryDateTime` field of each Savings Plan to today's date to determine how many days from expiration each Savings Plan is.

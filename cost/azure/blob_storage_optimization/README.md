@@ -28,6 +28,14 @@ This policy checks Azure storage containers for blobs to move to the 'Cool' or '
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
 For example if a user selects the "Delete Blobs" action while applying the policy, all of the blobs that didn't satisfy the policy condition will be deleted.
 
+## Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Send an email report
+- Change object storage tier after approval
+- Delete object after approval
+
 ## Prerequisites
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
@@ -49,4 +57,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

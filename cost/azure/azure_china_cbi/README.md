@@ -4,7 +4,7 @@
 
 This Policy Template is used to automatically take billing data for Azure China and send the data to Flexera CBI so that Azure China costs are visible in Flexera One.
 
-## Functional Details
+## How It Works
 
 - The policy uses the Azure China Usage Report API to retrieve Azure China billing data for user-specified month for the provided Enrollment ID.
 - The policy then sends this data, unmodified, into the Flexera Common Bill Ingestion endpoint so that the data can be ingested and then become visible on the Flexera One platform.
@@ -48,4 +48,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

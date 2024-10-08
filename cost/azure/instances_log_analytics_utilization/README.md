@@ -4,11 +4,11 @@
 
 This policy is no longer being updated. CPU and memory usage data can now be obtained from Azure resources without the need for Log Analytics. The [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/) policy now includes this functionality and is the recommended policy for getting recommendations for inefficient instance utilization.
 
-## What it does
+## What It Does
 
 This Policy Template uses performance metrics from Log Analytics from the last 30 days to identify underutilized instances and provides rightsizing recommendations. Once recommendations are generated, instances can be rightsized in an automated manner or after approval. This is meant to be run as a weekly policy.
 
-## Functional Details
+## How It Works
 
 - This policy identifies all instances reporting performance metrics to Log Analytics whose CPU or Memory utilization is below the thresholds set in the **Average used memory percentage** and **Average used CPU percentage** parameters. Once recommendations are generated, instances can be rightsized in an automated manner or after approval.
 - The **Exclusion Tag Key** parameter is a string value.  Supply the Tag Key only.  Tag Values are not analyzed and therefore are not need.  If the exclusion tag key is used on an Instance, that Instance is presumed to be exempt from this policy.
@@ -72,4 +72,4 @@ Replace the `30` wherever you see `query "timespan","P30D"` with the new number 
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.
