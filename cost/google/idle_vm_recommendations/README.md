@@ -4,7 +4,7 @@
 
 This policy is no longer being updated. The [Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations) policy now includes this functionality and is the recommended policy for getting idle VM recommendations.
 
-## What it does
+## What It Does
 
 This Policy finds Idle Virtual Machine Recommendations and reports when it finds them. You can then delete the idle instances
 
@@ -78,7 +78,7 @@ Required roles in the provider:
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This policy template does not incur any cloud costs.
 
 ### API Quotas
 

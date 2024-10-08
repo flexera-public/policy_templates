@@ -4,11 +4,11 @@
 
 This policy is no longer being updated. The [Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations) policy now includes this functionality and is the recommended policy for getting idle VM recommendations.
 
-## What it does
+## What It Does
 
 This Policy Template checks for idle instance in Google Compute Engine and then terminates them upon approval.
 
-## Functional Details
+## How It Works
 
 - If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
 - This policy identifies all instances reporting performance metrics to Google StackDriver and delivers a report, for instances whose CPU or Memory utilization is below the thresholds set in the **Average used memory percentage** and **Average used CPU percentage** parameters. These thresholds are what you would consider to be and idle instance.
@@ -60,4 +60,4 @@ Required permissions in the provider:
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.
