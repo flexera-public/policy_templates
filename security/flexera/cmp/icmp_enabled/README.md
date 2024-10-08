@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-## What it does
+## What It Does
 
 This Policy Template reviews your security group and alerts if any security group have ICMP types `0,3,8` enabled.
 
@@ -34,4 +34,4 @@ This policy requires permissions to access RightScale resources (clouds, network
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This policy template does not incur any cloud costs.
