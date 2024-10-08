@@ -7,7 +7,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.0",
+  version: "5.0.1",
   provider: "AWS",
   service: "Compute",
   policy_set: "Disallowed Regions"
@@ -92,15 +92,6 @@ end
 # Pagination
 ###############################################################################
 
-pagination "pagination_aws" do
-  get_page_marker do
-    body_path jmes_path(response, "NextToken")
-  end
-  set_page_marker do
-    body_field "NextToken"
-  end
-end
-
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
@@ -164,12 +155,11 @@ end
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
-    verb "GET"
     host "sts.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
@@ -252,19 +242,19 @@ datasource "ds_instance_sets" do
     auth $auth_aws
     host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
     path '/'
-    header 'User-Agent', 'RS Policies'
-    header 'Content-Type', 'text/xml'
     query 'Action', 'DescribeInstances'
     query 'Version', '2016-11-15'
     query 'Filter.1.Name', 'instance-state-name'
     query 'Filter.1.Value.1', 'running'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
   end
   result do
     encoding "xml"
     collect xpath(response, "//DescribeInstancesResponse/reservationSet/item", "array") do
       field "instances_set" do
         collect xpath(col_item,"instancesSet/item","array") do
-          field "region",val(iter_item, "region")
+          field "region", val(iter_item, "region")
           field "instanceId", xpath(col_item, "instanceId")
           field "imageId", xpath(col_item, "imageId")
           field "resourceType", xpath(col_item, "instanceType")
@@ -272,7 +262,7 @@ datasource "ds_instance_sets" do
           field "privateDnsName", xpath(col_item, "privateDnsName")
           field "launchTime", xpath(col_item, "launchTime")
           field "tags" do
-            collect xpath(col_item,"tagSet/item", "array") do
+            collect xpath(col_item, "tagSet/item", "array") do
               field "key", xpath(col_item, "key")
               field "value", xpath(col_item, "value")
             end
@@ -498,7 +488,7 @@ define stop_instances($data) do
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -516,7 +506,7 @@ define terminate_instances($data) do
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -636,7 +626,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do

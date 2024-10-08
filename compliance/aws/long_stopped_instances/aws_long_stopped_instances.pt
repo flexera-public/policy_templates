@@ -7,7 +7,7 @@ severity "low"
 category "Compliance"
 default_frequency "weekly"
 info(
-  version: "6.0",
+  version: "6.0.1",
   provider: "AWS",
   service: "Compute",
   policy_set: "Long Stopped Instances"
@@ -46,8 +46,8 @@ parameter "param_regions_list" do
   type "list"
   category "Filters"
   label "Allow/Deny Regions List"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
 end
 
@@ -73,9 +73,9 @@ parameter "param_stopped_days" do
   category "Policy Settings"
   label "Stopped Days"
   description "The number of days an instance needs to be stopped to include it in the incident report."
-  default 7
   min_value 1
   max_value 90
+  default 7
 end
 
 parameter "param_automatic_action" do
@@ -169,12 +169,11 @@ end
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
-    verb "GET"
     host "sts.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
@@ -256,19 +255,19 @@ datasource "ds_instance_sets" do
     auth $auth_aws
     host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
     path '/'
-    header 'User-Agent', 'RS Policies'
-    header 'Content-Type', 'text/xml'
     query 'Action', 'DescribeInstances'
     query 'Version', '2016-11-15'
     query 'Filter.1.Name', 'instance-state-name'
     query 'Filter.1.Value.1', 'stopped'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
   end
   result do
     encoding "xml"
     collect xpath(response, "//DescribeInstancesResponse/reservationSet/item", "array") do
       field "instances_set" do
         collect xpath(col_item,"instancesSet/item","array") do
-          field "region",val(iter_item, "region")
+          field "region", val(iter_item, "region")
           field "instanceId", xpath(col_item, "instanceId")
           field "imageId", xpath(col_item, "imageId")
           field "resourceType", xpath(col_item, "instanceType")
@@ -276,7 +275,7 @@ datasource "ds_instance_sets" do
           field "privateDnsName", xpath(col_item, "privateDnsName")
           field "launchTime", xpath(col_item, "launchTime")
           field "tags" do
-            collect xpath(col_item,"tagSet/item", "array") do
+            collect xpath(col_item, "tagSet/item", "array") do
               field "key", xpath(col_item, "key")
               field "value", xpath(col_item, "value")
             end
@@ -653,11 +652,11 @@ policy "pol_long_stopped_instances" do
   validate_each $ds_long_stopped_instances do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Long Stopped EC2 Instances Found"
     detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_terminate_instances
     hash_exclude "message", "tags"
-    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     export do
       resource_level true
       field "accountID" do
@@ -743,7 +742,7 @@ define terminate_instances($data) do
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -831,7 +830,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do
@@ -839,7 +838,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
