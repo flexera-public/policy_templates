@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8.3
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v2.8.2
 
 - Policy is no longer published to the Flexera catalog.
