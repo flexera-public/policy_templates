@@ -74,12 +74,12 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `Microsoft.Insights/metrics/read`
   - `Microsoft.Compute/skus/read`
   - `Microsoft.Compute/virtualMachines/read`
-  - `Microsoft.Compute/virtualMachines/write`§
+  - `Microsoft.Compute/virtualMachines/write`*
   - `Microsoft.Compute/virtualMachines/powerOff/action`*
-  - `Microsoft.Compute/virtualMachines/start/action`‖
-  - `Microsoft.Compute/virtualMachines/delete`¶
+  - `Microsoft.Compute/virtualMachines/start/action`*
+  - `Microsoft.Compute/virtualMachines/delete`*
 
-  ¶ Only required for taking action; the policy will still function in a read-only capacity without these permissions.
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
