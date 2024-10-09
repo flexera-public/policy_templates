@@ -264,10 +264,10 @@ def readme_invalid_credentials?(file, file_lines)
       fail_message += "```- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:```\n\n"
     end
 
-    aws_perm_tester = /`[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*:[a-zA-Z0-9]+`(?:[\*\u2020\u2021])?$/
+    aws_perm_tester = /`[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*:[a-zA-Z0-9]+`(?:[\*\u2020\u2021\u00a7\u2016\u00b6])?$/
 
     # Hash to track the presence of each footnote symbol in the permission list
-    footnote_symbols = { "*" => false,  "†" => false, "‡" => false }
+    footnote_symbols = { "*" => false,  "†" => false, "‡" => false, "§" => false, "‖" => false, "¶" => false }
     permission_list_found = 0
 
     aws_permission_text.each_with_index do |line, index|
@@ -282,6 +282,9 @@ def readme_invalid_credentials?(file, file_lines)
           footnote_symbols["*"] = true if line.strip.end_with?("*")
           footnote_symbols["†"] = true if line.strip.end_with?("\u2020")
           footnote_symbols["‡"] = true if line.strip.end_with?("\u2021")
+          footnote_symbols["§"] = true if line.strip.end_with?("\u00a7")
+          footnote_symbols["‖"] = true if line.strip.end_with?("\u2016")
+          footnote_symbols["¶"] = true if line.strip.end_with?("\u00b6")
 
           permission_action = line.split("  - ")[1]
           if permission_action.nil? || !permission_action.match?(aws_perm_tester)
@@ -329,10 +332,10 @@ def readme_invalid_credentials?(file, file_lines)
       fail_message += "```- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:```\n\n"
     end
 
-    azure_perm_tester = /^`Microsoft\.[a-zA-Z]+\/[a-zA-Z]+\/[a-zA-Z]+(?:\/[a-zA-Z]+)*`(?:[\*\u2020\u2021])?$/
+    azure_perm_tester = /^`Microsoft\.[a-zA-Z]+\/[a-zA-Z]+\/[a-zA-Z]+(?:\/[a-zA-Z]+)*`(?:[\*\u2020\u2021\u00a7\u2016\u00b6])?$/
 
     # Hash to track the presence of each footnote symbol in the permission list
-    footnote_symbols = { "*" => false,  "†" => false, "‡" => false }
+    footnote_symbols = { "*" => false,  "†" => false, "‡" => false, "§" => false, "‖" => false, "¶" => false }
     permission_list_found = 0
 
     azure_permission_text.each_with_index do |line, index|
@@ -347,6 +350,9 @@ def readme_invalid_credentials?(file, file_lines)
           footnote_symbols["*"] = true if line.strip.end_with?("*")
           footnote_symbols["†"] = true if line.strip.end_with?("\u2020")
           footnote_symbols["‡"] = true if line.strip.end_with?("\u2021")
+          footnote_symbols["§"] = true if line.strip.end_with?("\u00a7")
+          footnote_symbols["‖"] = true if line.strip.end_with?("\u2016")
+          footnote_symbols["¶"] = true if line.strip.end_with?("\u00b6")
 
           permission_action = line.split("  - ")[1]
           if permission_action.nil? || !permission_action.match?(azure_perm_tester)
@@ -392,10 +398,10 @@ def readme_invalid_credentials?(file, file_lines)
       fail_message += "```- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:```\n\n"
     end
 
-    google_perm_tester = /^`[a-zA-Z]+\.[a-zA-Z]+\.[a-zA-Z]+(?:\.[a-zA-Z]+)*`(?:[\*\u2020\u2021])?$/
+    google_perm_tester = /^`[a-zA-Z]+\.[a-zA-Z]+\.[a-zA-Z]+(?:\.[a-zA-Z]+)*`(?:[\*\u2020\u2021\u00a7\u2016\u00b6])?$/
 
     # Hash to track the presence of each footnote symbol in the permission list
-    footnote_symbols = { "*" => false,  "†" => false, "‡" => false }
+    footnote_symbols = { "*" => false,  "†" => false, "‡" => false, "§" => false, "‖" => false, "¶" => false }
     permission_list_found = 0
 
     google_permission_text.each_with_index do |line, index|
@@ -410,6 +416,9 @@ def readme_invalid_credentials?(file, file_lines)
           footnote_symbols["*"] = true if line.strip.end_with?("*")
           footnote_symbols["†"] = true if line.strip.end_with?("\u2020")
           footnote_symbols["‡"] = true if line.strip.end_with?("\u2021")
+          footnote_symbols["§"] = true if line.strip.end_with?("\u00a7")
+          footnote_symbols["‖"] = true if line.strip.end_with?("\u2016")
+          footnote_symbols["¶"] = true if line.strip.end_with?("\u00b6")
 
           if !line.split("  - ")[1].match?(google_perm_tester)
             fail_message += "Line #{line_number.to_s}: Google permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
@@ -456,10 +465,10 @@ def readme_invalid_credentials?(file, file_lines)
       fail_message += "```- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:```\n\n"
     end
 
-    flexera_perm_tester = /^`[a-zA-Z0-9\-_\.]+`(?:[\*\u2020\u2021])?$/
+    flexera_perm_tester = /^`[a-zA-Z0-9\-_\.]+`(?:[\*\u2020\u2021\u00a7\u2016\u00b6])?$/
 
     # Hash to track the presence of each footnote symbol in the permission list
-    footnote_symbols = { "*" => false,  "†" => false, "‡" => false }
+    footnote_symbols = { "*" => false,  "†" => false, "‡" => false, "§" => false, "‖" => false, "¶" => false }
     permission_list_found = 0
 
     flexera_permission_text.each_with_index do |line, index|
@@ -474,6 +483,9 @@ def readme_invalid_credentials?(file, file_lines)
           footnote_symbols["*"] = true if line.strip.end_with?("*")
           footnote_symbols["†"] = true if line.strip.end_with?("\u2020")
           footnote_symbols["‡"] = true if line.strip.end_with?("\u2021")
+          footnote_symbols["§"] = true if line.strip.end_with?("\u00a7")
+          footnote_symbols["‖"] = true if line.strip.end_with?("\u2016")
+          footnote_symbols["¶"] = true if line.strip.end_with?("\u00b6")
 
           if !line.split("  - ")[1].match?(flexera_perm_tester)
             fail_message += "Line #{line_number.to_s}: Flexera permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
