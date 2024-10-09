@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-## What it does
+## What It Does
 
 This Policy Template uses user defined tags to determine if it can decrease the size of your running instance after user approval.
 
@@ -64,4 +64,4 @@ If you would like to modify the relationships, you can take the following steps:
 
 ### Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This policy template does not incur any cloud costs.

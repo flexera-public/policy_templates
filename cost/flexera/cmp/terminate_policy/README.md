@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-## What it does
+## What It Does
 
 This Policy allows you to set a tag with a timestamp and terminate an instance at a specific time. It will not terminate locked instances.
 
@@ -64,4 +64,4 @@ The following clouds are supported:
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

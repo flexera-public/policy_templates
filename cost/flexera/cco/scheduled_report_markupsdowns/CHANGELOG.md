@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.0.0
+
+- Policy template now requires a valid Flexera credential.
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v1.7
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for

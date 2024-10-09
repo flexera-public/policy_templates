@@ -7,7 +7,7 @@ This policy is no longer being updated. Please use the version of this policy sp
 - [**AWS Superseded EC2 Instances**](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/superseded_instances)
 - [**Azure Superseded Compute Instances**](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/superseded_instances)
 
-## What it does
+## What It Does
 
 The Superseded Instances Policy Template is used to monitor an account a generate a list of superseded instances. This policy supports AWS, Azure, and AzureCSP. It also allows use of AMD, and Burstable types as replacement. There are fundamental differences between this and Optima Superseded Instances recommendations.
 
@@ -45,4 +45,4 @@ This policy has the following input parameters required when launching the polic
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This policy template does not incur any cloud costs.

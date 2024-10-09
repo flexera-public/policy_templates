@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v3.2
 
 - Fixed issue where a failed file upload would sometimes stall the policy indefinitely

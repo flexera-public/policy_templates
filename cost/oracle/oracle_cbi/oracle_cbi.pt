@@ -2,11 +2,12 @@ name "Oracle Cloud Common Bill Ingestion"
 rs_pt_ver 20180301
 type "policy"
 short_description "Downloads cost reports from Oracle Cloud (OCI) and then uploads them to a Flexera CBI endpoint. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/oracle_cbi) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
 severity "low"
 category "Cost"
 default_frequency "15 minutes"
 info(
-  version: "3.2",
+  version: "3.2.1",
   provider: "Oracle",
   service: "Common Bill Ingestion",
   policy_set: "Common Bill Ingestion"
@@ -21,8 +22,8 @@ parameter "param_billing_period" do
   category "Policy Settings"
   label "Month To Ingest"
   description "Month to process bills for."
-  default "Current Month"
   allowed_values "Current Month", "Previous Month", "Specific Month"
+  default "Current Month"
 end
 
 parameter "param_specific_period" do
@@ -30,8 +31,8 @@ parameter "param_specific_period" do
   category "Policy Settings"
   label "Billing Period"
   description "Billing period to process bills for in YYYY-MM format. Only relevant if Specific Month is selected for Month To Ingest."
-  default "2020-01"
   allowed_pattern /^(19|20)\d\d-(0[1-9]|1[0-2])$/
+  default "2020-01"
 end
 
 parameter "param_cbi_endpoint" do
@@ -39,6 +40,7 @@ parameter "param_cbi_endpoint" do
   category "Policy Settings"
   label "Flexera CBI Endpoint"
   description "Name of the Flexera CBI endpoint to use. Ex: cbi-oi-oracle-oraclecloud"
+  # No default value, user input required
 end
 
 parameter "param_region" do
@@ -47,6 +49,7 @@ parameter "param_region" do
   label "Oracle Cloud Region"
   description "Region of the Oracle Cloud Object Storage bucket containing the cost and usage reports. Ex: us-phoenix-1"
   allowed_pattern /^[a-z]{2}-[a-z]+(-[a-z]+)?-[1-9][0-9]*$/
+  # No default value, user input required
 end
 
 parameter "param_bucket" do
@@ -54,6 +57,7 @@ parameter "param_bucket" do
   category "Oracle"
   label "Oracle Cloud Cost & Usage Bucket"
   description "OCID of the Oracle Cloud Object Storage bucket containing the Cost and Usage reports."
+  # No default value, user input required
 end
 
 parameter "param_block_size" do
@@ -61,9 +65,9 @@ parameter "param_block_size" do
   category "Policy Settings"
   label "Block Size"
   description "The number of files in a single block."
-  default 20
   min_value 1
   max_value 20
+  default 20
 end
 
 parameter "param_commit_delay" do
@@ -71,9 +75,9 @@ parameter "param_commit_delay" do
   category "Policy Settings"
   label "Commit Delay (Hours)"
   description "Number of hours to wait between committing bill uploads."
-  default 12
   min_value 8
   max_value 24
+  default 12
 end
 
 ###############################################################################
@@ -140,13 +144,12 @@ end
 datasource "ds_existing_bill_uploads" do
   request do
     auth $auth_flexera
-    verb "GET"
     host rs_optima_host
     path join(["/optima/orgs/", rs_org_id, "/billUploads"])
-    header "User-Agent", "RS Policies"
-    header "allow_redirects", "False"
     query "billConnectId", $param_cbi_endpoint
     query "billingPeriod", val($ds_dates, 'period')
+    header "User-Agent", "RS Policies"
+    header "allow_redirects", "False"
   end
 end
 
@@ -180,7 +183,7 @@ end
 datasource "ds_abort_broken_uploads" do
   iterate $ds_broken_bill_uploads
   request do
-    run_script $js_abort_broken_uploads, rs_org_id, rs_optima_host, val(iter_item, 'id')
+    run_script $js_abort_broken_uploads, val(iter_item, 'id'), rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -189,7 +192,7 @@ datasource "ds_abort_broken_uploads" do
 end
 
 script "js_abort_broken_uploads", type: "javascript" do
-  parameters "rs_org_id", "rs_optima_host", "bill_upload_id"
+  parameters "bill_upload_id", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   // Slow down rate of requests to prevent throttling
@@ -362,7 +365,7 @@ end
 datasource "ds_upload_file" do
   iterate $ds_cost_objects
   request do
-    run_script $js_upload_file, iter_item, rs_org_id, rs_optima_host, $ds_bill_upload, $ds_dates
+    run_script $js_upload_file, iter_item, $ds_bill_upload, $ds_dates, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -377,7 +380,7 @@ datasource "ds_upload_file" do
 end
 
 script "js_upload_file", type: "javascript" do
-  parameters "oracle_cost_file", "rs_org_id", "rs_optima_host", "ds_bill_upload", "ds_dates"
+  parameters "oracle_cost_file", "ds_bill_upload", "ds_dates", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   // Slow down rate of requests to prevent throttling
@@ -435,7 +438,7 @@ end
 datasource "ds_commit_bill_upload" do
   iterate $ds_commit_assess
   request do
-    run_script $js_commit_bill_upload, rs_org_id, rs_optima_host, val(iter_item, 'id')
+    run_script $js_commit_bill_upload, val(iter_item, 'id'), rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -450,7 +453,7 @@ datasource "ds_commit_bill_upload" do
 end
 
 script "js_commit_bill_upload", type: "javascript" do
-  parameters "rs_org_id", "rs_optima_host", "bill_upload_id"
+  parameters "bill_upload_id", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   // Slow down rate of requests to prevent throttling

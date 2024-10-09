@@ -39,4 +39,4 @@ This Policy Template requires a minimum Kubecost version of 1.100.2 and does not
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.
