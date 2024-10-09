@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v3.0.0
 
 - Policy template renamed to `AWS Publicly Accessible CloudTrail S3 Buckets` to better reflect its functionality
