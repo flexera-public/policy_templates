@@ -8,6 +8,7 @@ This policy template checks all of the applied policy templates in the Flexera O
 
 - *Email Addresses* - A list of email addresses to notify.
 - *Applied Policy Template Ignore List* - A list of applied policy template names and IDs to ignore and never include in the results. Leave blank to report on all applied policy templates in an error state.
+- *Report Child Policy Errors* - Whether or not to report when the child policies of meta parent policies are in error. If `Yes` is selected and errors are found in child policies, these will be raised as a separate incident/email.
 
 ## Policy Actions
 

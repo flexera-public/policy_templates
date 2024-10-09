@@ -7,7 +7,7 @@ category "Operational"
 severity "high"
 default_frequency "hourly"
 info(
-  version: "3.0.0",
+  version: "4.0.0",
   provider: "Flexera",
   service: "Automation",
   policy_set: "Automation"
@@ -31,6 +31,15 @@ parameter "param_ignore_list" do
   label "Applied Policy Template Ignore List"
   description "A list of applied policy template names and IDs to ignore and never include in the results. Leave blank to report on all applied policy templates in an error state."
   default []
+end
+
+parameter "param_child_templates" do
+  type "string"
+  category "Policy Settings"
+  label "Report Child Policy Errors"
+  description "Whether or not to report when the child policies of meta parent policies are in error. If 'Yes' is selected and errors are found in child policies, these will be raised as a separate incident/email."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 ###############################################################################
@@ -118,6 +127,101 @@ script "js_bad_applied_policies", type: "javascript" do
       policy_name: ds_applied_policy['name']
     }
   })
+
+  result = _.sortBy(result, "name")
+EOS
+end
+
+# Only gather child policy information if the user opted to report child policy errors
+datasource "ds_child_boolean_logic" do
+  run_script $js_child_boolean_logic, $param_child_templates
+end
+
+script "js_child_boolean_logic", type: "javascript" do
+  parameters "param_child_templates"
+  result "result"
+  code <<-'EOS'
+  result = []
+  if (param_child_templates == "Yes") { result = [1] }
+EOS
+end
+
+datasource "ds_child_applied_policies" do
+  iterate $ds_child_boolean_logic
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies"])
+    query "show_meta_child_policies", "true"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    collect jmes_path(response, "items[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "href", jmes_path(col_item, "href")
+      field "category", jmes_path(col_item, "category")
+      field "frequency", jmes_path(col_item, "frequency")
+      field "severity", jmes_path(col_item, "severity")
+      field "skip_approvals", jmes_path(col_item, "skip_approvals")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "updated_at", jmes_path(col_item, "updated_at")
+      field "status", jmes_path(col_item, "status")
+      field "error", jmes_path(col_item, "error")
+      field "errored_at", jmes_path(col_item, "errored_at")
+      field "created_by", jmes_path(col_item, "created_by.email")
+      field "scope", jmes_path(col_item, "scope")
+      field "policy_aggregate_id", jmes_path(col_item, "policy_aggregate_id")
+      field "meta_parent_policy_id", jmes_path(col_item, "meta_parent_policy_id")
+    end
+  end
+end
+
+datasource "ds_bad_child_applied_policies" do
+  run_script $js_bad_child_applied_policies, $ds_child_applied_policies, $ds_applied_policy, $param_ignore_list, f1_app_host, rs_org_id, rs_project_id
+end
+
+script "js_bad_child_applied_policies", type: "javascript" do
+  parameters "ds_child_applied_policies", "ds_applied_policy", "param_ignore_list", "f1_app_host", "rs_org_id", "rs_project_id"
+  result "result"
+  code <<-'EOS'
+  policy_table = {}
+  _.each(ds_child_applied_policies, function(policy) { policy_table[policy['id']] = policy })
+
+  child_policies = _.filter(ds_child_applied_policies, function(policy) {
+    return typeof(policy["meta_parent_policy_id"]) == 'string' && policy["meta_parent_policy_id"] != ''
+  })
+
+  bad_policies = _.filter(child_policies, function(policy) {
+    return policy['status'] == "error" && !(_.contains(param_ignore_list, policy['id']) || _.contains(param_ignore_list, policy['name']))
+  })
+
+  result = _.map(bad_policies, function(policy) {
+    policy_url = [ "https://", f1_app_host, "/orgs/", rs_org_id, "/automation/applied-policies/projects/", rs_project_id, "?policyId=", policy['id'] ].join('')
+    parent_url = [ "https://", f1_app_host, "/orgs/", rs_org_id, "/automation/applied-policies/projects/", rs_project_id, "?policyId=", policy['meta_parent_policy_id'] ].join('')
+
+    return {
+      id: policy['id'],
+      name: [ policy['name'], "||", policy_url ].join(''),
+      error: policy['error'],
+      category: policy['category'],
+      frequency: policy['frequency'],
+      severity: policy['severity'],
+      skip_approvals: policy['skip_approvals'],
+      scope: policy['scope'],
+      created_by: policy['created_by'],
+      created_at: policy['created_at'],
+      updated_at: policy['updated_at'],
+      errored_at: policy['errored_at'],
+      policy_name: ds_applied_policy['name'],
+      parent_id: policy['meta_parent_policy_id'],
+      parent_name: [ policy_table[policy['meta_parent_policy_id']]['name'], "||", parent_url ].join('')
+    }
+  })
+
+  result = _.sortBy(result, "name")
+  result = _.sortBy(result, "parent_name")
 EOS
 end
 
@@ -138,6 +242,59 @@ policy "pol_bad_applied_policies" do
       end
       field "name" do
         label "Name"
+        format "link-external"
+      end
+      field "error" do
+        label "Error Message"
+      end
+      field "errored_at" do
+        label "Errored At"
+      end
+      field "scope" do
+        label "Scope"
+      end
+      field "category" do
+        label "Category"
+      end
+      field "frequency" do
+        label "Frequency"
+      end
+      field "severity" do
+        label "Severity"
+      end
+      field "skip_approvals" do
+        label "Skip Approvals"
+      end
+      field "created_by" do
+        label "Created By"
+      end
+      field "created_at" do
+        label "Created At"
+      end
+      field "updated_at" do
+        label "Updated At"
+      end
+    end
+  end
+  validate_each $ds_bad_child_applied_policies do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Child Applied Policies With Errors Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    hash_exclude "updated_at", "errored_at"
+    export do
+      resource_level true
+      field "parent_id" do
+        label "Parent ID"
+      end
+      field "parent_name" do
+        label "Parent Name"
+        format "link-external"
+      end
+      field "id" do
+        label "Child ID"
+      end
+      field "name" do
+        label "Child Name"
         format "link-external"
       end
       field "error" do
