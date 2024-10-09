@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v3.2
 
 - Added support for region filtering and more robust support for Subscription filtering.

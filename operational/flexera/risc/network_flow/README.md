@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-## What it does
+## What It Does
 
 This Policy Template will analyze RISC Foundations NetFlow data and will leverage these traffic patterns to identify the top communication routes from each application stack to external dependencies.
 
@@ -32,4 +32,4 @@ This policy has the following input parameters required when launching the polic
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

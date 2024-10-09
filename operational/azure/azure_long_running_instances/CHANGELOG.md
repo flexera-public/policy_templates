@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v6.1
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.
