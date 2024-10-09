@@ -310,7 +310,7 @@ def readme_invalid_credentials?(file, file_lines)
         end
       else
         if !aws_permission_text.any? { |line| line.strip.start_with?(symbol) }
-          fail_message += "Permission list contains a permission with an #{symbol} symbol, but no corresponding footnote explaining it. Please add a footnote starting with `  #{symbol} ` like so:\n\n"
+          fail_message += "Permission list contains a permission with a #{symbol} symbol, but no corresponding footnote explaining it. Please add a footnote starting with `  #{symbol} ` like so:\n\n"
           fail_message += "```  #{symbol} Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
         end
       end
@@ -377,7 +377,7 @@ def readme_invalid_credentials?(file, file_lines)
         end
       else
         if !azure_permission_text.any? { |line| line.strip.start_with?(symbol) }
-          fail_message += "Permission list contains a permission with an #{symbol} symbol, but no corresponding footnote explaining it. Please add a footnote starting with `  #{symbol} ` like so:\n\n"
+          fail_message += "Permission list contains a permission with a #{symbol} symbol, but no corresponding footnote explaining it. Please add a footnote starting with `  #{symbol} ` like so:\n\n"
           fail_message += "```  #{symbol} Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
         end
       end
@@ -443,7 +443,7 @@ def readme_invalid_credentials?(file, file_lines)
         end
       else
         if !google_permission_text.any? { |line| line.strip.start_with?(symbol) }
-          fail_message += "Permission list contains a permission with an #{symbol} symbol, but no corresponding footnote explaining it. Please add a footnote starting with `  #{symbol} ` like so:\n\n"
+          fail_message += "Permission list contains a permission with a #{symbol} symbol, but no corresponding footnote explaining it. Please add a footnote starting with `  #{symbol} ` like so:\n\n"
           fail_message += "```  #{symbol} Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
         end
       end
@@ -507,7 +507,7 @@ def readme_invalid_credentials?(file, file_lines)
         end
       else
         if !flexera_permission_text.any? { |line| line.strip.start_with?(symbol) }
-          fail_message += "Permission list contains a permission with an #{symbol} symbol, but no corresponding footnote explaining it. Please add a footnote starting with `  #{symbol} ` like so:\n\n"
+          fail_message += "Permission list contains a permission with a #{symbol} symbol, but no corresponding footnote explaining it. Please add a footnote starting with `  #{symbol} ` like so:\n\n"
           fail_message += "```  #{symbol} Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
         end
       end
