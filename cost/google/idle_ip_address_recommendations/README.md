@@ -34,7 +34,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
   - Roles
     - `Compute Recommender Viewer`
-    - `Compute Recommender Admin`§
+    - `Compute Recommender Admin`*
 
   - Permissions
     - `recommender.computeAddressIdleResourceRecommendations.list`
