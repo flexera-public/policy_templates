@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.0
+
+- Policy now accepts any arbitrary cost dimension/value instead of requiring that currency conversion be done for a specific cloud provider
+
 ## v3.0
 
 - Fixed issue where policy would fail if org has existing adjustment rules for future months

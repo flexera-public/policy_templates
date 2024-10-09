@@ -26,6 +26,8 @@ default_child_policy_template_files = [
   "../../cost/aws/rightsize_rds_instances/aws_rightsize_rds_instances.pt",
   "../../cost/aws/rds_instance_license_info/rds_instance_license_info.pt",
   "../../cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt",
+  "../../cost/aws/rightsize_elasticache/aws_rightsize_elasticache.pt",
+  "../../cost/aws/rightsize_redshift/aws_rightsize_redshift.pt",
   "../../cost/aws/s3_bucket_size/aws_bucket_size.pt",
   "../../cost/aws/s3_storage_policy/aws_s3_bucket_policy_check.pt",
   "../../cost/aws/schedule_instance/aws_schedule_instance.pt",
@@ -77,9 +79,10 @@ default_child_policy_template_files = [
   "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
   "../../cost/azure/rightsize_managed_disks/azure_rightsize_managed_disks.pt",
   "../../cost/azure/rightsize_managed_sql/azure_rightsize_managed_sql.pt",
+  "../../cost/azure/rightsize_managed_sql_storage/azure_rightsize_managed_sql_storage.pt",
   "../../cost/azure/rightsize_mysql_flexible/azure_rightsize_mysql_flexible.pt",
   "../../cost/azure/rightsize_mysql_single/azure_rightsize_mysql_single.pt",
-  "../../cost/azure/rightsize_netapp_files/azure_rightsize_netapp_files.pt",
+  "../../cost/azure/rightsize_netapp/azure_rightsize_netapp.pt",
   "../../cost/azure/rightsize_sql_instances/azure_rightsize_sql_instances.pt",
   "../../cost/azure/rightsize_sql_storage/azure_rightsize_sql_storage.pt",
   #"../../cost/azure/rightsize_synapse_sql_pools/azure_rightsize_synapse_sql_pools.pt",
@@ -331,7 +334,11 @@ end
     # print(export_block)
     # print("\n---\n")
     # From the export block, capture the field blocks
-    fields = export_block[0].scan(/(^.*field\s+\".*?\".*?end)/m).flatten
+    fields = [] # Provide a default value, which is no fields declared
+    # Check if export_block is length > 0
+    if export_block.length > 0
+      fields = export_block[0].scan(/(^.*field\s+\".*?\".*?end)/m).flatten
+    end
     fields.each do |field|
       # Remove path from the field output in the meta parent
       field.gsub!(/\n.*?path.*?\n/, "\n")

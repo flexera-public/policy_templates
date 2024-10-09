@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4.1
+
+- Fixed a bug that showed wrong calculations for changing the disk capacity, IOPS and throughput.
+
 ## v2.4.0
 
 - Added a parameter to select the interval to use when gathering Azure metrics data.

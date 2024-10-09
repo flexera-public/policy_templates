@@ -7,7 +7,7 @@ severity "low"
 default_frequency "monthly"
 category "Cost"
 info(
-  version: "3.0",
+  version: "4.0.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization"
@@ -17,21 +17,14 @@ info(
 # Parameters
 ###############################################################################
 
-parameter "param_cloud_provider" do
+parameter "param_dimension" do
   type "string"
   category "Policy Settings"
-  label "Cloud Provider"
-  description "Cloud provider costs that you want to apply currency conversion to. Select 'Other' to specify the name of a cloud provider manually."
-  allowed_values "AWS", "Azure", "Google Cloud", "Oracle Cloud", "Other"
-  default "AWS"
-end
-
-parameter "param_cloud_provider_name" do
-  type "string"
-  category "Policy Settings"
-  label "Cloud Provider Name"
-  description "Name of the cloud provider to apply currency conversion to. Only applicable if 'Other' is selected for Cloud Provider."
-  default ""
+  label "Dimension"
+  description "The Flexera CCO cost dimension name/id and value to apply the currency conversion to in 'Dimension=Value' format. Example: Cloud Vendor=AWS"
+  allowed_pattern /.+=.+/
+  min_length  1
+  # No default value, user input required
 end
 
 parameter "param_backfill" do
@@ -99,6 +92,53 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+# Find dimension in the CCO platform based on user input
+datasource "ds_dimensions" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "dimensions[].{id: id, name: name, type:type}") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+    end
+  end
+end
+
+datasource "ds_dimension" do
+  run_script $js_dimension, $ds_dimensions, $param_dimension
+end
+
+script "js_dimension", type: "javascript" do
+  parameters "ds_dimensions", "param_dimension"
+  result "result"
+  code <<-'EOS'
+  result = {}
+
+  key = param_dimension.split('=')[0]
+  value = param_dimension.split('=')[1]
+
+  dimension = _.find(ds_dimensions, function(dimension) {
+    return dimension['id'] == key || dimension['name'] == key
+  })
+
+  if (dimension) {
+    result = {
+      id: dimension['id'],
+      name: dimension['name'],
+      type: dimension['type'],
+      value: value
+    }
+  }
+EOS
+end
 
 # Branching Logic: Whether or not to set the organization currency
 datasource "ds_set_org_currency_logic" do
@@ -262,11 +302,11 @@ datasource "ds_current_adjustments" do
 end
 
 datasource "ds_updated_adjustments" do
-  run_script $js_updated_adjustments, $ds_exchange_rates, $ds_current_adjustments, $ds_month_list, $param_cloud_provider, $param_cloud_provider_name, $param_currency_from, $param_currency_to, $param_backfill_exchange_rate, $param_backfill, $param_backfill_start_date
+  run_script $js_updated_adjustments, $ds_exchange_rates, $ds_current_adjustments, $ds_month_list, $ds_dimension, $param_currency_from, $param_currency_to, $param_backfill_exchange_rate, $param_backfill, $param_backfill_start_date
 end
 
 script "js_updated_adjustments", type: "javascript" do
-  parameters "ds_exchange_rates", "ds_current_adjustments", "ds_month_list", "param_cloud_provider", "param_cloud_provider_name", "param_currency_from", "param_currency_to", "param_backfill_exchange_rate", "param_backfill", "param_backfill_start_date"
+  parameters "ds_exchange_rates", "ds_current_adjustments", "ds_month_list", "ds_dimension", "param_currency_from", "param_currency_to", "param_backfill_exchange_rate", "param_backfill", "param_backfill_start_date"
   result "result"
   code <<-'EOS'
   // Get most recent exchange rate
@@ -284,11 +324,9 @@ script "js_updated_adjustments", type: "javascript" do
     return _.contains(_.pluck(ds_month_list, 'current'), list['effective_at'])
   })
 
-  // Cloud provider details
-  cloud_provider = param_cloud_provider
-  if (param_cloud_provider == "Google Cloud") { cloud_provider = "GCP" }
-  if (param_cloud_provider == "Other") { cloud_provider = param_cloud_provider_name }
-  new_adj_name = "Currency Conversion - " + cloud_provider
+  // Dimension details
+  pretty_dimension = ds_dimension['name'] + '=' + ds_dimension['value']
+  new_adj_name = "Currency Conversion - " + pretty_dimension
 
   // Rule information stored for incident
   message_rules = []
@@ -307,7 +345,7 @@ script "js_updated_adjustments", type: "javascript" do
       name: new_adj_name,
       rules: [
         {
-          condition: { type: "dimension_equals", dimension: "vendor", value: cloud_provider },
+          condition: { type: "dimension_equals", dimension: ds_dimension['id'], value: ds_dimension['value'] },
           cost_multiplier: conversion_rate - 1,
           label: param_currency_from + " to " + param_currency_to
         }
@@ -348,10 +386,10 @@ script "js_updated_adjustments", type: "javascript" do
 
   this_month = new Date().toISOString().split('-')[0] + '-' + new Date().toISOString().split('-')[1]
 
-  message = "Adjustments applied for cloud provider " + cloud_provider + " for month of " + this_month + ".\n\n"
+  message = "Adjustments applied for " + pretty_dimension + " for month of " + this_month + ".\n\n"
 
   if (param_backfill != 'Current Month' && param_backfill_start_date != '') {
-    message = "Adjustments applied for cloud provider " + cloud_provider + " from month of " + param_backfill_start_date + " to month of " + this_month + ". "
+    message = "Adjustments applied for " + pretty_dimension + " from month of " + param_backfill_start_date + " to month of " + this_month + ". "
 
     if (param_backfill_exchange_rate == 'Backdated Exchange Rate') {
       message += "Backdated exchange rates were used for previous months.\n\n"
@@ -371,16 +409,17 @@ end
 
 # Include ds_set_org_currency to ensure it executes, not because it's used by this script
 datasource "ds_updated_adjustments_payload" do
-  run_script $js_updated_adjustments_payload, $ds_updated_adjustments, $ds_set_org_currency
+  run_script $js_updated_adjustments_payload, $ds_updated_adjustments, $ds_set_org_currency, $ds_dimension
 end
 
 script "js_updated_adjustments_payload", type: "javascript" do
-  parameters "ds_updated_adjustments", "ds_set_org_currency"
+  parameters "ds_updated_adjustments", "ds_set_org_currency", "ds_dimension"
   result "result"
   code <<-'EOS'
   result = [{
     list: JSON.stringify(ds_updated_adjustments['list']),
-    message: ds_updated_adjustments['message']
+    message: ds_updated_adjustments['message'],
+    dimension: ds_dimension['name'] + '=' + ds_dimension['value']
   }]
 EOS
 end
@@ -400,6 +439,7 @@ datasource "ds_new_adjustments" do
   result do
     encoding "json"
     field "message", val(iter_item, "message")
+    field "dimension", val(iter_item, "dimension")
   end
 end
 
@@ -409,7 +449,7 @@ end
 
 policy "pol_currency_conversion" do
   validate_each $ds_new_adjustments do
-    summary_template "Currency Conversion - {{ parameters.param_cloud_provider }} - {{ parameters.param_currency_from }} to {{ parameters.param_currency_to }}"
+    summary_template "Currency Conversion - {{ with index data 0 }}{{ .dimension }}{{ end }} - {{ parameters.param_currency_from }} to {{ parameters.param_currency_to }}"
     detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     check eq(0, 1)
   end
