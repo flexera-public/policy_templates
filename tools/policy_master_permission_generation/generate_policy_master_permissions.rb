@@ -113,15 +113,12 @@ def extract_permissions_from_readme(readme_content)
         elsif line.strip.start_with?("\u2021")
           cross_dagger_note = line.strip.sub(/^\‡\s*/, '')
           list_of_notes << { symbol: "‡", detail: cross_dagger_note }
-        end
         elsif line.strip.start_with?("\u00a7")
           section_note = line.strip.sub(/^\§\s*/, '')
           list_of_notes << { symbol: "§", detail: section_note }
-        end
         elsif line.strip.start_with?("\u2016")
           vertical_bar_note = line.strip.sub(/^\‖\s*/, '')
           list_of_notes << { symbol: "‖", detail: vertical_bar_note }
-        end
         elsif line.strip.start_with?("\u00b6")
           pilcrow_note = line.strip.sub(/^\¶\s*/, '')
           list_of_notes << { symbol: "¶", detail: pilcrow_note }
