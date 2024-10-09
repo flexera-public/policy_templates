@@ -76,8 +76,8 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `Microsoft.Compute/virtualMachines/read`
   - `Microsoft.Compute/virtualMachines/write`§
   - `Microsoft.Compute/virtualMachines/powerOff/action`*
-  - `Microsoft.Compute/virtualMachines/start/action`*
-  - `Microsoft.Compute/virtualMachines/delete`*
+  - `Microsoft.Compute/virtualMachines/start/action`‖
+  - `Microsoft.Compute/virtualMachines/delete`¶
 
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
