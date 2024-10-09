@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.3.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v5.3.0
 
 - Added option to include the AWS account in the results alongside AWS resources

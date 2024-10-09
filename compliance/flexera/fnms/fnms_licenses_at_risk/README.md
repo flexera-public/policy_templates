@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-## What it does
+## What It Does
 
 This policy uses a Flexnet Manger Cloud/On-premise instance and looks up all FlexNet Manager Licenses that are at risk and lists them. A License at Risk is a License that is unable to cover the current license consumption.
 

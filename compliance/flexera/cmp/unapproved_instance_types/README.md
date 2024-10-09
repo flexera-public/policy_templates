@@ -4,11 +4,11 @@
 
 This policy is no longer being updated.
 
-## What it does
+## What It Does
 
 This policy checks for instances that are using instance types that are not in the specified list and stops them after approval.
 
-## Functional Details
+## How It Works
 
 The policy leverages the RightScale APIs to check instances across all supported clouds. When a non-approved instance type is detected, a report is emailed and the user can choose to Stop the instance after manual approval.
 
@@ -43,4 +43,4 @@ This policy requires permissions to access RightScale resources (instances and t
 
 ### Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

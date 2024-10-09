@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v6.0
 
 - Added support for regex when filtering resources by tag

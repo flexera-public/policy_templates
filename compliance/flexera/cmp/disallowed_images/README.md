@@ -4,15 +4,15 @@
 
 This policy is no longer being updated.
 
-## What it does
+## What It Does
 
 This policy checks all running instances for disallowed cloud images. The user is given the option to Terminate the instance after approval.
 
-## Functional Details
+## How It Works
 
 The policy leverages the CMP API to check all instances not using the provided list of cloud image resource_uids. Running instance states include any instance with state: running, operational and provisioned. Found instances are terminated after user approval.
 
-### Input Parameters
+## Input Parameters
 
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Exclude Tags* - List of tags that will exclude instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag must be of the format 'namespace:predicate=value'. Example: 'rs_agent:type=right_link_lite,rs_monitoring:state=auth'.
@@ -44,4 +44,4 @@ For example if a user selects the "Terminate Instances" action while applying th
 
 ### Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.
