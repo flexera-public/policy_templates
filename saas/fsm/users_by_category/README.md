@@ -41,4 +41,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This policy template does not incur any cloud costs.s
+This policy template does not incur any cloud costs.
