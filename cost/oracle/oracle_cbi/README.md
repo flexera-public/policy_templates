@@ -24,6 +24,10 @@ This policy has the following input parameters required when launching the polic
 - *Block Size* - The number of files to upload with each execution of the policy. The default value of 20 is recommended.
 - *Commit Delay (Hours)* - The number of hours to wait between committing bill uploads. This is to avoid overloading the CBI system and to ensure bill ingestion occurs at a predictable cadence. The default value of 12 is recommended.
 
+## Policy Actions
+
+- Upload Oracle Cloud bills to Flexera Cloud Cost Optimization (CCO)
+
 ## Prerequisites
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
