@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.3.2
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v6.3.1
 
 - Fixed issue where `New Monthly List Price` and `Estimated Monthly Savings` were being incorrectly reported in the policy incident.

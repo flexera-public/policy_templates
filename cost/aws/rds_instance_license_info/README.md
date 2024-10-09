@@ -4,11 +4,11 @@
 
 This policy is no longer being updated. The [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/) policy can be used with the `Underutilized Instance CPU Threshold (%)` parameter set to `100` and the `Report Unused or Underutilized` parameter set to `Underutilized` to retrieve the same information.
 
-## What it does
+## What It Does
 
 This Policy Template gathers AWS RDS Instance data related to licensing.
 
-## Functional Details
+## How It Works
 
 - This policy identifies all RDS instances and provides details on engine, version, license, and vCPU.
 
@@ -66,4 +66,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

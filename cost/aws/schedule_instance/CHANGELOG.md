@@ -1,5 +1,9 @@
 # Changelog
 
+## v7.0.2
+
+- Minor changes to policy template to pass lint tests. No functional changes.
+
 ## v7.0.1
 
 - Minor changes to policy template to pass lint tests. No functional changes.

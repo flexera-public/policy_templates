@@ -1,5 +1,9 @@
 # Changelog
 
+## v9.2.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v9.2.0
 
 - Added `Resource ARN` to incident table.

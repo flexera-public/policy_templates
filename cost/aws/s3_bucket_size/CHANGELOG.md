@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v3.1.0
 
 - Improved policy execution speed by batching CloudWatch requests.
