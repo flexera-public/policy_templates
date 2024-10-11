@@ -1,13 +1,13 @@
-name "Azure Missing Subscriptions"
+name "Google Missing Projects"
 rs_pt_ver 20180301
 type "policy"
-short_description "Reports any Azure Subscriptions present in Flexera One that are not accessible via the Azure Resource Manager automation credential. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/azure/azure_missing_subscriptions) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports any Google Projects present in Flexera One that are not accessible via the Google automation credential. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/google/google_missing_projects) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "low"
 category "Cost"
+severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.1",
+  version: "0.1.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Automation",
@@ -26,29 +26,20 @@ parameter "param_email" do
   default []
 end
 
-parameter "param_azure_endpoint" do
-  type "string"
-  category "Policy Settings"
-  label "Azure Endpoint"
-  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
-  allowed_values "management.azure.com", "management.chinacloudapi.cn"
-  default "management.azure.com"
-end
-
 parameter "param_report_selection" do
   type "string"
   category "Policy Settings"
   label "Report Selection"
-  description "Whether to report Subscriptions missing in the Azure API but present in CCO data, the opposite, or both."
-  allowed_values "Missing in Azure API", "Missing in CCO", "Both"
-  default "Missing in Azure API"
+  description "Whether to report Projects missing in the Google Cloud Resource Manager API but present in CCO data, the opposite, or both."
+  allowed_values "Missing in Google API", "Missing in CCO", "Both"
+  default "Missing in Google API"
 end
 
-parameter "param_subscriptions_list" do
+parameter "param_projects_list" do
   type "list"
   category "Filters"
-  label "Subscriptions Ignore List"
-  description "A list of Subscription IDs/names to never include in the results. Leave blank to not filter results."
+  label "Projects Ignore List"
+  description "A list of Project IDs/names to never include in the results. Leave blank to not filter results."
   default []
 end
 
@@ -56,11 +47,11 @@ end
 # Authentication
 ###############################################################################
 
-credentials "auth_azure" do
+credentials "auth_google" do
   schemes "oauth2"
-  label "Azure"
-  description "Select the Azure Resource Manager Credential from the list."
-  tags "provider=azure_rm"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
 end
 
 credentials "auth_flexera" do
@@ -74,12 +65,12 @@ end
 # Pagination
 ###############################################################################
 
-pagination "pagination_azure" do
+pagination "pagination_google" do
   get_page_marker do
-    body_path "nextLink"
+    body_path "nextPageToken"
   end
   set_page_marker do
-    uri true
+    query "pageToken"
   end
 end
 
@@ -177,10 +168,14 @@ script "js_flexera_cco_data", type: "javascript" do
       filter: {
         "type": "or",
         "expressions": [
-          { "dimension": "vendor", "type": "equal", "value": "Azure" },
-          { "dimension": "vendor", "type": "equal", "value": "azure" },
-          { "dimension": "vendor", "type": "equal", "value": "Microsoft Azure" },
-          { "dimension": "vendor", "type": "equal", "value": "microsoft azure" }
+          { "dimension": "vendor", "type": "equal", "value": "Google" },
+          { "dimension": "vendor", "type": "equal", "value": "google" },
+          { "dimension": "vendor", "type": "equal", "value": "Google Cloud" },
+          { "dimension": "vendor", "type": "equal", "value": "google cloud" },
+          { "dimension": "vendor", "type": "equal", "value": "Google Cloud Platform" },
+          { "dimension": "vendor", "type": "equal", "value": "google cloud platform" },
+          { "dimension": "vendor", "type": "equal", "value": "GCP" },
+          { "dimension": "vendor", "type": "equal", "value": "gcp" }
         ]
       }
     },
@@ -193,58 +188,59 @@ script "js_flexera_cco_data", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_subscriptions" do
+datasource "ds_google_projects" do
   request do
-    auth $auth_azure
-    pagination $pagination_azure
-    host $param_azure_endpoint
-    path "/subscriptions/"
-    query "api-version","2020-01-01"
-    header "User-Agent", "RS Policies"
-    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400, 403, 404]
+    auth $auth_google
+    pagination $pagination_google
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+    query "filter", "lifecycleState=ACTIVE"
   end
   result do
     encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item, "subscriptionId")
-      field "name", jmes_path(col_item, "displayName")
-      field "state", jmes_path(col_item, "state")
+    collect jmes_path(response, "projects[*]") do
+      field "id", jmes_path(col_item, "projectId")
+      field "number", jmes_path(col_item, "projectNumber")
+      field "name", jmes_path(col_item, "name")
+      field "parent", jmes_path(col_item, "parent")
+      field "createTime", jmes_path(col_item, "createTime")
+      field "lifecycleState", jmes_path(col_item, "lifecycleState")
+      field "tags", jmes_path(col_item, "labels")
     end
   end
 end
 
-datasource "ds_missing_subscriptions_api" do
-  run_script $js_missing_subscriptions_api, $ds_flexera_cco_data, $ds_azure_subscriptions, $ds_applied_policy, $param_subscriptions_list, $param_report_selection
+datasource "ds_missing_projects_api" do
+  run_script $js_missing_projects_api, $ds_flexera_cco_data, $ds_google_projects, $ds_applied_policy, $param_projects_list, $param_report_selection
 end
 
-script "js_missing_subscriptions_api", type: "javascript" do
-  parameters "ds_flexera_cco_data", "ds_azure_subscriptions", "ds_applied_policy", "param_subscriptions_list", "param_report_selection"
+script "js_missing_projects_api", type: "javascript" do
+  parameters "ds_flexera_cco_data", "ds_google_projects", "ds_applied_policy", "param_projects_list", "param_report_selection"
   result "result"
   code <<-'EOS'
   result = []
 
   if (param_report_selection != 'Missing in CCO') {
-    automation_ids = _.map(ds_azure_subscriptions, function(sub) {
-      return sub['id'].toLowerCase().trim()
+    automation_ids = _.map(ds_google_projects, function(project) {
+      return project['id'].toLowerCase().trim()
     })
 
-    missing_subs = _.reject(ds_flexera_cco_data, function(sub) {
-      return _.contains(automation_ids, sub['vendor_account'].toLowerCase().trim())
+    missing_projects = _.reject(ds_flexera_cco_data, function(project) {
+      return _.contains(automation_ids, project['vendor_account'].toLowerCase().trim())
     })
 
-    result = _.map(missing_subs, function(sub) {
+    result = _.map(missing_projects, function(project) {
       return {
-        accountID: sub['vendor_account'].toLowerCase().trim(),
-        accountName: sub['vendor_account_name'],
-        bill_source: sub['bill_source'],
+        accountID: project['vendor_account'].toLowerCase().trim(),
+        accountName: project['vendor_account_name'],
+        bill_source: project['bill_source'],
         policy_name: ds_applied_policy['name']
       }
     })
 
     // Remove filtered results
-    result = _.reject(result, function(sub) {
-      return _.contains(param_subscriptions_list, sub['accountID']) || _.contains(param_subscriptions_list, sub['accountName'])
+    result = _.reject(result, function(project) {
+      return _.contains(param_projects_list, project['accountID']) || _.contains(param_projects_list, project['accountName'])
     })
 
     result = _.sortBy(result, 'accountID')
@@ -253,36 +249,36 @@ script "js_missing_subscriptions_api", type: "javascript" do
 EOS
 end
 
-datasource "ds_missing_subscriptions_cco" do
-  run_script $js_missing_subscriptions_cco, $ds_flexera_cco_data, $ds_azure_subscriptions, $ds_applied_policy, $param_subscriptions_list, $param_report_selection
+datasource "ds_missing_projects_cco" do
+  run_script $js_missing_projects_cco, $ds_flexera_cco_data, $ds_google_projects, $ds_applied_policy, $param_projects_list, $param_report_selection
 end
 
-script "js_missing_subscriptions_cco", type: "javascript" do
-  parameters "ds_flexera_cco_data", "ds_azure_subscriptions", "ds_applied_policy", "param_subscriptions_list", "param_report_selection"
+script "js_missing_projects_cco", type: "javascript" do
+  parameters "ds_flexera_cco_data", "ds_google_projects", "ds_applied_policy", "param_projects_list", "param_report_selection"
   result "result"
   code <<-'EOS'
   result = []
 
-  if (param_report_selection != 'Missing in Azure API') {
-    cco_ids = _.map(ds_flexera_cco_data, function(sub) {
-      return sub['vendor_account'].toLowerCase().trim()
+  if (param_report_selection != 'Missing in Google API') {
+    cco_ids = _.map(ds_flexera_cco_data, function(project) {
+      return project['vendor_account'].toLowerCase().trim()
     })
 
-    missing_subs = _.reject(ds_azure_subscriptions, function(sub) {
-      return _.contains(cco_ids, sub['id'].toLowerCase().trim())
+    missing_projects = _.reject(ds_google_projects, function(project) {
+      return _.contains(cco_ids, project['id'].toLowerCase().trim())
     })
 
-    result = _.map(missing_subs, function(sub) {
+    result = _.map(missing_projects, function(project) {
       return {
-        accountID: sub['id'].toLowerCase().trim(),
-        accountName: sub['name'],
+        accountID: project['id'].toLowerCase().trim(),
+        accountName: project['name'],
         policy_name: ds_applied_policy['name']
       }
     })
 
     // Remove filtered results
-    result = _.reject(result, function(sub) {
-      return _.contains(param_subscriptions_list, sub['accountID']) || _.contains(param_subscriptions_list, sub['accountName'])
+    result = _.reject(result, function(project) {
+      return _.contains(param_projects_list, project['accountID']) || _.contains(param_projects_list, project['accountName'])
     })
 
     result = _.sortBy(result, 'accountID')
@@ -294,35 +290,35 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_missing_subscriptions" do
-  validate_each $ds_missing_subscriptions_api do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure API Missing Subscriptions"
+policy "pol_missing_projects" do
+  validate_each $ds_missing_projects_api do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google API Missing Projects"
     check eq(val(item, "accountID"), "")
     escalate $esc_email
     export do
       resource_level false
       field "accountID" do
-        label "Subscription ID"
+        label "Project ID"
       end
       field "accountName" do
-        label "Subscription Name"
+        label "Project Name"
       end
       field "bill_source" do
         label "Bill Connection"
       end
     end
   end
-  validate_each $ds_missing_subscriptions_cco do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure CCO Missing Subscriptions"
+  validate_each $ds_missing_projects_cco do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google CCO Missing Projects"
     check eq(val(item, "accountID"), "")
     escalate $esc_email
     export do
       resource_level false
       field "accountID" do
-        label "Subscription ID"
+        label "Project ID"
       end
       field "accountName" do
-        label "Subscription Name"
+        label "Project Name"
       end
     end
   end
