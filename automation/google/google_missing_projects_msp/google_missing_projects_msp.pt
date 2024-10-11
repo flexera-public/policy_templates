@@ -1,0 +1,253 @@
+name "MSP Report: Google Missing Projects"
+rs_pt_ver 20180301
+type "policy"
+short_description "Consolidates reports for the Google Missing Projects policy template from child organizations. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/google/google_missing_projects_msp/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "daily"
+info(
+  version: "0.1.0",
+  provider: "Google",
+  service: "IAM",
+  policy_set: "Authentication",
+  publish: "false"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_msp_customers" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/msp/v1/orgs/", rs_org_id, "/customers"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "kind", jmes_path(col_item, "kind")
+      field "createdAt", jmes_path(col_item, "createdAt")
+      field "updatedAt", jmes_path(col_item, "updatedAt")
+    end
+  end
+end
+
+datasource "ds_child_projects" do
+  iterate $ds_msp_customers
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "grs")
+    path join(["/grs/orgs/", val(iter_item, "id"), "/projects"])
+    header "X-Api-Version", "2.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "projectId", jmes_path(col_item, "id")
+      field "orgId", val(iter_item, "id")
+      field "orgName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_incidents" do
+  iterate $ds_child_projects
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", val(iter_item, "projectId"), "/incidents"])
+    query "state", "triggered"
+    header "User-Agent", "RS Policies"
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "incident_id", jmes_path(col_item, "id")
+      field "applied_policy_id", jmes_path(col_item, "applied_policy.id")
+      field "summary", jmes_path(col_item, "summary")
+      field "state", jmes_path(col_item, "state")
+      field "orgId", val(iter_item, "orgId")
+      field "orgName", val(iter_item, "orgName")
+      field "projectId", val(iter_item, "projectId")
+    end
+  end
+end
+
+datasource "ds_incidents_filtered" do
+  run_script $js_incidents_filtered, $ds_incidents
+end
+
+script "js_incidents_filtered", type: "javascript" do
+  parameters "ds_incidents"
+  result "result"
+  code <<-EOS
+  incidents = _.filter(ds_incidents, function(incident) {
+    return incident["summary"].indexOf("Google API Missing Projects") != -1
+  })
+
+  result = _.map(incidents, function(incident) {
+    return {
+      incident_id: incident["incident_id"],
+      applied_policy_id: incident["applied_policy_id"],
+      summary: incident["summary"],
+      state: incident["state"],
+      orgId: incident["orgId"],
+      orgName: incident["orgName"],
+      projectId: incident["projectId"]
+    }
+  })
+EOS
+end
+
+datasource "ds_incidents_with_details" do
+  iterate $ds_incidents_filtered
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", val(iter_item, "projectId"), "/incidents/", val(iter_item, "incident_id")])
+    query "view", "extended"
+    header "User-Agent", "RS Policies"
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "data", jmes_path(response, "violation_data")
+    field "incident_id", val(iter_item, "incident_id")
+    field "applied_policy_id", val(iter_item, "applied_policy_id")
+    field "summary", val(iter_item, "summary")
+    field "state", val(iter_item, "state")
+    field "orgId", val(iter_item, "orgId")
+    field "orgName", val(iter_item, "orgName")
+    field "projectId", val(iter_item, "projectId")
+    field "type", val(iter_item, "type")
+  end
+end
+
+datasource "ds_account_statuses" do
+  run_script $js_account_statuses, $ds_incidents_with_details, $ds_applied_policy
+end
+
+script "js_account_statuses", type: "javascript" do
+  parameters "ds_incidents_with_details"
+  result "result"
+  code <<-EOS
+  result = _.map(ds_incidents_with_details, function(incident) {
+    return {
+      orgId: incident["orgId"],
+      orgName: incident["orgName"],
+      id: incident["data"]["accountID"],
+      name: incident["data"]["accountName"],
+      policy_name: ds_applied_policy["name"]
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_credentials" do
+  validate_each $ds_credential_statuses do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Projects Without API Access Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    export do
+      resource_level true
+      field "orgId" do
+        label "Flexera Org ID"
+      end
+      field "orgName" do
+        label "Flexera Org Name"
+      end
+      field "id" do
+        label "Account ID"
+      end
+      field "name" do
+        label "Account Name"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
