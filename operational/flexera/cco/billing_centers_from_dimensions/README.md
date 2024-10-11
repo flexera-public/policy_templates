@@ -6,7 +6,7 @@ This policy generates a billing center structure based on specified dimensions. 
 
 Billing Centers are required for granular access to cost data in Flexera and this Policy Template can help create the Billing Centers which are used to grant access to User Groups and Users.
 
-Even without a requirement for granular access, the heirarchy view approach Billing Centers uses can also help an application owner find their costs and usage using a familiar hierarchy.
+Even without a requirement for granular access, the hierarchy view approach Billing Centers uses can also help an application owner find their costs and usage using a familiar hierarchy.
 
 ## Functional Details
 
@@ -28,7 +28,7 @@ The following policy actions are taken based on the specified dimensions:
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources. In order to apply this policy, you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 ### Credential configuration
 
@@ -44,4 +44,3 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 ## Cost
 
 This policy does not incur any additional costs as it only generates a billing center structure based on the specified dimensions.
-```
