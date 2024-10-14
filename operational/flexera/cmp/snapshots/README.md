@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-## What it does
+## What It Does
 
 This Policy Template verifies that you have snapshots on all of your important volumes.
 
