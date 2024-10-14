@@ -619,6 +619,29 @@ def policy_sections_out_of_order?(file, file_lines)
   policy_fail = false
   escalations_fail = false
 
+  # Record whether certain policy blocks exist at all
+  metadata_exists = false
+  parameters_exists = false
+  credentials_exists = false
+  pagination_exists = false
+  datasources_exists = false
+  policy_exists = false
+  escalations_exists = false
+  cwf_exists = false
+
+  file_lines.each_with_index do |line, index|
+    metadata_exists = true if line.start_with?('name ')
+    parameters_exists = true if line.strip.start_with?('parameter ') && line.strip.end_with?('do')
+    credentials_exists = true if line.strip.start_with?('credentials ') && line.strip.end_with?('do')
+    pagination_exists = true if line.strip.start_with?('pagination ') && line.strip.end_with?('do')
+    datasources_exists = true if line.strip.start_with?('datasource ') && line.strip.end_with?('do')
+    policy_exists = true if line.strip.start_with?('policy ') && line.strip.end_with?('do')
+    escalations_exists = true if line.strip.start_with?('escalation ') && line.strip.end_with?('do')
+    cwf_exists = true if line.strip.start_with?('define ') && line.strip.end_with?('do')
+
+    break if line.strip.start_with?('# Meta Policy [alpha]')
+  end
+
   # Failsafe for meta policy code which won't be in the correct order by design
   found_meta = false
 
@@ -637,32 +660,32 @@ def policy_sections_out_of_order?(file, file_lines)
       found_escalations = true if line.strip.start_with?('escalation ') && line.strip.end_with?('do')
       found_cwf = true if line.strip.start_with?('define ') && line.strip.end_with?('do')
 
-      if !metadata_fail && !found_metadata && (found_parameters || found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
+      if metadata_exists && !metadata_fail && !found_metadata && (found_parameters || found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
         fail_message += "Line #{line_number.to_s}: Invalid blocks found before metadata\n\n"
         metadata_fail = true
       end
 
-      if !parameters_fail && !found_parameters && (found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
+      if parameters_exists && !parameters_fail && !found_parameters && (found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
         fail_message += "Line #{line_number.to_s}: Invalid blocks found before parameter\n\n"
         parameters_fail = true
       end
 
-      if !credentials_fail && !found_credentials && (found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
+      if credentials_exists && !credentials_fail && !found_credentials && (found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
         fail_message += "Line #{line_number.to_s}: Invalid blocks found before credentials\n\n"
         credentials_fail = true
       end
 
-      if !datasources_fail && !found_datasources && (found_policy || found_escalations || found_cwf)
+      if datasources_exists && !datasources_fail && !found_datasources && (found_policy || found_escalations || found_cwf)
         fail_message += "Line #{line_number.to_s}: Invalid blocks found before datasources\n\n"
         datasources_fail = true
       end
 
-      if !policy_fail && !found_policy && (found_escalations || found_cwf)
+      if policy_exists && !policy_fail && !found_policy && (found_escalations || found_cwf)
         fail_message += "Line #{line_number.to_s}: Invalid blocks found before policy block\n\n"
         policy_fail = true
       end
 
-      if !escalations_fail && !found_escalations && (found_cwf)
+      if escalations_exists && !escalations_fail && !found_escalations && (found_cwf)
         fail_message += "Line #{line_number.to_s}: Invalid blocks found before escalations\n\n"
         escalations_fail = true
       end
@@ -1254,12 +1277,24 @@ def policy_bad_comma_spacing?(file, file_lines)
   file_lines.each_with_index do |line, index|
     line_number = index + 1
     line = line.strip
-    if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")') && !line.include?("jq(") && !line.include?("/,/")
-      if line.match(/,\s{2,}/) || line.match(/\s,/) || line.match(/,[^\s]/) && !(line.match(/\',\'/) || line.match(/\",\"/) || line.match(/\`,\`/))
-        if fail_message.empty?
-          fail_message += "\n\n"
-        end
-        fail_message += "Line #{line_number.to_s}: `"+line+"`\n\n"
+    test_line = line
+    parts = []
+
+    # Look for stuff quotations and remove those
+    # This is to reduce false positives
+    parts = line.split("\"") if line.include?("\"") && !line.include?("'")
+    parts = line.split("'") if !line.include?("\"") && line.include?("'")
+
+    if parts.length > 2 && parts.length % 2 == 1
+      test_parts = []
+      parts.each_with_index { |part, index| test_parts << part if index % 2 == 0 }
+      test_line = test_parts.join("'")
+    end
+
+    if test_line.include?(",") && !test_line.include?("allowed_pattern") && !test_line.include?('= ","') && !test_line.include?("(',')") && !test_line.include?('(",")') && !test_line.include?("jq(") && !test_line.include?("/,/")
+      if test_line.match(/,\s{2,}/) || test_line.match(/\s,/) || test_line.match(/,[^\s]/) && !(test_line.match(/\',\'/) || test_line.match(/\",\"/) || test_line.match(/\`,\`/))
+        fail_message += "\n\n" if fail_message.empty?
+        fail_message += "Line #{line_number.to_s}: `" + line + "`\n\n"
       end
     end
   end
@@ -1433,6 +1468,25 @@ def policy_console_log?(file, file_lines)
   end
 
   fail_message = "Policy Template has console.log() statements. These are used for debugging and should not be present in catalog policy templates:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### verb "GET" test
+# Return false if a datasource never specifies "GET" as a verb value
+def policy_verb_get?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file datasources have any verb \"GET\" statements..."
+
+  # Message to return of test fails
+  fail_message = ""
+
+  file_lines.each_with_index do |line, index|
+    line_number = index + 1
+    fail_message += "Line #{line_number.to_s}\n" if line.strip.start_with?("verb \"GET\"") || line.strip.start_with?("verb: \"GET\"") || line.strip.start_with?("verb 'GET'") || line.strip.start_with?("verb: 'GET'")
+  end
+
+  fail_message = "Policy Template has verb \"GET\" statements. The verb field defaults to this value and should only be specified for other values, such as PATCH or POST:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
