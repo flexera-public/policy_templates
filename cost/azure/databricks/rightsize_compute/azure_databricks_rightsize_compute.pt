@@ -2,8 +2,9 @@ name "Azure Databricks Rightsize Compute Instances"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks for instances that have inefficient utilization for a certain lookback period (in days). \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/databricks/rightsize_compute/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
-severity "low"
+long_description ""
 category "Cost"
+severity "low"
 default_frequency "weekly"
 info(
   version: "0.2.2",
@@ -116,9 +117,9 @@ parameter "param_stats_lookback" do
   category "Statistics"
   label "Statistic Lookback Period"
   description "How many days back to look at utilization metrics for compute resources. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
-  default 30
   min_value 1
   max_value 90
+  default 30
 end
 
 parameter "param_stats_idle_threshold_cpu_value" do
@@ -201,14 +202,14 @@ pagination "pagination_azure" do
   end
 end
 
-pagination "pagination_databricks_events" do
-  get_page_marker do
-    body_path jq(response, ".next_page.offset")
-  end
-  set_page_marker do
-    body_field "offset"
-  end
-end
+# pagination "pagination_databricks_events" do
+#   get_page_marker do
+#     body_path jq(response, ".next_page.offset")
+#   end
+#   set_page_marker do
+#     body_field "offset"
+#   end
+# end
 
 ###############################################################################
 # Datasources & Scripts
@@ -229,9 +230,9 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -434,11 +435,11 @@ script "js_lookback_time_formats", type: "javascript" do
   end_date = new Date()
   end_date.setMonth(end_date.getMonth() + 1)
   // Convert to YYYY-MM
-  end_date = end_date.toISOString().split("T")[0].split("-").slice(0,2).join("-")
+  end_date = end_date.toISOString().split("T")[0].split("-").slice(0, 2).join("-")
 
   start_date = new Date()
   start_date.setDate(start_date.getDate() - param_stats_lookback)
-  start_date = start_date.toISOString().split("T")[0].split("-").slice(0,2).join("-")
+  start_date = start_date.toISOString().split("T")[0].split("-").slice(0, 2).join("-")
 
   // convert
 
@@ -458,7 +459,7 @@ datasource "ds_azure_instance_size_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/azure/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/azure/instance_types.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -563,12 +564,12 @@ end
 datasource "ds_azure_databricks_managed_vm_metrics" do
   iterate $ds_virtualmachines_from_bill
   request do
-    run_script $js_azure_databricks_managed_vm_metrics, $param_azure_endpoint, $ds_param_stats_interval, $ds_lookback_time_formats, jq(iter_item, "[.virtualmachines[] .resourceId ]"), jq(iter_item, ".databricks_workspace.location"), jq(iter_item, ".databricks_workspace.managedResourceGroupId")
+    run_script $js_azure_databricks_managed_vm_metrics, $ds_param_stats_interval, $ds_lookback_time_formats, $param_azure_endpoint, jq(iter_item, "[.virtualmachines[] .resourceId ]"), jq(iter_item, ".databricks_workspace.location"), jq(iter_item, ".databricks_workspace.managedResourceGroupId")
   end
 end
 
 script "js_azure_databricks_managed_vm_metrics", type: "javascript" do
-  parameters "param_azure_endpoint", "ds_param_stats_interval", "ds_lookback_time_formats", "resources", "location", "managedResourceGroupId"
+  parameters "ds_param_stats_interval", "ds_lookback_time_formats", "param_azure_endpoint", "resources", "location", "managedResourceGroupId"
   result "request"
   code <<-EOS
   // Get the Subscription
@@ -623,11 +624,11 @@ datasource "ds_databricks_clusters" do
 end
 
 datasource "ds_filtered_workspace_virtualmachines" do
-  run_script $js_filtered_workspace_virtualmachines, $ds_databricks_workspaces_filtered, $ds_azure_databricks_managed_vm_metrics, $ds_param_stats_threshold, $param_stats_underutil_threshold_cpu_value, $ds_databricks_workspaces_vm_costs, $ds_lookback_time_formats, $ds_databricks_clusters, $ds_azure_sku_memory
+  run_script $js_filtered_workspace_virtualmachines, $ds_databricks_workspaces_filtered, $ds_azure_databricks_managed_vm_metrics, $ds_param_stats_threshold, $ds_databricks_workspaces_vm_costs, $ds_lookback_time_formats, $ds_databricks_clusters, $ds_azure_sku_memory, $param_stats_underutil_threshold_cpu_value
 end
 
 script "js_filtered_workspace_virtualmachines", type: "javascript" do
-  parameters "ds_databricks_workspaces", "ds_azure_databricks_managed_vm_metrics", "ds_param_stats_threshold", "param_stats_underutil_threshold_cpu_value", "ds_databricks_workspaces_vm_costs", "ds_lookback_time_formats", "ds_databricks_clusters", "ds_azure_sku_memory"
+  parameters "ds_databricks_workspaces", "ds_azure_databricks_managed_vm_metrics", "ds_param_stats_threshold", "ds_databricks_workspaces_vm_costs", "ds_lookback_time_formats", "ds_databricks_clusters", "ds_azure_sku_memory", "param_stats_underutil_threshold_cpu_value"
   result "result"
   code <<-EOS
   var lastTick = 0; // Holds the timestamp last tick was called
@@ -708,7 +709,7 @@ script "js_filtered_workspace_virtualmachines", type: "javascript" do
           var stats_data_names = ["minimum","average","maximum"] // convenient place to declare the stats we want to loop through
           var all_measurements = []
           _.each(stats_data_names, function(stat) {
-            var measurements = _.compact(_.pluck(resourceMetrics.data,stat))
+            var measurements = _.compact(_.pluck(resourceMetrics.data, stat))
             // Append measurements for this stat to all_measurements
             // We use all measurements (min, avg, max) to calculate percentile
             all_measurements = all_measurements.concat(measurements)
@@ -844,7 +845,7 @@ end
 datasource "ds_databricks_workspaces_vm_costs" do
   iterate $ds_databricks_workspaces_filtered
   request do
-    run_script $js_databricks_workspaces_vm_costs, iter_item, $ds_top_level_bcs, rs_org_id, rs_optima_host, $ds_lookback_time_formats, $param_databricks_cluster_list
+    run_script $js_databricks_workspaces_vm_costs, iter_item, $ds_top_level_bcs, $ds_lookback_time_formats, $param_databricks_cluster_list, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -865,7 +866,7 @@ datasource "ds_databricks_workspaces_vm_costs" do
 end
 
 script "js_databricks_workspaces_vm_costs", type: "javascript" do
-  parameters "iter_item", "ds_top_level_bcs", "rs_org_id", "rs_optima_host", "ds_lookback_time_formats", "param_databricks_cluster_list"
+  parameters "iter_item", "ds_top_level_bcs", "ds_lookback_time_formats", "param_databricks_cluster_list", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   subscription_id = iter_item["managedResourceGroupId"].split("/")[2]
@@ -1004,7 +1005,7 @@ script "js_virtualmachines_from_bill", type: "javascript" do
         for (var i=0; i < vm_count; i+=chunk_size) {
           result.push({
             "databricks_workspace": result_map[subscriptionId][location]["databricks_workspace"],
-            "virtualmachines": result_map[subscriptionId][location]["virtualmachines"].slice(i,i+chunk_size)
+            "virtualmachines": result_map[subscriptionId][location]["virtualmachines"].slice(i, i + chunk_size)
           })
         }
       }
@@ -1014,11 +1015,11 @@ script "js_virtualmachines_from_bill", type: "javascript" do
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $param_stats_check_both, $ds_param_stats_threshold, $param_stats_idle_threshold_cpu_value, $param_stats_underutil_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_mem_value, $ds_filtered_workspace_virtualmachines_with_costs, $ds_azure_instance_size_map, $ds_applied_policy
+  run_script $js_idle_and_underutil_instances, $ds_param_stats_threshold, $ds_filtered_workspace_virtualmachines_with_costs, $ds_azure_instance_size_map, $ds_applied_policy, $param_stats_check_both, $param_stats_idle_threshold_cpu_value, $param_stats_underutil_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_mem_value
 end
 
 script "js_idle_and_underutil_instances", type: "javascript" do
-  parameters "param_stats_check_both", "ds_param_stats_threshold", "param_stats_idle_threshold_cpu_value", "param_stats_underutil_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_mem_value", "ds_filtered_workspace_virtualmachines_with_costs", "ds_azure_instance_size_map", "ds_applied_policy"
+  parameters "ds_param_stats_threshold", "ds_filtered_workspace_virtualmachines_with_costs", "ds_azure_instance_size_map", "ds_applied_policy", "param_stats_check_both", "param_stats_idle_threshold_cpu_value", "param_stats_underutil_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_mem_value"
   result "result"
   code <<-EOS
   underutil_total_savings = 0.0
@@ -1080,9 +1081,9 @@ script "js_idle_and_underutil_instances", type: "javascript" do
       if (is_idle) { // First check to see if the resource is below the lower "idle" thresholds
         vm["recommendationType"] = "Delete"
         vm["recommendationDetails"] = [
-          "Delete Databricks Cluster",vm["databricks_cluster_id"],
+          "Delete Databricks Cluster", vm["databricks_cluster_id"],
           "which created Azure virtual machine", vm["resourceId"],
-          "in Azure Subscription", vm["databricks_workspace"]["subscriptionName"],"(", vm["databricks_workspace"]["subscriptionId"], ")"
+          "in Azure Subscription", vm["databricks_workspace"]["subscriptionName"], "(", vm["databricks_workspace"]["subscriptionId"], ")"
         ].join(" ")
         if (typeof vm["monthly_cost_estimate"] == "number") {
           vm["savings"] = vm["monthly_cost_estimate"] // Potential Savings from delete is the estimated monthly cost of the resource
@@ -1097,10 +1098,10 @@ script "js_idle_and_underutil_instances", type: "javascript" do
         }
         vm["recommendationType"] = "Downsize"
         vm["recommendationDetails"] = [
-          "Resize Databricks Cluster",vm["databricks_cluster_id"],
+          "Resize Databricks Cluster", vm["databricks_cluster_id"],
           "which created Azure virtual machine", vm["resourceId"],
-          "in Azure Subscription", vm["databricks_workspace"]["subscriptionName"],"(", vm["databricks_workspace"]["subscriptionId"], ")",
-          "from", vm["resourceType"],"to", vm["newResourceType"]
+          "in Azure Subscription", vm["databricks_workspace"]["subscriptionName"], "(", vm["databricks_workspace"]["subscriptionId"], ")",
+          "from", vm["resourceType"], "to", vm["newResourceType"]
         ].join(" ")
         if (typeof vm["monthly_cost_estimate"] == "number") {
           vm["savings"] = vm["monthly_cost_estimate"] / 2 // Potential Savings from downsize is generally half the estimated monthly cost of current resource type
@@ -1164,7 +1165,8 @@ policy "pol_databricks_optimizations" do
 
 Found {{ len data }} Databricks compute resources that were *idle* during the last {{ parameters.param_stats_lookback }} days.  *Idle* compute resources are those which have **{{ parameters.param_stats_check_both }} less than {{ parameters.param_stats_idle_threshold_cpu_value }}% {{ parameters.param_stats_threshold }} {{ parameters.param_stats_check_both }} utilization** within the last {{ parameters.param_stats_lookback }} days.
     EOS
-    check logic_or($ds_parent_policy_terminated,    eq(0,size(data))    )
+    check logic_or($ds_parent_policy_terminated, eq(0, size(data)))
+    escalate $esc_email
     export do
       resource_level true
       field "savings" do
@@ -1325,7 +1327,8 @@ Found {{ len data }} Databricks compute resources that were *idle* during the la
 
 Found {{ len data }} Databricks compute resources that were *underutilized* during the last {{ parameters.param_stats_lookback }} days.  *Underutilized* compute resources are those which have **{{ parameters.param_stats_check_both }} less than {{ parameters.param_stats_underutil_threshold_cpu_value }}% {{ parameters.param_stats_threshold }} utilization** within the last {{ parameters.param_stats_lookback }} days.
     EOS
-    check logic_or($ds_parent_policy_terminated,    eq(0,size(data))    )
+    check logic_or($ds_parent_policy_terminated, eq(0,size(data)))
+    escalate $esc_email
     export do
       resource_level true
       field "savings" do
@@ -1483,7 +1486,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "send_email_report" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
@@ -1502,7 +1505,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do
@@ -1510,7 +1513,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
