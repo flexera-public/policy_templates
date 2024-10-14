@@ -264,8 +264,10 @@ def readme_invalid_credentials?(file, file_lines)
       fail_message += "```- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:```\n\n"
     end
 
-    aws_perm_tester = /`[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*:[a-zA-Z0-9]+`(?:\*)?$/
-    asterix_found = 0
+    aws_perm_tester = /`[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*:[a-zA-Z0-9]+`(?:[\*\u2020\u2021\u00a7\u2016\u00b6])?$/
+
+    # Hash to track the presence of each footnote symbol in the permission list
+    footnote_symbols = { "*" => false,  "†" => false, "‡" => false, "§" => false, "‖" => false, "¶" => false }
     permission_list_found = 0
 
     aws_permission_text.each_with_index do |line, index|
@@ -277,30 +279,50 @@ def readme_invalid_credentials?(file, file_lines)
         if !line.start_with?("  - ")
           permission_list_found = 2
         else
-          asterix_found = 1 if line.strip.end_with?("*")
+          footnote_symbols["*"] = true if line.strip.end_with?("*")
+          footnote_symbols["†"] = true if line.strip.end_with?("\u2020")
+          footnote_symbols["‡"] = true if line.strip.end_with?("\u2021")
+          footnote_symbols["§"] = true if line.strip.end_with?("\u00a7")
+          footnote_symbols["‖"] = true if line.strip.end_with?("\u2016")
+          footnote_symbols["¶"] = true if line.strip.end_with?("\u00b6")
 
-          if !line.split("  - ")[1].match?(aws_perm_tester)
+          permission_action = line.split("  - ")[1]
+          if permission_action.nil? || !permission_action.match?(aws_perm_tester)
             fail_message += "Line #{line_number.to_s}: AWS permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
             fail_message += "```  - `rds:DeleteDBSnapshot`*```\n"
+            fail_message += "```  - `ec2:TerminateInstances`†```\n"
             fail_message += "```  - `sts:GetCallerIdentity` ```\n"
             fail_message += "```  - `cloudtrail:LookupEvents` ```\n\n"
           end
         end
       end
-
-      asterix_found = 2 if asterix_found == 1 && line.start_with?('  \* ')
     end
 
+    # Check for missing footnotes for any symbols that were found in the permissions list
+    footnote_symbols.each do |symbol, found|
+      next unless found # Only check if the symbol was found in the permission list
+
+      # Search for corresponding footnote explanation
+      if symbol == "*"
+        if !aws_permission_text.any? { |line| line.strip.start_with?("\\*") }
+          fail_message += "Permission list contains a permission with an asterisk (*), but no corresponding footnote explaining it. Please add a footnote starting with `  \\* ` like so:\n\n"
+          fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
+        end
+      else
+        if !aws_permission_text.any? { |line| line.strip.start_with?(symbol) }
+          fail_message += "Permission list contains a permission with a #{symbol} symbol, but no corresponding footnote explaining it. Please add a footnote starting with `  #{symbol} ` like so:\n\n"
+          fail_message += "```  #{symbol} Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
+        end
+      end
+    end
+
+    # Check if no permission list was found
     if permission_list_found == 0
       fail_message += "AWS permission list missing or formatted incorrectly. Please ensure there is a list of permissions beneath the AWS permission statement. Each list item should begin with [space][space][hyphen][space] like so:\n\n"
       fail_message += "```  - `rds:DeleteDBSnapshot`*```\n"
+      fail_message += "```  - `ec2:TerminateInstances`†```\n"
       fail_message += "```  - `sts:GetCallerIdentity` ```\n"
       fail_message += "```  - `cloudtrail:LookupEvents` ```\n\n"
-    end
-
-    if asterix_found == 1
-      fail_message += "AWS permission list contains a permission with an asterix but no footnote explaning why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][asterix][space] like so:\n\n"
-      fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n\n"
     end
   end
 
@@ -310,8 +332,10 @@ def readme_invalid_credentials?(file, file_lines)
       fail_message += "```- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:```\n\n"
     end
 
-    azure_perm_tester = /^`Microsoft\.[a-zA-Z]+\/[a-zA-Z]+\/[a-zA-Z]+(?:\/[a-zA-Z]+)*`(?:\*)?$/
-    asterix_found = 0
+    azure_perm_tester = /^`Microsoft\.[a-zA-Z]+\/[a-zA-Z]+\/[a-zA-Z]+(?:\/[a-zA-Z]+)*`(?:[\*\u2020\u2021\u00a7\u2016\u00b6])?$/
+
+    # Hash to track the presence of each footnote symbol in the permission list
+    footnote_symbols = { "*" => false,  "†" => false, "‡" => false, "§" => false, "‖" => false, "¶" => false }
     permission_list_found = 0
 
     azure_permission_text.each_with_index do |line, index|
@@ -323,9 +347,15 @@ def readme_invalid_credentials?(file, file_lines)
         if !line.start_with?("  - ")
           permission_list_found = 2
         else
-          asterix_found = 1 if line.strip.end_with?("*")
+          footnote_symbols["*"] = true if line.strip.end_with?("*")
+          footnote_symbols["†"] = true if line.strip.end_with?("\u2020")
+          footnote_symbols["‡"] = true if line.strip.end_with?("\u2021")
+          footnote_symbols["§"] = true if line.strip.end_with?("\u00a7")
+          footnote_symbols["‖"] = true if line.strip.end_with?("\u2016")
+          footnote_symbols["¶"] = true if line.strip.end_with?("\u00b6")
 
-          if !line.split("  - ")[1].match?(azure_perm_tester)
+          permission_action = line.split("  - ")[1]
+          if permission_action.nil? || !permission_action.match?(azure_perm_tester)
             fail_message += "Line #{line_number.to_s}: Azure permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
             fail_message += "```  - `Microsoft.Compute/snapshots/delete`*```\n"
             fail_message += "```  - `Microsoft.Compute/snapshots/read` ```\n"
@@ -333,20 +363,32 @@ def readme_invalid_credentials?(file, file_lines)
           end
         end
       end
-
-      asterix_found = 2 if asterix_found == 1 && line.start_with?('  \* ')
     end
 
+    # Check for missing footnotes for any symbols that were found in the permissions list
+    footnote_symbols.each do |symbol, found|
+      next unless found # Only check if the symbol was found in the permission list
+
+      # Search for corresponding footnote explanation
+      if symbol == "*"
+        if !azure_permission_text.any? { |line| line.strip.start_with?("\\*") }
+          fail_message += "Permission list contains a permission with an asterisk (*), but no corresponding footnote explaining it. Please add a footnote starting with `  \\* ` like so:\n\n"
+          fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
+        end
+      else
+        if !azure_permission_text.any? { |line| line.strip.start_with?(symbol) }
+          fail_message += "Permission list contains a permission with a #{symbol} symbol, but no corresponding footnote explaining it. Please add a footnote starting with `  #{symbol} ` like so:\n\n"
+          fail_message += "```  #{symbol} Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
+        end
+      end
+    end
+
+    # Check if no permission list was found
     if permission_list_found == 0
       fail_message += "Azure permission list missing or formatted incorrectly. Please ensure there is a list of permissions beneath the Azure permission statement. Each list item should begin with [space][space][hyphen][space] like so:\n\n"
       fail_message += "```  - `Microsoft.Compute/snapshots/delete`*```\n"
       fail_message += "```  - `Microsoft.Compute/snapshots/read` ```\n"
       fail_message += "```  - `Microsoft.Insights/metrics/read` ```\n\n"
-    end
-
-    if asterix_found == 1
-      fail_message += "Azure permission list contains a permission with an asterix but no footnote explaning why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][asterix][space] like so:\n\n"
-      fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n\n"
     end
   end
 
@@ -356,8 +398,10 @@ def readme_invalid_credentials?(file, file_lines)
       fail_message += "```- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:```\n\n"
     end
 
-    google_perm_tester = /^`[a-zA-Z]+\.[a-zA-Z]+\.[a-zA-Z]+(?:\.[a-zA-Z]+)*`(?:\*)?$/
-    asterix_found = 0
+    google_perm_tester = /^`[a-zA-Z]+\.[a-zA-Z]+\.[a-zA-Z]+(?:\.[a-zA-Z]+)*`(?:[\*\u2020\u2021\u00a7\u2016\u00b6])?$/
+
+    # Hash to track the presence of each footnote symbol in the permission list
+    footnote_symbols = { "*" => false,  "†" => false, "‡" => false, "§" => false, "‖" => false, "¶" => false }
     permission_list_found = 0
 
     google_permission_text.each_with_index do |line, index|
@@ -369,30 +413,49 @@ def readme_invalid_credentials?(file, file_lines)
         if !line.start_with?("  - ")
           permission_list_found = 2
         else
-          asterix_found = 1 if line.strip.end_with?("*")
+          footnote_symbols["*"] = true if line.strip.end_with?("*")
+          footnote_symbols["†"] = true if line.strip.end_with?("\u2020")
+          footnote_symbols["‡"] = true if line.strip.end_with?("\u2021")
+          footnote_symbols["§"] = true if line.strip.end_with?("\u00a7")
+          footnote_symbols["‖"] = true if line.strip.end_with?("\u2016")
+          footnote_symbols["¶"] = true if line.strip.end_with?("\u00b6")
 
           if !line.split("  - ")[1].match?(google_perm_tester)
             fail_message += "Line #{line_number.to_s}: Google permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
             fail_message += "```  - `resourcemanager.projects.get`*```\n"
+            fail_message += "```  - `recommender.computeInstanceMachineTypeRecommendations.list`†```\n"
             fail_message += "```  - `compute.regions.list` ```\n"
             fail_message += "```  - `billing.resourceCosts.get` ```\n\n"
           end
         end
       end
-
-      asterix_found = 2 if asterix_found == 1 && line.start_with?('  \* ')
     end
 
+    # Check for missing footnotes for any symbols that were found in the permissions list
+    footnote_symbols.each do |symbol, found|
+      next unless found # Only check if the symbol was found in the permission list
+
+      # Search for corresponding footnote explanation
+      if symbol == "*"
+        if !google_permission_text.any? { |line| line.strip.start_with?("\\*") }
+          fail_message += "Permission list contains a permission with an asterisk (*), but no corresponding footnote explaining it. Please add a footnote starting with `  \\* ` like so:\n\n"
+          fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
+        end
+      else
+        if !google_permission_text.any? { |line| line.strip.start_with?(symbol) }
+          fail_message += "Permission list contains a permission with a #{symbol} symbol, but no corresponding footnote explaining it. Please add a footnote starting with `  #{symbol} ` like so:\n\n"
+          fail_message += "```  #{symbol} Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
+        end
+      end
+    end
+
+    # Check if no permission list was found
     if permission_list_found == 0
       fail_message += "Google permission list missing or formatted incorrectly. Please ensure there is a list of permissions beneath the Google permission statement. Each list item should begin with [space][space][hyphen][space] like so:\n\n"
       fail_message += "```  - `resourcemanager.projects.get`*```\n"
+      fail_message += "```  - `recommender.computeInstanceMachineTypeRecommendations.list`†```\n"
       fail_message += "```  - `compute.regions.list` ```\n"
       fail_message += "```  - `billing.resourceCosts.get` ```\n\n"
-    end
-
-    if asterix_found == 1
-      fail_message += "Google permission list contains a permission with an asterix but no footnote explaning why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][asterix][space] like so:\n\n"
-      fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n\n"
     end
   end
 
@@ -402,8 +465,10 @@ def readme_invalid_credentials?(file, file_lines)
       fail_message += "```- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:```\n\n"
     end
 
-    flexera_perm_tester = /^`[a-zA-Z0-9\-_\.]+`(?:\*)?$/
-    asterix_found = 0
+    flexera_perm_tester = /^`[a-zA-Z0-9\-_\.]+`(?:[\*\u2020\u2021\u00a7\u2016\u00b6])?$/
+
+    # Hash to track the presence of each footnote symbol in the permission list
+    footnote_symbols = { "*" => false,  "†" => false, "‡" => false, "§" => false, "‖" => false, "¶" => false }
     permission_list_found = 0
 
     flexera_permission_text.each_with_index do |line, index|
@@ -415,7 +480,12 @@ def readme_invalid_credentials?(file, file_lines)
         if !line.start_with?("  - ")
           permission_list_found = 2
         else
-          asterix_found = 1 if line.strip.end_with?("*")
+          footnote_symbols["*"] = true if line.strip.end_with?("*")
+          footnote_symbols["†"] = true if line.strip.end_with?("\u2020")
+          footnote_symbols["‡"] = true if line.strip.end_with?("\u2021")
+          footnote_symbols["§"] = true if line.strip.end_with?("\u00a7")
+          footnote_symbols["‖"] = true if line.strip.end_with?("\u2016")
+          footnote_symbols["¶"] = true if line.strip.end_with?("\u00b6")
 
           if !line.split("  - ")[1].match?(flexera_perm_tester)
             fail_message += "Line #{line_number.to_s}: Flexera permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
@@ -423,18 +493,30 @@ def readme_invalid_credentials?(file, file_lines)
           end
         end
       end
-
-      asterix_found = 2 if asterix_found == 1 && line.start_with?('  \* ')
     end
 
+    # Check for missing footnotes for any symbols that were found in the permissions list
+    footnote_symbols.each do |symbol, found|
+      next unless found # Only check if the symbol was found in the permission list
+
+      # Search for corresponding footnote explanation
+      if symbol == "*"
+        if !flexera_permission_text.any? { |line| line.strip.start_with?("\\*") }
+          fail_message += "Permission list contains a permission with an asterisk (*), but no corresponding footnote explaining it. Please add a footnote starting with `  \\* ` like so:\n\n"
+          fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
+        end
+      else
+        if !flexera_permission_text.any? { |line| line.strip.start_with?(symbol) }
+          fail_message += "Permission list contains a permission with a #{symbol} symbol, but no corresponding footnote explaining it. Please add a footnote starting with `  #{symbol} ` like so:\n\n"
+          fail_message += "```  #{symbol} Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
+        end
+      end
+    end
+
+    # Check if no permission list was found
     if permission_list_found == 0
       fail_message += "Flexera permission list missing or formatted incorrectly. Please ensure there is a list of permissions beneath the Flexera permission statement. Each list item should begin with [space][space][hyphen][space] like so:\n\n"
       fail_message += "```  - `billing_center_viewer`*```\n\n"
-    end
-
-    if asterix_found == 1
-      fail_message += "Flexera permission list contains a permission with an asterix but no footnote explaning why or the footnote is formatted incorrectly. The footnote should indicate what is special about these permissions; in most cases, this will be an explanation that the permission is optional and only needed for policy actions. Please add a footnote that begins with [space][space][backslash][asterix][space] like so:\n\n"
-      fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n\n"
     end
   end
 
