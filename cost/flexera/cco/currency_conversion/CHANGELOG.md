@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.0.0
+
+- Multiple dimension/value pairs can now be used when applying currency conversion
+
 ## v4.0.0
 
 - Policy now accepts any arbitrary cost dimension/value instead of requiring that currency conversion be done for a specific cloud provider
