@@ -14,24 +14,28 @@ info(
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_report_id" do
   type "string"
+  category "Policy Settings"
   label "Flexera ITAM Report ID"
   description "Flexera ITAM Custom View Report ID"
+  # No default value, user input required
 end
 
 parameter "param_report_title" do
   type "string"
+  category "Policy Settings"
   label "Report Title in the Mail"
-  default "Flexera ITAM Report"
   description "Report header in the report result (e.g. Flexera ITAM Report)"
+  default "Flexera ITAM Report"
 end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses of the recipients you wish to notify"
   description "A list of email addresse(s) to notify"
   default []
@@ -52,7 +56,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "itam_pagination" do
+pagination "pagination_itam" do
   get_page_marker do
     body_path jq(response, 'try(.nextPage | split("skipToken=") | .[1] | sub("%3D";"=";"g") | sub("%253D";"=";"g")) catch null') # The skipToken is url encoded, so we need to decode the %3D and %253D to = .  This is not ideal implementation this seems to be enough without a true urldecode function
   end
@@ -62,16 +66,16 @@ pagination "itam_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 # /fnms/v1/orgs/{orgId}/reports/{id}/execute
 datasource "ds_fnms_report_execute" do
   request do
     auth $auth_flexera
-    pagination $itam_pagination
+    pagination $pagination_itam
     host join(["api.", get(1, split(f1_app_host, "app."))])
-    path join(["/fnms/v1/orgs/",rs_org_id,"/reports/",$param_report_id,"/execute"])
+    path join(["/fnms/v1/orgs/", rs_org_id, "/reports/", $param_report_id, "/execute"])
     header "Content-Type","application/json"
     header "User-Agent", "RS Policies"
   end
@@ -146,7 +150,7 @@ script "js_markdown_report", type: "javascript" do
         // label is used in the output report as a column header
         "label": label,
         // label_pad is used for the second row of the markdown table to create a separator
-        "label_pad": pad('-',label.length)
+        "label_pad": pad('-', label.length)
       });
     });
     // Begin constructing the markdown table
@@ -184,11 +188,9 @@ end
 policy 'policy_fnms_reports_combined' do
   validate $ds_markdown_report do
     summary_template "Flexera ITAM Report - {{data.name}}"
-    detail_template <<-EOS
-{{data.sResult}}
-    EOS
-    escalate $esc_send_report
+    detail_template "{{data.sResult}}"
     check eq(1, 0) # The check always fails which results in the escalation always triggering
+    escalate $esc_email
   end
 end
 
@@ -196,7 +198,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_send_report" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
