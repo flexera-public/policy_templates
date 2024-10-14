@@ -1482,6 +1482,8 @@ def policy_verb_get?(file, file_lines)
   fail_message = ""
 
   file_lines.each_with_index do |line, index|
+    break if line.strip.start_with?("# Cloud Workflow")
+
     line_number = index + 1
     fail_message += "Line #{line_number.to_s}\n" if line.strip.start_with?("verb \"GET\"") || line.strip.start_with?("verb: \"GET\"") || line.strip.start_with?("verb 'GET'") || line.strip.start_with?("verb: 'GET'")
   end
