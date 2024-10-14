@@ -8,10 +8,10 @@ This Policy Template leverages the [Azure API for Reserved Instance Utilization 
 
 This policy has the following input parameters required when launching the policy.
 
+- *Email Addresses* - A list of email addresses to notify
 - *Azure Endpoint* - Azure Endpoint to access resources
 - *Look Back Period* - The number of days of past Azure Reservation Utilization data to analyze
-- *Show Reservations with utilization below this value (%)* - Number between 1 and 100
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Reservation Utilization (%)* - Show Reservations with utilization below this value (%).
 
 ## Policy Actions
 
