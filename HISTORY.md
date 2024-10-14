@@ -6,6 +6,128 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2616](https://github.com/flexera-public/policy_templates/pull/2616): POL-1330 New Policy: AWS Account Credentials
+
+#### Description
+
+> This adds a new, unpublished policy template along with a custom meta parent. The purpose of this policy template is to test all of the various cross-account roles implied by an AWS credential to see if they were working as expected or not. Please see the README for more details.
+>
+> (A custom meta parent is used because the policy engine does not allow you to ignore_status on a signing error, so the meta parent will compare the aggregated incident results to the status of the child policies to determine if the API request succeeded or failed.)
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2616) for details about unpublished policies.
+- **Merged At**: 2024-10-11 19:31:30 UTC
+
+---
+
+### PR [#2728](https://github.com/flexera-public/policy_templates/pull/2728): POL-1379 Azure SQL MI Storage Pricing Automation
+
+#### Description
+
+> This adds automation to gather Azure SQL MI Storage Pricing and updates the Azure SQL MI Storage policy template to use this pricing data. In most cases, this will not matter (the generic SQL DB storage pricing is the same in most cases), but this ensures that any deviations in storage pricing specific to SQL MI are accounted for.
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize SQL Managed Instance Storage](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_sql_storage/README.md), [Meta Parent: Azure Rightsize SQL Managed Instance Storage](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_sql_storage/README.md)
+- **Merged At**: 2024-10-11 17:53:41 UTC
+
+---
+
+### PR [#2726](https://github.com/flexera-public/policy_templates/pull/2726): POL-1375 Google Label Cardinality Report: BigQuery Fix
+
+#### Description
+
+> Fixes an issue caused by the BigQuery API returning both the project ID and dataset ID in the "id" field when listing datasets. This caused errors when attempting to use this id to query for BigQuery tables in the dataset.
+>
+
+#### Metadata
+
+- **Policies**: [Google Label Cardinality Report](https://github.com/flexera-public/policy_templates/tree/master/operational/google/label_cardinality/README.md), [Meta Parent: Google Label Cardinality Report](https://github.com/flexera-public/policy_templates/tree/master/operational/google/label_cardinality/README.md)
+- **Merged At**: 2024-10-11 17:53:29 UTC
+
+---
+
+### PR [#2743](https://github.com/flexera-public/policy_templates/pull/2743): POL-1382 Currency Conversion: Multiple Dimension Support
+
+#### Description
+
+> Adds support for multiple dimension filters for the `Currency Conversion` policy template.
+>
+
+#### Metadata
+
+- **Policies**: [Currency Conversion](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/currency_conversion/README.md)
+- **Merged At**: 2024-10-11 13:18:16 UTC
+
+---
+
+### PR [#2712](https://github.com/flexera-public/policy_templates/pull/2712): POL-1139 New Policy: AWS S3 Usage Type Rule-Based Dimension
+
+#### Description
+
+> This new unpublished policy template, `AWS S3 Usage Type Rule-Based Dimension`, creates a single rule-based dimension based on the usage_type values for AWS S3. The intent is to provide a more general and human readable alternative to the built-in dimension, whose values tend to be very specific and not very human readable.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2712) for details about unpublished policies.
+- **Merged At**: 2024-10-10 18:09:28 UTC
+
+---
+
+### PR [#2702](https://github.com/flexera-public/policy_templates/pull/2702): POL-1355 New Policy: AWS Rightsize ElastiCache
+
+#### Description
+
+> New policy template to produce rightsizing recommendations for AWS ElastiCache clusters. See README for more details.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Rightsize ElastiCache](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_elasticache/README.md), [Meta Parent: AWS Rightsize ElastiCache](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_elasticache/README.md)
+- **Merged At**: 2024-10-09 17:11:27 UTC
+
+---
+
+### PR [#2709](https://github.com/flexera-public/policy_templates/pull/2709): POL-1374 Email Cost Optimization Recommendations: Added Policy Support
+
+#### Description
+
+> Updates to Email Cost Optimization Recommendations. From the CHANGELOG:
+>
+> - Added support for additional recommendation policy templates
+> - Changed "Disks" option to "Storage" for `Recommendation List` parameter to better reflect functionality
+> - Added "PaaS" option to `Recommendation List` parameter
+>
+
+#### Metadata
+
+- **Policies**: [Email Cost Optimization Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/email_recommendations/README.md)
+- **Merged At**: 2024-10-09 17:11:10 UTC
+
+---
+
+### PR [#2721](https://github.com/flexera-public/policy_templates/pull/2721): POL-1377 Cloud Bill Processing Error Notification: Fixes/Improvements
+
+#### Description
+
+> Fixes for `Cloud Bill Processing Error Notification`. From the CHANGELOG:
+>
+> - Updated some API requests to use newer internal Flexera API
+> - Fixed error that sometimes caused functioning bill connections to appear in results
+> - Fixed error that sometimes caused the policy template to fail
+> - Modified incident table to include more useful information
+>
+
+#### Metadata
+
+- **Policies**: [Cloud Bill Processing Error Notification](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/bill_processing_errors_notification/README.md)
+- **Merged At**: 2024-10-09 17:10:55 UTC
+
+---
+
 ### PR [#2708](https://github.com/flexera-public/policy_templates/pull/2708): POL-1373 Update AWS Superseded EBS Volumes - fix incorrect "New Monthly List Price" value
 
 #### Description
@@ -1602,154 +1724,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2361) for these details.
 - **Merged At**: 2024-07-02 14:35:36 UTC
-
----
-
-### PR [#2371](https://github.com/flexera-public/policy_templates/pull/2371): POL-1276 New Policy: Fixed Cost Common Bill Ingestion
-
-#### Description
-
-> This is a new policy template, `Fixed Cost Common Bill Ingestion`, that inserts fixed costs into Flexera CCO via CBI. It will automatically create the necessary CBI endpoint, if it does not already exist, generate the CSV, and upload it to the endpoint.
->
-> This PR also includes a small tweak to the Dangerfile to avoid false positives for comma separation when a comma is being referenced inside of a replace statement, such as "/,/"
->
-
-#### Metadata
-
-- **Policies**: [Fixed Cost Common Bill Ingestion](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/fixed_cost_cbi/README.md)
-- **Merged At**: 2024-07-01 15:07:25 UTC
-
----
-
-### PR [#2355](https://github.com/flexera-public/policy_templates/pull/2355): POL-1271 Azure Rightsize Managed Disks: SKU Filtering
-
-#### Description
-
-> This update to the `Azure Rightsize Managed Disks` policy adds support for filtering by disk SKU so that certain disks, such as HDDs, can be omitted from the results.
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md), [Meta Parent: Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md)
-- **Merged At**: 2024-07-01 12:35:05 UTC
-
----
-
-### PR [#2261](https://github.com/flexera-public/policy_templates/pull/2261): FOPTS-3684 Azure Synapse SQL Pools
-
-#### Description
-
-> Policy to get optimization recommendations for Azure Synapse service to realize more savings.
->
-> ### Issues Resolved
->
-> Policy can recommend rightsizing dedicated pool compute resources or recommend to pause them to result in substantial potential savings.
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize Synapse SQL Pools](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_synapse_sql_pools/README.md), [Meta Parent: Azure Rightsize Synapse SQL Pools](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_synapse_sql_pools/README.md)
-- **Merged At**: 2024-06-27 22:32:04 UTC
-
----
-
-### PR [#2354](https://github.com/flexera-public/policy_templates/pull/2354): POL-1270 GitHub Policy Revamps
-
-#### Description
-
-> This is a revamp of all of the GitHub policy templates. Additionally, the policy master permission automation has been updated to handle GitHub.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2354) for these details.
-- **Merged At**: 2024-06-27 12:05:44 UTC
-
----
-
-### PR [#2345](https://github.com/flexera-public/policy_templates/pull/2345): POL-1260 Cloud Spend Forecast - Straight-Line Revamp
-
-#### Description
-
-> NOTE: Errors are false positives from files being moved around.
->
-> This is a revamp of the `Cloud Spend Forecast - Straight-Line` policy template. From the CHANGELOG:
->
-> - Fixed issue where graph would not render if dimension name contains an ampersand
-> - Several parameters altered to be more descriptive and human-readable
-> - Added support for both simple and linear regression models via parameter
-> - Added support for splitting cost by any arbitrary dimension
-> - Added ability to filter by Billing Center via an allow or deny list
-> - Streamlined code for better readability and faster execution
->
-> Additionally, the `Cloud Spend Forecast - Straight-Line (Simple Model)` policy template has been deprecated. Its functionality has been folded into this policy template instead.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2345) for these details.
-- **Merged At**: 2024-06-26 15:17:34 UTC
-
----
-
-### PR [#2336](https://github.com/flexera-public/policy_templates/pull/2336): POL-1259 Cloud Spend Moving Average Report Revamp
-
-#### Description
-
-> This is a revamp of the previously-named `Cloud Spend Forecast - Moving Average` policy template. It is now named `Cloud Spend Moving Average Report`. I did a fair bit of investigating into the history of this policy, and from what I can tell, it has never been a forecasting policy template, and a moving average is not a formula one can meaningfully use to forecast future cost. The policy template was originally named `Moving Average` and did not claim to provide a forecast, but this was changed at some point without any forecasting functionality being added to the policy template.
->
-> From the CHANGELOG:
->
-> - Renamed policy template and updated description to better reflect functionality
-> - Added ability to filter by Billing Center as an allow list or a deny list
-> - Added logic to ensure redundant Billing Centers don't skew results
-> - Improvements made to moving average calculation for better accuracy
-> - Incident table now used to display the moving average data used in the chart
-> - Streamlined code for better readability and faster execution
->
-
-#### Metadata
-
-- **Policies**: [Cloud Spend Moving Average Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/moving_average/README.md)
-- **Merged At**: 2024-06-26 12:08:07 UTC
-
----
-
-### PR [#2339](https://github.com/flexera-public/policy_templates/pull/2339): POL-1269 Publish Meta Parent Policies
-
-#### Description
-
-> This makes several changes to add meta parent policies to the catalog:
->
-> - Removes the `publish: false` flag from meta parent policies.
-> - Changes their names to start with "Meta Parent: " to reduce risk of confusion with regular policies.
-> - Changes their category to "Meta" to reduce risk of confusion with regular policies.
-> - Policy description now contains information about meta policies and directs user to the meta policy README.
-> - The meta policy README has been updated to better guide users on the functionality.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2339) for these details.
-- **Merged At**: 2024-06-25 20:58:16 UTC
-
----
-
-### PR [#2334](https://github.com/flexera-public/policy_templates/pull/2334): POL-1267 AWS Accounts Missing Service Control Policies Revamp
-
-#### Description
-
-> This is a revamp of the `AWS Accounts Missing Service Control Policies` policy. From the CHANGELOG:
->
-> - Changed policy template name to `AWS Accounts Missing Service Control Policies` to better reflect its functionality
-> - Added ability to audit for multiple Service Control Policies in a single execution
-> - Streamlined code for better readability and faster execution
-> - Policy template now requires a valid Flexera credential
->
-
-#### Metadata
-
-- **Policies**: [AWS Accounts Missing Service Control Policies](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/missing_scps/README.md)
-- **Merged At**: 2024-06-24 17:13:54 UTC
 
 ---
 
