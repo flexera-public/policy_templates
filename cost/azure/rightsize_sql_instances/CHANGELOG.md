@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.4.2
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v5.4.1
 
 - Fixed minor issue with policy actions logging a patch action as a delete action
