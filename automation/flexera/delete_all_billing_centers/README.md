@@ -13,6 +13,14 @@ This policy deletes all Billing Centers in the Flexera organization it is execut
   - If this is the policy's second time executing, but for some reason the policy has failed to self-terminate, no action will be taken.
   - If this is the policy's first time executing, all of the Billing Centers in the Flexera organization are deleted.
 
+## Input Parameters
+
+This policy template has no input parameters.
+
+## Policy Actions
+
+- Delete all Billing Centers
+
 ## Prerequisites
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
@@ -31,4 +39,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.
