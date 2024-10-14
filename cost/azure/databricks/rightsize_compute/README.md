@@ -1,20 +1,20 @@
 # Azure Databricks Rightsize Compute Instances
 
+## What It Does
 
-
-This policy checks all the instances associated with Azure Databricks workspaces in Azure Subscriptions for the average or maximum CPU and/or memory usage over a user-specified number of days. If the usage is less than the user provided Idle Instance CPU and/or memory percentage threshold then the Virtual Machine is recommended for deletion. If the usage is less than the user provided Underutilized Instance CPU and/or Memory percentage threshold then the Virtual Machine is recommended for downsizing. Both sets of Virtual Machines returned from this policy are emailed to the user.
+This policy template checks all the instances associated with Azure Databricks workspaces in Azure Subscriptions for the average or maximum CPU and/or memory usage over a user-specified number of days. If the usage is less than the user provided Idle Instance CPU and/or memory percentage threshold then the Virtual Machine is recommended for deletion. If the usage is less than the user provided Underutilized Instance CPU and/or Memory percentage threshold then the Virtual Machine is recommended for downsizing. Both sets of Virtual Machines returned from this policy template are emailed to the user.
 
 ## How It Works
 
-- The policy identifies all Virtual Machine resources using the bill data from Flexera API
-- The policy uses Azure API to get all utilization metrics for those resources during the lookback period.
-- The policy identifies all instances that have CPU and/or memory utilization below the user-specified idle thresholds and provides the relevant recommendation.
+- The policy template identifies all Virtual Machine resources using the bill data from Flexera API
+- The policy template uses Azure API to get all utilization metrics for those resources during the lookback period.
+- The policy template identifies all instances that have CPU and/or memory utilization below the user-specified idle thresholds and provides the relevant recommendation.
 - The recommendation provided for Idle Instances is a deletion action. The cluster or workspace can likely be deleted.
 - The recommendation provided for Underutilized Instances is a downsize action. The cluster or workspace can likely be downsized.
 
 ### Policy Savings Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is deleted or downsized. Cost data from Flexera is used to retrieve and calculate the estimated savings.
+The policy template includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is deleted or downsized. Cost data from Flexera is used to retrieve and calculate the estimated savings.
 
 Because the virtual machine resources can often be short-lived and ephemeral, we use the actual cost during the lookback period to estimate Potential Monthly Savings.
 
