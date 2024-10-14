@@ -2,7 +2,8 @@
 
 ## v4.2.1
 
-- Minor code improvements to conform with current standards. Functionality unchanged.
+- Added `Service` field to incident table
+- Minor code improvements to conform with current standards.
 
 ## v4.2
 
