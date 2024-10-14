@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.2
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v1.0.1
 
 - Fixed issue with URL encoding causing the chart to not render in emails in some instances.
