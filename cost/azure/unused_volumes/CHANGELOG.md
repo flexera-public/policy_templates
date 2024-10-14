@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.2.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v8.2.0
 
 - Modified internal names for incident fields for more accurate scraping into Optimization dashboard
