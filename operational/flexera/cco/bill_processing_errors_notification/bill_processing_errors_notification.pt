@@ -7,7 +7,7 @@ category "Operational"
 severity "high"
 default_frequency "daily"
 info(
-  version: "2.4.0",
+  version: "2.5.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization"
@@ -66,27 +66,95 @@ datasource "ds_applied_policy" do
   end
 end
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 datasource "ds_bill_connections" do
   request do
     auth $auth_flexera
-    verb "GET"
-    host rs_optima_host
-    path join(["/api/onboarding/orgs/", rs_org_id, "/bill_connects"])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects"])
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    collect jmes_path(response, "[*]") do
+    collect jmes_path(response, "values[*]") do
       field "id", jmes_path(col_item, "id")
-      field "href", jmes_path(col_item, "href")
-      field "created_at", jmes_path(col_item, "created_at")
-      field "updated_at", jmes_path(col_item, "updated_at")
-      field "cloud_vendor_id", jmes_path(col_item, "cloud_vendor_id")
-      field "cbi_bill_identifier", jmes_path(col_item, "cbi_bill_identifier")
-      field "cbi_integration_id", jmes_path(col_item, "cbi_integration_id")
-      field "cbi_name", jmes_path(col_item, "cbi_name")
-      field "cbi_params", jmes_path(col_item, "cbi_params")
+      field "createdAt", jmes_path(col_item, "createdAt")
+      field "updatedAt", jmes_path(col_item, "updatedAt")
+      field "cbi", jmes_path(col_item, "cbi")
+      # Sample contents of "cbi" key if it exists:
+      # "billIdentifier": "test",
+      # "integrationId": "cbi-oi-optima",
+      # "name": "private_cloud_bill",
+      # "params": {
+      #   "finopsDisplayName": "Alibaba International",
+      #   "vendorName": "Alibaba"
+      # }
+      field "cbiAzureMca", jmes_path(col_item, "cbiAzureMca")
+      # Sample contents of "cbiAzureMca" key if it exists:
+      # "billingAccountId": "1234abcd-12ab-1234-abcd-1234abcd5678:1234abcd-12ab-1234-abcd-1234abcd5678_2019-05-31",
+      # "clientId": "1234abcd-12ab-1234-abcd-1234abcd5678",
+      # "startBillingPeriod": "202407",
+      # "tenantId": "1234abcd-12ab-1234-abcd-1234abcd5678"
+      field "aws", jmes_path(col_item, "aws")
+      # Sample contents of "aws" key if it exists:
+      # "billAccountId": "20194320903",
+      # "bucketName": "aws-bucket-name",
+      # "bucketPath": "/bucket/path",
+      # "bucketRegion": "aws-region",
+      # "iamRole": {
+      #   "stsExternalId": "abcdef1234567890",
+      #   "stsRoleArn": "arn:aws:iam::123456789012:role/bill_access_role",
+      #   "stsRoleSessionName": "flexera-finops"
+      # },
+      # "kind": "finops:bill-connect-aws-iam-role"
+      field "azureEa", jmes_path(col_item, "azureEa")
+      # Sample contents of "azureEa" key if it exists:
+      # "enrollmentNumber": "ea-23213323"
+      field "azureEaManagement", jmes_path(col_item, "azureEaManagement")
+      # Sample contents of "azureEaManagement" key if it exists:
+      # "billingAccountId": "12345678",
+      # "clientId": "1234abcd-12ab-1234-abcd-1234abcd5678",
+      # "tenantId": "1234abcd-12ab-1234-abcd-1234abcd5678",
+      # "exportDetails": {
+      #   "actualCostExportURL": "https://bucket12345678.blob.core.windows.net/flexera_actual/FlexeraExport_Daily_Actual",
+      #   "amortizedCostExportURL": "https://bucket12345678.blob.core.windows.net/flexera_amort/FlexeraExport_Daily_Amortized",
+      #   "enableOOBExports": false
+      # },
+      # "scopeDetails": {
+      #   "scopeType": "Billing Account"
+      # }
+      field "gcp", jmes_path(col_item, "gcp")
+      # Sample contents of "gcp" key if it exists:
+      # "bigQueryDataset": "someDataset",
+      # "billingAccountId": "963d605a-fac2-4263-b90e-bee184d0e045",
+      # "projectId": "flexera.com:resat-cloud"
     end
   end
 end
@@ -94,18 +162,16 @@ end
 datasource "ds_bill_connections_valid" do
   request do
     auth $auth_flexera
-    verb "GET"
-    host rs_optima_host
-    path join(["/api/onboarding/orgs/", rs_org_id, "/bill_connects/validate"])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects/validations"])
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "bill_id", jmes_path(col_item, "bill_id")
+    collect jmes_path(response, "values[*]") do
+      field "billId", jmes_path(col_item, "billId")
       field "error", jmes_path(col_item, "error")
-      field "href", jmes_path(col_item, "href")
+      field "kind", jmes_path(col_item, "kind")
       field "valid", jmes_path(col_item, "valid")
     end
   end
@@ -114,7 +180,6 @@ end
 datasource "ds_bill_status_errors" do
   request do
     auth $auth_flexera
-    verb "GET"
     host rs_optima_host
     path join(["/api/status/orgs/", rs_org_id, "/bill-status-errors"])
     header "Api-Version", "1.0"
@@ -134,7 +199,6 @@ datasource "ds_bill_import_history" do
   iterate $ds_bill_connections
   request do
     auth $auth_flexera
-    verb "GET"
     host rs_optima_host
     path join(["/api/status/orgs/", rs_org_id, "/bill_id/", val(iter_item, "id"), "/import-history"])
     header "Api-Version", "1.0"
@@ -166,26 +230,53 @@ script "js_bill_connections_combined", type: "javascript" do
   import_history = _.groupBy(ds_bill_import_history, "id")
 
   result = _.map(ds_bill_connections_valid, function(item) {
-    id = item["bill_id"]
-
+    id = item["billId"]
     created_at = ""
     updated_at = ""
-    cbi_name = ""
-    cbi_params = {}
     vendor_name = ""
+    bill_account = ""
+    type = ""
+    active = false
 
-    if (connection_metadata[id] != undefined) {
-      if (connection_metadata[id][0] != undefined) {
-        created_at = new Date(connection_metadata[id][0]["created_at"]).toISOString()
-        updated_at = new Date(connection_metadata[id][0]["updated_at"]).toISOString()
-        cbi_name = connection_metadata[id][0]["cbi_name"]
-        cbi_params = connection_metadata[id][0]["cbi_params"]
+    if (connection_metadata[id] && connection_metadata[id][0]) {
+      metadata = connection_metadata[id][0]
+      created_at = new Date(metadata["createdAt"]).toISOString()
+      updated_at = new Date(metadata["updatedAt"]).toISOString()
+      active = true
+
+      if (metadata["cbi"]) {
+        vendor_name = metadata["cbi"]["params"]["vendorName"]
+        type = "CBI"
       }
-    }
 
-    if (typeof(cbi_params) == 'object') {
-      if (typeof(cbi_params["vendor_name"]) == 'string') {
-        vendor_name = cbi_params["vendor_name"]
+      if (metadata["cbiAzureMca"]) {
+        vendor_name = "Azure"
+        bill_account = metadata["cbiAzureMca"]["billingAccountId"]
+        type = "Azure MCA"
+      }
+
+      if (metadata["aws"]) {
+        vendor_name = "AWS"
+        bill_account = metadata["aws"]["billAccountId"]
+        type = "AWS"
+      }
+
+      if (metadata["azureEa"]) {
+        vendor_name = "Azure"
+        bill_account = metadata["azureEa"]["enrollmentNumber"]
+        type = "Azure EA"
+      }
+
+      if (metadata["azureEaManagement"]) {
+        vendor_name = "Azure"
+        bill_account = metadata["azureEaManagement"]["billingAccountId"]
+        type = "Azure EA Management"
+      }
+
+      if (metadata["gcp"]) {
+        vendor_name = "GCP"
+        bill_account = metadata["gcp"]["billingAccountId"]
+        type = "GCP"
       }
     }
 
@@ -198,29 +289,34 @@ script "js_bill_connections_combined", type: "javascript" do
     }
 
     if (import_history[id] != undefined) {
-      _.each(import_history[id], function(entry) {
-        downloaded_at = new Date(entry["downloaded_at"])
+      completed = _.filter(import_history[id], function(item) { return item["status"] == "completed" })
+
+      if (completed.length > 0) {
+        most_recent = _.last(_.sortBy(completed, "downloaded_at"))
+        downloaded_at = new Date(most_recent["downloaded_at"])
         hours_diff = (today - downloaded_at) / 1000 / 60 / 60
 
-        if (hours_diff > param_processing_limit && entry["status"] != "completed"  && entry["status"] != "aborted") {
-          errors.push("Bill: " + id + "-" + entry["billing_period"] + " processing longer than " + param_processing_limit + " hours")
+        if (hours_diff > param_processing_limit) {
+          errors.push("Bill: " + id + " has not processed a bill in over " + param_processing_limit + " hours")
         }
-      })
+      } else {
+        errors.push("Bill: " + id + " has not processed a bill in over " + param_processing_limit + " hours")
+      }
     }
 
     return {
       id: id,
-      name: cbi_name,
       vendor_name: vendor_name,
+      bill_account: bill_account,
       created_at: created_at,
       updated_at: updated_at,
-      href: item["href"],
+      type: type,
       valid: item["valid"],
       errors: errors.join(" | "),
-      connection_metadata: connection_metadata[id][0],
       status_errors: ds_bill_status_errors[id],
       import_history: import_history[id],
-      policy_name: ds_applied_policy["name"]
+      policy_name: ds_applied_policy["name"],
+      active: active
     }
   })
 EOS
@@ -235,7 +331,7 @@ script "js_bad_bill_connections", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = _.reject(ds_bill_connections_combined, function(item) {
-    return (item["valid"] && item["errors"] == "") || _.contains(param_ignore_list, item['id']) || _.contains(param_ignore_list, item['name'])
+    return (item["valid"] && item["errors"] == "") || !item["active"] || _.contains(param_ignore_list, item['id']) || _.contains(param_ignore_list, item['bill_account'])
   })
 EOS
 end
@@ -254,11 +350,14 @@ policy "pol_bill_processing_errors" do
       field "id" do
         label "Connection ID"
       end
-      field "name" do
-        label "Connection Name"
-      end
       field "vendor_name" do
         label "Cloud Vendor"
+      end
+      field "bill_account" do
+        label "Billing Account"
+      end
+      field "type" do
+        label "Connection Type"
       end
       field "created_at" do
         label "Created At"
