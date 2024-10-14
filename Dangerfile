@@ -537,6 +537,9 @@ changed_pt_files.each do |file|
 
     # Raise error if policy has console.log() statements
     test = policy_console_log?(file, file_lines); failures << test if test
+
+    # Raise error if policy has verb "GET" statements
+    test = policy_verb_get?(file, file_lines); failures << test if test
   end
 
   # Output final list of failures and warnings

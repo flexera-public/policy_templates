@@ -1277,11 +1277,21 @@ def policy_bad_comma_spacing?(file, file_lines)
   file_lines.each_with_index do |line, index|
     line_number = index + 1
     line = line.strip
+    parts = []
+
+    # Look for stuff quotations and remove those
+    # This is to reduce false positives
+    parts = line.split("\"") if line.include?("\"") && !line.include?("'")
+    parts = line.split("'") if !line.include?("\"") && line.include?("'")
+
+    if parts.length > 2 && parts.length % 2 == 1
+      line = ""
+      parts.each_with_index { |part, index| line += part if index % 2 == 0 }
+    end
+
     if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")') && !line.include?("jq(") && !line.include?("/,/")
       if line.match(/,\s{2,}/) || line.match(/\s,/) || line.match(/,[^\s]/) && !(line.match(/\',\'/) || line.match(/\",\"/) || line.match(/\`,\`/))
-        if fail_message.empty?
-          fail_message += "\n\n"
-        end
+        fail_message += "\n\n" if fail_message.empty?
         fail_message += "Line #{line_number.to_s}: `"+line+"`\n\n"
       end
     end
@@ -1456,6 +1466,25 @@ def policy_console_log?(file, file_lines)
   end
 
   fail_message = "Policy Template has console.log() statements. These are used for debugging and should not be present in catalog policy templates:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### verb "GET" test
+# Return false if a datasource never specifies "GET" as a verb value
+def policy_verb_get?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file datasources have any verb \"GET\" statements..."
+
+  # Message to return of test fails
+  fail_message = ""
+
+  file_lines.each_with_index do |line, index|
+    line_number = index + 1
+    fail_message += "Line #{line_number.to_s}\n" if line.strip.start_with?("verb \"GET\"") || line.strip.start_with?("verb: \"GET\"") || line.strip.start_with?("verb 'GET'") || line.strip.start_with?("verb: 'GET'")
+  end
+
+  fail_message = "Policy Template has verb \"GET\" statements. The verb field defaults to this value and should only be specified for other values, such as PATCH or POST:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
