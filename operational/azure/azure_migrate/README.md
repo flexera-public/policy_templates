@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-## What it does
+## What It Does
 
 This Policy will collect the resources from a RISC Foundations assessment and seed Azure Migrate with the discovered servers.
 
@@ -47,4 +47,4 @@ This policy has the following input parameters required when launching the polic
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

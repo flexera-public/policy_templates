@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.5.0
+
+- Updated some API requests to use newer internal Flexera API
+- Fixed error that sometimes caused functioning bill connections to appear in results
+- Fixed error that sometimes caused the policy template to fail
+- Modified incident table to include more useful information
+
 ## v2.4.0
 
 - Added `Bill Connection Ignore List` parameter to allow user to ignore specific bill connections.
