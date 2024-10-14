@@ -22,8 +22,8 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses* - A list of email addresses to notify
-- *Azure Endpoint* - Azure Endpoint to access resources
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
 - *Snapshot Age Threshold* - The number of days since the snapshot was created to consider a snapshot old.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Allow/Deny Subscriptions* - Allow or Deny entered Subscriptions to filter results.
