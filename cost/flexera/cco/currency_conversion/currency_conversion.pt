@@ -7,7 +7,7 @@ severity "low"
 default_frequency "monthly"
 category "Cost"
 info(
-  version: "4.0.0",
+  version: "5.0.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization"
@@ -17,14 +17,23 @@ info(
 # Parameters
 ###############################################################################
 
-parameter "param_dimension" do
-  type "string"
+parameter "param_dimensions" do
+  type "list"
   category "Policy Settings"
-  label "Dimension"
-  description "The Flexera CCO cost dimension name/id and value to apply the currency conversion to in 'Dimension=Value' format. Example: Cloud Vendor=AWS"
+  label "Dimensions"
+  description "The Flexera CCO cost dimension names/ids and values to apply the currency conversion to in 'Dimension=Value' format. Example: Cloud Vendor=AWS"
   allowed_pattern /.+=.+/
   min_length  1
   # No default value, user input required
+end
+
+parameter "param_dimensions_boolean" do
+  type "string"
+  category "Policy Settings"
+  label "Dimensions Boolean"
+  description "Whether to apply the currency conversion to costs that match any of the criteria in the 'Dimensions' parameter or only those that match all of them. Only applicable if more than one value is specified for the 'Dimensions' parameter."
+  allowed_values "Any", "All"
+  default "All"
 end
 
 parameter "param_backfill" do
@@ -112,31 +121,35 @@ datasource "ds_dimensions" do
   end
 end
 
-datasource "ds_dimension" do
-  run_script $js_dimension, $ds_dimensions, $param_dimension
+datasource "ds_filter_dimensions" do
+  run_script $js_filter_dimensions, $ds_dimensions, $param_dimensions
 end
 
-script "js_dimension", type: "javascript" do
-  parameters "ds_dimensions", "param_dimension"
+script "js_filter_dimensions", type: "javascript" do
+  parameters "ds_dimensions", "param_dimensions"
   result "result"
   code <<-'EOS'
-  result = {}
+  result = _.map(param_dimensions, function(item) {
+    key = item.split('=')[0]
+    value = item.split('=')[1]
 
-  key = param_dimension.split('=')[0]
-  value = param_dimension.split('=')[1]
+    dimension = _.find(ds_dimensions, function(dimension) {
+      return dimension['id'] == key || dimension['name'] == key
+    })
 
-  dimension = _.find(ds_dimensions, function(dimension) {
-    return dimension['id'] == key || dimension['name'] == key
+    if (dimension) {
+      return {
+        id: dimension['id'],
+        name: dimension['name'],
+        type: dimension['type'],
+        value: value
+      }
+    } else {
+      return null
+    }
   })
 
-  if (dimension) {
-    result = {
-      id: dimension['id'],
-      name: dimension['name'],
-      type: dimension['type'],
-      value: value
-    }
-  }
+  result = _.compact(result)
 EOS
 end
 
@@ -302,11 +315,11 @@ datasource "ds_current_adjustments" do
 end
 
 datasource "ds_updated_adjustments" do
-  run_script $js_updated_adjustments, $ds_exchange_rates, $ds_current_adjustments, $ds_month_list, $ds_dimension, $param_currency_from, $param_currency_to, $param_backfill_exchange_rate, $param_backfill, $param_backfill_start_date
+  run_script $js_updated_adjustments, $ds_exchange_rates, $ds_current_adjustments, $ds_month_list, $ds_filter_dimensions, $param_currency_from, $param_currency_to, $param_backfill_exchange_rate, $param_backfill, $param_backfill_start_date, $param_dimensions_boolean
 end
 
 script "js_updated_adjustments", type: "javascript" do
-  parameters "ds_exchange_rates", "ds_current_adjustments", "ds_month_list", "ds_dimension", "param_currency_from", "param_currency_to", "param_backfill_exchange_rate", "param_backfill", "param_backfill_start_date"
+  parameters "ds_exchange_rates", "ds_current_adjustments", "ds_month_list", "ds_filter_dimensions", "param_currency_from", "param_currency_to", "param_backfill_exchange_rate", "param_backfill", "param_backfill_start_date", "param_dimensions_boolean"
   result "result"
   code <<-'EOS'
   // Get most recent exchange rate
@@ -325,7 +338,14 @@ script "js_updated_adjustments", type: "javascript" do
   })
 
   // Dimension details
-  pretty_dimension = ds_dimension['name'] + '=' + ds_dimension['value']
+  if (ds_filter_dimensions.length > 1) {
+    pretty_dimension = param_dimensions_boolean + ": " + _.map(ds_filter_dimensions, function(item) {
+      return item['name'] + '=' + item['value']
+    }).join(" | ")
+  } else {
+    pretty_dimension = ds_filter_dimensions[0]['name'] + '=' + ds_filter_dimensions[0]['value']
+  }
+
   new_adj_name = "Currency Conversion - " + pretty_dimension
 
   // Rule information stored for incident
@@ -341,11 +361,33 @@ script "js_updated_adjustments", type: "javascript" do
     }
 
     // Create the currency conversion rule
+    if (ds_filter_dimensions.length > 1) {
+      boolean_type = "or"
+      if (param_dimensions_boolean == "All") { boolean_type = "and" }
+
+      condition = {
+        type: boolean_type,
+        expressions: _.map(ds_filter_dimensions, function(item) {
+          return {
+            type: "dimension_equals",
+            dimension: item['id'],
+            value: item['value']
+          }
+        })
+      }
+    } else {
+      condition = {
+        type: "dimension_equals",
+        dimension: ds_filter_dimensions[0]['id'],
+        value: ds_filter_dimensions[0]['value']
+      }
+    }
+
     currency_conversion_rule = {
       name: new_adj_name,
       rules: [
         {
-          condition: { type: "dimension_equals", dimension: ds_dimension['id'], value: ds_dimension['value'] },
+          condition: condition,
           cost_multiplier: conversion_rate - 1,
           label: param_currency_from + " to " + param_currency_to
         }
@@ -402,24 +444,25 @@ script "js_updated_adjustments", type: "javascript" do
 
   result = {
     list: { dated_adjustment_lists: new_adjustments },
-    message: message + message_rules.join("\n")
+    message: message + message_rules.join("\n"),
+    dimension: pretty_dimension
   }
 EOS
 end
 
 # Include ds_set_org_currency to ensure it executes, not because it's used by this script
 datasource "ds_updated_adjustments_payload" do
-  run_script $js_updated_adjustments_payload, $ds_updated_adjustments, $ds_set_org_currency, $ds_dimension
+  run_script $js_updated_adjustments_payload, $ds_updated_adjustments, $ds_set_org_currency
 end
 
 script "js_updated_adjustments_payload", type: "javascript" do
-  parameters "ds_updated_adjustments", "ds_set_org_currency", "ds_dimension"
+  parameters "ds_updated_adjustments", "ds_set_org_currency"
   result "result"
   code <<-'EOS'
   result = [{
     list: JSON.stringify(ds_updated_adjustments['list']),
     message: ds_updated_adjustments['message'],
-    dimension: ds_dimension['name'] + '=' + ds_dimension['value']
+    dimension: ds_updated_adjustments['dimension']
   }]
 EOS
 end
@@ -449,7 +492,7 @@ end
 
 policy "pol_currency_conversion" do
   validate_each $ds_new_adjustments do
-    summary_template "Currency Conversion - {{ with index data 0 }}{{ .dimension }}{{ end }} - {{ parameters.param_currency_from }} to {{ parameters.param_currency_to }}"
+    summary_template "Currency Conversion - {{ parameters.param_currency_from }} to {{ parameters.param_currency_to }} - {{ with index data 0 }}{{ .dimension }}{{ end }}"
     detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     check eq(0, 1)
   end
