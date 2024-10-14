@@ -1277,6 +1277,7 @@ def policy_bad_comma_spacing?(file, file_lines)
   file_lines.each_with_index do |line, index|
     line_number = index + 1
     line = line.strip
+    test_line = line
     parts = []
 
     # Look for stuff quotations and remove those
@@ -1285,14 +1286,15 @@ def policy_bad_comma_spacing?(file, file_lines)
     parts = line.split("'") if !line.include?("\"") && line.include?("'")
 
     if parts.length > 2 && parts.length % 2 == 1
-      line = ""
-      parts.each_with_index { |part, index| line += part if index % 2 == 0 }
+      test_parts = []
+      parts.each_with_index { |part, index| test_parts << part if index % 2 == 0 }
+      test_line = test_parts.join("'")
     end
 
-    if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")') && !line.include?("jq(") && !line.include?("/,/")
-      if line.match(/,\s{2,}/) || line.match(/\s,/) || line.match(/,[^\s]/) && !(line.match(/\',\'/) || line.match(/\",\"/) || line.match(/\`,\`/))
+    if test_line.include?(",") && !test_line.include?("allowed_pattern") && !test_line.include?('= ","') && !test_line.include?("(',')") && !test_line.include?('(",")') && !test_line.include?("jq(") && !test_line.include?("/,/")
+      if test_line.match(/,\s{2,}/) || test_line.match(/\s,/) || test_line.match(/,[^\s]/) && !(test_line.match(/\',\'/) || test_line.match(/\",\"/) || test_line.match(/\`,\`/))
         fail_message += "\n\n" if fail_message.empty?
-        fail_message += "Line #{line_number.to_s}: `"+line+"`\n\n"
+        fail_message += "Line #{line_number.to_s}: `" + line + "`\n\n"
       end
     end
   end
