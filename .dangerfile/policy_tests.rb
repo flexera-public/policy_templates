@@ -1041,7 +1041,7 @@ def policy_run_script_incorrect_order?(file, file_lines)
       value_found = false     # Whether we've found a raw value, like a number or string
 
       parameters.each_with_index do |parameter, index|
-        if parameter.include?("iter_item") || parameter.include?("val(")
+        if parameter.include?("iter_item") || parameter.include?("val(") || parameter.include?("jq(")
           val_found = true
           val_index = index
           disordered = true if ds_found || param_found || constant_found || value_found

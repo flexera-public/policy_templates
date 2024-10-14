@@ -49,18 +49,6 @@ The savings is displayed in the Estimated Monthly Savings column. The incident m
 
 ## Prerequisites
 
-### Create `Azure Databricks ClusterId` Tag Dimension in Flexera
-
-This is required for the policy templates to be able to map each Azure Virtual Machine to a Databricks Cluster.
-
-Navigate to *Administration > Custom Tags* in Flexera and Create a new Tag Dimension
-
-| Tag Display Name | Tag Keys | Tag ID (if creating via API instead of UI) |
-| ---------------- | -------- | --- |
-| `Azure Databricks ClusterId` | `ClusterId` | `tag_azure_databricks_clusterid` |
-
-> *Note: These values are case-sensitive*
-
 ### Credential configuration
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
@@ -134,6 +122,18 @@ curl 'https://api.flexera.com/cred/v2/projects/{flexeraProjectId}/credentials/oa
 ```
 
 ***Important*** - When creating an Applied Policy using a Databricks Personal Access Token credential, you must provide just 1 workspace identifier (Name or ID) in `param_databricks_workspace_list`.  Personal Access Tokens are workspace-scoped and a single applied policy cannot traverse multiple Databricks workspaces with a single Personal Access Token.
+
+### Create `Azure Databricks ClusterId` Tag Dimension in Flexera
+
+This is *required* for the policy templates to be able to map each Azure Virtual Machine to a Databricks Cluster.
+
+Navigate to *Administration > Custom Tags* in Flexera and Create a new Tag Dimension
+
+| Tag Display Name | Tag Keys | Tag ID (if creating via API instead of UI) |
+| ---------------- | -------- | --- |
+| `Azure Databricks ClusterId` | `ClusterId` | `tag_azure_databricks_clusterid` |
+
+> *Note: These values are case-sensitive*
 
 ## Supported Clouds
 
