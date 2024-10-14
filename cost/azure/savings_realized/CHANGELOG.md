@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.9.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v3.9.0
 
 - Added parameter to select between showing the currency code or the currency symbol in the incident report

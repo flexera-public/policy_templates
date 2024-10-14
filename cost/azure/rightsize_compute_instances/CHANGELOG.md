@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.3.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v5.3.0
 
 - Added ability to set metrics granularity when gathering resource metrics from Azure
