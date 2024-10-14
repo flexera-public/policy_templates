@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v3.0.0
 
 - Policy template renamed to `AWS IAM Root Account Access Keys` to better reflect its functionality
