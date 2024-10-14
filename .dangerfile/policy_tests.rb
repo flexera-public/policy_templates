@@ -619,6 +619,29 @@ def policy_sections_out_of_order?(file, file_lines)
   policy_fail = false
   escalations_fail = false
 
+  # Record whether certain policy blocks exist at all
+  metadata_exists = false
+  parameters_exists = false
+  credentials_exists = false
+  pagination_exists = false
+  datasources_exists = false
+  policy_exists = false
+  escalations_exists = false
+  cwf_exists = false
+
+  file_lines.each_with_index do |line, index|
+    metadata_exists = true if line.start_with?('name ')
+    parameters_exists = true if line.strip.start_with?('parameter ') && line.strip.end_with?('do')
+    credentials_exists = true if line.strip.start_with?('credentials ') && line.strip.end_with?('do')
+    pagination_exists = true if line.strip.start_with?('pagination ') && line.strip.end_with?('do')
+    datasources_exists = true if line.strip.start_with?('datasource ') && line.strip.end_with?('do')
+    policy_exists = true if line.strip.start_with?('policy ') && line.strip.end_with?('do')
+    escalations_exists = true if line.strip.start_with?('escalation ') && line.strip.end_with?('do')
+    cwf_exists = true if line.strip.start_with?('define ') && line.strip.end_with?('do')
+
+    break if line.strip.start_with?('# Meta Policy [alpha]')
+  end
+
   # Failsafe for meta policy code which won't be in the correct order by design
   found_meta = false
 
@@ -637,32 +660,32 @@ def policy_sections_out_of_order?(file, file_lines)
       found_escalations = true if line.strip.start_with?('escalation ') && line.strip.end_with?('do')
       found_cwf = true if line.strip.start_with?('define ') && line.strip.end_with?('do')
 
-      if !metadata_fail && !found_metadata && (found_parameters || found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
+      if metadata_exists && !metadata_fail && !found_metadata && (found_parameters || found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
         fail_message += "Line #{line_number.to_s}: Invalid blocks found before metadata\n\n"
         metadata_fail = true
       end
 
-      if !parameters_fail && !found_parameters && (found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
+      if parameters_exists && !parameters_fail && !found_parameters && (found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
         fail_message += "Line #{line_number.to_s}: Invalid blocks found before parameter\n\n"
         parameters_fail = true
       end
 
-      if !credentials_fail && !found_credentials && (found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
+      if credentials_exists && !credentials_fail && !found_credentials && (found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
         fail_message += "Line #{line_number.to_s}: Invalid blocks found before credentials\n\n"
         credentials_fail = true
       end
 
-      if !datasources_fail && !found_datasources && (found_policy || found_escalations || found_cwf)
+      if datasources_exists && !datasources_fail && !found_datasources && (found_policy || found_escalations || found_cwf)
         fail_message += "Line #{line_number.to_s}: Invalid blocks found before datasources\n\n"
         datasources_fail = true
       end
 
-      if !policy_fail && !found_policy && (found_escalations || found_cwf)
+      if policy_exists && !policy_fail && !found_policy && (found_escalations || found_cwf)
         fail_message += "Line #{line_number.to_s}: Invalid blocks found before policy block\n\n"
         policy_fail = true
       end
 
-      if !escalations_fail && !found_escalations && (found_cwf)
+      if escalations_exists && !escalations_fail && !found_escalations && (found_cwf)
         fail_message += "Line #{line_number.to_s}: Invalid blocks found before escalations\n\n"
         escalations_fail = true
       end
