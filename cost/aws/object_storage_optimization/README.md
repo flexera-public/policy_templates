@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. Due to the scales involved, per-object analysis and recommendations are not useful in most situations. Instead, [lifecycle rules](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lifecycle-mgmt.html) should be utilized to manage object storage spend.
+This policy is no longer being updated. Due to the scales involved, per-object analysis and recommendations are not useful in most situations. Instead, [lifecycle rules](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lifecycle-mgmt.html) should be utilized to manage object storage spend. The [AWS S3 Buckets Without Lifecycle Configuration](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_lifecycle) and [AWS S3 Buckets Without Intelligent Tiering](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy) policy templates can be used to identify storage accounts that do not have lifecycle rules or intelligent tiering enabled.
 
 ## What It Does
 
