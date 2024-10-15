@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.1
+
+- Deprecated: This policy is no longer being updated. See README for more details.
+
 ## v4.0
 
 - Several parameters altered to be more descriptive and human-readable

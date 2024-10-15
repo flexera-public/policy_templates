@@ -1,5 +1,9 @@
 # Google Object Storage Optimization
 
+## Deprecated
+
+This policy is no longer being updated. Due to the scales involved, per-object analysis and recommendations are not useful in most situations. Instead, [lifecycle rules](https://cloud.google.com/storage/docs/lifecycle) should be utilized to manage object storage spend.
+
 ## What It Does
 
 This policy template checks Google buckets for older objects and produces recommendations to move these objects to the 'nearline' or 'coldline' class after a given period of time. Optionally, an email report is sent of these objects and the user can change their class or delete them.

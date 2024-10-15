@@ -1,5 +1,9 @@
 # AWS Object Storage Optimization
 
+## Deprecated
+
+This policy is no longer being updated. Due to the scales involved, per-object analysis and recommendations are not useful in most situations. Instead, [lifecycle rules](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lifecycle-mgmt.html) should be utilized to manage object storage spend.
+
 ## What It Does
 
 This policy checks S3 buckets for objects to move to the 'Glacier' or 'Deep Archive' storage classes based on object age. The user can opt to either delete the objects or move them to the recommended storage class.
