@@ -29,6 +29,7 @@ default_child_policy_template_files = [
   "../../cost/aws/rightsize_elasticache/aws_rightsize_elasticache.pt",
   "../../cost/aws/rightsize_redshift/aws_rightsize_redshift.pt",
   "../../cost/aws/s3_bucket_size/aws_bucket_size.pt",
+  "../../cost/aws/s3_lifecycle/aws_s3_lifecycle.pt",
   "../../cost/aws/s3_storage_policy/aws_s3_bucket_policy_check.pt",
   "../../cost/aws/schedule_instance/aws_schedule_instance.pt",
   "../../cost/aws/superseded_instances/aws_superseded_instances.pt",
