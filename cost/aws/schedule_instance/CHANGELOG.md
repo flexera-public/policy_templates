@@ -1,5 +1,15 @@
 # Changelog
 
+## v7.0.1
+
+- Minor changes to policy template to pass lint tests. No functional changes.
+
+## v7.0.0
+
+- Remove `next_stop`, `next_start` label requirements
+- Add task labels to improve status updates and debugging for CWF actions
+- Add error capture, graceful timeout handling for CWF actions
+
 ## v6.0
 
 - Added support for regex when filtering resources by tag

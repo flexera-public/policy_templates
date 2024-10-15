@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.5
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v0.1.4
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for

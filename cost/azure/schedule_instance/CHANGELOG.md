@@ -1,5 +1,16 @@
 # Changelog
 
+## v6.0.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v6.0.0
+
+- Remove `next_stop`, `next_start` tag requirements
+- Add check after stop/start request to validate expected status change
+- Add task labels to improve status updates and debugging for CWF actions
+- Add error capture, graceful timeout handling for CWF actions
+
 ## v5.0
 
 - Added support for regex when filtering resources by tag

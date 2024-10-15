@@ -1,18 +1,17 @@
-name "Applied Policy Error Notification"
+name "Applied Policy Template Errors"
 rs_pt_ver 20180301
 type "policy"
-short_description "Collects all currently applied policies and raises an incident for any in an error state. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/automation/applied_policy_error_notification/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports any applied policy templates that are in an error state. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/automation/applied_policy_error_notification/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "high"
 category "Operational"
+severity "high"
 default_frequency "hourly"
 info(
-    version: "2.3",
-    provider: "Flexera",
-    service: "Automation",
-    policy_set: "Automation",
-    publish: "false"
-  )
+  version: "3.0.0",
+  provider: "Flexera",
+  service: "Automation",
+  policy_set: "Automation"
+)
 
 ###############################################################################
 # Parameters
@@ -20,30 +19,48 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
-  description "A list of email addresses to notify"
-  min_length 1
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_ignore_list" do
+  type "list"
+  category "Filters"
+  label "Applied Policy Template Ignore List"
+  description "A list of applied policy template names and IDs to ignore and never include in the results. Leave blank to report on all applied policy templates in an error state."
+  default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-credentials "auth_rs" do
+credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
-  description "Select FlexeraOne OAuth2 credentials"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
 
 datasource "ds_applied_policies" do
   request do
-    auth $auth_rs
-    verb "GET"
+    auth $auth_flexera
     host rs_governance_host
     path join(["/api/governance/projects/", rs_project_id, "/applied_policies"])
     header "Api-Version", "1.0"
@@ -51,43 +68,98 @@ datasource "ds_applied_policies" do
   end
   result do
     collect jmes_path(response, "items[*]") do
-      field "id", join(["[", jmes_path(col_item, "name"), "](https://", rs_governance_host, "/api/governance/projects/", rs_project_id, "/applied_policies/", jmes_path(col_item, "id"),")"])
-      field "policy_aggregate_id", jmes_path(col_item, "policy_aggregate_id")
+      field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
+      field "category", jmes_path(col_item, "category")
+      field "frequency", jmes_path(col_item, "frequency")
+      field "severity", jmes_path(col_item, "severity")
+      field "skip_approvals", jmes_path(col_item, "skip_approvals")
       field "created_at", jmes_path(col_item, "created_at")
       field "updated_at", jmes_path(col_item, "updated_at")
       field "status", jmes_path(col_item, "status")
       field "error", jmes_path(col_item, "error")
-      field "errored_at" , jmes_path(col_item, "errored_at")
-      field "created_by" , jmes_path(col_item, "created_by.email")
+      field "errored_at", jmes_path(col_item, "errored_at")
+      field "created_by", jmes_path(col_item, "created_by.email")
       field "scope", jmes_path(col_item, "scope")
+      field "policy_aggregate_id", jmes_path(col_item, "policy_aggregate_id")
     end
   end
 end
 
-###############################################################################
-# Scripts
-###############################################################################
+datasource "ds_bad_applied_policies" do
+  run_script $js_bad_applied_policies, $ds_applied_policies, $ds_applied_policy, $param_ignore_list, f1_app_host, rs_org_id, rs_project_id
+end
 
+script "js_bad_applied_policies", type: "javascript" do
+  parameters "ds_applied_policies", "ds_applied_policy", "param_ignore_list", "f1_app_host", "rs_org_id", "rs_project_id"
+  result "result"
+  code <<-'EOS'
+  bad_policies = _.filter(ds_applied_policies, function(policy) {
+    return policy['status'] == "error" && !(_.contains(param_ignore_list, policy['id']) || _.contains(param_ignore_list, policy['name']))
+  })
+
+  result = _.map(bad_policies, function(policy) {
+    policy_url = [ "https://", f1_app_host, "/orgs/", rs_org_id, "/automation/applied-policies/projects/", rs_project_id, "?policyId=", policy['id'] ].join('')
+
+    return {
+      id: policy['id'],
+      name: [ policy['name'], "||", policy_url ].join(''),
+      error: policy['error'],
+      category: policy['category'],
+      frequency: policy['frequency'],
+      severity: policy['severity'],
+      skip_approvals: policy['skip_approvals'],
+      scope: policy['scope'],
+      created_by: policy['created_by'],
+      created_at: policy['created_at'],
+      updated_at: policy['updated_at'],
+      errored_at: policy['errored_at'],
+      policy_name: ds_applied_policy['name']
+    }
+  })
+EOS
+end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "pol_applied_policies" do
-  validate_each $ds_applied_policies do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Failed Policies"
+policy "pol_bad_applied_policies" do
+  validate_each $ds_bad_applied_policies do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Applied Policies With Errors Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    hash_exclude "updated_at", "errored_at"
     export do
       resource_level true
       field "id" do
-        label "Applied Policy Id"
+        label "ID"
       end
       field "name" do
         label "Name"
+        format "link-external"
+      end
+      field "error" do
+        label "Error Message"
+      end
+      field "errored_at" do
+        label "Errored At"
       end
       field "scope" do
         label "Scope"
+      end
+      field "category" do
+        label "Category"
+      end
+      field "frequency" do
+        label "Frequency"
+      end
+      field "severity" do
+        label "Severity"
+      end
+      field "skip_approvals" do
+        label "Skip Approvals"
       end
       field "created_by" do
         label "Created By"
@@ -98,15 +170,7 @@ policy "pol_applied_policies" do
       field "updated_at" do
         label "Updated At"
       end
-      field "errored_at" do
-        label "Errored At"
-      end
-      field "error" do
-        label "Error Message"
-      end
     end
-    escalate $ese_email
-    check ne(val(item, "status"), "error")
   end
 end
 
@@ -114,6 +178,9 @@ end
 # Escalations
 ###############################################################################
 
-escalation "ese_email" do
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end

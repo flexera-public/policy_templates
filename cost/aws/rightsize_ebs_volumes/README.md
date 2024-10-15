@@ -21,7 +21,7 @@ tmpfs             453M     0  453M   0% /tmp
 
 In this example, we know an example volume (`vol-a1b2c3d4`) is mounted on `/dev/nvme1`.  This information is provided by the `ec2:DescribeVolumes` API response, but we don't have a way to get the the mount point (`/data-backup`) without information from the OS.  The policy template does not attempt to map this information, but we are exploring this topic and hope to add recommendations for Storage Capacity Used % future releases.  Added complexity for disks that have multiple partitions, or mount points that span multiple volumes (RAID, LVM, etc..)
 
-## Functional Details
+## How It Works
 
 - The policy leverages the AWS API to retrieve a list of all volumes in an AWS Account
 - The policy identifies all volumes
@@ -55,6 +55,7 @@ The policy estimates savings for underutilized volumes to be the difference base
   - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
+- *Exclusion Types* - A list of volume types to always exclude from the results. Leave blank to consider all volume types when producing recommendations. Examples: sc1, gp2
 - *Create Final Snapshot* - Whether or not to take a final snapshot before deleting a volume.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 

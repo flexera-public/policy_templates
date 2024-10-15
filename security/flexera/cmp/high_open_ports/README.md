@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-## What it does
+## What It Does
 
 This Policy Template leverages the multi cloud RightScale API. It will notify only if a security group has a port higher than `Beginning High Port` field open.
 
@@ -35,4 +35,4 @@ This policy requires permissions to access RightScale resources (clouds, network
 
 ### Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This policy template does not incur any cloud costs.

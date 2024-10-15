@@ -7,7 +7,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.0.0",
+  version: "3.1.0",
   provider: "Google",
   service: "Compute",
   policy_set: "Untagged Resources"
@@ -55,7 +55,7 @@ parameter "param_projects_list" do
   type "list"
   category "Filters"
   label "Allow/Deny Projects List"
-  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  description "A list of allowed or denied Project IDs/names. See the README for more details."
   default []
 end
 
@@ -64,7 +64,7 @@ parameter "param_resource_types" do
   category "Filters"
   label "Resource Types"
   description "The types of resources to check labels for. Any options not selected will not be reported on."
-  allowed_values ["Persistent Disks", "VPN Gateways (Internal)", "VPN Gateways (External)", "Images", "Virtual Machines", "Snapshots", "Storage Buckets"]
+  allowed_values ["Projects", "Persistent Disks", "VPN Gateways (Internal)", "VPN Gateways (External)", "Images", "Virtual Machines", "Snapshots", "Storage Buckets"]
   default ["Persistent Disks", "VPN Gateways (Internal)", "VPN Gateways (External)", "Images", "Virtual Machines", "Snapshots", "Storage Buckets"]
 end
 
@@ -240,6 +240,7 @@ datasource "ds_google_projects" do
       field "number", jmes_path(col_item, "projectNumber")
       field "id", jmes_path(col_item, "projectId")
       field "name", jmes_path(col_item, "name")
+      field "labels", jmes_path(col_item, "labels")
     end
   end
 end
@@ -664,14 +665,33 @@ datasource "ds_storage_buckets" do
 end
 
 datasource "ds_google_resources" do
-  run_script $js_google_resources, $ds_disks, $ds_vpn_gateways, $ds_external_vpn_gateways, $ds_images, $ds_instances, $ds_snapshots, $ds_storage_buckets
+  run_script $js_google_resources, $ds_google_projects_filtered, $ds_disks, $ds_vpn_gateways, $ds_external_vpn_gateways, $ds_images, $ds_instances, $ds_snapshots, $ds_storage_buckets, $param_resource_types
 end
 
 script "js_google_resources", type: "javascript" do
-  parameters "ds_disks", "ds_vpn_gateways", "ds_external_vpn_gateways", "ds_images", "ds_instances", "ds_snapshots", "ds_storage_buckets"
+  parameters "ds_google_projects_filtered", "ds_disks", "ds_vpn_gateways", "ds_external_vpn_gateways", "ds_images", "ds_instances", "ds_snapshots", "ds_storage_buckets", "param_resource_types"
   result "result"
   code <<-'EOS'
-  result = ds_disks.concat(ds_vpn_gateways, ds_external_vpn_gateways, ds_images, ds_instances, ds_snapshots, ds_storage_buckets)
+  projects = []
+
+  if (_.contains(param_resource_types, "Projects")) {
+    projects = _.map(ds_google_projects_filtered, function(project) {
+      return {
+        id: project['id'],
+        name: project['name'],
+        labels: project['labels'],
+        projectId: project['id'],
+        projectName: project['name'],
+        projectNumber: project['number'],
+        selfLink: "https://cloudresourcemanager.googleapis.com/v3/projects/" + project['name'],
+        kind: "project",
+        requestType: "Projects",
+        location: ""
+      }
+    })
+  }
+
+  result = projects.concat(ds_disks, ds_vpn_gateways, ds_external_vpn_gateways, ds_images, ds_instances, ds_snapshots, ds_storage_buckets)
 EOS
 end
 
@@ -769,7 +789,8 @@ script "js_missing_labels_incident", type: "javascript" do
     "Images": "Image",
     "Virtual Machines": "Virtual Machine",
     "Snapshots": "Snapshot",
-    "Storage Buckets": "Storage Bucket"
+    "Storage Buckets": "Storage Bucket",
+    "Projects": "Project"
   }
 
   result = _.map(ds_google_resources_missing_labels, function(resource) {
@@ -887,7 +908,7 @@ policy "pol_unlabeled_resources" do
         path "resourceID"
       end
       field "labels_object" do
-        label "Tag Object"
+        label "Labels Object"
       end
     end
   end
@@ -930,6 +951,8 @@ define label_resources($data, $param_labels_to_add) return $all_responses do
     sub on_error: handle_error() do
       if $resource["resourceType"] == "Storage Bucket"
         call label_bucket($resource, $param_labels_to_add) retrieve $label_response
+      elsif $resource["resourceType"] == "Project"
+        call label_project($resource, $param_labels_to_add) retrieve $label_response
       else
         call label_resource($resource, $param_labels_to_add) retrieve $label_response
       end
@@ -976,6 +999,44 @@ define label_bucket($resource, $param_labels_to_add) return $response do
     raise "Unexpected response patching Google resource: "+ $resource["id"] + " " + to_json($response)
   else
     task_label("Patch Google resource successful: " + $resource["id"])
+  end
+end
+
+define label_project($resource, $param_labels_to_add) return $response do
+  $labels_to_add = $resource["labels_object"]
+
+  if $labels_to_add == null
+    $labels_to_add = {}
+  end
+
+  foreach $label in $param_labels_to_add do
+    $key = first(split($label, "=" ))
+    $value = last(split($label, "="))
+    $labels_to_add[$key] = $value
+  end
+
+  $url = $resource["selfLink"]
+  task_label("PATCH " + $url)
+
+  $response = http_patch(
+    auth: $$auth_google,
+    url: $url,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: {
+      "labels": $labels_to_add
+    }
+  )
+
+  task_label("Patch Google Project response: " + $resource["name"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response patching Google Project: "+ $resource["name"] + " " + to_json($response)
+  else
+    task_label("Patch Google Project successful: " + $resource["name"])
   end
 end
 

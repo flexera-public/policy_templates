@@ -41,6 +41,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
   - `resourcemanager.projects.get`
+  - `resourcemanager.projects.update`*
   - `compute.disks.list`
   - `compute.disks.setLabels`*
   - `compute.externalVpnGateways.list`
@@ -74,4 +75,4 @@ Additionally, this Policy Template requires that several APIs be enabled in your
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This policy template does not incur any cloud costs.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v4.0
 
 - Added support for regex when filtering resources by label

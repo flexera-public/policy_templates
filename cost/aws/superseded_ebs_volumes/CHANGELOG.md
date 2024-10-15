@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.3.1
+
+- Fixed issue where `New Monthly List Price` and `Estimated Monthly Savings` were being incorrectly reported in the policy incident.
+
 ## v6.3.0
 
 - Added `Resource ARN` to incident table.
