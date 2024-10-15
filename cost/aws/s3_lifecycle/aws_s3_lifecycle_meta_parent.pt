@@ -1,15 +1,15 @@
-name "Meta Parent: AWS Object Storage Optimization"
+name "Meta Parent: AWS S3 Buckets Without Lifecycle Configuration"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [AWS Object Storage Optimization](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/object_storage_optimization) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [AWS S3 Buckets Without Lifecycle Configuration](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_lifecycle) Policies."
 severity "low"
 category "Meta"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "4.0.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "0.1.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "true",
-  deprecated: "true"
+  deprecated: "false"
 )
 
 ##############################################################################
@@ -62,27 +62,27 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"AWS Object Storage Optimization\" Policy Template from Catalog.  Optionally, you can use the \"AWS Object Storage Optimization\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"AWS S3 Buckets Without Lifecycle Configuration\" Policy Template from Catalog.  Optionally, you can use the \"AWS S3 Buckets Without Lifecycle Configuration\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
 
 ## Child Policy Parameters
-parameter "param_bucket_list" do
-  type "list"
-  category "Filters"
-  label "Bucket List"
-  description "A list of S3 buckets to assess objects in. Leave blank to assess all buckets."
-  default []
-end
-
 parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
-  label "Exclusion Tags (Key:Value)"
-  description "Cloud native tags to ignore S3 objects that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any objects with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
-  allowed_pattern /(^$)|[\w]*\:.*/
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -98,44 +98,8 @@ parameter "param_regions_list" do
   type "list"
   category "Filters"
   label "Allow/Deny Regions List"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
-  default []
-end
-
-parameter "param_new_storage_class" do
-  type "string"
-  category "Actions"
-  label "New Storage Class"
-  description "Whether to move objects to Glacier or Deep Archive if they meet the specified age thresholds. Select 'Both' to consider moving objects to either one based on the specified age thresholds"
-  default "Both"
-  allowed_values "Both", "Glacier", "Deep Archive"
-end
-
-parameter "param_glacier_days" do
-  type "number"
-  category "Actions"
-  label "Glacier Age Threshold (Days)"
-  description "Time in days since object was last modified to change storage class to Glacier. Not applicable if 'Deep Archive' is selected for New Storage Class"
-  default 30
-  min_value 1
-end
-
-parameter "param_deep_archive_days" do
-  type "number"
-  category "Actions"
-  label "Deep Archive Age Threshold (Days)"
-  description "Time in days since object was last modified to change storage class to Deep Archive. Not applicable if 'Glacier' is selected for New Storage Class"
-  default 90
-  min_value 1
-end
-
-parameter "param_automatic_action" do
-  type "list"
-  category "Actions"
-  label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Update S3 Objects Storage Class", "Delete S3 Objects"]
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
 end
 
@@ -266,7 +230,7 @@ script "js_published_child_policy_information", type: "javascript" do
   result "result"
   code <<-EOS
   result = _.filter(ds_get_published_child_policy_information, function(item) {
-    return item['name'] == "AWS Object Storage Optimization" && item['created_by'] == "support@flexera.com"
+    return item['name'] == "AWS S3 Buckets Without Lifecycle Configuration" && item['created_by'] == "support@flexera.com"
   })
 EOS
 end
@@ -299,7 +263,7 @@ script "js_project_child_policy_information", type: "javascript" do
   result "result"
   code <<-EOS
   result = _.filter(ds_get_project_child_policy_information, function(item) {
-    return item['name'] == "AWS Object Storage Optimization"
+    return item['name'] == "AWS S3 Buckets Without Lifecycle Configuration"
   })
 EOS
 end
@@ -866,19 +830,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_aws_s3_objects_incident_combined_incidents" do
-  run_script $js_ds_aws_s3_objects_incident_combined_incidents, $ds_child_incident_details
+datasource "ds_bad_buckets_combined_incidents" do
+  run_script $js_ds_bad_buckets_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_aws_s3_objects_incident_combined_incidents", type: "javascript" do
+script "js_ds_bad_buckets_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "AWS S3 Objects Recommended For Storage Class Change" then include it in the filter result
-    if (s.indexOf("AWS S3 Objects Recommended For Storage Class Change") > -1) {
+    // If the incident summary contains "AWS S3 Buckets Without Lifecycle Configurations Found" then include it in the filter result
+    if (s.indexOf("AWS S3 Buckets Without Lifecycle Configurations Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -889,33 +853,6 @@ EOS
 end
 
 
-# Escalation for Update S3 Objects Storage Class
-escalation "esc_update" do
-  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Update S3 Objects Storage Class"
-  description "Approval to update the storage class of all selected S3 Objects"
-
-  # Run declaration should go at end, after any parameters that may exist
-  run "esc_update", data, rs_governance_host, rs_project_id
-end
-define esc_update($data, $governance_host, $rs_project_id) do
-  $actions_options = []
-  call child_run_action($data, $governance_host, $rs_project_id, "Update S3 Objects Storage Class", $action_options)
-end
-
-# Escalation for Delete S3 Objects
-escalation "esc_delete" do
-  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Delete S3 Objects"
-  description "Approval to delete all selected S3 Objects"
-
-  # Run declaration should go at end, after any parameters that may exist
-  run "esc_delete", data, rs_governance_host, rs_project_id
-end
-define esc_delete($data, $governance_host, $rs_project_id) do
-  $actions_options = []
-  call child_run_action($data, $governance_host, $rs_project_id, "Delete S3 Objects", $action_options)
-end
 
 
 # Summary and a conditional incident which will show up if any policy is being applied, updated or deleted.
@@ -924,12 +861,11 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for AWS S3 Objects Recommended For Storage Class Change
-  validate $ds_aws_s3_objects_incident_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} AWS S3 Objects Recommended For Storage Class Change"
+    # Consolidated incident for AWS S3 Buckets Without Lifecycle Configurations Found
+  validate $ds_bad_buckets_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} AWS S3 Buckets Without Lifecycle Configurations Found"
     escalate $esc_email
-    escalate $esc_update
-    escalate $esc_delete
+    
     check eq(size(data), 0)
     export do
       resource_level true
@@ -939,32 +875,20 @@ policy "policy_scheduled_report" do
       field "accountName" do
         label "Account Name"
       end
-      field "bucket_name" do
+      field "resourceID" do
         label "Bucket Name"
       end
-      field "resourceID" do
-        label "Object Key"
+      field "tags" do
+        label "Bucket Tags"
       end
       field "region" do
         label "Region"
       end
-      field "last_modified" do
-        label "Last Modified Date"
+      field "creation_date" do
+        label "Creation Date"
       end
-      field "recommendationDetails" do
-        label "Recommendation"
-      end
-      field "resourceType" do
-        label "Current Storage Class"
-      end
-      field "newResourceType" do
-        label "Recommended Storage Class"
-      end
-      field "tags" do
-        label "Tags"
-      end
-      field "host" do
-        label "Host"
+      field "service" do
+        label "Service"
       end
       field "id" do
         label "ID"
