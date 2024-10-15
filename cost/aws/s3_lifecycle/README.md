@@ -20,8 +20,6 @@ This policy template reports all AWS S3 buckets that don't have a [lifecycle con
 
 ## Policy Actions
 
-The following policy actions are taken on any resources found to be out of compliance.
-
 - Send an email report
 
 ## Prerequisites
@@ -71,4 +69,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.
