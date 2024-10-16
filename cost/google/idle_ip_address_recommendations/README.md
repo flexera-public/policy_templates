@@ -21,34 +21,6 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - If the Flexera organization is configured to use a currency other than the one Google Recommender is reporting the savings estimates in, the savings values will be converted using the exchange rate at the time that the policy executes.
 
-## Prerequisites
-
-This Policy Template requires that several APIs be enabled in your Google Cloud environment:
-
-- [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
-- [Compute Engine API](https://console.cloud.google.com/flows/enableapi?apiid=compute.googleapis.com)
-- [Recommender API](https://console.cloud.google.com/flows/enableapi?apiid=recommender.googleapis.com)
-
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
-
-- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
-  - Roles
-    - `Compute Recommender Viewer`
-    - `Compute Recommender Admin`*
-
-  - Permissions
-    - `recommender.computeAddressIdleResourceRecommendations.list`
-    - `resourcemanager.projects.get`
-    - `compute.addresses.list`
-    - `compute.addresses.delete`*
-
-\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
-
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `billing_center_viewer`
-
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
-
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
@@ -78,13 +50,36 @@ The following policy actions are taken on any resources found to be out of compl
 - Send an email report
 - Delete idle IP addresses after approval
 
+## Prerequisites
+
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
+  - `recommender.computeAddressIdleResourceRecommendations.list`
+  - `resourcemanager.projects.get`
+  - `compute.addresses.list`
+  - `compute.addresses.delete`*
+
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
+Additionally, this policy template requires that several APIs be enabled in your Google Cloud environment:
+
+- [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
+- [Compute Engine API](https://console.cloud.google.com/flows/enableapi?apiid=compute.googleapis.com)
+- [Recommender API](https://console.cloud.google.com/flows/enableapi?apiid=recommender.googleapis.com)
+
 ## Supported Clouds
 
 - Google
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This policy template does not incur any cloud costs.
 
 ## API Quotas
 
