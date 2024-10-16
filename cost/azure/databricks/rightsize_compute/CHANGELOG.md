@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.0
+
+- Added batch processing for large datasources.
+
 ## v0.2.2
 
 - Minor code improvements to conform with current standards. Functionality unchanged.
