@@ -17,7 +17,7 @@ This policy checks all the instances in Azure Subscriptions for the average or m
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized for idle resources if the resource is terminated, and for underutilized resources if the resource is downsized.
 
 - The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
-- For idle resources, the savings is the full cost of the resource. For underutilized resources, the savings is 50% of the cost of the resource.
+- For idle resources, the savings is the full cost of the resource. For underutilized resources, the savings is the difference of the current cost of the resource and the estimated cost of the recommended resource type.
 - Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
 - If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
