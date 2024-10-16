@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.3.1",
+  version: "5.4.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -188,6 +188,15 @@ parameter "param_stats_lookback" do
   min_value 1
   max_value 90
   default 30
+end
+
+parameter "param_downsize_multiple" do
+  type "string"
+  category "Policy Settings"
+  label "Skip Instance Sizes"
+  description "Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_automatic_action" do
@@ -1055,11 +1064,11 @@ datasource "ds_azure_instance_size_map" do
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_stats_interval, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_exclude_databricks
+  run_script $js_idle_and_underutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_stats_interval, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_exclude_databricks, $param_downsize_multiple
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_stats_interval", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_exclude_databricks"
+  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_stats_interval", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_exclude_databricks", "param_downsize_multiple"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -1167,6 +1176,8 @@ script "js_idle_and_underutil_instances", type:"javascript" do
           idle_list.push(instance)
         }
       } else if (is_underutil) {
+        savingsMultiplier = 1
+
         instance["savings"] = parseFloat(parseFloat(total_cost / 2).toFixed(3))
         instance["recommendationType"] = "Downsize"
         instance["threshold"] = param_stats_underutil_threshold_cpu_value
@@ -1174,6 +1185,42 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
         if (ds_azure_instance_size_map[instance['resourceType']]) {
           instance["newResourceType"] = ds_azure_instance_size_map[instance['resourceType']]['down']
+        }
+
+        if (param_downsize_multiple == "Yes") {
+          if (checking_cpu && checking_mem && param_stats_check_both == "Both CPU and Memory") {
+            while (ds_azure_instance_size_map[instance['newResourceType']]['down'] && cpu_value * 2 < param_stats_underutil_threshold_cpu_value && mem_value * 2 < param_stats_underutil_threshold_mem_value) {
+              cpu_value = cpu_value * 2
+              mem_value = mem_value * 2
+              instance["newResourceType"] = ds_azure_instance_size_map[instance['newResourceType']]['down']
+              savingsMultiplier += 1
+            }
+          }
+
+          if (checking_cpu && checking_mem && param_stats_check_both == "Either CPU or Memory") {
+            while (ds_azure_instance_size_map[instance['newResourceType']]['down'] && (cpu_value * 2 < param_stats_underutil_threshold_cpu_value || mem_value * 2 < param_stats_underutil_threshold_mem_value)) {
+              cpu_value = cpu_value * 2
+              mem_value = mem_value * 2
+              instance["newResourceType"] = ds_azure_instance_size_map[instance['newResourceType']]['down']
+              savingsMultiplier += 1
+            }
+          }
+
+          if (checking_cpu && !checking_mem) {
+            while (ds_azure_instance_size_map[instance['newResourceType']]['down'] && cpu_value * 2 < param_stats_underutil_threshold_cpu_value) {
+              cpu_value = cpu_value * 2
+              instance["newResourceType"] = ds_azure_instance_size_map[instance['newResourceType']]['down']
+              savingsMultiplier += 1
+            }
+          }
+
+          if (!checking_cpu && checking_mem) {
+            while (ds_azure_instance_size_map[instance['newResourceType']]['down'] && mem_value * 2 < param_stats_underutil_threshold_mem_value) {
+              mem_value = mem_value * 2
+              instance["newResourceType"] = ds_azure_instance_size_map[instance['newResourceType']]['down']
+              savingsMultiplier += 1
+            }
+          }
         }
 
         recommendationDetails = [
@@ -1188,7 +1235,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
         if (instance["newResourceType"] != null && instance["newResourceType"] != undefined) {
           if (instance['savings'] >= param_min_savings) {
-            underutil_total_savings += total_cost / 2
+            underutil_total_savings += total_cost / (2 * savingsMultiplier)
             underutil_list.push(instance)
           }
         }

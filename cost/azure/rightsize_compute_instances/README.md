@@ -49,6 +49,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
   - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
+- *Skip Instance Sizes* - Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 - *Power Off Type* - Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances. Only applicable when taking action against instances.
 
