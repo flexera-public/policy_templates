@@ -1,6 +1,6 @@
 # Changelog
 
-## v5.3.1
+## v5.3.0
 
 - Added support for downsizing multiple sizes where appropriate
 
