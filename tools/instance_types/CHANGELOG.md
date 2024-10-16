@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v2.3
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
