@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.4.2",
+  version: "5.5.0",
   provider: "AWS",
   service: "RDS",
   policy_set: "Rightsize Database Instances",
@@ -41,6 +41,15 @@ parameter "param_min_savings" do
   description "Minimum potential savings required to generate a recommendation."
   min_value 0
   default 0
+end
+
+parameter "param_downsize_multiple" do
+  type "string"
+  category "Policy Settings"
+  label "Skip Instance Sizes"
+  description "Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -1164,11 +1173,11 @@ EOS
 end
 
 datasource "ds_rds_nonidle_instances_with_metrics" do
-  run_script $js_rds_nonidle_instances_with_metrics, $ds_rds_nonidle_instances, $ds_cloudwatch_underutil_cpu_sorted, $ds_cloudwatch_underutil_mem_sorted, $ds_cloudwatch_underutil_netin_sorted, $ds_cloudwatch_underutil_netout_sorted, $ds_instance_costs_grouped, $ds_aws_instance_size_map
+  run_script $js_rds_nonidle_instances_with_metrics, $ds_rds_nonidle_instances, $ds_cloudwatch_underutil_cpu_sorted, $ds_cloudwatch_underutil_mem_sorted, $ds_cloudwatch_underutil_netin_sorted, $ds_cloudwatch_underutil_netout_sorted
 end
 
 script "js_rds_nonidle_instances_with_metrics", type: "javascript" do
-  parameters "ds_rds_nonidle_instances", "ds_cloudwatch_underutil_cpu_sorted", "ds_cloudwatch_underutil_mem_sorted", "ds_cloudwatch_underutil_netin_sorted", "ds_cloudwatch_underutil_netout_sorted", "ds_instance_costs_grouped", "ds_aws_instance_size_map"
+  parameters "ds_rds_nonidle_instances", "ds_cloudwatch_underutil_cpu_sorted", "ds_cloudwatch_underutil_mem_sorted", "ds_cloudwatch_underutil_netin_sorted", "ds_cloudwatch_underutil_netout_sorted"
   result "result"
   code <<-EOS
   // Merge original instance list with cloudwatch data into a single list
@@ -1176,134 +1185,133 @@ script "js_rds_nonidle_instances_with_metrics", type: "javascript" do
 
   _.each(ds_rds_nonidle_instances, function(instance) {
     region = instance['region']
-    id = instance['instanceId']
     cloudwatch_name = instance['name'].toLowerCase()
-    resourceType = instance['resourceType']
-    newResourceType = null
-
-    if (typeof(ds_aws_instance_size_map[resourceType]) == 'object') {
-      newResourceType = ds_aws_instance_size_map[resourceType]["down"]
-    }
 
     // Only proceed if the CloudWatch data actually has the region and instance id.
     // Otherwise, we have no usage data on the instance and thus dont include it in the results.
-    if (ds_cloudwatch_underutil_cpu_sorted[region] != undefined) {
-      if (ds_cloudwatch_underutil_cpu_sorted[region][cloudwatch_name] != undefined) {
-        instance_cpu_metrics = ds_cloudwatch_underutil_cpu_sorted[region][cloudwatch_name]
-        instance_mem_metrics = ds_cloudwatch_underutil_mem_sorted[region][cloudwatch_name]
-        instance_netin_metrics = ds_cloudwatch_underutil_netin_sorted[region][cloudwatch_name]
-        instance_netout_metrics = ds_cloudwatch_underutil_netout_sorted[region][cloudwatch_name]
+    if (ds_cloudwatch_underutil_cpu_sorted[region] && ds_cloudwatch_underutil_cpu_sorted[region][cloudwatch_name]) {
+      instance_cpu_metrics = ds_cloudwatch_underutil_cpu_sorted[region][cloudwatch_name]
+      instance_mem_metrics = ds_cloudwatch_underutil_mem_sorted[region][cloudwatch_name]
+      instance_netin_metrics = ds_cloudwatch_underutil_netin_sorted[region][cloudwatch_name]
+      instance_netout_metrics = ds_cloudwatch_underutil_netout_sorted[region][cloudwatch_name]
 
-        savings = 0.0
-
-        if (typeof(newResourceType) == 'string') {
-          cost_name = "db:" + instance['name'].toLowerCase()
-          cost = 0.0
-
-          if (typeof(ds_instance_costs_grouped[cost_name]) == 'number') {
-            cost = ds_instance_costs_grouped[cost_name]
-          }
-
-          cost_per_nfu = cost / ds_aws_instance_size_map[resourceType]['nfu']
-
-          new_cost = cost_per_nfu * ds_aws_instance_size_map[newResourceType]['nfu']
-          savings = cost - new_cost
-        }
-
-        // Create object we're going to return
-        merged_instance = {
-          instanceId: instance['instanceId'],
-          instanceArn: instance['instanceArn'],
-          resourceType: instance['resourceType'],
-          name: instance['name'],
-          status: instance['status'],
-          databaseEngine: instance['databaseEngine'],
-          engineVersion: instance['engineVersion'],
-          privateDnsName: instance['privateDnsName'],
-          region: instance['region'],
-          tags: instance['tags'],
-          availabilityZone: instance['availabilityZone'],
-          licenseModel: instance['licenseModel'],
-          processorFeatures: instance['processorFeatures'],
-          vcpus: instance['vcpus'],
-          savings: savings,
-          newResourceType: newResourceType
-        }
-
-        // Grab usage data for the instance if it is present.
-        // Note: We don't simply name them the same as Cloudwatch does because
-        // prior versions of this policy also didn't, and we want to ensure
-        // that exported incident data looks the same as it used to.
-        cpu_stats_list = [ "Average", "Minimum", "Maximum", "p99", "p95", "p90" ]
-
-        _.each(cpu_stats_list, function(stat) {
-          incident_statname = "cpu" + "_" + stat.toLowerCase()
-
-          merged_instance[incident_statname] = null
-
-          if (typeof(instance_cpu_metrics[stat]) == 'number') {
-            merged_instance[incident_statname] = Math.round(instance_cpu_metrics[stat] * 100) / 100
-          }
-        })
-
-        mem_stats_list = [ "Average", "Minimum", "Maximum" ]
-
-        _.each(mem_stats_list, function(stat) {
-          incident_statname = "mem" + "_" + stat.toLowerCase()
-
-          merged_instance[incident_statname] = null
-
-          if (typeof(instance_mem_metrics[stat]) == 'number') {
-            merged_instance[incident_statname] = Math.round(instance_mem_metrics[stat] / 1024 / 1024 * 100) / 100
-          }
-        })
-
-        netin_stats_list = [ "Average", "Minimum", "Maximum" ]
-
-        _.each(netin_stats_list, function(stat) {
-          incident_statname = "netin" + "_" + stat.toLowerCase()
-
-          merged_instance[incident_statname] = null
-
-          if (typeof(instance_netin_metrics[stat]) == 'number') {
-            merged_instance[incident_statname] = Math.round(instance_netin_metrics[stat] * 100) / 100
-          }
-        })
-
-        netout_stats_list = [ "Average", "Minimum", "Maximum" ]
-
-        _.each(netout_stats_list, function(stat) {
-          incident_statname = "netout" + "_" + stat.toLowerCase()
-
-          merged_instance[incident_statname] = null
-
-          if (typeof(instance_netout_metrics[stat]) == 'number') {
-            merged_instance[incident_statname] = Math.round(instance_netout_metrics[stat] * 100) / 100
-          }
-        })
-
-        // Send the instance information with the CloudWatch data into the final result.
-        // Also adds in the account ID and currency symbol since itll be needed for the incident.
-        result.push(merged_instance)
+      // Create object we're going to return
+      merged_instance = {
+        instanceId: instance['instanceId'],
+        instanceArn: instance['instanceArn'],
+        resourceType: instance['resourceType'],
+        name: instance['name'],
+        status: instance['status'],
+        databaseEngine: instance['databaseEngine'],
+        engineVersion: instance['engineVersion'],
+        privateDnsName: instance['privateDnsName'],
+        region: instance['region'],
+        tags: instance['tags'],
+        availabilityZone: instance['availabilityZone'],
+        licenseModel: instance['licenseModel'],
+        processorFeatures: instance['processorFeatures'],
+        vcpus: instance['vcpus']
       }
+
+      // Grab usage data for the instance if it is present.
+      // Note: We don't simply name them the same as Cloudwatch does because
+      // prior versions of this policy also didn't, and we want to ensure
+      // that exported incident data looks the same as it used to.
+      cpu_stats_list = [ "Average", "Minimum", "Maximum", "p99", "p95", "p90" ]
+
+      _.each(cpu_stats_list, function(stat) {
+        incident_statname = "cpu" + "_" + stat.toLowerCase()
+
+        merged_instance[incident_statname] = null
+
+        if (typeof(instance_cpu_metrics[stat]) == 'number') {
+          merged_instance[incident_statname] = Math.round(instance_cpu_metrics[stat] * 100) / 100
+        }
+      })
+
+      mem_stats_list = [ "Average", "Minimum", "Maximum" ]
+
+      _.each(mem_stats_list, function(stat) {
+        incident_statname = "mem" + "_" + stat.toLowerCase()
+
+        merged_instance[incident_statname] = null
+
+        if (typeof(instance_mem_metrics[stat]) == 'number') {
+          merged_instance[incident_statname] = Math.round(instance_mem_metrics[stat] / 1024 / 1024 * 100) / 100
+        }
+      })
+
+      netin_stats_list = [ "Average", "Minimum", "Maximum" ]
+
+      _.each(netin_stats_list, function(stat) {
+        incident_statname = "netin" + "_" + stat.toLowerCase()
+
+        merged_instance[incident_statname] = null
+
+        if (typeof(instance_netin_metrics[stat]) == 'number') {
+          merged_instance[incident_statname] = Math.round(instance_netin_metrics[stat] * 100) / 100
+        }
+      })
+
+      netout_stats_list = [ "Average", "Minimum", "Maximum" ]
+
+      _.each(netout_stats_list, function(stat) {
+        incident_statname = "netout" + "_" + stat.toLowerCase()
+
+        merged_instance[incident_statname] = null
+
+        if (typeof(instance_netout_metrics[stat]) == 'number') {
+          merged_instance[incident_statname] = Math.round(instance_netout_metrics[stat] * 100) / 100
+        }
+      })
+
+      // Send the instance information with the CloudWatch data into the final result.
+      // Also adds in the account ID and currency symbol since itll be needed for the incident.
+      result.push(merged_instance)
     }
   })
 EOS
 end
 
 datasource "ds_rds_underutil_instances" do
-  run_script $js_rds_underutil_instances, $ds_rds_nonidle_instances_with_metrics, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value
+  run_script $js_rds_underutil_instances, $ds_rds_nonidle_instances_with_metrics, $ds_aws_instance_size_map, $ds_instance_costs_grouped, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value, $param_downsize_multiple
 end
 
 script "js_rds_underutil_instances", type: "javascript" do
-  parameters "ds_rds_nonidle_instances_with_metrics", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value"
+  parameters "ds_rds_nonidle_instances_with_metrics", "ds_aws_instance_size_map", "ds_instance_costs_grouped", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value", "param_downsize_multiple"
   result "result"
   code <<-'EOS'
-  // Filter above list to just underutilized instances
-  result = _.filter(ds_rds_nonidle_instances_with_metrics, function(instance) {
+  result = []
+
+  _.each(ds_rds_nonidle_instances_with_metrics, function(instance) {
     cpu_value = instance['cpu_' + param_stats_threshold.toLowerCase()]
-    cpu_undertilized = cpu_value < param_stats_underutil_threshold_cpu_value || cpu_value == null
-    return cpu_undertilized && typeof(instance['newResourceType']) == 'string'
+    if (typeof(cpu_value) != 'number') { cpu_value = 0 }
+
+    if (cpu_value < param_stats_underutil_threshold_cpu_value && ds_aws_instance_size_map[instance["resourceType"]]["down"]) {
+      newResourceType = ds_aws_instance_size_map[instance["resourceType"]]["down"]
+
+      if (param_downsize_multiple == "Yes") {
+        while (ds_aws_instance_size_map[newResourceType]["down"] && cpu_value * 2 < param_stats_underutil_threshold_cpu_value) {
+          cpu_value = cpu_value * 2
+          newResourceType = ds_aws_instance_size_map[newResourceType]['down']
+        }
+      }
+
+      cost_name = "db:" + instance['name'].toLowerCase()
+      savings = 0.0
+
+      cost = 0.0
+      if (typeof(ds_instance_costs_grouped[cost_name]) == 'number') { cost = ds_instance_costs_grouped[cost_name] }
+
+      cost_per_nfu = cost / ds_aws_instance_size_map[instance["resourceType"]]['nfu']
+
+      new_cost = cost_per_nfu * ds_aws_instance_size_map[newResourceType]['nfu']
+      savings = cost - new_cost
+
+      new_instance = { newResourceType: newResourceType, savings: savings }
+      _.each(_.keys(instance), function(key) { new_instance[key] = instance[key] })
+      result.push(new_instance)
+    }
   })
 EOS
 end
