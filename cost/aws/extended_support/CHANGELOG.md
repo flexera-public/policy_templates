@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v0.2
 
 - Modified policy to correctly report cost as potential savings

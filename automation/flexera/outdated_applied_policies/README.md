@@ -68,4 +68,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not incur any cloud costs. Cloud costs may be incurred by the applied policies that this policy reports on and updates. Please consult the README of each policy for more information.
+This policy template does not incur any cloud costs. Cloud costs may be incurred by the applied policies that this policy reports on and updates. Please consult the README of each policy for more information.
