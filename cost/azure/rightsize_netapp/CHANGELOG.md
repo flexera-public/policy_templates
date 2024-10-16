@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.2
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v2.0.1
 
 - Fixed issue affecting incidents in meta parent policy. Base policy functionality is unchanged.

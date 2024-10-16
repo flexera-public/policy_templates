@@ -4,7 +4,7 @@
 
 This Policy finds Azure snapshots older than the specified number of days and raises an incident with a list of said snapshots. Optionally, it will delete them.
 
-## Functional Details
+## How It Works
 
 The policy makes use of the Azure Resource Manager API to obtain a list of snapshots and their ages in order to produce a list of recommendations.
 
@@ -22,8 +22,8 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses* - A list of email addresses to notify
-- *Azure Endpoint* - Azure Endpoint to access resources
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
 - *Snapshot Age Threshold* - The number of days since the snapshot was created to consider a snapshot old.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Allow/Deny Subscriptions* - Allow or Deny entered Subscriptions to filter results.
@@ -57,7 +57,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `Microsoft.Compute/snapshots/read`
   - `Microsoft.Compute/snapshots/delete`*
 
-\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
@@ -70,4 +70,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This policy template does not incur any cloud costs.
