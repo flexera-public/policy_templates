@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.0
+
+- Added batch processing for large datasources.
+
 ## v4.1.0
 
 - Updated Azure API versions to provide more up to date and accurate results
