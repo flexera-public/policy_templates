@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.2.1
+
+- Added `Service` field to incident table
+- Minor code improvements to conform with current standards.
+
 ## v4.2
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.
