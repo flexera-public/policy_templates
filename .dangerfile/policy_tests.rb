@@ -1282,13 +1282,14 @@ def policy_bad_comma_spacing?(file, file_lines)
 
     # Look for stuff quotations and remove those
     # This is to reduce false positives
-    parts = line.split("\"") if line.include?("\"") && !line.include?("'")
-    parts = line.split("'") if !line.include?("\"") && line.include?("'")
+    parts = line.split("\"") if line.include?("\"") && !line.include?("'") && !line.start_with?("\"")
+    parts = line.split("'") if !line.include?("\"") && line.include?("'") && !line.start_with?("'")
 
-    if parts.length > 2 && parts.length % 2 == 1
+    if parts.length > 2
       test_parts = []
       parts.each_with_index { |part, index| test_parts << part if index % 2 == 0 }
       test_line = test_parts.join("'")
+      test_line += "'" if line.end_with?("'") || line.end_with?("\"")
     end
 
     if test_line.include?(",") && !test_line.include?("allowed_pattern") && !test_line.include?('= ","') && !test_line.include?("(',')") && !test_line.include?('(",")') && !test_line.include?("jq(") && !test_line.include?("/,/")
