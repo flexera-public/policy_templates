@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.4.2
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v5.4.1
 
 - Modified internal template name for ARN incident field to match other policy templates. Functionality unchanged.

@@ -4,11 +4,11 @@
 
 This policy is no longer being updated. The [Google Rightsize Cloud SQL Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_recommendations/) policy should be used instead.
 
-## What it does
+## What It Does
 
 This Policy Template checks Google Cloud SQL instances based on provided CPU threshold over a 30 day average and resizes them after approval.
 
-## Functional Details
+## How It Works
 
 - This policy identifies all Google CloudSQL instances reporting performance metrics to stackdriver whose CPU utilization is below the thresholds set in the **Average used CPU % - Downsize Threshold** and **Average used CPU % - Upsize Threshold** parameters.
 - If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
@@ -56,4 +56,4 @@ Required permissions in the provider:
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.
