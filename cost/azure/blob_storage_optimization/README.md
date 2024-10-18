@@ -1,5 +1,9 @@
 # Azure Blob Storage Optimization
 
+## Deprecated
+
+This policy is no longer being updated. Due to the scales involved, per-object analysis and recommendations are not useful in most situations. Instead, [lifecycle rules](https://learn.microsoft.com/en-us/azure/storage/blobs/lifecycle-management-policy-configure?tabs=azure-portal) should be utilized to manage object storage spend. The [Azure Storage Accounts without Lifecycle Management Policies](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/storage_account_lifecycle_management) policy template can be used to identify storage accounts that do not have lifecycle management configured.
+
 ## What It Does
 
 This policy checks Azure storage containers for blobs to move to the 'Cool' or 'Archive' storage tiers based on blob age. The user can opt to either delete the blobs or move them to the recommended storage tier.
