@@ -265,6 +265,7 @@ These templates can generate savings estimates for your environment.
   - [AWS Old Snapshots](./cost/aws/old_snapshots)
   - [AWS Oversized S3 Buckets](./cost/aws/s3_bucket_size)
   - [AWS S3 Buckets Without Intelligent Tiering](./cost/aws/s3_storage_policy)
+  - [AWS S3 Buckets Without Lifecycle Configuration](./cost/aws/s3_lifecycle)
   - [Turbonomic Delete Unattached Volumes Recommendations AWS](./cost/turbonomics/delete_unattached_volumes/aws)
 
 - Usage Discount
@@ -433,6 +434,7 @@ These templates can generate savings estimates for your environment.
 
 - Storage
 
+  - [Google Cloud Storage Without Lifecycle Configuration](./cost/google/cloud_storage_lifecycle)
   - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
   - [Google Object Storage Optimization](./cost/google/object_storage_optimization)
   - [Google Old Snapshots](./cost/google/old_snapshots)
@@ -713,13 +715,13 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 134
+  Cost: 136
   Operational: 30
   SaaS Management: 11
   Security: 74
 :optimization_count: 71
 :policy_sets:
-  '': 46
+  '': 48
   Allocate VMs: 3
   Automation: 2
   Autoscaling: 1
@@ -784,14 +786,14 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 7
   Usage Report: 10
 :providers:
-  AWS: 102
+  AWS: 103
   Azure: 104
   Azure China: 1
   Flexera: 39
   Flexera Optima: 1
   GCE: 2
   GitHub: 7
-  Google: 21
+  Google: 22
   Kubecost: 2
   Microsoft: 1
   Okta: 1
@@ -835,11 +837,11 @@ These templates can generate savings estimates for your environment.
   SQL: 20
   SaaS Manager: 8
   Security: 3
-  Storage: 28
+  Storage: 30
   Storage Accounts: 2
   Tags: 3
   Usage Discount: 6
-:total_count: 283
+:total_count: 285
 -->
 <!-- End Policy Template Stats -->
 
