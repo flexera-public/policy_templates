@@ -862,6 +862,7 @@ Some policies require external data sets to function.  These data sets are store
 - [Google Instance Types](./data/google/instance_types.json)
 - [Currency Reference](./data/currency/currency_reference.json)
 - [Azure SQL Service Tier Types](./data/azure/sql_service_tier_types.json)
+- [Azure SQL Managed Instance Tier Types](./data/azure/sqlmi_tier_types.json)
 - [TZ database Timezone List](./data/tz_database/timezones_list.json)
 
 ## Instructions to upload policy templates to Flexera CMP Policies
