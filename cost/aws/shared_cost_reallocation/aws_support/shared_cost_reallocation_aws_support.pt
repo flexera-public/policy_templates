@@ -45,6 +45,14 @@ parameter "param_period_specific_month" do
   constraint_description "Specific Month parameter must be in the format of YYYY-MM"
 end
 
+parameter "param_reallocation_granularity" do
+  type "string"
+  label "Reallocated Cost Granularity"
+  description "Reallocated Cost Granularity configures the granularity for the new line items. Typically \"Day\" is preferred.  For some extremely large environments, you may need to change this to 'Month' to prevent Policy Engine timeouts."
+  default "Day"
+  allowed_values "Day", "Month"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -133,8 +141,8 @@ script "js_ds_bill_connect", type: "javascript" do
       "integrationId": "cbi-oi-optima",
       "name": "Shared Costs: AWS Support",
       "params": {
-        "displayName": "Amazon Web Services",
-        "vendorName": "Amazon Web Services"
+        "displayName": "AWS",
+        "vendorName": "AWS"
       }
     },
     headers: {
@@ -146,26 +154,25 @@ script "js_ds_bill_connect", type: "javascript" do
   existing_bc = _.find(ds_existing_bill_connects, function(bc) {
     return bc.id == param_bill_connect_id
   })
-  // If we did, override the POST with a GET instead
+  // If we did, override the POST with a PATCH instead
+  // PATCH used instead of GET to mitigate/prevent drift with the Bill Connect configuration from what we expect
   if (_.isObject(existing_bc)) {
-    request["verb"] = "GET"
+    request["verb"] = "PATCH"
     request["path"] = request["path"] + "/" + param_bill_connect_id
-    request["body_fields"] = {}
   }
 
 EOS
 end
 
 datasource "ds_dates" do
-  run_script $js_dates, $param_period, $param_period_specific_month
+  run_script $js_dates, $param_period, $param_period_specific_month, $param_reallocation_granularity
 end
 
 script "js_dates", type: "javascript" do
-  parameters "param_period", "param_period_specific_month"
+  parameters "param_period", "param_period_specific_month", "param_reallocation_granularity"
   result "result"
   code <<-EOS
     var today = new Date()
-    var result = {}
 
     // Switch or case statement in javascript for param_period values
     switch(param_period) {
@@ -193,16 +200,26 @@ script "js_dates", type: "javascript" do
     var numdays = new Date(end_date.split("-")[0], end_date.split("-")[1] - 1, 0).getDate()
 
 
-    result = {
+    var result = {
       // Daily prefered to prevent issue when reconciling costs (would introduce diff looking at daily cost vs monthly cost)
-      //start_date: start_date,
-      //end_date: end_date,
-      //granularity: "day",
-      start_date: start_date.split('-')[0] + "-" + start_date.split('-')[1],
-      end_date: end_date.split('-')[0] + "-" + end_date.split('-')[1],
-      granularity: "month",
+      start_date: start_date,
+      end_date: end_date,
+      granularity: "day",
       period: period, // YYYY-MM
       numdays: numdays,
+    }
+
+    // Override if granularity is configured to Month
+    if (param_reallocation_granularity == "Month") {
+      result["granularity"] = "month",
+      // Parse just the YYYY-MM portion of the start_date and end_date
+      result["start_date"] = start_date.split('-')[0] + "-" + start_date.split('-')[1],
+      result["end_date"] = end_date.split('-')[0] + "-" + end_date.split('-')[1],
+      // If granularity is month, we can summarize the costs
+      // This will group everything by the dimensions specified and provide only 1 timestamp (the start_at date)
+      // This is OK because we only pull one month at a time so summarizing that 1 month period is fine
+      // Helps reduce the number of line items we have to process, and total policy runtime
+      result["summarized"] = "true"
     }
 EOS
 end
@@ -381,7 +398,7 @@ end
 
 datasource "ds_shared_cost" do
   request do
-    run_script $js_shared_cost, $ds_billing_centers, $ds_dates, $ds_bill_connect, rs_org_id, rs_optima_host
+    run_script $js_shared_cost, $ds_billing_centers, $ds_dates, $param_bill_connect_id, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -398,7 +415,7 @@ datasource "ds_shared_cost" do
 end
 
 script "js_shared_cost", type: "javascript" do
-  parameters "ds_billing_centers", "ds_dates", "ds_bill_connect", "rs_org_id", "rs_optima_host"
+  parameters "ds_billing_centers", "ds_dates", "param_bill_connect_id", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   // Get all billing center IDs from top-level billing centers
@@ -470,7 +487,7 @@ script "js_shared_cost", type: "javascript" do
           "expression": {
             "dimension":"bill_source",
             "type":"equal",
-            "value": ds_bill_connect.id
+            "value": param_bill_connect_id
           }
         },
         // In scope costs are only AWS Support costs
@@ -514,6 +531,14 @@ script "js_shared_cost", type: "javascript" do
     "start_at": ds_dates['start_date']
   }
 
+  // If granularity is month, summarize the costs
+  // This will group everything by the dimensions specified and provide only 1 timestamp (the start_at date)
+  // This is OK because we only pull one month at a time so summarizing that 1 month period is fine
+  // Helps reduce the number of line items we have to process, and total policy runtime
+  if (payload.granularity == "month") {
+    payload.summarized = true
+  }
+
   var request = {
     auth: "auth_flexera",
     host: rs_optima_host,
@@ -529,7 +554,7 @@ end
 
 datasource "ds_other_cost" do
   request do
-    run_script $js_other_cost, $ds_shared_cost, $ds_billing_centers, $ds_dates, $ds_tag_dimensions_used_in_rbd_rules, $ds_bill_connect, rs_org_id, rs_optima_host
+    run_script $js_other_cost, $ds_shared_cost, $ds_billing_centers, $ds_dates, $ds_tag_dimensions_used_in_rbd_rules, $param_bill_connect_id, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -546,7 +571,7 @@ datasource "ds_other_cost" do
 end
 
 script "js_other_cost", type: "javascript" do
-  parameters "ds_shared_cost", "ds_billing_centers", "ds_dates", "ds_tag_dimensions_used_in_rbd_rules", "ds_bill_connect", "rs_org_id", "rs_optima_host"
+  parameters "ds_shared_cost", "ds_billing_centers", "ds_dates", "ds_tag_dimensions_used_in_rbd_rules", "param_bill_connect_id", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   // Get all billing center IDs from top-level billing centers
@@ -604,7 +629,7 @@ script "js_other_cost", type: "javascript" do
         {
           "type": "not",
           "expression": {
-            "type":"equal", "dimension":"bill_source", "value": ds_bill_connect.id
+            "type":"equal", "dimension":"bill_source", "value": param_bill_connect_id
           }
         },
         // Exclude costs from AWS Master Payers
@@ -653,6 +678,14 @@ script "js_other_cost", type: "javascript" do
     ],
     "end_at": ds_dates['end_date'],
     "start_at": ds_dates['start_date']
+  }
+
+  // If granularity is month, summarize the costs
+  // This will group everything by the dimensions specified and provide only 1 timestamp (the start_at date)
+  // This is OK because we only pull one month at a time so summarizing that 1 month period is fine
+  // Helps reduce the number of line items we have to process, and total policy runtime
+  if (payload.granularity == "month") {
+    payload.summarized = true
   }
 
   var request = {
@@ -1067,12 +1100,12 @@ end
 
 datasource "ds_cbi_create_bill_upload" do
   request do
-    run_script $js_cbi_create_bill_upload, $ds_dates, $ds_bill_connect, rs_org_id, rs_optima_host
+    run_script $js_cbi_create_bill_upload, $ds_dates, $param_bill_connect_id, rs_org_id, rs_optima_host
   end
 end
 
 script "js_cbi_create_bill_upload", type: "javascript" do
-  parameters "ds_dates", "ds_bill_connect", "rs_org_id", "rs_optima_host"
+  parameters "ds_dates", "param_bill_connect_id", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
     var request = {
@@ -1081,7 +1114,7 @@ script "js_cbi_create_bill_upload", type: "javascript" do
       host: rs_optima_host,
       path: "/optima/orgs/" + rs_org_id + "/billUploads",
       body_fields: {
-        "billConnectId": ds_bill_connect.id,
+        "billConnectId": param_bill_connect_id,
         "billingPeriod": ds_dates['period'],
       },
       headers: {
