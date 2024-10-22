@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-## What it does
+## What It Does
 
 This Policy Template will create a list old snapshots in the cloud account. The age of snapshots to list is provided in the *Number of days old snapshot to delete* parameter.
 
@@ -42,4 +42,4 @@ This policy requires permissions to access RightScale resources (clouds, volumes
 
 ### Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This policy template does not incur any cloud costs.

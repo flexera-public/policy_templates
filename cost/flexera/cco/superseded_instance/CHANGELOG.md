@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.5.2
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v3.5.1
 
 - Added `deprecated` field to policy metadata. Functionality is unchanged.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v2.0.0
 
 - Updated policy to use internal Flexera API for generating charts. Policy functionality is unchanged.

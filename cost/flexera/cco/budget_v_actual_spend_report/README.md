@@ -30,11 +30,11 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 - Flexera
 
-## Functional Details
+## How It Works
 
 - Chart templates are updated for improved configuration adaptability.
 - Various minor enhancements and bug fixes contribute to improved stability and performance.
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.
