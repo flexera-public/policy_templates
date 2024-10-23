@@ -8,11 +8,48 @@ Billing Centers are required for granular access to cost data in Flexera and thi
 
 Even without a requirement for granular access, the hierarchy view approach Billing Centers uses can also help an application owner find their costs and usage using a familiar hierarchy.
 
-## Functional Details
+## How It Works
 
 - The policy leverages the specified dimensions to create a hierarchical billing center structure.
 - Users can specify a list of dimensions to be used for generating the billing center structure.
 - An optional suffix can be appended to the billing center names to designate the level, which is useful for deeply nested billing centers.
+
+### Example Scenario
+
+Consider a scenario where the default `Dimension List` parameter value is used: "Vendor" and "Cloud Vendor Account Name". The policy will generate a hierarchical billing center structure based on these dimensions. Here are the vendor values and some example cloud account names:
+
+- **Vendor Values**: "AWS", "Azure", "Google", "Oracle"
+- **Cloud Account Names**: "project-alpha", "project-beta", "project-gamma", "project-delta", "project-epsilon"
+
+The resulting hierarchy would look like this:
+
+```
+├── AWS
+|   |
+|   ├── aws-account1
+|   ├── aws-account2
+|   └── aws-account3
+|
+├── Azure
+|   |
+|   ├── azure-sub-A
+|   ├── azure-sub-B
+|   └── azure-sub-C
+|
+├── Google
+|   |
+|   ├── gcp-project-alpha
+|   ├── gcp-project-beta
+|   └── gcp-project-gamma
+|
+└── Oracle
+    |
+    ├── oci-account1
+    ├── oci-account2
+    └── oci-account3
+```
+
+In this example, the top level of the hierarchy is the "Vendor" dimension, and each vendor has several cloud accounts under it, represented by the "Cloud Vendor Account Name" dimension. This structure would work well if you wanted to grant access to costs at a Cloud Vendor or Cloud Vendor Account Scope.
 
 ## Input Parameters
 
