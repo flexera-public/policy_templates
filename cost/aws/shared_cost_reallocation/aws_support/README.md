@@ -4,7 +4,7 @@
 
 This policy template reallocates AWS Support costs (`OCBPremiumSupport`, `AWSEnterpriseSupport`, `AWSSupportBusiness`, `AWSSupportEnterprise`) to the AWS Linked Accounts within the AWS Organization.  Costs are allocated to each AWS Linked Account based on the percentage of total that account consumed in the bill period.
 
-To reallocate the costs, the policy template uses Flexera's "Common Bill Ingest" (CBI) capability to negate the original cost allocated to the AWS Master Payer Account with negative cost line items, and write the reallocation portional costs as new line items.
+To reallocate the costs, the policy template uses Flexera's "Common Bill Ingest" (CBI) capability to negate the original cost allocated to the AWS Master Payer Account with negative cost line items, and write the reallocated portions of costs as new line items.
 
 For example, if you are currently paying $15,000 per month for AWS Enterprise Support, those costs are being charged to your AWS Master Account (example ID `123456789012`).  This policy template would push new line items in, first the negative cost line item for -$15,000 allocated to `123456789012`, and in addition N number of line items that sum up to positive +$15,000.
 
@@ -39,7 +39,7 @@ The reallocated costs would be:
 ### Positive Business Outcomes
 
 - **Accurate Cost Allocation**: Ensures that each AWS Linked Account is charged accurately based on their actual usage, promoting accountability and cost transparency.
-- **Simplified Billing**: Reduces the complexity of internal chargebacks and financial reporting by automating the reallocation process.
+- **Simplified Billing**: Reduces the complexity of internal chargeback and financial reporting by automating the reallocation process.
 - **Cost Optimization**: Encourages AWS Linked Accounts to optimize their usage and reduce unnecessary costs, as they are directly accountable for their share of the AWS Support costs.
 
 ## Input Parameters
