@@ -16,37 +16,47 @@ Even without a requirement for granular access, the hierarchy view approach Bill
 
 ### Example Scenario
 
-Consider a scenario where the default `Dimension List` parameter value is used: "Vendor" and "Cloud Vendor Account Name". The policy will generate a hierarchical billing center structure based on these dimensions. Here are the vendor values and some example cloud account names:
+Consider a scenario where the default `Dimension List` parameter value is used: "Vendor" and "Cloud Vendor Account Name". The policy will generate a hierarchical billing center structure based on these dimensions. Here are the vendor values and some example cloud accounts:
 
-- **Vendor Values**: "AWS", "Azure", "Google", "Oracle"
-- **Cloud Account Names**: "project-alpha", "project-beta", "project-gamma", "project-delta", "project-epsilon"
+Vendor: AWS
+AWS Account Names: aws-account1, aws-account2, aws-account3, etc..
 
-The resulting hierarchy would look like this:
+Vendor: Azure
+Azure Subscription Names: azure-sub-A, azure-sub-B, azure-sub-C, etc..
+
+Vendor: Google
+GCP Project Names: gcp-project-alpha, gcp-project-beta, etc..
+
+Vendor: Oracle
+Oracle Account Names: oci-account1, oci-account2, etc..
+
+The resulting Billing Centers hierarchy would look like this:
 
 ```
 ├── AWS
 |   |
 |   ├── aws-account1
 |   ├── aws-account2
-|   └── aws-account3
+|   ├── ...
+|   └── aws-accountN
 |
 ├── Azure
 |   |
 |   ├── azure-sub-A
 |   ├── azure-sub-B
-|   └── azure-sub-C
+|   └── ...
 |
-├── Google
+└── Google
 |   |
 |   ├── gcp-project-alpha
 |   ├── gcp-project-beta
-|   └── gcp-project-gamma
+|   └── ...
 |
 └── Oracle
     |
     ├── oci-account1
     ├── oci-account2
-    └── oci-account3
+    └── ...
 ```
 
 In this example, the top level of the hierarchy is the "Vendor" dimension, and each vendor has several cloud accounts under it, represented by the "Cloud Vendor Account Name" dimension. This structure would work well if you wanted to grant access to costs at a Cloud Vendor or Cloud Vendor Account Scope.
