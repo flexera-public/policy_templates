@@ -18,8 +18,6 @@ Even without a requirement for granular access, the hierarchy view approach Bill
 
 Consider a scenario where the default `Dimension List` parameter value is used: "Vendor" and "Cloud Vendor Account Name". The policy will generate a hierarchical billing center structure based on these dimensions. Here are the vendor values and some example cloud accounts:
 
-
-
 |Vendor|AWS|Azure|Google|Oracle|
 |-|-|-|-|-|
 |**Cloud Vendor Account Names**|*aws-account1*, *aws-account2*, *aws-account3*, etc..|*azure-sub-A*, *azure-sub-B*, *azure-sub-C*, etc..|*gcp-project-alpha*, *gcp-project-beta*, etc..|*oci-account1*, *oci-account2*, etc..|
