@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.3.3
+
+- Fixed issue where Currency Conversion messaging in policy incident would show incorrectly. Functionality unchanged.
+
 ## v6.3.2
 
 - Minor code improvements to conform with current standards. Functionality unchanged.
