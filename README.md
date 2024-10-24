@@ -506,6 +506,8 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera
 
+- [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
+
 - Automation
 
   - [Applied Policy Template Errors](./operational/flexera/automation/applied_policy_error_notification)
@@ -716,12 +718,12 @@ These templates can generate savings estimates for your environment.
 :categories:
   Compliance: 34
   Cost: 136
-  Operational: 30
+  Operational: 31
   SaaS Management: 11
   Security: 74
 :optimization_count: 71
 :policy_sets:
-  '': 48
+  '': 49
   Allocate VMs: 3
   Automation: 2
   Autoscaling: 1
@@ -789,7 +791,7 @@ These templates can generate savings estimates for your environment.
   AWS: 103
   Azure: 104
   Azure China: 1
-  Flexera: 39
+  Flexera: 40
   Flexera Optima: 1
   GCE: 2
   GitHub: 7
@@ -800,7 +802,7 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 5
+  '': 6
   AKS: 2
   All: 6
   App Service: 1
@@ -841,7 +843,7 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 2
   Tags: 3
   Usage Discount: 6
-:total_count: 285
+:total_count: 286
 -->
 <!-- End Policy Template Stats -->
 
