@@ -265,6 +265,7 @@ These templates can generate savings estimates for your environment.
   - [AWS Old Snapshots](./cost/aws/old_snapshots)
   - [AWS Oversized S3 Buckets](./cost/aws/s3_bucket_size)
   - [AWS S3 Buckets Without Intelligent Tiering](./cost/aws/s3_storage_policy)
+  - [AWS S3 Buckets Without Lifecycle Configuration](./cost/aws/s3_lifecycle)
   - [Turbonomic Delete Unattached Volumes Recommendations AWS](./cost/turbonomics/delete_unattached_volumes/aws)
 
 - Usage Discount
@@ -433,6 +434,7 @@ These templates can generate savings estimates for your environment.
 
 - Storage
 
+  - [Google Cloud Storage Without Lifecycle Configuration](./cost/google/cloud_storage_lifecycle)
   - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
   - [Google Object Storage Optimization](./cost/google/object_storage_optimization)
   - [Google Old Snapshots](./cost/google/old_snapshots)
@@ -503,6 +505,8 @@ These templates can generate savings estimates for your environment.
   - [Azure Tag Cardinality Report](./operational/azure/tag_cardinality)
 
 #### Flexera
+
+- [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
 
 - Automation
 
@@ -713,13 +717,13 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 134
-  Operational: 30
+  Cost: 136
+  Operational: 31
   SaaS Management: 11
   Security: 74
 :optimization_count: 71
 :policy_sets:
-  '': 46
+  '': 49
   Allocate VMs: 3
   Automation: 2
   Autoscaling: 1
@@ -784,21 +788,21 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 7
   Usage Report: 10
 :providers:
-  AWS: 102
+  AWS: 103
   Azure: 104
   Azure China: 1
-  Flexera: 39
+  Flexera: 40
   Flexera Optima: 1
   GCE: 2
   GitHub: 7
-  Google: 21
+  Google: 22
   Kubecost: 2
   Microsoft: 1
   Okta: 1
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 5
+  '': 6
   AKS: 2
   All: 6
   App Service: 1
@@ -835,11 +839,11 @@ These templates can generate savings estimates for your environment.
   SQL: 20
   SaaS Manager: 8
   Security: 3
-  Storage: 28
+  Storage: 30
   Storage Accounts: 2
   Tags: 3
   Usage Discount: 6
-:total_count: 283
+:total_count: 286
 -->
 <!-- End Policy Template Stats -->
 
@@ -860,6 +864,7 @@ Some policies require external data sets to function.  These data sets are store
 - [Google Instance Types](./data/google/instance_types.json)
 - [Currency Reference](./data/currency/currency_reference.json)
 - [Azure SQL Service Tier Types](./data/azure/sql_service_tier_types.json)
+- [Azure SQL Managed Instance Tier Types](./data/azure/sqlmi_tier_types.json)
 - [TZ database Timezone List](./data/tz_database/timezones_list.json)
 
 ## Instructions to upload policy templates to Flexera CMP Policies
