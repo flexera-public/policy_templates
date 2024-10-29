@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.4.2",
+  version: "5.5.0",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Database Instances",
@@ -149,6 +149,15 @@ parameter "param_stats_lookback" do
   min_value 1
   max_value 90
   default 30
+end
+
+parameter "param_downsize_multiple" do
+  type "string"
+  category "Policy Settings"
+  label "Skip Instance Sizes"
+  description "Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_automatic_action" do
@@ -657,11 +666,11 @@ datasource "ds_azure_sql_resize_map" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $ds_azure_sql_resize_map, $ds_applied_policy, $param_stats_underutil_threshold_cpu_value, $param_stats_lookback, $param_unused_or_underutilized, $param_stats_threshold
+  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $ds_azure_sql_resize_map, $ds_applied_policy, $param_stats_underutil_threshold_cpu_value, $param_stats_lookback, $param_unused_or_underutilized, $param_stats_threshold, $param_downsize_multiple
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_azure_sql_database_metrics", "ds_azure_sql_resize_map", "ds_applied_policy", "param_stats_underutil_threshold_cpu_value", "param_stats_lookback", "param_unused_or_underutilized", "param_stats_threshold"
+  parameters "ds_azure_sql_database_metrics", "ds_azure_sql_resize_map", "ds_applied_policy", "param_stats_underutil_threshold_cpu_value", "param_stats_lookback", "param_unused_or_underutilized", "param_stats_threshold", "param_downsize_multiple"
   result "result"
   code <<-EOS
   // Function to calculate percentiles from metrics
@@ -803,6 +812,16 @@ script "js_merged_metrics", type: "javascript" do
             if (ds_azure_sql_resize_map[tier][type] != undefined) {
               if (typeof(ds_azure_sql_resize_map[tier][type]['down']) == 'string') {
                 instance['newResourceType'] = ds_azure_sql_resize_map[tier][type]['down']
+
+                if (param_downsize_multiple == "Yes") {
+                  type = instance['sku']['name'] + '_' + instance['newResourceType']
+
+                  while (typeof(ds_azure_sql_resize_map[tier][type]['down']) == 'string' && cpu_test_value * 2 <= param_stats_underutil_threshold_cpu_value) {
+                    cpu_test_value = cpu_test_value * 2
+                    instance['newResourceType'] = ds_azure_sql_resize_map[tier][type]['down']
+                    type = instance['sku']['name'] + '_' + instance['newResourceType']
+                  }
+                }
 
                 instance["recommendationDetails"] = [
                   "Downsize Azure SQL database ", instance["name"], " ",
