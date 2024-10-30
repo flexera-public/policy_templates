@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.0
+
+- Added support for downsizing multiple sizes where appropriate
+
 ## v0.2.0
 
 - Fixed issue where policy template would sometimes recommend invalid sizes for SQL Managed Instances

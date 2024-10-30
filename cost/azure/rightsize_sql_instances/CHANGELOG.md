@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.5.0
+
+- Added support for downsizing multiple sizes where appropriate
+
 ## v5.4.2
 
 - Minor code improvements to conform with current standards. Functionality unchanged.

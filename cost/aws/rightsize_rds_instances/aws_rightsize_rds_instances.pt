@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.5.0",
+  version: "5.5.1",
   provider: "AWS",
   service: "RDS",
   policy_set: "Rightsize Database Instances",
@@ -659,77 +659,79 @@ script "js_rds_instances", type: "javascript" do
   result = []
 
   _.each(ds_rds_instances_set, function(instance) {
-    id = instance['instanceId'].toLowerCase()
+    if (instance['resourceType'] != 'db.serverless') {
+      id = instance['instanceId'].toLowerCase()
 
-    resource_tags = {}
-    if (tag_object[id] != undefined) { resource_tags = tag_object[id] }
+      resource_tags = {}
+      if (tag_object[id] != undefined) { resource_tags = tag_object[id] }
 
-    // Store a list of found tags
-    found_tags = []
+      // Store a list of found tags
+      found_tags = []
 
-    _.each(comparators, function(comparator) {
-      comparison = comparator['comparison']
-      value = comparator['value']
-      string = comparator['string']
-      resource_tag = resource_tags[comparator['key']]
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
 
-      if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
-      if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
-      if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
 
-      if (comparison == '=~') {
-        if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
-      }
-
-      if (comparison == '!~') {
-        if (resource_tag == undefined) { found_tags.push(string) }
-        if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
-      }
-    })
-
-    all_tags_found = found_tags.length == comparators.length
-    any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
-
-    if ((!any_tags_found && !all_tags_found) || param_exclusion_tags.length == 0) {
-      tag_string = []
-
-      _.each(_.keys(resource_tags), function(key) {
-        tag_string.push(key + '=' + resource_tags[key])
-      })
-
-      tag_string = tag_string.join(', ')
-
-      vcpus = null
-
-      if (instance["processorFeatures"] != null && instance["processorFeatures"] != undefined) {
-        cores = _.findWhere(instance["processorFeatures"], { "name": "coreCount" })
-        threads = _.findWhere(instance["processorFeatures"], { "name": "threadsPerCore" })
-
-        if (cores != undefined && threads != undefined) {
-          vcpus = cores["value"] * threads["value"]
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
         }
-      }
 
-      if (vcpus == null && ds_aws_instance_size_map[instance["resourceType"]] != undefined) {
-        vcpus = ds_aws_instance_size_map[instance["resourceType"]]["vcpu"]
-      }
-
-      result.push({
-        instanceId: instance['instanceId'],
-        instanceArn: instance['instanceArn'],
-        resourceType: instance['resourceType'],
-        name: instance['name'],
-        status: instance['status'],
-        databaseEngine: instance['databaseEngine'],
-        engineVersion: instance['engineVersion'],
-        privateDnsName: instance['privateDnsName'],
-        region: instance['region'],
-        availabilityZone: instance['availabilityZone'],
-        licenseModel: instance['licenseModel'],
-        processorFeatures: instance['processorFeatures'],
-        vcpus: vcpus,
-        tags: tag_string
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
       })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      if ((!any_tags_found && !all_tags_found) || param_exclusion_tags.length == 0) {
+        tag_string = []
+
+        _.each(_.keys(resource_tags), function(key) {
+          tag_string.push(key + '=' + resource_tags[key])
+        })
+
+        tag_string = tag_string.join(', ')
+
+        vcpus = null
+
+        if (instance["processorFeatures"] != null && instance["processorFeatures"] != undefined) {
+          cores = _.findWhere(instance["processorFeatures"], { "name": "coreCount" })
+          threads = _.findWhere(instance["processorFeatures"], { "name": "threadsPerCore" })
+
+          if (cores != undefined && threads != undefined) {
+            vcpus = cores["value"] * threads["value"]
+          }
+        }
+
+        if (vcpus == null && ds_aws_instance_size_map[instance["resourceType"]] != undefined) {
+          vcpus = ds_aws_instance_size_map[instance["resourceType"]]["vcpu"]
+        }
+
+        result.push({
+          instanceId: instance['instanceId'],
+          instanceArn: instance['instanceArn'],
+          resourceType: instance['resourceType'],
+          name: instance['name'],
+          status: instance['status'],
+          databaseEngine: instance['databaseEngine'],
+          engineVersion: instance['engineVersion'],
+          privateDnsName: instance['privateDnsName'],
+          region: instance['region'],
+          availabilityZone: instance['availabilityZone'],
+          licenseModel: instance['licenseModel'],
+          processorFeatures: instance['processorFeatures'],
+          vcpus: vcpus,
+          tags: tag_string
+        })
+      }
     }
   })
 EOS
@@ -1287,7 +1289,7 @@ script "js_rds_underutil_instances", type: "javascript" do
     cpu_value = instance['cpu_' + param_stats_threshold.toLowerCase()]
     if (typeof(cpu_value) != 'number') { cpu_value = 0 }
 
-    if (cpu_value < param_stats_underutil_threshold_cpu_value && ds_aws_instance_size_map[instance["resourceType"]]["down"]) {
+    if (cpu_value < param_stats_underutil_threshold_cpu_value && ds_aws_instance_size_map[instance["resourceType"]] && ds_aws_instance_size_map[instance["resourceType"]]["down"]) {
       newResourceType = ds_aws_instance_size_map[instance["resourceType"]]["down"]
 
       if (param_downsize_multiple == "Yes") {

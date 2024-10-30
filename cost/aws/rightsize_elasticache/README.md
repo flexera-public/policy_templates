@@ -9,7 +9,7 @@ This policy template reports any underutilized AWS ElastiCache resources based o
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is downsized.
 
 - The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
-- Savings is estimated at 50% of the current cost of the resource.
+- Savings is estimated as the difference of the current cost of the resource and the estimated cost of the recommended resource type.
 - Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
 - If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
@@ -28,6 +28,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
   - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
+- *Skip Instance Sizes* - Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate.
 - *Statistic Lookback Period* - How many days back to look at CPU and memory usage data for clusters. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days.
 - *Threshold Statistic* - Statistic to use when determining if a cluster is underutilized.
 - *CPU Threshold (%)* - The CPU threshold at which to consider a cluster to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization

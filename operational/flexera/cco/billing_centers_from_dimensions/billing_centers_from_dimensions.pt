@@ -1,0 +1,828 @@
+name "Flexera Billing Centers from Dimension Values"
+rs_pt_ver 20180301
+type "policy"
+short_description "Creates and manages billing centers structure based on existing dimension values. Please see the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/billing_centers_from_dimensions/) for more information."
+long_description ""
+category "Operational"
+severity "low"
+default_frequency "15 minutes"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  category: "Operational",
+  publish: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_dimension_list" do
+  type "list"
+  category "Policy Settings"
+  label "Dimension List"
+  description "A list of dimensions to use for generating the billing center structure."
+  default ["Cloud Vendor", "Cloud Vendor Account Name"]
+end
+
+parameter "param_append_suffix" do
+  type "string"
+  category "Policy Settings"
+  label "Append Suffix"
+  description "A suffix to append to the end of the billing center name to designate the level.  This can be useful for deeply nested billing centers."
+  allowed_values ["No Suffix", "Add Level Number Suffix"]
+  default "No Suffix"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credential."
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_dates" do
+  run_script $js_dates
+end
+
+script "js_dates", type: "javascript" do
+  result "result"
+  code <<-'EOS'
+  param_backfill = "Backfill Previous Months"
+  param_backfill_start_date = 2020
+
+  result = []
+
+  current_date_parts = new Date().toISOString().split('-')
+  year = parseInt(current_date_parts[0])
+
+  // loop until we reach the backfill start date
+  while (year >= param_backfill_start_date) {
+    result.push({
+      start_at: String(year) + "-01",
+      end_at: String(year+1) + "-01"
+    })
+    year -= 1
+  }
+EOS
+end
+
+datasource "ds_dimensions_list" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "dimensions[].{id: id, name: name}") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_dimensions_for_report" do
+  run_script $js_dimensions_for_report, $ds_dimensions_list, $param_dimension_list
+end
+
+script "js_dimensions_for_report", type: "javascript" do
+  parameters "ds_dimensions_list", "param_dimension_list"
+  result "result"
+  code <<-EOS
+  result = [];
+  // Loop through param list first so we keep the order of user input
+  _.each(param_dimension_list, function(param_dimension) {
+    // Loop through all RBDs that exist to find the one that matches the param
+    _.each(ds_dimensions_list, function(dimension) {
+      if (param_dimension == dimension.name || param_dimension == dimension.id) {
+        result.push(dimension);
+      }
+    });
+  });
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jq(response, '.[]' ) do
+      field "billing_center_id", jq(col_item, ".id")
+      field "billing_center_name", jq(col_item, ".name")
+      field "billing_center_parent_id", jq(col_item, ".parent_id")
+    end
+  end
+end
+
+datasource "ds_billing_centers_toplevel" do
+  run_script $js_billing_centers_toplevel, $ds_billing_centers
+end
+
+script "js_billing_centers_toplevel", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  var result = _.filter(ds_billing_centers, function(bc) {
+    return bc.billing_center_parent_id == null;
+  })
+EOS
+end
+
+datasource "ds_flexera_vendor_accounts" do
+  iterate $ds_dates
+  request do
+    run_script $js_flexera_vendor_accounts, iter_item, $ds_billing_centers_toplevel, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jq(response, '.rows[]' ) do
+      field "dimensions", jq(col_item, ".dimensions")
+      field "cost_nonamortized_unblended_adj", jq(col_item, ".metrics.cost_nonamortized_unblended_adj")
+      field "timestamp", jq(col_item, ".timestamp")
+    end
+  end
+end
+
+script "js_flexera_vendor_accounts", type: "javascript" do
+  parameters "iter_item", "ds_billing_centers_toplevel", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  metric = "cost_nonamortized_unblended_adj"
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      "dimensions": ["vendor_account", "vendor_account_name"],
+      "granularity": "month",
+      "start_at": iter_item["start_at"],
+      "end_at": iter_item["end_at"],
+      "metrics": [metric],
+      "billing_center_ids": _.pluck(ds_billing_centers_toplevel, "billing_center_id"),
+      "summarized": true
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    }
+  }
+EOS
+end
+
+datasource "ds_flexera_vendor_accounts_mapped" do
+  run_script $js_flexera_vendor_accounts_mapped, $ds_flexera_vendor_accounts
+end
+
+script "js_flexera_vendor_accounts_mapped", type: "javascript" do
+  parameters "ds_flexera_vendor_accounts"
+  result "result"
+  code <<-EOS
+  var result = _.groupBy(ds_flexera_vendor_accounts, function(row) {
+    return row.dimensions.vendor_account_name;
+  });
+EOS
+end
+
+datasource "ds_flexera_dimension_values" do
+  iterate $ds_dates
+  request do
+    run_script $js_flexera_dimension_values, iter_item, $ds_billing_centers_toplevel, $ds_dimensions_for_report, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jq(response, '.rows[]') do
+      field "dimensions", jq(col_item, ".dimensions")
+      field "cost_nonamortized_unblended_adj", jq(col_item, ".metrics.cost_nonamortized_unblended_adj")
+      field "timestamp", jq(col_item, ".timestamp")
+    end
+  end
+end
+
+script "js_flexera_dimension_values", type: "javascript" do
+  parameters "iter_item", "ds_billing_centers_toplevel", "ds_dimensions_for_report", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  metric = "cost_nonamortized_unblended_adj"
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      "dimensions": _.pluck(ds_dimensions_for_report, "id"),
+      "granularity": "month",
+      "start_at": iter_item["start_at"],
+      "end_at": iter_item["end_at"],
+      "metrics": [metric],
+      "billing_center_ids": _.pluck(ds_billing_centers_toplevel, "billing_center_id"),
+      "summarized": true
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    }
+  }
+EOS
+end
+
+datasource "ds_bc_structure" do
+  run_script $js_bc_structure, $ds_flexera_dimension_values, $ds_dimensions_for_report
+end
+
+script "js_bc_structure", type: "javascript" do
+  parameters "ds_flexera_dimension_values", "ds_dimensions_for_report"
+  result "result"
+  code <<-EOS
+  // Get the dimension ids for the dimensions we care about
+  var dimension_ids = _.pluck(ds_dimensions_for_report, "id")
+
+  function buildStructure(result, dimensions, index) {
+    // If we've reached the end of the dimensions, return
+    if (index >= dimensions.length) return;
+
+    // Get the value of the current dimension
+    var dimensionValue = dimensions[index];
+    // Check if the dimension value is in the result
+    if (result[dimensionValue] === undefined) {
+      // If the dimension value is not in the result, add it
+      result[dimensionValue] = { "_metadata": {} };
+      // Copy parent's _metadata to the child
+      _.extend(result[dimensionValue]["_metadata"], result["_metadata"]);
+      // Add the current dimension's metadata
+      result[dimensionValue]["_metadata"][dimension_ids[index]] = dimensionValue;
+    }
+
+    buildStructure(result[dimensionValue], dimensions, index + 1);
+  }
+
+  // Build empty structure
+  var result = {}
+  _.each(ds_flexera_dimension_values, function(row) {
+    // Extract dimensions in the order of dimension_ids
+    var dimensions = _.map(dimension_ids, function(dimension) {
+      return row.dimensions[dimension];
+    });
+    buildStructure(result, dimensions, 0);
+  });
+EOS
+end
+
+datasource "ds_bc_structure_to_crud" do
+  run_script $js_bc_structure_to_crud, $ds_bc_structure, $ds_billing_centers, $ds_dimensions_for_report, $ds_flexera_vendor_accounts_mapped, $param_append_suffix
+end
+
+script "js_bc_structure_to_crud", type: "javascript" do
+  parameters "ds_bc_structure", "ds_billing_centers", "ds_dimensions_for_report", "ds_flexera_vendor_accounts_mapped", "param_append_suffix"
+  result "result"
+  code <<-EOS
+  // function logSample() logs a sample to the console every 5 minutes
+  // This is useful for debugging and monitoring the progress of the script
+  // Sampling is used to mitigate/prevent hitting the 1000 console log Policy Engine limit
+  eventLast = null // Default lastEvent to null so that the first logSample will always log
+  eventCount = 0 // Default eventCount to 0
+  function logSample(sample) {
+    delaySecondsBetweenSample = 10 // 10 seconds between log events
+    eventCount = eventCount + 1
+    var now = new Date()
+    if (typeof sample != "string") {
+      sample = JSON.stringify(sample)
+    }
+    var log_entry = "[Event "+eventCount.toString()+" @ "+now.toISOString()+"] "+sample
+    // Check if eventLast was old than delaySecondsBetweenSample ago
+    if (eventLast == null || (now - eventLast) > delaySecondsBetweenSample*2000) {
+      eventLast = now
+    }
+  }
+  logSample("logSample() Initialized")
+
+  // Traverse ds_bc_structure heirarchy
+  function traverseBCStructure(bc_structure, parent_id, index) {
+    var result = [];
+    // Get the count of keys for the bc_structure
+    var data_length = _.keys(bc_structure).length;
+    var data_index = 0;
+    _.each(bc_structure, function(value, key) {
+      data_index = data_index + 1;
+      // If key matches certain keys, skip them
+      //   - None and "" are used for costs that are not allocated
+      //   - _metadata is used for metadata about the dimension value
+      if (key == "None" || key == "" || key == "_metadata") {
+        return;
+      }
+      logSample(data_index+"/"+data_length+" traverseBCStructure starting billing_center_name="+key+" billing_center_parent_id="+parent_id + " index="+index)
+      var bc_suffix = "";
+      if (param_append_suffix == "Add Level Number Suffix") {
+        bc_suffix = " ["+index+"]";
+      }
+      // Create the billing center name using the key and the optional suffix
+      var billing_center_name = key + bc_suffix
+      var bc = {
+        "_metadata": value._metadata,
+        "billing_center_name": billing_center_name,
+        "billing_center_parent_id": parent_id,
+        "billing_center_index": index
+      };
+      var bc_exists = _.find(ds_billing_centers, function(bc) {
+        return bc.billing_center_name == billing_center_name && bc.billing_center_parent_id == parent_id;
+      });
+      if (bc_exists) {
+        bc.action = "exists";
+        bc.billing_center_id = bc_exists.billing_center_id;
+      } else {
+        bc.action = "create_pending";
+        // Check that we can actually create the BC
+        // Must be top-level, or have a parent id value
+        if (index == 0 || parent_id != null) {
+          bc.action = "create";
+        }
+      }
+      result.push(bc);
+      if (_.isObject(value)) {
+        var bc_exists_parent_id = null
+        if (bc_exists) {
+          bc_exists_parent_id = bc_exists.billing_center_id
+        }
+        result = result.concat(traverseBCStructure(value, bc_exists_parent_id, index + 1));
+      }
+    });
+    return result;
+  }
+
+  function markForDeletion(ds_billing_centers, collectedBCs) {
+    var result = [];
+    var data_length = ds_billing_centers.length;
+    var data_index = 0;
+    var delete_total = 0; // Counter to keep track of total marked for deletion
+    _.each(ds_billing_centers, function(bc) {
+      data_index = data_index + 1;
+      batch_size = 100;
+      // Limit to batch_size to expedite the policy evaluation runtime
+      if (delete_total >= batch_size) {
+        logSample(data_index+"/"+data_length+" Have "+batch_size+" BCs marked for deletion. Exiting markForDeletion each BC loop")
+        return;
+      }
+      logSample(data_index+"/"+data_length+" markForDeletion starting billing_center_name="+bc.billing_center_name+" billing_center_id="+bc.billing_center_id+" billing_center_parent_id="+bc.billing_center_parent_id)
+      var bc_in_structure = _.find(collectedBCs, function(collectedBC) {
+        return collectedBC.billing_center_name == bc.billing_center_name &&
+              collectedBC.billing_center_parent_id == bc.billing_center_parent_id;
+      });
+      if (!bc_in_structure) {
+        var unallocated_bc = /^unallocated.*/.test(bc.billing_center_id)
+        // var ignored_bc = _.contains(param_ignore_billing_centers, bc.billing_center_id) || _.contains(param_ignore_billing_centers, bc.billing_center_name)
+        // If unallocated, don't add to list because these aren't managed by the users
+        if (unallocated_bc) {
+          bc.action = "skip_unallocated";
+        } else {
+          // if (ignored_bc) {
+          //   bc.action = "ignored_by_param";
+          // } else {
+            bc.action = "delete_pending";
+            // Check that we can actually delete the BC
+            // Must be a leaf node
+            var children = _.filter(ds_billing_centers, function(child_bc) {
+              return child_bc.billing_center_parent_id == bc.billing_center_id;
+            });
+            if (children.length == 0) {
+              bc.action = "delete";
+              delete_total = delete_total + 1;  // Increment counter to keep track of total marked for deletion
+            }
+          // }
+          // Push BCs that are ignored or should be deleted
+          // Showing ignored helps provide visibility into what's being ignored
+          result.push(bc);
+        }
+      }
+    });
+    return result;
+  }
+
+  var bcs = traverseBCStructure(ds_bc_structure, null, 0);
+  var bc_list = bcs.concat(markForDeletion(ds_billing_centers, bcs));
+
+  // Empty rbd_bc_rules
+  var rbd_bc_rules = [];
+  var data_length = bc_list.length;
+  var data_index = 0;
+  // Loop  through bc_list to generate RBD BC Rules
+  _.each(bc_list, function(bc) {
+    data_index = data_index + 1;
+    logSample(data_index+"/"+data_length+" rbc_bc_rules starting billing_center_name="+bc.billing_center_name+" billing_center_id="+bc.billing_center_id+" billing_center_parent_id="+bc.billing_center_parent_id+" action="+bc.action)
+    if (bc.action == "exists" && _.isObject(bc._metadata)) {
+
+      var rbd_bc_rule = {
+        "condition": {
+          "type": "and",
+          "expressions": []
+        },
+        "value": {
+          "text": bc.billing_center_id
+        }
+      };
+      // Add a condition for each dimension in the metadata
+      // Use ds_dimensions_for_report so we are adding the rules in the same order as the user input dimensions
+      // This helps minimize the number of "rule groups" in the config
+      _.each(ds_dimensions_for_report, function(dimension) {
+        // Default rule dimension to the id of the dimension from ds_dimensions_for_report
+        var rule_dimension = dimension.id;
+        if (_.isString(bc._metadata[rule_dimension])) {
+          var rule_value = bc._metadata[rule_dimension];
+          // If key == vendor_account_name, we need to use vendor_account
+          // RBD rules do not support vendor_account_name as condition dimension
+          if (rule_dimension == "vendor_account_name") {
+            rule_dimension = "vendor_account";
+            // We should always have a value for this from the bill data since we got the value ealier in the other datasource
+            rule_value = ds_flexera_vendor_accounts_mapped[rule_value][0].dimensions.vendor_account;
+          }
+          rbd_bc_rule.condition.expressions.push({
+            "type": "dimension_equals",
+            "dimension": rule_dimension,
+            "value": rule_value
+          });
+        }
+      });
+      // Check that we actually have conditions for this rule
+      if (rbd_bc_rule.condition.expressions.length > 0) {
+        rbd_bc_rules.push(rbd_bc_rule);
+      }
+    }
+  });
+
+  // Check if there are any BC rules before attempting to sort them
+  if (rbd_bc_rules.length > 0) {
+    // Sort the rules generated by the number of conditions, with higher number conditions being top of list
+    // This is to reduce the number of "rule groups" in the RBD config
+    var rbd_bc_rules_sorted = _.sortBy(rbd_bc_rules, function(rule) {
+      // Sort by Condition length first, then by the rule itself
+      // Condition length puts the rules with the more conditions at the top
+      // Within same count of conditions, sort by the rule itself to ensure consistent ordering
+      return rule.condition.expressions.length;
+    }).reverse();
+    // Overwrite rbd_bc_rules with the sorted rules
+    rbd_bc_rules = rbd_bc_rules_sorted
+  }
+
+  var result = {
+    "bc_list": bc_list, // bc_list is unused past this point but could be used for printing the formatted structure of the BCs
+
+    // rbd_bc_rules is the RBD Rules for Billing Center Allocation
+    "rbd_bc_rules": rbd_bc_rules
+  }
+EOS
+end
+
+datasource "ds_bcs_to_delete" do
+  run_script $js_bcs_to_delete, $ds_bc_structure_to_crud
+end
+
+script "js_bcs_to_delete", type: "javascript" do
+  parameters "ds_bc_structure_to_crud"
+  result "result"
+  code <<-EOS
+  var batch_size = 100;
+  var filtered_list = _.filter(ds_bc_structure_to_crud.bc_list, function(bc) {
+    return bc.action == "delete"
+  });
+  var result = filtered_list.slice(0, batch_size);
+EOS
+end
+
+datasource "ds_bcs_to_create" do
+  run_script $js_bcs_to_create, $ds_bc_structure_to_crud
+end
+
+script "js_bcs_to_create", type: "javascript" do
+  parameters "ds_bc_structure_to_crud"
+  result "result"
+  code <<-EOS
+  var batch_size = 100;
+  var filtered_list = _.filter(ds_bc_structure_to_crud.bc_list, function(bc) {
+    return bc.action == "create"
+  });
+  var result = filtered_list.slice(0, batch_size);
+EOS
+end
+
+datasource "ds_rbd_bc_rules" do
+  run_script $js_rbd_bc_rules, $ds_bc_structure_to_crud
+end
+
+script "js_rbd_bc_rules", type: "javascript" do
+  parameters "ds_bc_structure_to_crud"
+  result "result"
+  code <<-EOS
+  var result = ds_bc_structure_to_crud.rbd_bc_rules
+EOS
+end
+
+# Using datasource to apply RBDs
+# Passing this to CWF would result in error for some larger RBDs (which can be PUT to the API directly, but not using CWF)
+# Example Error:
+#   failed to run cloud workflow: Problem:  An internal error occurred.
+#   Issue: Document exceeds allowed max BSON size.
+#   The max is 16777216. (on mongodb-1.us-east-1.meta.flexeraeng.com:27017) (on mongodb-1.us-east-1.meta.flexeraeng.com:27017)
+datasource "ds_apply_rbds" do
+  request do
+    run_script $js_apply_rbds, val($ds_bc_structure_to_crud, "rbd_bc_rules"), val($ds_flexera_api_hosts, "flexera"), rs_org_id, "1970-01"
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_apply_rbds", type: "javascript" do
+  parameters "rules", "api_host", "rs_org_id", "effective_at"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    verb: "PUT",
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/rbd_bc/rules/", effective_at].join(''),
+    body_fields: { rules: rules }
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_billing_centers" do
+  validate $ds_bcs_to_create do
+    summary_template "Creating Billing Centers"
+    detail_template <<-EOS
+## Billing Centers to Create
+
+Total: {{ len data }}
+
+{{ range data }}- billing_center_name={{ .billing_center_name }} billing_center_id={{ .billing_center_id }} billing_center_parent_id={{ .billing_center_parent_id }}\n{{ end }}
+
+EOS
+    check eq(size(data), 0)
+    escalate $esc_billing_center_create
+  end
+
+  validate $ds_bcs_to_delete do
+    summary_template "Deleting Billing Centers"
+    detail_template <<-EOS
+## Billing Centers to Delete
+
+Total: {{ len data }}
+
+{{ range data }}- billing_center_name={{ .billing_center_name }} billing_center_id={{ .billing_center_id }} billing_center_parent_id={{ .billing_center_parent_id }}\n{{ end }}
+
+EOS
+    check eq(size(data), 0)
+    escalate $esc_billing_center_delete
+  end
+
+  validate $ds_rbd_bc_rules do
+    summary_template "Updated Billing Center Allocation Rules"
+    detail_template <<-EOS
+## Update Billing Center Allocation Rules
+
+The `rbc_bc` rules have been updated by Automation. {{ len data }} rules have been generated.
+
+{{ range data }}- {{ range .condition.expressions }}{{.dimension}}={{.value}};{{end}} => {{ .value.text }}\n{{ end }}
+
+EOS
+    check eq(size(data), 0)
+  end
+
+  validate $ds_apply_rbds do
+    summary_template "RBDs Generated & Applied"
+    detail_template ""
+    check eq(0, 0) # Always check but do not persist an incident
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_billing_center_create" do
+  automatic true # Always automatically run when triggered
+  label "Create Billing Centers"
+  description "Create the listed Billing Centers."
+  run "billing_center_create", data, rs_org_id, rs_optima_host
+  resolve_incident # Automatically close the incident once the escalation has run
+end
+
+escalation "esc_billing_center_delete" do
+  # request_approval do
+  #   label "Delete Billing Centers"
+  #   description "Approving this will delete the listed Billing Centers."
+  # end
+  # automatic false
+  automatic true # Always automatically run when triggered
+  label "Delete Billing Centers"
+  description "Delete the listed Billing Centers."
+  run "billing_center_delete", data, rs_org_id, rs_optima_host
+  resolve_incident # Automatically close the incident once the escalation has run
+end
+
+# esc_rbd_bc_put is not used due to limitations with CWF and large RBDs
+# escalation "esc_rbd_bc_put" do
+#   automatic true # Always automatically run when triggered
+#   label "Update RBD BC Rules"
+#   description "Update the RBD BC Rules."
+#   run "rbd_bc_put", data, rs_org_id, rs_optima_host
+#   # resolve_incident # Automatically close the incident once the escalation has run
+# end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+# Helper function to batch data list into groups
+# This is used to enable concurrent processing of batches
+define batch_group($data) return $groups do
+  $group_size = 10 # Delete + Create requests with CWF around 1 per minute and default PT schedule is 15min
+  $groups = []
+  $index = 0
+  while $index < size($data) do
+    $next_index = $index+$group_size
+    $groups << $data[$index..$next_index-1]
+    $index = $next_index
+  end
+end
+
+define billing_center_create($data, $rs_org_id, $rs_optima_host) do
+  call batch_group($data) retrieve $$groups
+
+  concurrent foreach $group in $$groups do
+    $data_total = size($group)
+    task_label("Size of group: "+to_s($data_total))
+    $data_index = 0
+    foreach $bc in $group do
+      $data_index = $data_index + 1
+      call log_message(to_s($data_index)+"/"+to_s($data_total)+" Starting create billing center: "+$bc["billing_center_name"] + " under parent: "+to_s($bc["billing_center_parent_id"]))
+      # check that billing center we are trying to create is a top-level billing center or has a parent
+      # We generally should not fail this check ever at this point but it's a good safety check
+      if $bc["billing_center_index"] == 0 || $bc["billing_center_parent_id"] != null
+        $parent_href = null
+        if $bc["billing_center_parent_id"] != null
+          $parent_href = join(["/analytics/orgs/", $rs_org_id, "/billing_centers/", $bc["billing_center_parent_id"]])
+        end
+        call log_message(to_s($data_index)+"/"+to_s($data_total)+" Creating billing center: "+$bc["billing_center_name"]+" under parent: "+to_s($parent_href))
+        $request = {
+          "auth": $$auth_flexera,
+          "url": join(["https://", $rs_optima_host, "/analytics/orgs/", $rs_org_id, "/billing_centers"]),
+          "headers": {"Api-Version": "1.0" },
+          "body": {
+            "description": "Billing Center for "+$bc["billing_center_name"],
+            "name": $bc["billing_center_name"],
+            "parent_href": $parent_href
+          }
+        }
+        $response = http_post($request)
+        if $response["code"] == 409
+          call log_message(to_s($data_index)+"/"+to_s($data_total)+" Billing Center already exists, moving forward. billing_center_name="+$bc["billing_center_name"]+" request="+to_json($request)+" response="+to_json($response))
+        elsif $response["code"] != 201
+          raise "Unexpected response creating billing center: "+$bc["billing_center_name"]+". request="+to_json($request)+" response="+to_json($response)
+        end
+      else
+        call log_message(to_s($data_index)+"/"+to_s($data_total)+" Skipping creation of child billing center because missing parent ID billing_center_name="+$bc["billing_center_name"]+" billing_center_parent_id="+$bc["billing_center_parent_id"])
+      end
+    end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define billing_center_delete($data, $rs_org_id, $rs_optima_host) do
+  call batch_group($data) retrieve $$groups
+
+  concurrent foreach $group in $$groups do
+    $data_total = size($group)
+    task_label("Size of group: "+to_s($data_total))
+    $data_index = 0
+    foreach $bc in $group do
+      $data_index = $data_index + 1
+      call log_message(to_s($data_index)+"/"+to_s($data_total)+" Starting delete billing center: "+$bc["billing_center_name"]+ "("+$bc["billing_center_id"] + ")" )
+      $request = {
+        "auth": $$auth_flexera,
+        "url": join(["https://", $rs_optima_host, "/analytics/orgs/", $rs_org_id, "/billing_centers/", $bc["billing_center_id"]]),
+        "headers": {"Api-Version": "1.0" }
+      }
+      $response = http_delete($request)
+      if ($response["code"] == 204)
+        call log_message(to_s($data_index)+"/"+to_s($data_total)+" Deleted Billing Center billing_center_name"+$bc["billing_center_name"]+" request="+to_json($request)+" response="+to_json($response))
+      elsif ($response["code"] == 400 && include?($response["body"]["message"], "is not a leaf"))
+        call log_message(to_s($data_index)+"/"+to_s($data_total)+" Ignore error deleting non-\"leaf\" Billing Center. Will be deleted in subsequent run. billing_center_name"+$bc["billing_center_name"]+" request="+to_json($request)+" response="+to_json($response))
+      elsif ($response["code"] == 404)
+        call log_message(to_s($data_index)+"/"+to_s($data_total)+" Billing Center not found. Likely already deleted. billing_center_name"+$bc["billing_center_name"]+" request="+to_json($request)+" response="+to_json($response))
+      else
+        raise "Unexpected response deleting billing center: "+$bc["billing_center_name"]+". request="+to_json($request)+" response="+to_json($response)
+      end
+    end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+# rbd_bc_put is not used due to limitations with CWF and large RBDs
+# define rbd_bc_put($data, $rs_org_id, $rs_optima_host) do
+#   sub on_error: handle_error() do
+#     $request = {
+#       "auth": $$auth_flexera,
+#       "url": join(["https://api.flexera.com", "/finops-customizations/v1/orgs/", $rs_org_id, "/rule-based-dimensions/rbd_bc/rules/1970-01"]),
+#       "headers": {"Api-Version": "1.0" },
+#       "body": {
+#         "rules": $data["rbd_bc_rules"]
+#       }
+#     }
+#     $response = http_put($request)
+#     if ($response["code"] == 204)
+#       call log_message("Updated RBD Billing Center Allocation Rules. response="+to_json($response)+" request="+to_json($request))
+#     else
+#       raise "Unexpected response updating RBD Billing Center Allocation Rules. response="+to_json($response)+" request="+to_json($request)
+#     end
+#   end
+
+#   # If we encountered any errors, use `raise` to mark the CWF process as errored
+#   if inspect($$errors) != "null"
+#     raise join($$errors, "\n")
+#   end
+# end
+
+# CWF function to handle errors
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": "+$_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+# CWF function to help with capturing log output
+define log_message($message) do
+  if !$$log_messages
+    $$log_messages = []
+  end
+  $message_string = to_json($message)
+  task_label($message_string)
+  # Convert response object to JSON string.  Easier to interpret
+  $$log_messages << $message_string
+end

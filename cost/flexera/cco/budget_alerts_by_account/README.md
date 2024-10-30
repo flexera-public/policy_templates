@@ -4,7 +4,7 @@
 
 This policy template is no longer being updated. The [Budget Alerts](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_report_alerts/) policy template can be used instead by specifying a cloud account in the relevant filtering parameter.
 
-## What it does
+## What It Does
 
 This Policy uses Optima to determine if a Cloud Account has exceeded its monthly cost budget. The policy should be run daily and will take into account data from 3 days ago to ensure there is a complete set.
 
@@ -17,7 +17,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-## Functional Details
+## How It Works
 
 - This policy supports a single target (ie. 1 specific Cloud Account). In order to apply a budget alert for multiple targets, you will need to apply this policy multiple times.
 - Actual Spend budget alerts will raise an incident when the target has exceeded the budget for the month
@@ -25,7 +25,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 - First 3 days of the month are not reported until after the 4th day to insure all bill data is retrieved before creating an incident.
 - Cost data isn't fully retrieved from the cloud bill for 2-3 days.  Therefore this policy will evaluate Optima data 3 days earlier than the run date.
 
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
@@ -43,4 +43,4 @@ This policy has the following input parameters required when launching the polic
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.
