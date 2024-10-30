@@ -2,7 +2,7 @@
 
 ## v0.1.2
 
-- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+- Added `hide_skip_approvals` field to the info section, enabling the UI to dynamically show or hide the "Skip Approval" option. Functionality unchanged.
 
 ## v0.1.1
 
