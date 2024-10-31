@@ -12,7 +12,7 @@ __NOTE: Only API requests made using the modern [Flexera One API](https://develo
 - *Days Back* - How many days of API events to include in the report. All events from this many days back until today will be reported.
 - *Allow/Deny URL Filters* - Allow or Deny requests whose URLs contain the listed strings. Only applicable if `Allow/Deny URL Filter List` isn't empty.
 - *Allow/Deny URL Filter List* - A list of strings to allow or deny when filtering API requests by URL. For example, if */bill-connects* is specified here, any API calls with */bill-connects* in the URL will be filtered. This is useful for reporting on specific API endpoints instead of reporting on all API calls. Leave empty to not filter requests by URL.
-- *Allow/Deny Email Filters* - Allow or Deny requests made by users with the specified email addresses. Only applicable if `Allow/Deny Email Filter List` isn't empty.
+- *Allow/Deny Email Filters* - Allow or Deny requests made by users with the specified email addresses. Only applicable if `Allow/Deny Email Filter List` isn't empty. Note that, if this is set to 'Allow' and email addresses are specified in the `Allow/Deny Email Filter List` parameter, requests without an associated user, such as requests made without proper authentication, will not be included in the results.
 - *Allow/Deny Email Filter List* - A list of user email addresses to allow or deny when filtering API requests. Leave empty to not filter requests by user email address.
 - *Response Filter* - Whether to include API calls that received a good (Code 2XX/3XX) response, a bad (Code 4XX/5XX) response, or both.
 
