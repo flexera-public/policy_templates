@@ -34,6 +34,49 @@ parameter "param_days_back" do
   default 7
 end
 
+parameter "param_url_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny URL Filters"
+  description "Allow or Deny requests whose URLs contain the listed strings. Only applicable if 'Allow/Deny URL Filter List' isn't empty. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_url_filter_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny URL Filter List"
+  description "A list of strings to allow or deny when filtering API requests by URL. Leave empty to not filter requests by URL. See the README for more details."
+  default []
+end
+
+parameter "param_email_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Email Filters"
+  description "Allow or Deny requests made by users with the specified email addresses. Only applicable if 'Allow/Deny Email Filter List' isn't empty."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_email_filter_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Email Filter List"
+  description "A list of user email addresses to allow or deny when filtering API requests. Leave empty to not filter requests by user email address."
+  default []
+end
+
+parameter "param_response_type" do
+  type "list"
+  category "Filters"
+  label "Response Filter"
+  description "Whether to include API calls that received a good (Code 2XX/3XX) response, a bad (Code 4XX/5XX) response, or both."
+  allowed_values ["Good", "Bad"]
+  default ["Good", "Bad"]
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -148,15 +191,82 @@ datasource "ds_api_events" do
   end
 end
 
+datasource "ds_api_events_url_filtered" do
+  run_script $js_api_events_url_filtered, $ds_api_events, $param_url_allow_or_deny, $param_url_filter_list
+end
+
+script "js_api_events_url_filtered", type: "javascript" do
+  parameters "ds_api_events", "param_url_allow_or_deny", "param_url_filter_list"
+  result "result"
+  code <<-EOS
+  if (param_url_filter_list.length > 0) {
+    result = _.filter(ds_api_events, function(event) {
+      include_event = false
+
+      _.each(param_url_filter_list, function(item) {
+        if (event['requestPath'].indexOf(item) != -1) { include_event = true }
+      })
+
+      if (param_url_allow_or_deny == "Deny") { include_event = !include_event }
+
+      return include_event
+    })
+  } else {
+    result = ds_api_events
+  }
+EOS
+end
+
+datasource "ds_api_events_email_filtered" do
+  run_script $js_api_events_email_filtered, $ds_api_events_url_filtered, $param_email_allow_or_deny, $param_email_filter_list
+end
+
+script "js_api_events_email_filtered", type: "javascript" do
+  parameters "ds_api_events_url_filtered", "param_email_allow_or_deny", "param_email_filter_list"
+  result "result"
+  code <<-EOS
+  if (param_email_filter_list.length > 0) {
+    result = _.filter(ds_api_events_url_filtered, function(event) {
+      include_event = false
+      if (_.contains(param_email_filter_list, event['userEmail'])) { include_event = true }
+      if (param_email_allow_or_deny == "Deny") { include_event = !include_event }
+      return include_event
+    })
+  } else {
+    result = ds_api_events_url_filtered
+  }
+EOS
+end
+
+datasource "ds_api_events_status_filtered" do
+  run_script $js_api_events_status_filtered, $ds_api_events_email_filtered, $param_response_type
+end
+
+script "js_api_events_status_filtered", type: "javascript" do
+  parameters "ds_api_events_email_filtered", "param_response_type"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_api_events_email_filtered, function(event) {
+    include_event = false
+    code_letter = event['responseCode'].toString().substring(0, 1)
+
+    if ((code_letter == 2 || code_letter == 3) && _.contains(param_response_type, "Good")) { include_event = true }
+    if ((code_letter != 2 && code_letter != 3) && _.contains(param_response_type, "Bad")) { include_event = true }
+
+    return include_event
+  })
+EOS
+end
+
 datasource "ds_api_events_report" do
-  run_script $js_api_events_report, $ds_api_events, $ds_applied_policy, $param_days_back
+  run_script $js_api_events_report, $ds_api_events_status_filtered, $ds_applied_policy, $param_days_back
 end
 
 script "js_api_events_report", type: "javascript" do
-  parameters "ds_api_events", "ds_applied_policy", "param_days_back"
+  parameters "ds_api_events_status_filtered", "ds_applied_policy", "param_days_back"
   result "result"
   code <<-EOS
-  result = _.map(ds_api_events, function(event) {
+  result = _.map(ds_api_events_status_filtered, function(event) {
     return {
       timestamp: event['timestamp'],
       eventType: event['eventType'],
