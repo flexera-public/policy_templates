@@ -6,6 +6,105 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2800](https://github.com/flexera-public/policy_templates/pull/2800): POL-1408 AWS Account Credentials Meta Not Spawning Children
+
+#### Description
+
+> Fixes issue where the meta policy for AWS Account Credentials was not spawning children due to the policy not properly filtering out meta-specific parameters.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2800) for details about unpublished policies.
+- **Merged At**: 2024-10-31 17:48:14 UTC
+
+---
+
+### PR [#2737](https://github.com/flexera-public/policy_templates/pull/2737): POL-1378 Linting Updates: Cost Policies: Misc
+
+#### Description
+
+> Various small changes to Cost policies not associated with the big 3 hyperscalers to bring them up to current linting standards. Also removes known bad coding patterns to avoid their reuse.
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2737) for these details.
+- **Merged At**: 2024-10-30 14:58:32 UTC
+
+---
+
+### PR [#2790](https://github.com/flexera-public/policy_templates/pull/2790): POL-1394 Downsize Multiple Sizes: Azure MySQL
+
+#### Description
+
+> Added support for downsizing multiple sizes where appropriate for the two Azure MySQL policy templates. Enabled via an optional parameter.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize MySQL Flexible Servers](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_mysql_flexible/README.md), [Meta Parent: Azure Rightsize MySQL Flexible Servers](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_mysql_flexible/README.md), [Azure Rightsize MySQL Single Servers](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_mysql_single/README.md), [Meta Parent: Azure Rightsize MySQL Single Servers](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_mysql_single/README.md)
+- **Merged At**: 2024-10-30 12:04:39 UTC
+
+---
+
+### PR [#2792](https://github.com/flexera-public/policy_templates/pull/2792): POL-1407 Downsize Multiple Sizes: AWS Rightsize ElastiCache
+
+#### Description
+
+> Added support for downsizing multiple sizes where appropriate. Enabled via an optional parameter.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Rightsize ElastiCache](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_elasticache/README.md), [Meta Parent: AWS Rightsize ElastiCache](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_elasticache/README.md)
+- **Merged At**: 2024-10-30 12:04:16 UTC
+
+---
+
+### PR [#2789](https://github.com/flexera-public/policy_templates/pull/2789): POL-1396 Downsize Multiple Sizes: Azure Rightsize SQL Managed Instances
+
+#### Description
+
+> Added support for downsizing multiple sizes where appropriate. Enabled via an optional parameter.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize SQL Managed Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_sql/README.md), [Meta Parent: Azure Rightsize SQL Managed Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_sql/README.md)
+- **Merged At**: 2024-10-29 12:11:49 UTC
+
+---
+
+### PR [#2788](https://github.com/flexera-public/policy_templates/pull/2788): POL-1393 Downsize Multiple Sizes: Azure Rightsize SQL Databases
+
+#### Description
+
+> Added support for downsizing multiple sizes where appropriate. Enabled via an optional parameter.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md), [Meta Parent: Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
+- **Merged At**: 2024-10-29 12:11:23 UTC
+
+---
+
+### PR [#2787](https://github.com/flexera-public/policy_templates/pull/2787): POL-1406 AWS Rightsize RDS Instances Fix
+
+#### Description
+
+> Fixes issue where policy would fail if a "db.serverless" (or any other instance type not present in the mapping file) instance was found.
+>
+> Also makes it so that the policy template does not bother to gather metrics for "db.serverless" instances, since we won't be making recommendations for these regardless, as they are not ordinary RDS instances.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md), [Meta Parent: AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md)
+- **Merged At**: 2024-10-29 12:11:04 UTC
+
+---
+
 ### PR [#2747](https://github.com/flexera-public/policy_templates/pull/2747): POL-1385 - New Template: Billing Centers from Dimensions
 
 #### Description
@@ -1545,128 +1644,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2452) for these details.
 - **Merged At**: 2024-07-31 12:06:47 UTC
-
----
-
-### PR [#2460](https://github.com/flexera-public/policy_templates/pull/2460): POL-1288 Azure Reserved Instance/Savings Plans Updates
-
-#### Description
-
-> This updates the `Azure Reserved Instances Recommendations` and `Azure Savings Plan Recommendations` policy templates to add Resource Group scope support. Additionally, `Azure Savings Plan Recommendations` now has a meta policy and has had some improvements to reduce execution time.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2460) for these details.
-- **Merged At**: 2024-07-29 15:07:49 UTC
-
----
-
-### PR [#2451](https://github.com/flexera-public/policy_templates/pull/2451): POL-1297 Azure Security Policy Revamps: Part 1
-
-#### Description
-
-> This is a revamp of several Azure Security policies. See their respective CHANGELOGS and READMEs for more details.
->
-> This also includes two small Dangerfile tweaks around Graph API credentials.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2451) for these details.
-- **Merged At**: 2024-07-26 12:08:05 UTC
-
----
-
-### PR [#2459](https://github.com/flexera-public/policy_templates/pull/2459): POL-1169 P90, P95 and P99 for Azure Rightsize Managed Disks
-
-#### Description
-
-> I implemented the statistics P90, P95 and P99 for the parameters:
-> - IOPS Threshold Statistic
-> - Throughput Threshold Statistic
->
-> ### Issues Resolved
->
-> - https://flexera.attlassian.com/browse/POL-1169
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md)
-- **Merged At**: 2024-07-25 18:21:28 UTC
-
----
-
-### PR [#2453](https://github.com/flexera-public/policy_templates/pull/2453): POL-1300 - fix: use `PaginationToken` for paginating tagging API
-
-#### Description
-
-> Fixes an issue discovered when troubleshooting the `AWS Untagged Resources` Policy Template
->
->  - Use [`PaginationToken`](https://docs.aws.amazon.com/resourcegroupstagging/latest/APIReference/API_GetResources.html#API_GetResources_RequestSyntax) for paginating tagging API
->
-
-#### Metadata
-
-- **Policies**: [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md), [AWS Tag Cardinality Report](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/tag_cardinality/README.md)
-- **Merged At**: 2024-07-24 17:21:06 UTC
-
----
-
-### PR [#2447](https://github.com/flexera-public/policy_templates/pull/2447): POL-1281 AWS Security Policy Revamps: Part 6
-
-#### Description
-
-> This is a revamp of the last set of AWS Security policies. See their respective CHANGELOGs and READMEs for more details.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2447) for these details.
-- **Merged At**: 2024-07-24 17:19:57 UTC
-
----
-
-### PR [#2429](https://github.com/flexera-public/policy_templates/pull/2429): POL-1281 AWS Security Policy Revamps: Part 5
-
-#### Description
-
-> This is a revamp of two RDS Security policies:
->
-> **AWS Publicly Accessible RDS Instances**
-> - Policy template renamed to `AWS Publicly Accessible RDS Instances` to better reflect its functionality
-> - Added more robust tag filtering options
-> - Added option to automatically terminate offending instances
-> - Added additional fields to incident table for added context
-> - Streamlined code for better readability and faster execution
-> - Policy now requires a valid Flexera credential
->
-> **AWS Unencrypted RDS Instances**
-> - Added more robust tag filtering options
-> - Added additional fields to incident table for added context
-> - Streamlined code for better readability and faster execution
-> - Policy now requires a valid Flexera credential
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2429) for these details.
-- **Merged At**: 2024-07-22 15:36:24 UTC
-
----
-
-### PR [#2425](https://github.com/flexera-public/policy_templates/pull/2425): POL-1281 AWS Security Policy Revamps: Part 4
-
-#### Description
-
-> This is a revamp for all of the Security policy templates focused on AWS CloudTrail logs. See the individual CHANGELOGs for information on the changes in each template.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2425) for these details.
-- **Merged At**: 2024-07-22 12:23:58 UTC
 
 ---
 
