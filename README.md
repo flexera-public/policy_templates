@@ -527,6 +527,7 @@ These templates can generate savings estimates for your environment.
 
 - Identity & Access Management
 
+  - [Flexera One API Event Report](./operational/flexera/iam/api_event_report)
   - [Flexera One User Access Report](./operational/flexera/iam/iam_user_report)
 
 #### Google
@@ -718,7 +719,7 @@ These templates can generate savings estimates for your environment.
 :categories:
   Compliance: 34
   Cost: 136
-  Operational: 31
+  Operational: 32
   SaaS Management: 11
   Security: 74
 :optimization_count: 71
@@ -742,7 +743,7 @@ These templates can generate savings estimates for your environment.
   GP3 Volumes: 1
   Hybrid Use Benefit: 5
   IT Asset Management: 5
-  Identity & Access Management: 4
+  Identity & Access Management: 5
   Idle Compute Instances: 4
   Idle NAT Gateways: 1
   Inefficient Disk Usage: 1
@@ -791,7 +792,7 @@ These templates can generate savings estimates for your environment.
   AWS: 103
   Azure: 104
   Azure China: 1
-  Flexera: 40
+  Flexera: 41
   Flexera Optima: 1
   GCE: 2
   GitHub: 7
@@ -821,7 +822,7 @@ These templates can generate savings estimates for your environment.
   Git: 7
   IAM: 20
   IT Asset Management: 6
-  Identity & Access Management: 2
+  Identity & Access Management: 3
   KMS: 1
   Kubernetes: 2
   Managed Disks: 1
@@ -843,7 +844,7 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 2
   Tags: 3
   Usage Discount: 6
-:total_count: 286
+:total_count: 287
 -->
 <!-- End Policy Template Stats -->
 
