@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "15 minutes"
 info(
-  version: "5.0.1",
+  version: "5.1.0",
   provider: "Google",
   service: "Compute",
   policy_set: "Schedule Instance"
@@ -89,8 +89,8 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Execute Schedules"]
-  default ["Execute Schedules"] # Schedules enabled by default because resource label required to action.  Can be disabled by removing from list which is helpful for debugging / manual triggers.
+  allowed_values ["Execute Schedules", "Start Notification", "Stop Notification", "Error Notification"]
+  default ["Execute Schedules", "Start Notification", "Stop Notification", "Error Notification"] # Schedules enabled by default because resource label required to action.  Can be disabled by removing from list which is helpful for debugging / manual triggers.
 end
 
 ###############################################################################
@@ -127,6 +127,131 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get Incident data for use later
+datasource "ds_policy_incident" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/incidents"])
+    header "Api-Version", "1.0"
+    query "applied_policy_id", policy_id
+    # query "applied_policy_id", "6729221992caab6c320fb088" # For dev only
+    query "state", "triggered"
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".items[]?") do
+      field "incident_id", jq(col_item, ".id")
+      field "applied_policy_id", jq(col_item, ".applied_policy.id")
+      field "summary", jq(col_item, ".summary")
+      field "state", jq(col_item, ".state")
+      field "violation_data_count", jq(col_item, ".violation_data_count")
+      field "action_failed", jq(col_item, ".action_failed")
+      field "updated_at", jq(col_item, ".updated_at")
+    end
+  end
+end
+
+datasource "ds_policy_incident_action_failed" do
+  run_script $js_policy_incident_action_failed, $ds_policy_incident
+end
+
+script "js_policy_incident_action_failed", type: "javascript" do
+  parameters "ds_policy_incident"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_policy_incident, function(incident) {
+    return incident['action_failed'] == true
+  })
+EOS
+end
+
+# GET https://governance-3.rightscale.com/api/governance/projects/7954/action_status?incident_id=6729168ec2ac3b997eff9a0c&view=extended
+datasource "ds_policy_incident_action_failed_status" do
+  iterate $ds_policy_incident_action_failed
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/action_status"])
+    verb "GET"
+    header "User-Agent", "RS Policies"
+    header "Api-Version", "1.0"
+    query "incident_id", val(iter_item, 'incident_id')
+    query "view", "extended"
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".items[]?") do
+      field "applied_policy_id", jq(iter_item, ".applied_policy_id")
+      field "incident_id", jq(iter_item, ".incident_id")
+      field "incident_summary", jq(iter_item, ".summary")
+      field "action_status", jq(col_item, ".status")
+      field "action_items", jq(col_item, ".action_items")
+      field "action_label", jq(col_item, ".label")
+    end
+  end
+end
+
+#
+datasource "ds_policy_incident_action_failed_details" do
+  run_script $js_policy_incident_action_fail_details, $ds_policy_incident_action_failed_status, $ds_applied_policy, $ds_flexera_api_hosts
+end
+
+script "js_policy_incident_action_fail_details", type: "javascript" do
+  parameters "ds_policy_incident_action_failed_status", "ds_applied_policy", "ds_flexera_api_hosts"
+  result "result"
+  code <<-EOS
+  result = []
+  // Incidents can have multiple actions
+  // Loop through each action and compile list of failed actions
+  _.each(ds_policy_incident_action_failed_status, function(action) {
+    // Check if the incident action is status failed
+    if (action['action_status'] == 'failed') {
+      action['failed_action_items'] = _.filter(action['action_items'], function(item) {
+        return item['status'] == 'failed'
+      })
+      result.push(action)
+    }
+  })
+  // If we found any failed actions, add the policy name and UI host to the result
+  // These strings are used in the email template
+  if (result.length > 0) {
+    result[0]['policy_name'] = ds_applied_policy['name']
+    result[0]['ui_host'] = ds_flexera_api_hosts['ui']
+  }
+EOS
+end
 
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
@@ -499,17 +624,117 @@ datasource "ds_instances_schedule_result" do
   end
 end
 
+# Classify the results from ds_instances_schedule_result
+# This allows us to produce email notifications when actions are being taken
+datasource "ds_instances_schedule_result_action_start" do
+  run_script $js_instances_schedule_result_action_start, $ds_instances_schedule_result
+end
+
+script "js_instances_schedule_result_action_start", type: "javascript" do
+  parameters "ds_instances_schedule_result"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_instances_schedule_result, function(instance) {
+    if (instance['event_active'] == "true" && instance['status'] != "RUNNING" && instance['status'] != "PROVISIONING") {
+      instance['action'] = "start"
+      result.push(instance)
+    }
+  })
+  EOS
+end
+
+datasource "ds_instances_schedule_result_action_stop" do
+  run_script $js_instances_schedule_result_action_stop, $ds_instances_schedule_result
+end
+
+script "js_instances_schedule_result_action_stop", type: "javascript" do
+  parameters "ds_instances_schedule_result"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_instances_schedule_result, function(instance) {
+    console.log(JSON.stringify(instance))
+    if (instance['event_active'] == "false" && instance['status'] != "TERMINATED" && instance['status'] != "STOPPED" && instance['status'] != "STOPPING") {
+      instance['action'] = "stop"
+      result.push(instance)
+    }
+  })
+  EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_schedule_instance" do
-  validate_each $ds_instances_schedule_result do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Scheduled VM Instances"
+  validate $ds_policy_incident_action_failed_details do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Google Scheduled VM Instances Failed Actions"
+    detail_template <<-EOS
+The following actions failed:
+{{ range data }}
+**[{{ .incident_summary }}](https://{{ .ui_host }}/orgs/{{ rs_org_id }}/automation/incidents/projects/{{ rs_project_id }}={{ .incident_id }})**
+{{ range .failed_action_items }}
+```
+{{ .error }}
+```
+{{ end }}
+
+{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
+    escalate $esc_email_error
+  end
+
+  validate_each $ds_instances_schedule_result_action_start do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Starting {{ len data }} Google Scheduled VM Instances"
+    detail_template <<-EOS
+The following Google VM Instances are scheduled to start now:
+{{ range data }}
+- [{{ .resourceName }}](https://console.cloud.google.com/compute/instancesDetail/zones/{{ .zone }}/instances/{{ .resourceID }}?project={{ .accountID }}) in project `{{ .accountName }} ({{ .projectNumber }})` is scheduled to start at {{ .next_start }}.
+{{ end }}
+EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
-    escalate $esc_email
+    escalate $esc_email_start
     escalate $esc_execute_schedules
+    escalate $esc_update_schedules
+    escalate $esc_delete_schedules
+    escalate $esc_start_instances
+    escalate $esc_stop_instances
+    escalate $esc_delete_instances
+    hash_exclude "tags"
+  end
+
+  validate_each $ds_instances_schedule_result_action_stop do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Stopping {{ len data }} Google Scheduled VM Instances"
+    detail_template <<-EOS
+The following Google VM Instances are scheduled to stop now:
+{{ range data }}
+- [{{ .resourceName }}](https://console.cloud.google.com/compute/instancesDetail/zones/{{ .zone }}/instances/{{ .resourceID }}?project={{ .accountID }}) in project `{{ .accountName }} ({{ .projectNumber }})` is scheduled to stop at {{ .next_stop }}.
+{{ end }}
+EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email_stop
+    escalate $esc_execute_schedules
+    escalate $esc_update_schedules
+    escalate $esc_delete_schedules
+    escalate $esc_start_instances
+    escalate $esc_stop_instances
+    escalate $esc_delete_instances
+    hash_exclude "tags"
+  end
+
+  validate_each $ds_instances_schedule_result do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Scheduled VM Instances"
+    detail_template <<-EOS
+    The following Google VM Instances have label `{{ parameters.param_label_schedule }}` and will be automatically started and stopped on a schedule.
+  EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_update_schedules
     escalate $esc_delete_schedules
     escalate $esc_start_instances
@@ -584,8 +809,22 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_email" do
-  automatic true
+escalation "esc_email_start" do
+  automatic contains($param_automatic_action, "Start Notification")
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_email_stop" do
+  automatic contains($param_automatic_action, "Stop Notification")
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_email_error" do
+  automatic contains($param_automatic_action, "Error Notification")
   label "Send Email"
   description "Send incident email"
   email $param_email
