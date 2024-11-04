@@ -74,6 +74,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Insights/metrics/read`
   - `Microsoft.Compute/skus/read`
+  - `Microsoft.Compute/locations/vmSizes/read`
   - `Microsoft.Compute/virtualMachines/read`
   - `Microsoft.Compute/virtualMachines/write`*
   - `Microsoft.Compute/virtualMachines/powerOff/action`*
