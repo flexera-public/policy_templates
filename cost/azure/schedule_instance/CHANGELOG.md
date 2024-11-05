@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1.0
+
+- Added email notifications for Start Action, Stop Action, and Errors
+
 ## v6.0.1
 
 - Minor code improvements to conform with current standards. Functionality unchanged.

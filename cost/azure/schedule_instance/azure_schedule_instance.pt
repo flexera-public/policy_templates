@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "15 minutes"
 info(
-  version: "6.0.1",
+  version: "6.1.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Schedule Instance"
@@ -107,8 +107,8 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Execute Schedules"]
-  default ["Execute Schedules"]
+  allowed_values ["Execute Schedules", "Start Notification", "Stop Notification", "Error Notification"]
+  default ["Execute Schedules", "Start Notification", "Stop Notification", "Error Notification"] # Schedules enabled by default because resource label required to action.  Can be disabled by removing from list which is helpful for debugging / manual triggers.
 end
 
 ###############################################################################
@@ -145,6 +145,150 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# get azure directory name so we can construct the portal url
+# https://portal.azure.com/#@FLEXERA.onmicrosoft.com/resource/subscriptions/0db6431e-7324-4088-aae6-772079b7e198/resourceGroups/BK-SANDBOX/providers/Microsoft.Compute/virtualMachines/bk-tmp-scheduled-instance/overview
+# We need the FLEXERA.onmicrosoft.com part
+datasource "ds_azure_directory" do
+  request do
+    auth $auth_azure
+    host $param_azure_endpoint
+    path "/tenants"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".value[]?") do
+      field "id", jq(col_item, ".id")
+      field "tenantId", jq(col_item, ".tenantId")
+      field "tenantCategory", jq(col_item, ".tenantCategory")
+    end
+  end
+end
+
+# Get Incident data for use later
+datasource "ds_policy_incident" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/incidents"])
+    header "Api-Version", "1.0"
+    query "applied_policy_id", policy_id
+    query "state", "triggered"
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".items[]?") do
+      field "incident_id", jq(col_item, ".id")
+      field "applied_policy_id", jq(col_item, ".applied_policy.id")
+      field "summary", jq(col_item, ".summary")
+      field "state", jq(col_item, ".state")
+      field "violation_data_count", jq(col_item, ".violation_data_count")
+      field "action_failed", jq(col_item, ".action_failed")
+      field "updated_at", jq(col_item, ".updated_at")
+    end
+  end
+end
+
+datasource "ds_policy_incident_action_failed" do
+  run_script $js_policy_incident_action_failed, $ds_policy_incident
+end
+
+script "js_policy_incident_action_failed", type: "javascript" do
+  parameters "ds_policy_incident"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_policy_incident, function(incident) {
+    return incident['action_failed'] == true
+  })
+EOS
+end
+
+# GET https://governance-3.rightscale.com/api/governance/projects/7954/action_status?incident_id=6729168ec2ac3b997eff9a0c&view=extended
+datasource "ds_policy_incident_action_failed_status" do
+  iterate $ds_policy_incident_action_failed
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/action_status"])
+    verb "GET"
+    header "User-Agent", "RS Policies"
+    header "Api-Version", "1.0"
+    query "incident_id", val(iter_item, 'incident_id')
+    query "view", "extended"
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".items[]?") do
+      field "applied_policy_id", jq(iter_item, ".applied_policy_id")
+      field "incident_id", jq(iter_item, ".incident_id")
+      field "incident_summary", jq(iter_item, ".summary")
+      field "action_status", jq(col_item, ".status")
+      field "action_items", jq(col_item, ".action_items")
+      field "action_label", jq(col_item, ".label")
+    end
+  end
+end
+
+#
+datasource "ds_policy_incident_action_failed_details" do
+  run_script $js_policy_incident_action_fail_details, $ds_policy_incident_action_failed_status, $ds_applied_policy, $ds_flexera_api_hosts
+end
+
+script "js_policy_incident_action_fail_details", type: "javascript" do
+  parameters "ds_policy_incident_action_failed_status", "ds_applied_policy", "ds_flexera_api_hosts"
+  result "result"
+  code <<-EOS
+  result = []
+  // Incidents can have multiple actions
+  // Loop through each action and compile list of failed actions
+  _.each(ds_policy_incident_action_failed_status, function(action) {
+    // Check if the incident action is status failed
+    if (action['action_status'] == 'failed') {
+      action['failed_action_items'] = _.filter(action['action_items'], function(item) {
+        return item['status'] == 'failed'
+      })
+      result.push(action)
+    }
+  })
+  // If we found any failed actions, add the policy name and UI host to the result
+  // These strings are used in the email template
+  if (result.length > 0) {
+    result[0]['policy_name'] = ds_applied_policy['name']
+    result[0]['ui_host'] = ds_flexera_api_hosts['ui']
+  }
+EOS
+end
 
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
@@ -371,11 +515,11 @@ datasource "ds_azure_instances_with_status" do
 end
 
 datasource "ds_instances_with_schedule" do
-  run_script $js_instances_with_schedule, $ds_azure_instances_with_status, $ds_applied_policy, $param_tag_schedule
+  run_script $js_instances_with_schedule, $ds_azure_instances_with_status, $ds_applied_policy, $ds_azure_directory, $param_tag_schedule
 end
 
 script "js_instances_with_schedule", type: "javascript" do
-  parameters "ds_azure_instances_with_status", "ds_applied_policy", "param_tag_schedule"
+  parameters "ds_azure_instances_with_status", "ds_applied_policy", "ds_azure_directory", "param_tag_schedule"
   result "result"
   code <<-EOS
   result = []
@@ -466,6 +610,7 @@ script "js_instances_with_schedule", type: "javascript" do
         stop_rule: stop_rule,
         tz: timezone,
         // Resource Fields
+        tenantId: ds_azure_directory[0]['tenantId'],
         accountID: instance['subscriptionId'],
         accountName: instance['subscriptionName'],
         resourceGroup: instance['resourceGroup'],
@@ -474,6 +619,7 @@ script "js_instances_with_schedule", type: "javascript" do
         resourceType: instance['resourceType'],
         resourceKind: instance['resourceKind'],
         region: instance['region'],
+        status: instance['status'],
         osType: instance['osType'],
         service: "Microsoft.Compute",
         tags: tags.join(', '),
@@ -517,6 +663,7 @@ datasource "ds_instances_schedule_result" do
     field "stop_rule", val(iter_item, "stop_rule")
     field "tz", val(iter_item, "tz")
     # Resource Fields
+    field "tenantId", val(iter_item, "tenantId")
     field "accountID", val(iter_item, "accountID")
     field "accountName", val(iter_item, "accountName")
     field "resourceGroup", val(iter_item, "resourceGroup")
@@ -527,6 +674,7 @@ datasource "ds_instances_schedule_result" do
     field "region", val(iter_item, "region")
     field "osType", val(iter_item, "osType")
     field "service", "Microsoft.Compute"
+    field "status", val(iter_item, "status")
     field "tags", val(iter_item, "tags")
     field "tags_object", val(iter_item, "tags_object")
     field "policy_name", val(iter_item, "policy_name")
@@ -538,17 +686,114 @@ datasource "ds_instances_schedule_result" do
   end
 end
 
+# Classify the results from ds_instances_schedule_result
+# This allows us to produce email notifications when actions are being taken
+datasource "ds_instances_schedule_result_action_start" do
+  run_script $js_instances_schedule_result_action_start, $ds_instances_schedule_result
+end
+
+script "js_instances_schedule_result_action_start", type: "javascript" do
+  parameters "ds_instances_schedule_result"
+  result "result"
+  code <<-EOS
+  result = []
+  _.each(ds_instances_schedule_result, function(instance) {
+    if (instance['event_active'] == "true" && /(running|creating)/.test(instance['status']) == false) {
+      instance['action'] = "start"
+      result.push(instance)
+    }
+  })
+  EOS
+end
+
+datasource "ds_instances_schedule_result_action_stop" do
+  run_script $js_instances_schedule_result_action_stop, $ds_instances_schedule_result
+end
+
+script "js_instances_schedule_result_action_stop", type: "javascript" do
+  parameters "ds_instances_schedule_result"
+  result "result"
+  code <<-EOS
+  result = []
+  _.each(ds_instances_schedule_result, function(instance) {
+    console.log(JSON.stringify(instance))
+    if (instance['event_active'] == "false" && /(deallocated|deallocating)/.test(instance['status']) == false) {
+      instance['action'] = "stop"
+      result.push(instance)
+    }
+  })
+  EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_schedule_instance" do
-  validate_each $ds_instances_schedule_result do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Scheduled Instances"
+  validate $ds_policy_incident_action_failed_details do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Failed Actions"
+    detail_template <<-EOS
+The following actions failed:
+{{ range data }}
+**[{{ .incident_summary }}](https://{{ .ui_host }}/orgs/{{ rs_org_id }}/automation/incidents/projects/{{ rs_project_id }}={{ .incident_id }})**
+{{ range .failed_action_items }}
+```
+{{ .error }}
+```
+{{ end }}
+{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
+    escalate $esc_email_error
+  end
+
+  validate_each $ds_instances_schedule_result_action_start do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Starting {{ len data }} Instances"
+    detail_template <<-EOS
+The following Azure Instances are scheduled to start now:
+{{ range data }}
+- [{{ .resourceName }}](https://portal.azure.com/#@{{ .tenantId }}/resource/subscriptions/{{ .accountID }}/resourceGroups/{{ .resourceGroup }}/providers/Microsoft.Compute/virtualMachines/{{ .resourceName }}/overview) in subscription `{{ .accountName }}` is scheduled to start at {{ .next_start }}.
+{{ end }}
+EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
-    escalate $esc_email
+    escalate $esc_email_start
     escalate $esc_execute_schedules
+    escalate $esc_update_schedules
+    escalate $esc_delete_schedules
+    escalate $esc_start_instances
+    escalate $esc_stop_instances
+    escalate $esc_delete_instances
+    hash_exclude "tags"
+  end
+
+  validate_each $ds_instances_schedule_result_action_stop do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Stopping {{ len data }} Instances"
+    detail_template <<-EOS
+The following Azure Instances are scheduled to stop now:
+{{ range data }}
+- [{{ .resourceName }}](https://portal.azure.com/#@{{ .tenantId }}/resource/subscriptions/{{ .accountID }}/resourceGroups/{{ .resourceGroup }}/providers/Microsoft.Compute/virtualMachines/{{ .resourceName }}/overview) in subscription `{{ .accountName }}` is scheduled to stop at {{ .next_stop }}.
+{{ end }}
+EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email_stop
+    escalate $esc_execute_schedules
+    escalate $esc_update_schedules
+    escalate $esc_delete_schedules
+    escalate $esc_start_instances
+    escalate $esc_stop_instances
+    escalate $esc_delete_instances
+    hash_exclude "tags"
+  end
+
+  validate_each $ds_instances_schedule_result do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Scheduled Instances"
+    detail_template <<-EOS
+    The following Azure Scheduled Instances have tag `{{ parameters.param_tag_schedule }}` and will be automatically started and stopped on a schedule.
+  EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_update_schedules
     escalate $esc_delete_schedules
     escalate $esc_start_instances
@@ -557,6 +802,9 @@ policy "pol_schedule_instance" do
     hash_exclude "tags", "tags_object"
     export do
       resource_level true
+      field "tenantId" do
+        label "Tenant ID"
+      end
       field "accountID" do
         label "Subscription ID"
       end
@@ -617,8 +865,22 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_email" do
-  automatic true
+escalation "esc_email_start" do
+  automatic contains($param_automatic_action, "Start Notification")
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_email_stop" do
+  automatic contains($param_automatic_action, "Stop Notification")
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_email_error" do
+  automatic contains($param_automatic_action, "Error Notification")
   label "Send Email"
   description "Send incident email"
   email $param_email
@@ -769,34 +1031,29 @@ define execute_schedule($instance, $param_azure_endpoint, $param_skipshutdown, $
   else
     call task_label("Start executing schedule for instance: " + $instance["resourceName"])
     call get_instance_state($instance, $param_azure_endpoint) retrieve $state
-    if $state =~ /^(deallocate|deallocating)$/
-      call task_label("Skipping attempting to modify a deallocated instance: " + $instance["resourceName"] + " " + $status)
-    else
-      call parse_schedule($instance['schedule']) retrieve $start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $schedule_days, $timezone
+    call parse_schedule($instance['schedule']) retrieve $start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $schedule_days, $timezone
+    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active
 
-      call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active
-
-      if $window_active
-        # if window active, should be running
-        if $state == "running"
-          call task_label("Skipping starting a running instance: " + $instance["resourceName"] + " " + $state)
-        else
-          if $state !~ /^(stopped|stopping)$/
-            call task_label("Skipping starting an instance that is not stopped or stopping: " + $instance["resourceName"] + " " + $state)
-          else
-            call start_instance($instance, $param_azure_endpoint)
-          end
-        end
+    if $window_active
+      # if window active, should be running
+      if $state == "running"
+        call task_label("Skipping starting a running instance: " + $instance["resourceName"] + " " + $state)
       else
-        if $state =~ /^(stopped|stopping)$/
-          call task_label("Skipping stopping a stopped instance: " + $instance["resourceName"] + " " + $state)
+        if $state !~ /^(deallocated|deallocating)$/
+          call task_label("Skipping starting an instance that is not deallocated or deallocating: " + $instance["resourceName"] + " " + $state)
         else
-          # else window not active, should NOT be running
-          if $state !~ /^(running|creating)$/
-            call task_label("Skipping stopping an instance that not running or creating: " + $instance["resourceName"]+ " " + $state)
-          else
-            call stop_instance($instance, $param_azure_endpoint, $param_skipshutdown)
-          end
+          call start_instance($instance, $param_azure_endpoint)
+        end
+      end
+    else
+      if $state =~ /^(deallocated|deallocating)$/
+        call task_label("Skipping stopping a stopped instance: " + $instance["resourceName"] + " " + $state)
+      else
+        # else window not active, should NOT be running
+        if $state !~ /^(running|creating)$/
+          call task_label("Skipping stopping an instance that not running or creating: " + $instance["resourceName"]+ " " + $state)
+        else
+          call stop_instance($instance, $param_azure_endpoint, $param_skipshutdown)
         end
       end
     end
@@ -841,7 +1098,7 @@ define update_schedule($instance, $param_azure_endpoint, $schedule, $param_tag_s
   $new_tags[$param_tag_schedule] = $schedule
 
   $host = $param_azure_endpoint
-  $href = $instance["id"]
+  $href = $instance["resourceID"]
   $params = "?api-version=2020-06-01"
   $url = $host + $href + $params
   call task_label("PATCH " + $url)
@@ -866,7 +1123,7 @@ define update_schedule($instance, $param_azure_endpoint, $schedule, $param_tag_s
   $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
 
   if $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response updating Azure instance tags: " + $instance["id"] + " " + to_json($response)
+    raise "Unexpected response updating Azure instance tags: " + $instance["resourceID"] + " " + to_json($response)
   else
     call task_label("Updating Azure instance tags successful: " + $instance["resourceName"])
   end
@@ -882,7 +1139,7 @@ define delete_schedule($instance, $param_azure_endpoint, $param_tag_schedule) re
   end
 
   $host = $param_azure_endpoint
-  $href = $instance["id"]
+  $href = $instance["resourceID"]
   $params = "?api-version=2020-06-01"
   $url = $host + $href + $params
   call task_label("PATCH " + $url)
@@ -907,7 +1164,7 @@ define delete_schedule($instance, $param_azure_endpoint, $param_tag_schedule) re
   $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
 
   if $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response deleting Azure instance tags: " + $instance["id"] + " " + to_json($response)
+    raise "Unexpected response deleting Azure instance tags: " + $instance["resourceID"] + " " + to_json($response)
   else
     call task_label("Deleting Azure instance tags successful: " + $instance["resourceName"])
   end
@@ -915,7 +1172,7 @@ end
 
 define delete_instance($instance, $param_azure_endpoint) do
   $host = $param_azure_endpoint
-  $href = $instance["id"]
+  $href = $instance["resourceID"]
   $params = "?api-version=2023-07-01"
   $url = $host + $href + $params
   call task_label("DELETE " + $url)
@@ -933,7 +1190,7 @@ define delete_instance($instance, $param_azure_endpoint) do
   $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response deleting Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+    raise "Unexpected response deleting Azure VM instance: "+ $instance["resourceID"] + " " + to_json($response)
   else
     call task_label("Delete Azure VM instance successful: " + $instance["resourceName"])
   end
@@ -976,7 +1233,7 @@ end
 
 define get_instance_state($instance, $param_azure_endpoint) return $state do
   $host = $param_azure_endpoint
-  $href = $instance["id"] + "/instanceView"
+  $href = $instance["resourceID"] + "/instanceView"
   $params = "?api-version=2023-07-01"
   $url = $host + $href + $params
   call task_label("GET " + $url)
@@ -997,7 +1254,7 @@ define get_instance_state($instance, $param_azure_endpoint) return $state do
 
   $state = null
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response getting Azure VM instance status: "+ $instance["id"] + " " + to_json($response)
+    raise "Unexpected response getting Azure VM instance status: "+ $instance["resourceID"] + " " + to_json($response)
   else
     foreach $status in $response["body"]["statuses"] do
       if $status["code"] =~ /PowerState/
@@ -1011,7 +1268,7 @@ end
 
 define start_instance($instance, $param_azure_endpoint) do
   $host = $param_azure_endpoint
-  $href = $instance["id"] + "/start"
+  $href = $instance["resourceID"] + "/start"
   $params = "?api-version=2023-07-01"
   $url = $host + $href + $params
   call task_label("POST " + $url)
@@ -1031,7 +1288,7 @@ define start_instance($instance, $param_azure_endpoint) do
   $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response powering on Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+    raise "Unexpected response powering on Azure VM instance: "+ $instance["resourceID"] + " " + to_json($response)
   else
     call task_label("Power on Azure VM instance request successful: " + $instance["resourceName"])
     call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
@@ -1047,7 +1304,7 @@ end
 
 define stop_instance($instance, $param_azure_endpoint, $param_skipshutdown) do
   $host = $param_azure_endpoint
-  $href = $instance["id"] + "/powerOff"
+  $href = $instance["resourceID"] + "/deallocate"
   $params = "?api-version=2023-07-01"
   $url = $host + $href + $params
   call task_label("POST " + $url)
@@ -1072,13 +1329,13 @@ define stop_instance($instance, $param_azure_endpoint, $param_skipshutdown) do
   $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response powering off Azure VM instance: "+ $instance["id"] + " " + to_json($response)
+    raise "Unexpected response powering off Azure VM instance: "+ $instance["resourceID"] + " " + to_json($response)
   else
     call task_label("Power off Azure VM instance request successful: " + $instance["resourceName"])
     call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
 
     sub timeout: 5m, on_timeout: handle_timeout() do
-      while $instance_state != "stopped" do
+      while $instance_state != "deallocated" do
         call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
         sleep(10)
       end
