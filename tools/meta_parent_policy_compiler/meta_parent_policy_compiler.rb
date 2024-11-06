@@ -430,12 +430,10 @@ end
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PUBLISH__", publish)
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_DEPRECATED__", deprecated)
   if !hide_skip_approvals.empty?
-    # Replace the placeholder with the actual value
     output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_HIDE_SKIP_APPROVALS__", hide_skip_approvals)
   else
-    # Remove the entire line containing hide_skip_approvals, including any preceding whitespace and commas
+    # Remove the entire line containing hide_skip_approvals
     output_pt = output_pt.gsub(/^\s*,?\s*hide_skip_approvals: "__PLACEHOLDER_FOR_CHILD_POLICY_HIDE_SKIP_APPROVALS__",?\s*\n/, "")
-    # Remove any trailing commas before the closing parenthesis
     output_pt = output_pt.gsub(/,\s*\)/, "\n)")
   end
   # Attempt to identify the URL to the child policy template file on github using the file_path provided
