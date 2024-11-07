@@ -1,5 +1,9 @@
 # Changelog
 
+## V7.1.0
+
+- Added email notifications for Start Action, Stop Action, and Errors
+
 ## v7.0.2
 
 - Minor changes to policy template to pass lint tests. No functional changes.
