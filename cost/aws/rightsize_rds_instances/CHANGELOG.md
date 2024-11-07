@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.5.2
+
+- Added `hide_skip_approvals` field to the info section, enabling the UI to dynamically show or hide the "Skip Approval" option. Functionality unchanged.
+
 ## v5.5.1
 
 - Fixed issue where policy template would fail if "db.serverless" instances were found
