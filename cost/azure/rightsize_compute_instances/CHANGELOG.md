@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v6.0.0
 
 - Recommendations now consider number of attached data disks. Sizes that would not support the current number of attached disks for an instance will not be recommended.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.3.2
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v5.3.1
 
 - Added `hide_skip_approvals` field to the info section, enabling the UI to dynamically show or hide the "Skip Approval" option. Functionality unchanged.

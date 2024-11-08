@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.1.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v5.1.0
 
 - Modified internal names for incident fields for more accurate scraping into Optimization dashboard

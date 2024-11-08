@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.3.2
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v8.3.1
 
 - Minor code improvements to conform with current standards. Functionality unchanged.

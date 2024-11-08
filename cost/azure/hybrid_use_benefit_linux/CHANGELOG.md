@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.1.2
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v5.1.1
 
 - Fixed issue where policy actions were not properly reporting errors
