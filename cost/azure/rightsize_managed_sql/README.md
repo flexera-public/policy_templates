@@ -16,7 +16,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 - The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
 - For unused resources, the `Estimated Monthly Savings` is the full cost of the resource.
-- For underutilized resources, the `Estimated Monthly Savings` is the full cost of the resource is divided by the current capacity of the instance, multiplied by the recommended capacity of the instance, and then subtracted from the current cost of the instance.
+- For underutilized resources, the savings is the difference of the current cost of the resource and the estimated cost of the recommended resource type.
 - Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
 - If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
@@ -42,6 +42,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Statistic Interval* - The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets.
 - *Statistic Lookback Period* - How many days back to look at connection and CPU utilization data for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
 - *Underutilized Instance CPU Threshold (%)* - The CPU threshold at which to consider an instance to be underutilized and therefore be flagged for downsizing.
+- *Skip Instance Sizes* - Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
@@ -81,4 +82,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

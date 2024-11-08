@@ -8,7 +8,7 @@ This policy is no longer being updated. The [Flexera Automation Outdated Applied
 
 This Policy Template scans all applied policies in a Flexera account and finds ones that are using an outdated version of a policy template from the Flexera catalog. An incident is raised, and optionally an email is sent, containing a list of these outdated applied policies.
 
-## Functional Details
+## How It Works
 
 The policy utilizes the Flexera API to get a list of all applied policies in the Flexera account. The same API is then used to get a list of all policy templates in the catalog. An incident is raised with any applied policies whose version number does not match the version number for that same template in the catalog. Applied policies created from templates not in the policy catalog are not included in the results.
 
@@ -35,4 +35,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

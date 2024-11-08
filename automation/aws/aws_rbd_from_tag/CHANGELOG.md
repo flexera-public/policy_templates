@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3.2
+
+- Fixed issue where tag keys that were not lowercase would not be properly detected and used
+
 ## v2.3.1
 
 - Fixed issue that would sometimes cause execution to fail if an AWS Account had no tag keys

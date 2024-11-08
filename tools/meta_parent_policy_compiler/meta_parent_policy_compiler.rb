@@ -26,7 +26,10 @@ default_child_policy_template_files = [
   "../../cost/aws/rightsize_rds_instances/aws_rightsize_rds_instances.pt",
   "../../cost/aws/rds_instance_license_info/rds_instance_license_info.pt",
   "../../cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt",
+  "../../cost/aws/rightsize_elasticache/aws_rightsize_elasticache.pt",
+  "../../cost/aws/rightsize_redshift/aws_rightsize_redshift.pt",
   "../../cost/aws/s3_bucket_size/aws_bucket_size.pt",
+  "../../cost/aws/s3_lifecycle/aws_s3_lifecycle.pt",
   "../../cost/aws/s3_storage_policy/aws_s3_bucket_policy_check.pt",
   "../../cost/aws/schedule_instance/aws_schedule_instance.pt",
   "../../cost/aws/superseded_instances/aws_superseded_instances.pt",
@@ -38,6 +41,7 @@ default_child_policy_template_files = [
   "../../cost/aws/unused_volumes/aws_delete_unused_volumes.pt",
   "../../operational/aws/ec2_stopped_report/aws_ec2_stopped_report.pt",
   "../../operational/aws/lambda_functions_with_high_error_rate/lambda_functions_with_high_error_rate.pt",
+  "../../operational/aws/lambda_provisioned_concurrency/aws_lambda_provisioned_concurrency.pt",
   "../../operational/aws/long_running_instances/long_running_instances.pt",
   "../../operational/aws/scheduled_ec2_events/aws_scheduled_ec2_events.pt",
   "../../operational/aws/tag_cardinality/aws_tag_cardinality.pt",
@@ -76,7 +80,10 @@ default_child_policy_template_files = [
   "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
   "../../cost/azure/rightsize_managed_disks/azure_rightsize_managed_disks.pt",
   "../../cost/azure/rightsize_managed_sql/azure_rightsize_managed_sql.pt",
-  "../../cost/azure/rightsize_netapp_files/azure_rightsize_netapp_files.pt",
+  "../../cost/azure/rightsize_managed_sql_storage/azure_rightsize_managed_sql_storage.pt",
+  "../../cost/azure/rightsize_mysql_flexible/azure_rightsize_mysql_flexible.pt",
+  "../../cost/azure/rightsize_mysql_single/azure_rightsize_mysql_single.pt",
+  "../../cost/azure/rightsize_netapp/azure_rightsize_netapp.pt",
   "../../cost/azure/rightsize_sql_instances/azure_rightsize_sql_instances.pt",
   "../../cost/azure/rightsize_sql_storage/azure_rightsize_sql_storage.pt",
   #"../../cost/azure/rightsize_synapse_sql_pools/azure_rightsize_synapse_sql_pools.pt",
@@ -85,6 +92,7 @@ default_child_policy_template_files = [
   "../../cost/azure/unused_app_service_plans/azure_unused_app_service_plans.pt",
   "../../cost/azure/unused_firewalls/azure_unused_firewalls.pt",
   "../../cost/azure/unused_ip_addresses/azure_unused_ip_addresses.pt",
+  "../../cost/azure/unused_load_balancers/azure_unused_load_balancers.pt",
   "../../cost/azure/unused_sql_databases/azure_unused_sql_databases.pt",
   "../../cost/azure/unused_vngs/azure_unused_vngs.pt",
   "../../cost/azure/unused_volumes/azure_unused_volumes.pt",
@@ -137,8 +145,10 @@ default_child_policy_template_files = [
   "../../compliance/google/long_stopped_instances/google_long_stopped_instances.pt",
   "../../compliance/google/unlabeled_resources/unlabeled_resources.pt",
   "../../cost/google/cloud_sql_idle_instance_recommendations/google_sql_idle_instance_recommendations.pt",
+  "../../cost/google/cloud_storage_lifecycle/google_cloud_storage_lifecycle.pt",
   "../../cost/google/idle_ip_address_recommendations/google_idle_ip_address_recommendations.pt",
   "../../cost/google/idle_persistent_disk_recommendations/google_idle_persistent_disk_recommendations.pt",
+  "../../cost/google/rightsize_cloudsql_recommendations/google_rightsize_cloudsql_recommendations.pt",
   "../../cost/google/object_storage_optimization/google_object_storage_optimization.pt",
   "../../cost/google/recommender/recommender.pt",
   "../../cost/google/rightsize_vm_recommendations/google_rightsize_vm_recommendations.pt",
@@ -173,7 +183,7 @@ def compile_meta_parent_policy(file_path)
   publish = "true"
   publish = publish_scan[0][0] if !publish_scan.empty?
   # get the deprecated string if it exists, defaulting to false if not present
-  deprecated_scan = pt.scan(/publish: "(.*?)"/)
+  deprecated_scan = pt.scan(/deprecated: "(.*?)"/)
   deprecated = "false"
   deprecated = deprecated_scan[0][0] if !deprecated_scan.empty?
   # print("Name: #{name}\n")
@@ -326,7 +336,11 @@ end
     # print(export_block)
     # print("\n---\n")
     # From the export block, capture the field blocks
-    fields = export_block[0].scan(/(^.*field\s+\".*?\".*?end)/m).flatten
+    fields = [] # Provide a default value, which is no fields declared
+    # Check if export_block is length > 0
+    if export_block.length > 0
+      fields = export_block[0].scan(/(^.*field\s+\".*?\".*?end)/m).flatten
+    end
     fields.each do |field|
       # Remove path from the field output in the meta parent
       field.gsub!(/\n.*?path.*?\n/, "\n")

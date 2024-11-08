@@ -1,5 +1,18 @@
 # Changelog
 
+## v6.0.0
+
+- Recommendations now consider number of attached data disks. Sizes that would not support the current number of attached disks for an instance will not be recommended.
+- Azure credential now requires `Microsoft.Compute/locations/vmSizes/read` permission to support the above.
+
+## v5.4.0
+
+- Added support for downsizing multiple sizes where appropriate
+
+## v5.3.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v5.3.0
 
 - Added ability to set metrics granularity when gathering resource metrics from Azure

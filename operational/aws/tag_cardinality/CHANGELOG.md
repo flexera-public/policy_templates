@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.2
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v3.1.1
 
 - Fixed bug related to pagination on the AWS Tagging API

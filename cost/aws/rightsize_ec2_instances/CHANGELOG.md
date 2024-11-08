@@ -1,5 +1,17 @@
 # Changelog
 
+## v5.3.1
+
+- Added `hide_skip_approvals` field to the info section, enabling the UI to dynamically show or hide the "Skip Approval" option. Functionality unchanged.
+
+## v5.3.0
+
+- Added support for downsizing multiple sizes where appropriate
+
+## v5.2.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v5.2.0
 
 - Added `Resource ARN` to incident table.

@@ -1,7 +1,8 @@
 # Orgs and Clouds Vendor Accounts
 
-This policy generates a list of cross organization Cloud Vendor Accounts connected to Flexera Optima based on
-the bill connection settings for Azure and Google, as well as full list of AWS accounts under the payer account connected for each Flexera Organization.
+## What It Does
+
+This policy generates a list of cross organization Cloud Vendor Accounts connected to Flexera Cloud Cost Optimization based on the bill connection settings for Azure and Google, as well as full list of AWS accounts under the payer account connected for each Flexera Organization.
 
 _Note 1: 'enterprise_manager' user role is required for each organization._
 
@@ -21,11 +22,14 @@ The following policy actions are taken on any resources found to be out of compl
 
 - Send an email report
 
-## Required Permissions
+## Prerequisites
 
-This policy requires permissions to access RightScale resources (Optima).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-- Governance - enterprise_manager
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `enterprise_manager`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
@@ -35,4 +39,4 @@ This policy requires permissions to access RightScale resources (Optima).  Befor
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This policy template does not incur any cloud costs.
