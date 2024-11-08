@@ -48,12 +48,15 @@ task :generate_policy_list do
       recommendation_type = pp.parsed_info[:recommendation_type]
       publish = pp.parsed_info[:publish]
       deprecated = pp.parsed_info[:deprecated]
+      hide_skip_approvals = pp.parsed_info[:hide_skip_approvals]
+
 
       # 'publish' defaults to true unless explicitly set to false
       # 'deprecated' defaults to false unless explicitly set to true
       publish = !(publish == 'false' || publish == false)
       deprecated = deprecated == 'true' || deprecated == true
-      hide_skip_approvals = pp.parsed_info[:hide_skip_approvals]
+      # 'hide_skip_approvals' defaults to false unless explicitly set to true
+      hide_skip_approvals = hide_skip_approvals == 'true' || hide_skip_approvals == true
     end
 
     # Get version from long description
@@ -66,8 +69,7 @@ task :generate_policy_list do
       puts "Skipping #{pp.parsed_name} because publish flag set to a value other than 'true'"
     else
       # Get datetime for last time file was modified
-      commits = github_client.commits(repo_name, branch, path: file)
-      updated_at = commits.first.commit.author.date.utc.iso8601 if !commits.empty?
+      updated_at = `git log -1 --format="%cI" -- #{file}`.strip
       generally_recommended = generally_recommended_template_names.include?(pp.parsed_name) && !deprecated
 
       puts "Adding #{pp.parsed_name}"
