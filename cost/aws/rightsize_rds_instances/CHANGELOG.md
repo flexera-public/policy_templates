@@ -1,6 +1,6 @@
 # Changelog
 
-## v5.2.3
+## v5.5.3
 
 - Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
 
