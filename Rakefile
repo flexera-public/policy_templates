@@ -69,7 +69,8 @@ task :generate_policy_list do
       puts "Skipping #{pp.parsed_name} because publish flag set to a value other than 'true'"
     else
       # Get datetime for last time file was modified
-      updated_at = `git log -1 --format="%cI" -- #{file}`.strip
+      commits = github_client.commits(repo_name, branch, path: file)
+      updated_at = commits.first.commit.author.date.utc.iso8601 if !commits.empty?
       generally_recommended = generally_recommended_template_names.include?(pp.parsed_name) && !deprecated
 
       puts "Adding #{pp.parsed_name}"
