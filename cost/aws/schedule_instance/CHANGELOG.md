@@ -1,6 +1,6 @@
 # Changelog
 
-## V7.1.0
+## v7.1.0
 
 - Added email notifications for Start Action, Stop Action, and Errors
 
