@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.1.0
+
+- Added email notifications for Start Action, Stop Action, and Errors
+
 ## v5.0.1
 
 - Removed datasource that was not necessary for results
