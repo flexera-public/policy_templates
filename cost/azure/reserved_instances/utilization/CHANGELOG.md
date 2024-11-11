@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.2
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v3.1.1
 
 - Fixed Microsoft VM Size Flexibility URL which prevented the policy from completing without error. Policy functionality is unchanged.

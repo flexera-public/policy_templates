@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v0.4.0
 
 - Policy template renamed to `Kubecost Container Request Rightsizing Recommendations` to better reflect its functionality
