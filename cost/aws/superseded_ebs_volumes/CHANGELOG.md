@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.3.4
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v6.3.3
 
 - Fixed issue where Currency Conversion messaging in policy incident would show incorrectly. Functionality unchanged.

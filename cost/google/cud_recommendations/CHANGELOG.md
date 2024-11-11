@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.2
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v4.2.1
 
 - Added `Service` field to incident table

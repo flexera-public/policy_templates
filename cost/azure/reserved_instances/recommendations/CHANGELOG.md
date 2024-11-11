@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v4.1.0
 
 - Updated Azure API versions to provide more up to date and accurate results
