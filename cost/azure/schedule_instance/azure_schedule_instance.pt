@@ -1021,17 +1021,21 @@ end
 # Secondary CWF functions for taking action on individual instances
 define execute_schedule($instance, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule) return $response do
   if $instance['schedule'] == null
-    call task_label("Skipping instance without schedule: " + $instance["resourceName"])
+    call task_label("Skipping instance without schedule: " + $instance["resourceID"])
   else
-    call task_label("Start executing schedule for instance: " + $instance["resourceName"])
-
-    # Loop until we get a state
-    # There are rare cases where we don't always get a state, so we will retry for 3 minutes until we do get a valid state
-    sub timeout: 3m do
-      while $state == null do
-        call get_instance_state($instance, $param_azure_endpoint) retrieve $state
+    call task_label("Start executing schedule for instance: " + $instance["resourceID"])
+    # Get the current state of the instance
+    call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
+    sub timeout: 5m, on_timeout: handle_timeout() do
+      while $instance_state == null do
+        call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
         sleep(10)
       end
+    end
+
+    # If we still don't have a state, raise an error
+    if $instance_state == null
+      raise "Failed to retrieve state for instance: " + $instance["resourceID"]
     end
 
     call parse_schedule($instance['schedule']) retrieve $start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $schedule_days, $timezone
@@ -1039,28 +1043,28 @@ define execute_schedule($instance, $param_azure_endpoint, $param_skipshutdown, $
 
     if $window_active
       # if window active, should be running
-      if $state == "running"
-        call task_label("Skipping starting a running instance: " + $instance["resourceName"] + " " + $state)
+      if $instance_state == "running"
+        call task_label("Skipping starting a running instance: " + $instance["resourceID"] + " " + $instance_state)
       else
-        if $state !~ /^(deallocated|deallocating|stopped|stopping)$/
-          call task_label("Skipping starting an instance that is not deallocated, deallocating, stopped, or stopping: " + $instance["resourceName"] + " " + $state)
+        if $instance_state !~ /^(deallocated|deallocating|stopped|stopping)$/
+          call task_label("Skipping starting an instance that is not deallocated, deallocating, stopped, or stopping: " + $instance["resourceID"] + " " + $instance_state)
         else
           call start_instance($instance, $param_azure_endpoint)
         end
       end
     else
-      if $state =~ /^(deallocated|deallocating)$/
-        call task_label("Skipping stopping a stopped instance: " + $instance["resourceName"] + " " + $state)
+      if $instance_state =~ /^(deallocated|deallocating)$/
+        call task_label("Skipping stopping a stopped instance: " + $instance["resourceID"] + " " + $instance_state)
       else
         # else window not active, should NOT be running
-        if $state !~ /^(running|creating)$/
-          call task_label("Skipping stopping an instance that not running or creating: " + $instance["resourceName"]+ " " + $state)
+        if $instance_state !~ /^(running|creating)$/
+          call task_label("Skipping stopping an instance that not running or creating: " + $instance["resourceID"]+ " " + $instance_state)
         else
           call stop_instance($instance, $param_azure_endpoint, $param_skipshutdown)
         end
       end
     end
-    call task_label("Finished executing schedule for instance: " + $instance["resourceName"])
+    call task_label("Finished executing schedule for instance: " + $instance["resourceID"])
   end
 end
 
@@ -1234,14 +1238,14 @@ define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_
   end
 end
 
-define get_instance_state($instance, $param_azure_endpoint) return $state do
+define get_instance_state($instance, $param_azure_endpoint) return $instance_state do
   $host = $param_azure_endpoint
   $href = $instance["resourceID"] + "/instanceView"
   $params = "?api-version=2023-07-01"
   $url = $host + $href + $params
   call task_label("GET " + $url)
 
-  $query_strings = { "api-version": "2019-03-01" }
+  $query_strings = { "api-version": "2023-07-01" }
 
   $response = http_request(
     auth: $$auth_azure,
@@ -1255,15 +1259,15 @@ define get_instance_state($instance, $param_azure_endpoint) return $state do
   call task_label("Get Azure VM instance status response: " + to_s($response["code"]))
   $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
 
-  $state = null
+  $instance_state = null
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response getting Azure VM instance status: "+ $instance["resourceID"] + " " + to_json($response)
   else
     foreach $status in $response["body"]["statuses"] do
       if $status["code"] =~ /PowerState/
-        $state = $status["code"]
-        $state = split($state, "/")[1]
-        call task_label("Get Azure VM instance status successful: " + $instance["resourceName"] + " " + $state)
+        $instance_state = $status["code"]
+        $instance_state = split($instance_state, "/")[1]
+        call task_label("Get Azure VM instance status successful: " + $instance["resourceName"] + " " + $instance_state)
       end
     end
   end
@@ -1294,8 +1298,8 @@ define start_instance($instance, $param_azure_endpoint) do
     raise "Unexpected response powering on Azure VM instance: "+ $instance["resourceID"] + " " + to_json($response)
   else
     call task_label("Power on Azure VM instance request successful: " + $instance["resourceName"])
+    # Verify the requested state is reached
     call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
-
     sub timeout: 5m, on_timeout: handle_timeout() do
       while $instance_state != "running" do
         call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
@@ -1335,8 +1339,8 @@ define stop_instance($instance, $param_azure_endpoint, $param_skipshutdown) do
     raise "Unexpected response powering off Azure VM instance: "+ $instance["resourceID"] + " " + to_json($response)
   else
     call task_label("Power off Azure VM instance request successful: " + $instance["resourceName"])
+    # Verify the requested state is reached
     call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
-
     sub timeout: 5m, on_timeout: handle_timeout() do
       while $instance_state != "deallocated" do
         call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
