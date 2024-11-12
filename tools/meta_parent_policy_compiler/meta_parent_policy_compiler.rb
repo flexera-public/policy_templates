@@ -29,6 +29,7 @@ default_child_policy_template_files = [
   "../../cost/aws/rightsize_elasticache/aws_rightsize_elasticache.pt",
   "../../cost/aws/rightsize_redshift/aws_rightsize_redshift.pt",
   "../../cost/aws/s3_bucket_size/aws_bucket_size.pt",
+  "../../cost/aws/s3_lifecycle/aws_s3_lifecycle.pt",
   "../../cost/aws/s3_storage_policy/aws_s3_bucket_policy_check.pt",
   "../../cost/aws/schedule_instance/aws_schedule_instance.pt",
   "../../cost/aws/superseded_instances/aws_superseded_instances.pt",
@@ -144,6 +145,7 @@ default_child_policy_template_files = [
   "../../compliance/google/long_stopped_instances/google_long_stopped_instances.pt",
   "../../compliance/google/unlabeled_resources/unlabeled_resources.pt",
   "../../cost/google/cloud_sql_idle_instance_recommendations/google_sql_idle_instance_recommendations.pt",
+  "../../cost/google/cloud_storage_lifecycle/google_cloud_storage_lifecycle.pt",
   "../../cost/google/idle_ip_address_recommendations/google_idle_ip_address_recommendations.pt",
   "../../cost/google/idle_persistent_disk_recommendations/google_idle_persistent_disk_recommendations.pt",
   "../../cost/google/rightsize_cloudsql_recommendations/google_rightsize_cloudsql_recommendations.pt",
@@ -184,6 +186,10 @@ def compile_meta_parent_policy(file_path)
   deprecated_scan = pt.scan(/deprecated: "(.*?)"/)
   deprecated = "false"
   deprecated = deprecated_scan[0][0] if !deprecated_scan.empty?
+  # get the hide_skip_approvals string if it exists, defaulting to false if not present
+  hide_skip_approvals_scan = pt.scan(/hide_skip_approvals: "(.*?)"/)
+  hide_skip_approvals = ""
+  hide_skip_approvals = hide_skip_approvals_scan[0][0] if !hide_skip_approvals_scan.empty?
   # print("Name: #{name}\n")
   # print("Description: #{description}\n")
   # print("\n###########################\n")
@@ -423,6 +429,13 @@ end
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_VERSION__", version)
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PUBLISH__", publish)
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_DEPRECATED__", deprecated)
+  if !hide_skip_approvals.empty?
+    output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_HIDE_SKIP_APPROVALS__", hide_skip_approvals)
+  else
+    # Remove the entire line containing hide_skip_approvals
+    output_pt = output_pt.gsub(/^\s*,?\s*hide_skip_approvals: "__PLACEHOLDER_FOR_CHILD_POLICY_HIDE_SKIP_APPROVALS__",?\s*\n/, "")
+    output_pt = output_pt.gsub(/,\s*\)/, "\n)")
+  end
   # Attempt to identify the URL to the child policy template file on github using the file_path provided
   # This would only work if the pt file is located under the `policy_templates` repo directory
   # If it is not, then the URL will be incorrect

@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.6.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v3.6.0
 
 - Added support for DynamoDB and MemoryDB reservation recommendations

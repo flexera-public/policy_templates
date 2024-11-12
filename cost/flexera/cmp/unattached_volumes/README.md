@@ -4,7 +4,7 @@
 
 This policy is no longer being updated.
 
-## What it does
+## What It Does
 
 This Policy Template scans all volumes in the given account and identifies any unattached volumes that have been unattached for at least the number of user-specified days. If any are found, an incident report will show the volumes, and related information and an email will be sent to the user-specified email address.
 
@@ -52,4 +52,4 @@ This policy requires permissions to access RightScale resources (clouds, volumes
 
 ### Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

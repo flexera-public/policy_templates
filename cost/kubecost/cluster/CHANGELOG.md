@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v0.3.0
 
 - Policy template renamed to `Kubecost Cluster Rightsizing Recommendation` to better reflect its functionality

@@ -1,5 +1,18 @@
 # Changelog
 
+## v6.0.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v6.0.0
+
+- Recommendations now consider number of attached data disks. Sizes that would not support the current number of attached disks for an instance will not be recommended.
+- Azure credential now requires `Microsoft.Compute/locations/vmSizes/read` permission to support the above.
+
+## v5.4.0
+
+- Added support for downsizing multiple sizes where appropriate
+
 ## v5.3.1
 
 - Minor code improvements to conform with current standards. Functionality unchanged.

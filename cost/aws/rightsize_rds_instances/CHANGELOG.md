@@ -1,5 +1,21 @@
 # Changelog
 
+## v5.5.3
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v5.5.2
+
+- Added `hide_skip_approvals` field to the info section, enabling the UI to dynamically show or hide the "Skip Approval" option. Functionality unchanged.
+
+## v5.5.1
+
+- Fixed issue where policy template would fail if "db.serverless" instances were found
+
+## v5.5.0
+
+- Added support for downsizing multiple sizes where appropriate
+
 ## v5.4.2
 
 - Minor code improvements to conform with current standards. Functionality unchanged.

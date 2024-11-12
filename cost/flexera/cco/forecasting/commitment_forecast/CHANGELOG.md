@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v4.0.0
 
 - Renamed policy template to `Vendor Spend Commitment Forecast` to avoid confusion with policy templates for RIs/SPs

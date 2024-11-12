@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.2
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v3.0.1
 
 - Fixed issue with meta policy failing during execution due to order of fields in incident
