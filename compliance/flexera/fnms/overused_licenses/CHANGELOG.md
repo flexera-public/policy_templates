@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4.2
+
+- Fixed issue with consumption percentage calculation.
+
 ## v2.4.1
 
 - Minor code improvements to conform with current standards. Functionality unchanged.
