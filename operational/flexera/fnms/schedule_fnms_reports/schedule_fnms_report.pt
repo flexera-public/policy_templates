@@ -14,8 +14,13 @@ info(
   hide_skip_approvals: "true"
 )
 
+###############################################################################
+# Parameters
+###############################################################################
+
 parameter "param_fnms_host" do
   type "string"
+  category "Policy Settings"
   label "FlexNet Manager host"
   description "Flexera One FlexNet Manager host"
   allowed_values "slo.app.flexera.com", "slo.app.flexera.eu", "slo.app.flexera.au", "slo-uat.app.flexera.com", "slo-uat.app.flexera.eu", "slo-uat.app.flexera.au"
@@ -24,6 +29,7 @@ end
 
 parameter "param_report_id" do
   type "string"
+  category "Policy Settings"
   label "FlexNet Manager Report ID"
   description "IT Asset Management Custom View ID"
   # No default value because parameter is required
@@ -31,17 +37,23 @@ end
 
 parameter "param_report_title" do
   type "string"
+  category "Policy Settings"
   label "Report Title in the Mail"
-  default "FlexNet Manager Report"
   description "Report header in the report result (e.g. FlexNet Manager Report)"
+  default "FlexNet Manager Report"
 end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses of the recipients you wish to notify"
   description "A list of email address(es) to notify"
   default []
 end
+
+###############################################################################
+# Authentication
+###############################################################################
 
 credentials "auth_flexera" do
   schemes "oauth2"
@@ -50,13 +62,17 @@ credentials "auth_flexera" do
   tags "provider=flexera"
 end
 
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
 # Make API call and get the header data
 datasource "ds_itam_report_header" do
   request do
     auth $auth_flexera
-    host $param_fnms_host
     verb "POST"
     scheme "https"
+    host $param_fnms_host
     path "/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx"
     query "orgid", to_s(rs_org_id) # Must convert rs_org_id to string otherwise query param does not get set
     header "Content-Type", "text/xml;charset=utf-8"
@@ -83,9 +99,9 @@ end
 datasource "ds_itam_report" do
   request do
     auth $auth_flexera
-    host $param_fnms_host
     verb "POST"
     scheme "https"
+    host $param_fnms_host
     path "/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx"
     query "orgid", to_s(rs_org_id) # Must convert rs_org_id to string otherwise query param does not get set
     header "Content-Type", "text/xml;charset=utf-8"
@@ -211,16 +227,24 @@ script "js_json2markdowntable", type: "javascript" do
   EOS
 end
 
-policy 'fnms_report_policy' do
+###############################################################################
+# Policy
+###############################################################################
+
+policy 'esc_fnms_report_policy' do
   validate $ds_json2markdowntable do
     summary_template "FlexNet Manager Report - {{data.name}}"
     detail_template <<-EOS
 {{data.sResult}}
     EOS
-    escalate $send_report
     check eq(1, 0) # Always fail the check to trigger escalation every time policy runs
+    escalate $send_report
   end
 end
+
+###############################################################################
+# Escalations
+###############################################################################
 
 escalation "send_report" do
   automatic true
