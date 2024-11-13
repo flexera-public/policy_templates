@@ -14,8 +14,13 @@ info(
   hide_skip_approvals: "true"
 )
 
+###############################################################################
+# Parameters
+###############################################################################
+
 parameter "param_expiring" do
   type "number"
+  category "Policy Settings"
   label "Time Period of Expiration"
   description "Number of days out to search for license expiration"
   default 90
@@ -23,9 +28,14 @@ end
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses of the recipients you wish to notify"
   description "A list of email addresse(s) to notify"
 end
+
+###############################################################################
+# Authentication
+###############################################################################
 
 credentials "auth_flexeraone" do
   schemes "oauth2"
@@ -34,7 +44,11 @@ credentials "auth_flexeraone" do
   tags "provider=flexera"
 end
 
-pagination "itam_pagination" do
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_itam" do
   get_page_marker do
     body_path jq(response, "if .total == 0 then null else .offset + 10000 end")
   end
@@ -43,16 +57,20 @@ pagination "itam_pagination" do
   end
 end
 
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
 datasource "ds_licenses" do
   request do
     auth $auth_flexeraone
     host join(["api.", get(1, split(f1_app_host, "app."))])
     path join(["/fnms/v1/orgs/", rs_org_id, "/license-attributes"])
-    header "Api-Version", "0.1"
-    header "User-Agent", "RS Policies"
     query "status", "Active"
     query "limit", "10000"
-    pagination $itam_pagination
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    pagination $pagination_itam
   end
 end
 
@@ -82,11 +100,15 @@ script "js_check_date", type: "javascript" do
 EOF
 end
 
+###############################################################################
+# Policy
+###############################################################################
+
 policy 'itam_policy' do
   validate_each $ds_check_date do
     summary_template 'IT Asset - Expiring Licenses'
-    escalate $send_report
     check eq(to_n(val(item,"expiring")),0)
+    escalate $esc_send_report
     export do
       field "licenseId"
       field "publisher"
@@ -97,12 +119,15 @@ policy 'itam_policy' do
       field "licenseDuration"
       field "licenseType"
       field "expiryDate"
-
     end
   end
 end
 
-escalation "send_report" do
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_send_report" do
   automatic true
   label "Send Email"
   description "Send incident email"
