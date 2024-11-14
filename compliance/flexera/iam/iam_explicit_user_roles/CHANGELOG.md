@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v4.0.0
 
 - Specific roles can now be ignored via the `Role Ignore List` parameter

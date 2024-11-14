@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.0.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v5.0.1
 
 - Removed datasource that was not necessary for results
