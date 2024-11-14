@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.2
+
+- Replace usage of Kubecost deprecated endpoints for newest versions
+
 ## v0.3.1
 
 - Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators

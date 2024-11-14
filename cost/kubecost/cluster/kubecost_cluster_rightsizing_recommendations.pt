@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.3.1",
+  version: "0.3.2",
   provider: "Kubecost",
   service: "Kubernetes",
   policy_set: "Rightsize Clusters",
@@ -86,16 +86,6 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-# Get applied policy metadata for use later
-datasource "ds_applied_policy" do
-  request do
-    auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
-  end
-end
-
 datasource "ds_kubecost_currency_code" do
   request do
     host $param_kubecost_host
@@ -162,79 +152,114 @@ script "js_target_util", type:"javascript" do
   code "result = { value: (param_target_util / 100).toString() }"
 end
 
-datasource "ds_cluster_sizing" do
+datasource "ds_clusters" do
   request do
     host $param_kubecost_host
-    path "/model/savings/clusterSizing"
+    path "/model/savings/clusterSizingETL"
     query "minNodeCount", $param_min_nodes
     query "window", join([$param_lookback, "d"])
     query "targetUtilization", val($ds_target_util, "value")
+    query "allowSharedCore", "true"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    field "accountID", jmes_path(response, "data.parameters.clusterId")
-    field "accountName", jmes_path(response, "data.parameters.clusterName")
-    field "totalNodeCount", jmes_path(response, "data.currentClusterInfo.totalCounts.totalNodeCount")
-    field "totalRAMGB", jmes_path(response, "data.currentClusterInfo.totalCounts.totalRAMGB")
-    field "totalVCPUs", jmes_path(response, "data.currentClusterInfo.totalCounts.totalVCPUs")
-    field "monthlyRate", jmes_path(response, "data.currentClusterInfo.monthlyRate")
-    field "recommendations", jmes_path(response, "data.recommendations")
+    field "accountID", jmes_path(response, "data")
   end
 end
 
+datasource "ds_get_cluster_list" do
+  run_script $js_get_cluster_list, $ds_clusters
+end
+
+script "js_get_cluster_list", type: "javascript" do
+  parameters "ds_clusters"
+  result "result"
+  code <<-EOS
+  result = []
+_.each(ds_clusters.accountID, function(value, key){
+  result.push({
+    "clusterId": (key)
+  })
+})
+  EOS
+end
+
+datasource "ds_cluster_sizing" do
+  run_script $js_cluster_parse, $ds_clusters
+end
+
+script "js_cluster_parse", type: "javascript" do
+  parameters "data"
+  result "result"
+  code <<-'EOS'
+  result = []
+  // Loop over each accountKey in data.accountID
+  for (var accountKey in data.accountID) {
+    var accountData = data.accountID[accountKey];
+    // Extract required fields and push them as a flat object to extractedData
+    result.push({
+      accountID: accountKey,
+      clusterName: accountKey,
+      totalNodeCount: accountData.currentClusterInfo.totalCounts.totalNodeCount,
+      totalRAMGB: accountData.currentClusterInfo.totalCounts.totalRAMGB,
+      totalVCPUs: accountData.currentClusterInfo.totalCounts.totalVCPUs,
+      monthlyRate: accountData.currentClusterInfo.monthlyRate,
+      recommendations: accountData.recommendations
+    });
+  }
+  EOS
+end
+
 datasource "ds_recommendations" do
-  run_script $js_recommendations, $ds_cluster_sizing, $ds_currency, $ds_applied_policy, $param_strategy, $param_min_nodes, $param_lookback, $param_target_util
+  run_script $js_recommendations, $ds_cluster_sizing, $ds_currency, $param_strategy, $param_min_nodes, $param_lookback, $param_target_util
 end
 
 script "js_recommendations", type: "javascript" do
-  parameters "ds_cluster_sizing", "ds_currency", "ds_applied_policy", "param_strategy", "param_min_nodes", "param_lookback", "param_target_util"
+  parameters "ds_cluster_sizing", "ds_currency", "param_strategy", "param_min_nodes", "param_lookback", "param_target_util"
   result "result"
   code <<-'EOS'
+  result = []
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
-    formatted_number = "0"
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
 
-    if (number) {
-      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
-
-      if (separator) {
-        withSeparator = ""
-
-        for (var i = 0; i < formatted_number.length; i++) {
-          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
-          withSeparator += formatted_number[i]
-        }
-
-        formatted_number = withSeparator
-      }
-
-      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
-      if (decimal) { formatted_number += "." + decimal }
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
     }
 
-    return formatted_number
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
   }
 
   selected_strategy = param_strategy
 
+  _.each(ds_cluster_sizing, function(crs){
   if (selected_strategy == "Optimal") {
     selected_strategy = "Single"
 
     // Note: Savings is presented as a negative value. Hence why we select the lowest, not the highest.
-    if (ds_cluster_sizing['recommendations']['multi']['monthlySavings'] < ds_cluster_sizing['recommendations']['single']['monthlySavings']) {
+
+    if (crs['recommendations']['multi']['monthlySavings'] < crs['recommendations']['single']['monthlySavings']) {
       selected_strategy = "Multi"
     }
   }
 
-  recommendation = ds_cluster_sizing['recommendations'][selected_strategy.toLowerCase()]
+  recommendation = crs['recommendations'][selected_strategy.toLowerCase()]
 
   regions = []
   _.each(recommendation['pools'], function(pool) { regions.push(pool['type']['region']) })
   region = _.uniq(_.compact(regions)).join(', ')
 
-  accountID = ds_cluster_sizing['accountID']
-  accountName = ds_cluster_sizing['accountName']
+  accountID = crs['accountID']
+  accountName = crs['accountName']
   if (typeof(accountName) != 'string' || accountName == '') { accountName = accountID }
 
   message_strategy = selected_strategy
@@ -248,6 +273,7 @@ script "js_recommendations", type: "javascript" do
     "- Target Utilization: ", param_target_util, "%\n\n",
     "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
   ].join('')
+  savings = Math.round(recommendation['monthlySavings']).toFixed(2)
 
   recommendationDetails = [
     "Modify settings for cluster ", accountID,
@@ -255,33 +281,34 @@ script "js_recommendations", type: "javascript" do
     " and pools are configured to match the Recommended Pools field."
   ].join('')
 
-  result = [{
+  result.push({
     accountID: accountID,
     accountName: accountName,
     strategy: selected_strategy,
-    totalNodeCount: ds_cluster_sizing['totalNodeCount'],
-    totalRAMGB: ds_cluster_sizing['totalRAMGB'],
-    totalVCPUs: ds_cluster_sizing['totalVCPUs'],
-    monthlyRate: Math.round(ds_cluster_sizing['monthlyRate'] * 1000) / 1000,
-    totalMonthlyCost: Math.round(recommendation['totalMonthlyCost'] * 1000) / 1000,
+    totalNodeCount: crs['totalNodeCount'],
+    totalRAMGB: crs['totalRAMGB'],
+    totalVCPUs: crs['totalVCPUs'],
+    monthlyRate: Math.round(crs['monthlyRate']).toFixed(2),
+    totalMonthlyCost: Math.round(recommendation['totalMonthlyCost']).toFixed(2),
     // Note: Savings is presented as a negative value. Hence why we multiply by a negative number to invert it
-    savings: Math.round(recommendation['monthlySavings'] * -1000) / 1000,
+    savings: Math.round(recommendation['monthlySavings']).toFixed(2),
     savingsCurrency: ds_currency['symbol'],
     nodeCount: recommendation['nodeCount'],
     pools: JSON.stringify(recommendation['pools']),
     recommendationDetails: recommendationDetails,
     region: region,
     service: "Kubernetes",
-    policy_name: ds_applied_policy['name'],
     min_nodes: param_min_nodes,
     lookback: param_lookback,
     target_util: param_target_util,
     message: message,
     message_savings: [
       ds_currency['symbol'], ' ',
-      formatNumber(Math.round(recommendation['monthlySavings'] * -1000) / 1000, ds_currency['separator'])
+      formatNumber(Math.round(recommendation['monthlySavings']).toFixed(2), ds_currency['separator'])
     ].join('')
-  }]
+  })
+
+})
 EOS
 end
 
@@ -291,12 +318,7 @@ end
 
 policy "pol_kubecost_recommendations" do
   validate_each $ds_recommendations do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}"
-    detail_template <<-'EOS'
-    **Potential Monthly Savings:** {{ with index data 0 }}{{ .message_savings }}{{ end }}
-
-    {{ with index data 0 }}{{ .message }}{{ end }}
-    EOS
+    summary_template "Kubecost Cluster Rightsizing"
     check eq(val(item, "accountID"), "")
     escalate $esc_email
     export do
