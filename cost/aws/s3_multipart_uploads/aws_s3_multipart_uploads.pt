@@ -26,6 +26,14 @@ parameter "param_email" do
   default []
 end
 
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
 parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
@@ -413,21 +421,19 @@ datasource "ds_aws_bucket_multipart_uploads" do
     host val(iter_item, "host")
     path join(["/", val(iter_item, "name"), "/"])
     query "uploads", ""
-    header "Content-Type", "application/json"
-    header "Accept", "application/json"
     ignore_status [404]
   end
   result do
-    encoding "json"
-    collect jmes_path(response, "Uploads[*]") do
-      field "key", jmes_path(col_item, "Key")
-      field "uploadId", jmes_path(col_item, "UploadId")
-      field "storageClass", jmes_path(col_item, "StorageClass")
-      field "creationDate", val(iter_item, "Initiated")
-      field "initiatorId", jmes_path(col_item, "Initiator.ID")
-      field "initiatorName", jmes_path(col_item, "Initiator.DisplayName")
-      field "ownerId", jmes_path(col_item, "Owner.ID")
-      field "ownerName", jmes_path(col_item, "Owner.DisplayName")
+    encoding "xml"
+    collect xpath(response, "//ListMultipartUploadsResult/Upload", "array") do
+      field "key", xpath(col_item, "Key")
+      field "uploadId", xpath(col_item, "UploadId")
+      field "storageClass", xpath(col_item, "StorageClass")
+      field "creationDate", xpath(col_item, "Initiated")
+      field "initiatorId", xpath(col_item, "Initiator/ID")
+      field "initiatorName", xpath(col_item, "Initiator/DisplayName")
+      field "ownerId", xpath(col_item, "Owner/ID")
+      field "ownerName", xpath(col_item, "Owner/DisplayName")
       field "bucketName", val(iter_item, "name")
       field "bucketCreationDate", val(iter_item, "creation_date")
       field "bucketTags", val(iter_item, "tags")
@@ -444,17 +450,15 @@ datasource "ds_aws_bucket_multipart_uploads_with_parts" do
     host val(iter_item, "host")
     path join(["/", val(iter_item, "bucketName"), "/", val(iter_item, "key")])
     query "uploadId", val(iter_item, "uploadId")
-    header "Content-Type", "application/json"
-    header "Accept", "application/json"
     ignore_status [404]
   end
   result do
-    encoding "json"
+    encoding "xml"
     field "parts" do
-      collect jmes_path(response, "Parts[*]") do
-        field "number", jmes_path(col_item, "PartNumber")
-        field "lastModified", jmes_path(col_item, "LastModified")
-        field "size", jmes_path(col_item, "Size")
+      collect xpath(response, "//ListPartsResult/Part", "array") do
+        field "number", xpath(col_item, "PartNumber")
+        field "lastModified", xpath(col_item, "LastModified")
+        field "size", xpath(col_item, "Size")
       end
     end
     field "key", val(iter_item, "key")
@@ -488,8 +492,11 @@ script "js_aws_bucket_multipart_uploads_normalized", type: "javascript" do
     tags = []
 
     if (upload['bucketTags']) {
-      tags = _.map(bucket['bucketTags'], function(item) { return [ item['key'], item['value'] ].join('=') })
+      tags = _.map(upload['bucketTags'], function(item) { return [ item['key'], item['value'] ].join('=') })
     }
+
+    part_sizes = _.map(_.pluck(upload['parts'], 'size'), function(item) { return Number(item) })
+    total_size = _.reduce(part_sizes, function(memo, num) { return memo + num }, 0)
 
     new_upload['accountID'] = ds_aws_account['id']
     new_upload['accountName'] = ds_aws_account['name']
@@ -497,13 +504,13 @@ script "js_aws_bucket_multipart_uploads_normalized", type: "javascript" do
     new_upload['id'] = new_upload['uploadId']
     new_upload['tags'] = tags.join(', ')
     new_upload['partsNumber'] = new_upload['parts'].length
-    new_upload['total_size'] = _.reduce(_.pluck(upload['parts'], 'size'), function(memo, num) { return memo + num }, 0)
+    new_upload['total_size'] = total_size
     new_upload['service'] = "AmazonS3"
 
     return new_upload
   })
 
-  result = _.filter(result, function(upload) { return upload['total_size'] >= param_min_size })
+  result = _.filter(result, function(upload) { return upload['total_size'] >= param_min_size || param_min_size == 0 })
   result = _.sortBy(result, 'total_size').reverse()
 EOS
 end
