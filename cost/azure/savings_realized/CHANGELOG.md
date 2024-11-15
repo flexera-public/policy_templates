@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.9.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v3.9.1
 
 - Minor code improvements to conform with current standards. Functionality unchanged.

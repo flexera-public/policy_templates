@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v3.2.0
 
 - Added option to include Azure subscriptions and resource groups in the results alongside Azure resources

@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v3.0.0
 
 - Policy can now be run against an arbitrary number of days in the past
