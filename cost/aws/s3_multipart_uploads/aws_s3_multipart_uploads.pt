@@ -1,0 +1,728 @@
+name "AWS S3 Incomplete Multi-Part Uploads"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy template reports incomplete multi-part uploads in AWS S3 buckets and, optionally, aborts them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_multipart_uploads) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "AWS",
+  service: "Storage",
+  policy_set: "",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
+end
+
+parameter "param_min_size" do
+  type "number"
+  category "Filters"
+  label "Minimum Size (Bytes)"
+  description "Minimum size, in bytes, of incomplete multi-part uploads to include in results. Uploads smaller than this size will not be reported."
+  min_value 0
+  default 0
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Abort Incomplete Multi-Part Uploads"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+## Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_get_aws_buckets" do
+  request do
+    auth $auth_aws
+    host "s3.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListAllMyBucketsResult/Buckets/Bucket", "array") do
+      field "name", xpath(col_item, "Name")
+      field "creation_date", xpath(col_item, "CreationDate")
+    end
+  end
+end
+
+datasource "ds_aws_buckets_with_region" do
+  iterate $ds_get_aws_buckets
+  request do
+    auth $auth_aws
+    host "s3.amazonaws.com"
+    path join(["/", val(iter_item, "name")])
+    query "location", ""
+  end
+  result do
+    encoding "xml"
+    field "region", xpath(response, "//LocationConstraint")
+    field "name", val(iter_item, "name")
+    field "creation_date", val(iter_item, "creation_date")
+  end
+end
+
+datasource "ds_aws_buckets_sanitized" do
+  run_script $js_aws_buckets_sanitized, $ds_aws_buckets_with_region
+end
+
+script "js_aws_buckets_sanitized", type: "javascript" do
+  parameters "ds_aws_buckets_with_region"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_aws_buckets_with_region, function(bucket) {
+    if (typeof(bucket['region']) != 'string' || bucket['region'] == '' || bucket['region'] == 'us-east-1') {
+      region = 'us-east-1'
+      host = 's3.amazonaws.com'
+    } else if (bucket['region'] == 'EU') {
+      region = 'eu-west-1'
+      host = 's3-eu-west-1.amazonaws.com'
+    } else {
+      region = bucket['region'].toLowerCase().trim()
+      host = 's3-' + region + '.amazonaws.com'
+    }
+
+    return {
+      name: bucket['name'],
+      creation_date: bucket['creation_date'],
+      region: region,
+      host: host
+    }
+  })
+EOS
+end
+
+datasource "ds_aws_buckets_region_filtered" do
+  run_script $js_aws_buckets_region_filtered, $ds_aws_buckets_sanitized, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_aws_buckets_region_filtered", type: "javascript" do
+  parameters "ds_aws_buckets_sanitized", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_aws_buckets_sanitized, function(bucket) {
+      include_bucket = _.contains(param_regions_list, bucket['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_bucket = !include_bucket
+      }
+
+      return include_bucket
+    })
+  } else {
+    result = ds_aws_buckets_sanitized
+  }
+EOS
+end
+
+datasource "ds_aws_buckets_with_tags" do
+  iterate $ds_aws_buckets_region_filtered
+  request do
+    auth $auth_aws
+    host val(iter_item, "host")
+    path join(["/", val(iter_item, "name")])
+    query "tagging", ""
+    # Buckets with no tags cause a 404 response so we ignore that
+    ignore_status [404]
+  end
+  result do
+    encoding "xml"
+    field "name", val(iter_item, "name")
+    field "region", val(iter_item, "region")
+    field "creation_date", val(iter_item, "creation_date")
+    field "host", val(iter_item, "host")
+    field "tags" do
+      collect xpath(response, "//Tagging/TagSet/Tag", "array") do
+        field "key", xpath(col_item, "Key")
+        field "value", xpath(col_item, "Value")
+      end
+    end
+  end
+end
+
+datasource "ds_aws_buckets_tag_filtered" do
+  run_script $js_aws_buckets_tag_filtered, $ds_aws_buckets_with_tags, $ds_aws_buckets_region_filtered, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_aws_buckets_tag_filtered", type: "javascript" do
+  parameters "ds_aws_buckets_with_tags", "ds_aws_buckets_region_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-EOS
+  // Logic to ensure any buckets skipped because of a 404 response due to no tags
+  // are still included in the final result
+  tagged_bucket_list = _.map(ds_aws_buckets_with_tags, function(bucket) {
+    return bucket['name'] + '___' + bucket['region']
+  })
+
+  tagless_buckets = _.reject(ds_aws_buckets_region_filtered, function(bucket) {
+    return _.contains(tagged_bucket_list, bucket['name'] + '___' + bucket['region'])
+  })
+
+  aws_buckets = ds_aws_buckets_with_tags.concat(tagless_buckets)
+
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.filter(aws_buckets, function(bucket) {
+      resource_tags = {}
+
+      if (typeof(resource['tags']) == 'object') {
+        _.each(resource['tags'], function(tag) {
+          resource_tags[tag['key']] = tag['value']
+        })
+      }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = aws_buckets
+  }
+EOS
+end
+
+datasource "ds_aws_bucket_multipart_uploads" do
+  iterate $ds_aws_buckets_tag_filtered
+  request do
+    auth $auth_aws
+    host val(iter_item, "host")
+    path join(["/", val(iter_item, "name"), "/"])
+    query "uploads", ""
+    header "Content-Type", "application/json"
+    header "Accept", "application/json"
+    ignore_status [404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Uploads[*]") do
+      field "key", jmes_path(col_item, "Key")
+      field "uploadId", jmes_path(col_item, "UploadId")
+      field "storageClass", jmes_path(col_item, "StorageClass")
+      field "creationDate", val(iter_item, "Initiated")
+      field "initiatorId", jmes_path(col_item, "Initiator.ID")
+      field "initiatorName", jmes_path(col_item, "Initiator.DisplayName")
+      field "ownerId", jmes_path(col_item, "Owner.ID")
+      field "ownerName", jmes_path(col_item, "Owner.DisplayName")
+      field "bucketName", val(iter_item, "name")
+      field "bucketCreationDate", val(iter_item, "creation_date")
+      field "bucketTags", val(iter_item, "tags")
+      field "region", val(iter_item, "region")
+      field "host", val(iter_item, "host")
+    end
+  end
+end
+
+datasource "ds_aws_bucket_multipart_uploads_with_parts" do
+  iterate $ds_aws_bucket_multipart_uploads
+  request do
+    auth $auth_aws
+    host val(iter_item, "host")
+    path join(["/", val(iter_item, "bucketName"), "/", val(iter_item, "key")])
+    query "uploadId", val(iter_item, "uploadId")
+    header "Content-Type", "application/json"
+    header "Accept", "application/json"
+    ignore_status [404]
+  end
+  result do
+    encoding "json"
+    field "parts" do
+      collect jmes_path(response, "Parts[*]") do
+        field "number", jmes_path(col_item, "PartNumber")
+        field "lastModified", jmes_path(col_item, "LastModified")
+        field "size", jmes_path(col_item, "Size")
+      end
+    end
+    field "key", val(iter_item, "key")
+    field "uploadId", val(iter_item, "uploadId")
+    field "storageClass", val(iter_item, "storageClass")
+    field "creationDate", val(iter_item, "creationDate")
+    field "initiatorId", val(iter_item, "initiatorId")
+    field "initiatorName", val(iter_item, "initiatorName")
+    field "ownerId", val(iter_item, "ownerId")
+    field "ownerName", val(iter_item, "ownerName")
+    field "bucketName", val(iter_item, "bucketName")
+    field "bucketCreationDate", val(iter_item, "bucketCreationDate")
+    field "bucketTags", val(iter_item, "bucketTags")
+    field "region", val(iter_item, "region")
+    field "host", val(iter_item, "host")
+  end
+end
+
+datasource "ds_aws_bucket_multipart_uploads_normalized" do
+  run_script $js_aws_bucket_multipart_uploads_normalized, $ds_aws_bucket_multipart_uploads_with_parts, $ds_aws_account, $ds_applied_policy, $param_min_size
+end
+
+script "js_aws_bucket_multipart_uploads_normalized", type: "javascript" do
+  parameters "ds_aws_bucket_multipart_uploads_with_parts", "ds_aws_account", "ds_applied_policy", "param_min_size"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_aws_bucket_multipart_uploads_with_parts, function(upload) {
+    new_upload = {}
+    _.each(_.keys(upload), function(key) { new_upload[key] = upload[key] })
+
+    tags = []
+
+    if (upload['bucketTags']) {
+      tags = _.map(bucket['bucketTags'], function(item) { return [ item['key'], item['value'] ].join('=') })
+    }
+
+    new_upload['accountID'] = ds_aws_account['id']
+    new_upload['accountName'] = ds_aws_account['name']
+    new_upload['policy_name'] = ds_applied_policy['name']
+    new_upload['id'] = new_upload['uploadId']
+    new_upload['tags'] = tags.join(', ')
+    new_upload['partsNumber'] = new_upload['parts'].length
+    new_upload['total_size'] = _.reduce(_.pluck(upload['parts'], 'size'), function(memo, num) { return memo + num }, 0)
+    new_upload['service'] = "AmazonS3"
+
+    return new_upload
+  })
+
+  result = _.filter(result, function(upload) { return upload['total_size'] >= param_min_size })
+  result = _.sortBy(result, 'total_size').reverse()
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_aws_multipart_uploads" do
+  validate_each $ds_aws_bucket_multipart_uploads_normalized do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS S3 Incomplete Multi-Part Uploads Found"
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
+    escalate $esc_email
+    escalate $esc_abort_uploads
+    hash_exclude "tags"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "bucketName" do
+        label "Bucket Name"
+      end
+      field "id" do
+        label "Upload ID"
+      end
+      field "key" do
+        label "Upload Key"
+      end
+      field "storageClass" do
+        label "Upload Storage Class"
+      end
+      field "partsNumber" do
+        label "Upload Parts (#)"
+      end
+      field "total_size" do
+        label "Upload Size (Bytes)"
+      end
+      field "tags" do
+        label "Bucket Tags"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "host" do
+        label "Host"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_abort_uploads" do
+  automatic contains($param_automatic_action, "Abort Incomplete Multi-Part Uploads")
+  label "Abort Incomplete Multi-Part Uploads"
+  description "Approval to abort all selected incomplete multi-part uploads"
+  run "abort_uploads", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define abort_uploads($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $upload in $data do
+    sub on_error: handle_error() do
+      call abort_upload($upload) retrieve $abort_response
+      $$all_responses << $abort_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define abort_upload($upload) return $response do
+  $host = $upload["host"]
+  $href = "/" + $upload["bucketName"] + "/" + $upload["key"]
+  $params = "?uploadId=" + $upload["id"]
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "delete",
+    href: $href,
+    host: $host,
+    query_strings: {
+      "uploadId": $upload["id"]
+    }
+  )
+
+  task_label("Abort AWS S3 multi-part upload response: " + $upload["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response aborting AWS S3 multi-part upload: "+ $upload["id"] + " " + to_json($response)
+  else
+    task_label("Abort AWS S3 multi-part upload successful: " + $upload["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end
