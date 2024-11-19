@@ -86,6 +86,16 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
 datasource "ds_kubecost_currency_code" do
   request do
     host $param_kubecost_host
@@ -212,11 +222,11 @@ script "js_cluster_parse", type: "javascript" do
 end
 
 datasource "ds_recommendations" do
-  run_script $js_recommendations, $ds_cluster_sizing, $ds_currency, $param_strategy, $param_min_nodes, $param_lookback, $param_target_util
+  run_script $js_recommendations, $ds_cluster_sizing, $ds_currency, $ds_applied_policy,$param_strategy, $param_min_nodes, $param_lookback, $param_target_util
 end
 
 script "js_recommendations", type: "javascript" do
-  parameters "ds_cluster_sizing", "ds_currency", "param_strategy", "param_min_nodes", "param_lookback", "param_target_util"
+  parameters "ds_cluster_sizing", "ds_currency","ds_applied_policy", "param_strategy", "param_min_nodes", "param_lookback", "param_target_util"
   result "result"
   code <<-'EOS'
   result = []
@@ -302,6 +312,7 @@ script "js_recommendations", type: "javascript" do
     lookback: param_lookback,
     target_util: param_target_util,
     message: message,
+    policy_name: ds_applied_policy['name'],
     message_savings: [
       ds_currency['symbol'], ' ',
       formatNumber(Math.round(recommendation['monthlySavings']).toFixed(2), ds_currency['separator'])
