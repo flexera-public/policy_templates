@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v2.4
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for

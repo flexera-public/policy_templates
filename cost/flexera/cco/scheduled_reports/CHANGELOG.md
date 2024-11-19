@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.5.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v3.5.0
 
 - Added parameter `Graph Dimension Value Count` to enable configuration of number of dimensions included in the report graph
