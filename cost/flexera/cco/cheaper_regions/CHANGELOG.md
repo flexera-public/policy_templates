@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v2.4.1
 
 - Deprecated: This policy is no longer being updated.

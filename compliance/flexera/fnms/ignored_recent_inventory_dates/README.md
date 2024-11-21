@@ -1,4 +1,4 @@
-# ITAM Ignore Recent Inventory Dates
+# ITAM Ignored Recent Inventory Dates
 
 ## What It Does
 

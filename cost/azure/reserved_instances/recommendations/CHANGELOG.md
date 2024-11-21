@@ -4,6 +4,10 @@
 
 - Added batch processing for large datasources.
 
+## v4.1.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v4.1.1
 
 - Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
