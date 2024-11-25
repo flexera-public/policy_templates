@@ -6,6 +6,68 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2837](https://github.com/flexera-public/policy_templates/pull/2837): POL-1417 Azure Savings Realized from Reservations - fix NaN issue related to incident creation
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+> Fixes a bug that produces this error preventing the policy incident from being created for an EU Customer:
+> `incident service client: create incident: [Incident create]: failed to encode request body: json: unsupported value: NaN`
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+> Fixes a bug that produces this error preventing the policy incident from being created for an EU Customer:
+> `incident service client: create incident: [Incident create]: failed to encode request body: json: unsupported value: NaN`
+>
+
+#### Metadata
+
+- **Policies**: [Azure Savings Realized from Reservations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/savings_realized/README.md)
+- **Merged At**: 2024-11-22 13:32:40 UTC
+
+---
+
+### PR [#2841](https://github.com/flexera-public/policy_templates/pull/2841): POL-1416 New Policy: AWS S3 Incomplete Multi-Part Uploads
+
+#### Description
+
+> New policy template `AWS S3 Incomplete Multi-Part Uploads` that reports incomplete S3 multi-part uploads.
+>
+
+#### Metadata
+
+- **Policies**: [AWS S3 Incomplete Multi-Part Uploads](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_multipart_uploads/README.md), [Meta Parent: AWS S3 Incomplete Multi-Part Uploads](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_multipart_uploads/README.md)
+- **Merged At**: 2024-11-22 13:28:09 UTC
+
+---
+
+### PR [#2722](https://github.com/flexera-public/policy_templates/pull/2722): FOPTS-5124 Added batch processing for some Policies with high memory consumption
+
+#### Description
+
+> Added batch processing in AWS Object Storage Optimization, Azure Databricks Rightsize Compute Instances and Azure Reserved Instance Recommendations Policies
+>
+>
+> Following the release of batch processing for all organizations, it was decided to modify the templates with the highest memory consumption to make use of batch processing. These policies are:
+> - Azure Databricks Rightsize Compute Instances
+> - Azure Reserved Instance Recommendations
+>
+> NOTE: For AWS Object Storage Optimization, I think there was a mistake in the parameters to run script
+> _$js_aws_s3_objects_with_storage_class_. It was using _$ds_aws_list_s3_objects_ but I think it should use, _$ds_aws_s3_objects_ because it is the data source that has the objects filtered by tags if we use that param, and _$ds_aws_s3_objects_  was not being used by any other datasource. I changed the data source used as input, but let me know if it was correct
+>
+> ### Issues Resolved
+>
+> [FOPTS-5124](https://flexera.atlassian.net/browse/FOPTS-5124)
+>
+
+#### Metadata
+
+- **Policies**: [Azure Databricks Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/databricks/rightsize_compute/README.md), [Meta Parent: Azure Databricks Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/databricks/rightsize_compute/README.md), [Azure Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/recommendations/README.md), [Meta Parent: Azure Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/recommendations/README.md)
+- **Merged At**: 2024-11-21 17:03:20 UTC
+
+---
+
 ### PR [#2830](https://github.com/flexera-public/policy_templates/pull/2830): FOPTS-5507  Added hide_skip_approvals to All Active Policies
 
 #### Description
@@ -1617,53 +1679,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2503) for these details.
 - **Merged At**: 2024-08-09 13:12:36 UTC
-
----
-
-### PR [#2504](https://github.com/flexera-public/policy_templates/pull/2504): POL-1314 Deprecate Budget Alerts by Cloud Account Policy Template
-
-#### Description
-
-> The `Budget Alerts by Cloud Account` policy template is being deprecated because its functionality can be entirely replicated in the `Budget Alerts` policy template, making it redundant.
-
-#### Metadata
-
-- **Policies**: [Budget Alerts by Cloud Account](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_alerts_by_account/README.md)
-- **Merged At**: 2024-08-09 12:13:43 UTC
-
----
-
-### PR [#2508](https://github.com/flexera-public/policy_templates/pull/2508): fix: minor wording fix on incident detail template
-
-#### Description
-
-> Updated incident message to be more relative for this policy template
->
-
-#### Metadata
-
-- **Policies**: [Flexera Automation Outdated Applied Policies](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/outdated_applied_policies/README.md)
-- **Merged At**: 2024-08-08 17:02:13 UTC
-
----
-
-### PR [#2501](https://github.com/flexera-public/policy_templates/pull/2501): POL-1309 Vendor Spend Commitment Forecast Revamp
-
-#### Description
-
-> This is a revamp of the Vendor Commitment Forecast policy template. From the CHANGELOG:
->
-> - Renamed policy template to `Vendor Spend Commitment Forecast` to avoid confusion with policy templates for RIs/SPs
-> - Added ability to specify a cost metric to use when gathering spend data
-> - Several parameters altered to be more descriptive and human-readable
-> - Additional fields added to incident table for context
-> - Streamlined code for better readability and faster execution
->
-
-#### Metadata
-
-- **Policies**: [Vendor Spend Commitment Forecast](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/forecasting/commitment_forecast/README.md)
-- **Merged At**: 2024-08-08 13:06:26 UTC
 
 ---
 
