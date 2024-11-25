@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "4.0.3",
+  version: "4.1.0",
   provider: "Azure",
   service: "Storage",
   policy_set: "Object Store Optimization",
@@ -129,6 +129,15 @@ parameter "param_automatic_action" do
   description "When this value is set, this policy will automatically take the selected action."
   allowed_values ["Update Blobs Storage Tier", "Delete Blobs"]
   default []
+end
+
+parameter "param_hierarchical_namespace" do
+  type "string"
+  category "Filters"
+  label "Azure Data Lake Storage Account"
+  description "For Azure Data Lake Storage account, the hierarchical namespace is enabled "
+  allowed_values "TRUE", "FALSE"
+  default "FALSE"
 end
 
 ###############################################################################
@@ -263,6 +272,7 @@ datasource "ds_azure_storage_accounts" do
       field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
       field "subscriptionID", val(iter_item, "id")
       field "subscriptionName", val(iter_item, "name")
+      field "hnsEnabled", val(iter_item, "properties.isHnsEnabled")
     end
   end
 end
@@ -388,8 +398,27 @@ script "js_azure_storage_accounts_name_filtered", type: "javascript" do
 EOS
 end
 
+
+datasource "ds_azure_storage_accounts_hns" do
+  run_script $js_azure_storage_accounts_hns, $ds_azure_storage_accounts_name_filtered, $param_hierarchical_namespace
+end
+
+script "js_azure_storage_accounts_hns", type: "javascript" do
+  parameters "ds_azure_storage_accounts_region_filtered", "param_hierarchical_namespace"
+  result "result"
+  code <<-EOS
+  if (param_hierarchical_namespace === 'TRUE') {
+    result = _.filter(ds_azure_storage_accounts_region_filtered, function(account) {
+      return account['hnsEnabled'] === true
+    })
+  } else {
+    result = ds_azure_storage_accounts_region_filtered
+  }
+EOS
+end
+
 datasource "ds_azure_containers" do
-  iterate $ds_azure_storage_accounts_name_filtered
+  iterate $ds_azure_storage_accounts_hns
   request do
     auth $auth_azure_storage
     pagination $pagination_azure_xml
