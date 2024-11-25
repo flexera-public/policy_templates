@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.0
+
+- Added batch processing for large datasources.
+
 ## v4.1.2
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
