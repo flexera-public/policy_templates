@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.4
+
+- Fixed code issue preventing policy from successfully completing.
+
 ## v0.3.3
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
