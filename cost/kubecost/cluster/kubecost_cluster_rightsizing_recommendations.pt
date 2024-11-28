@@ -1,4 +1,4 @@
-name "Kubecost Cluster Rightsizing Recommendation"
+name "Kubecost Rightsizing Custom V2"
 rs_pt_ver 20180301
 type "policy"
 short_description "Reports Kubecost recommendation for rightsizing of Kubernetes cluster. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/cluster) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -35,6 +35,23 @@ parameter "param_kubecost_host" do
   min_length 1
   # No default value, user input required
 end
+
+parameter "param_allow_shared_core" do
+  type "string"
+  category "Allow Shared Core"
+  label "Shared core"
+  allowed_values "true", "false"
+  description "Allow the use of shared cores this would affect how Kubecost calculates savings"
+end
+
+parameter "param_include_overhead" do
+  type "string"
+  category "Include overhead"
+  label "Include overhead"
+  allowed_values "true", "false"
+  description "Include additional resources in the cluster size adjustment recommendation calculations"
+end
+
 
 parameter "param_min_nodes" do
   type "number"
@@ -141,10 +158,15 @@ script "js_currency", type:"javascript" do
   result "result"
   code <<-EOS
   code = ds_kubecost_currency_code['code'].toUpperCase().trim()
+  console.log("code currency", code)
+  console.log("code ds_kubecost_currency_code ", ds_kubecost_currency_code)
+  // using default code.
   if (code == '') { code = ds_currency_code['value'] }
+  console.log("code ds_kubecost_currency_code ", ds_currency_code['value'])
+
   if (typeof(code) != 'string' || code == '') { code = 'USD' }
   if (ds_currency_reference[code] == undefined) { code = 'USD' }
-
+  console.log("code", code)
   result = {
     code: code,
     symbol: ds_currency_reference[code]['symbol'],
@@ -170,17 +192,14 @@ datasource "ds_clusters" do
     query "minNodeCount", $param_min_nodes
     query "window", join([$param_lookback, "d"])
     query "targetUtilization", val($ds_target_util, "value")
-    query "allowSharedCore", "true"
+    query "allowSharedCore", $param_allow_shared_core
+    query "includeOverhead", $param_include_overhead
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
     field "accountID", jmes_path(response, "data")
   end
-end
-
-datasource "ds_get_cluster_list" do
-  run_script $js_get_cluster_list, $ds_clusters
 end
 
 script "js_get_cluster_list", type: "javascript" do
@@ -256,7 +275,8 @@ script "js_recommendations", type: "javascript" do
   if (selected_strategy == "Optimal") {
     selected_strategy = "Single"
 
-    // Note: Savings is presented as a negative value. Hence why we select the lowest, not the highest.
+    // Note: Sa
+    vings is presented as a negative value. Hence why we select the lowest, not the highest.
 
     if (crs['recommendations']['multi']['monthlySavings'] < crs['recommendations']['single']['monthlySavings']) {
       selected_strategy = "Multi"
@@ -284,7 +304,7 @@ script "js_recommendations", type: "javascript" do
     "- Target Utilization: ", param_target_util, "%\n\n",
     "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
   ].join('')
-  savings = Math.round(recommendation['monthlySavings']).toFixed(2)
+  savings = (Math.round(recommendation['monthlySavings'] * 100) / 100 ).toFixed(2)
 
   recommendationDetails = [
     "Modify settings for cluster ", accountID,
@@ -292,6 +312,7 @@ script "js_recommendations", type: "javascript" do
     " and pools are configured to match the Recommended Pools field."
   ].join('')
 
+if (recommendation['monthlySavings'] > 0){
   result.push({
     accountID: accountID,
     accountName: accountName,
@@ -299,10 +320,10 @@ script "js_recommendations", type: "javascript" do
     totalNodeCount: crs['totalNodeCount'],
     totalRAMGB: crs['totalRAMGB'],
     totalVCPUs: crs['totalVCPUs'],
-    monthlyRate: Math.round(crs['monthlyRate']).toFixed(2),
-    totalMonthlyCost: Math.round(recommendation['totalMonthlyCost']).toFixed(2),
+    monthlyRate: (Math.round(crs['monthlyRate'] * 100) / 100 ).toFixed(2),
+    totalMonthlyCost: (Math.round(recommendation['totalMonthlyCost'] * 100) / 100 ).toFixed(2),
     // Note: Savings is presented as a negative value. Hence why we multiply by a negative number to invert it
-    savings: Math.round(recommendation['monthlySavings']).toFixed(2),
+    savings: (Math.round(recommendation['monthlySavings'] * 100) / 100 ).toFixed(2),
     savingsCurrency: ds_currency['symbol'],
     nodeCount: recommendation['nodeCount'],
     pools: JSON.stringify(recommendation['pools']),
@@ -316,10 +337,10 @@ script "js_recommendations", type: "javascript" do
     policy_name: ds_applied_policy['name'],
     message_savings: [
       ds_currency['symbol'], ' ',
-      formatNumber(Math.round(recommendation['monthlySavings']).toFixed(2), ds_currency['separator'])
+      formatNumber((Math.round(recommendation['monthlySavings'] * 100) / 100 ).toFixed(2), ds_currency['separator'])
     ].join('')
   })
-
+}
 })
 EOS
 end
@@ -330,7 +351,12 @@ end
 
 policy "pol_kubecost_recommendations" do
   validate_each $ds_recommendations do
-    summary_template "Kubecost Cluster Rightsizing"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .message_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
     check eq(val(item, "accountID"), "")
     escalate $esc_email
     export do
