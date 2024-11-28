@@ -1,8 +1,10 @@
 # Changelog
 
-## v0.3.2
+## v0.3.3
 
-- Replace usage of Kubecost deprecated endpoints for newest versions
+- Updated API endpoints for Kubecost.
+- Added two new params param_allow_shared_core,param_include_overhead.
+
 
 ## v0.3.2
 
