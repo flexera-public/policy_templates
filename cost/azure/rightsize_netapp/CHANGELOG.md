@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.0.4
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v2.0.3
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v2.0.2
 
 - Minor code improvements to conform with current standards. Functionality unchanged.

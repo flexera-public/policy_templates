@@ -7,11 +7,12 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.0",
+  version: "0.2.2",
   provider: "AWS",
   service: "Database",
   policy_set: "Rightsize Database Instances",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -41,6 +42,15 @@ parameter "param_min_savings" do
   description "Minimum potential savings required to generate a recommendation"
   min_value 0
   default 0
+end
+
+parameter "param_downsize_multiple" do
+  type "string"
+  category "Policy Settings"
+  label "Skip Instance Sizes"
+  description "Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_exclusion_tags" do
@@ -221,7 +231,6 @@ end
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
-    verb "GET"
     host "sts.amazonaws.com"
     path "/"
     query "Action", "GetCallerIdentity"
@@ -354,7 +363,6 @@ end
 datasource "ds_describe_regions" do
   request do
     auth $auth_aws
-    verb "GET"
     host "ec2.amazonaws.com"
     path "/"
     query "Action", "DescribeRegions"
@@ -424,7 +432,6 @@ end
 
 datasource "ds_elasticache_size_list" do
   request do
-    verb "GET"
     host "raw.githubusercontent.com"
     path "/flexera-public/policy_templates/master/data/aws/elasticache_types.json"
     header "User-Agent", "RS Policies"
@@ -433,7 +440,6 @@ end
 
 datasource "ds_aws_instance_size_map" do
   request do
-    verb "GET"
     host "raw.githubusercontent.com"
     path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
     header "User-Agent", "RS Policies"
@@ -453,15 +459,15 @@ script "js_elasticache_clusters_resize_filtered", type: "javascript" do
 
   _.each(ds_elasticache_clusters, function(cluster) {
     normalizedType = cluster["nodeType"].split("cache.")[1]
-    downType = null
+    downsizeable = false
 
     if (ds_aws_instance_size_map[normalizedType] && ds_aws_instance_size_map[normalizedType]["down"]) {
       if (_.contains(ds_elasticache_size_list, ds_aws_instance_size_map[normalizedType]["down"])) {
-        downType = "cache." + ds_aws_instance_size_map[normalizedType]["down"]
+        downsizeable = true
       }
     }
 
-    if (downType) {
+    if (downsizeable) {
       resourceARN = [
         "arn:aws:elasticache:", cluster["region"], ":",
         ds_aws_account["id"], ":cluster:", cluster["id"]
@@ -482,7 +488,7 @@ script "js_elasticache_clusters_resize_filtered", type: "javascript" do
         engineVersion: cluster["engineVersion"],
         region: cluster["region"],
         resourceType: cluster["nodeType"],
-        newResourceType: downType,
+        normalizedType: normalizedType,
         vcpu: ds_aws_instance_size_map[normalizedType]["vcpu"],
         memory: ds_aws_instance_size_map[normalizedType]["memory"]
       })
@@ -521,7 +527,7 @@ datasource "ds_elasticache_clusters_with_tags" do
     field "engineVersion", val(iter_item, "engineVersion")
     field "region", val(iter_item, "region")
     field "resourceType", val(iter_item, "resourceType")
-    field "newResourceType", val(iter_item, "newResourceType")
+    field "normalizedType", val(iter_item, "normalizedType")
     field "vcpu", val(iter_item, "vcpu")
     field "memory", val(iter_item, "memory")
   end
@@ -849,7 +855,7 @@ script "js_elasticache_clusters_with_metrics", type: "javascript" do
       engineVersion: cluster["engineVersion"],
       region: cluster["region"],
       resourceType: cluster["resourceType"],
-      newResourceType: cluster["newResourceType"],
+      normalizedType: cluster["normalizedType"],
       vcpu: cluster["vcpu"],
       memory: cluster["memory"],
       cpuAverage: cpuAverage,
@@ -970,29 +976,36 @@ EOS
 end
 
 datasource "ds_underutilized_elasticache_clusters" do
-  run_script $js_underutilized_elasticache_clusters, $ds_elasticache_clusters_with_metrics, $ds_cluster_costs_grouped, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_stats_threshold, $param_stats_threshold_cpu_value, $param_stats_threshold_mem_value, $param_min_savings
+  run_script $js_underutilized_elasticache_clusters, $ds_elasticache_clusters_with_metrics, $ds_cluster_costs_grouped, $ds_aws_instance_size_map, $ds_elasticache_size_list, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_stats_threshold, $param_stats_threshold_cpu_value, $param_stats_threshold_mem_value, $param_min_savings, $param_downsize_multiple
 end
 
 script "js_underutilized_elasticache_clusters", type: "javascript" do
-  parameters "ds_elasticache_clusters_with_metrics", "ds_cluster_costs_grouped", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_stats_threshold", "param_stats_threshold_cpu_value", "param_stats_threshold_mem_value", "param_min_savings"
+  parameters "ds_elasticache_clusters_with_metrics", "ds_cluster_costs_grouped", "ds_aws_instance_size_map", "ds_elasticache_size_list", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_stats_threshold", "param_stats_threshold_cpu_value", "param_stats_threshold_mem_value", "param_min_savings", "param_downsize_multiple"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
-  function formatNumber(number, separator){
-    numString = number.toString()
-    values = numString.split(".")
-    formatted_number = ''
+  function formatNumber(number, separator) {
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   result = []
@@ -1032,12 +1045,46 @@ script "js_underutilized_elasticache_clusters", type: "javascript" do
     cpu_underutilized = cpu_stat < param_stats_threshold_cpu_value || param_stats_threshold_cpu_value == -1
     mem_underutilized = mem_stat > param_stats_threshold_mem_value || param_stats_threshold_mem_value == -1
 
-    // Calculate estimated savings
-    savings = 0.0
-    if (ds_cluster_costs_grouped[cluster['id']]) { savings = ds_cluster_costs_grouped[cluster['id']] / 2 }
-
     // Check if cluster is underutilized and if savings is above threshold
     if (cpu_underutilized && mem_underutilized && savings >= param_min_savings) {
+      normalizedNewType = ds_aws_instance_size_map[cluster['normalizedType']]['down']
+      savingsMultiplier = 1
+
+      if (param_downsize_multiple == "Yes") {
+        if (param_stats_threshold_cpu_value != -1 && param_stats_threshold_mem_value != -1) {
+          while (ds_aws_instance_size_map[normalizedNewType]['down'] && _.contains(ds_elasticache_size_list, ds_aws_instance_size_map[normalizedType]["down"]) && cpu_stat * 2 < param_stats_threshold_cpu_value && mem_stat / 2 > param_stats_threshold_mem_value) {
+            cpu_stat = cpu_stat * 2
+            mem_stat = mem_stat / 2
+            normalizedNewType = ds_aws_instance_size_map[cluster['normalizedType']]['down']
+            savingsMultiplier += 1
+          }
+        }
+
+        if (param_stats_threshold_mem_value == -1) {
+          while (ds_aws_instance_size_map[normalizedNewType]['down'] && _.contains(ds_elasticache_size_list, ds_aws_instance_size_map[normalizedType]["down"]) && cpu_stat * 2 < param_stats_threshold_cpu_value) {
+            cpu_stat = cpu_stat * 2
+            normalizedNewType = ds_aws_instance_size_map[cluster['normalizedType']]['down']
+            savingsMultiplier += 1
+          }
+        }
+
+        if (param_stats_threshold_cpu_value == -1) {
+          while (ds_aws_instance_size_map[normalizedNewType]['down'] && _.contains(ds_elasticache_size_list, ds_aws_instance_size_map[normalizedType]["down"]) && mem_stat / 2 > param_stats_threshold_mem_value) {
+            mem_stat = mem_stat / 2
+            normalizedNewType = ds_aws_instance_size_map[cluster['normalizedType']]['down']
+            savingsMultiplier += 1
+          }
+        }
+      }
+
+      cluster['newResourceType'] = "cache." + ds_aws_instance_size_map[cluster['normalizedType']]['down']
+
+      savings = 0.0
+
+      if (ds_cluster_costs_grouped[cluster['id']]) {
+        savings = ds_cluster_costs_grouped[cluster['id']] / (2 * savingsMultiplier)
+      }
+
       total_savings += savings
 
       recommendationDetails = [

@@ -7,11 +7,12 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.3.1",
+  version: "6.0.2",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -188,6 +189,15 @@ parameter "param_stats_lookback" do
   min_value 1
   max_value 90
   default 30
+end
+
+parameter "param_downsize_multiple" do
+  type "string"
+  category "Policy Settings"
+  label "Skip Instance Sizes"
+  description "Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_automatic_action" do
@@ -426,7 +436,7 @@ datasource "ds_azure_instances" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
-    query "api-version", "2024-03-01"
+    query "api-version", "2024-07-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
@@ -443,6 +453,7 @@ datasource "ds_azure_instances" do
       field "imageOffer", jmes_path(col_item, "properties.storageProfile.imageReference.offer")
       field "imageSKU", jmes_path(col_item, "properties.storageProfile.imageReference.sku")
       field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "dataDisks", jmes_path(col_item, "properties.storageProfile.dataDisks")
       field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "tags", jmes_path(col_item, "tags")
       field "subscriptionId", val(iter_item, "id")
@@ -488,6 +499,9 @@ script "js_azure_instances_with_status", type: "javascript" do
   })
 
   result = _.map(ds_azure_instances, function(vm) {
+    dataDiskCount = 0
+    if (vm['dataDisks']) { dataDiskCount = vm['dataDisks'].length }
+
     return {
       resourceID: vm["resourceID"],
       resourceGroup: vm["resourceGroup"],
@@ -498,6 +512,7 @@ script "js_azure_instances_with_status", type: "javascript" do
       imageOffer: vm["imageOffer"],
       imageSKU: vm["imageSKU"],
       osType: vm["osType"],
+      dataDiskCount: dataDiskCount,
       resourceType: vm["resourceType"],
       tags: vm["tags"],
       subscriptionId: vm["subscriptionId"],
@@ -596,11 +611,7 @@ script "js_azure_instances_region_filtered", type: "javascript" do
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_instances_tag_filtered, function(vm) {
       include_vm = _.contains(param_regions_list, vm['region'])
-
-      if (param_regions_allow_or_deny == "Deny") {
-        include_vm = !include_vm
-      }
-
+      if (param_regions_allow_or_deny == "Deny") { include_vm = !include_vm }
       return include_vm
     })
   } else {
@@ -719,6 +730,7 @@ datasource "ds_azure_instances_metrics" do
     field "imageOffer", val(iter_item, "imageOffer")
     field "imageSKU", val(iter_item, "imageSKU")
     field "osType", val(iter_item, "osType")
+    field "dataDiskCount", val(iter_item, "dataDiskCount")
     field "resourceType", val(iter_item, "resourceType")
     field "subscriptionId", val(iter_item, "subscriptionId")
     field "subscriptionName", val(iter_item, "subscriptionName")
@@ -913,6 +925,7 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
       imageOffer: vm['imageOffer'],
       imageSKU: vm['imageSKU'],
       osType: vm['osType'],
+      dataDiskCount: vm['dataDiskCount'],
       resourceType: vm['resourceType'],
       accountID: vm['subscriptionId'],
       accountName: vm['subscriptionName'],
@@ -1054,30 +1067,94 @@ datasource "ds_azure_instance_size_map" do
   end
 end
 
+datasource "ds_azure_regions_for_instance_sizes" do
+  run_script $js_azure_regions_for_instance_sizes, $ds_azure_instances_metrics_organized
+end
+
+script "js_azure_regions_for_instance_sizes", type: "javascript" do
+  parameters "ds_azure_instances_metrics_organized"
+  result "result"
+  code <<-EOS
+  result = []
+
+  if (ds_azure_instances_metrics_organized.length > 0) {
+    regions = _.uniq(_.compact(_.pluck(ds_azure_instances_metrics_organized, "region")))
+
+    result = _.map(regions, function(region) {
+      return {
+        subscriptionId: ds_azure_instances_metrics_organized[0]['accountID'],
+        region: region
+      }
+    })
+  }
+EOS
+end
+
+datasource "ds_azure_instance_size_details" do
+  iterate $ds_azure_regions_for_instance_sizes
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.Compute/locations/", val(iter_item, "region"), "/vmSizes"])
+    query "api-version", "2024-07-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "maxDataDiskCount", jmes_path(col_item, "maxDataDiskCount")
+    end
+  end
+end
+
+datasource "ds_azure_disk_count_table" do
+  run_script $js_azure_disk_count_table, $ds_azure_instance_size_details
+end
+
+script "js_azure_disk_count_table", type: "javascript" do
+  parameters "ds_azure_instance_size_details"
+  result "result"
+  code <<-EOS
+  result = {}
+  _.each(ds_azure_instance_size_details, function(size) { result[size['name']] = size['maxDataDiskCount'] })
+EOS
+end
+
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_stats_interval, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_exclude_databricks
+  run_script $js_idle_and_underutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_stats_interval, $ds_azure_disk_count_table, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_exclude_databricks, $param_downsize_multiple
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_stats_interval", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_exclude_databricks"
+  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_stats_interval", "ds_azure_disk_count_table", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_exclude_databricks", "param_downsize_multiple"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
-  function formatNumber(number, separator){
-    numString = number.toString()
-    values = numString.split(".")
-    formatted_number = ''
+  function formatNumber(number, separator) {
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   // The key name is lowercase, param value needs to be lowercase.
@@ -1167,14 +1244,54 @@ script "js_idle_and_underutil_instances", type:"javascript" do
           idle_list.push(instance)
         }
       } else if (is_underutil) {
-        instance["savings"] = parseFloat(parseFloat(total_cost / 2).toFixed(3))
+        savingsMultiplier = 1
+
         instance["recommendationType"] = "Downsize"
         instance["threshold"] = param_stats_underutil_threshold_cpu_value
         instance["memoryThreshold"] = param_stats_underutil_threshold_mem_value
 
-        if (ds_azure_instance_size_map[instance['resourceType']]) {
+        if (ds_azure_instance_size_map[instance['resourceType']] && ds_azure_instance_size_map[instance['resourceType']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['resourceType']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['resourceType']]['down']] >= instance["dataDiskCount"]) {
           instance["newResourceType"] = ds_azure_instance_size_map[instance['resourceType']]['down']
         }
+
+        if (instance["newResourceType"] && param_downsize_multiple == "Yes") {
+          if (checking_cpu && checking_mem && param_stats_check_both == "Both CPU and Memory") {
+            while (ds_azure_instance_size_map[instance['newResourceType']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] >= instance["dataDiskCount"] && cpu_value * 2 < param_stats_underutil_threshold_cpu_value && mem_value * 2 < param_stats_underutil_threshold_mem_value) {
+              cpu_value = cpu_value * 2
+              mem_value = mem_value * 2
+              instance["newResourceType"] = ds_azure_instance_size_map[instance['newResourceType']]['down']
+              savingsMultiplier += 1
+            }
+          }
+
+          if (checking_cpu && checking_mem && param_stats_check_both == "Either CPU or Memory") {
+            while (ds_azure_instance_size_map[instance['newResourceType']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] >= instance["dataDiskCount"] && (cpu_value * 2 < param_stats_underutil_threshold_cpu_value || mem_value * 2 < param_stats_underutil_threshold_mem_value)) {
+              cpu_value = cpu_value * 2
+              mem_value = mem_value * 2
+              instance["newResourceType"] = ds_azure_instance_size_map[instance['newResourceType']]['down']
+              savingsMultiplier += 1
+            }
+          }
+
+          if (checking_cpu && !checking_mem) {
+            while (ds_azure_instance_size_map[instance['newResourceType']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] >= instance["dataDiskCount"] && cpu_value * 2 < param_stats_underutil_threshold_cpu_value) {
+              cpu_value = cpu_value * 2
+              instance["newResourceType"] = ds_azure_instance_size_map[instance['newResourceType']]['down']
+              savingsMultiplier += 1
+            }
+          }
+
+          if (!checking_cpu && checking_mem) {
+            while (ds_azure_instance_size_map[instance['newResourceType']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] >= instance["dataDiskCount"] && mem_value * 2 < param_stats_underutil_threshold_mem_value) {
+              mem_value = mem_value * 2
+              instance["newResourceType"] = ds_azure_instance_size_map[instance['newResourceType']]['down']
+              savingsMultiplier += 1
+            }
+          }
+        }
+
+        savings = total_cost - (total_cost / (2 * savingsMultiplier))
+        instance["savings"] = Math.round(savings * 1000) / 1000
 
         recommendationDetails = [
           "Resize Azure virtual machine ", instance["resourceName"], " ",
@@ -1187,8 +1304,8 @@ script "js_idle_and_underutil_instances", type:"javascript" do
         instance["recommendationDetails"] = recommendationDetails.join('')
 
         if (instance["newResourceType"] != null && instance["newResourceType"] != undefined) {
-          if (instance['savings'] >= param_min_savings) {
-            underutil_total_savings += total_cost / 2
+          if (savings >= param_min_savings) {
+            underutil_total_savings += savings
             underutil_list.push(instance)
           }
         }
@@ -1459,6 +1576,9 @@ policy "pol_utilization" do
       field "osType" do
         label "Operating System"
       end
+      field "dataDiskCount" do
+        label "Attached Disks (#)"
+      end
       field "imagePublisher" do
         label "Image Publisher"
       end
@@ -1596,6 +1716,9 @@ policy "pol_utilization" do
       end
       field "osType" do
         label "Operating System"
+      end
+      field "dataDiskCount" do
+        label "Attached Disks (#)"
       end
       field "imagePublisher" do
         label "Image Publisher"

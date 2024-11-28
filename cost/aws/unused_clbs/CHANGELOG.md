@@ -1,5 +1,17 @@
 # Changelog
 
+## v6.4.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v6.4.2
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v6.4.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v6.4.0
 
 - Added `Resource ARN` and `Resource Name` to incident table.

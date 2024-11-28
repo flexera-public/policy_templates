@@ -8,6 +8,14 @@
 - Report can now use either maximum or average utilization when assessing reservations
 - Normalized incident output for parity with other policy templates
 
+## v3.1.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.1.2
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v3.1.1
 
 - Fixed Microsoft VM Size Flexibility URL which prevented the policy from completing without error. Policy functionality is unchanged.

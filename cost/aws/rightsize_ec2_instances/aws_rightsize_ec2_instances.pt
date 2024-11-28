@@ -7,11 +7,12 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.2.0",
+  version: "5.3.2",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -21,7 +22,7 @@ info(
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses to notify"
+  label "Email Addresses"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
   default []
 end
@@ -41,6 +42,15 @@ parameter "param_min_savings" do
   description "Minimum potential savings required to generate a recommendation"
   min_value 0
   default 0
+end
+
+parameter "param_downsize_multiple" do
+  type "string"
+  category "Policy Settings"
+  label "Skip Instance Sizes"
+  description "Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_exclusion_tags" do
@@ -250,7 +260,6 @@ end
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
-    verb "GET"
     host "sts.amazonaws.com"
     path "/"
     query "Action", "GetCallerIdentity"
@@ -383,7 +392,6 @@ end
 datasource "ds_describe_regions" do
   request do
     auth $auth_aws
-    verb "GET"
     host "ec2.amazonaws.com"
     path "/"
     query "Action", "DescribeRegions"
@@ -891,7 +899,6 @@ end
 
 datasource "ds_aws_instance_size_map" do
   request do
-    verb "GET"
     host "raw.githubusercontent.com"
     path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
     header "User-Agent", "RS Policies"
@@ -991,29 +998,36 @@ EOS
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback
+  run_script $js_idle_and_underutil_instances, $ds_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_downsize_multiple
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_instances", "ds_merged_metrics", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback"
+  parameters "ds_instances", "ds_merged_metrics", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_downsize_multiple"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
-  function formatNumber(number, separator){
-    numString = number.toString()
-    values = numString.split(".")
-    formatted_number = ''
+  function formatNumber(number, separator) {
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   // The key name is lowercase, param value needs to be lowercase.
@@ -1098,7 +1112,8 @@ script "js_idle_and_underutil_instances", type:"javascript" do
           idle_list.push(instance)
         }
       } else if (is_underutil) {
-        instance["savings"] = parseFloat(parseFloat(total_cost / 2).toFixed(3))
+        savingsMultiplier = 1
+
         instance["recommendationType"] = "Downsize"
         instance["threshold"] = param_stats_underutil_threshold_cpu_value
         instance["memoryThreshold"] = param_stats_underutil_threshold_mem_value
@@ -1106,6 +1121,45 @@ script "js_idle_and_underutil_instances", type:"javascript" do
         if (ds_aws_instance_size_map[instance['resourceType']]) {
           instance["newResourceType"] = ds_aws_instance_size_map[instance['resourceType']]['down']
         }
+
+        if (param_downsize_multiple == "Yes") {
+          if (checking_cpu && checking_mem && param_stats_check_both == "Both CPU and Memory") {
+            while (ds_aws_instance_size_map[instance['newResourceType']]['down'] && cpu_value * 2 < param_stats_underutil_threshold_cpu_value && mem_value * 2 < param_stats_underutil_threshold_mem_value) {
+              cpu_value = cpu_value * 2
+              mem_value = mem_value * 2
+              instance["newResourceType"] = ds_aws_instance_size_map[instance['newResourceType']]['down']
+              savingsMultiplier += 1
+            }
+          }
+
+          if (checking_cpu && checking_mem && param_stats_check_both == "Either CPU or Memory") {
+            while (ds_aws_instance_size_map[instance['newResourceType']]['down'] && (cpu_value * 2 < param_stats_underutil_threshold_cpu_value || mem_value * 2 < param_stats_underutil_threshold_mem_value)) {
+              cpu_value = cpu_value * 2
+              mem_value = mem_value * 2
+              instance["newResourceType"] = ds_aws_instance_size_map[instance['newResourceType']]['down']
+              savingsMultiplier += 1
+            }
+          }
+
+          if (checking_cpu && !checking_mem) {
+            while (ds_aws_instance_size_map[instance['newResourceType']]['down'] && cpu_value * 2 < param_stats_underutil_threshold_cpu_value) {
+              cpu_value = cpu_value * 2
+              instance["newResourceType"] = ds_aws_instance_size_map[instance['newResourceType']]['down']
+              savingsMultiplier += 1
+            }
+          }
+
+          if (!checking_cpu && checking_mem) {
+            while (ds_aws_instance_size_map[instance['newResourceType']]['down'] && mem_value * 2 < param_stats_underutil_threshold_mem_value) {
+              mem_value = mem_value * 2
+              instance["newResourceType"] = ds_aws_instance_size_map[instance['newResourceType']]['down']
+              savingsMultiplier += 1
+            }
+          }
+        }
+
+        savings = total_cost - (total_cost / (2 * savingsMultiplier))
+        instance["savings"] = Math.round(savings * 1000) / 1000
 
         recommendationDetails = [
           "Change instance type of EC2 instance ", instance["resourceID"], " ",
@@ -1119,7 +1173,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
         if (instance["newResourceType"] != null && instance["newResourceType"] != undefined) {
           if (instance['savings'] >= param_min_savings) {
-            underutil_total_savings += total_cost / 2
+            underutil_total_savings += savings
             underutil_list.push(instance)
           }
         }
