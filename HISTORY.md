@@ -6,6 +6,38 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2859](https://github.com/flexera-public/policy_templates/pull/2859): POL-1419 Bug Fix for Azure Publicly-Accessible Blob Containers 
+
+#### Description
+
+> This fixes a bug in the Azure Publicly-Accessible Blob Containers policy template caused by an incorrectly named variable in a JavaScript block.
+
+#### Metadata
+
+- **Policies**: [Azure Publicly-Accessible Blob Containers](https://github.com/flexera-public/policy_templates/tree/master/security/azure/private_blob_containers/README.md), [Meta Parent: Azure Publicly-Accessible Blob Containers](https://github.com/flexera-public/policy_templates/tree/master/security/azure/private_blob_containers/README.md)
+- **Merged At**: 2024-11-26 18:56:50 UTC
+
+---
+
+### PR [#2847](https://github.com/flexera-public/policy_templates/pull/2847): FOPTS-5666 Handle properly null values in Google Rightsize VM Recommender Policy
+
+#### Description
+
+> We had an issue sorting recommendations when cpuAvergae. cpuMinimum or cpuMaximum are nulls.
+>
+> ### Issues Resolved
+>
+> [FOPTS-5666](https://flexera.atlassian.net/browse/FOPTS-5666)
+> [SQ-10199](https://flexera.atlassian.net/browse/SQ-10199)
+>
+
+#### Metadata
+
+- **Policies**: [Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations/README.md), [Meta Parent: Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations/README.md)
+- **Merged At**: 2024-11-26 15:57:50 UTC
+
+---
+
 ### PR [#2837](https://github.com/flexera-public/policy_templates/pull/2837): POL-1417 Azure Savings Realized from Reservations - fix NaN issue related to incident creation
 
 #### Description
@@ -1623,62 +1655,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2472) for these details.
 - **Merged At**: 2024-08-09 15:01:45 UTC
-
----
-
-### PR [#2474](https://github.com/flexera-public/policy_templates/pull/2474): POL-1302 New Usage Revamp
-
-#### Description
-
-> This is a revamp of the `New Service Usage` policy template, which has been renamed to `New Usage`. From the CHANGELOG:
->
-> - Policy template renamed to `New Usage` to better reflect its functionality
-> - Added ability to report new usage for any cost dimension
-> - Added ability to specify a cost metric and look back period
-> - Added ability to filter results by estimated monthly cost
-> - Improved Billing Center filtering options
-> - Added additional fields and text to incident output for added context
-> - Streamlined code for better readability and faster execution
->
-> Note: Ignore the "run_script statements" error. The same script is invoked twice; once with a hard value, and once with a parameter value, so there's not a way to place them in the correct order in both situations without needlessly making two identical scripts.
->
-
-#### Metadata
-
-- **Policies**: [New Usage](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/new_usage/README.md)
-- **Merged At**: 2024-08-09 13:13:00 UTC
-
----
-
-### PR [#2503](https://github.com/flexera-public/policy_templates/pull/2503): POL-1313 SaaS Policy Revamps
-
-#### Description
-
-> These are revamps of the following policy templates:
->
-> #### Office 365 Security Alerts
-> - Modified credential to correctly match Microsoft Graph credentials in the Flexera platform
-> - Several parameters altered to be more descriptive and human-readable
-> - Removed unused `Azure AD Tenant ID` parameter
-> - Updated Microsoft Graph API call to use production `/v1.0/security/alerts_v2` endpoint
-> - Fixed issue where policy template would report alerts unrelated to Office 365
-> - Streamlined code for better readability and faster execution
->
-> #### Okta Inactive Users
-> - Several parameters altered to be more descriptive and human-readable
-> - Normalized incident export to be consistent with other policies
-> - Streamlined code for better readability and faster execution
->
-> #### ServiceNow Inactive Approvers
-> - Several parameters altered to be more descriptive and human-readable
-> - Normalized incident export to be consistent with other policies
-> - Streamlined code for better readability and faster execution
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2503) for these details.
-- **Merged At**: 2024-08-09 13:12:36 UTC
 
 ---
 
