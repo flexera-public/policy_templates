@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.6.0
+
+- Added `Connections (Daily)` field to incident table for added context
+
 ## v5.5.3
 
 - Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
