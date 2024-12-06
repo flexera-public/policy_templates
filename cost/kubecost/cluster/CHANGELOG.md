@@ -2,9 +2,12 @@
 
 ## v0.3.3
 
-- Updated API endpoints for Kubecost.
-- Added two new params `param_allow_shared_core`, `param_include_overhead`.
-
+- Updated from /model/savings/clusterSizing to /model/savings/clusterSizingETL.
+- Created new functions to handle the modified response format from the updated endpoint.
+- Modified functionality to generate incident correctly based on the new response structure.
+- New Parameters:
+  - param_allow_shared_core: Specifies whether shared cores should be considered in the cluster sizing calculation.
+  - param_include_overhead: Ensures overhead costs are correctly included in the cost calculations.
 
 ## v0.3.2
 
