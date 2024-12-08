@@ -6,6 +6,36 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2867](https://github.com/flexera-public/policy_templates/pull/2867): POL-1422 Fix AWS New Marketplace Products
+
+#### Description
+
+> AWS New Marketplace Products has an issue that was introduced during a mass code change that prevents the policy from completing execution. This fixes that issue.
+>
+
+#### Metadata
+
+- **Policies**: [AWS New Marketplace Products](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/marketplace_new_products/README.md)
+- **Merged At**: 2024-12-02 14:09:36 UTC
+
+---
+
+### PR [#2862](https://github.com/flexera-public/policy_templates/pull/2862): POL-1415 AWS Rightsize RDS Instances: Add Connections to Incident Table
+
+#### Description
+
+> This adds a daily average of connections to the RDS instance, labelled `Connections (Daily)`, to the incident table for both the idle and underutilized incidents.
+>
+> (This also includes some minor code refactoring to make similar changes in the future easier)
+>
+
+#### Metadata
+
+- **Policies**: [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md), [Meta Parent: AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md)
+- **Merged At**: 2024-12-02 13:08:57 UTC
+
+---
+
 ### PR [#2859](https://github.com/flexera-public/policy_templates/pull/2859): POL-1419 Bug Fix for Azure Publicly-Accessible Blob Containers 
 
 #### Description
@@ -1620,41 +1650,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md), [Meta Parent: AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md)
 - **Merged At**: 2024-08-12 12:28:34 UTC
-
----
-
-### PR [#2506](https://github.com/flexera-public/policy_templates/pull/2506): POL-1317 AWS Superseded EC2 Instances Fix/Improvement
-
-#### Description
-
-> Improvements to `AWS Superseded EC2 Instances`. From the CHANGELOG:
->
-> - Fixed bug where invalid recommendations with no new resource type would sometimes be included in results
-> - Added `Fallback Instance Type Category` parameter to provide alternate recommendations when the selected category is not available
->
-> This also updates the local Gemfile to use the current version of Danger
->
-
-#### Metadata
-
-- **Policies**: [AWS Superseded EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/superseded_instances/README.md), [Meta Parent: AWS Superseded EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/superseded_instances/README.md)
-- **Merged At**: 2024-08-12 12:27:51 UTC
-
----
-
-### PR [#2472](https://github.com/flexera-public/policy_templates/pull/2472): POL-1297 Azure Security Policy Revamps: Part 4
-
-#### Description
-
-> This is a revamp of several Azure Security policy templates. Please see their respective CHANGELOGs and READMEs for details.
->
-> Additionally, the `Azure Storage Accounts Without HTTPs Enforced` policy template is being deprecated because it is redundant.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2472) for these details.
-- **Merged At**: 2024-08-09 15:01:45 UTC
 
 ---
 
