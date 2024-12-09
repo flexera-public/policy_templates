@@ -1465,8 +1465,6 @@ def policy_console_log?(file, file_lines)
 
   file_lines.each_with_index do |line, index|
     line_number = index + 1
-    # Exclude the line if it contains the specific phrase `// Excluded from console.log test.*`
-    next if line.include?("// Excluded from console.log test")
     fail_message += "Line #{line_number.to_s}\n" if line.include?("console.log")
   end
 
