@@ -12,6 +12,8 @@ This policy template reports a Kubecost cluster rightsizing recommendation gener
 - *Lookback Period (Days)* - Number of historical days of usage to analyze when generating recommendations.
 - *Target Utilization (%)* - Utilization target to use when generating recommendations.
 - *Recommendation Strategy* - Recommendation strategy to use. 'Optimal' will automatically select whichever strategy has the highest potential savings.
+- *Allow Shared Core* Specifies whether shared cores should be considered in the cluster sizing calculation.
+- *Include Overhead* Ensures that overhead costs, such as control plane and node management resources, are included in the cost calculations.
 
 ## Policy Actions
 
