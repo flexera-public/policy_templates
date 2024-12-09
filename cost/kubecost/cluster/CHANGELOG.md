@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.3
+
+- Updated API endpoints for cluster Sizing.
+- Added new parameters `param_allow_shared_core`, `param_include_overhead`:
+  - Added param_allow_shared_core to include shared cores in the cluster sizing calculation.
+  - Added param_include_overhead to ensure overhead costs are included in the cost calculations.
+
 ## v0.3.2
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
