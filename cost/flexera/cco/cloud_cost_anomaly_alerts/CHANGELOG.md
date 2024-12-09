@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.7.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v3.7.1
 
 - Fixed bug when sending request to get the anomalies report that caused the policy to fail due to a bad request (400) error.

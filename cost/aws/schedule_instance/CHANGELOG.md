@@ -4,6 +4,10 @@
 
 - Added email notifications for Start Action, Stop Action, and Errors
 
+## v7.0.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v7.0.2
 
 - Minor changes to policy template to pass lint tests. No functional changes.

@@ -7,11 +7,12 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.2",
+  version: "0.3.0",
   provider: "Azure",
   service: "Databricks",
   policy_set: "Databricks",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -263,8 +264,63 @@ script "js_top_level_bcs", type: "javascript" do
 EOS
 end
 
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
 # Get all subscriptions
 datasource "ds_azure_subscriptions" do
+  batch true
   request do
     auth $auth_azure
     pagination $pagination_azure
@@ -288,6 +344,7 @@ datasource "ds_azure_subscriptions" do
 end
 
 datasource "ds_azure_subscriptions_filtered" do
+  batch true
   run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
@@ -296,23 +353,26 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   result "result"
   code <<-EOS
   if (param_subscriptions_list.length > 0) {
-    result = _.filter(ds_azure_subscriptions, function(subscription) {
+    getIterator(ds_azure_subscriptions).Each(function(subscription, idx){
       include_subscription = _.contains(param_subscriptions_list, subscription['subscriptionId']) || _.contains(param_subscriptions_list, subscription['subscriptionName'])
 
       if (param_subscriptions_allow_or_deny == "Deny") {
         include_subscription = !include_subscription
       }
 
-      return include_subscription
+      if (include_subscription) {
+        appendToResult(subscription)
+      }
     })
   } else {
-    result = ds_azure_subscriptions
+    getIterator(ds_azure_subscriptions).Each(appendToResult)
   }
 EOS
 end
 
 #get workspaces, and urls
 datasource "ds_databricks_workspaces" do
+  batch true
   iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
@@ -339,6 +399,7 @@ datasource "ds_databricks_workspaces" do
 end
 
 datasource "ds_databricks_workspaces_region_filtered" do
+  batch true
   run_script $js_databricks_workspaces_region_filtered, $ds_databricks_workspaces, $param_regions_allow_or_deny, $param_regions_list
 end
 
@@ -347,22 +408,25 @@ script "js_databricks_workspaces_region_filtered", type: "javascript" do
   result "result"
   code <<-EOS
   if (param_regions_list.length > 0) {
-    result = _.filter(ds_databricks_workspaces, function(item) {
+    getIterator(ds_databricks_workspaces).Each(function(item, idx){
       include = _.contains(param_regions_list, item['location'])
 
       if (param_regions_allow_or_deny == "Deny") {
         include = !include
       }
 
-      return include
+      if (include) {
+         appendToResult(item)
+      }
     })
   } else {
-    result = ds_databricks_workspaces
+    getIterator(ds_databricks_workspaces).Each(appendToResult)
   }
 EOS
 end
 
 datasource "ds_databricks_workspaces_filtered" do
+  batch true
   run_script $js_databricks_workspaces_filtered, $ds_databricks_workspaces_region_filtered, $param_databricks_workspace_list
 end
 
@@ -372,15 +436,16 @@ script "js_databricks_workspaces_filtered", type: "javascript" do
   code <<-EOS
   var results = []
   if ( param_databricks_workspace_list.length != 0){
-    results = []
     _.each(param_databricks_workspace_list, function(workspace){
-      var found = _.find(ds_databricks_workspaces, function(item){
-        return (item.workspaceId == workspace || item.name.toLowerCase() == workspace.toLowerCase());
+      getIterator(ds_databricks_workspaces).Each(function(item, idx) {
+        if (item.workspaceId == workspace || item.name.toLowerCase() == workspace.toLowerCase()) {
+          appendToResult(item);
+          return true;
+        }
       })
-      results.push(found)
     })
   } else {
-    results = ds_databricks_workspaces
+    getIterator(ds_databricks_workspaces).Each(appendToResult)
   }
 EOS
 end
@@ -464,6 +529,7 @@ datasource "ds_azure_instance_size_map" do
 end
 
 datasource "ds_azure_skus" do
+  batch true
   iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
@@ -545,8 +611,7 @@ script "js_azure_sku_memory", type: "javascript" do
   result "result"
   code <<-EOS
   result = {}
-
-  _.each(ds_azure_skus, function(sku) {
+  getIterator(ds_azure_skus).Each(function (sku, idx){
     name = sku['name'].toLowerCase()
 
     if (result[name] == undefined && sku["resourceType"] == "virtualMachines") {
@@ -561,6 +626,7 @@ EOS
 end
 
 datasource "ds_azure_databricks_managed_vm_metrics" do
+  batch true
   iterate $ds_virtualmachines_from_bill
   request do
     run_script $js_azure_databricks_managed_vm_metrics, jq(iter_item, "[.virtualmachines[] .resourceId ]"), jq(iter_item, ".databricks_workspace.location"), jq(iter_item, ".databricks_workspace.managedResourceGroupId"), $ds_param_stats_interval, $ds_lookback_time_formats, $param_azure_endpoint
@@ -604,6 +670,7 @@ EOS
 end
 
 datasource "ds_databricks_clusters" do
+  batch true
   iterate $ds_databricks_workspaces_filtered
   request do
     auth $auth_databricks
@@ -623,6 +690,7 @@ datasource "ds_databricks_clusters" do
 end
 
 datasource "ds_filtered_workspace_virtualmachines" do
+  batch true
   run_script $js_filtered_workspace_virtualmachines, $ds_databricks_workspaces_filtered, $ds_azure_databricks_managed_vm_metrics, $ds_param_stats_threshold, $ds_databricks_workspaces_vm_costs, $ds_lookback_time_formats, $ds_databricks_clusters, $ds_azure_sku_memory, $param_stats_underutil_threshold_cpu_value
 end
 
@@ -632,8 +700,6 @@ script "js_filtered_workspace_virtualmachines", type: "javascript" do
   code <<-EOS
   var lastTick = 0; // Holds the timestamp last tick was called
   var tickCount = 0; // Holds the count tick was called
-
-  var result = [];
 
   function percentile(arr, p) {
     // No need to do math if array is empty
@@ -649,14 +715,18 @@ script "js_filtered_workspace_virtualmachines", type: "javascript" do
   }
 
   // Loop through all the batched metrics results
-  _.each(ds_azure_databricks_managed_vm_metrics, function(batch_result) {
+  getIterator(ds_azure_databricks_managed_vm_metrics).Each(function(batch_result, idx) {
     _.each(batch_result.values, function(vm_metrics) {
       // Each value for a result should be unique to a ResourceId (i.e. a Virtual Machine)
       // Get some information needed for the result
       vm_resourceId = vm_metrics.resourceid
-      databricks_workspace = _.find(ds_databricks_workspaces, function(dbws) {
+      var databricks_workspace = undefined;
+      getIterator(ds_databricks_workspaces).Each(function(dbws, idx){
         // If the vm resource id contains the databricks workspace managed resource group (prefix of resource id), then return result
-        return vm_resourceId.toLowerCase().lastIndexOf(dbws.managedResourceGroupId.toLowerCase()) == 0
+        if (vm_resourceId.toLowerCase().lastIndexOf(dbws.managedResourceGroupId.toLowerCase()) == 0) {
+          databricks_workspace = dbws;
+          return true;
+        }
       })
       databricks_workspace["resourceGroup"] = databricks_workspace["resourceId"].split("/")[4]
       // Setup placeholder result and calculation values for this resource
@@ -734,13 +804,14 @@ script "js_filtered_workspace_virtualmachines", type: "javascript" do
         })
       })
       // Add the result to the result array
-      result.push(r)
+      appendToResult(r)
     })
   })
   EOS
 end
 
 datasource "ds_filtered_workspace_virtualmachines_with_costs" do
+  batch true
   run_script $js_filtered_workspace_virtualmachines_with_costs, $ds_filtered_workspace_virtualmachines, $ds_databricks_workspaces_vm_costs, $ds_databricks_clusters, $ds_azure_sku_memory, $param_stats_lookback
 end
 
@@ -748,16 +819,18 @@ script "js_filtered_workspace_virtualmachines_with_costs", type: "javascript" do
   parameters "ds_filtered_workspace_virtualmachines", "ds_databricks_workspaces_vm_costs", "ds_databricks_clusters", "ds_azure_sku_memory", "param_stats_lookback"
   result "result"
   code <<-EOS
-  var result = [];
-  _.each(ds_filtered_workspace_virtualmachines, function(r){
+  getIterator(ds_filtered_workspace_virtualmachines).Each(function(r, idx) {
     // At this point we have all the utilization data from Azure Metrics API
     // We need to look at the data from Flexera to get cost, databricks cluster id, and cluster instance type
 
     // Filters costs for this resources from the datasource
-    resource_costs = _.filter(ds_databricks_workspaces_vm_costs, function(cost) {
+    resource_costs = [];
+    getIterator(ds_databricks_workspaces_vm_costs).Each(function(cost, idx) {
       // check if names match using case-insensitive comparison
       // bill data sometimes makes RG uppercase, whereas the api value is lowercase
-      return cost["resourceId"].toLowerCase() == r["resourceId"].toLowerCase()
+      if (cost["resourceId"].toLowerCase() == r["resourceId"].toLowerCase()){
+        resource_costs.push(cost);
+      }
     })
 
     // Check if we found cost information for this resource
@@ -814,9 +887,10 @@ script "js_filtered_workspace_virtualmachines_with_costs", type: "javascript" do
     }
     if (typeof r["databricks_cluster_id"] === "string") {
       // Attempt to find additional cluster metadata in ds_databricks_clusters
-      _.each(ds_databricks_clusters, function(dbc) {
+      getIterator(ds_databricks_clusters).Each(function(dbc, idx) {
         if (dbc.cluster.cluster_id.toLowerCase() == r["databricks_cluster_id"].toLowerCase()) {
           r["databricks_cluster"] = dbc.cluster
+          return true;
         }
       })
     }
@@ -836,12 +910,13 @@ script "js_filtered_workspace_virtualmachines_with_costs", type: "javascript" do
     // Unit Cost to 4 digits (portions of a penny because that's how price is publicly listed)
     r["unit_cost"] = Math.round(r["unit_cost"] * 10000) / 10000
 
-    result.push(r)
+    appendToResult(r)
   })
   EOS
 end
 
 datasource "ds_databricks_workspaces_vm_costs" do
+  batch true
   iterate $ds_databricks_workspaces_filtered
   request do
     run_script $js_databricks_workspaces_vm_costs, iter_item, $ds_top_level_bcs, $ds_lookback_time_formats, $param_databricks_cluster_list, rs_org_id, rs_optima_host
@@ -957,6 +1032,7 @@ EOS
 end
 
 datasource "ds_virtualmachines_from_bill" do
+  batch true
   run_script $js_virtualmachines_from_bill, $ds_databricks_workspaces_vm_costs, $ds_databricks_workspaces_filtered
 end
 
@@ -965,12 +1041,17 @@ script "js_virtualmachines_from_bill", type: "javascript" do
   result "result"
   code <<-EOS
   var result_map = {}
-  _.each(ds_databricks_workspaces_vm_costs, function(vm) {
+  getIterator(ds_databricks_workspaces_vm_costs).Each(function(vm, idx) {
     vm_cost_sub = vm["resourceId"].split("/")[2] // Get the subscription ID from the resource ID
     vm_cost_rg = vm["resourceId"].split("/")[4] // Get the resource group from the resource ID
     vm_rg_string = "/subscriptions/"+vm_cost_sub+"/resourceGroups/"+vm_cost_rg
-    db_workspace = _.find(ds_databricks_workspaces, function(dbws) {
-      return dbws["managedResourceGroupId"].toLowerCase() == vm_rg_string.toLowerCase()
+
+    var db_workspace = undefined;
+    getIterator(ds_databricks_workspaces).Each(function(dbws, idx){
+      if (dbws["managedResourceGroupId"].toLowerCase() == vm_rg_string.toLowerCase()) {
+        db_workspace = dbws;
+        return true;
+      }
     })
     // only keep what we need from db_workspace
     db_workspace = _.pick(db_workspace, ["resourceId", "resourceGroup", "workspaceId", "subscriptionId", "location", "name", "workspaceUrl","managedResourceGroupId"])
@@ -988,7 +1069,6 @@ script "js_virtualmachines_from_bill", type: "javascript" do
   })
 
   // The policy evaluation expects an array, and we don't need the keys anymore so lets convert it to an array
-  result = []
   _.each(Object.keys(result_map), function(subscriptionId) {
     _.each(Object.keys(result_map[subscriptionId]), function(location) {
       vm_count = result_map[subscriptionId][location]["virtualmachines"].length
@@ -998,11 +1078,11 @@ script "js_virtualmachines_from_bill", type: "javascript" do
       chunk_size = 25
       if (vm_count > 0 && vm_count <= chunk_size) {
         // If less <= chunk_size, just add the result as it is
-        result.push(result_map[subscriptionId][location])
+        appendToResult(result_map[subscriptionId][location])
       } else {
         // If more than chunk_size, do the chunking
         for (var i=0; i < vm_count; i+=chunk_size) {
-          result.push({
+          appendToResult({
             "databricks_workspace": result_map[subscriptionId][location]["databricks_workspace"],
             "virtualmachines": result_map[subscriptionId][location]["virtualmachines"].slice(i, i + chunk_size)
           })
@@ -1014,11 +1094,11 @@ script "js_virtualmachines_from_bill", type: "javascript" do
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_param_stats_threshold, $ds_filtered_workspace_virtualmachines_with_costs, $ds_azure_instance_size_map, $ds_applied_policy, $param_stats_check_both, $param_stats_idle_threshold_cpu_value, $param_stats_underutil_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_mem_value
+  run_script $js_idle_and_underutil_instances, $ds_param_stats_threshold, $ds_filtered_workspace_virtualmachines_with_costs, $ds_azure_instance_size_map, $ds_currency, $ds_applied_policy, $param_stats_check_both, $param_stats_idle_threshold_cpu_value, $param_stats_underutil_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_mem_value
 end
 
 script "js_idle_and_underutil_instances", type: "javascript" do
-  parameters "ds_param_stats_threshold", "ds_filtered_workspace_virtualmachines_with_costs", "ds_azure_instance_size_map", "ds_applied_policy", "param_stats_check_both", "param_stats_idle_threshold_cpu_value", "param_stats_underutil_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_mem_value"
+  parameters "ds_param_stats_threshold", "ds_filtered_workspace_virtualmachines_with_costs", "ds_azure_instance_size_map", "ds_currency", "ds_applied_policy", "param_stats_check_both", "param_stats_idle_threshold_cpu_value", "param_stats_underutil_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_mem_value"
   result "result"
   code <<-EOS
   underutil_total_savings = 0.0
@@ -1029,7 +1109,7 @@ script "js_idle_and_underutil_instances", type: "javascript" do
 
   applied_policy_name = ds_applied_policy["name"]
 
-  _.each(ds_filtered_workspace_virtualmachines_with_costs, function(vm) {
+  getIterator(ds_filtered_workspace_virtualmachines_with_costs).Each(function(vm, idx) {
     // Set the Applied Policy Name which is used in the summary_template/detail_template output
     vm["policy_name"] = applied_policy_name
     // Get the utilization metrics that we are going to use for comparison
@@ -1039,6 +1119,10 @@ script "js_idle_and_underutil_instances", type: "javascript" do
     // Set thresholdType for output
     vm["thresholdType"] = ds_param_stats_threshold["param_value"]
     vm["thresholdResourceTypes"] = param_stats_check_both
+
+    // Set fields for scrapper recommendations service
+    vm["savingsCurrency"] = ds_currency['symbol']
+    vm["service"] = "Microsoft.Compute"
 
     // Test for whether to consider the instance idle or underutilized.
     // Assume instance is not idle or underutilized by default.
@@ -1171,20 +1255,26 @@ Found {{ len data }} Databricks compute resources that were *idle* during the la
       field "savings" do
         label "Estimated Savings"
       end
+      field "savingsCurrency" do
+        label "Currency"
+      end
       field "recommendationDetails" do
         label "Recommendation"
       end
-      field "subscriptionId" do
+      field "accountID" do
         label "Subscription ID"
         path "databricks_workspace.subscriptionId"
       end
-      field "subscriptionName" do
+      field "accountName" do
         label "Subscription Name"
         path "databricks_workspace.subscriptionName"
       end
       field "resourceGroup" do
         label "Azure Resource Group Name"
         path "databricks_workspace.resourceGroup"
+      end
+      field "service" do
+        label "Service Name"
       end
       field "region" do
         label "Azure Region"
@@ -1314,6 +1404,10 @@ Found {{ len data }} Databricks compute resources that were *idle* during the la
       end
       field "lookbackPeriod" do
         label "Look Back Period (Days)"
+      end
+      field "resourceID" do
+        label "Resource ID"
+        path "resourceId"
       end
     end
   end
@@ -1333,20 +1427,26 @@ Found {{ len data }} Databricks compute resources that were *underutilized* duri
       field "savings" do
         label "Estimated Savings"
       end
+      field "savingsCurrency" do
+        label "Currency"
+      end
       field "recommendationDetails" do
         label "Recommendation"
       end
-      field "subscriptionId" do
+      field "accountID" do
         label "Subscription ID"
         path "databricks_workspace.subscriptionId"
       end
-      field "subscriptionName" do
+      field "accountName" do
         label "Subscription Name"
         path "databricks_workspace.subscriptionName"
       end
       field "resourceGroup" do
         label "Azure Resource Group Name"
         path "databricks_workspace.resourceGroup"
+      end
+      field "service" do
+        label "Service Name"
       end
       field "region" do
         label "Azure Region"
@@ -1476,6 +1576,10 @@ Found {{ len data }} Databricks compute resources that were *underutilized* duri
       end
       field "lookbackPeriod" do
         label "Look Back Period (Days)"
+      end
+      field "resourceID" do
+        label "Resource ID"
+        path "resourceId"
       end
     end
   end

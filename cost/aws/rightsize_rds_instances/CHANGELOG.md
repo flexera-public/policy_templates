@@ -1,5 +1,17 @@
 # Changelog
 
+## v5.6.0
+
+- Added `Connections (Daily)` field to incident table for added context
+
+## v5.5.3
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v5.5.2
+
+- Added `hide_skip_approvals` field to the info section, enabling the UI to dynamically show or hide the "Skip Approval" option. Functionality unchanged.
+
 ## v5.5.1
 
 - Fixed issue where policy template would fail if "db.serverless" instances were found

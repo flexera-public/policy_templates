@@ -6,6 +6,273 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2867](https://github.com/flexera-public/policy_templates/pull/2867): POL-1422 Fix AWS New Marketplace Products
+
+#### Description
+
+> AWS New Marketplace Products has an issue that was introduced during a mass code change that prevents the policy from completing execution. This fixes that issue.
+>
+
+#### Metadata
+
+- **Policies**: [AWS New Marketplace Products](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/marketplace_new_products/README.md)
+- **Merged At**: 2024-12-02 14:09:36 UTC
+
+---
+
+### PR [#2862](https://github.com/flexera-public/policy_templates/pull/2862): POL-1415 AWS Rightsize RDS Instances: Add Connections to Incident Table
+
+#### Description
+
+> This adds a daily average of connections to the RDS instance, labelled `Connections (Daily)`, to the incident table for both the idle and underutilized incidents.
+>
+> (This also includes some minor code refactoring to make similar changes in the future easier)
+>
+
+#### Metadata
+
+- **Policies**: [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md), [Meta Parent: AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md)
+- **Merged At**: 2024-12-02 13:08:57 UTC
+
+---
+
+### PR [#2859](https://github.com/flexera-public/policy_templates/pull/2859): POL-1419 Bug Fix for Azure Publicly-Accessible Blob Containers 
+
+#### Description
+
+> This fixes a bug in the Azure Publicly-Accessible Blob Containers policy template caused by an incorrectly named variable in a JavaScript block.
+
+#### Metadata
+
+- **Policies**: [Azure Publicly-Accessible Blob Containers](https://github.com/flexera-public/policy_templates/tree/master/security/azure/private_blob_containers/README.md), [Meta Parent: Azure Publicly-Accessible Blob Containers](https://github.com/flexera-public/policy_templates/tree/master/security/azure/private_blob_containers/README.md)
+- **Merged At**: 2024-11-26 18:56:50 UTC
+
+---
+
+### PR [#2847](https://github.com/flexera-public/policy_templates/pull/2847): FOPTS-5666 Handle properly null values in Google Rightsize VM Recommender Policy
+
+#### Description
+
+> We had an issue sorting recommendations when cpuAvergae. cpuMinimum or cpuMaximum are nulls.
+>
+> ### Issues Resolved
+>
+> [FOPTS-5666](https://flexera.atlassian.net/browse/FOPTS-5666)
+> [SQ-10199](https://flexera.atlassian.net/browse/SQ-10199)
+>
+
+#### Metadata
+
+- **Policies**: [Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations/README.md), [Meta Parent: Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations/README.md)
+- **Merged At**: 2024-11-26 15:57:50 UTC
+
+---
+
+### PR [#2837](https://github.com/flexera-public/policy_templates/pull/2837): POL-1417 Azure Savings Realized from Reservations - fix NaN issue related to incident creation
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+> Fixes a bug that produces this error preventing the policy incident from being created for an EU Customer:
+> `incident service client: create incident: [Incident create]: failed to encode request body: json: unsupported value: NaN`
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+> Fixes a bug that produces this error preventing the policy incident from being created for an EU Customer:
+> `incident service client: create incident: [Incident create]: failed to encode request body: json: unsupported value: NaN`
+>
+
+#### Metadata
+
+- **Policies**: [Azure Savings Realized from Reservations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/savings_realized/README.md)
+- **Merged At**: 2024-11-22 13:32:40 UTC
+
+---
+
+### PR [#2841](https://github.com/flexera-public/policy_templates/pull/2841): POL-1416 New Policy: AWS S3 Incomplete Multi-Part Uploads
+
+#### Description
+
+> New policy template `AWS S3 Incomplete Multi-Part Uploads` that reports incomplete S3 multi-part uploads.
+>
+
+#### Metadata
+
+- **Policies**: [AWS S3 Incomplete Multi-Part Uploads](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_multipart_uploads/README.md), [Meta Parent: AWS S3 Incomplete Multi-Part Uploads](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_multipart_uploads/README.md)
+- **Merged At**: 2024-11-22 13:28:09 UTC
+
+---
+
+### PR [#2722](https://github.com/flexera-public/policy_templates/pull/2722): FOPTS-5124 Added batch processing for some Policies with high memory consumption
+
+#### Description
+
+> Added batch processing in AWS Object Storage Optimization, Azure Databricks Rightsize Compute Instances and Azure Reserved Instance Recommendations Policies
+>
+>
+> Following the release of batch processing for all organizations, it was decided to modify the templates with the highest memory consumption to make use of batch processing. These policies are:
+> - Azure Databricks Rightsize Compute Instances
+> - Azure Reserved Instance Recommendations
+>
+> NOTE: For AWS Object Storage Optimization, I think there was a mistake in the parameters to run script
+> _$js_aws_s3_objects_with_storage_class_. It was using _$ds_aws_list_s3_objects_ but I think it should use, _$ds_aws_s3_objects_ because it is the data source that has the objects filtered by tags if we use that param, and _$ds_aws_s3_objects_  was not being used by any other datasource. I changed the data source used as input, but let me know if it was correct
+>
+> ### Issues Resolved
+>
+> [FOPTS-5124](https://flexera.atlassian.net/browse/FOPTS-5124)
+>
+
+#### Metadata
+
+- **Policies**: [Azure Databricks Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/databricks/rightsize_compute/README.md), [Meta Parent: Azure Databricks Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/databricks/rightsize_compute/README.md), [Azure Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/recommendations/README.md), [Meta Parent: Azure Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/recommendations/README.md)
+- **Merged At**: 2024-11-21 17:03:20 UTC
+
+---
+
+### PR [#2830](https://github.com/flexera-public/policy_templates/pull/2830): FOPTS-5507  Added hide_skip_approvals to All Active Policies
+
+#### Description
+
+> This PR marks the last update for the Hide Skip Approval [task](https://flexera.atlassian.net/browse/FLEX-5397).
+> ✅ The first phase, updating AWS Right Size policies, is complete in [PR-2799](https://github.com/flexera-public/policy_templates/pull/2799).
+> ✅ Additionally, the metaparent policy compiler and Rakefile have been successfully updated : [PR-2813](https://github.com/flexera-public/policy_templates/pull/2813)
+>
+> Current Phase (Phase 2):
+> In this phase, we have added the hide_skip_approvals field to the info section of policy templates that do not use the request approval option in any escalation. This field allows the UI to dynamically show or hide the "Skip Approval" option based on the policy’s configuration. Following the AWS Right Size policy updates, these changes have now been applied to **all remaining active policies.**
+>
+> More context:[ Seeking Your Input: Proposed Solution for Conditional "Skip Approvals" Visibility](https://teams.microsoft.com/l/message/19:833373548e104af2a20b0216eda1ba7b@thread.skype/1728495063426?tenantId=91034d23-0b63-4943-b138-367d4dfac252&groupId=fb250818-e040-4a26-b207-61c3cd99fd6e&parentMessageId=1728495063426&teamName=Team%20Flexera%20One&channelName=Policy%20Support%20and%20Questions&createdTime=1728495063426)
+>
+> ### Issues Resolved
+>
+>
+> [FLEX-5397](https://flexera.atlassian.net/browse/FLEX-5397)
+>
+> <!-- URL to the Applied Policy that was used for dev/testing below -->
+> <!-- This can be helpful for a reviewer to validate the changes proposed resulted in the expected behavior. If you do not have access or ability to apply the policy template, please mention this in your PR description.-->
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2830) for these details.
+- **Merged At**: 2024-11-14 19:54:59 UTC
+
+---
+
+### PR [#2829](https://github.com/flexera-public/policy_templates/pull/2829): FOPTS-5505 Fixed consumption calculation for ITAM Overused Licenses
+
+#### Description
+
+> An issue with consumption percentage calculation was fixed.
+>
+> ### Issues Resolved
+>
+> [SQ-11024](https://flexera.atlassian.net/browse/SQ-11024)
+> [FOPTS-5505](https://flexera.atlassian.net/browse/FOPTS-5505)
+>
+
+#### Metadata
+
+- **Policies**: [ITAM Overused Licenses](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/fnms/overused_licenses/README.md)
+- **Merged At**: 2024-11-14 16:49:56 UTC
+
+---
+
+### PR [#2818](https://github.com/flexera-public/policy_templates/pull/2818): POL-1413 Currency Separator Fix
+
+#### Description
+
+> This fixes the commonly-used formatNumber function present in many policy templates to ensure that it does not end up inserting the text "undefined" where comma separators are supposed to go.
+>
+> (Warnings/errors are false positives unrelated to the specific change being made with this PR)
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2818) for these details.
+- **Merged At**: 2024-11-11 18:09:26 UTC
+
+---
+
+### PR [#2813](https://github.com/flexera-public/policy_templates/pull/2813): FLEX-5397 - Modify Meta Parent Compiler to Conditionally Include `hide_skip_approvals`
+
+#### Description
+
+> This pull request enhances the Meta Parent Policy Template Compiler to conditionally include the hide_skip_approvals field in the generated meta parent policy templates when it exists in the child policy templates.
+> It also removes prior manual modifications to meta parent policies : https://github.com/flexera-public/policy_templates/pull/2799
+>
+> More context:[ Seeking Your Input: Proposed Solution for Conditional "Skip Approvals" Visibility](https://teams.microsoft.com/l/message/19:833373548e104af2a20b0216eda1ba7b@thread.skype/1728495063426?tenantId=91034d23-0b63-4943-b138-367d4dfac252&groupId=fb250818-e040-4a26-b207-61c3cd99fd6e&parentMessageId=1728495063426&teamName=Team%20Flexera%20One&channelName=Policy%20Support%20and%20Questions&createdTime=1728495063426)
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+>
+> [FLEX-5397](https://flexera.atlassian.net/browse/FLEX-5397)
+>
+>
+> <!-- URL to the Applied Policy that was used for dev/testing below -->
+> <!-- This can be helpful for a reviewer to validate the changes proposed resulted in the expected behavior. If you do not have access or ability to apply the policy template, please mention this in your PR description.-->
+>
+
+#### Metadata
+
+- **Policies**: [Meta Parent: AWS Rightsize EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/README.md), [Meta Parent: AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/README.md), [Meta Parent: AWS Rightsize ElastiCache](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_elasticache/README.md), [Meta Parent: AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md), [Meta Parent: AWS Rightsize Redshift](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_redshift/README.md)
+- **Merged At**: 2024-11-08 19:46:42 UTC
+
+---
+
+### PR [#2808](https://github.com/flexera-public/policy_templates/pull/2808): POL-1402 Azure Rightsizing Compute: Consider Managed Disk
+
+#### Description
+
+> This updates the `Azure Rightsize Compute Instances` policy template so that it never recommends a downsize to a size that wouldn't support the current number of attached disks for an instance.
+>
+> The [Virtual Machine Sizes - List](https://learn.microsoft.com/en-us/rest/api/compute/virtual-machine-sizes/list?view=rest-compute-2024-07-01&tabs=HTTP) API call is used during policy execution to get a list of resource types and the maximum number of attached disks. The policy template has been given a major version change since the above API call requires an additional permission.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md), [Meta Parent: Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md)
+- **Merged At**: 2024-11-07 13:07:23 UTC
+
+---
+
+### PR [#2799](https://github.com/flexera-public/policy_templates/pull/2799): FOPTS-4819 Added `hide_skip_approvals` to AWS Right Size policies
+
+#### Description
+
+> Adding a new hide_skip_approvals field to the info section of policy templates that do not utilize the request approval option in any escalation. This field enables the UI to dynamically show or hide the "Skip Approval" option based on the policy configuration. Initially, these changes are applied to AWS Right Size policies, with plans to update additional policies in subsequent steps.
+>
+> More context:[ Seeking Your Input: Proposed Solution for Conditional "Skip Approvals" Visibility](https://teams.microsoft.com/l/message/19:833373548e104af2a20b0216eda1ba7b@thread.skype/1728495063426?tenantId=91034d23-0b63-4943-b138-367d4dfac252&groupId=fb250818-e040-4a26-b207-61c3cd99fd6e&parentMessageId=1728495063426&teamName=Team%20Flexera%20One&channelName=Policy%20Support%20and%20Questions&createdTime=1728495063426)
+>
+> ### Issues Resolved
+>
+> [FLEX-5397](https://flexera.atlassian.net/browse/FLEX-5397)
+> <!-- URL to the Applied Policy that was used for dev/testing below -->
+> <!-- This can be helpful for a reviewer to validate the changes proposed resulted in the expected behavior. If you do not have access or ability to apply the policy template, please mention this in your PR description.-->
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2799) for these details.
+- **Merged At**: 2024-11-05 22:00:13 UTC
+
+---
+
+### PR [#2802](https://github.com/flexera-public/policy_templates/pull/2802): POL-1397 Flexera One API Event Report
+
+#### Description
+
+> This is a new policy template that reports API requests made to the Flexera API with several filtering options.
+>
+
+#### Metadata
+
+- **Policies**: [Flexera One API Event Report](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/iam/api_event_report/README.md)
+- **Merged At**: 2024-11-04 13:12:12 UTC
+
+---
+
 ### PR [#2800](https://github.com/flexera-public/policy_templates/pull/2800): POL-1408 AWS Account Credentials Meta Not Spawning Children
 
 #### Description
@@ -1383,267 +1650,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md), [Meta Parent: AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md)
 - **Merged At**: 2024-08-12 12:28:34 UTC
-
----
-
-### PR [#2506](https://github.com/flexera-public/policy_templates/pull/2506): POL-1317 AWS Superseded EC2 Instances Fix/Improvement
-
-#### Description
-
-> Improvements to `AWS Superseded EC2 Instances`. From the CHANGELOG:
->
-> - Fixed bug where invalid recommendations with no new resource type would sometimes be included in results
-> - Added `Fallback Instance Type Category` parameter to provide alternate recommendations when the selected category is not available
->
-> This also updates the local Gemfile to use the current version of Danger
->
-
-#### Metadata
-
-- **Policies**: [AWS Superseded EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/superseded_instances/README.md), [Meta Parent: AWS Superseded EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/superseded_instances/README.md)
-- **Merged At**: 2024-08-12 12:27:51 UTC
-
----
-
-### PR [#2472](https://github.com/flexera-public/policy_templates/pull/2472): POL-1297 Azure Security Policy Revamps: Part 4
-
-#### Description
-
-> This is a revamp of several Azure Security policy templates. Please see their respective CHANGELOGs and READMEs for details.
->
-> Additionally, the `Azure Storage Accounts Without HTTPs Enforced` policy template is being deprecated because it is redundant.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2472) for these details.
-- **Merged At**: 2024-08-09 15:01:45 UTC
-
----
-
-### PR [#2474](https://github.com/flexera-public/policy_templates/pull/2474): POL-1302 New Usage Revamp
-
-#### Description
-
-> This is a revamp of the `New Service Usage` policy template, which has been renamed to `New Usage`. From the CHANGELOG:
->
-> - Policy template renamed to `New Usage` to better reflect its functionality
-> - Added ability to report new usage for any cost dimension
-> - Added ability to specify a cost metric and look back period
-> - Added ability to filter results by estimated monthly cost
-> - Improved Billing Center filtering options
-> - Added additional fields and text to incident output for added context
-> - Streamlined code for better readability and faster execution
->
-> Note: Ignore the "run_script statements" error. The same script is invoked twice; once with a hard value, and once with a parameter value, so there's not a way to place them in the correct order in both situations without needlessly making two identical scripts.
->
-
-#### Metadata
-
-- **Policies**: [New Usage](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/new_usage/README.md)
-- **Merged At**: 2024-08-09 13:13:00 UTC
-
----
-
-### PR [#2503](https://github.com/flexera-public/policy_templates/pull/2503): POL-1313 SaaS Policy Revamps
-
-#### Description
-
-> These are revamps of the following policy templates:
->
-> #### Office 365 Security Alerts
-> - Modified credential to correctly match Microsoft Graph credentials in the Flexera platform
-> - Several parameters altered to be more descriptive and human-readable
-> - Removed unused `Azure AD Tenant ID` parameter
-> - Updated Microsoft Graph API call to use production `/v1.0/security/alerts_v2` endpoint
-> - Fixed issue where policy template would report alerts unrelated to Office 365
-> - Streamlined code for better readability and faster execution
->
-> #### Okta Inactive Users
-> - Several parameters altered to be more descriptive and human-readable
-> - Normalized incident export to be consistent with other policies
-> - Streamlined code for better readability and faster execution
->
-> #### ServiceNow Inactive Approvers
-> - Several parameters altered to be more descriptive and human-readable
-> - Normalized incident export to be consistent with other policies
-> - Streamlined code for better readability and faster execution
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2503) for these details.
-- **Merged At**: 2024-08-09 13:12:36 UTC
-
----
-
-### PR [#2504](https://github.com/flexera-public/policy_templates/pull/2504): POL-1314 Deprecate Budget Alerts by Cloud Account Policy Template
-
-#### Description
-
-> The `Budget Alerts by Cloud Account` policy template is being deprecated because its functionality can be entirely replicated in the `Budget Alerts` policy template, making it redundant.
-
-#### Metadata
-
-- **Policies**: [Budget Alerts by Cloud Account](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_alerts_by_account/README.md)
-- **Merged At**: 2024-08-09 12:13:43 UTC
-
----
-
-### PR [#2508](https://github.com/flexera-public/policy_templates/pull/2508): fix: minor wording fix on incident detail template
-
-#### Description
-
-> Updated incident message to be more relative for this policy template
->
-
-#### Metadata
-
-- **Policies**: [Flexera Automation Outdated Applied Policies](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/outdated_applied_policies/README.md)
-- **Merged At**: 2024-08-08 17:02:13 UTC
-
----
-
-### PR [#2501](https://github.com/flexera-public/policy_templates/pull/2501): POL-1309 Vendor Spend Commitment Forecast Revamp
-
-#### Description
-
-> This is a revamp of the Vendor Commitment Forecast policy template. From the CHANGELOG:
->
-> - Renamed policy template to `Vendor Spend Commitment Forecast` to avoid confusion with policy templates for RIs/SPs
-> - Added ability to specify a cost metric to use when gathering spend data
-> - Several parameters altered to be more descriptive and human-readable
-> - Additional fields added to incident table for context
-> - Streamlined code for better readability and faster execution
->
-
-#### Metadata
-
-- **Policies**: [Vendor Spend Commitment Forecast](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/forecasting/commitment_forecast/README.md)
-- **Merged At**: 2024-08-08 13:06:26 UTC
-
----
-
-### PR [#2468](https://github.com/flexera-public/policy_templates/pull/2468): POL-1297 Azure Security Policy Revamps: Part 3
-
-#### Description
-
-> This is a revamp of several Azure Security policies. Please see their respective CHANGELOGs and READMEs for details.
->
-> This also fixes a small issue in the Azure Rightsize SQL policy with how actions are logged.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2468) for these details.
-- **Merged At**: 2024-08-01 12:23:52 UTC
-
----
-
-### PR [#2471](https://github.com/flexera-public/policy_templates/pull/2471): POL-1301 Add Case Sensitivity Option to RBD Policy Templates
-
-#### Description
-
-> This adds the option to retain the casing of tag values when creating RBDs instead of normalizing them to lowercase. Default is still normalizing them to ensure consistency with previous versions and to reduce the risk of the policy template failing due to duplicate values with different casings.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2471) for these details.
-- **Merged At**: 2024-08-01 12:21:31 UTC
-
----
-
-### PR [#2475](https://github.com/flexera-public/policy_templates/pull/2475): POL-1303 Kubecost Policy Template Revamps
-
-#### Description
-
-> This is a revamp of the 2 Kubecost policy templates. From their CHANGELOGs:
->
-> #### Kubecost Cluster Rightsizing Recommendation
->
-> - Policy template renamed to `Kubecost Cluster Rightsizing Recommendation` to better reflect its functionality
-> - Kubecost API requests now use HTTPS for added security
-> - Policy template now falls back to Flexera-configured currency if Kubecost does not report a currency
-> - Added additional context to incident
-> - Renamed some incident fields to conform with other recommendations policy templates
-> - Streamlined code for better readability and faster execution
-> - Policy template now requires a valid Flexera credential
->
-> #### Kubecost Request Rightsizing Recommendations
->
-> - Policy template renamed to `Kubecost Container Request Rightsizing Recommendations` to better reflect its functionality
-> - Kubecost API requests now use HTTPS for added security
-> - Policy template now falls back to Flexera-configured currency if Kubecost does not report a currency
-> - Added additional context to incident
-> - Renamed some incident fields to conform with other recommendations policy templates
-> - Streamlined code for better readability and faster execution
-> - Policy template now requires a valid Flexera credential
->
-
-#### Metadata
-
-- **Policies**: [Kubecost Cluster Rightsizing Recommendation](https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/cluster/README.md), [Kubecost Container Request Rightsizing Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/sizing/README.md)
-- **Merged At**: 2024-07-31 20:58:49 UTC
-
----
-
-### PR [#2478](https://github.com/flexera-public/policy_templates/pull/2478): POL-1306 Add Hourly Cost to AHUB Policy Templates
-
-#### Description
-
-> This adds Hourly Cost and Currency as fields in the incident output for the three Azure AHUB policy templates.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2478) for these details.
-- **Merged At**: 2024-07-31 20:58:20 UTC
-
----
-
-### PR [#2477](https://github.com/flexera-public/policy_templates/pull/2477): POL-1305 Azure Rightsize SQL Managed Instances 2-Core Recommendation Fix
-
-#### Description
-
-> SQL instance sizes with only 2 cores are not available in most circumstances for SQL Managed Instances. This fix ensures that these invalid recommendations do not appear in the results by throwing out any downsizing recommendations that are for fewer than 4 cores.
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize SQL Managed Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_sql/README.md), [Meta Parent: Azure Rightsize SQL Managed Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_sql/README.md)
-- **Merged At**: 2024-07-31 12:41:36 UTC
-
----
-
-### PR [#2476](https://github.com/flexera-public/policy_templates/pull/2476): POL-1304 Add Hourly Cost to Time Stopped Policy Templates
-
-#### Description
-
-> Update to the `AWS EC2 Instances Time Stopped Report` and `Azure Compute Instances Time Powered Off Report` policy templates.
->
-> This adds `Estimated Hourly Cost` and `Currency` fields to the incident to help users assess potential impact of terminating instances.
->
-
-#### Metadata
-
-- **Policies**: [AWS EC2 Instances Time Stopped Report](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/ec2_stopped_report/README.md), [Meta Parent: AWS EC2 Instances Time Stopped Report](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/ec2_stopped_report/README.md), [Azure Compute Instances Time Powered Off Report](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/compute_poweredoff_report/README.md), [Meta Parent: Azure Compute Instances Time Powered Off Report](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/compute_poweredoff_report/README.md)
-- **Merged At**: 2024-07-31 12:07:05 UTC
-
----
-
-### PR [#2452](https://github.com/flexera-public/policy_templates/pull/2452): POL-1297 Azure Security Policy Revamps: Part 2
-
-#### Description
-
-> This is a revamp of several Azure Security policies. Please see their respective CHANGELOGs and READMEs for details.
->
-> This also deprecates `Azure Resources with public IP address` due to this policy not really being necessary for CIS compliance and not providing complete or particularly useful functionality.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2452) for these details.
-- **Merged At**: 2024-07-31 12:06:47 UTC
 
 ---
 

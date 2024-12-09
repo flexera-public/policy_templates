@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.0.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v4.0.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v4.0.0
 
 - Policy can now be run against an arbitrary number of days in the past

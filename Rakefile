@@ -48,11 +48,15 @@ task :generate_policy_list do
       recommendation_type = pp.parsed_info[:recommendation_type]
       publish = pp.parsed_info[:publish]
       deprecated = pp.parsed_info[:deprecated]
+      hide_skip_approvals = pp.parsed_info[:hide_skip_approvals]
+
 
       # 'publish' defaults to true unless explicitly set to false
       # 'deprecated' defaults to false unless explicitly set to true
       publish = !(publish == 'false' || publish == false)
       deprecated = deprecated == 'true' || deprecated == true
+      # 'hide_skip_approvals' defaults to false unless explicitly set to true
+      hide_skip_approvals = hide_skip_approvals == 'true' || hide_skip_approvals == true
     end
 
     # Get version from long description
@@ -86,7 +90,8 @@ task :generate_policy_list do
         "recommendation_type": recommendation_type,
         "updated_at": updated_at,
         "generally_recommended": generally_recommended,
-        "deprecated": deprecated
+        "deprecated": deprecated,
+        "hide_skip_approvals": hide_skip_approvals
       }
     end
   end
