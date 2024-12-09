@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.1.0
+
+- Added email notifications for Start Action, Stop Action, and Errors
+
 ## v5.0.2
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
