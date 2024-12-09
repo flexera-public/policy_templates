@@ -378,7 +378,7 @@ changed_pt_files.each do |file|
   #   `// Dangerfile ignore: <reason for exclusion>`
   #   OR
   #   `# Dangerfile ignore: <reason for exclusion>`
-  file_lines = file_lines.reject { |line| line.contains('// Dangerfile ignore') || line.contains('# Dangerfile ignore') }
+  file_lines = file_lines.reject { |line| line.include?('// Dangerfile ignore') || line.include?('# Dangerfile ignore') }
 
   # Raise error if policy is deprecated but missing deprecated field in info() block
   test = policy_missing_deprecated_field?(file, file_parsed); failures << test if test
