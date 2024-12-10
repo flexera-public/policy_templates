@@ -355,7 +355,7 @@ def readme_invalid_credentials?(file, file_lines)
           footnote_symbols["¶"] = true if line.strip.end_with?("\u00b6")
 
           permission_action = line.split("  - ")[1]
-          if permission_action.nil? || !permission_action.match?(azure_perm_tester) && !permission_action.include?("- `Storage Blob Data")
+          if permission_action.nil? || !permission_action.match?(azure_perm_tester) && !permission_action.include?("Storage Blob Data")
             fail_message += "Line #{line_number.to_s}: Azure permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
             fail_message += "```  - `Microsoft.Compute/snapshots/delete`*```\n"
             fail_message += "```  - `Microsoft.Compute/snapshots/read` ```\n"
