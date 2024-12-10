@@ -212,8 +212,8 @@ end
 activepolicy_json_filepath = "../../data/active_policy_list/active_policy_list.json"
 permission_json_filepath = "../../data/policy_permissions_list/master_policy_permissions_list.json"
 template_filepath = "./aws_cft_generator.template.txt"
-output_filepath = "./FlexeraAutomationPolicies_Rolling.template"
-output_readonly_filepath = "./FlexeraAutomationPoliciesReadOnly_Rolling.template"
+output_filepath = "./rolling/FlexeraAutomationPolicies.template"
+output_readonly_filepath = "./rolling/FlexeraAutomationPoliciesReadOnly.template"
 
 # Get list of deprecated policies
 activepolicy_json = JSON.parse(File.read(activepolicy_json_filepath))
