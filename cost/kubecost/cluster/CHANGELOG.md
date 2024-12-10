@@ -3,9 +3,9 @@
 ## v0.3.3
 
 - Updated API endpoints for cluster Sizing.
-- Added new parameters `param_allow_shared_core`, `param_include_overhead`:
-  - Added param_allow_shared_core to include shared cores in the cluster sizing calculation.
-  - Added param_include_overhead to ensure overhead costs are included in the cost calculations.
+- Added new parameters `Shared Core`, `Architecture`:
+  - Added Shared Core to include shared cores in the cluster sizing calculation. This improves the accuracy when sizing the resources of your infrastructure.
+  - Added Architecture
 
 ## v0.3.2
 
