@@ -2,9 +2,7 @@
 
 ## v0.3.3
 
-- Added support for multiple currencies: The system now supports handling different currencies.
-- Default currency set to USD: If the kubecost config endpoint returns an empty currency, USD will be used as the default.
-- No conversion when currencies match: If the currency in Kubecost matches the currency in Flexera, no conversion will occur.
+- Added support for multiple currencies
 
 ## v0.3.2
 
