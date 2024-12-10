@@ -1,5 +1,25 @@
 # Changelog
 
+## v6.3.5
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v6.3.4
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v6.3.3
+
+- Fixed issue where Currency Conversion messaging in policy incident would show incorrectly. Functionality unchanged.
+
+## v6.3.2
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v6.3.1
+
+- Fixed issue where `New Monthly List Price` and `Estimated Monthly Savings` were being incorrectly reported in the policy incident.
+
 ## v6.3.0
 
 - Added `Resource ARN` to incident table.

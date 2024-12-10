@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v0.2.1
+
+- Fixed broken README link in policy template description
+
 ## v0.2.0
 
 - Fixed bug that related to Summarized Unallocated amount and Unallocated Percent of Total in report

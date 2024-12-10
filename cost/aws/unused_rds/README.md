@@ -8,7 +8,7 @@ This policy is no longer being updated. The [AWS Rightsize RDS Instances](https:
 
 This policy template checks for Unused RDS instances by reviewing CloudWatch DBconnections and terminates them after user approval.
 
-## Functional Details
+## How It Works
 
 This policy gets a list of RDS instances and uses CloudWatch DBConnection metric to check for connections over a user-specified period of days. If there are no DBConnections, the policy will terminate the RDS instance after the user approval.
 
@@ -96,4 +96,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

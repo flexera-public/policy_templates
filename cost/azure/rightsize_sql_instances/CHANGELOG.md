@@ -1,5 +1,21 @@
 # Changelog
 
+## v5.5.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v5.5.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v5.5.0
+
+- Added support for downsizing multiple sizes where appropriate
+
+## v5.4.2
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v5.4.1
 
 - Fixed minor issue with policy actions logging a patch action as a delete action

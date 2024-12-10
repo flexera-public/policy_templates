@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.3.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.3.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v3.3.0
 
 - Removed invalid "Any" option from the `Savings Plan Term` parameter.

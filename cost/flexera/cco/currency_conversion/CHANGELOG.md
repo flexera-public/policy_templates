@@ -1,5 +1,17 @@
 # Changelog
 
+## v5.0.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v5.0.0
+
+- Multiple dimension/value pairs can now be used when applying currency conversion
+
+## v4.0.0
+
+- Policy now accepts any arbitrary cost dimension/value instead of requiring that currency conversion be done for a specific cloud provider
+
 ## v3.0
 
 - Fixed issue where policy would fail if org has existing adjustment rules for future months

@@ -7,10 +7,11 @@ severity "medium"
 category "Compliance"
 default_frequency "daily"
 info(
-  version: "2.4",
+  version: "2.4.1",
   provider: "Flexera",
   service: "IT Asset Management",
-  policy_set: "IT Asset Management"
+  policy_set: "IT Asset Management",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -19,6 +20,7 @@ info(
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses of the recipients you wish to notify"
   description "A list of email address(es) to notify"
 end
@@ -38,7 +40,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "itam_pagination" do
+pagination "pagination_itam" do
   get_page_marker do
     body_path jq(response, "if .total == 0 then null else .offset + 10000 end")
   end
@@ -48,19 +50,19 @@ pagination "itam_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 datasource "ds_inventories" do
   request do
     auth $auth_flexeraone
+    pagination $pagination_itam
     host join(["api.", get(1, split(f1_app_host, "app."))])
     path join(["/fnms/v1/orgs/", rs_org_id, "/inventories"])
-    header "Api-Version", "0.1"
-    header "User-Agent", "RS Policies"
     query "status", "Active"
     query "limit", "10000"
-    pagination $itam_pagination
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
   end
 end
 
@@ -95,8 +97,8 @@ end
 policy 'itam_policy' do
   validate $ds_missing_hostid do
     summary_template 'FlexNet Manager - Virtual Machines Without Host ID'
-    escalate $send_report
     check eq(size(data),0)
+    escalate $esc_send_report
     export do
       field "name"
       field "serialNumber"
@@ -127,7 +129,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "send_report" do
+escalation "esc_send_report" do
   automatic true
   label "Send Email"
   description "Send incident email"
