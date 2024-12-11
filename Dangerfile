@@ -370,16 +370,6 @@ changed_pt_files.each do |file|
   file_lines = File.readlines(file)
   file_diff = git.diff_for_file(file)
 
-  # Allow policy developer to exclude certain lines from testing
-  # This should be done with caution, as it can hide potential issues/noncompliance
-  # Exclusion can be used to exclude lines that are known to be false positives (or approved exceptions)
-  # Exclusion should be done in the PT file itself, and should be documented in the file
-  # Exclusion should be done in the following format:
-  #   `// Dangerfile ignore: <reason for exclusion>`
-  #   OR
-  #   `# Dangerfile ignore: <reason for exclusion>`
-  file_lines = file_lines.reject { |line| line.include?('// Dangerfile ignore') || line.include?('# Dangerfile ignore') }
-
   # Raise error if policy is deprecated but missing deprecated field in info() block
   test = policy_missing_deprecated_field?(file, file_parsed); failures << test if test
 
