@@ -4,8 +4,8 @@
 
 - Updated API endpoints for cluster Sizing.
 - Added new parameters `Shared Core`, `Architecture`:
-  - Added Shared Core to include shared cores in the cluster sizing calculation. This improves the accuracy when sizing the resources of your infrastructure.
-  - Added Architecture
+  - Shared Core Whether shared cores should be considered in the cluster sizing calculation.
+  - Architecture parameter to allow users to optimize cost calculations and resource allocation based on hardware architecture.
 
 ## v0.3.2
 
