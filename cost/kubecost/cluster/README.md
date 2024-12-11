@@ -12,8 +12,8 @@ This policy template reports a Kubecost cluster rightsizing recommendation gener
 - *Lookback Period (Days)* - Number of historical days of usage to analyze when generating recommendations.
 - *Target Utilization (%)* - Utilization target to use when generating recommendations.
 - *Recommendation Strategy* - Recommendation strategy to use. 'Optimal' will automatically select whichever strategy has the highest potential savings.
-- *Allow Shared Core* - Specifies whether shared cores should be considered in the cluster sizing calculation.
-- *Architecture* - Specifies the chipset architecture for the recommended nodes. Leave it blank to include any architecture.
+- *Allow Shared Core* - Whether to include shared core node types for recommendations.
+- *Architecture* - Chipset architecture for recommended nodes (e.g., 'x86' or 'ARM'). Leave it blank to include all architectures. Note: 'ARM' is currently supported only on AWS clusters.
 
 ## Policy Actions
 
