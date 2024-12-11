@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.3
+
+- Updated API endpoints for cluster Sizing.
+- Added new parameters `Shared Core`, `Architecture`:
+  - Shared Core Whether shared cores should be considered in the cluster sizing calculation.
+  - Architecture parameter to allow users to optimize cost calculations and resource allocation based on hardware architecture.
+
 ## v0.3.2
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
