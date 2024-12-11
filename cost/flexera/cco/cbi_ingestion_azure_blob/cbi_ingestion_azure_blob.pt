@@ -1,13 +1,13 @@
-name "Fixed Cost Common Bill Ingestion"
+name "Common Bill Ingestion from Azure Blob Storage"
 rs_pt_ver 20180301
 type "policy"
-short_description "Sends a fixed cost into the Flexera Cloud Cost Optimization platform. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/fixed_cost_cbi/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Downloads cost reports stored in the Flexera Common Bill Ingestion format from Azure Blob Storage and then uploads them to a Flexera CBI endpoint. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cbi_ingestion_azure_blob) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "low"
 category "Cost"
+severity "low"
 default_frequency "daily"
 info(
-  version: "0.2.0",
+  version: "0.1.0",
   provider: "Flexera",
   service: "Common Bill Ingestion",
   policy_set: "Common Bill Ingestion",
@@ -21,24 +21,16 @@ info(
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses to notify"
+  label "Email Addresses"
   description "Email addresses of the recipients you wish to notify when billing data is uploaded"
   default []
-end
-
-parameter "param_cost_amount" do
-  type "number"
-  category "Policy Settings"
-  label "Cost Amount (Monthly)"
-  description "The monthly amount of the fixed cost to inject in the currency that the Flexera organization is configured to use."
-  # No default value, user input required
 end
 
 parameter "param_month_billing" do
   type "string"
   category "Policy Settings"
   label "Billing Month"
-  description "Month to insert fixed cost into. Select 'Specific Month' to specify a month."
+  description "Month to upload costs for. Select 'Specific Month' to specify a month."
   allowed_values "Current Month", "Previous Month", "Specific Month"
   default "Current Month"
 end
@@ -47,17 +39,26 @@ parameter "param_month_specific" do
   type "string"
   category "Policy Settings"
   label "Specific Month"
-  description "Month to insert fixed cost into in YYYY-MM format. Only relevant if 'Specific Month' is selected for the Billing Month parameter."
+  description "Month to upload costs for in YYYY-MM format. Only relevant if 'Specific Month' is selected for the Billing Month parameter."
   allowed_pattern /^(19|20)\d\d-(0[1-9]|1[0-2])$/
   default "2020-01"
+end
+
+parameter "param_cbi_type" do
+  type "string"
+  category "Policy Settings"
+  label "CBI (Common Bill Ingestion) Endpoint Type"
+  description "Whether costs are being sent to an endpoint for Common Bill Ingestion Format or FOCUS Format"
+  allowed_values "Common Bill Ingestion", "FOCUS"
+  default "Common Bill Ingestion"
 end
 
 parameter "param_cbi_endpoint" do
   type "string"
   category "Policy Settings"
   label "CBI (Common Bill Ingestion) Endpoint ID"
-  description "The ID of CBI endpoint to create/use when injecting the fixed cost. Leave blank to have this generated and managed automatically. Ex: cbi-oi-optima-laborcosts"
-  allowed_pattern /^(cbi-oi-optima-[a-z]+|)$/
+  description "The ID of CBI endpoint to create/use for ingested costs. Ex: cbi-oi-optima-laborcosts"
+  allowed_pattern /^(cbi-oi-optima-[a-z]+|cbi-oi-focus-[a-z]+|)$/
   default ""
 end
 
@@ -65,82 +66,25 @@ parameter "param_cbi_cloud_vendor" do
   type "string"
   category "Policy Settings"
   label "Cloud Vendor"
-  description "The value the fixed cost should have for the 'Cloud Vendor' dimension in Flexera CBI. Only has an effect when the CBI endpoint is first created."
+  description "The value the ingested costs should have for the 'Cloud Vendor' dimension in Flexera CBI. Only has an effect when the CBI endpoint is first created."
   min_length 1
   # No default value, user input required
 end
 
-parameter "param_metadata_cloud_vendor_account_id" do
+parameter "param_blob_hostname" do
   type "string"
-  category "Cost Metadata"
-  label "Cloud Vendor Account"
-  description "The value the fixed cost should have for the 'Cloud Vendor Account' dimension in Flexera CBI. Leave blank to have no value for this dimension."
-  default ""
+  category "Policy Settings"
+  label "Azure Blob Storage Hostname"
+  description "The hostname for the Azure Blob Storage container that stores the costs. Ex: billing-files.blob.core.windows.net"
+  # No default value, user input required
 end
 
-parameter "param_metadata_cloud_vendor_account_name" do
+parameter "param_blob_prefix" do
   type "string"
-  category "Cost Metadata"
-  label "Cloud Vendor Account Name"
-  description "The value the fixed cost should have for the 'Cloud Vendor Account Name' dimension in Flexera CBI. Leave blank to have no value for this dimension."
-  default ""
-end
-
-parameter "param_metadata_category" do
-  type "string"
-  category "Cost Metadata"
-  label "Category"
-  description "The value the fixed cost should have for the 'Category' dimension in Flexera CBI. Leave blank to have no value for this dimension."
-  default ""
-end
-
-parameter "param_metadata_service" do
-  type "string"
-  category "Cost Metadata"
-  label "Service"
-  description "The value the fixed cost should have for the 'Service' dimension in Flexera CBI. Leave blank to have no value for this dimension."
-  default ""
-end
-
-parameter "param_metadata_region" do
-  type "string"
-  category "Cost Metadata"
-  label "Region"
-  description "The value the fixed cost should have for the 'Region' dimension in Flexera CBI. Leave blank to have no value for this dimension."
-  default ""
-end
-
-parameter "param_metadata_resourcetype" do
-  type "string"
-  category "Cost Metadata"
-  label "Resource Type"
-  description "The value the fixed cost should have for the 'Resource Type' dimension in Flexera CBI. Leave blank to have no value for this dimension."
-  default ""
-end
-
-parameter "param_metadata_instancetype" do
-  type "string"
-  category "Cost Metadata"
-  label "Instance Type"
-  description "The value the fixed cost should have for the 'Instance Type' dimension in Flexera CBI. Leave blank to have no value for this dimension."
-  default ""
-end
-
-parameter "param_metadata_lineitemtype" do
-  type "string"
-  category "Cost Metadata"
-  label "Line Item Type"
-  description "The value the fixed cost should have for the 'Line Item Type' dimension in Flexera CBI. 'Usage' is recommended for most cases."
-  allowed_values "Usage", "Tax", "Fee", "Credit"
-  default "Usage"
-end
-
-parameter "param_metadata_tags" do
-  type "list"
-  category "Cost Metadata"
-  label "Tags"
-  description "Tag values to attach to the line items in the Flexera platform in Key=Value format. Leave blank to not include any tag values."
-  default []
+  category "Policy Settings"
+  label "Azure Blob Storage Path/Prefix"
+  description "The path and prefix for the name of the object in the Azure Blob Storage container. See README for more information on how file names should be structured. Ex: bills/labor-costs-"
+  # No default value, user input required
 end
 
 ###############################################################################
@@ -152,6 +96,13 @@ credentials "auth_flexera" do
   label "Flexera"
   description "Select FlexeraOne OAuth2 credentials"
   tags "provider=flexera"
+end
+
+credentials "auth_azure_storage" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Storage Credential from the list."
+  tags "provider=azure_storage"
 end
 
 ###############################################################################
@@ -217,165 +168,30 @@ script "js_dates", type: "javascript" do
     year = date.toISOString().split('-')[0]
     month = date.toISOString().split('-')[1]
 
-    result = { period: year + '-' + month }
-  }
-EOS
-end
-
-datasource "ds_currency_reference" do
-  request do
-    host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
-datasource "ds_currency_code" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
-    header "Api-Version", "0.1"
-    header "User-Agent", "RS Policies"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    field "id", jmes_path(response, "id")
-    field "value", jmes_path(response, "value")
-  end
-end
-
-datasource "ds_currency" do
-  run_script $js_currency, $ds_currency_reference, $ds_currency_code
-end
-
-script "js_currency", type:"javascript" do
-  parameters "ds_currency_reference", "ds_currency_code"
-  result "result"
-  code <<-EOS
-  code = "USD"
-  symbol = "$"
-  separator = ","
-
-  if (ds_currency_code['value'] != undefined) {
-    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
-      code = ds_currency_reference[ds_currency_code['value']]['code']
-      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
-
-      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
-        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-      } else {
-        separator = ""
-      }
+    result = {
+      period: year + '-' + month
     }
   }
-
-  result = {
-    code: code,
-    symbol: symbol,
-    separator: separator
-  }
-EOS
-end
-
-datasource "ds_cost_csv" do
-  run_script $js_cost_csv, $ds_dates, $ds_currency, $param_cost_amount, $param_metadata_cloud_vendor_account_id, $param_metadata_cloud_vendor_account_name, $param_metadata_category, $param_metadata_service, $param_metadata_region, $param_metadata_resourcetype, $param_metadata_instancetype, $param_metadata_lineitemtype, $param_metadata_tags
-end
-
-script "js_cost_csv", type: "javascript" do
-  parameters "ds_dates", "ds_currency", "param_cost_amount", "param_metadata_cloud_vendor_account_id", "param_metadata_cloud_vendor_account_name", "param_metadata_category", "param_metadata_service", "param_metadata_region", "param_metadata_resourcetype", "param_metadata_instancetype", "param_metadata_lineitemtype", "param_metadata_tags"
-  result "result"
-  code <<-'EOS'
-  // Set static field values. These will be the same for every entry in the CSV file
-  CloudVendorAccountID = param_metadata_cloud_vendor_account_id.trim().replace(/,/g, '_')
-  CloudVendorAccountName = param_metadata_cloud_vendor_account_name.trim().replace(/,/g, '_')
-  Category = param_metadata_category.trim().replace(/,/g, '_')
-  Service = param_metadata_service.trim().replace(/,/g, '_')
-  Region = param_metadata_region.trim().replace(/,/g, '_')
-  ResourceType = param_metadata_resourcetype.trim().replace(/,/g, '_')
-  InstanceType = param_metadata_instancetype.trim().replace(/,/g, '_')
-  LineItemType = param_metadata_lineitemtype.trim().replace(/,/g, '_')
-
-  UsageType = "None"
-  UsageUnit = "Unit"
-  UsageAmount = 0
-  CurrencyCode = ds_currency['code']
-  InvoiceYearMonth = ds_dates['period'].replace(/-/g, '')
-  InvoiceID = ds_dates['period'].replace(/-/g, '_')
-
-  // Generate the Tags value if user provided tags
-  tag_strings = []
-
-  _.each(param_metadata_tags, function(item) {
-    if (item.split('=')[1] != undefined && item.split('=')[1] != "") {
-      key = item.split('=')[0].trim().replace(/,/g, '_')
-      value = item.split('=')[1].trim().replace(/,/g, '_')
-      tag_strings.push("\"\"" + key + "\"\": \"\"" + value + "\"\"")
-    }
-  })
-
-  Tags = ""
-  if (tag_strings.length > 0) { Tags = '"{' + tag_strings.join(',') + '}"' }
-
-  // Determine the number of days in the current month for cost splitting
-  next_month_year = Number(ds_dates['period'].split('-')[0])
-  next_month = Number(ds_dates['period'].split('-')[1]) + 1
-  if (next_month == 13) { next_month = 1; next_month_year++ }
-  if (next_month < 10) { next_month = '0' + next_month.toString() }
-  future_date = new Date(next_month_year.toString() + '-' + next_month.toString())
-  future_date.setDate(future_date.getDate() - 1)
-  total_days_in_month = Number(future_date.toISOString().substring(8, 10))
-
-  // Calculate daily cost from monthly cost.
-  // Round it to avoid causing problems with extremely small numbers in scientific notation.
-  Cost = Math.round(param_cost_amount / total_days_in_month * 10000) / 10000
-
-  // Determine the number of days we need to insert billing data for
-  // Simply use the number of days in the entire month if not current month
-  days_in_month = total_days_in_month
-
-  // Otherwise, figure out how far into the current month we are and use that
-  if (ds_dates['period'] == new Date().toISOString().substring(0, 7)) {
-    days_in_month = Number(new Date().toISOString().substring(8, 10))
-  }
-
-  // Create header row
-  rows = ["CloudVendorAccountID,CloudVendorAccountName,Category,Service,Region,ResourceType,InstanceType,LineItemType,UsageType,UsageAmount,UsageUnit,CurrencyCode,InvoiceYearMonth,InvoiceID,Tags,UsageStartTime,Cost"]
-
-  // Create remaining rows
-  for (var i = 1; i <= days_in_month; i++) {
-    // Determine usage start time based on day
-    if (i < 10) { day = '0' + i.toString() }
-    if (i >= 10) { day = i.toString() }
-    UsageStartTime = ds_dates['period'] + '-' + day + 'T00:00:00Z'
-
-    // Add row for this day to row list
-    rows.push([
-      CloudVendorAccountID, CloudVendorAccountName, Category, Service, Region,
-      ResourceType, InstanceType, LineItemType, UsageType, UsageAmount, UsageUnit,
-      CurrencyCode, InvoiceYearMonth, InvoiceID, Tags, UsageStartTime, Cost
-    ].join(','))
-  }
-
-  result = { csv: rows.join("\n") }
 EOS
 end
 
 datasource "ds_cbi_endpoint_id" do
-  run_script $js_cbi_endpoint_id, $param_cbi_endpoint, $param_cbi_cloud_vendor
+  run_script $js_cbi_endpoint_id, $param_cbi_endpoint, $param_cbi_cloud_vendor, $param_cbi_type
 end
 
 script "js_cbi_endpoint_id", type: "javascript" do
-  parameters "param_cbi_endpoint", "param_cbi_cloud_vendor"
+  parameters "param_cbi_endpoint", "param_cbi_cloud_vendor", "param_cbi_type"
   result "result"
   code <<-EOS
   result = param_cbi_endpoint
 
   if (param_cbi_endpoint == "") {
+    prefix = "cbi-oi-optima-"
+    if (param_cbi_type == "FOCUS") { prefix = "cbi-oi-focus-" }
+
     // Make the Cloud Vendor lowercase, replace spaces with underscores,
-    // remove any non-alphabetical characters, and remove any underscors are the start/end of the string
-    result = "cbi-oi-optima-" + param_cbi_cloud_vendor.toLowerCase().replace(/ /g, '_').replace(/[^a-z_]/g, '').replace(/^_+|_+$/g, '')
+    // remove any non-alphabetical characters, and remove any underscores are the start/end of the string
+    result = prefix + param_cbi_cloud_vendor.toLowerCase().replace(/ /g, '_').replace(/[^a-z_]/g, '').replace(/^_+|_+$/g, '')
   }
 EOS
 end
@@ -405,11 +221,11 @@ end
 
 # Branching logic: Create a new bill connect if it doesn't already exist
 datasource "ds_to_create_bill_connect" do
-  run_script $js_to_create_bill_connect, $ds_existing_bill_connects, $ds_cbi_endpoint_id, $param_cbi_cloud_vendor
+  run_script $js_to_create_bill_connect, $ds_existing_bill_connects, $ds_cbi_endpoint_id, $param_cbi_cloud_vendor, $param_cbi_type
 end
 
 script "js_to_create_bill_connect", type: "javascript" do
-  parameters "ds_existing_bill_connects", "ds_cbi_endpoint_id", "param_cbi_cloud_vendor"
+  parameters "ds_existing_bill_connects", "ds_cbi_endpoint_id", "param_cbi_cloud_vendor", "param_cbi_type"
   result "result"
   code <<-EOS
   result = []
@@ -419,9 +235,12 @@ script "js_to_create_bill_connect", type: "javascript" do
   })
 
   if (existing_bill_connect == undefined) {
+    prefix = "cbi-oi-optima"
+    if (param_cbi_type == "FOCUS") { prefix = "cbi-oi-focus" }
+
     result = [{
-      billIdentifier: ds_cbi_endpoint_id.split('cbi-oi-optima-')[1],
-      integrationId: "cbi-oi-optima",
+      billIdentifier: ds_cbi_endpoint_id.split(prefix + "-")[1],
+      integrationId: prefix,
       name: param_cbi_cloud_vendor.toLowerCase().trim().replace(/ /g, '_'),
       params: {
         displayName: param_cbi_cloud_vendor,
@@ -568,6 +387,34 @@ datasource "ds_cbi_create_bill_upload" do
   end
 end
 
+datasource "ds_cost_file" do
+  request do
+    auth $auth_azure_storage
+    host $param_blob_hostname
+    path join([$param_blob_prefix, val($ds_dates, "period"), ".csv"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "text"
+  end
+end
+
+datasource "ds_cost_file_data" do
+  run_script $js_cost_file_data, $ds_cost_file
+end
+
+script "js_cost_file_data", type: "javascript" do
+  parameters "ds_cost_file"
+  result "result"
+  code <<-EOS
+  if (typeof(ds_cost_file) == 'string') {
+    result = { data: ds_cost_file }
+  } else {
+    result = { data: ds_cost_file[0] }
+  }
+EOS
+end
+
 datasource "ds_cbi_upload_file" do
   request do
     auth $auth_flexera
@@ -575,7 +422,7 @@ datasource "ds_cbi_upload_file" do
     host rs_optima_host
     path join(["/optima/orgs/", rs_org_id, "/billUploads/", val($ds_cbi_create_bill_upload, "id"), "/files/cost-", val($ds_dates, "period"), ".csv"])
     header "User-Agent", "RS Policies"
-    body val($ds_cost_csv, "csv")
+    body val($ds_cost_file_data, "data")
   end
   result do
     encoding "json"
@@ -612,7 +459,7 @@ script "js_cbi_commit_bill_upload", type: "javascript" do
     auth: "auth_flexera",
     verb: "POST",
     host: rs_optima_host,
-    path: ["/optima/orgs/", rs_org_id, "/billUploads/", ds_cbi_create_bill_upload["id"], '/operations'].join(''),
+    path: ["/optima/orgs/", rs_org_id, "/billUploads/", ds_cbi_create_bill_upload["id"], "/operations"].join(''),
     headers: { "User-Agent": "RS Policies" },
     body_fields: {"operation": "commit" }
   }
@@ -620,11 +467,11 @@ EOS
 end
 
 datasource "ds_incident" do
-  run_script $js_incident, $ds_cbi_commit_bill_upload, $ds_applied_policy, $ds_cost_csv, $param_cost_amount, $param_cbi_cloud_vendor
+  run_script $js_incident, $ds_cbi_commit_bill_upload, $ds_applied_policy, $ds_dates, $param_blob_hostname, $param_blob_prefix
 end
 
 script "js_incident", type: "javascript" do
-  parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_cost_csv", "param_cost_amount", "param_cbi_cloud_vendor"
+  parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_dates", "param_blob_hostname", "param_blob_prefix"
   result "result"
   code <<-EOS
   result = [{
@@ -635,9 +482,8 @@ script "js_incident", type: "javascript" do
     updatedAt: ds_cbi_commit_bill_upload['updatedAt'],
     billConnectId: ds_cbi_commit_bill_upload['billConnectId'],
     billingPeriod: ds_cbi_commit_bill_upload['billingPeriod'],
-    csv: ds_cost_csv['csv'],
-    cost_amount: param_cost_amount,
-    cloud_vendor: param_cbi_cloud_vendor
+    blob_hostname: param_blob_hostname,
+    filename: param_blob_prefix + ds_dates["period"] + ".csv"
   }]
 EOS
 end
@@ -649,10 +495,6 @@ end
 policy "pol_fixed_cost" do
   validate_each $ds_incident do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ with index data 0 }}{{ .billingPeriod }}{{ end }}"
-    detail_template <<-EOS
-## Common Bill Ingestion CSV
-{{ with index data 0 }}{{ .csv }}{{ end }}
-EOS
     check eq(0, 1)
     escalate $esc_email
     export do
@@ -660,11 +502,11 @@ EOS
       field "billingPeriod" do
         label "Billing Period"
       end
-      field "cloud_vendor" do
-        label "Cloud Vendor"
+      field "blob_hostname" do
+        label "Azure Blob Storage Hostname"
       end
-      field "cost_amount" do
-        label "Monthly Cost"
+      field "filename" do
+        label "Azure Blob Storage Object"
       end
       field "id" do
         label "Bill Upload ID"
