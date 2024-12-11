@@ -334,7 +334,7 @@ def readme_invalid_credentials?(file, file_lines)
 
     azure_perm_tester = /^`Microsoft\.[a-zA-Z]+\/[a-zA-Z]+\/[a-zA-Z]+(?:\/[a-zA-Z]+)*`(?:[\*\u2020\u2021\u00a7\u2016\u00b6])?$/
 
-    # Hash to track the presence of each footnote symbol in the permission list
+    # Hash to track the presence ofF each footnote symbol in the permission list
     footnote_symbols = { "*" => false,  "†" => false, "‡" => false, "§" => false, "‖" => false, "¶" => false }
     permission_list_found = 0
 
@@ -355,7 +355,7 @@ def readme_invalid_credentials?(file, file_lines)
           footnote_symbols["¶"] = true if line.strip.end_with?("\u00b6")
 
           permission_action = line.split("  - ")[1]
-          if permission_action.nil? || !permission_action.match?(azure_perm_tester) && !permission_action.include?("Storage Blob Data")
+          if permission_action.nil? || !permission_action.match?(azure_perm_tester)
             fail_message += "Line #{line_number.to_s}: Azure permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
             fail_message += "```  - `Microsoft.Compute/snapshots/delete`*```\n"
             fail_message += "```  - `Microsoft.Compute/snapshots/read` ```\n"
