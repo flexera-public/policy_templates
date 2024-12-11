@@ -533,6 +533,7 @@ def policy_readme_missing_credentials?(file, file_lines)
   flexera_regex = /(?i)(?=.*flexera)(?=.*credential)(?=.*provider=flexera).*/
   aws_regex = /(?i)(?=.*aws)(?=.*credential)(?=.*provider=aws).*/
   azure_regex = /(?i)(?=.*azure)(?=.*credential)(?=.*provider=azure_rm).*/
+  azure_storage_regex = /(?i)(?=.*azure)(?=.*credential)(?=.*provider=azure_storage).*/
   google_regex = /(?i)(?=.*google)(?=.*credential)(?=.*provider=gce).*/
   oracle_regex = /(?i)(?=.*oracle)(?=.*credential)(?=.*provider=oracle).*/
 
@@ -541,7 +542,7 @@ def policy_readme_missing_credentials?(file, file_lines)
 
     readme_flexera_credential = true if line.strip.match?(flexera_regex)
     readme_aws_credential = true if line.strip.match?(aws_regex)
-    readme_azure_credential = true if line.strip.match?(azure_regex) && !line.include?("Azure China")
+    readme_azure_credential = true if (line.strip.match?(azure_regex) || line.strip.match?(azure_storage_regex)) && !line.include?("Azure China")
     readme_google_credential = true if line.strip.match?(google_regex)
     readme_oracle_credential = true if line.strip.match?(oracle_regex)
   end
