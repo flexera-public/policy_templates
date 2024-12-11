@@ -334,7 +334,7 @@ def readme_invalid_credentials?(file, file_lines)
 
     azure_perm_tester = /^`Microsoft\.[a-zA-Z]+\/[a-zA-Z]+\/[a-zA-Z]+(?:\/[a-zA-Z]+)*`(?:[\*\u2020\u2021\u00a7\u2016\u00b6])?$/
 
-    # Hash to track the presence ofF each footnote symbol in the permission list
+    # Hash to track the presence of each footnote symbol in the permission list
     footnote_symbols = { "*" => false,  "†" => false, "‡" => false, "§" => false, "‖" => false, "¶" => false }
     permission_list_found = 0
 
