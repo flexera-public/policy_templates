@@ -34,7 +34,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `s3:ListAllMyBuckets`
   - `s3:GetBucketLocation`
   - `s3:GetBucketTagging`
-  - `s3:GetBucketLifecycleConfiguration`
+  - `s3:GetLifecycleConfiguration`
   - `sts:GetCallerIdentity`
 
   Example IAM Permission Policy:
@@ -49,7 +49,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
                   "s3:ListAllMyBuckets",
                   "s3:GetBucketLocation",
                   "s3:GetBucketTagging",
-                  "s3:GetBucketLifecycleConfiguration",
+                  "s3:GetLifecycleConfiguration",
                   "sts:GetCallerIdentity"
               ],
               "Resource": "*"

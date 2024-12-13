@@ -1,5 +1,8 @@
 require "json"
 require "time"
+require "pathname"
+require "digest"
+require "fileutils"
 
 # Method for generating permission list
 def create_permissions(perm_json, deprecated, perm_type = "action")
@@ -197,8 +200,7 @@ def create_template(perm_list, template_path)
   # Generate new CloudFormation Template
   empty_template = File.read(template_path)
 
-  final_template = empty_template.gsub("__PLACEHOLDER_FOR_GENERATION_DATETIME__", Time.now.utc.iso8601)
-  final_template = final_template.gsub("__PLACEHOLDER_FOR_PARAMETER_GROUPS__", parameter_groups)
+  final_template = empty_template.gsub("__PLACEHOLDER_FOR_PARAMETER_GROUPS__", parameter_groups)
   final_template = final_template.gsub("__PLACEHOLDER_FOR_PARAMETER_LABELS__", parameter_labels)
   final_template = final_template.gsub("__PLACEHOLDER_FOR_PARAMETER_GROUP_DEFINITIONS__", parameter_group_definitions)
   final_template = final_template.gsub("__PLACEHOLDER_FOR_CONDITIONS__", conditions)
@@ -212,8 +214,8 @@ end
 activepolicy_json_filepath = "../../data/active_policy_list/active_policy_list.json"
 permission_json_filepath = "../../data/policy_permissions_list/master_policy_permissions_list.json"
 template_filepath = "./aws_cft_generator.template.txt"
-output_filepath = "./rolling/FlexeraAutomationPolicies.template"
-output_readonly_filepath = "./rolling/FlexeraAutomationPoliciesReadOnly.template"
+output_filepath = "./FlexeraAutomationPolicies.template"
+output_readonly_filepath = "./FlexeraAutomationPoliciesReadOnly.template"
 
 # Get list of deprecated policies
 activepolicy_json = JSON.parse(File.read(activepolicy_json_filepath))
