@@ -197,8 +197,7 @@ def create_template(perm_list, template_path)
   # Generate new CloudFormation Template
   empty_template = File.read(template_path)
 
-  final_template = empty_template.gsub("__PLACEHOLDER_FOR_GENERATION_DATETIME__", Time.now.utc.iso8601)
-  final_template = final_template.gsub("__PLACEHOLDER_FOR_PARAMETER_GROUPS__", parameter_groups)
+  final_template = empty_template.gsub("__PLACEHOLDER_FOR_PARAMETER_GROUPS__", parameter_groups)
   final_template = final_template.gsub("__PLACEHOLDER_FOR_PARAMETER_LABELS__", parameter_labels)
   final_template = final_template.gsub("__PLACEHOLDER_FOR_PARAMETER_GROUP_DEFINITIONS__", parameter_group_definitions)
   final_template = final_template.gsub("__PLACEHOLDER_FOR_CONDITIONS__", conditions)
