@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.5.2
+
+- Fixed a bug that prevented the policy incident from being created when `Billing Term` parameter was set to `Week`.
+
 ## v3.5.1
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.

@@ -393,6 +393,8 @@ These templates can generate savings estimates for your environment.
 
 - Common Bill Ingestion
 
+  - [Common Bill Ingestion from AWS S3 Object Storage](./cost/flexera/cco/cbi_ingestion_aws_s3)
+  - [Common Bill Ingestion from Azure Blob Storage](./cost/flexera/cco/cbi_ingestion_azure_blob)
   - [Fixed Cost Common Bill Ingestion](./cost/flexera/cco/fixed_cost_cbi)
 
 #### Flexera Optima
@@ -719,7 +721,7 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 137
+  Cost: 139
   Operational: 32
   SaaS Management: 11
   Security: 74
@@ -734,7 +736,7 @@ These templates can generate savings estimates for your environment.
   Cheaper Regions: 3
   Cloud Cost Optimization: 15
   Committed Use Discount: 2
-  Common Bill Ingestion: 3
+  Common Bill Ingestion: 5
   Database Services: 1
   Databricks: 1
   Deprecated Resources: 1
@@ -793,7 +795,7 @@ These templates can generate savings estimates for your environment.
   AWS: 104
   Azure: 104
   Azure China: 1
-  Flexera: 41
+  Flexera: 43
   Flexera Optima: 1
   GCE: 2
   GitHub: 7
@@ -811,7 +813,7 @@ These templates can generate savings estimates for your environment.
   Automation: 2
   Cloud Cost Optimization: 19
   CloudTrail: 8
-  Common Bill Ingestion: 3
+  Common Bill Ingestion: 5
   Compute: 80
   Config: 1
   DBS: 1
@@ -845,7 +847,7 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 2
   Tags: 3
   Usage Discount: 6
-:total_count: 288
+:total_count: 290
 -->
 <!-- End Policy Template Stats -->
 

@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.1.1",
+  version: "0.2.0",
   provider: "Flexera",
   service: "Common Bill Ingestion",
   policy_set: "Common Bill Ingestion",
@@ -473,6 +473,78 @@ script "js_cbi_endpoint", type: "javascript" do
 EOS
 end
 
+datasource "ds_existing_bill_uploads" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/optima/orgs/", rs_org_id, "/billUploads"])
+    header "User-Agent", "RS Policies"
+    body_field "billConnectId", val($ds_cbi_endpoint, "id")
+    body_field "billingPeriod", val($ds_dates, "period")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "status", jmes_path(col_item, "status")
+      field "billConnectId", jmes_path(col_item, "billConnectId")
+      field "billingPeriod", jmes_path(col_item, "billingPeriod")
+      field "createdAt", jmes_path(col_item, "createdAt")
+      field "updatedAt", jmes_path(col_item, "updatedAt")
+    end
+  end
+end
+
+datasource "ds_pending_bill_uploads" do
+  run_script $js_pending_bill_uploads, $ds_existing_bill_uploads
+end
+
+script "js_pending_bill_uploads", type: "javascript" do
+  parameters "ds_existing_bill_uploads"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_existing_bill_uploads, function(item) {
+    return item["status"] != "complete" && item["status"] != "aborted"
+  })
+EOS
+end
+
+datasource "ds_abort_pending_bill_uploads" do
+  iterate $ds_pending_bill_uploads
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host rs_optima_host
+    path join(["/optima/orgs/", rs_org_id, "/billUploads/", val(iter_item, "id"), "/operations"])
+    header "User-Agent", "RS Policies"
+    body_field "operation", "abort"
+    ignore_status [400, 401, 402, 403, 404, 405, 429, 500, 502]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "status", jmes_path(response, "status")
+    field "billConnectId", jmes_path(response, "billConnectId")
+    field "billingPeriod", jmes_path(response, "billingPeriod")
+    field "createdAt", jmes_path(response, "createdAt")
+    field "updatedAt", jmes_path(response, "updatedAt")
+  end
+end
+
+# Branching logic: This exists purely to be referenced later to ensure policy execution aborts
+# any pending bill uploads before attempting to create a new one.
+datasource "ds_aborted_pending_bill_uploads_done" do
+  run_script $js_aborted_pending_bill_uploads_done, $ds_abort_pending_bill_uploads
+end
+
+script "js_aborted_pending_bill_uploads_done", type: "javascript" do
+  parameters "ds_abort_pending_bill_uploads"
+  result "result"
+  code <<-EOS
+  result = { abortedUploads: (ds_abort_pending_bill_uploads.length != 0).toString() }
+EOS
+end
+
 datasource "ds_cbi_create_bill_upload" do
   request do
     auth $auth_flexera
@@ -480,6 +552,8 @@ datasource "ds_cbi_create_bill_upload" do
     host rs_optima_host
     path join(["/optima/orgs/", rs_org_id, "/billUploads"])
     header "User-Agent", "RS Policies"
+    # This is to ensure that any pending bill uploads were aborted prior to creating a new one
+    header "AbortedUploads", val($ds_aborted_pending_bill_uploads_done, "abortedUploads")
     body_field "billConnectId", val($ds_cbi_endpoint, "id")
     body_field "billingPeriod", val($ds_dates, "period")
   end

@@ -48,7 +48,12 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `Microsoft.Storage/storageAccounts/read`
 
 - [**Azure Storage Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121576) (*provider=azure_storage*). Note that a credential can be made with access to several storage accounts by setting `resource` to `https://storage.azure.com` in the Additional Parameters when creating this credential in Flexera One. This credential should have the following permissions for every storage account whose blobs you want to assess:
-  - `Storage Blob Data Owner`
+  - `Microsoft.Storage/storageAccounts/blobServices/containers/list`
+  - `Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read`
+  - `Microsoft.Storage/storageAccounts/blobServices/containers/blobs/write`*
+  - `Microsoft.Storage/storageAccounts/blobServices/containers/blobs/delete`*
+
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
