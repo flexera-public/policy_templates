@@ -1,5 +1,8 @@
 require "json"
 require "time"
+require "pathname"
+require "digest"
+require "fileutils"
 
 # Method for generating permission list
 def create_permissions(perm_json, deprecated, perm_type = "action")
@@ -211,8 +214,8 @@ end
 activepolicy_json_filepath = "../../data/active_policy_list/active_policy_list.json"
 permission_json_filepath = "../../data/policy_permissions_list/master_policy_permissions_list.json"
 template_filepath = "./aws_cft_generator.template.txt"
-output_filepath = "./rolling/FlexeraAutomationPolicies.template"
-output_readonly_filepath = "./rolling/FlexeraAutomationPoliciesReadOnly.template"
+output_filepath = "./FlexeraAutomationPolicies.template"
+output_readonly_filepath = "./FlexeraAutomationPoliciesReadOnly.template"
 
 # Get list of deprecated policies
 activepolicy_json = JSON.parse(File.read(activepolicy_json_filepath))

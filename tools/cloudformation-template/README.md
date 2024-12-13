@@ -4,15 +4,11 @@
 
 Template to create a CloudFormation Stack with IAM Role and Permission Policy resources required by [Flexera Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm).
 
-Two supported versions are provided as options:
+Three supported versions are provided as options:
 
-- [FlexeraAutomationPolicies.template](https://github.com/flexera-public/policy_templates/blob/master/tools/cloudformation-template/FlexeraAutomationPolicies.template): Current approved/stable version of the template. Recommended for most use cases.
+- [FlexeraAutomationPolicies.template](https://github.com/flexera-public/policy_templates/blob/master/tools/cloudformation-template/FlexeraAutomationPolicies.template): Current production version of the template. Recommended for most use cases.
+- [FlexeraAutomationPoliciesReadOnly.template](https://github.com/flexera-public/policy_templates/blob/master/tools/cloudformation-template/rolling/FlexeraAutomationPoliciesReadOnly.template): Identical to the above but with only read-only permissions. Recommended when there are concerns over the template having options for more than just read-only access.
 - [FlexeraAutomationPoliciesSimple.template](https://github.com/flexera-public/policy_templates/blob/master/tools/cloudformation-template/FlexeraAutomationPoliciesSimple.template): Template that simply attaches the built-in `arn:aws:iam::aws:policy/ReadOnlyAccess` AWS policy by default with the option to add other policies by name manually via parameter. Recommended when custom inline policies are not desired. Note that this grants more access than simply applying [FlexeraAutomationPolicies.template](https://github.com/flexera-public/policy_templates/blob/master/tools/cloudformation-template/FlexeraAutomationPolicies.template) with the default options, since this provides read-only access to everything in the AWS account rather than just to the resources needed for Flexera automation.
-
-Additionally, two automatically generated rolling release versions are provided but are **not recommended** or supported for production use. These will be used as the basis for the stable releases above.
-
-- [rolling/FlexeraAutomationPolicies.template](https://github.com/flexera-public/policy_templates/blob/master/tools/cloudformation-template/rolling/FlexeraAutomationPolicies.template): Template to add either read or read/action permissions for either all Flexera automation templates or per-Flexera automation template.
-- [rolling/FlexeraAutomationPoliciesReadOnly.template](https://github.com/flexera-public/policy_templates/blob/master/tools/cloudformation-template/rolling/FlexeraAutomationPoliciesReadOnly.template): Identical to the above but with only read-only permissions. Recommended when there are concerns over the template having options for more than just read-only access.
 
 ## Amazon S3 Template URL
 
@@ -180,6 +176,6 @@ resource "aws_cloudformation_stack" "FlexeraAutomationAccessRole" {
 
 ## For Maintainers
 
-New rolling releases are created automatically by the `tools/cloudformation-template/aws_cft_generator.rb` script. This script runs automatically via GitHub Actions whenever a change is made to the master branch. This script uses the permissions file `data/policy_permissions_list/master_policy_permissions_list.json` to obtain the information needed to generate the CloudFormation Template. This file, in turn, is sourced through its [own automation](https://github.com/flexera-public/policy_templates/tree/master/tools/policy_master_permission_generation) that scrapes policy template README files.
+New versions of `tools/cloudformation-template/FlexeraAutomationPolicies.template` are created automatically by the `tools/cloudformation-template/aws_cft_generator.rb` script. This script runs automatically via GitHub Actions whenever a change is made to the master branch. This script uses the permissions file `data/policy_permissions_list/master_policy_permissions_list.json` to obtain the information needed to generate the CloudFormation Template. This file, in turn, is sourced through its [own automation](https://github.com/flexera-public/policy_templates/tree/master/tools/policy_master_permission_generation) that scrapes policy template README files.
 
-New production releases are created automatically by the `tools/cloudformation-template/aws_cft_updater.rb` script. This script runs on the first of every month and checks whether the most recent rolling release has any changes compared to the current production release. If changes are present, a new minor version is created and stored in the `tools/cloudformation-template/releases` directory, and the `tools/cloudformation-template/FlexeraAutomationPolicies.template` file is updated to match the new release.
+New releases are created automatically by the `tools/cloudformation-template/aws_cft_new_release.rb` script. This script runs daily and checks whether the most recent version has any changes compared to the latest release. If changes are present, a new minor version is created and stored in the `tools/cloudformation-template/releases` directory.
