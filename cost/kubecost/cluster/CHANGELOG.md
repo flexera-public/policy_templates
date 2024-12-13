@@ -2,7 +2,7 @@
 
 ## v0.3.3
 
-- Updated API endpoints for cluster Sizing.
+- Updated API endpoint for cluster Sizing.
 - Added parameter `Shared Core` to indicate whether shared cores should be considered in the cluster sizing calculation.
 - Added parameter `Architecture` to optimize cost calculations and resource allocation based on hardware architecture.
 
