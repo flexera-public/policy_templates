@@ -30,8 +30,8 @@ unless files_match?(rolling_path, local_file_path)
   most_recent_file, most_recent_version = most_recent
   most_recent_path = File.join(release_dir, most_recent_file)
 
-  new_patch_version = (Integer(most_recent_version.split(".")[2]) + 1).to_s
-  new_version = most_recent_version.split(".")[0] + "." + most_recent_version.split(".")[1] + "." + new_patch_version
+  new_minor_version = (Integer(most_recent_version.split(".")[1]) + 1).to_s
+  new_version = most_recent_version.split(".")[0] + "." + new_minor_version + ".0"
   new_file_path = release_dir + "/FlexeraAutomationPolicies_v" + new_version + ".template"
 
   FileUtils.cp(rolling_path, new_file_path, verbose: true)
