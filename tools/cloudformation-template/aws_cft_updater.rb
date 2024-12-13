@@ -6,7 +6,15 @@ require "fileutils"
 
 # Method to test if two files are identical
 def files_match?(file1, file2)
-  Digest::SHA256.file(file1).hexdigest == Digest::SHA256.file(file2).hexdigest
+  lines1 = File.readlines(file1)
+  lines2 = File.readlines(file2)
+
+  # Remove line 3 since this contains the date the file was generated
+  lines1.delete_at(2) if lines1.size > 2
+  lines2.delete_at(2) if lines2.size > 2
+
+  # Compare the remaining content
+  Digest::SHA256.hexdigest(lines1.join) == Digest::SHA256.hexdigest(lines2.join)
 end
 
 # Define the directory containing the files
