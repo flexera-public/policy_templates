@@ -217,6 +217,44 @@ datasource "ds_currency_code" do
   end
 end
 
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value']) {
+    if (ds_currency_reference[ds_currency_code['value']]) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator']) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
@@ -521,7 +559,7 @@ script "js_azure_blobs_filtered", type: "javascript" do
   result "result"
   code <<-EOS
   result = _.reject(ds_azure_blobs, function(blob) {
-    return blob['blob_type'].toLowerCase() == 'pageblob' || blob['blob_type'].toLowerCase() == 'appendblob'
+    return blob['blob_type'].toLowerCase() == 'pageblob' || blob['blob_type'].toLowerCase() == 'appendblob' || blob['content_length'] == 0
   })
 EOS
 end
@@ -635,11 +673,11 @@ datasource "ds_azure_pricing_per_region" do
 end
 
 datasource "ds_azure_blobs_incident" do
-  run_script $js_azure_blobs_incident, $ds_azure_blobs_with_tier, $ds_applied_policy, $param_cool_tier_days, $param_archive_tier_days, $param_new_storage_tier, $ds_azure_pricing_per_region, $ds_currency_code
+  run_script $js_azure_blobs_incident, $ds_azure_blobs_with_tier, $ds_applied_policy, $param_cool_tier_days, $param_archive_tier_days, $param_new_storage_tier, $ds_azure_pricing_per_region, $ds_currency_code, $ds_currency
 end
 
 script "js_azure_blobs_incident", type: "javascript" do
-  parameters "ds_azure_blobs_with_tier", "ds_applied_policy", "param_cool_tier_days", "param_archive_tier_days", "param_new_storage_tier", "ds_azure_pricing_per_region", "ds_currency_code"
+  parameters "ds_azure_blobs_with_tier", "ds_applied_policy", "param_cool_tier_days", "param_archive_tier_days", "param_new_storage_tier", "ds_azure_pricing_per_region", "ds_currency_code", "ds_currency"
   result "result"
   code <<-'EOS'
   blobs_to_change = _.reject(ds_azure_blobs_with_tier, function(blob) {
@@ -682,29 +720,28 @@ script "js_azure_blobs_incident", type: "javascript" do
       newTier = coolLrs;
     }
 
-    if(blob['content_length'] > 0){
-      blobContentInGb = blob['content_length'] / 1073741824
-      var currentTierPrice
-      var newTierPrice
 
-      for(index = 0; index < ds_azure_pricing_per_region.length; index++){
-        skuPricing = ds_azure_pricing_per_region[index].skuName
+    blobContentInGb = blob['content_length'] / 1073741824
+    var currentTierPrice
+    var newTierPrice
 
-        if( skuPricing === current[0] && ds_azure_pricing_per_region[index].meterName === current[1] ) {
-          currentTierPrice = ds_azure_pricing_per_region[index]
-        }
+    for(index = 0; index < ds_azure_pricing_per_region.length; index++){
+      skuPricing = ds_azure_pricing_per_region[index].skuName
 
-        if( skuPricing === newTier[0] && ds_azure_pricing_per_region[index].meterName === newTier[1] ) {
-          newTierPrice = ds_azure_pricing_per_region[index]
-        }
+      if( skuPricing === current[0] && ds_azure_pricing_per_region[index].meterName === current[1] ) {
+        currentTierPrice = ds_azure_pricing_per_region[index]
       }
 
-      if(currentTierPrice && newTierPrice){
-        savingForBlob = (currentTierPrice.unitPrice - newTierPrice.unitPrice) * blobContentInGb
+      if( skuPricing === newTier[0] && ds_azure_pricing_per_region[index].meterName === newTier[1] ) {
+        newTierPrice = ds_azure_pricing_per_region[index]
       }
-      total_savings = total_savings + savingForBlob
-
     }
+
+    if(currentTierPrice && newTierPrice){
+      savingForBlob = (currentTierPrice.unitPrice - newTierPrice.unitPrice) * blobContentInGb
+    }
+    total_savings = total_savings + savingForBlob
+
     return {
       accountID: blob['subscriptionID'],
       accountName: blob['subscriptionName'],
@@ -713,8 +750,8 @@ script "js_azure_blobs_incident", type: "javascript" do
       resourceType: blob['access_tier'],
       newResourceType: blob['new_storage_tier'],
       content_type: blob['content_type'],
-      content_length: blob['content_length'],
-      cost_savings: savingForBlob.toFixed(15),
+      content_length: blobContentInGb.toFixed(15),
+      cost_savings: savingForBlob.toFixed(5),
       lease_state: blob['lease_state'],
       blob_type: blob['blob_type'],
       container: blob['container'],
@@ -779,7 +816,7 @@ script "js_azure_blobs_incident", type: "javascript" do
   result.push({ resourceID: "", policy_name: "", message: "", tags: "" })
 
   result[0]['message'] = findings + analysis + disclaimer
-  result[0]['total_savings'] = total_savings.toFixed(3) + " " + ds_currency_code['value']
+  result[0]['total_savings'] = ds_currency['symbol'] + " " +total_savings.toFixed(5)
 EOS
 end
 
@@ -791,7 +828,7 @@ policy "pol_azure_blobs_list" do
   validate_each $ds_azure_blobs_incident do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Blobs Recommended For Storage Tier Change."
     detail_template <<-'EOS'
-    **Potential Monthly Savings:** {{ with index data 0 }}${{ .total_savings }}
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}
 
     {{ .message }}
     {{ end }}
@@ -843,7 +880,7 @@ policy "pol_azure_blobs_list" do
         label "Content Type"
       end
       field "size" do
-        label "Content Length (Bytes)"
+        label "Content Length (GB)"
         path "content_length"
       end
       field "savings" do
