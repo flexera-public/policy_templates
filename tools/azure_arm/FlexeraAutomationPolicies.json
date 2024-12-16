@@ -1,0 +1,97 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "customRoleName": {
+      "type": "string",
+      "defaultValue": "MyGranularRole",
+      "metadata": {
+        "description": "Name of the custom role to create"
+      }
+    },
+    "includeVMManagement": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Include permissions for Virtual Machines Management"
+      }
+    },
+    "includeMySQLServers": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Include permissions for MySQL Flexible Servers"
+      }
+    },
+    "includeMetricsAccess": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Include permissions for Metrics Access"
+      }
+    },
+    "assignToRootManagementGroup": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Set to true if the role should apply to the root management group (requires the management group ID)."
+      }
+    },
+    "rootManagementGroupId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "The ID of the root management group (e.g., '/providers/Microsoft.Management/managementGroups/<id>'). Leave blank to use the subscription scope."
+      }
+    }
+  },
+  "variables": {
+    "vmManagementPermissions": [
+      "Microsoft.Compute/virtualMachines/read",
+      "Microsoft.Compute/virtualMachines/start/action",
+      "Microsoft.Compute/virtualMachines/stop/action"
+    ],
+    "mysqlPermissions": [
+      "Microsoft.DBforMySQL/flexibleServers/read",
+      "Microsoft.DBforMySQL/flexibleServers/write"
+    ],
+    "metricsPermissions": [
+      "Microsoft.Insights/metrics/read"
+    ],
+    "resolvedVMManagementPermissions": "[if(parameters('includeVMManagement'), variables('vmManagementPermissions'), json('[]'))]",
+    "resolvedMySQLPermissions": "[if(parameters('includeMySQLServers'), variables('mysqlPermissions'), json('[]'))]",
+    "resolvedMetricsPermissions": "[if(parameters('includeMetricsAccess'), variables('metricsPermissions'), json('[]'))]",
+    "selectedPermissions": "[union(variables('resolvedVMManagementPermissions'), variables('resolvedMySQLPermissions'), variables('resolvedMetricsPermissions'))]",
+    "assignableScope": "[if(parameters('assignToRootManagementGroup'), if(not(empty(parameters('rootManagementGroupId'))), parameters('rootManagementGroupId'), subscription().id), subscription().id)]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Authorization/roleDefinitions",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(parameters('customRoleName'), subscription().id)]",
+      "properties": {
+        "roleName": "[parameters('customRoleName')]",
+        "description": "Custom role with selected permissions across the Azure estate",
+        "assignableScopes": [
+          "[variables('assignableScope')]"
+        ],
+        "permissions": [
+          {
+            "actions": "[variables('selectedPermissions')]",
+            "notActions": []
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "roleDefinitionId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Authorization/roleDefinitions', guid(parameters('customRoleName'), subscription().id))]"
+    },
+    "assignableScope": {
+      "type": "string",
+      "value": "[variables('assignableScope')]"
+    }
+  }
+}
