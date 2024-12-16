@@ -2,7 +2,7 @@
 
 ## v0.3.3
 
-- Added support for multiple currencies
+- Currency values in incident table are automatically converted to the local currency of the Flexera organization using the most recent exchange rate.
 
 ## v0.3.2
 
