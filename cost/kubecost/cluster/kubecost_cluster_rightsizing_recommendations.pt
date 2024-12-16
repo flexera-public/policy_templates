@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.3.2",
+  version: "0.3.3",
   provider: "Kubecost",
   service: "Kubernetes",
   policy_set: "Rightsize Clusters",
@@ -108,6 +108,66 @@ datasource "ds_kubecost_currency_code" do
   end
 end
 
+# Gather local currency info
+datasource "ds_currency_target" do
+  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency_target", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  // Default to USD if currency is not found
+  result = ds_currency_reference['USD']
+
+  if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
+    result = ds_currency_reference[ds_currency_code['value']]
+  }
+EOS
+end
+
+datasource "ds_conditional_currency_conversion" do
+  run_script $js_conditional_currency_conversion, $ds_currency_target, $ds_kubecost_currency_code
+end
+
+script "js_conditional_currency_conversion", type: "javascript" do
+  parameters "ds_currency_target", "ds_kubecost_currency_code"
+  result "result"
+  code <<-EOS
+  result = []
+  from_currency = "USD"
+  // Make the request only if the target currency is not USD
+  if (ds_kubecost_currency_code['code'] != '') {
+    from_currency = ds_kubecost_currency_code['code']
+  }
+
+  if (ds_currency_target['code'] != from_currency  ){
+      result = [{ from: from_currency }]
+  }
+EOS
+end
+
+datasource "ds_currency_conversion" do
+  # Only make a request if the target currency is not USD
+  iterate $ds_conditional_currency_conversion
+  request do
+    host "api.xe-auth.flexeraeng.com"
+    path "/prod/{proxy+}"
+    query "from", val(iter_item, 'from')
+    query "to", val($ds_currency_target, 'code')
+    query "amount", "1"
+    # Ignore currency conversion if API has issues
+    ignore_status [400, 404, 502]
+  end
+  result do
+    encoding "json"
+    field "from", jmes_path(response, "from")
+    field "to", jmes_path(response, "to")
+    field "amount", jmes_path(response, "amount")
+    field "year", jmes_path(response, "year")
+  end
+end
+
 datasource "ds_currency_code" do
   request do
     auth $auth_flexera
@@ -133,22 +193,27 @@ datasource "ds_currency_reference" do
 end
 
 datasource "ds_currency" do
-  run_script $js_currency, $ds_currency_reference, $ds_kubecost_currency_code, $ds_currency_code
+  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
 end
 
 script "js_currency", type:"javascript" do
-  parameters "ds_currency_reference", "ds_kubecost_currency_code", "ds_currency_code"
+  parameters "ds_currency_target", "ds_currency_conversion"
   result "result"
   code <<-EOS
-  code = ds_kubecost_currency_code['code'].toUpperCase().trim()
-  if (code == '') { code = ds_currency_code['value'] }
-  if (typeof(code) != 'string' || code == '') { code = 'USD' }
-  if (ds_currency_reference[code] == undefined) { code = 'USD' }
+  result = ds_currency_target
+  result['exchange_rate'] = 1
 
-  result = {
-    code: code,
-    symbol: ds_currency_reference[code]['symbol'],
-    separator: ds_currency_reference[code]['t_separator'] ? ds_currency_reference[code]['t_separator'] : ""
+  if (ds_currency_conversion.length > 0) {
+    currency_code = ds_currency_target['code']
+    current_month = parseInt(new Date().toISOString().split('-')[1])
+
+    conversion_block = _.find(ds_currency_conversion[0]['to'][currency_code], function(item) {
+      return item['month'] == current_month
+    })
+
+    if (conversion_block != undefined) {
+      result['exchange_rate'] = conversion_block['monthlyAverage']
+    }
   }
 EOS
 end
@@ -167,7 +232,7 @@ datasource "ds_cluster_sizing" do
   request do
     host $param_kubecost_host
     path "/model/savings/clusterSizing"
-    query "minNodeCount", $param_min_nodes
+    query "minNodeCount", to_s($param_min_nodes)
     query "window", join([$param_lookback, "d"])
     query "targetUtilization", val($ds_target_util, "value")
     header "User-Agent", "RS Policies"
@@ -218,6 +283,7 @@ script "js_recommendations", type: "javascript" do
   }
 
   selected_strategy = param_strategy
+  exchange_rate = ds_currency['exchange_rate']
 
   if (selected_strategy == "Optimal") {
     selected_strategy = "Single"
@@ -263,10 +329,10 @@ script "js_recommendations", type: "javascript" do
     totalNodeCount: ds_cluster_sizing['totalNodeCount'],
     totalRAMGB: ds_cluster_sizing['totalRAMGB'],
     totalVCPUs: ds_cluster_sizing['totalVCPUs'],
-    monthlyRate: Math.round(ds_cluster_sizing['monthlyRate'] * 1000) / 1000,
-    totalMonthlyCost: Math.round(recommendation['totalMonthlyCost'] * 1000) / 1000,
+    monthlyRate: Math.round(ds_cluster_sizing['monthlyRate'] * exchange_rate * 1000) / 1000,
+    totalMonthlyCost: Math.round(recommendation['totalMonthlyCost'] * exchange_rate * 1000) / 1000,
     // Note: Savings is presented as a negative value. Hence why we multiply by a negative number to invert it
-    savings: Math.round(recommendation['monthlySavings'] * -1000) / 1000,
+    savings: Math.round(recommendation['monthlySavings'] * exchange_rate * -1000) / 1000,
     savingsCurrency: ds_currency['symbol'],
     nodeCount: recommendation['nodeCount'],
     pools: JSON.stringify(recommendation['pools']),
