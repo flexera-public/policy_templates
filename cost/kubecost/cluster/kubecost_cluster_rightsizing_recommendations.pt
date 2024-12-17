@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.3.3",
+  version: "0.4.0",
   provider: "Kubecost",
   service: "Kubernetes",
   policy_set: "Rightsize Clusters",
@@ -49,9 +49,9 @@ parameter "param_architecture" do
   type "string"
   category "Policy Settings"
   label "Architecture"
-  description "Chipset architecture for the recommended nodes. Leave blank to include all architectures. 'ARM' is currently supported only on AWS clusters."
-  allowed_values "", "x86", "ARM"
-  default ""
+  description "Chipset architecture for the recommended nodes.'ARM' is currently supported only on AWS clusters."
+  allowed_values "All Chipset Architectures", "x86", "ARM"
+  default "x86"
 end
 
 parameter "param_min_nodes" do
@@ -124,6 +124,23 @@ datasource "ds_kubecost_currency_code" do
     encoding "json"
     field "code", jmes_path(response, "data.currencyCode")
   end
+end
+
+# Get current architecture
+datasource "ds_architecture" do
+  run_script $js_architecture, $param_architecture
+end
+
+script "js_architecture", type: "javascript" do
+  parameters "param_architecture"
+  result "result"
+  code <<-EOS
+  if (param_architecture == "All Chipset Architectures"){
+    result = { value: "" }
+  } else {
+    result = { values: param_architecture}
+  }
+EOS
 end
 
 # Gather local currency info
@@ -254,8 +271,8 @@ datasource "ds_clusters" do
     query "window", join([$param_lookback, "d"])
     query "targetUtilization", val($ds_target_util, "value")
     query "allowSharedCore", $param_allow_shared_core
-    query "architecture", $param_architecture
-    # Note: `includeOverhead` is explicitly set to `false` to ensure consistency between the recommendations and the Kube-cost UI. 
+    query "architecture", val($ds_architecture, "value")
+    # Note: `includeOverhead` is explicitly set to `false` to ensure consistency between the recommendations and the Kube-cost UI.
     # Also, the field  `includeOverhead`  is not exposed as a configurable parameter because it is not part of the Cluster Right-Sizing Recommendation API specification.
     query "includeOverhead", "false"
     header "User-Agent", "RS Policies"
@@ -355,7 +372,7 @@ script "js_recommendations", type: "javascript" do
 
     if (recommendation['monthlySavings'] > 0){
       // Note: Savings is presented as a negative value. Hence why we multiply by a negative number to invert it
-      recommendationSavings = Math.round(recommendation['monthlySavings'] * -1000) / 1000
+      recommendationSavings = Math.round(recommendation['monthlySavings'] * exchange_rate * -1000) / 1000
       totalRAMGB = crs['totalRAMGB']
       requiredRAMGB = recommendation['totalRAMGB']
 
@@ -373,8 +390,8 @@ script "js_recommendations", type: "javascript" do
         totalNodeCount: crs['totalNodeCount'],
         totalRAMGB: crs['totalRAMGB'],
         totalVCPUs: crs['totalVCPUs'],
-        monthlyRate: Math.round(crs['monthlyRate'] * 1000) / 1000,
-        totalMonthlyCost: Math.round(recommendation['totalMonthlyCost'] * 1000) / 1000,
+        monthlyRate: Math.round(crs['monthlyRate'] * exchange_rate * 1000) / 1000,
+        totalMonthlyCost: Math.round(recommendation['totalMonthlyCost'] * exchange_rate  * 1000) / 1000,
         savings: recommendationSavings,
         savingsCurrency: ds_currency['symbol'],
         nodeCount: recommendation['nodeCount'],
@@ -389,7 +406,7 @@ script "js_recommendations", type: "javascript" do
         policy_name: ds_applied_policy['name'],
         message_savings: [
           ds_currency['symbol'], ' ',
-          formatNumber(Math.round(recommendation['monthlySavings'] * -1000) / 1000, ds_currency['separator'])
+          formatNumber(Math.round(recommendation['monthlySavings'] * exchange_rate * -1000) / 1000, ds_currency['separator'])
         ].join('')
       })
     }

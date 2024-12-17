@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.3.3
+## v0.4.0
 
 - Updated API endpoint for cluster Sizing.
 - Added parameter `Shared Core` to indicate whether shared cores should be considered in the cluster sizing calculation.
