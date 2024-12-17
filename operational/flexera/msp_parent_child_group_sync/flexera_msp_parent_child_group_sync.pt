@@ -1,0 +1,982 @@
+name "MSP Parent to Child Group Sync"
+rs_pt_ver 20180301
+type "policy"
+short_description "Synchronizes user groups, membership, and permissions from MSP Parent org to user groups in MSP Child orgs"
+long_description "This policy synchronizes groups, roles and users from a MSP parent organization to child organizations based on group description patterns."
+category "Operational"
+severity "low"
+tenancy "single"
+default_frequency "daily"
+
+parameter "param_automatic_actions" do
+  type "list"
+  category "Policy Settings"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected actions"
+  allowed_values [
+    "Sync Groups"
+  ]
+  default []
+end
+
+parameter "param_child_orgs_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Child Orgs"
+  description "Allow or Deny entered Child Orgs to sync groups to. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_child_orgs_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Child Orgs List"
+  description "A list of allowed or denied Child Orgs to sync groups to. See the README for more details"
+  default []
+end
+
+parameter "param_prefix" do
+  type "string"
+  category "Policy Settings"
+  label "Prefix String"
+  description "Prefix to indicate the Group should be synced.  This is the first part of the string that needs to be in the description. **`<PrefixString>`**_`<ChildOrgID>`_`Child Group Name`"
+  default "GroupSync"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_flexera" do
+  get_page_marker do
+    body_path jmes_path(response, "nextPage")
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/policy/v1/orgs/",rs_org_id,"/projects/",rs_project_id,"/applied-policies/", policy_id])
+    ignore_status 404 # Ignore 404 returned when we are running this with retrieve_data
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get organizations
+datasource "ds_organizations" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/msp/v1/orgs/", rs_org_id, "/customers"])
+    ignore_status 403 #Ignore Status 403 so we can gracefully handle that kind of error
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_organizations_filtered" do
+  run_script $js_filter_organizations, $ds_organizations, $param_child_orgs_allow_or_deny, $param_child_orgs_list
+end
+
+script "js_filter_organizations", type: "javascript" do
+  parameters "ds_organizations", "param_child_orgs_allow_or_deny", "param_child_orgs_list"
+  result "result"
+  code <<-EOS
+  var result = [];
+
+  if (_.isEmpty(param_child_orgs_list)) {
+    result = ds_organizations;
+  } else {
+    _.each(ds_organizations, function(org) {
+      if (param_child_orgs_allow_or_deny == "Allow") {
+        _.each(param_child_orgs_list, function(child_org_id) {
+          if (parseInt(org.id) == parseInt(child_org_id)) {
+            result.push(org);
+          }
+        });
+      } else {
+        _.each(param_child_orgs_list, function(child_org_id) {
+          if (parseInt(org.id) != parseInt(child_org_id)) {
+            result.push(org);
+          }
+        });
+      }
+    });
+  }
+  EOS
+end
+
+datasource "ds_identify_errors" do
+  run_script $js_identify_errors, $ds_organizations, $ds_children_roles
+end
+
+script "js_identify_errors", type: "javascript" do
+  parameters "ds_organizations", "ds_children_roles"
+  result "errors"
+  code <<-EOS
+  var errors = [];
+  // Check if ds_organizations response is an empty list
+  // This can identify if the Applied Policy was not deployed in the MSP Parent Org
+  if (ds_organizations.length == 0) {
+    errors.push("403 Forbidden error received attempting to get Flexera MSP Customer Orgs.  You must deploy this policy in an account that has the `msp` capability enabled.");
+  }
+
+  // Check if ds_children_roles is missing any children org responses
+  // This will identify Orgs that the credential does not have access to
+  var all_child_orgs = _.pluck(ds_organizations, "id");
+  var accessible_child_orgs = _.pluck(ds_children_roles, "org_id");
+  accessible_child_orgs = _.uniq(accessible_child_orgs);
+  var forbidden_orgs = _.filter(ds_organizations, function(org) {
+    return !_.contains(accessible_child_orgs, org.id);
+  });
+  if (forbidden_orgs.length > 0) {
+    var orgs_string = _.pluck(forbidden_orgs, "id").join(", ");
+    errors.push("403 Forbidden error received attempting to access Flexera MSP Customer Orgs: "+orgs_string+". You should deploy this policy using a User Refresh Token credential associated with a User that has `org_owner` access in all MSP Child Orgs.  Alternatively, use the `Allow/Deny Child Orgs` parameter to filter the list of Child Orgs in scope.");
+  }
+
+  // Deduplicate identical errors
+  errors = _.uniq(errors);
+EOS
+end
+
+datasource "ds_parent_roles" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/", rs_org_id, "/roles"])
+  end
+  result do
+    encoding "json"
+    collect jq(response, '.[]') do
+      field "org_id", rs_org_id
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "capability", jmes_path(col_item, "capability")
+    end
+  end
+end
+
+
+datasource "ds_parent_users" do
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/", rs_org_id, "/users"])
+  end
+  result do
+    encoding "json"
+    collect jq(response, '.values[]') do
+      field "org_id", rs_org_id
+      field "id", jmes_path(col_item, "id")
+      field "email", jmes_path(col_item, "email")
+      field "firstName", jmes_path(col_item, "firstName")
+      field "lastName", jmes_path(col_item, "lastName")
+      field "ref", jmes_path(col_item, "ref")
+    end
+  end
+end
+
+datasource "ds_parent_groups" do
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/", rs_org_id, "/groups"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "ref", jmes_path(col_item, "ref")
+    end
+  end
+end
+
+datasource "ds_parent_group_members" do
+  iterate $ds_parent_groups
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/", rs_org_id, "/groups/", val(iter_item, "id"), "/memberships"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "group_ref", val(iter_item, "ref")
+      field "id", jmes_path(col_item, "id")
+      field "group_id", jq(col_item, '.id | split(":")[0]')
+      field "user_id", jq(col_item, '.id | split(":")[1]')
+    end
+  end
+end
+
+datasource "ds_parent_group_roles" do
+  iterate $ds_parent_groups
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/", rs_org_id, "/access-rules"])
+    query "filter", join(["subjectRef eq '",val(iter_item, "ref"),"'"])
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".values[]") do
+      field "group_ref", val(iter_item, "ref")
+      field "role", jq(col_item, ".role")
+      field "scope", jq(col_item, ".scope")
+    end
+  end
+end
+
+datasource "ds_children_roles" do
+  iterate $ds_organizations_filtered
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/", val(iter_item, "id"), "/roles"])
+    ignore_status 403 # Ignore status 403 so we can gracefully handle that kind of error
+  end
+  result do
+    encoding "json"
+    collect jq(response, '.[]') do
+      field "org_id", val(iter_item, "id")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "capability", jmes_path(col_item, "capability")
+      # field "description", jmes_path(col_item, "description")
+      # field "displayName", jmes_path(col_item, "displayName")
+      # field "category", jmes_path(col_item, "category")
+    end
+  end
+end
+
+datasource "ds_children_invitations_pending" do
+  iterate $ds_organizations_filtered_with_access
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/", val(iter_item, "id"), "/invitations"])
+    query "status", "pending"
+  end
+  result do
+    encoding "json"
+    collect jq(response, '.[]') do
+      field "org_id", val(iter_item, "id")
+      field "id", jmes_path(col_item, "id")
+      field "email", jmes_path(col_item, "inviteeEmail")
+      field "groups", jmes_path(col_item, "groups")
+      field "expiresAt", jmes_path(col_item, "expiresAt")
+    end
+  end
+end
+
+datasource "ds_children_users" do
+  iterate $ds_organizations_filtered_with_access
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/", val(iter_item, "id"), "/users"])
+  end
+  result do
+    encoding "json"
+    collect jq(response, '.values[]') do
+      field "org_id", val(iter_item, "id")
+      field "id", jmes_path(col_item, "id")
+      field "email", jmes_path(col_item, "email")
+      field "firstName", jmes_path(col_item, "firstName")
+      field "lastName", jmes_path(col_item, "lastName")
+      field "ref", jmes_path(col_item, "ref")
+    end
+  end
+end
+
+datasource "ds_children_groups" do
+  iterate $ds_organizations_filtered_with_access
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/", val(iter_item, "id"), "/groups"])
+  end
+  result do
+    encoding "json"
+    collect jq(response, '.values[]') do
+      field "org_id", val(iter_item, "id")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "ref", jmes_path(col_item, "ref")
+    end
+  end
+end
+
+datasource "ds_organizations_filtered_with_access" do
+  run_script $js_organizations_filtered_with_access, $ds_organizations_filtered, $ds_children_roles
+end
+
+script "js_organizations_filtered_with_access", type: "javascript" do
+  parameters "ds_organizations_filtered", "ds_children_roles"
+  result "result"
+  code <<-EOS
+  // Pluck all the org IDs from the child org roles responses
+  var child_orgs_with_access_validated = _.pluck(ds_children_roles, "org_id");
+  // Deduplicate the list
+  child_orgs_with_access_validated = _.uniq(child_orgs_with_access_validated);
+
+  var result = _.filter(ds_organizations_filtered, function(org) {
+    return _.contains(child_orgs_with_access_validated, org.id);
+  });
+  EOS
+end
+
+datasource "ds_children_group_members" do
+  iterate $ds_children_groups
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/", val(iter_item, "org_id"), "/groups/", val(iter_item, "id"), "/memberships"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "org_id", val(iter_item, "org_id")
+      field "group_ref", val(iter_item, "ref")
+      field "id", jmes_path(col_item, "id")
+      field "group_id", jq(col_item, '.id | split(":")[0]')
+      field "user_id", jq(col_item, '.id | split(":")[1]')
+    end
+  end
+end
+
+datasource "ds_children_group_roles" do
+  iterate $ds_children_groups
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/", val(iter_item, "org_id"), "/access-rules"])
+    query "filter", join(["subjectRef eq '",val(iter_item, "ref"),"'"])
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".values[]") do
+      field "org_id", val(iter_item, "org_id")
+      field "group_ref", val(iter_item, "ref")
+      field "role", jq(col_item, ".role")
+      field "scope", jq(col_item, ".scope")
+    end
+  end
+end
+
+datasource "ds_process_sync" do
+  run_script $js_process_sync, $ds_parent_groups, $ds_parent_group_members, $ds_parent_group_roles, $ds_children_groups, $ds_children_group_members, $ds_children_group_roles, $ds_children_groups, $ds_parent_roles, $ds_children_roles, $ds_parent_users, $ds_children_users, $ds_children_invitations_pending, $param_prefix, $ds_applied_policy
+end
+
+# Process data and generate sync tasks
+script "js_process_sync", type: "javascript" do
+  parameters "ds_parent_groups", "ds_parent_group_members", "ds_parent_group_roles", "ds_children_groups", "ds_children_group_members", "ds_children_group_roles", "ds_children_groups", "ds_parent_roles", "ds_children_roles", "ds_parent_users", "ds_children_users", "ds_children_invitations_pending", "param_prefix", "ds_applied_policy"
+  result "sync_tasks"
+  code <<-EOS
+  var sync_tasks = [];
+
+  // Process each parent group
+  _.each(ds_parent_groups, function(group) {
+    // Construct regex using the param_prefix string
+    // Need to construct 2 regex objects because .exec() and .test() each seem to modify the original regex object
+    var capture = new RegExp(param_prefix + "_[0-9]+_.*", "gi").exec(group.description);
+    var match = new RegExp(param_prefix + "_[0-9]+_.*", "gi").test(group.description);
+    if (match && capture.length > 0 && _.isString(capture[0])) {
+      var string = capture[0].split("_");
+      var target_org_id = string[1];
+      var target_group_name = string[2];
+
+      // Identify if the group currently exists in the Org
+      var existing_group = _.find(ds_children_groups, function(child_group) {
+        return child_group.org_id == target_org_id && child_group.name == target_group_name;
+      });
+
+      // Get members and roles
+      var members = _.filter(ds_parent_group_members, function(member) {
+        return member.group_ref == group.ref;
+      });
+      // Check if the user is a member in the child org group
+      // No membership if group does not exist yet
+      if (!existing_group) {
+        // If Group does not exist, skip member invite this time around
+        // Next run when group exists, we can proceed with adding membership and invites
+        _.each(members, function(member) {
+          member.action = "skip"
+        });
+      } else {
+        // Else the group exists and we can check if we need to add/invite user to the org, and/or user membership to group
+        _.each(members, function(member) {
+          var existing_member = _.find(ds_children_group_members, function(child_member) {
+            return child_member.org_id == target_org_id && child_member.group_id == existing_group.id && child_member.user_id == member.user_id;
+          });
+          // sync_tasks.push(existing_member)
+          if (existing_member) {
+            member.target_group_member_id = existing_member.id;
+            member.action = "skip"
+          } else {
+            // Assume we need to add the member
+            member.action = "create"
+            // Check that user exists in the child org
+            // If not we'll change action to invite
+            user_exists_in_org = _.find(ds_children_users, function(child_user) {
+              return child_user.org_id == target_org_id && child_user.id == member.user_id;
+            });
+            if (!user_exists_in_org) {
+              member.action = "invite_user"
+              // We need the user email to invite
+              var user_details = _.find(ds_parent_users, function(parent_user) {
+                return parseInt(parent_user.id) == parseInt(member.user_id);
+              });
+              if (user_details) {
+                member.user_details = user_details;
+              }
+              // Check if user is already invited
+              var user_invited = _.find(ds_children_invitations_pending, function(invitation) {
+                var invite_groups = _.pluck(invitation.groups,"id");;
+                return invitation.org_id == target_org_id && invitation.email == user_details.email && _.contains(invite_groups, existing_group.id);
+              });
+              if (user_invited) {
+                member.action = "invite_pending"
+                member.invitation_id = user_invited.id;
+                member.invite_expires = user_invited.expiresAt;
+              }
+            }
+          }
+        });
+      }
+
+      var parent_group_roles = _.filter(ds_parent_group_roles, function(role) {
+        return role.group_ref == group.ref;
+      });
+      // Check if the role is already assigned in the child org group
+      // No role assignment if group does not exist yet
+      if (existing_group) {
+        _.each(parent_group_roles, function(parent_role) {
+          var existing_role = _.find(ds_children_group_roles, function(child_role) {
+            // Check that child role matches target org, group, role, and scope
+            var child_org_match = child_role.org_id == target_org_id;
+            var child_org_group_match = child_role.group_ref == existing_group.ref;
+            var child_role_match = child_role.role.name == parent_role.role.name;
+            var child_role_scope_match = child_role.scope.kind == parent_role.scope.kind;
+            // Check if all check conditions are true and role is correctly assigned
+            var match = (child_org_match && child_org_group_match && child_role_match && child_role_scope_match);
+            return match;
+          })
+          if (existing_role) {
+            parent_role.action = "skip"
+          } else {
+            // Role not granted yet
+            parent_role.action = "create"
+            // Check that role exists in the child org
+            role_exists_in_org = _.find(ds_children_roles, function(child_role) {
+              return child_role.org_id == target_org_id && child_role.name == parent_role.role.name;
+            });
+            // If not exists, then the capability is missing in the child org
+            if (!role_exists_in_org) {
+              parent_role.action = "add_capability"
+              // Check if missing capabilities array already created
+              // Used to store unique list of missing capabilities for a role
+              if (!parent_role.missing_capabilities) {
+                parent_role.missing_capabilities = [];
+              }
+              // Attempt to find the capability in the parent org
+              // This helps operators understand what capabilities are missing
+              var parent_org_role = _.find(ds_parent_roles, function(r) {
+                return r.name == parent_role.role.name;
+              });
+              if (parent_org_role) {
+                parent_role.missing_capabilities.push(parent_org_role.capability);
+              }
+            }
+          }
+          // Deduplicate missing capabilities values, if exists
+          if (parent_role.action == "add_capability" && parent_role.missing_capabilities.length > 1) {
+            parent_role.missing_capabilities = _.uniq(parent_role.missing_capabilities);
+          }
+        });
+      }
+
+      sync_tasks.push({
+        source_group: group,
+        target_org_id: target_org_id,
+        target_group_name: target_group_name,
+        target_group_id: existing_group ? existing_group.id : null,
+        target_group_ref: existing_group ? existing_group.ref : null,
+        members: members,
+        roles: parent_group_roles
+      });
+    }
+  });
+  EOS
+end
+
+datasource "ds_process_sync_remove_roles" do
+  run_script $js_process_sync_remove_roles, $ds_parent_group_roles, $ds_children_group_roles, $ds_process_sync
+end
+
+script "js_process_sync_remove_roles", type: "javascript" do
+  parameters "ds_parent_group_roles", "ds_children_group_roles", "ds_process_sync"
+  result "child_group_roles_to_remove"
+  code <<-EOS
+  // Identify any role grants that exist in child but not in the parent
+  var child_group_roles_to_remove = [];
+  _.each(ds_children_group_roles, function(child_role) {
+    var existing_role = _.find(ds_parent_group_roles, function(parent_role) {
+      var child_group = _.find(ds_process_sync, function(sync_task) {
+        return sync_task.target_group_ref == child_role.group_ref;
+      });
+      return child_group && parent_role.role.name == child_role.role.name;
+    });
+    if (!existing_role) {
+      child_group_roles_to_remove.push(child_role);
+    }
+  });
+  EOS
+end
+
+datasource "ds_process_sync_remove_members" do
+  run_script $js_process_sync_remove_members, $ds_parent_group_members, $ds_children_group_members, $ds_process_sync
+end
+
+script "js_process_sync_remove_members", type: "javascript" do
+  parameters "ds_parent_group_members", "ds_children_group_members", "ds_process_sync"
+  result "child_group_members_to_remove"
+  code <<-EOS
+  // Identify any memberships that exist in child but not in the parent
+  var child_group_members_to_remove = [];
+  // Loop through each child group member
+  _.each(ds_children_group_members, function(child_member) {
+    var existing_member = _.find(ds_parent_group_members, function(parent_member) {
+      var child_group = _.find(ds_process_sync, function(sync_task) {
+        return sync_task.target_group_ref == child_member.group_ref;
+      });
+      return child_group && parent_member.user_id == child_member.user_id;
+    });
+    if (!existing_member) {
+      child_group_members_to_remove.push(child_member);
+    }
+  });
+  EOS
+end
+
+# Policy
+policy "pol_group_sync" do
+  validate $ds_process_sync do
+    summary_template "{{ len data }} groups being synchronized"
+    detail_template <<-EOS
+{{ range data }}
+ - {{ .source_group.ref }} to {{ .target_group_name }} in Org {{ .target_org_id }}
+   {{ len .members }} members and {{ len .roles }} roles
+{{ end }}
+
+{{ $sync_enabled := "false" -}}
+{{- range parameters.param_automatic_actions -}}
+ {{- if eq . "Sync Groups" -}}
+    {{- $sync_enabled = "true" -}}
+ {{- end -}}
+{{- end -}}
+{{- if eq $sync_enabled "false" -}} > Note: Automatic Group Sync is currently *disabled*. To enable automatic sync, add "Sync Groups" to the Automatic Actions parameter{{ end }}
+
+EOS
+    check eq(size(data), 0)
+    escalate $esc_sync_groups
+  end
+  validate $ds_process_sync_remove_roles do
+    summary_template "{{ len data }} roles being removed"
+    detail_template <<-EOS
+{{ range data -}}
+ - {{ .role.name }} in group {{ .group_ref }}
+{{ end }}
+EOS
+    check eq(size(data), 0)
+    escalate $esc_remove_roles
+  end
+  validate $ds_process_sync_remove_members do
+    summary_template "{{ len data }} members being removed"
+    detail_template <<-EOS
+{{ range data -}}
+ - {{ .user_id }} in group {{ .group_ref }}
+{{ end }}
+EOS
+    check eq(size(data), 0)
+    escalate $esc_remove_members
+  end
+  validate $ds_identify_errors do
+    summary_template "Errors identified"
+    detail_template <<-EOS
+{{ range data }}{{ . }}\n\n{{ end }}
+EOS
+    check eq(size(data), 0)
+  end
+end
+
+# Escalations
+escalation "esc_sync_groups" do
+  automatic contains($param_automatic_actions, "Sync Groups")
+  label "Sync Groups"
+  description "Sync groups to child orgs"
+  run "sync_groups", data, rs_org_id
+end
+
+escalation "esc_remove_roles" do
+  automatic contains($param_automatic_actions, "Sync Groups")
+  label "Remove Roles"
+  description "Remove roles from child org"
+  run "remove_roles", data, rs_org_id
+end
+
+escalation "esc_remove_members" do
+  automatic contains($param_automatic_actions, "Sync Groups")
+  label "Remove Members"
+  description "Remove members from child org"
+  run "remove_members", data, rs_org_id
+end
+
+define remove_members($data, $rs_org_id) do
+  $$debug = []
+  foreach $task in $data do
+    sub on_error: handle_error() do
+      $child_member = http_request(
+        auth: $$auth_flexera,
+        verb: "delete",
+        https: true,
+        host: "api.flexera.com",
+        href: join(["/iam/v1/orgs/", $task["org_id"], "/groups/", $task["group_id"], "/memberships/", $task["id"]]),
+        headers: {
+          "Content-Type": "application/json"
+        }
+      )
+      if $child_member["code"] != 204
+        raise "Error removing membership "+$task["id"]+" in org "+$task["org_id"] # For debug
+      else
+        $$debug << "Success removing membership "+$task["id"]+" in org "+$task["org_id"] # For debug
+      end
+    end
+  end
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+
+  # If we made it here, all actions completed successfully
+  # Celebrate Success!
+  task_label("All out of sync group memberships removed successfully!")
+end
+
+define remove_roles($data, $rs_org_id) do
+  $$debug = []
+  foreach $task in $data do
+    sub on_error: handle_error() do
+      $role_payload = {
+        "role": {
+          "name": $task["role"]["name"]
+        },
+        "scope": {
+          "ref": $task["scope"]["ref"]
+        },
+        "subject": {
+          "ref": $task["group_ref"]
+        }
+      }
+
+      # $child_role = http_request(
+      #   auth: $$auth_flexera,
+      #   verb: "put",
+      #   https: true,
+      #   host: "api.flexera.com",
+      #   href: join(["/iam/v1/orgs/", $task["org_id"], "/access-rules/revoke"]),
+      #   headers: {
+      #     "Content-Type": "application/json"
+      #   },
+      #   body: $role_payload
+      # )
+      $request = {
+        auth: $$auth_flexera,
+        url: join(["https://api.flexera.com/iam/v1/orgs/", $task["org_id"], "/access-rules/revoke"]),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: $role_payload
+      }
+      $child_role = http_put($request)
+      $$debug_revoke_role = "revoke-response="+to_json($child_role)+" request="+to_json($request)
+      if $child_role["code"] != 204
+        raise "Error revoking access rule "+to_json($child_role)+" on with payload "+to_json($role_payload) # For debug
+      else
+        $$debug << "Success revoking access rule "+$task["group_ref"]+" with role "+$task["role"]["name"]  # For debug
+      end
+    end
+  end
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+
+  # If we made it here, all actions completed successfully
+  # Celebrate Success!
+  task_label("All out of sync roles removed successfully!")
+end
+
+# Cloud workflow
+define sync_groups($data, $rs_org_id) do
+  $$debug = []
+  foreach $task in $data do
+    $$debug_task = to_json($task)
+    sub on_error: handle_error() do
+      $child_group_id = ""
+      $child_group_ref = ""
+      if $task["target_group_ref"] != null && $task["target_group_id"] != ""
+        $$debug << "Group exists, skipping creation of "+$task["target_group_name"]+" in org "+$task["target_org_id"]
+        $child_group_ref = $task["target_group_ref"]
+        $child_group_id = $task["target_group_id"]
+        # Currently Flexera IAM does not support updating Groups
+        # So we will not update the group if it already exists
+        # Removing + recreating the group of there's a difference could be destructive for other permission grants (i.e. bc grants are tied to group ID)
+      else
+        # Create/update group in child org
+        # https://developer.flexera.com/docs/api/iam/v1#/Group/Group#create
+        $group_payload = {
+          "name": $task["target_group_name"],
+          "description": $task["source_group"]["description"]
+        }
+        $child_group = http_request(
+          auth: $$auth_flexera,
+          verb: "post",
+          https: true,
+          host: "api.flexera.com",
+          href: join(["/iam/v1/orgs/", $task["target_org_id"], "/groups"]),
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: $group_payload
+        )
+        if $child_group["code"] != 201
+          raise "Error creating group "+to_json($child_group)+" on with payload "+to_json($group_payload) # For debug
+        else
+          $$debug << "Success creating group "+$task["target_group_name"]+" in org "+$task["target_org_id"] # For debug
+          $child_group_ref = $child_group["body"]["ref"]
+          $child_group_id = $child_group["body"]["id"]
+        end
+      end
+
+      # Sync roles
+      foreach $role in $task["roles"] do
+        $$debug_role = to_json($role)
+        sub on_error: handle_error() do
+          if $role["action"] == "skip"
+            $$debug << "Role exists, skipping granting access rule "+$role["role"]["name"]+" in org "+$task["target_org_id"]+" group "+$task["target_group_name"]
+          elsif $role["action"] == "add_capability"
+            raise "Unable to grant role "+$role["role"]["name"]+" in org "+$task["target_org_id"]+" group "+$task["target_group_name"]+" because the org is missing the capabilities: "+join($role["missing_capabilities"],",")
+          else
+            # Else action is "create"
+            # We can assume the scope reg is org scope
+            # Update the original scope to use this child org ID instead of the MSP parent org ID
+            $ref_parts = split($role["scope"]["ref"], "iam:org:")
+            # Use the part before `iam:org:` and use target org ID
+            $child_org_ref = $ref_parts[0] + "iam:org:" + $task["target_org_id"]
+            $role_payload = {
+              "role": {
+                "name": $role["role"]["name"]
+              },
+              "scope": {
+                "ref": $child_org_ref
+              },
+              "subject": {
+                "ref": $child_group_ref
+              }
+            }
+
+            # $child_role = http_request(
+            #   auth: $$auth_flexera,
+            #   verb: "put",
+            #   https: true,
+            #   host: "api.flexera.com",
+            #   href: join(["/iam/v1/orgs/", $task["target_org_id"], "/access-rules/grant"]),
+            #   headers: {
+            #     "Content-Type": "application/json"
+            #   },
+            #   body: $role_payload
+            # )
+            $request = {
+              auth: $$auth_flexera,
+              url: join(["https://api.flexera.com/iam/v1/orgs/", $task["target_org_id"], "/access-rules/grant"]),
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: $role_payload
+            }
+            $child_role = http_put($request)
+            $$debug_grant_role = "grant-response="+to_json($child_role)+" request="+to_json($request)
+            if $child_role["code"] != 204
+              raise "Error granting access rule "+to_json($child_role)+" on with payload "+to_json($role_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/access-rules/grant"]) # For debug
+            else
+              $$debug << "Success granting access rule "+$child_group_ref+" with role "+$role["role"]["name"]  # For debug
+            end
+          end
+        end
+      end
+
+      # Sync members
+      foreach $member in $task["members"] do
+        # Skip adding user to group if they are already a member
+        if $member["action"] == "skip"
+          $$debug << "Member exists, skipping adding user "+$member["user_id"]+" in org "+$task["target_org_id"]+" group "+$task["target_group_name"]
+        elsif $member["action"] == "invite_pending"
+          $$debug << "User "+$member["user_details"]["email"]+" has existing invite pending to org "+$task["target_org_id"]+" group "+$task["target_group_name"]+" with invitation ID "+$member["invitation_id"]+" and expires at "+to_s($member["invite_expires"])
+        elsif $member["action"] == "invite_user"
+          # User already exists in platform, so we only need to provide email
+          $invite_payload = {
+            "email": $member["user_details"]["email"],
+            "first_name": $member["user_details"]["firstName"],
+            "last_name": $member["user_details"]["lastName"]
+          }
+          $child_member = http_request(
+            auth: $$auth_flexera,
+            verb: "post",
+            https: true,
+            host: "api.flexera.com",
+            href: join(["/iam/v1/orgs/", $task["target_org_id"], "/users"]),
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: $invite_payload
+          )
+          if $child_member["code"] == 404 && $child_member["body"]["message"] == "no IDPs found in org "+$task["target_org_id"]
+            $$debug << "No Identity Providers found in org "+$task["target_org_id"]+" to directly add user user "+$member["user_details"]["email"]+". Attempting to use invite flow"
+            $invite_payload = {
+              "groupIds": [
+                to_n($child_group_id)
+              ],
+              "inviteeEmail": $member["user_details"]["email"]
+            }
+            $child_member = http_request(
+              auth: $$auth_flexera,
+              verb: "post",
+              https: true,
+              host: "api.flexera.com",
+              href: join(["/iam/v1/orgs/", $task["target_org_id"], "/invitations"]),
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: $invite_payload
+            )
+            if $child_member["code"] != 201
+              raise "Error inviting user "+to_json($child_member)+" with payload "+to_json($invite_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/invitations"])
+            else
+              $$debug << "Success inviting user "+$member["user_details"]["email"]+" to org "+$task["target_org_id"]+" to group "+$child_group_id  # For debug
+            end
+          elsif $child_member["code"] != 200
+            raise "Error adding user "+to_json($child_member)+" with payload "+to_json($invite_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/users"])
+          else
+            $$debug << "Success adding user "+$member["user_details"]["email"]+" to org "+$task["target_org_id"]  # For debug
+          end
+        else
+          # Else matches "create"
+          $member_payload = {
+            "userIds": [
+              to_n($member["user_id"])
+            ]
+          }
+          $child_member = http_request(
+            auth: $$auth_flexera,
+            verb: "post",
+            https: true,
+            host: "api.flexera.com",
+            href: join(["/iam/v1/orgs/", $task["target_org_id"], "/groups/", $child_group_id, "/memberships"]),
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: $member_payload
+          )
+          if $child_member["code"] != 201
+            raise "Error adding user to group "+to_json($child_member)+" on with payload "+to_json($member_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/groups/", $child_group_id, "/memberships"])
+          else
+            $$debug << "Success adding user "+$member["user_id"]+" to group "+$child_group_ref # For debug
+          end
+        end
+      end
+    end
+  end
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors,"\n")
+  end
+
+  # If we made it here, all actions completed successfully
+  # Celebrate Success!
+  task_label("All org groups synchronized successfully!")
+end
+
+# CWF function to handle errors
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
