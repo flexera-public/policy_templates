@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.9.3
+
+- Fixed a bug that prevented the policy incident from being created in some edge cases.
+
 ## v3.9.2
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.

@@ -266,6 +266,7 @@ These templates can generate savings estimates for your environment.
   - [AWS Oversized S3 Buckets](./cost/aws/s3_bucket_size)
   - [AWS S3 Buckets Without Intelligent Tiering](./cost/aws/s3_storage_policy)
   - [AWS S3 Buckets Without Lifecycle Configuration](./cost/aws/s3_lifecycle)
+  - [AWS S3 Incomplete Multi-Part Uploads](./cost/aws/s3_multipart_uploads)
   - [Turbonomic Delete Unattached Volumes Recommendations AWS](./cost/turbonomics/delete_unattached_volumes/aws)
 
 - Usage Discount
@@ -392,6 +393,8 @@ These templates can generate savings estimates for your environment.
 
 - Common Bill Ingestion
 
+  - [Common Bill Ingestion from AWS S3 Object Storage](./cost/flexera/cco/cbi_ingestion_aws_s3)
+  - [Common Bill Ingestion from Azure Blob Storage](./cost/flexera/cco/cbi_ingestion_azure_blob)
   - [Fixed Cost Common Bill Ingestion](./cost/flexera/cco/fixed_cost_cbi)
 
 #### Flexera Optima
@@ -718,13 +721,13 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 136
+  Cost: 139
   Operational: 32
   SaaS Management: 11
   Security: 74
 :optimization_count: 71
 :policy_sets:
-  '': 49
+  '': 50
   Allocate VMs: 3
   Automation: 2
   Autoscaling: 1
@@ -733,7 +736,7 @@ These templates can generate savings estimates for your environment.
   Cheaper Regions: 3
   Cloud Cost Optimization: 15
   Committed Use Discount: 2
-  Common Bill Ingestion: 3
+  Common Bill Ingestion: 5
   Database Services: 1
   Databricks: 1
   Deprecated Resources: 1
@@ -789,10 +792,10 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 7
   Usage Report: 10
 :providers:
-  AWS: 103
+  AWS: 104
   Azure: 104
   Azure China: 1
-  Flexera: 41
+  Flexera: 43
   Flexera Optima: 1
   GCE: 2
   GitHub: 7
@@ -810,7 +813,7 @@ These templates can generate savings estimates for your environment.
   Automation: 2
   Cloud Cost Optimization: 19
   CloudTrail: 8
-  Common Bill Ingestion: 3
+  Common Bill Ingestion: 5
   Compute: 80
   Config: 1
   DBS: 1
@@ -840,11 +843,11 @@ These templates can generate savings estimates for your environment.
   SQL: 20
   SaaS Manager: 8
   Security: 3
-  Storage: 30
+  Storage: 31
   Storage Accounts: 2
   Tags: 3
   Usage Discount: 6
-:total_count: 287
+:total_count: 290
 -->
 <!-- End Policy Template Stats -->
 

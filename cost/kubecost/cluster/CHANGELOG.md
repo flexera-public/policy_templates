@@ -6,6 +6,10 @@
 - Added parameter `Shared Core` to indicate whether shared cores should be considered in the cluster sizing calculation.
 - Added parameter `Architecture` to optimize cost calculations and resource allocation based on hardware architecture.
 
+## v0.3.3
+
+- Currency values in incident table are automatically converted to the local currency of the Flexera organization using the most recent exchange rate.
+
 ## v0.3.2
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
