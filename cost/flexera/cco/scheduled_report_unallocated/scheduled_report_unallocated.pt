@@ -8,9 +8,9 @@ category "Cost"
 default_frequency "monthly"
 info(
   version: "0.3.0",
-  provider: "Flexera Optima",
-  service: "",
-  policy_set: "",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: "Cloud Cost Optimization",
   hide_skip_approvals: "true"
 )
 
@@ -30,7 +30,7 @@ parameter "param_cost_dimensions" do
   type "list"
   category "Policy Settings"
   label "Dimensions List"
-  description "List of Dimension names/ids you want to report on. Must provide at least one dimension. Examples: Billing Centers, Services, vendor_account"
+  description "List of Dimension names/IDs you want to report on. Must provide at least one dimension. Examples: Billing Centers, Services, vendor_account"
   default ["Billing Centers"]
 end
 
@@ -330,29 +330,33 @@ script "js_costs_flattened", type: "javascript" do
     "Amortized Blended": "cost_amortized_blended_adj"
   }
 
+  metric_name = param_cost_metric + " Spend"
+
   bc_names = {}
   _.each(ds_billing_centers, function(bc) { bc_names[bc['id']] = bc['name'] })
+
+  dimensions_table = {}
+  _.each(ds_cost_dimensions, function(dimension) { dimensions_table[dimension['id']] = dimension['name'] })
 
   total_spend = 0
   unallocated_spend = 0
 
-  rows = ds_costs_aggregated.map(function(row) {
-    flattened = { "unallocated": false, "unallocated_details": "" }
+  rows = _.map(ds_costs_aggregated, function(row) {
+    flattened = { "Unallocated": false }
     unallocatedDetailsList = []
 
-    _.each(row.metrics, function(value, key) {
-      if (key == cost_metric[param_cost_metric]) { total_spend = total_spend + value }
+    flattened[metric_name] = row['metrics'][cost_metric[param_cost_metric]]
+    total_spend += flattened[metric_name]
 
-      // Round the metric values to 2 decimal places for report
-      flattened[key] = value
-      if (typeof flattened[key] == "number") { flattened[key] = Math.round(flattened[key] * 100) / 100 }
-    })
+    _.each(row['dimensions'], function(value, key) {
+      if (dimensions_table[key]) {
+        flattened[dimensions_table[key]] = value
+      } else {
+        flattened[key] = value
+      }
 
-    _.each(row.dimensions, function(value, key) {
-      flattened[key] = value
-
-      // If billing_center_id dimension, add billing_center_name dimension to results
-      if (key == "billing_center_id") { flattened["billing_center_name"] = bc_names[value] }
+      // If billing_center_id dimension, add name dimension to results
+      if (key == "billing_center_id") { flattened["Billing Centers"] = bc_names[value] }
 
       // Certain dimensions from bill dimensions we expect to be "None" or "" but that is a proper allocation
       // resource_group only exists on Azure, and certain usage types don't have a resource_group (Microsoft.Capacity, Support)
@@ -362,31 +366,26 @@ script "js_costs_flattened", type: "javascript" do
       if (!_.contains(skip_dimensions, key)) {
         // For billing_center_id dimension, unallocated costs are in "unallocated" billing_center_id
         // For all other dimensions (tag, rbd), unallocated costs are in "None" or "" value for that dimension
-        if ((key != "billing_center_id" && (value == "None" || value == "")) || (key == "billing_center_id" && value == "undefined")) {
-          flattened["unallocated"] = true
-          unallocatedDetailsList.push("`"+key + "=" + value+"`")
+        if ((key != "billing_center_id" && (value == "None" || value == "")) || (key == "billing_center_id" && value == "unallocated")) {
+          flattened["Unallocated"] = true
+          unallocatedDetailsList.push("`" + key + "=" + value + "`")
         }
       }
     })
 
     // If any of the values are unallocated, add the cost to the unallocated_spend
-    if (flattened.hasOwnProperty("unallocated") && flattened["unallocated"] == true) {
-      unallocated_spend = unallocated_spend + flattened[cost_metric[param_cost_metric]]
-    }
-
-    if (unallocatedDetailsList.length > 0) {
-      flattened["unallocated_details"] = unallocatedDetailsList.join(" ")
-    }
+    if (flattened["Unallocated"]) { unallocated_spend += flattened[metric_name] }
+    flattened["Unallocated Details"] = unallocatedDetailsList.join(" ")
 
     return flattened
   })
 
   // Group by the dimensions
   grouped_rows = _.groupBy(rows, function(row) {
-    var group_by = []
+    group_by = []
 
     _.each(row, function(value, key) {
-      if (key != cost_metric[param_cost_metric]) { group_by.push(value) }
+      if (key != metric_name) { group_by.push(value) }
     })
 
     return group_by.join("|")
@@ -394,25 +393,34 @@ script "js_costs_flattened", type: "javascript" do
 
   // Sum the cost_* metrics for each group
   rows = []
+
   _.each(grouped_rows, function(group) {
-    var row = {}
+    row = {}
 
     _.each(group, function(item) {
       _.each(item, function(value, key) {
-        if (key != cost_metric[param_cost_metric]) { row[key] = value }
+        if (key != metric_name) { row[key] = value }
       })
     })
 
     _.each(group, function(item) {
       _.each(item, function(value, key) {
-        if (key == cost_metric[param_cost_metric]) {
-          if (!row.hasOwnProperty(key)) { row[key] = 0.0 }
+        if (key == metric_name) {
+          if (row[key] == undefined) { row[key] = 0.0 }
           row[key] += value
         }
       })
     })
 
-    rows.push(row)
+    // Round any numeric values in the row
+    rounded_row = {}
+
+    _.each(_.keys(row), function(key) {
+      rounded_row[key] = row[key]
+      if (typeof(row[key]) == 'number') { rounded_row[key] = Math.round(row[key] * 1000) / 1000 }
+    })
+
+    rows.push(rounded_row)
   })
 
   // Free up memory
@@ -422,35 +430,23 @@ script "js_costs_flattened", type: "javascript" do
   rows_with_total = []
 
   _.each(rows, function(row) {
-    row[cost_metric[param_cost_metric]+"_percent_of_total"] = +(((row[cost_metric[param_cost_metric]] / total_spend) * 100).toFixed(2))
+    row[param_cost_metric + " (% of Total)"] = +(((row[metric_name] / total_spend) * 100).toFixed(2))
     rows_with_total.push(row)
   })
 
   // sort the rows by cost_*_percent_of_total metric
-  rows_with_total = _.sortBy(rows_with_total, function(row) {
-    return row[cost_metric[param_cost_metric]+"_percent_of_total"]
-  }).reverse()
+  rows_with_total = _.sortBy(rows_with_total, param_cost_metric + " (% of Total)").reverse()
 
   // Get the column order from the first row
   // Put any cost_* columns at the end
-  columns_unsorted = Object.keys(rows[0]) // Reverse the order so that when we push/append them they are in their original order
+  columns_unsorted = _.keys(rows[0]) // Reverse the order so that when we push/append them they are in their original order
 
   // Add the required dimension columns from user input first
-  columns = _.pluck(ds_cost_dimensions, 'name')
-
-  // Put unallocated column after the required dimension columns
-  _.each(columns_unsorted, function(key) {
-    if (key.match(/^unallocated|unallocated_details/)) { columns.push(key) }
-  })
-
-  // Add the cost_* columns, after all other dimensions
-  _.each(columns_unsorted, function(key) {
-    if (key.match(/^cost_.*/)) { columns.push(key) }
-  })
+  columns = _.pluck(ds_cost_dimensions, 'name').concat([ "Unallocated", "Unallocated Details", metric_name ])
 
   result = {
     "columns": columns,
-    "percent_unallocated_column_name": cost_metric[param_cost_metric] + "_percent_of_total",
+    "percent_unallocated_column_name": param_cost_metric + " (% of Total)",
     "currency_code": ds_currency['symbol'],
     "total_spend": Math.round(total_spend * 1000) / 1000,
     "unallocated_spend": Math.round(unallocated_spend * 1000) / 1000,
