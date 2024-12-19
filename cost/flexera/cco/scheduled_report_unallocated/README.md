@@ -7,11 +7,11 @@ This policy allows you to set up scheduled reports that will provide summaries o
 ## Input Parameters
 
 - *Email List* - Email addresses of the recipients you wish to notify
-- *Dimensions List* - List of Dimensions you want to report on (i.e. billing_center_id). Must provide at least one dimension
+- *Dimensions List* - List of Dimension names/IDs you want to report on. Must provide at least one dimension. Examples: Billing Centers, Services, vendor_account
 - *Cost Filters* - JSON object (as a string) of filters to apply to the report.  Example: `{\"dimension\": \"vendor\",\"type\": \"equal\",\"value\": \"aws\"}`
 - *Cost Metric* - The cost metric for the report
 - *Date Range" - Date Range for the Report
-- *Filter Report Percent Threshold* - Filter out rows where the cost metric is less than this percentage of the total spend in the report.  Enter 0 to show all rows
+- *Filter Report Percent Threshold* - Filter out rows where the cost metric is less than this percentage of the total spend in the report. Enter 0 to show all rows
 
 ## Policy Actions
 
