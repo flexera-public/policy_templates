@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.4.0
+
+- Updated API endpoint for cluster sizing.
+- Added parameter `Shared Core` to indicate whether shared cores should be considered in the cluster sizing calculation.
+- Added parameter `Architecture` to optimize cost calculations and resource allocation based on hardware architecture.
+
 ## v0.3.3
 
 - Currency values in incident table are automatically converted to the local currency of the Flexera organization using the most recent exchange rate.
