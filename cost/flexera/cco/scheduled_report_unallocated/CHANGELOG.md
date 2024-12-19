@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.0
+
+- Fixed issue that would cause policy template to fail when "Last 7 Days" was selected for the "Date Range" parameter.
+- "Dimensions List" parameter now accepts both dimension names and dimension IDs as valid inputs.
+- Markdown table in incident now uses pretty dimension names instead of dimension IDs.
+
 ## v0.2.2
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
