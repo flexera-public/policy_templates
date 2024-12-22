@@ -6,6 +6,73 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2833](https://github.com/flexera-public/policy_templates/pull/2833): POL-1405 Replace deprecated Kubecost endpoints for Kubecost Cluster Policy
+
+#### Description
+
+> The endpoint we are currently using has been deprecated “/model/savings/clusterSizing"
+> It still works but only returns one cluster rather than all clusters.
+>
+> The new endpoint is returns a different response “/model/savings/clusterSizingETL" and simply adding ETL onto the end of our current end point in the policy returns null values in ds_cluster_sizing
+>
+> This endpoint returns all cluster recommendations in one response.
+>
+>
+> The `ds_clusters` function has been created  to include two new parameters in the Kubecost API call:
+>
+> * param_allow_shared_core: This boolean parameter indicates whether shared cores should be allowed in the cluster sizing calculation. By default, Kubecost may not consider the shared cores between pods as part of the cost savings calculations. With this new parameter, the explicit inclusion of shared cores in the calculations can be enabled. This is useful for environments where resources are shared between multiple pods, and a more accurate estimate of potential savings is desired.
+>
+>
+>
+> #### Changes Made:
+>
+> * Updated the function responsible for the API call to /model/savings/clusterSizing
+> * Added the param_allow_shared_core to the `ds_clusters` function.
+> * Updated the HTTP call to send these parameters in the Request.
+> * Set the default values of these parameters to False, meaning shared cores will not be allowed.
+>
+> > How the response for the new endpoint differs from what we initially wanted: we modified it and added new functions to handle the response and convert it to the expected struct
+>
+> ### Issues Resolved
+>
+> - Deprecated endpoint from kubecost was replaced.
+> - https://flexera.atlassian.net/browse/POL-1405
+>
+
+#### Metadata
+
+- **Policies**: [Kubecost Cluster Rightsizing Recommendation](https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/cluster/README.md)
+- **Merged At**: 2024-12-19 15:58:27 UTC
+
+---
+
+### PR [#2869](https://github.com/flexera-public/policy_templates/pull/2869): POL-1414 Currency Conversion Functionality on Kubecost cluster rightsizing policy
+
+#### Description
+
+> This update introduces functionality to handle automatic currency conversion within Kubecost cluster rightsizing policy, ensuring that incidents reflect values across different currencies.
+>
+> #### Changes
+>
+> * Support for multiple currencies has been added to the system.
+> * If the kubecost config endpoint returns an empty currency, USD (United States Dollar) will be used as the default currency.
+> * A condition has been implemented where, if Kubecost's currency matches Flexera's, no currency conversion will take place.
+>
+> ### Issues Resolved
+>
+> Resolves the issue where currency discrepancies occurred between our template and Kubecost when they had different base currencies.
+>
+>
+> https://flexera.atlassian.net/browse/POL-1414
+>
+
+#### Metadata
+
+- **Policies**: [Kubecost Cluster Rightsizing Recommendation](https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/cluster/README.md)
+- **Merged At**: 2024-12-16 22:02:52 UTC
+
+---
+
 ### PR [#2817](https://github.com/flexera-public/policy_templates/pull/2817): POL-1410 - Improve Scheduled Instance Notifications
 
 #### Description
@@ -1637,34 +1704,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2534) for details about unpublished policies.
 - **Merged At**: 2024-08-13 18:55:54 UTC
-
----
-
-### PR [#2496](https://github.com/flexera-public/policy_templates/pull/2496): POL-1311 New Policy: Azure Advisor Compute Instances Recommendations
-
-#### Description
-
-> This is a new policy template that reports virtual machine resizing recommendations from the Azure Advisor tool. See the README for more details.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2496) for details about unpublished policies.
-- **Merged At**: 2024-08-13 12:04:51 UTC
-
----
-
-### PR [#2494](https://github.com/flexera-public/policy_templates/pull/2494): POL-1310 New Policy: AWS EC2 Compute Optimizer Recommendations
-
-#### Description
-
-> This is a new policy template that reports EC2 resizing recommendations from AWS Compute Optimizer tool. See the README for more details.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2494) for details about unpublished policies.
-- **Merged At**: 2024-08-13 12:04:43 UTC
 
 ---
 
