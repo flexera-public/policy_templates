@@ -57,6 +57,7 @@ These templates can generate savings estimates for your environment.
 
 #### Azure
 
+- [Azure Data Lake Optimization](./cost/azure/data_lake_optimization)
 - [Azure Databricks Rightsize Compute Instances](./cost/azure/databricks/rightsize_compute)
 - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances)
@@ -355,6 +356,7 @@ These templates can generate savings estimates for your environment.
 
 - Storage Accounts
 
+  - [Azure Data Lake Optimization](./cost/azure/data_lake_optimization)
   - [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management)
 
 - Usage Discount
@@ -721,11 +723,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 139
+  Cost: 140
   Operational: 32
   SaaS Management: 11
   Security: 74
-:optimization_count: 71
+:optimization_count: 72
 :policy_sets:
   '': 50
   Allocate VMs: 3
@@ -737,6 +739,7 @@ These templates can generate savings estimates for your environment.
   Cloud Cost Optimization: 15
   Committed Use Discount: 2
   Common Bill Ingestion: 5
+  Data Lake Optimization: 1
   Database Services: 1
   Databricks: 1
   Deprecated Resources: 1
@@ -793,7 +796,7 @@ These templates can generate savings estimates for your environment.
   Usage Report: 10
 :providers:
   AWS: 104
-  Azure: 104
+  Azure: 105
   Azure China: 1
   Flexera: 43
   Flexera Optima: 1
@@ -844,10 +847,10 @@ These templates can generate savings estimates for your environment.
   SaaS Manager: 8
   Security: 3
   Storage: 31
-  Storage Accounts: 2
+  Storage Accounts: 3
   Tags: 3
   Usage Discount: 6
-:total_count: 290
+:total_count: 291
 -->
 <!-- End Policy Template Stats -->
 
