@@ -6,6 +6,23 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2887](https://github.com/flexera-public/policy_templates/pull/2887): FLEX-5165 Add datalake optimization policy template
+
+#### Description
+
+> Initial implementation of a Policy (Azure Data Lake Optimization) which enables customers to run efficiently for Azure Data Lake. The policy type is Usage Reduction and provide the recommendations with Potential savings.
+>
+> ### Issues Resolved
+> https://flexera.atlassian.net/browse/FLEX-5165
+>
+
+#### Metadata
+
+- **Policies**: [Azure Data Lake Optimization](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/data_lake_optimization/README.md), [Meta Parent: Azure Data Lake Optimization](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/data_lake_optimization/README.md)
+- **Merged At**: 2024-12-23 18:30:07 UTC
+
+---
+
 ### PR [#2833](https://github.com/flexera-public/policy_templates/pull/2833): POL-1405 Replace deprecated Kubecost endpoints for Kubecost Cluster Policy
 
 #### Description
@@ -1691,19 +1708,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2533) for these details.
 - **Merged At**: 2024-08-13 19:13:27 UTC
-
----
-
-### PR [#2534](https://github.com/flexera-public/policy_templates/pull/2534): POL-1294 RBD Policy Logic Fix
-
-#### Description
-
-> Modified logic in unpublished RBD policies to reduce risk of policy failure due to an account having no tags
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2534) for details about unpublished policies.
-- **Merged At**: 2024-08-13 18:55:54 UTC
 
 ---
 
