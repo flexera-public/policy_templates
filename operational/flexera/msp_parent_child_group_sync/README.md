@@ -46,16 +46,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-## Group Description Pattern
-
-To synchronize a group from the parent org to a child org, the group description must match the pattern:
-
-`ChildOrg_<org_id>_<group_name>`
-
-Where:
-- `<org_id>` is the ID of the target child organization
-- `<group_name>` is the name to use for the group in the child organization
-
 ## Cost
 
 This Policy Template does not incur any cloud costs.
