@@ -1,0 +1,259 @@
+name "ITAM Asset Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Produces a report of assets stored in Flexera ITAM. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/itam/asset_report) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Operational"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "IT Asset Management",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_asset_status" do
+  type "string"
+  category "Filters"
+  label "Asset Status"
+  description "Only report assets with the selected status. Select 'All' to not filter results by asset status."
+  allowed_values "All", "Purchased", "In Storage", "Installed", "Retired", "Disposed", "Other"
+  default "All"
+end
+
+parameter "param_asset_type" do
+  type "string"
+  category "Filters"
+  label "Asset Type"
+  description "Only report assets of the selected type. Select 'All' to not filter results by asset type."
+  allowed_values "All", "Workstation", "Server", "Monitor", "Desk", "Chair", "Printer", "Router", "Switch", "Telephone", "Cell Phone", "Laptop", "Mobile Device", "DataStorage", "Network Appliance", "Mainframe"
+  default "All"
+end
+
+parameter "param_asset_location" do
+  type "string"
+  category "Filters"
+  label "Asset Location"
+  description "Only report assets in the specified location. Leave blank to not filter results by location."
+  default ""
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_itam_assets" do
+  request do
+    run_script $js_itam_assets, val($ds_flexera_api_hosts, "flexera"), $param_asset_status, $param_asset_type, $param_asset_location, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "assetId")
+      field "name", jmes_path(col_item, "assetName")
+      field "tag", jmes_path(col_item, "assetTag")
+      field "type", jmes_path(col_item, "assetType")
+      field "category", jmes_path(col_item, "category")
+      field "company", jmes_path(col_item, "assetCompany")
+      field "serialNumber", jmes_path(col_item, "serialNumber")
+      field "status", jmes_path(col_item, "status")
+      field "manufacturer", jmes_path(col_item, "manufacturer")
+      field "computerId", jmes_path(col_item, "computerId")
+      field "acquisitionMethod", jmes_path(col_item, "acquisitionMethod")
+      field "installedOn", jmes_path(col_item, "installedOn")
+      field "deliveryDate", jmes_path(col_item, "deliveryDate")
+      field "expiryDate", jmes_path(col_item, "expiryDate")
+      field "electronicLastInventoryBy", jmes_path(col_item, "electronicLastInventoryBy")
+      field "electronicLastInventoryDate", jmes_path(col_item, "electronicLastInventoryDate")
+      field "physicalLastInventoryBy", jmes_path(col_item, "physicalLastInventoryBy")
+      field "physicalLastInventoryDate", jmes_path(col_item, "physicalLastInventoryDate")
+      field "ownershipCostCenter", jmes_path(col_item, "ownership.costCenter")
+      field "ownershipDepartment", jmes_path(col_item, "ownership.department")
+      field "ownershipLocation", jmes_path(col_item, "ownership.location")
+      field "purchaseDataDate", jmes_path(col_item, "purchaseData.orderDate")
+      field "purchaseDataNumber", jmes_path(col_item, "purchaseData.orderNumber")
+      field "userDataAssigned", jmes_path(col_item, "userData.assigned")
+      field "userDataSamAccountName", jmes_path(col_item, "userData.samAccountName")
+    end
+  end
+end
+
+script "js_itam_assets", type: "javascript" do
+  parameters "flexera_api_host", "param_asset_status", "param_asset_type", "param_asset_location", "rs_org_id"
+  result "request"
+  code <<-EOS
+  query_params = {}
+  if (param_asset_status != "All") { query_params["status"] = param_asset_status }
+  if (param_asset_type != "All") { query_params["assetType"] = param_asset_type }
+  if (param_asset_location.trim() != "") { query_params["location"] = param_asset_location.trim() }
+
+  var request = {
+    auth: "auth_flexera",
+    host: flexera_api_host,
+    path: ["/fnms/v1/orgs/", rs_org_id, "/assets"].join(''),
+    headers: { "User-Agent": "RS Policies" },
+    query_params: query_params
+  }
+EOS
+end
+
+datasource "ds_itam_asset_report" do
+  run_script $js_itam_asset_report, $ds_itam_assets, $ds_applied_policy, $param_asset_status, $param_asset_type, $param_asset_location
+end
+
+script "js_itam_asset_report", type: "javascript" do
+  parameters "ds_itam_assets", "ds_applied_policy", "param_asset_status", "param_asset_type", "param_asset_location"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_itam_assets, function(item) {
+    new_item = {}
+    _.each(_.keys(item), function(key) { new_item[key] = item[key] })
+
+    new_item["policy_name"] = ds_applied_policy["name"]
+    new_item["message"] = ""
+
+    return new_item
+  })
+
+  if (result.length > 0) {
+    asset_location = param_asset_location
+    if (asset_location.trim() == "") { asset_location = "All" }
+
+    result[0]["message"] = [
+      "Assets Found: ", result.length.toString(), "\n",
+      "- Status: ", param_asset_status, "\n",
+      "- Type: ", param_asset_type, "\n",
+      "- Location: ", asset_location, "\n"
+    ].join('')
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_itam_asset_report" do
+  validate_each $ds_itam_asset_report do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} ITAM Assets Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    hash_exclude "message"
+    export do
+      resource_level true
+      field "id" do
+        label "ID"
+      end
+      field "serialNumber" do
+        label "Serial Number"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "tag" do
+        label "Tag"
+      end
+      field "type" do
+        label "Type"
+      end
+      field "category" do
+        label "Category"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "company" do
+        label "Company"
+      end
+      field "manufacturer" do
+        label "Manufacturer"
+      end
+      field "acquisitionMethod" do
+        label "Acquisition Method"
+      end
+      field "installedOn" do
+        label "Installed On"
+      end
+      field "deliveryDate" do
+        label "Delivery Date"
+      end
+      field "expiryDate" do
+        label "Expiry Date"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
