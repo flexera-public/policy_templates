@@ -4,10 +4,14 @@
 
 This policy template synchronizes groups, roles and users from a parent organization to child MSP organizations based on group description patterns. Groups in the parent org with descriptions matching the pattern `<GroupSync Prefix>_<OrgID>_<Group Name>` will be synchronized to the specified child org.  Using the default Group Sync Prefix, an example configuration string looks like:
 
-Assuming default Group Sync Prefix is used:
-  - A group in the MSP Parent Org containing the string `GroupSync_123_Administrator Access` in the description results in a group being created/synced in child ***Org 123*** named ***Administrator Access***
+OrgID can be a specific Child Org ID to sync the group with one specific child org, or `ALLORGS` to sync the group with all child orgs.
 
-  - A group in the MSP Parent Org containing the string `GroupSync_123_Read-Only Access` - Results in a group being created/synced in child ***Org 123*** named ***Read-Only Access***
+Assuming default Group Sync Prefix is used:
+  - A group in the MSP Parent Org containing the string `GroupSync_ALLORGS_Read-Only Access` - Results in a group being created/synced with a name ***Read-Only Access*** in ***ALL*** child orgs
+
+  - A group in the MSP Parent Org containing the string `GroupSync_123_Administrator Access` in the description results in a group being created/synced with a name ***Administrator Access*** in child ***Org 123***
+
+  - A group in the MSP Parent Org containing the string `GroupSync_123_Read-Only Access` - Results in a group being created/synced with a name ***Read-Only Access*** in child ***Org 123***
 
 The policy will:
 - Create groups in child orgs if they don't exist
