@@ -1,8 +1,8 @@
-# ITAM Installed Application Report
+# ITAM License Report
 
 ## What It Does
 
-This policy produces a report of installed applications stored in Flexera ITAM. Optionally, the report can be emailed.
+This policy produces a report of licenses stored in Flexera ITAM. Optionally, the report can be emailed.
 
 ## Input Parameters
 
@@ -10,7 +10,7 @@ This policy produces a report of installed applications stored in Flexera ITAM. 
 
 ## Policy Actions
 
-- Sends an email report with the list of installed applications.
+- Sends an email report with the list of licenses.
 
 ## Prerequisites
 
