@@ -390,6 +390,7 @@ These templates can generate savings estimates for your environment.
   - [Low Usage Report](./cost/flexera/cco/low_usage)
   - [New Usage](./cost/flexera/cco/new_usage)
   - [Scheduled Report](./cost/flexera/cco/scheduled_reports)
+  - [Scheduled Report for Unallocated Costs](./cost/flexera/cco/scheduled_report_unallocated)
   - [Superseded Instances](./cost/flexera/cco/superseded_instance)
   - [Vendor Spend Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
 
@@ -398,10 +399,6 @@ These templates can generate savings estimates for your environment.
   - [Common Bill Ingestion from AWS S3 Object Storage](./cost/flexera/cco/cbi_ingestion_aws_s3)
   - [Common Bill Ingestion from Azure Blob Storage](./cost/flexera/cco/cbi_ingestion_azure_blob)
   - [Fixed Cost Common Bill Ingestion](./cost/flexera/cco/fixed_cost_cbi)
-
-#### Flexera Optima
-
-- [Scheduled Report for Unallocated Costs](./cost/flexera/cco/scheduled_report_unallocated)
 
 #### GCE
 
@@ -729,14 +726,14 @@ These templates can generate savings estimates for your environment.
   Security: 74
 :optimization_count: 72
 :policy_sets:
-  '': 50
+  '': 49
   Allocate VMs: 3
   Automation: 2
   Autoscaling: 1
   Burstable Compute Instances: 1
   CIS: 61
   Cheaper Regions: 3
-  Cloud Cost Optimization: 15
+  Cloud Cost Optimization: 16
   Committed Use Discount: 2
   Common Bill Ingestion: 5
   Data Lake Optimization: 1
@@ -798,8 +795,7 @@ These templates can generate savings estimates for your environment.
   AWS: 104
   Azure: 105
   Azure China: 1
-  Flexera: 43
-  Flexera Optima: 1
+  Flexera: 44
   GCE: 2
   GitHub: 7
   Google: 22
@@ -809,12 +805,12 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 6
+  '': 5
   AKS: 2
   All: 6
   App Service: 1
   Automation: 2
-  Cloud Cost Optimization: 19
+  Cloud Cost Optimization: 20
   CloudTrail: 8
   Common Bill Ingestion: 5
   Compute: 80
