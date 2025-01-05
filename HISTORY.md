@@ -6,6 +6,37 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2907](https://github.com/flexera-public/policy_templates/pull/2907): POL-1440 Flexera FOCUS Report Bug Fix
+
+#### Description
+
+> This fixes an issue in the `Flexera FOCUS Report` policy template where the policy would fail when reporting unamortized costs.
+>
+
+#### Metadata
+
+- **Policies**: [Flexera FOCUS Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/focus_report/README.md)
+- **Merged At**: 2025-01-02 13:32:31 UTC
+
+---
+
+### PR [#2896](https://github.com/flexera-public/policy_templates/pull/2896): POL-1434 Scheduled Report for Unallocated Costs "7 Days" Fix
+
+#### Description
+
+> From the `Scheduled Report for Unallocated Costs` CHANGELOG:
+> - Fixed issue that would cause policy template to fail when "Last 7 Days" was selected for the "Date Range" parameter.
+> - "Dimensions List" parameter now accepts both dimension names and dimension IDs as valid inputs.
+> - Markdown tables in incident now uses pretty names for various fields to improve readability.
+>
+
+#### Metadata
+
+- **Policies**: [Scheduled Report for Unallocated Costs](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_report_unallocated/README.md)
+- **Merged At**: 2025-01-02 13:32:12 UTC
+
+---
+
 ### PR [#2887](https://github.com/flexera-public/policy_templates/pull/2887): FLEX-5165 Add datalake optimization policy template
 
 #### Description
@@ -1681,33 +1712,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Scheduled Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_reports/README.md)
 - **Merged At**: 2024-08-14 14:33:46 UTC
-
----
-
-### PR [#2511](https://github.com/flexera-public/policy_templates/pull/2511): POL-1308 New Policy: Flexera One User Access Report
-
-#### Description
-
-> New policy that produces a list of users and the various roles they have assigned to them in order to assist with auditing users in a Flexera org.
->
-
-#### Metadata
-
-- **Policies**: [Flexera One User Access Report](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/iam/iam_user_report/README.md)
-- **Merged At**: 2024-08-14 13:09:41 UTC
-
----
-
-### PR [#2533](https://github.com/flexera-public/policy_templates/pull/2533): POL-1321 Meta Policy Unpublish Fix
-
-#### Description
-
-> This adds publish to the info block of meta parent policies that corresponds to the child policy. This is to prevent meta parent policies for unpublished child policies from themselves being published by mistake.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2533) for these details.
-- **Merged At**: 2024-08-13 19:13:27 UTC
 
 ---
 
