@@ -43,6 +43,14 @@ parameter "param_tag_schedule" do
   default "schedule"
 end
 
+parameter "param_tag_schedule_action" do
+  type "string"
+  category "Tag Keys"
+  label "Schedule Action Tag Key (Optional)"
+  description "Optional Tag key to specify what action to use.  By default if not specified the policy assumes the defined schedule is for a scheduled window. Expected tag values are \"startstop\", \"start\", \"stop\"."
+  default "schedule_action"
+end
+
 parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
@@ -320,20 +328,20 @@ EOS
 end
 
 datasource "ds_policy_incident_action_failed_details" do
-  run_script $js_policy_incident_action_failed_details, $ds_policy_incident_action_most_recent, $ds_instances_schedule_result
+  run_script $js_policy_incident_action_failed_details, $ds_policy_incident_action_most_recent, $ds_instances_schedule_result_with_last_action_status
 end
 
 script "js_policy_incident_action_failed_details", type: "javascript" do
-  parameters "ds_policy_incident_action_most_recent", "ds_instances_schedule_result"
+  parameters "ds_policy_incident_action_most_recent", "ds_instances_schedule_result_with_last_action_status"
   result "result"
   code <<-EOS
   // Filter only the failed actions
   var actions = _.filter(ds_policy_incident_action_most_recent, function(action) {
     return action.action_status == 'failed'
   })
-  // Loop through `ds_instances_schedule_result` and add any instances where the resource_id is in any of the failed actions
+  // Loop through `ds_instances_schedule_result_with_last_action_status` and add any instances where the resource_id is in any of the failed actions
   var instances = [];
-  _.each(ds_instances_schedule_result, function(instance) {
+  _.each(ds_instances_schedule_result_with_last_action_status, function(instance) {
     _.each(actions, function(action) {
       _.each(action['action_items'], function(item) {
         if (_.isString(item.error)) {
@@ -777,11 +785,11 @@ end
 # Classify the results from ds_instances_schedule_result
 # This allows us to produce email notifications when actions are being taken
 datasource "ds_instances_schedule_result_action_start" do
-  run_script $js_instances_schedule_result_action_start, $ds_instances_schedule_result, "Yes" # "Yes" Placeholder for $param_enforce_schedules as it's not implemented yet
+  run_script $js_instances_schedule_result_action_start, $ds_instances_schedule_result_with_last_action_status, "Yes", $param_tag_schedule_action
 end
 
 script "js_instances_schedule_result_action_start", type: "javascript" do
-  parameters "ds_instances_schedule_result", "param_enforce_schedules"
+  parameters "ds_instances_schedule_result", "param_enforce_schedules", "param_tag_schedule_action"
   result "result"
   code <<-EOS
   var result = []
@@ -791,9 +799,22 @@ script "js_instances_schedule_result_action_start", type: "javascript" do
   // If enabled setting the string to current timestamp will ensure the resulting hash of the result updates each evaluation
   // This will force the action to be taken on the instance each run if param_enforce_schedules is set to "Yes"
   if (enforce_schedules_enabled) { enforce_schedule = new Date().toISOString() }
-  // Loop through each instance and check if the event is active and the instance is not already running
+
+  // Loop through each instance and check if we should start it
   _.each(ds_instances_schedule_result, function(instance) {
-    if (instance['event_active'] == "true" && /(running|creating)/.test(instance['status']) == false) {
+    // Get schedule action type, default to startstop if not specified
+    var schedule_action = "startstop"
+    if (instance.tags_object && instance.tags_object[param_tag_schedule_action]) {
+      schedule_action = instance.tags_object[param_tag_schedule_action].toLowerCase()
+    }
+
+    // Only start instances if:
+    // 1. schedule_action is 'start' or 'startstop'
+    // 2. window is active
+    // 3. instance is not already running
+    if ((schedule_action == "start" || schedule_action == "startstop") &&
+        instance['event_active'] == "true" &&
+        /(running|creating)/.test(instance['status']) == false) {
       instance['action'] = "start"
       instance['enforce_schedule'] = enforce_schedule
       result.push(instance)
@@ -803,11 +824,11 @@ script "js_instances_schedule_result_action_start", type: "javascript" do
 end
 
 datasource "ds_instances_schedule_result_action_stop" do
-  run_script $js_instances_schedule_result_action_stop, $ds_instances_schedule_result, "Yes" # "Yes" Placeholder for $param_enforce_schedules as it's not implemented yet
+  run_script $js_instances_schedule_result_action_stop, $ds_instances_schedule_result_with_last_action_status, "Yes", $param_tag_schedule_action
 end
 
 script "js_instances_schedule_result_action_stop", type: "javascript" do
-  parameters "ds_instances_schedule_result", "param_enforce_schedules"
+  parameters "ds_instances_schedule_result", "param_enforce_schedules", "param_tag_schedule_action"
   result "result"
   code <<-EOS
   var result = []
@@ -817,9 +838,29 @@ script "js_instances_schedule_result_action_stop", type: "javascript" do
   // If enabled setting the string to current timestamp will ensure the resulting hash of the result updates each evaluation
   // This will force the action to be taken on the instance each run if param_enforce_schedules is set to "Yes"
   if (enforce_schedule_enabled) { enforce_schedule = new Date().toISOString() }
-  // Loop through each instance and check if the event is active and the instance is not already stopped
+
+  // Loop through each instance and check if we should stop it
   _.each(ds_instances_schedule_result, function(instance) {
-    if (instance['event_active'] == "false" && /(deallocated|deallocating)/.test(instance['status']) == false) {
+    // Get schedule action type, default to startstop if not specified
+    var schedule_action = "startstop"
+    if (instance.tags_object && instance.tags_object[param_tag_schedule_action]) {
+      schedule_action = instance.tags_object[param_tag_schedule_action].toLowerCase()
+    }
+
+    // Handle stop behavior based on schedule_action:
+    // - For 'stop': Stop when window is active
+    // - For 'startstop': Stop when window is not active
+    // - For 'start': Never stop
+    var should_stop = false
+    if (schedule_action == "stop") {
+      // Stop action stops during active window
+      should_stop = (instance['event_active'] == "true")
+    } else if (schedule_action == "startstop") {
+      // Startstop action stops outside active window
+      should_stop = (instance['event_active'] == "false")
+    }
+
+    if (should_stop && /(deallocated|deallocating)/.test(instance['status']) == false) {
       instance['action'] = "stop"
       instance['enforce_schedule'] = enforce_schedule
       result.push(instance)
@@ -1293,14 +1334,14 @@ escalation "esc_execute_scheduled_start" do
   automatic contains($param_automatic_action, "Execute Schedules")
   label "Execute Scheduled Start"
   description "Approval to start or stop all selected instances respecting the defined schedule"
-  run "execute_schedules", data, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule
+  run "execute_schedules", data, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule, $param_tag_schedule_action
 end
 
 escalation "esc_execute_scheduled_stop" do
   automatic contains($param_automatic_action, "Execute Schedules")
   label "Execute Scheduled Stop"
   description "Approval to stop all selected instances respecting the defined schedule"
-  run "execute_schedules", data, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule
+  run "execute_schedules", data, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule, $param_tag_schedule_action
 end
 
 escalation "esc_update_schedules" do
@@ -1350,12 +1391,12 @@ end
 ###############################################################################
 
 # Core CWF functions for iterating through items
-define execute_schedules($data, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule) return $all_responses do
+define execute_schedules($data, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule, $param_tag_schedule_action) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      call execute_schedule($instance, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule)
+      call execute_schedule($instance, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule, $param_tag_schedule_action)
     end
   end
 
@@ -1447,7 +1488,7 @@ define delete_instances($data, $param_azure_endpoint) return $all_responses do
 end
 
 # Secondary CWF functions for taking action on individual instances
-define execute_schedule($instance, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule) return $response do
+define execute_schedule($instance, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule, $param_tag_schedule_action) return $response do
   if $instance['schedule'] == null
     call task_label("Skipping instance without schedule: " + $instance["resourceID"])
   else
@@ -1469,23 +1510,40 @@ define execute_schedule($instance, $param_azure_endpoint, $param_skipshutdown, $
     call parse_schedule($instance['schedule']) retrieve $start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $schedule_days, $timezone
     call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active
 
+    # Get schedule action type, default to startstop if not specified
+    $schedule_action = "startstop"
+    if $instance["tags_object"] && $instance["tags_object"][$param_tag_schedule_action]
+      $schedule_action = downcase($instance["tags_object"][$param_tag_schedule_action])
+    end
+
     if $window_active
-      # if window active, should be running
-      if $instance_state == "running"
-        call task_label("Skipping starting a running instance: " + $instance["resourceID"] + " " + $instance_state)
-      else
-        if $instance_state !~ /^(deallocated|deallocating|stopped|stopping)$/
+      # Window is active - determine if we should start or stop
+      if $schedule_action =~ /^(start|startstop)$/
+        # For start-only or startstop, start instance during window
+        if $instance_state == "running"
+          call task_label("Skipping starting a running instance: " + $instance["resourceID"] + " " + $instance_state)
+        elsif $instance_state !~ /^(deallocated|deallocating|stopped|stopping)$/
           call task_label("Skipping starting an instance that is not deallocated, deallocating, stopped, or stopping: " + $instance["resourceID"] + " " + $instance_state)
         else
           call start_instance($instance, $param_azure_endpoint)
         end
+      elsif $schedule_action == "stop"
+        # For stop-only, stop instance during window
+        if $instance_state =~ /^(deallocated|deallocating)$/
+          call task_label("Skipping stopping a stopped instance: " + $instance["resourceID"] + " " + $instance_state)
+        elsif $instance_state !~ /^(running|creating)$/
+          call task_label("Skipping stopping an instance that not running or creating: " + $instance["resourceID"]+ " " + $instance_state)
+        else
+          call stop_instance($instance, $param_azure_endpoint, $param_skipshutdown)
+        end
       end
     else
-      if $instance_state =~ /^(deallocated|deallocating)$/
-        call task_label("Skipping stopping a stopped instance: " + $instance["resourceID"] + " " + $instance_state)
-      else
-        # else window not active, should NOT be running
-        if $instance_state !~ /^(running|creating)$/
+      # Window is not active - determine if we should stop
+      if $schedule_action == "startstop"
+        # Only startstop needs to handle stopping outside window
+        if $instance_state =~ /^(deallocated|deallocating)$/
+          call task_label("Skipping stopping a stopped instance: " + $instance["resourceID"] + " " + $instance_state)
+        elsif $instance_state !~ /^(running|creating)$/
           call task_label("Skipping stopping an instance that not running or creating: " + $instance["resourceID"]+ " " + $instance_state)
         else
           call stop_instance($instance, $param_azure_endpoint, $param_skipshutdown)

@@ -4,6 +4,7 @@
 
 - Added retry mechanism in case of failed actions or timeout waiting for the expected status change
 - Fixed issue preventing schedules being enforced when first action attempt fails
+- Added support for "Schedule Action Tag" to control scheduling behavior
 
 ## v6.1.0
 
