@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.3
+
+- Fixed issue with a variable causing the policy to fail.
+
 ## v0.2.2
 
 - Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
