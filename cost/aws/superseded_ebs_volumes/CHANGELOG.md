@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.3.6
+
+- Fixed issue where Currency Conversion messaging in policy incident would stop policy execution because of an error. Functionality unchanged.
+
 ## v6.3.5
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
