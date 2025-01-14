@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "6.0.2",
+  version: "6.0.3",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -873,20 +873,27 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
         // Note: The switch between min and max is intentional because
         // the maximum available memory is equivalent to the minumum
         // memory used.
-        if (item["average"] != undefined && item["average"] != null) {
+        // Note 2: Sometimes the amount of memory provided by Azure metrics is greater by far than the
+        // total memory of the instance size, for these cases we skip making recommendations based on
+        // memory since not knowing the total memory makes all the derived calculations wrong.
+        // This behavior happens because the instances are recently rightsized and stats data from their
+        // previous size and stats data from the current size is mixed. This caused showing negative values
+        // for memory statistics.
+
+        if (item["average"] != undefined && item["average"] != null && item["average"] <= total_memory) {
           average = (total_memory - item["average"]) / total_memory
           mem_all_stats.push(average)
           mem_avg += average
           mem_avg_count += 1
         }
 
-        if (item["minimum"] != undefined && item["minimum"] != null) {
+        if (item["minimum"] != undefined && item["minimum"] != null && item["minimum"] <= total_memory) {
           maximum = (total_memory - item["minimum"]) / total_memory
           mem_all_stats.push(maximum)
           if (maximum > mem_max) { mem_max = maximum }
         }
 
-        if (item["maximum"] != undefined && item["maximum"] != null) {
+        if (item["maximum"] != undefined && item["maximum"] != null && item["maximum"] <= total_memory) {
           minimum = (total_memory - item["maximum"]) / total_memory
           mem_all_stats.push(minimum)
           if (minimum < mem_min || mem_min == null) { mem_min = minimum }
