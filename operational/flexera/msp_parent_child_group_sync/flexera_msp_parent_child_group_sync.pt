@@ -334,6 +334,34 @@ datasource "ds_children_invitations_pending" do
   end
 end
 
+datasource "ds_children_idps" do
+  iterate $ds_organizations_filtered_with_access
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/", val(iter_item, "id"), "/idps"])
+  end
+  result do
+   encoding "json"
+   collect jq(response, '.[]') do
+    field "org_id", val(iter_item, "id")
+    field "id", jq(col_item, ".id")
+    field "name", jq(col_item, ".name")
+   end
+  end
+end
+
+datasource "ds_children_idps_domains" do
+  iterate $ds_children_idps
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/", val(iter_item, "org_id"), "/idps/", val(iter_item, "id"), "/domains"])
+  end
+end
+
 datasource "ds_children_users" do
   iterate $ds_organizations_filtered_with_access
   request do
@@ -818,7 +846,6 @@ end
 define sync_groups($data, $rs_org_id) do
   $$debug = []
   foreach $task in $data do
-    $$debug_task = to_json($task)
     sub on_error: handle_error() do
       $child_group_id = ""
       $child_group_ref = ""
@@ -858,7 +885,6 @@ define sync_groups($data, $rs_org_id) do
 
       # Sync roles
       foreach $role in $task["roles"] do
-        $$debug_role = to_json($role)
         sub on_error: handle_error() do
           if $role["action"] == "skip"
             $$debug << "Role exists, skipping granting access rule "+$role["role"]["name"]+" in org "+$task["target_org_id"]+" group "+$task["target_group_name"]
@@ -883,17 +909,6 @@ define sync_groups($data, $rs_org_id) do
               }
             }
 
-            # $child_role = http_request(
-            #   auth: $$auth_flexera,
-            #   verb: "put",
-            #   https: true,
-            #   host: "api.flexera.com",
-            #   href: join(["/iam/v1/orgs/", $task["target_org_id"], "/access-rules/grant"]),
-            #   headers: {
-            #     "Content-Type": "application/json"
-            #   },
-            #   body: $role_payload
-            # )
             $request = {
               auth: $$auth_flexera,
               url: join(["https://api.flexera.com/iam/v1/orgs/", $task["target_org_id"], "/access-rules/grant"]),
@@ -915,80 +930,87 @@ define sync_groups($data, $rs_org_id) do
 
       # Sync members
       foreach $member in $task["members"] do
-        # Skip adding user to group if they are already a member
-        if $member["action"] == "skip"
-          $$debug << "Member exists, skipping adding user "+$member["user_id"]+" in org "+$task["target_org_id"]+" group "+$task["target_group_name"]
-        elsif $member["action"] == "invite_pending"
-          $$debug << "User "+$member["user_details"]["email"]+" has existing invite pending to org "+$task["target_org_id"]+" group "+$task["target_group_name"]+" with invitation ID "+$member["invitation_id"]+" and expires at "+to_s($member["invite_expires"])
-        elsif $member["action"] == "invite_user"
-          # User already exists in platform, so we only need to provide email
-          $invite_payload = {
-            "email": $member["user_details"]["email"],
-            "first_name": $member["user_details"]["firstName"],
-            "last_name": $member["user_details"]["lastName"]
-          }
-          $child_member = http_request(
-            auth: $$auth_flexera,
-            verb: "post",
-            https: true,
-            host: "api.flexera.com",
-            href: join(["/iam/v1/orgs/", $task["target_org_id"], "/users"]),
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: $invite_payload
-          )
-          if $child_member["code"] == 404 && $child_member["body"]["message"] == "no IDPs found in org "+$task["target_org_id"]
-            $$debug << "No Identity Providers found in org "+$task["target_org_id"]+" to directly add user user "+$member["user_details"]["email"]+". Attempting to use invite flow"
+        sub on_error: handle_error() do
+          # Skip adding user to group if they are already a member
+          if $member["action"] == "skip"
+            $$debug << "Member exists, skipping adding user "+$member["user_id"]+" in org "+$task["target_org_id"]+" group "+$task["target_group_name"]
+          elsif $member["action"] == "invite_pending"
+            $$debug << "User "+$member["user_details"]["email"]+" has existing invite pending to org "+$task["target_org_id"]+" group "+$task["target_group_name"]+" with invitation ID "+$member["invitation_id"]+" and expires at "+to_s($member["invite_expires"])
+          elsif $member["action"] == "invite_user"
+            # Attempt to directly add the user to the Child Org
+            # We will handle errors gracefully if the Child Org is not configured to allow directly adding the user to the Org
             $invite_payload = {
-              "groupIds": [
-                to_n($child_group_id)
-              ],
-              "inviteeEmail": $member["user_details"]["email"]
+              "email": $member["user_details"]["email"],
+              "first_name": $member["user_details"]["firstName"],
+              "last_name": $member["user_details"]["lastName"]
             }
             $child_member = http_request(
               auth: $$auth_flexera,
               verb: "post",
               https: true,
               host: "api.flexera.com",
-              href: join(["/iam/v1/orgs/", $task["target_org_id"], "/invitations"]),
+              href: join(["/iam/v1/orgs/", $task["target_org_id"], "/users"]),
               headers: {
                 "Content-Type": "application/json"
               },
               body: $invite_payload
             )
-            if $child_member["code"] != 201
-              raise "Error inviting user "+to_json($child_member)+" with payload "+to_json($invite_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/invitations"])
+            if $child_member["code"] == 400 && $child_member["body"]["name"] == "conflict"
+              $$debug << $child_member["body"]["message"]
+            elsif $child_member["code"] == 404 && $child_member["body"]["message"] == "no IDPs found in org "+$task["target_org_id"]
+              # If the error code is 404, and message contains "no IDPs found in org", then the child org is not configured to allow direct user addition
+              $$debug << "No Identity Providers found in org "+$task["target_org_id"]+" to directly add user user "+$member["user_details"]["email"]+". Attempting to use invite flow"
+              # We can attempt to invite the user to the org, which requires no IdP Configuration
+              $invite_payload = {
+                "groupIds": [
+                  to_n($child_group_id)
+                ],
+                "inviteeEmail": $member["user_details"]["email"]
+              }
+              $child_member = http_request(
+                auth: $$auth_flexera,
+                verb: "post",
+                https: true,
+                host: "api.flexera.com",
+                href: join(["/iam/v1/orgs/", $task["target_org_id"], "/invitations"]),
+                headers: {
+                  "Content-Type": "application/json"
+                },
+                body: $invite_payload
+              )
+              if $child_member["code"] != 201
+                raise "Error inviting user "+to_json($child_member)+" with payload "+to_json($invite_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/invitations"])
+              else
+                $$debug << "Success inviting user "+$member["user_details"]["email"]+" to org "+$task["target_org_id"]+" to group "+$child_group_id  # For debug
+              end
+            elsif $child_member["code"] != 200
+              raise "Error adding user "+to_json($child_member)+" with payload "+to_json($invite_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/users"])
             else
-              $$debug << "Success inviting user "+$member["user_details"]["email"]+" to org "+$task["target_org_id"]+" to group "+$child_group_id  # For debug
+              $$debug << "Success adding user "+$member["user_details"]["email"]+" to org "+$task["target_org_id"]  # For debug
             end
-          elsif $child_member["code"] != 200
-            raise "Error adding user "+to_json($child_member)+" with payload "+to_json($invite_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/users"])
           else
-            $$debug << "Success adding user "+$member["user_details"]["email"]+" to org "+$task["target_org_id"]  # For debug
-          end
-        else
-          # Else matches "create"
-          $member_payload = {
-            "userIds": [
-              to_n($member["user_id"])
-            ]
-          }
-          $child_member = http_request(
-            auth: $$auth_flexera,
-            verb: "post",
-            https: true,
-            host: "api.flexera.com",
-            href: join(["/iam/v1/orgs/", $task["target_org_id"], "/groups/", $child_group_id, "/memberships"]),
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: $member_payload
-          )
-          if $child_member["code"] != 201
-            raise "Error adding user to group "+to_json($child_member)+" on with payload "+to_json($member_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/groups/", $child_group_id, "/memberships"])
-          else
-            $$debug << "Success adding user "+$member["user_id"]+" to group "+$child_group_ref # For debug
+            # Else matches "create"
+            $member_payload = {
+              "userIds": [
+                to_n($member["user_id"])
+              ]
+            }
+            $child_member = http_request(
+              auth: $$auth_flexera,
+              verb: "post",
+              https: true,
+              host: "api.flexera.com",
+              href: join(["/iam/v1/orgs/", $task["target_org_id"], "/groups/", $child_group_id, "/memberships"]),
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: $member_payload
+            )
+            if $child_member["code"] != 201
+              raise "Error adding user to group "+to_json($child_member)+" on with payload "+to_json($member_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/groups/", $child_group_id, "/memberships"])
+            else
+              $$debug << "Success adding user "+$member["user_id"]+" to group "+$child_group_ref # For debug
+            end
           end
         end
       end
