@@ -430,10 +430,12 @@ changed_pt_files.each do |file|
     test = policy_bad_metadata?(file, file_parsed, "category"); failures << test if test
     test = policy_bad_metadata?(file, file_parsed, "default_frequency"); failures << test if test
     test = policy_bad_metadata?(file, file_parsed, "severity"); failures << test if test
-    test = policy_bad_metadata?(file, file_parsed, "info"); failures << test if test
 
-    # Raise errors or warnings if bad info block metadata is found
-    if !test
+    # First test if info block is missing, then test if it has bad metadata
+    info_test = policy_bad_metadata?(file, file_parsed, "info"); failures << info_test if info_test
+    # If info block exists, test for bad metadata in it
+    if !info_test
+      # Raise errors or warnings if bad info block metadata is found
       info_test = policy_missing_info_field?(file, file_parsed, "version"); failures << info_test if info_test
       info_test = policy_missing_info_field?(file, file_parsed, "provider"); failures << info_test if info_test
       info_test = policy_missing_info_field?(file, file_parsed, "service"); warnings << info_test if info_test
