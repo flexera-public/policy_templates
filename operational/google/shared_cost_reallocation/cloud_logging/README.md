@@ -1,53 +1,58 @@
-# Shared Cost Reallocation - AWS Support
+# Shared Cost Reallocation - Google Cloud Logging
 
 ## What It Does
 
-This policy template reallocates AWS Support costs (`OCBPremiumSupport`, `AWSEnterpriseSupport`, `AWSSupportBusiness`, `AWSSupportEnterprise`) to the AWS Linked Accounts within the AWS Organization.  Costs are allocated to each AWS Linked Account based on the percentage of total that account consumed in the bill period.
+This policy template reallocates Google Cloud Logging costs from centralized logging project(s) to the projects where the logs originated from. Costs are allocated to each project based on their actual Cloud Logging usage (bytes ingested) during the billing period.
 
-To reallocate the costs, the policy template uses Flexera's "Common Bill Ingest" (CBI) capability to negate the original cost allocated to the AWS Master Payer Account with negative cost line items, and write the reallocated portions of costs as new line items.
+To reallocate the costs, the policy template uses Flexera's "Common Bill Ingest" (CBI) capability to negate the original cost allocated to the centralized logging project(s) with negative cost line items, and write the reallocated portions as new line items.
 
-For example, if you are currently paying $15,000 per month for AWS Enterprise Support, those costs are being charged to your AWS Master Account (example ID `123456789012`).  This policy template would push new line items in, first the negative cost line item for -$15,000 allocated to `123456789012`, and in addition N number of line items that sum up to positive +$15,000.
+For example, if you are paying $10,000 per month for Cloud Logging in your centralized logging project (example ID `gcp-logging-nonprod`), those costs are being charged to that project. This policy template would push new line items in - first a negative cost line item for -$10,000 allocated to `gcp-logging-nonprod`, and then N number of line items that sum up to positive +$10,000 distributed across all projects based on their logging usage.
 
 ### Example Scenario
 
 #### Before Reallocation
 
-Let's assume you have three AWS Linked Accounts under your AWS Organization:
+Let's assume you have a centralized logging setup with:
 
-- **Master Payer Account** (ID: `123456789012`)
-- **Linked Account A** (ID: `234567890123`)
-- **Linked Account B** (ID: `345678901234`)
-- **Linked Account C** (ID: `456789012345`)
+- **Central Logging Project** (ID: `gcp-logging-nonprod`)
+- **Project A** (ID: `project-a-123`)
+- **Project B** (ID: `project-b-456`)
+- **Project C** (ID: `project-c-789`)
 
-In the current billing setup, the entire AWS Support cost of $15,000 is allocated to the Master Payer Account (`123456789012`).
+In the current billing setup, the entire Cloud Logging cost of $10,000 is allocated to the Central Logging Project (`gcp-logging-nonprod`).
 
 #### After Reallocation
 
-After applying this policy, the AWS Support costs are reallocated based on the percentage of total consumption by each Linked Account. For example:
+After applying this policy, the Cloud Logging costs are reallocated based on each project's actual logging usage:
 
-- **Linked Account A** consumed 50% of the total usage.
-- **Linked Account B** consumed 30% of the total usage.
-- **Linked Account C** consumed 20% of the total usage.
+- **Project A** ingested 50% of the total logs (500GB)
+- **Project B** ingested 30% of the total logs (300GB)
+- **Project C** ingested 20% of the total logs (200GB)
 
 The reallocated costs would be:
 
-- **Master Payer Account**: -$15,000 (negative cost line item)
-- **Linked Account A**: +$7,500 (50% of $15,000)
-- **Linked Account B**: +$4,500 (30% of $15,000)
-- **Linked Account C**: +$3,000 (20% of $15,000)
+- **Central Logging Project**: -$10,000 (negative cost line item)
+- **Project A**: +$5,000 (50% of $10,000)
+- **Project B**: +$3,000 (30% of $10,000)
+- **Project C**: +$2,000 (20% of $10,000)
 
 ### Positive Business Outcomes
 
-- **Accurate Cost Allocation**: Ensures that each AWS Linked Account is charged accurately based on their actual usage, promoting accountability and cost transparency.
+- **Accurate Cost Allocation**: Ensures that each project is charged accurately based on their actual Cloud Logging usage, promoting accountability and cost transparency.
 - **Simplified Billing**: Reduces the complexity of internal chargeback and financial reporting by automating the reallocation process.
-- **Cost Optimization**: Encourages AWS Linked Accounts to optimize their usage and reduce unnecessary costs, as they are directly accountable for their share of the AWS Support costs.
+- **Cost Optimization**: Encourages projects to optimize their logging configuration and reduce unnecessary logs, as they are directly accountable for their share of the logging costs.
 
 ## Input Parameters
 
 - *Bill Connect ID* - Bill Connect ID to use for reallocating costs. Usually does not need to be changed, will be created if not exists.
+
+- *Centralized Logging Projects* - List of centralized logging projects to reallocate costs from. Costs will be reallocated to the project where the logs were sourced from. At least 1 project is required. Can be specified using Project Name or Project ID.
+
 - *Billing Period* - Billing Period this applied policy will update. Allowed values: *"Previous Month"*, *"Current Month"*, *"Specific Month"*. If *"Specific Month"* is selected, use the *"Billing Period - Specific Month"* parameter to specify the month in \"YYYY-MM\" format.
-- *Billing Period - Specific Month* - If *"Specific Month"* is selected for Billing Period, use this parameter to specify the month in `YYYY-MM` format. Example: 2024-01.  This is intended to be used for backfilling/reprocessing reallocation for previous months.
-- *Reallocated Cost Granularity* - Reallocated Cost Granularity configures the granularity for the new line items. Typically "Day" is preferred.  For some extremely large environments, you may need to change this to 'Month' to prevent Policy Engine timeouts.
+
+- *Billing Period - Specific Month* - If *"Specific Month"* is selected for Billing Period, use this parameter to specify the month in `YYYY-MM` format. Example: 2024-01. This is intended to be used for backfilling/reprocessing reallocation for previous months.
+
+- *Reallocated Cost Granularity* - Reallocated Cost Granularity configures the granularity for the new line items. Typically "Day" is preferred. For some extremely large environments, you may need to change this to 'Month' to prevent Policy Engine timeouts.
 
 ## Policy Actions
 
@@ -66,13 +71,19 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `billing_center_viewer`
   - `org_owner`*
 
-  \* The `org_owner` role is only required if the Bill Connect does not already exist.  If the Bill Connect already exists, the `org_owner` role is not required.
+  \* The `org_owner` role is only required if the Bill Connect does not already exist. If the Bill Connect already exists, the `org_owner` role is not required.
+
+- [**Google Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=gce*) with the following permissions:
+  - `cloudresourcemanager.projects.get`
+  - `cloudresourcemanager.projects.list`
+  - `compute.regions.list`
+  - `monitoring.timeSeries.list`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
-- AWS
+- Google Cloud
 
 ## Cost
 
