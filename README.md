@@ -57,6 +57,7 @@ These templates can generate savings estimates for your environment.
 
 #### Azure
 
+- [Azure Data Lake Optimization](./cost/azure/data_lake_optimization)
 - [Azure Databricks Rightsize Compute Instances](./cost/azure/databricks/rightsize_compute)
 - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances)
@@ -266,6 +267,7 @@ These templates can generate savings estimates for your environment.
   - [AWS Oversized S3 Buckets](./cost/aws/s3_bucket_size)
   - [AWS S3 Buckets Without Intelligent Tiering](./cost/aws/s3_storage_policy)
   - [AWS S3 Buckets Without Lifecycle Configuration](./cost/aws/s3_lifecycle)
+  - [AWS S3 Incomplete Multi-Part Uploads](./cost/aws/s3_multipart_uploads)
   - [Turbonomic Delete Unattached Volumes Recommendations AWS](./cost/turbonomics/delete_unattached_volumes/aws)
 
 - Usage Discount
@@ -354,6 +356,7 @@ These templates can generate savings estimates for your environment.
 
 - Storage Accounts
 
+  - [Azure Data Lake Optimization](./cost/azure/data_lake_optimization)
   - [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management)
 
 - Usage Discount
@@ -387,16 +390,15 @@ These templates can generate savings estimates for your environment.
   - [Low Usage Report](./cost/flexera/cco/low_usage)
   - [New Usage](./cost/flexera/cco/new_usage)
   - [Scheduled Report](./cost/flexera/cco/scheduled_reports)
+  - [Scheduled Report for Unallocated Costs](./cost/flexera/cco/scheduled_report_unallocated)
   - [Superseded Instances](./cost/flexera/cco/superseded_instance)
   - [Vendor Spend Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
 
 - Common Bill Ingestion
 
+  - [Common Bill Ingestion from AWS S3 Object Storage](./cost/flexera/cco/cbi_ingestion_aws_s3)
+  - [Common Bill Ingestion from Azure Blob Storage](./cost/flexera/cco/cbi_ingestion_azure_blob)
   - [Fixed Cost Common Bill Ingestion](./cost/flexera/cco/fixed_cost_cbi)
-
-#### Flexera Optima
-
-- [Scheduled Report for Unallocated Costs](./cost/flexera/cco/scheduled_report_unallocated)
 
 #### GCE
 
@@ -523,6 +525,9 @@ These templates can generate savings estimates for your environment.
 
 - IT Asset Management
 
+  - [ITAM Asset Report](./operational/flexera/itam/asset_report)
+  - [ITAM Installed Application Report](./operational/flexera/itam/installed_app_report)
+  - [ITAM License Report](./operational/flexera/itam/license_report)
   - [Schedule ITAM Report](./operational/flexera/itam/schedule_itam_report)
 
 - Identity & Access Management
@@ -718,11 +723,11 @@ These templates can generate savings estimates for your environment.
 ---
 :categories:
   Compliance: 34
-  Cost: 136
-  Operational: 32
+  Cost: 140
+  Operational: 35
   SaaS Management: 11
   Security: 74
-:optimization_count: 71
+:optimization_count: 72
 :policy_sets:
   '': 49
   Allocate VMs: 3
@@ -731,9 +736,10 @@ These templates can generate savings estimates for your environment.
   Burstable Compute Instances: 1
   CIS: 61
   Cheaper Regions: 3
-  Cloud Cost Optimization: 15
+  Cloud Cost Optimization: 16
   Committed Use Discount: 2
-  Common Bill Ingestion: 3
+  Common Bill Ingestion: 5
+  Data Lake Optimization: 1
   Database Services: 1
   Databricks: 1
   Deprecated Resources: 1
@@ -743,6 +749,7 @@ These templates can generate savings estimates for your environment.
   GP3 Volumes: 1
   Hybrid Use Benefit: 5
   IT Asset Management: 5
+  ITAM Report: 3
   Identity & Access Management: 5
   Idle Compute Instances: 4
   Idle NAT Gateways: 1
@@ -789,11 +796,10 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 7
   Usage Report: 10
 :providers:
-  AWS: 103
-  Azure: 104
+  AWS: 104
+  Azure: 105
   Azure China: 1
-  Flexera: 41
-  Flexera Optima: 1
+  Flexera: 47
   GCE: 2
   GitHub: 7
   Google: 22
@@ -803,14 +809,14 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   ServiceNow: 1
 :services:
-  '': 6
+  '': 5
   AKS: 2
   All: 6
   App Service: 1
   Automation: 2
-  Cloud Cost Optimization: 19
+  Cloud Cost Optimization: 20
   CloudTrail: 8
-  Common Bill Ingestion: 3
+  Common Bill Ingestion: 5
   Compute: 80
   Config: 1
   DBS: 1
@@ -821,7 +827,7 @@ These templates can generate savings estimates for your environment.
   FlexNet Manager: 1
   Git: 7
   IAM: 20
-  IT Asset Management: 6
+  IT Asset Management: 9
   Identity & Access Management: 3
   KMS: 1
   Kubernetes: 2
@@ -840,11 +846,11 @@ These templates can generate savings estimates for your environment.
   SQL: 20
   SaaS Manager: 8
   Security: 3
-  Storage: 30
-  Storage Accounts: 2
+  Storage: 31
+  Storage Accounts: 3
   Tags: 3
   Usage Discount: 6
-:total_count: 287
+:total_count: 294
 -->
 <!-- End Policy Template Stats -->
 

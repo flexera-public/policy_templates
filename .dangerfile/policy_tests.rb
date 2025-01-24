@@ -533,6 +533,7 @@ def policy_readme_missing_credentials?(file, file_lines)
   flexera_regex = /(?i)(?=.*flexera)(?=.*credential)(?=.*provider=flexera).*/
   aws_regex = /(?i)(?=.*aws)(?=.*credential)(?=.*provider=aws).*/
   azure_regex = /(?i)(?=.*azure)(?=.*credential)(?=.*provider=azure_rm).*/
+  azure_storage_regex = /(?i)(?=.*azure)(?=.*credential)(?=.*provider=azure_storage).*/
   google_regex = /(?i)(?=.*google)(?=.*credential)(?=.*provider=gce).*/
   oracle_regex = /(?i)(?=.*oracle)(?=.*credential)(?=.*provider=oracle).*/
 
@@ -541,7 +542,7 @@ def policy_readme_missing_credentials?(file, file_lines)
 
     readme_flexera_credential = true if line.strip.match?(flexera_regex)
     readme_aws_credential = true if line.strip.match?(aws_regex)
-    readme_azure_credential = true if line.strip.match?(azure_regex) && !line.include?("Azure China")
+    readme_azure_credential = true if (line.strip.match?(azure_regex) || line.strip.match?(azure_storage_regex)) && !line.include?("Azure China")
     readme_google_credential = true if line.strip.match?(google_regex)
     readme_oracle_credential = true if line.strip.match?(oracle_regex)
   end
@@ -1465,9 +1466,9 @@ def policy_console_log?(file, file_lines)
 
   file_lines.each_with_index do |line, index|
     line_number = index + 1
-    # Check if the line contains the "console.log" function
-    # Also check if the line is not a comment (regex match /\A\/\//)
-    fail_message += "Line #{line_number.to_s}\n" if (line.include?("console.log") && !line.strip.start_with?("//"))
+    # Exclude the line if it contains the specific phrase `// Excluded from console.log test.*`
+    next if line.include?("// Excluded from console.log test")
+    fail_message += "Line #{line_number.to_s}\n" if line.include?("console.log")
   end
 
   fail_message = "Policy Template has console.log() statements. These are used for debugging and should not be present in catalog policy templates:\n\n" + fail_message if !fail_message.empty?

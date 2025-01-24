@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.5.2",
+  version: "5.6.0",
   provider: "AWS",
   service: "RDS",
   policy_set: "Rightsize Database Instances",
@@ -762,7 +762,7 @@ script "js_cloudwatch_idle_queries", type: "javascript" do
   code <<-EOS
   queries = {}
   metric = "DatabaseConnections"
-  statistic = "Average"
+  statistic = "Sum"
   lookback = param_stats_lookback * 86400
 
   _.each(ds_rds_instances_to_check, function(resource) {
@@ -869,72 +869,77 @@ script "js_cloudwatch_idle_data", type: "javascript" do
 EOS
 end
 
-datasource "ds_rds_idle_instances" do
-  run_script $js_rds_idle_instances, $ds_rds_instances_to_check, $ds_cloudwatch_idle_data, $ds_instance_costs_grouped
+datasource "ds_rds_instances_with_connections" do
+  run_script $js_rds_instances_with_connections, $ds_rds_instances_to_check, $ds_cloudwatch_idle_data, $param_stats_lookback
 end
 
-script "js_rds_idle_instances", type: "javascript" do
-  parameters "ds_rds_instances_to_check", "ds_cloudwatch_idle_data", "ds_instance_costs_grouped"
+script "js_rds_instances_with_connections", type: "javascript" do
+  parameters "ds_rds_instances_to_check", "ds_cloudwatch_idle_data", "param_stats_lookback"
   result "result"
   code <<-EOS
-  result = []
   cloudwatch_activity = {}
 
   _.each(ds_cloudwatch_idle_data, function(item) {
     instance_name = item['label'].split(' ')[0].toLowerCase()
 
-    if (cloudwatch_activity[instance_name] == undefined) {
-      cloudwatch_activity[instance_name] = 0
-    }
+    if (cloudwatch_activity[instance_name] == undefined) { cloudwatch_activity[instance_name] = 0 }
 
     if (typeof(item['values']) == 'object') {
-      _.each(item['values'], function(value) {
-        cloudwatch_activity[instance_name] += value
-      })
+      _.each(item['values'], function(value) { cloudwatch_activity[instance_name] += value })
     }
   })
 
-  _.each(ds_rds_instances_to_check, function(instance) {
+  result = _.map(ds_rds_instances_to_check, function(instance) {
     cloudwatch_name = instance['name'].toLowerCase()
     instance_activity = cloudwatch_activity[cloudwatch_name]
+    if (instance_activity == undefined) { instance_activity = 0 }
+
+    new_instance = {}
+    _.each(_.keys(instance), function(key) { new_instance[key] = instance[key] })
+
+    new_instance['connectionsTotal'] = instance_activity
+    new_instance['connectionsAverage'] = instance_activity / param_stats_lookback
+
+    return new_instance
+  })
+EOS
+end
+
+datasource "ds_rds_idle_instances" do
+  run_script $js_rds_idle_instances, $ds_rds_instances_with_connections, $ds_instance_costs_grouped
+end
+
+script "js_rds_idle_instances", type: "javascript" do
+  parameters "ds_rds_instances_with_connections", "ds_instance_costs_grouped"
+  result "result"
+  code <<-EOS
+  idle_instances = _.filter(ds_rds_instances_with_connections, function(instance) {
+    return instance['connectionsTotal'] == 0
+  })
+
+  result = _.map(idle_instances, function(instance) {
+    new_instance = {}
+    _.each(_.keys(instance), function(key) { new_instance[key] = instance[key] })
+
     savings_name = "db:" + instance['name'].toLowerCase()
-    savings = 0.0
+    new_instance['savings'] = 0.0
 
     if (typeof(ds_instance_costs_grouped[savings_name]) == 'number') {
-      savings = ds_instance_costs_grouped[savings_name]
+      new_instance['savings'] = ds_instance_costs_grouped[savings_name]
     }
 
-    if (instance_activity == undefined || instance_activity == 0) {
-      result.push({
-        instanceId: instance['instanceId'],
-        instanceArn: instance['instanceArn'],
-        resourceType: instance['resourceType'],
-        name: instance['name'],
-        status: instance['status'],
-        databaseEngine: instance['databaseEngine'],
-        engineVersion: instance['engineVersion'],
-        privateDnsName: instance['privateDnsName'],
-        region: instance['region'],
-        tags: instance['tags'],
-        availabilityZone: instance['availabilityZone'],
-        licenseModel: instance['licenseModel'],
-        processorFeatures: instance['processorFeatures'],
-        vcpus: instance['vcpus'],
-        savings: savings,
-        instance_activity: instance_activity
-      })
-    }
+    return new_instance
   })
 EOS
 end
 
 # Filter for instances already determined to be idle to avoid unnecessary CloudWatch queries
 datasource "ds_rds_nonidle_instances" do
-  run_script $js_rds_nonidle_instances, $ds_rds_instances, $ds_rds_idle_instances, $param_unused_or_underutilized
+  run_script $js_rds_nonidle_instances, $ds_rds_instances_with_connections, $ds_rds_idle_instances, $param_unused_or_underutilized
 end
 
 script "js_rds_nonidle_instances", type: "javascript" do
-  parameters "ds_rds_instances", "ds_rds_idle_instances", "param_unused_or_underutilized"
+  parameters "ds_rds_instances_with_connections", "ds_rds_idle_instances", "param_unused_or_underutilized"
   result "result"
   code <<-EOS
   result = []
@@ -942,7 +947,7 @@ script "js_rds_nonidle_instances", type: "javascript" do
   if (param_unused_or_underutilized != "Unused") {
     idle_resources = _.pluck(ds_rds_idle_instances, 'instanceId')
 
-    result = _.reject(ds_rds_instances, function(instance) {
+    result = _.reject(ds_rds_instances_with_connections, function(instance) {
       return _.contains(idle_resources, instance['instanceId'])
     })
   }
@@ -1191,7 +1196,7 @@ script "js_rds_nonidle_instances_with_metrics", type: "javascript" do
     cloudwatch_name = instance['name'].toLowerCase()
 
     // Only proceed if the CloudWatch data actually has the region and instance id.
-    // Otherwise, we have no usage data on the instance and thus dont include it in the results.
+    // Otherwise, we have no usage data on the instance and don't include it in the results.
     if (ds_cloudwatch_underutil_cpu_sorted[region] && ds_cloudwatch_underutil_cpu_sorted[region][cloudwatch_name]) {
       instance_cpu_metrics = ds_cloudwatch_underutil_cpu_sorted[region][cloudwatch_name]
       instance_mem_metrics = ds_cloudwatch_underutil_mem_sorted[region][cloudwatch_name]
@@ -1199,22 +1204,8 @@ script "js_rds_nonidle_instances_with_metrics", type: "javascript" do
       instance_netout_metrics = ds_cloudwatch_underutil_netout_sorted[region][cloudwatch_name]
 
       // Create object we're going to return
-      merged_instance = {
-        instanceId: instance['instanceId'],
-        instanceArn: instance['instanceArn'],
-        resourceType: instance['resourceType'],
-        name: instance['name'],
-        status: instance['status'],
-        databaseEngine: instance['databaseEngine'],
-        engineVersion: instance['engineVersion'],
-        privateDnsName: instance['privateDnsName'],
-        region: instance['region'],
-        tags: instance['tags'],
-        availabilityZone: instance['availabilityZone'],
-        licenseModel: instance['licenseModel'],
-        processorFeatures: instance['processorFeatures'],
-        vcpus: instance['vcpus']
-      }
+      merged_instance = {}
+      _.each(_.keys(instance), function(key) { merged_instance[key] = instance[key] })
 
       // Grab usage data for the instance if it is present.
       // Note: We don't simply name them the same as Cloudwatch does because
@@ -1434,21 +1425,28 @@ script "js_rds_idle_incident", type: "javascript" do
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
-  function formatNumber(number, separator){
-    numString = number.toString()
-    values = numString.split(".")
-    formatted_number = ''
+  function formatNumber(number, separator) {
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   result = []
@@ -1484,6 +1482,8 @@ script "js_rds_idle_incident", type: "javascript" do
         availabilityZone: instance['availabilityZone'],
         licenseModel: instance['licenseModel'],
         processorFeatures: instance['processorFeatures'],
+        connectionsTotal: instance['connectionsTotal'],
+        connectionsAverage: instance['connectionsAverage'],
         vcpus: instance['vcpus'],
         savings: Math.round(savings * 1000) / 1000,
         savingsCurrency: ds_currency['symbol'],
@@ -1556,21 +1556,28 @@ script "js_rds_underutil_incident", type: "javascript" do
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
-  function formatNumber(number, separator){
-    numString = number.toString()
-    values = numString.split(".")
-    formatted_number = ''
+  function formatNumber(number, separator) {
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   result = []
@@ -1607,6 +1614,8 @@ script "js_rds_underutil_incident", type: "javascript" do
         databaseEngine: instance['databaseEngine'],
         platform: instance['databaseEngine'],
         engineVersion: instance['engineVersion'],
+        connectionsTotal: instance['connectionsTotal'],
+        connectionsAverage: instance['connectionsAverage'],
         cpuMaximum: instance['cpu_maximum'],
         cpuMinimum: instance['cpu_minimum'],
         cpuAverage: instance['cpu_average'],
@@ -1754,6 +1763,9 @@ policy "pol_rightsize_rds" do
       field "newResourceType" do
         label "Recommended Resource Type"
       end
+      field "connectionsAverage" do
+        label "Connections (Daily)"
+      end
       field "cpuMaximum" do
         label "CPU Maximum %"
       end
@@ -1884,6 +1896,9 @@ policy "pol_rightsize_rds" do
       end
       field "newResourceType" do
         label "Recommended Resource Type"
+      end
+      field "connectionsAverage" do
+        label "Connections (Daily)"
       end
       field "databaseEngine" do
         label "Database Engine"

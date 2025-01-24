@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v4.2.0
 
 - Added `Resource Hourly Cost` and `Currency` to incident table for added context

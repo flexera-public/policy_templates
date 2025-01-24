@@ -52,7 +52,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `ec2:DescribeRegions`
   - `tag:GetResources`
   - `tag:TagResources`*
-  - `organizations:TagResources`*
+  - `organizations:TagResource`*
 
   \* Only required for taking action (adding tags); the policy will still function in a read-only capacity without these permissions.
 
@@ -69,7 +69,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
                   "ec2:DescribeRegions",
                   "tag:GetResources",
                   "tag:TagResources",
-                  "organizations:TagResources"
+                  "organizations:TagResource"
               ],
               "Resource": "*"
           }
