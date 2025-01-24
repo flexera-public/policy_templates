@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0.3
+
+- Fixed error that caused showing negative values at the incident fields for memory statistics for recently rightsized instances. Functionality unchanged.
+
 ## v6.0.2
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
