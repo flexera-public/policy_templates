@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template reports on any Flexera Cloud Cost Optimization bill connections that are in an error state, have not successfully processed a bill for the user-specified number of hours or have no bills (which may be caused by a misconfiguration in the connection). Optionally, this report can be emailed.
+This policy template reports on any Flexera Cloud Cost Optimization bill connections that are in an error state, have not successfully processed a bill for the user-specified number of hours or have no bills which may be caused by a misconfiguration in the connection. Optionally, this report can be emailed.
 
 ## Input Parameters
 

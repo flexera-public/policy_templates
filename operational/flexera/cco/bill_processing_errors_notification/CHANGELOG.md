@@ -2,7 +2,7 @@
 
 ## v2.5.2
 
-- Added a new error identify and report connections with no bills (misconfigured connections).
+- Added a new error to identify and report connections with no bills.
 
 ## v2.5.1
 
