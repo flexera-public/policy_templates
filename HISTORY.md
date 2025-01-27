@@ -6,6 +6,20 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2911](https://github.com/flexera-public/policy_templates/pull/2911): POL-1441 ITAM Reporting Policies
+
+#### Description
+
+> This creates 3 new policy templates for ITAM to report on asset, licenses, and installed applications. All are fairly simple but can serve both as basic reporting policies and as a springboard for more sophisticated ITAM policies down the road.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2911) for these details.
+- **Merged At**: 2025-01-23 13:28:22 UTC
+
+---
+
 ### PR [#2921](https://github.com/flexera-public/policy_templates/pull/2921): FOPTS-6693 Fix conversion issue that stops policy execution
 
 #### Description
@@ -1697,22 +1711,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/README.md)
 - **Merged At**: 2024-08-20 13:21:54 UTC
-
----
-
-### PR [#2531](https://github.com/flexera-public/policy_templates/pull/2531): POL-980 New AWS Load Balancer Policy Templates
-
-#### Description
-
-> This PR adds two new policy templates, `AWS Unused Application Load Balancers` and `AWS Unused Network Load Balancers`. It also modifies the existing `AWS Unused Classic Load Balancers` policy template to bring it more in alignment with the new policy templates.
->
-> I opted for 3 separate templates because there are enough differences between the three, especially when it comes to Classic vs App/Network, that a single policy template for all of them would be complex and cumbersome to maintain. The simplest way to offer users an intuitive experience while making the templates themselves maintainable was to simply have a separate policy template for each.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2531) for these details.
-- **Merged At**: 2024-08-19 18:05:12 UTC
 
 ---
 
