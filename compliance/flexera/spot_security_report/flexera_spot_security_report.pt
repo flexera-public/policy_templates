@@ -1,0 +1,381 @@
+name "Spot Security - Compliance Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Retrieves and reports on compliance findings from Spot Security."
+long_description ""
+category "Security"
+severity "low"
+default_frequency "daily"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "Spot Security",
+  policy_set: "Spot Security",
+  recommendation_type: "Security Findings",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "Email addresses to notify"
+  default []
+end
+
+parameter "param_spotinst_accounts_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Spot Accounts"
+  description "Allow or Deny entered Spot Accounts"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_spotinst_accounts_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Spot Accounts List"
+  description "A list of allowed or denied Spot Accounts"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_spotinst" do
+  schemes "api_key"
+  label "SpotInst"
+  description "Select the SpotInst Credential from the list."
+  tags "provider=spotinst"
+end
+
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_spot" do
+  get_page_marker do
+    body_path jq(response, ".response.paginationInfo.nextKey")
+  end
+  set_page_marker do
+    query "paginationKey"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# https://api.spotinst.io/setup/account
+# Docs: https://docs.spot.io/api/#tag/Accounts/operation/OrganizationsAndAccountsGetAccounts
+datasource "ds_spotinst_accounts" do
+  request do
+    auth $auth_spotinst
+    host "api.spotinst.io"
+    path "/setup/account"
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".response.items[]") do
+      # response field
+      field "account", jq(col_item, ".")
+    end
+  end
+end
+
+datasource "ds_spotinst_accounts_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_spotinst_accounts, $param_spotinst_accounts_allow_or_deny, $param_spotinst_accounts_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_spotinst_accounts", "param_spotinst_accounts_allow_or_deny", "param_spotinst_accounts_list"
+  result "result"
+  code <<-EOS
+  if (param_spotinst_accounts_list.length > 0) {
+    result = _.filter(ds_spotinst_accounts, function(subscription) {
+      include = _.contains(param_spotinst_accounts_list, subscription['account']['accountId']) || _.contains(param_spotinst_accounts_list, subscription['account']['name'])
+
+      if (param_spotinst_accounts_allow_or_deny == "Deny") {
+        include = include
+      }
+
+      return include
+    })
+  } else {
+    result = ds_spotinst_accounts
+  }
+EOS
+end
+
+datasource "ds_spot_compliances" do
+  # iterate $ds_spotinst_accounts_filtered
+  request do
+    auth $auth_spotinst
+    host "api.spotinst.io"
+    path "/security/v1/compliances"
+    # header "Content-Type", "application/json"
+    # query "accountId", val(val(iter_item,"account"), "accountId")
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".response.items[]") do
+      # iteration fields
+      # field "account", jq(iter_item, ".account")
+      # response field
+      field "compliance", jq(col_item, ".")
+    end
+  end
+end
+
+datasource "ds_spot_misconfigurations_aws" do
+  iterate $ds_spotinst_accounts_filtered
+  request do
+    auth $auth_spotinst
+    host "api.spotinst.io"
+    path "/security/v1/misconfigurations"
+    # header "Content-Type", "application/json"
+    query "accountId", val(val(iter_item,"account"), "accountId")
+    query "cloud", "aws"
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".response.items[]") do
+      # iteration fields
+      field "account", jq(iter_item, ".account")
+      # response field
+      field "misconfiguration", jq(col_item, ".")
+    end
+  end
+end
+
+datasource "ds_spot_misconfigurations_azure" do
+  iterate $ds_spotinst_accounts_filtered
+  request do
+    auth $auth_spotinst
+    host "api.spotinst.io"
+    path "/security/v1/misconfigurations"
+    # header "Content-Type", "application/json"
+    query "accountId", val(val(iter_item,"account"), "accountId")
+    query "cloud", "azure"
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".response.items[]") do
+      # iteration fields
+      field "account", jq(iter_item, ".account")
+      # response field
+      field "misconfiguration", jq(col_item, ".")
+    end
+  end
+end
+
+# datasource "ds_spot_assets_aws" do
+#   iterate $ds_spotinst_accounts_filtered
+#   request do
+#     auth $auth_spotinst
+#     pagination $pagination_spot
+#     host "api.spotinst.io"
+#     path "/security/v1/assets/filters/assetName"
+#     # header "Content-Type", "application/json"
+#     query "accountId", val(val(iter_item,"account"), "accountId")
+#     query "cloud", "aws"
+#   end
+#   result do
+#     encoding "json"
+#     collect jq(response, ".response.items[]") do
+#       # iteration fields
+#       field "account", jq(iter_item, ".account")
+#       # response field
+#       field "asset", jq(col_item, ".")
+#     end
+#   end
+# end
+
+# datasource "ds_spot_assets_azure" do
+#   iterate $ds_spotinst_accounts_filtered
+#   request do
+#     auth $auth_spotinst
+#     pagination $pagination_spot
+#     host "api.spotinst.io"
+#     path "/security/v1/assets/filters/assetName"
+#     # header "Content-Type", "application/json"
+#     query "accountId", val(val(iter_item,"account"), "accountId")
+#     query "cloud", "azure"
+#   end
+#   result do
+#     encoding "json"
+#     collect jq(response, ".response.items[]") do
+#       # iteration fields
+#       field "account", jq(iter_item, ".account")
+#       # response field
+#       field "asset", jq(col_item, ".")
+#     end
+#   end
+# end
+
+datasource "ds_security_report" do
+  run_script $js_security_report, $ds_spot_misconfigurations_aws, $ds_spot_misconfigurations_azure
+end
+
+script "js_security_report", type: "javascript" do
+  parameters "ds_spot_misconfigurations_aws", "ds_spot_misconfigurations_azure"
+  result "result"
+  code <<-EOS
+
+  var misconfigurations = [];
+  misconfigurations = misconfigurations.concat(ds_spot_misconfigurations_aws);
+  misconfigurations = misconfigurations.concat(ds_spot_misconfigurations_azure);
+  result = misconfigurations;
+
+  var totalFindings = misconfigurations.length;
+
+  // Process and organize compliance findings
+  // Group findings by severity
+  var severityGroups = _.groupBy(misconfigurations, function(finding){
+    return finding.misconfiguration.what.severity;
+  });
+  console.log(JSON.stringify(severityGroups))
+
+  // Group by cloud provider
+  var cloudGroups = _.groupBy(misconfigurations, function(finding){
+    return finding.account.cloudProvider;
+  });
+  console.log(JSON.stringify(cloudGroups))
+
+  // Group by service
+  var serviceGroups = _.groupBy(misconfigurations, function(finding){
+    return finding.misconfiguration.where.service;
+  });
+
+  var report = "# Spot Security Compliance Report\\n\\n";
+
+  // Executive Summary
+  report += "## Executive Summary\\n\\n";
+  report += "Total findings: "+totalFindings+"\\n\\n";
+
+  // Severity Distribution
+  report += "### Severity Distribution\\n\\n";
+  _.each(_.keys(severityGroups), function(severity){
+    var count = severityGroups[severity].length;
+    var percentage = ((count / totalFindings) * 100).toFixed(1);
+    report += "- "+severity+": "+count+" ("+percentage+"%)\\n";
+  })
+  report += "\\n";
+
+  // Cloud Provider Distribution
+  report += "### Cloud Provider Distribution\\n\\n";
+  _.each(_.keys(cloudGroups), function(cloud) {
+    var count = cloudGroups[cloud].length;
+    var percentage = ((count / totalFindings) * 100).toFixed(1);
+    report += "- "+cloud+": "+count+" ("+percentage+"%)\\n";
+  })
+  report += "\\n";
+
+  // Service Distribution
+  report += "### Service Distribution\\n\\n";
+  _.each(_.keys(serviceGroups), function(service) {
+    var count = serviceGroups[service].length;
+    var percentage = ((count / totalFindings) * 100).toFixed(1);
+    report += "- "+service.toUpperCase()+": "+count+" ("+percentage+"%)\\n";
+  })
+  report += "\\n";
+
+
+  // Detailed Findings
+  report += "## Detailed Findings\\n\\n";
+
+  // Group by severity for detailed listing
+  _.each(_.keys(severityGroups), function(severity){
+    report += "### "+severity+" Severity Findings\\n\\n";
+    _.each(severityGroups[severity], function(finding){
+      var f = finding.misconfiguration;
+      report += "#### "+f.what.ruleTitle+"\\n\\n";
+      report += "- **Service**: "+f.where.service.toUpperCase()+"\\n";
+      report += "- **Region**: "+f.where.region+"\\n";
+      report += "- **Asset**: "+f.where.assetName+" ("+f.where.assetType+")\\n";
+      report += "- **Account**: "+finding.account.name+"\\n";
+      report += "- **Description**: "+f.what.ruleDescription+"\\n";
+      report += "- **Last Seen**: "+f.when.lastSeen+"\\n\\n";
+    });
+  })
+
+  result = {
+    "markdown": report,
+    "findings": misconfigurations
+  };
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "spot_security_compliance_report" do
+  validate $ds_security_report do
+    summary_template "{{ len data.findings }} Security compliance findings discovered"
+    detail_template "{{ data.markdown }}"
+    check eq(size(val(data, "findings")), 0)
+    escalate $alert_email
+    export "findings" do
+      # resource_level true
+      field "rule_name" do
+      label "Rule Name"
+      path "misconfiguration.what.ruleName"
+      end
+      field "title" do
+      label "Finding Title"
+      path "misconfiguration.what.ruleTitle"
+      end
+      field "severity" do
+      label "Severity Level"
+      path "misconfiguration.what.severity"
+      end
+      field "description" do
+      label "Description"
+      path "misconfiguration.what.ruleDescription"
+      end
+      field "asset_name" do
+      label "Resource Name"
+      path "misconfiguration.where.assetName"
+      end
+      field "asset_type" do
+      label "Resource Type"
+      path "misconfiguration.where.assetType"
+      end
+      field "region" do
+      label "Region"
+      path "misconfiguration.where.region"
+      end
+      field "service" do
+      label "Cloud Service"
+      path "misconfiguration.where.service"
+      end
+      field "cloud_account" do
+      label "Cloud Account"
+      path "account.name"
+      end
+      field "last_seen" do
+      label "Last Detected"
+      path "misconfiguration.when.lastSeen"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "alert_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

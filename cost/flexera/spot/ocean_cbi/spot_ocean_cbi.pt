@@ -1,0 +1,933 @@
+name "Spot Ocean - Common Bill Ingest"
+rs_pt_ver 20180301
+type "policy"
+short_description "Exposted costs from [Spot Ocean Cluster Aggregated Detailed Costs API](https://docs.spot.io/api/#tag/Ocean-AWS/operation/oceanAwsK8sClusterAggregatedDetailedCosts) and pushes them into the [Flexera Optima Bill Upload API](https://reference.rightscale.com/optima-bill-upload/#/)"
+long_description ""
+category "Operational"
+severity "low"
+default_frequency "hourly"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "Kubernetes",
+  policy_set: "Common Bill Ingest",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_spotinst_accounts_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Spot Accounts"
+  description "Allow or Deny entered Spot Accounts. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_spotinst_accounts_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Spot Accounts List"
+  description "A list of allowed or denied Spot Accounts. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
+end
+
+parameter "param_period" do
+  type "string"
+  category "Billing Period Settings"
+  label "Billing Period"
+  description "Billing Period this applied policy will update. If \"Specific Month\" is selected, use the \"Billing Period - Specific Month\" parameter to specify the month in \"YYYY-MM\" format."
+  allowed_values "Previous Month", "Current Month", "Specific Month"
+  default "Previous Month"
+end
+
+parameter "param_period_specific_month" do
+  type "string"
+  category "Billing Period Settings"
+  label "Billing Period - Specific Month"
+  description "If \"Specific Month\" is selected for Billing Period, use this parameter to specify the month in \"YYYY-MM\" format."
+  constraint_description "Specific Month parameter must be in the format of YYYY-MM"
+  allowed_pattern /^(?:\d{4}-\d{2})?$/
+  default ""
+end
+
+parameter "param_reallocation_granularity" do
+  type "string"
+  category "Advanced Settings"
+  label "Reallocated Cost Granularity"
+  description "Reallocated Cost Granularity configures the granularity for the new line items. Typically \"Day\" is preferred.  For some extremely large environments, you may need to change this to 'Month' to prevent Policy Engine timeouts."
+  allowed_values "Day", "Month"
+  default "Day"
+end
+
+parameter "param_bill_connect_id" do
+  type "string"
+  category "Policy Settings"
+  label "Bill Connect ID"
+  description "Bill Connect ID to use for reallocating costs. Usually does not need to be changed, will be created if not exists."
+  allowed_pattern /cbi-oi-optima-[a-zA-Z0-9]+/
+  default "cbi-oi-optima-spot-ocean"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credential."
+  tags "provider=flexera"
+end
+
+credentials "auth_spotinst" do
+  schemes "api_key"
+  label "SpotInst"
+  description "Select the SpotInst Credential from the list."
+  tags "provider=spotinst"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# https://api.spotinst.io/setup/account
+# Docs: https://docs.spot.io/api/#tag/Accounts/operation/OrganizationsAndAccountsGetAccounts
+datasource "ds_spotinst_accounts" do
+  request do
+    auth $auth_spotinst
+    host "api.spotinst.io"
+    path "/setup/account"
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".response.items[]") do
+      # response field
+      field "account", jq(col_item, ".")
+    end
+  end
+end
+
+datasource "ds_spotinst_accounts_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_spotinst_accounts, $param_spotinst_accounts_allow_or_deny, $param_spotinst_accounts_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_spotinst_accounts", "param_spotinst_accounts_allow_or_deny", "param_spotinst_accounts_list"
+  result "result"
+  code <<-EOS
+  if (param_spotinst_accounts_list.length > 0) {
+    result = _.filter(ds_spotinst_accounts, function(subscription) {
+      include = _.contains(param_spotinst_accounts_list, subscription['account']['accountId']) || _.contains(param_spotinst_accounts_list, subscription['account']['name'])
+
+      if (param_spotinst_accounts_allow_or_deny == "Deny") {
+        include = include
+      }
+
+      return include
+    })
+  } else {
+    result = ds_spotinst_accounts
+  }
+EOS
+end
+
+# https://api.spotinst.io/ocean/aws/k8s/cluster
+# Docs: https://docs.spot.io/api/#tag/Ocean-AWS/operation/OceanAWSClusterList
+datasource "ds_spotinst_clusters" do
+  iterate $ds_spotinst_accounts_filtered
+  request do
+    auth $auth_spotinst
+    host "api.spotinst.io"
+    path "/ocean/aws/k8s/cluster"
+    query "accountId", val(val(iter_item,"account"), "accountId")
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".response.items[]") do
+      # iteration fields
+      field "account", jq(iter_item, ".account")
+      # response field
+      #field "cluster", jq(col_item, ".")
+      field "id", jq(col_item, ".id")
+      field "name", jq(col_item, ".name")
+      field "controllerClusterId", jq(col_item, ".controllerClusterId")
+      field "region", jq(col_item, ".region")
+      field "autoScaler", jq(col_item, ".autoScaler")
+      field "capacity", jq(col_item, ".capacity")
+      field "strategy", jq(col_item, ".strategy")
+      field "scheduling", jq(col_item, ".scheduling")
+      field "security", jq(col_item, ".security")
+      field "compute", jq(col_item, ".compute")
+      field "logging", jq(col_item, ".logging")
+      field "createdAt", jq(col_item, ".createdAt")
+      field "updatedAt", jq(col_item, ".updatedAt")
+    end
+  end
+end
+
+datasource "ds_dates" do
+  run_script $js_dates, $param_period, $param_period_specific_month, $param_reallocation_granularity
+end
+
+script "js_dates", type: "javascript" do
+  parameters "param_period", "param_period_specific_month", "param_reallocation_granularity"
+  result "result"
+  code <<-EOS
+    var today = new Date()
+    // Today minus 30 days
+    var one_month_ago = new Date(today)
+    one_month_ago.setMonth(one_month_ago.getMonth() - 1)
+
+
+    var start_date = new Date(one_month_ago.getFullYear(), one_month_ago.getMonth(), one_month_ago.getDate())
+    var end_date = new Date(one_month_ago.getFullYear(), one_month_ago.getMonth() + 1, one_month_ago.getDate())
+
+    start_date = start_date.toISOString().split('T')[0]
+    end_date = end_date.toISOString().split('T')[0]
+    var period = start_date.split('-')[0] + "-" + start_date.split('-')[1]
+
+    // Get number of days in the month
+    // Account for leap year and February
+    var numdays = new Date(end_date.split("-")[0], end_date.split("-")[1] - 1, 0).getDate()
+    var daysStrings = []
+    for (var i = 1; i <= numdays; i++) {
+      if (i < 10) {
+        daysStrings.push("0" + i)
+      } else {
+        daysStrings.push(i.toString())
+      }
+    }
+
+    var result = {
+      // Daily prefered to prevent issue when reconciling costs (would introduce diff looking at daily cost vs monthly cost)
+      start_date: start_date,
+      end_date: end_date,
+      today_date: today.toISOString().split('T')[0],
+      granularity: param_reallocation_granularity,
+      period: period, // YYYY-MM
+      numdays: numdays,
+    }
+
+    // Override if granularity is configured to Month
+    if (param_reallocation_granularity == "Month") {
+      result["granularity"] = "month",
+      // Parse just the YYYY-MM portion of the start_date and end_date
+      result["start_date"] = start_date.split('-')[0] + "-" + start_date.split('-')[1],
+      result["end_date"] = end_date.split('-')[0] + "-" + end_date.split('-')[1],
+      // If granularity is month, we can summarize the costs
+      // This will group everything by the dimensions specified and provide only 1 timestamp (the start_at date)
+      // This is OK because we only pull one month at a time so summarizing that 1 month period is fine
+      // Helps reduce the number of line items we have to process, and total policy runtime
+      result["summarized"] = "true"
+    }
+EOS
+end
+
+datasource "ds_date_periods" do
+  run_script $js_date_periods, $ds_dates
+end
+
+script "js_date_periods", type: "javascript" do
+  parameters "ds_dates"
+  result "result"
+  code <<-EOS
+  var result = []
+
+  if (ds_dates.granularity == "month") {
+    result.push({
+      start_date: ds_dates.start_date + " 00:00:00.000",
+      end_date: ds_dates.end_date + " 00:00:00.000",
+      summarized: "true"
+    })
+  } else {
+    // Else granularity is day
+    // Loop through each day in the month
+    for (var i = 1; i < ds_dates.numdays+1; i++) {
+      // shared function to construct the date string
+      function constructDateString(ds_dates, i) {
+        return ds_dates.period + "-" + (i < 10 ? "0" + i : i.toString()) + " 00:00:00.000"
+      }
+      // Set start date using the current day in the loop
+      var startDayString = constructDateString(ds_dates, i)
+      // End day is the next day
+      var endDayString = constructDateString(ds_dates, i+1)
+      // Handle if we are on the last day of the month already (31+1 is not a valid day)
+      // Set the endDayString using the end_date from ds_dates which is YYYY-MM-DD
+      if (i == ds_dates.numdays) {
+        endDayString = ds_dates.end_date + " 00:00:00.000"
+      }
+      result.push({
+        // 2025-01-06 00:00:00.000
+        start_date: startDayString,
+        end_date: endDayString,
+      })
+    }
+  }
+EOS
+end
+
+# Zip all the clusters and all the date periods into a single list
+datasource "ds_requests_spotinst_cluster_aggregated_costs" do
+ run_script $js_requests_spotinst_cluster_aggregated_costs, $ds_date_periods, $ds_spotinst_clusters
+end
+
+script "js_requests_spotinst_cluster_aggregated_costs", type: "javascript" do
+  parameters "ds_date_periods", "ds_spotinst_clusters"
+  result "result"
+  code <<-EOS
+  var result = []
+  _.each(ds_date_periods, function(date_period) {
+    _.each(ds_spotinst_clusters, function(spotinst_cluster) {
+      result.push({
+        spotinst_cluster: spotinst_cluster,
+        date_period: date_period,
+      })
+    })
+  })
+EOS
+end
+
+# https://api.spotinst.io/ocean/aws/k8s/cluster/{oceanClusterId}/aggregatedCosts
+# Docs: https://docs.spot.io/api/#tag/Ocean-AWS/operation/oceanAwsK8sClusterAggregatedDetailedCosts
+datasource "ds_spotinst_cluster_aggregated_costs" do
+  iterate $ds_requests_spotinst_cluster_aggregated_costs
+  request do
+    verb "POST"
+    auth $auth_spotinst
+    host "api.spotinst.io"
+    path join(["/ocean/aws/k8s/cluster/", val(val(iter_item,"spotinst_cluster"),"id"), "/aggregatedCosts"])
+    query "accountId", jq(iter_item,".spotinst_cluster.account.accountId")
+    body_field "startTime", val(val(iter_item,"date_period"), "start_date")
+    body_field "endTime",   val(val(iter_item,"date_period"), "end_date")
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".response.items[].result.totalForDuration") do
+      field "account", val(iter_item, "account")
+      field "date_period", val(iter_item, "date_period")
+      field "spotinst_cluster", val(iter_item, "spotinst_cluster")
+      field "detailedCosts", jq(col_item, ".detailedCosts")
+      field "endTime", jq(col_item, ".endTime")
+      field "startTime", jq(col_item, ".startTime")
+      field "summary", jq(col_item, ".summary")
+    end
+  end
+end
+
+datasource "ds_calculated_proportions" do
+  run_script $js_calculated_proportions, $ds_spotinst_cluster_aggregated_costs
+end
+
+script "js_calculated_proportions", type: "javascript" do
+  parameters "ds_spotinst_cluster_aggregated_costs"
+  result "result"
+  code <<-EOS
+  var result = []
+
+  function properCase(string) {
+    // Capitalize the first letter of each word
+    var words = string.split(" ")
+    var properWords = []
+    _.each(words, function(word) {
+      properWords.push(word.charAt(0).toUpperCase() + word.slice(1))
+    })
+    return properWords.join(" ")
+  }
+
+  // Loop through ds_spotinst_cluster_aggregated_costs
+  _.each(ds_spotinst_cluster_aggregated_costs, function(cost){
+    // Check if we have any costs
+    if (cost.detailedCosts) {
+      // Loop through the aggregations{} object
+      _.each(cost.detailedCosts.aggregations, function(aggregation){
+        // Loop through each resource in the aggregation
+        _.each(aggregation.resources, function(resource) {
+          // These fields in the resource object are not cost dimensions
+          // We will skip them when creating the CBI object
+          var skipKeys = ["metadata","total"]
+          // Currently supported usage categories returned by Spot API
+          var usageCategories = ["compute", "storage", "networking"]
+          // Loop through each usage category to append the cost data
+          _.each(usageCategories, function(usageCategory){
+            // Values that are the same for all usage categories
+            var obj = {
+              "CloudVendorAccountID": "412879992092", // Should be the Cloud Account the K8S cluster resides in
+              "CloudVendorAccountName": "demo-poc-infra-production", // Should be the Cloud Account Name the K8S cluster resides in
+              "Category": properCase(usageCategory), // Category can be the usage, with proper case (Networking, Storage, Compute)
+              "InstanceType": "",
+              "LineItemType": "Usage", // Static value used in other bills
+              "Region": cost.spotinst_cluster.region,
+              "ResourceGroup": "", // Can be the namespace?  Or the K8S cluster name?
+              "ResourceType": "", // Handled per usageCategory below
+              "ResourceID": resource.metadata.type + "/" + resource.metadata.name,
+              "Service": "",
+              "UsageType": properCase(usageCategory),
+              // Use lowercase tags and allow the common logic in next step to convert it from object to CSV string with escaped quotes
+              "tags": {
+                "kubernetes_cluster_name": cost.spotinst_cluster.name
+                "kubernetes_resource_namespace": resource.metadata.namespace? resource.metadata.namespace : "", // Namespace is not always present
+                "kubernetes_resource_type": resource.metadata.type,
+                "kubernetes_resource_name": resource.metadata.name,
+              },
+              "UsageAmount": 0,
+              "UsageUnit": "",
+              "Cost": 0.0,
+              "CurrencyCode": "USD",
+              // Convert cost.date_period.start_date "2025-01-02 00:00:00.000" to RFC3339 format "2025-01-02T00:00:00Z"
+              // Replace space with T, and remove the milliseconds, append Z for UTC
+              "UsageStartTime": cost.date_period.start_date.replace(" ", "T").replace(".000","") + "Z",
+              "InvoiceYearMonth": cost.date_period.start_date.split(" ")[0].split("-").slice(0,2).join(""), // YYYYMM
+              "InvoiceID": cost.date_period.start_date.split(" ")[0].split("-").slice(0,2).join("-") // Potentially bill period (YYYY-MM), but if we can reconcilate actual costs w/ cloud vendor bill, then should be the invoice id from cloud vendor bill
+            }
+
+            switch (usageCategory) {
+              case "compute":
+                var compute_cost_obj = _.clone(obj)
+                compute_cost_obj["Cost"] = resource[usageCategory].total
+                compute_cost_obj["UsageAmount"] = resource[usageCategory].total
+                compute_cost_obj["UsageUnit"] = "USD" // For compute we only get costs in USD from SpotInst API today
+                compute_cost_obj["ResourceType"] = resource.metadata.type
+                if ((compute_cost_obj["Cost"] + compute_cost_obj["UsageAmount"]) > 0) {
+                  result.push(compute_cost_obj)
+                }
+                break;
+
+              case "networking":
+                var network_usage_types = ["interAZ", "interRegion", "internet", "intraAZ"]
+                _.each(network_usage_types, function(network_usage_type) {
+                  var network_usage_subtypes = ["in", "out"]
+                  _.each(network_usage_subtypes, function(network_usage_subtype) {
+                    // Check that the usage type and subtype exist in the resource object
+                    if (resource[usageCategory][network_usage_type] && resource[usageCategory][network_usage_type][network_usage_subtype]) {
+                      var network_usage_type_obj = _.clone(obj)
+                      c = resource[usageCategory][network_usage_type][network_usage_subtype].cost
+                      network_usage_type_obj["UsageAmount"] = resource[usageCategory][network_usage_type][network_usage_subtype].usage
+                      network_usage_type_obj["UsageUnit"] = "Bytes" // Assuming Bytes for now, need to confirm
+                      network_usage_type_obj["ResourceType"] = resource.metadata.type
+                      network_usage_type_obj["UsageType"] = properCase(network_usage_type) + " " + properCase(network_usage_subtype)
+                      // Only push if we have a cost or usage amount
+                      if ((network_usage_type_obj["Cost"] + network_usage_type_obj["UsageAmount"]) > 0) {
+                        result.push(network_usage_type_obj)
+                      }
+                    }
+                  })
+                })
+                break;
+
+              case "storage":
+                var storage_usage_types = ["block", "file"]
+                _.each(storage_usage_types, function(storage_usage_type) {
+                  // Check if we have the storage usage type in the resource object
+                  if (resource[usageCategory][storage_usage_type]) {
+                    // Get the storage types dynamically to attempt to handle cross-vendor storage usage subtypes
+                    // i.e. AWS has `ebsPv`, `efsPv`
+                    // This is all fields except for "total"
+                    var storage_usage_subtypes = _.filter(_.keys(resource[usageCategory][storage_usage_type]), function(key) {
+                      return key != "total"
+                    })
+                    _.each(storage_usage_subtypes, function(storage_usage_subtype) {
+                      if (resource[usageCategory][storage_usage_type] && resource[usageCategory][storage_usage_type][storage_usage_subtype]) {
+                        var storage_usage_type_obj = _.clone(obj)
+                        storage_usage_type_obj["Cost"] = resource[usageCategory][storage_usage_type][storage_usage_subtype].total
+                        storage_usage_type_obj["UsageAmount"] = resource[usageCategory][storage_usage_type][storage_usage_subtype].total
+                        storage_usage_type_obj["UsageUnit"] = "USD" // For storage we only get costs in USD from SpotInst API today
+                        storage_usage_type_obj["ResourceType"] = resource.metadata.type
+                        storage_usage_type_obj["UsageType"] = properCase(storage_usage_type) + " " + properCase(storage_usage_subtype)
+
+                        // Handle UnusedStorage as a special case
+                        if (resource.metadata.type == "UnusedStorage") {
+                          storage_usage_type_obj["Cost"] = resource[usageCategory].total
+                          storage_usage_type_obj["UsageType"] = resource.metadata.type
+                          storage_usage_type_obj["ResourceID"] = resource.metadata.type
+                        }
+
+                        result.push(storage_usage_type_obj)
+                      }
+                    })
+                  }
+                })
+                break;
+
+              default:
+                console.log("Warning: No Matching Usage Category for '" + usageCategory + "'.  Skipping Line...")
+                break;
+            } // End switch(usageCategory)
+
+          })
+        })
+
+      })
+    }
+  })
+EOS
+end
+
+policy 'pol_spot_ocean_cbi' do
+  validate $ds_cbi_commit do
+    summary_template 'CBI Commited: {{data.billingPeriod}}'
+    detail_template '{{ data }}'
+    check eq(0,1)
+  end
+end
+
+
+###############################################################################
+# Common Logic for pushing to CBI
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_existing_bill_connects" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "updated_at", jmes_path(col_item, "updated_at")
+      field "billIdentifier", jmes_path(col_item, "cbi.billIdentifier")
+      field "integrationId", jmes_path(col_item, "cbi.integrationId")
+      field "name", jmes_path(col_item, "cbi.name")
+      field "displayName", jmes_path(col_item, "cbi.params.displayName")
+      field "vendorName", jmes_path(col_item, "cbi.params.vendorName")
+    end
+  end
+end
+
+datasource "ds_bill_connect" do
+  request do
+    run_script $js_bill_connect, $ds_existing_bill_connects, $ds_flexera_api_hosts, $param_bill_connect_id, rs_org_id
+  end
+end
+
+script "js_bill_connect", type: "javascript" do
+  parameters "ds_existing_bill_connects", "ds_flexera_api_hosts", "param_bill_connect_id", "rs_org_id"
+  result "request"
+  code <<-EOS
+
+  // Default request payload to CREATE the bill connect
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: ds_flexera_api_hosts["flexera"],
+    path:  "/finops-onboarding/v1/orgs/" + rs_org_id + "/bill-connects/cbi",
+    body_fields: {
+      "billIdentifier": param_bill_connect_id.split('cbi-oi-optima-')[1],
+      "integrationId": "cbi-oi-optima",
+      "name": "Kubernetes",
+      "params": {
+        "displayName": "Kubernetes",
+        "vendorName": "Kubernetes"
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies"
+    }
+  }
+
+  // Check if ds_existing_bill_connects contains bill connect matching param_bill_connect_id
+  existing_bc = _.find(ds_existing_bill_connects, function(bc) {
+    return bc.id == param_bill_connect_id
+  })
+  // If we did, override the POST with a PATCH instead
+  // PATCH used instead of GET to mitigate/prevent drift with the Bill Connect configuration from what we expect
+  if (_.isObject(existing_bc)) {
+    request["verb"] = "PATCH"
+    request["path"] = request["path"] + "/" + param_bill_connect_id
+  }
+
+EOS
+end
+
+datasource "ds_cbi_csv_rows" do
+  run_script $js_cbi_csv_rows, $ds_calculated_proportions, $ds_dates
+end
+
+script "js_cbi_csv_rows", type: "javascript" do
+  parameters "ds_calculated_proportions", "ds_dates"
+  result "rows"
+  code <<-'EOS'
+  // function logSample() logs a sample to the console every 5 minutes
+  // This is useful for debugging and monitoring the progress of the script
+  // Sampling is used to mitigate/prevent hitting the 1000 console.log Policy Engine limit
+  eventLast = null // Default lastEvent to null so that the first logSample will always log
+  eventCount = 0 // Default eventCount to 0
+  function logSample(sample) {
+    delaySecondsBetweenSample = 10 // 10 seconds between log events
+    eventCount = eventCount + 1
+    var now = new Date()
+    var log_entry = "[Event "+eventCount.toString()+" @ "+now.toISOString()+"] "+JSON.stringify(sample)
+    // Check if eventLast was old than delaySecondsBetweenSample ago
+    if (eventLast == null || (now - eventLast) > delaySecondsBetweenSample*1000) {
+      console.log(log_entry)
+      eventLast = now
+    }
+  }
+
+  // Static list of headers for Flexera cbi-oi-optima Bill Upload Format
+  // https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBIDefaultFormat.htm
+  var ds_cbi_optima_headers = ["CloudVendorAccountID", "CloudVendorAccountName", "Category", "InstanceType", "LineItemType", "Region", "ResourceGroup", "ResourceType", "ResourceID", "Service", "UsageType", "Tags", "UsageAmount", "UsageUnit", "Cost", "CurrencyCode", "UsageStartTime", "InvoiceYearMonth", "InvoiceID"]
+
+  var row_total = ds_calculated_proportions.length
+  var row_index = 0
+  var row_total_duration = 0
+  var rows = []
+
+  _.each(ds_calculated_proportions, function(item) {
+    // Start time for row processing
+    var startTime = new Date()
+    // Increment row index
+    row_index += 1
+    // Calculate progress percentage
+    var progress = (parseInt(row_index) / parseInt(row_total)) * 100
+    // Calculate average duration for each row
+    var avg_duration = 0
+    var avg_duration_string = ""
+    // Check if this is the first row
+    // We don't have an average duration for the first row
+    if (row_index > 1) {
+      avg_duration = row_total_duration / (row_index - 1)
+      avg_duration_string = " Average row duration: "+avg_duration.toFixed(2)+"ms"
+    }
+    logSample("Processing row "+row_index.toString()+" of "+row_total.toString()+" ("+ progress.toFixed(1) +"%%)"+avg_duration_string)
+    // Create object to hold CBI dimension values
+    var obj = {}
+    // Loop through CBI headers and get the corresponding dimension value from the cost data
+    _.each(ds_cbi_optima_headers, function(cbi_header) {
+      cost_dimension = cbi_header
+      // If we have a dimension from the cost that maps to CBI, add it to the object
+      if (cost_dimension != "") {
+        obj[cbi_header] = item[cost_dimension]
+      } else {
+        // No value from cost data for this CBI dimension then set it to empty string
+        obj[cbi_header] = ""
+      }
+    })
+
+    // Add Tags to object
+    // This is a JSON object that is stringified and then escaped for the CSV
+    var tags = {}
+    // if the item.tags is an object, use that
+    if (_.isObject(item.tags)) {
+      tags = item.tags
+    }
+
+    // Stringify the tags object
+    var tags_string = JSON.stringify(tags)
+    // Replace single " with double "" to escape the quotes in the CSV string
+    tags_string = tags_string.replace(/"/g, '""')
+    // Add resulting string type value to "Tags" field
+    obj["Tags"] = tags_string
+
+    // Add object to rows array
+    rows.push(obj)
+    var endTime = new Date()
+    var duration = (endTime - startTime)
+    row_total_duration += duration
+  })
+EOS
+end
+
+
+datasource "ds_existing_bill_uploads" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/optima/orgs/", rs_org_id, "/billUploads"])
+    header "User-Agent", "RS Policies"
+    query "billConnectId", $param_bill_connect_id
+    query "billingPeriod", val($ds_dates, "period")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "status", jmes_path(col_item, "status")
+      field "billConnectId", jmes_path(col_item, "billConnectId")
+      field "billingPeriod", jmes_path(col_item, "billingPeriod")
+      field "createdAt", jmes_path(col_item, "createdAt")
+      field "updatedAt", jmes_path(col_item, "updatedAt")
+    end
+  end
+end
+
+datasource "ds_pending_bill_uploads" do
+  run_script $js_pending_bill_uploads, $ds_existing_bill_uploads
+end
+
+script "js_pending_bill_uploads", type: "javascript" do
+  parameters "ds_existing_bill_uploads"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_existing_bill_uploads, function(item) {
+    return item["status"] != "complete" && item["status"] != "aborted"
+  })
+EOS
+end
+
+datasource "ds_abort_pending_bill_uploads" do
+  iterate $ds_pending_bill_uploads
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host rs_optima_host
+    path join(["/optima/orgs/", rs_org_id, "/billUploads/", val(iter_item, "id"), "/operations"])
+    header "User-Agent", "RS Policies"
+    body_field "operation", "abort"
+    ignore_status [400, 401, 402, 403, 404, 405, 429, 500, 502]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "status", jmes_path(response, "status")
+    field "billConnectId", jmes_path(response, "billConnectId")
+    field "billingPeriod", jmes_path(response, "billingPeriod")
+    field "createdAt", jmes_path(response, "createdAt")
+    field "updatedAt", jmes_path(response, "updatedAt")
+  end
+end
+
+# Branching logic: This exists purely to be referenced later to ensure policy execution aborts
+# any pending bill uploads before attempting to create a new one.
+datasource "ds_aborted_pending_bill_uploads_done" do
+  run_script $js_aborted_pending_bill_uploads_done, $ds_abort_pending_bill_uploads
+end
+
+script "js_aborted_pending_bill_uploads_done", type: "javascript" do
+  parameters "ds_abort_pending_bill_uploads"
+  result "result"
+  code <<-EOS
+  result = { abortedUploads: (ds_abort_pending_bill_uploads.length != 0).toString() }
+EOS
+end
+
+datasource "ds_cbi_create_bill_upload" do
+  request do
+    run_script $js_cbi_create_bill_upload, $ds_dates, $ds_bill_connect, $ds_aborted_pending_bill_uploads_done, $param_bill_connect_id, rs_org_id, rs_optima_host
+  end
+end
+
+script "js_cbi_create_bill_upload", type: "javascript" do
+  parameters "ds_dates", "ds_bill_connect", "ds_aborted_pending_bill_uploads_done", "param_bill_connect_id", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/optima/orgs/" + rs_org_id + "/billUploads",
+    body_fields: {
+      "billConnectId": param_bill_connect_id,
+      "billingPeriod": ds_dates['period']
+    },
+    headers: {
+      // This is to ensure that any pending bill uploads were aborted prior to creating a new one
+      "Aborted-Uploads": ds_aborted_pending_bill_uploads_done.abortedUploads,
+
+      "User-Agent": "RS Policies",
+      "allow_redirects": "False"
+    }
+  }
+EOS
+end
+
+datasource "ds_cbi_csv" do
+  run_script $js_cbi_csv, $ds_dates, $ds_cbi_csv_rows, $ds_cbi_create_bill_upload
+end
+
+script "js_cbi_csv", type: "javascript" do
+  parameters "ds_dates", "ds_cbi_csv_rows", "ds_cbi_create_bill_upload"
+  result "result"
+  code <<-'EOS'
+  // function logSample() logs a sample to the console every 5 minutes
+  // This is useful for debugging and monitoring the progress of the script
+  // Sampling is used to mitigate/prevent hitting the 1000 console.log Policy Engine limit
+  eventLast = null // Default lastEvent to null so that the first logSample will always log
+  eventCount = 0 // Default eventCount to 0
+  function logSample(sample) {
+    delaySecondsBetweenSample = 10 // 10 seconds between log events
+    eventCount = eventCount + 1
+    var now = new Date()
+    var log_entry = "[Event "+eventCount.toString()+" @ "+now.toISOString()+"] "+JSON.stringify(sample)
+    // Check if eventLast was old than delaySecondsBetweenSample ago
+    if (eventLast == null || (now - eventLast) > delaySecondsBetweenSample*1000) {
+      console.log(log_entry)
+      eventLast = now
+    }
+  }
+
+  // Static list of headers for Flexera cbi-oi-optima Bill Upload Format
+  // https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBIDefaultFormat.htm
+  var ds_cbi_optima_headers = ["CloudVendorAccountID", "CloudVendorAccountName", "Category", "InstanceType", "LineItemType", "Region", "ResourceGroup", "ResourceType", "ResourceID", "Service", "UsageType", "Tags", "UsageAmount", "UsageUnit", "Cost", "CurrencyCode", "UsageStartTime", "InvoiceYearMonth", "InvoiceID"]
+
+  var result = []
+
+  // Empty CSV array
+  var csv = []
+
+  var cbi_headers = ds_cbi_optima_headers
+  // Wrap CBI headers in quotes
+  cbi_headers_safe = _.map(cbi_headers, function(header) {
+    return '"' + header + '"'
+  })
+
+  // Add Headers as first line of CSV
+  csv.push(cbi_headers_safe.join(","))
+
+  var row_total = ds_cbi_csv_rows.length
+  var row_index = 0
+  var row_total_duration = 0
+  // Counters to split number of rows
+  var batch_size = row_total // Default to single payload for batch that will hold all rows
+  // If row count is greater than threshold, we should break it into multiple batches
+  if (row_total > 100000) {
+    // Maximum number of files is 8
+    batch_size = row_total / 8
+  }
+  // Loop through rows
+  _.each(ds_cbi_csv_rows, function(row) {
+    // Start time for row processing
+    var startTime = new Date()
+    // Increment row index
+    row_index += 1
+    // Calculate progress percentage
+    var progress = (parseInt(row_index) / parseInt(row_total)) * 100
+    // Calculate average duration for each row
+    var avg_duration = 0
+    var avg_duration_string = ""
+    // Check if this is the first row
+    // We don't have an average duration for the first row
+    if (row_index > 1) {
+      avg_duration = row_total_duration / (row_index - 1)
+      avg_duration_string = " Average row duration: "+avg_duration.toFixed(2)+"ms"
+    }
+    logSample("Appending CSV row "+row_index.toString()+" of "+row_total.toString()+" ("+ progress.toFixed(1) +"%%)"+avg_duration_string)
+    row_values = []
+    // Loop through headers and append to row_values array
+    // This ensures that the row values are in the same order as the headers
+    _.each(cbi_headers, function(header) {
+      // Check that we have a row value for the particular CBI header
+      // Without this check the resulting value would be `"undefined"` in the CSV
+      if (typeof row[header] != "undefined") {
+        row_values.push(row[header])
+      } else {
+        // Handle the dimensions where we don't have a value from the cost data
+        row_values.push("")
+      }
+    })
+    // Wrap row values in quotes
+    row_values = _.map(row_values, function(value) {
+      return '"' + value + '"'
+    })
+    // Push row values CSV string to CSV array
+    csv.push(row_values.join(","));
+    var endTime = new Date()
+    var duration = (endTime - startTime)
+    row_total_duration += duration
+    // check if we need to create a new batch
+    // If we have reached the batch size, or if we are on the last row
+    if ((row_index % batch_size == 0) || (row_index == row_total)) {
+      // Add CSV to result and reset
+      //batches.push(csv.join("\n"))
+      console.log("Added batch result number " + (result.length +1).toFixed(0) + " with rows " + (csv.length -1).toFixed(0))
+      result.push({
+        "bill_upload_id": ds_cbi_create_bill_upload.id,
+        "index": result.length.toFixed(0),
+        // resulting CSV file is a string of csv lines separated by newline
+        "csv": csv.join("\n")
+      })
+      // Reset CSV array
+      csv = []
+      // Add Headers as first line of CSV
+      csv.push(cbi_headers_safe.join(","))
+    }
+  });
+EOS
+end
+
+datasource "ds_cbi_upload_file" do
+  iterate $ds_cbi_csv
+  request do
+    run_script $js_cbi_upload_file, iter_item, $ds_dates, rs_org_id, rs_optima_host
+  end
+end
+
+script "js_cbi_upload_file", type: "javascript" do
+  parameters "iter_item", "ds_dates", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/optima/orgs/" + rs_org_id + "/billUploads/" + iter_item.bill_upload_id + '/files/cost-reallocation-' + ds_dates['period'] + '-' + iter_item.index + '.csv',
+    headers: {
+      "User-Agent": "RS Policies",
+    },
+    body: iter_item.csv
+  }
+EOS
+end
+
+datasource "ds_cbi_commit" do
+  request do
+    run_script $js_cbi_commit, $ds_cbi_upload_file, $ds_cbi_create_bill_upload, rs_org_id, rs_optima_host
+  end
+end
+
+script "js_cbi_commit", type: "javascript" do
+  parameters "ds_cbi_upload_file", "ds_cbi_create_bill_upload", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/optima/orgs/" + rs_org_id + "/billUploads/" + ds_cbi_create_bill_upload["id"] + '/operations',
+    headers: {
+      "User-Agent": "RS Policies",
+    },
+    body_fields: {"operation": "commit"}
+  }
+EOS
+end
+###############################################################################
+# End Common Logic for pushing to CBI
+###############################################################################
