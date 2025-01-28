@@ -42,6 +42,15 @@ parameter "param_ignore_list" do
   default []
 end
 
+parameter "param_report_connection_with_zero_bills" do
+  type "string"
+  category "Policy Settings"
+  label "Report Connection With Zero Bills"
+  description "Whether or not to report any connections that has no bills (may caused by a misconfiguration). See the README for more details"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -218,11 +227,11 @@ datasource "ds_bill_import_history" do
 end
 
 datasource "ds_bill_connections_combined" do
-  run_script $js_bill_connections_combined, $ds_bill_connections, $ds_bill_connections_valid, $ds_bill_status_errors, $ds_bill_import_history, $ds_applied_policy, $param_processing_limit
+  run_script $js_bill_connections_combined, $ds_bill_connections, $ds_bill_connections_valid, $ds_bill_status_errors, $ds_bill_import_history, $ds_applied_policy, $param_processing_limit, $param_report_connection_with_zero_bills
 end
 
 script "js_bill_connections_combined", type: "javascript" do
-  parameters "ds_bill_connections", "ds_bill_connections_valid", "ds_bill_status_errors", "ds_bill_import_history", "ds_applied_policy", "param_processing_limit"
+  parameters "ds_bill_connections", "ds_bill_connections_valid", "ds_bill_status_errors", "ds_bill_import_history", "ds_applied_policy", "param_processing_limit", "param_report_connection_with_zero_bills"
   result "result"
   code <<-'EOS'
   today = new Date()
@@ -303,8 +312,8 @@ script "js_bill_connections_combined", type: "javascript" do
       } else {
         errors.push("Bill: " + id + " has not processed a bill in over " + param_processing_limit + " hours")
       }
-    } else {
-      errors.push("Bill: " + id + " has no bills. Please verify if the connection is correctly configured.")
+    } else if (param_report_connection_with_zero_bills == "Yes") {
+        errors.push("Bill: " + id + " has no bills. Please verify if the connection is correctly configured.")
     }
 
     return {
