@@ -2,7 +2,7 @@
 
 ## v2.5.2
 
-- Added `param_report_connection_with_zero_bills` as an optional feature to report connections with no bills, which may indicate a misconfiguration in the connection.
+- Added `Report Connection With Zero Bills` parameter to help users detect connections without bills and spot potential misconfigurations.
 
 ## v2.5.1
 
