@@ -500,9 +500,11 @@ script "js_report", type: "javascript" do
     // Calculate costs
     _.each(inclusiveCosts, function(org) {
       if (org.costs) {
+        org.totalCost = 0;
         _.each(org.costs, function(cost) {
           var amount = cost.metrics.cost_nonamortized_unblended_adj;
           totalCost += amount;
+          org.totalCost += amount;
           var orgId = org.org.id;
 
           // Get month from timestamp
@@ -526,7 +528,6 @@ script "js_report", type: "javascript" do
           } else {
           targetSource = costsBySource.other;
           }
-
           targetSource.cost += amount;
           if (!_.contains(targetSource.orgs, orgId)) {
           targetSource.orgs.push(orgId);
@@ -576,16 +577,6 @@ script "js_report", type: "javascript" do
     months = _.uniq(months);
     var sortedMonths = _.sortBy(months, "timestamp");
 
-    // Calculate estimated 12-month costs using the most recent 3 months of costs
-    var recentMonths = sortedMonths.slice(-3);
-    var recentTotalCost = 0;
-    _.each(recentMonths, function(month) {
-      _.each(costsBySource, function(source) {
-        recentTotalCost += source.monthlyAmounts[month] || 0;
-      });
-    });
-    var estimatedAnnualCost = (recentTotalCost / 3) * 12;
-
     // Generate markdown report
     var markdown = "# MSP Organizations Summary Report\\n\\n";
 
@@ -609,7 +600,17 @@ script "js_report", type: "javascript" do
     }
     var warning = sortedMonths.length < 12 ? " (Warning: Less than 12 months of data available)" : "";
     markdown += "* Previous "+sortedMonths.length+"-Month Cost: " + formatCurrency(totalCost) + warning + "\\n";
-    markdown += "* Estimated 12-Month Cost using most recent last 3-Month Cost: " + formatCurrency(estimatedAnnualCost) + "\\n";
+    if (sortedMonths >= 3) {
+      var recentMonths = sortedMonths.slice(-3);
+      var recentTotalCost = 0;
+      _.each(recentMonths, function(month) {
+        _.each(costsBySource, function(source) {
+          recentTotalCost += source.monthlyAmounts[month] || 0;
+        });
+      });
+      var estimated12MCostFromLast3Months = (recentTotalCost / 3) * 12;
+      markdown += "* Estimated 12-Month Cost using most recent last 3-Month Cost: " + formatCurrency(estimated12MCostFromLast3Months) + "\\n";
+    }
     markdown += "* Total Users: " + totalUsers + "\\n";
     markdown += "* Active Users: " + activeUsers + " (" + ((activeUsers/totalUsers)*100).toFixed(1) + "%) (Last UI login less than "+param_active_days_threshold+"days)" + "\\n";
     markdown += "* Inactive Users: " + (totalUsers-activeUsers) + " (" + (((totalUsers-activeUsers)/totalUsers)*100).toFixed(1) + "%)" + "\\n";
@@ -665,13 +666,7 @@ script "js_report", type: "javascript" do
     // Process each child org
     // Sort organizations by total cost first
     var sortedOrgs = _.sortBy(inclusiveCosts, function(org) {
-      var orgTotal = 0;
-      if (org.costs) {
-      _.each(org.costs, function(cost) {
-        orgTotal += cost.metrics.cost_nonamortized_unblended_adj;
-      });
-      }
-      return -orgTotal; // Negative for descending order
+      return -org.totalCost; // Negative for descending order
     });
 
     markdown += "\\n## Costs by Organization\\n\\n";
@@ -841,9 +836,29 @@ script "js_report", type: "javascript" do
       }
     });
 
+    var orgData = [];
+    _.each(inclusiveCosts, function(org) {
+      orgData.push({
+        org: org.org,
+        costs: {
+          start_at: ds_dates.start_at,
+          end_at: ds_dates.end_at,
+          totalCost: org.totalCost,
+          percentTotalCost: _.isNumber(org.totalCost) ? ((org.totalCost / totalCost) * 100).toFixed(1) : null,
+        },
+        users: {
+          activeUsers: org.activeUsers,
+          inactiveUsers: _.isNumber(org.totalUsers) && _.isNumber(org.activeUsers) ? org.totalUsers - org.activeUsers : null,
+          excludedUsers: org.excludedUsers,
+          inactivePercentUsers: _.isNumber(org.totalUsers) && _.isNumber(org.activeUsers) ? (((org.totalUsers - org.activeUsers) / org.totalUsers) * 100).toFixed(1) : null,
+        },
+      });
+    });
+
     result = {
       report: markdown,
       totalCost: totalCost,
+      data: orgData
     }
   EOS
 end
@@ -854,8 +869,53 @@ policy "pol_group_sync" do
     summary_template "MSP Organizations Usage Report"
     detail_template <<-EOS
 {{ data.report }}
+
+---
+
 EOS
     check eq(data, "")
+    export "data" do
+      field "orgId" do
+        label "Flexera Org ID"
+        path "org.id"
+      end
+      field "orgName" do
+        label "Flexera Org Name"
+        path "org.name"
+      end
+      field "costTotal" do
+        label "Cost Total"
+        path "costs.totalCost"
+      end
+      field "costPercentTotalCost" do
+        label "Percent of Total Cost"
+        path "costs.percentTotalCost"
+      end
+      field "costStartAt" do
+        label "Cost Start Date"
+        path "costs.start_at"
+      end
+      field "costEndAt" do
+        label "Cost End Date"
+        path "costs.end_at"
+      end
+      field "usersActive" do
+        label "Active Users"
+        path "users.activeUsers"
+      end
+      field "usersInactive" do
+        label "Inactive Users"
+        path "users.inactiveUsers"
+      end
+      field "usersExcluded" do
+        label "Excluded Users"
+        path "users.excludedUsers"
+      end
+      field "usersInactivePercent" do
+        label "Percent of Inactive Users"
+        path "users.inactivePercentUsers"
+      end
+    end
     escalate $esc_email
   end
 
