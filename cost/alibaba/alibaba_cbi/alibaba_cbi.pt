@@ -1,0 +1,560 @@
+name "Alibaba Cloud Common Bill Ingestion"
+rs_pt_ver 20180301
+type "policy"
+short_description "Downloads cost reports from Alibaba Cloud and then uploads them to a Flexera CBI endpoint. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/alibaba/alibaba_cbi) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "0.1.0",
+  provider: "Alibaba",
+  service: "Common Bill Ingestion",
+  policy_set: "Common Bill Ingestion",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when billing data is uploaded"
+  default []
+end
+
+parameter "param_billing_period" do
+  type "string"
+  category "Policy Settings"
+  label "Month To Ingest"
+  description "Month to process bills for."
+  allowed_values "Current Month", "Previous Month", "Specific Month"
+  default "Current Month"
+end
+
+parameter "param_specific_period" do
+  type "string"
+  category "Policy Settings"
+  label "Billing Period"
+  description "Billing period to process bills for in YYYY-MM format. Only relevant if Specific Month is selected for Month To Ingest."
+  allowed_pattern /^(19|20)\d\d-(0[1-9]|1[0-2])$/
+  default "2020-01"
+end
+
+parameter "param_cbi_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Flexera CBI Endpoint"
+  description "Name of the Flexera CBI endpoint to use. Ex: cbi-oi-alibaba-alibabacloud"
+  # No default value, user input required
+end
+
+parameter "param_frequency" do
+  type "string"
+  category "Policy Settings"
+  label "Frequency"
+  description "Whether cost reports are generated monthly (single file for the month) or daily (one file per day)"
+  allowed_values "Monthly", "Daily"
+  default "Daily"
+end
+
+parameter "param_account_id" do
+  type "string"
+  category "Policy Settings"
+  label "Alibaba Cloud Account ID"
+  description "Account ID for Alibaba Cloud Account"
+  # No default value, user input required
+end
+
+parameter "param_region" do
+  type "string"
+  category "Policy Settings"
+  label "Alibaba Cloud Region"
+  description "Region of the Alibaba Cloud Object Storage bucket containing the cost reports. Ex: oss-cn-shanghai"
+  # No default value, user input required
+end
+
+parameter "param_bucket" do
+  type "string"
+  category "Policy Settings"
+  label "Alibaba Cloud Billing Report Bucket"
+  description "Alibaba Cloud Object Storage bucket containing the Billing reports. Ex: flexera-billing-data"
+  # No default value, user input required
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+credentials "auth_alibaba" do
+  schemes "aws"
+  label "Alibaba"
+  description "Select the Alibaba Cloud Credential from the list."
+  tags "provider=aws"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_dates" do
+  run_script $js_dates, $param_billing_period, $param_specific_period, $param_frequency
+end
+
+script "js_dates", type: "javascript" do
+  parameters "param_billing_period", "param_specific_period", "param_frequency"
+  result "result"
+  code <<-EOS
+  period = param_specific_period
+
+  if (param_billing_period != 'Specific Month') {
+    date = new Date()
+    date.setDate(date.getDate() - 1)
+    if (param_billing_period == 'Previous Month') { date.setMonth(date.getMonth() - 1) }
+    period = date.toISOString().substring(0, 7)
+  }
+
+  date_list = []
+
+  if (param_frequency == "Daily") {
+    if (new Date().toISOString().substring(0, 7) == period) {
+      days_in_month = Number(new Date().toISOString().substring(8, 10))
+    } else {
+      month = Number(period.split('-')[1])
+      year = Number(period.split('-')[0])
+      month_chart = { 1: 31, 2: 28, 3: 31, 4: 30, 5: 31, 6: 30, 7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31 }
+      days_in_month = month_chart[month]
+      if (month == 2 && year % 4 == 0) { days_in_month = 29 }
+    }
+
+    for (i = 1; i <= days_in_month; i++) {
+      if (i < 10) { day = '0' + i.toString() }
+      if (i >= 10) { day = i.toString() }
+      date_list.push({ date: period.replace(/[-]/g, '') + day })
+    }
+  } else {
+    date_list.push({ date: period.replace(/[-]/g, '') })
+  }
+
+  result = {
+    period: period,
+    date_list: date_list
+  }
+EOS
+end
+
+datasource "ds_dates_list" do
+  run_script $js_dates_list, $ds_dates
+end
+
+script "js_dates_list", type: "javascript" do
+  parameters "ds_dates"
+  result "result"
+  code "result = ds_dates['date_list']"
+end
+
+datasource "ds_cost_reports" do
+  iterate $ds_dates_list
+  request do
+    auth $auth_alibaba
+    host join([$param_bucket, ".", $param_region, ".aliyuncs.com"])
+    path join(["/", $param_account_id, "_BillingItemDetail_", val(iter_item, "date")])
+  end
+  result do
+    encoding "text"
+  end
+end
+
+datasource "ds_cbi_endpoint_id" do
+  run_script $js_cbi_endpoint_id, $param_cbi_endpoint
+end
+
+script "js_cbi_endpoint_id", type: "javascript" do
+  parameters "param_cbi_endpoint"
+  result "result"
+  code <<-EOS
+  result = "cbi-oi-alibaba-alibabacloud"
+  if (param_cbi_endpoint) { result = param_cbi_endpoint }
+EOS
+end
+
+datasource "ds_existing_bill_connects" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "updated_at", jmes_path(col_item, "updated_at")
+      field "billIdentifier", jmes_path(col_item, "cbi.billIdentifier")
+      field "integrationId", jmes_path(col_item, "cbi.integrationId")
+      field "name", jmes_path(col_item, "cbi.name")
+      field "displayName", jmes_path(col_item, "cbi.params.displayName")
+      field "vendorName", jmes_path(col_item, "cbi.params.vendorName")
+    end
+  end
+end
+
+# Branching logic: Create a new bill connect if it doesn't already exist
+datasource "ds_to_create_bill_connect" do
+  run_script $js_to_create_bill_connect, $ds_existing_bill_connects, $ds_cbi_endpoint_id
+end
+
+script "js_to_create_bill_connect", type: "javascript" do
+  parameters "ds_existing_bill_connects", "ds_cbi_endpoint_id"
+  result "result"
+  code <<-EOS
+  result = []
+
+  existing_bill_connect = _.find(ds_existing_bill_connects, function(connect) {
+    return connect["id"] == ds_cbi_endpoint_id
+  })
+
+  if (existing_bill_connect == undefined) {
+    prefix = "cbi-oi-alibaba"
+
+    result = [{
+      billIdentifier: ds_cbi_endpoint_id.split(prefix + "-")[1],
+      integrationId: prefix,
+      name: ds_cbi_endpoint_id.split(prefix + "-")[1],
+      params: {
+        displayName: "Alibaba Cloud",
+        vendorName: "alibaba_cloud"
+      }
+    }]
+  }
+EOS
+end
+
+datasource "ds_create_bill_connect" do
+  iterate $ds_to_create_bill_connect
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects/cbi"])
+    header "User-Agent", "RS Policies"
+    body_field "billIdentifier", val(iter_item, "billIdentifier")
+    body_field "integrationId", val(iter_item, "integrationId")
+    body_field "name", val(iter_item, "name")
+    body_field "params", val(iter_item, "params")
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "kind", jmes_path(response, "kind")
+    field "created_at", jmes_path(response, "created_at")
+    field "updated_at", jmes_path(response, "updated_at")
+    field "billIdentifier", jmes_path(response, "cbi.billIdentifier")
+    field "integrationId", jmes_path(response, "cbi.integrationId")
+    field "name", jmes_path(response, "cbi.name")
+    field "displayName", jmes_path(response, "cbi.params.displayName")
+    field "vendorName", jmes_path(response, "cbi.params.vendorName")
+  end
+end
+
+# Branching logic: Select newly created CBI endpoint if it exists. Otherwise, select existing one.
+datasource "ds_cbi_endpoint" do
+  run_script $js_cbi_endpoint, $ds_create_bill_connect, $ds_existing_bill_connects, $ds_cbi_endpoint_id
+end
+
+script "js_cbi_endpoint", type: "javascript" do
+  parameters "ds_create_bill_connect", "ds_existing_bill_connects", "ds_cbi_endpoint_id"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_existing_bill_connects, function(connect) { return connect["id"] == ds_cbi_endpoint_id })
+  if (ds_create_bill_connect.length > 0) { result = ds_create_bill_connect[0] }
+EOS
+end
+
+datasource "ds_existing_bill_uploads" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/optima/orgs/", rs_org_id, "/billUploads"])
+    header "User-Agent", "RS Policies"
+    body_field "billConnectId", val($ds_cbi_endpoint, "id")
+    body_field "billingPeriod", val($ds_dates, "period")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "status", jmes_path(col_item, "status")
+      field "billConnectId", jmes_path(col_item, "billConnectId")
+      field "billingPeriod", jmes_path(col_item, "billingPeriod")
+      field "createdAt", jmes_path(col_item, "createdAt")
+      field "updatedAt", jmes_path(col_item, "updatedAt")
+    end
+  end
+end
+
+datasource "ds_pending_bill_uploads" do
+  run_script $js_pending_bill_uploads, $ds_existing_bill_uploads
+end
+
+script "js_pending_bill_uploads", type: "javascript" do
+  parameters "ds_existing_bill_uploads"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_existing_bill_uploads, function(item) {
+    return item["status"] != "complete" && item["status"] != "aborted"
+  })
+EOS
+end
+
+datasource "ds_abort_pending_bill_uploads" do
+  iterate $ds_pending_bill_uploads
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host rs_optima_host
+    path join(["/optima/orgs/", rs_org_id, "/billUploads/", val(iter_item, "id"), "/operations"])
+    header "User-Agent", "RS Policies"
+    body_field "operation", "abort"
+    ignore_status [ 400, 401, 402, 403, 404, 405, 429, 500, 502 ]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "status", jmes_path(response, "status")
+    field "billConnectId", jmes_path(response, "billConnectId")
+    field "billingPeriod", jmes_path(response, "billingPeriod")
+    field "createdAt", jmes_path(response, "createdAt")
+    field "updatedAt", jmes_path(response, "updatedAt")
+  end
+end
+
+# Branching logic: This exists purely to be referenced later to ensure policy execution aborts
+# any pending bill uploads before attempting to create a new one.
+datasource "ds_aborted_pending_bill_uploads_done" do
+  run_script $js_aborted_pending_bill_uploads_done, $ds_abort_pending_bill_uploads
+end
+
+script "js_aborted_pending_bill_uploads_done", type: "javascript" do
+  parameters "ds_abort_pending_bill_uploads"
+  result "result"
+  code <<-EOS
+  result = { abortedUploads: (ds_abort_pending_bill_uploads.length != 0).toString() }
+EOS
+end
+
+datasource "ds_cbi_create_bill_upload" do
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host rs_optima_host
+    path join(["/optima/orgs/", rs_org_id, "/billUploads"])
+    header "User-Agent", "RS Policies"
+    # This is to ensure that any pending bill uploads were aborted prior to creating a new one
+    header "AbortedUploads", val($ds_aborted_pending_bill_uploads_done, "abortedUploads")
+    body_field "billConnectId", val($ds_cbi_endpoint, "id")
+    body_field "billingPeriod", val($ds_dates, "period")
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "status", jmes_path(response, "status")
+    field "createdAt", jmes_path(response, "createdAt")
+    field "updatedAt", jmes_path(response, "updatedAt")
+    field "billConnectId", jmes_path(response, "billConnectId")
+    field "billingPeriod", jmes_path(response, "billingPeriod")
+  end
+end
+
+datasource "ds_cbi_upload_files" do
+  iterate $ds_cost_reports
+  request do
+    run_script $js_cbi_upload_files, iter_item, $ds_cbi_create_bill_upload, $ds_dates, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "billUploadId", jmes_path(response, "billUploadId")
+    field "createdAt", jmes_path(response, "createdAt")
+    field "length", jmes_path(response, "length")
+    field "md5", jmes_path(response, "md5")
+    field "status", jmes_path(response, "status")
+    field "updatedAt", jmes_path(response, "updatedAt")
+  end
+end
+
+script "js_cbi_upload_files", type: "javascript" do
+  parameters "alibaba_cost_file", "ds_cbi_create_bill_upload", "ds_dates", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  path = [ "/optima/orgs/", rs_org_id, "/billUploads/", ds_cbi_create_bill_upload["id"], "/files/", now, "_", Math.random().toString().split(".")[1], "_", ds_dates["period"], ".csv" ].join('')
+
+  // Slow down rate of requests to prevent throttling
+  api_wait = 3
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: path,
+    headers: { "User-Agent": "RS Policies" },
+    body: alibaba_cost_file
+  }
+EOS
+end
+
+datasource "ds_cbi_commit_bill_upload" do
+  request do
+    run_script $js_cbi_commit_bill_upload, $ds_cbi_upload_files, $ds_cbi_create_bill_upload, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "status", jmes_path(response, "status")
+    field "createdAt", jmes_path(response, "createdAt")
+    field "updatedAt", jmes_path(response, "updatedAt")
+    field "billConnectId", jmes_path(response, "billConnectId")
+    field "billingPeriod", jmes_path(response, "billingPeriod")
+  end
+end
+
+script "js_cbi_commit_bill_upload", type: "javascript" do
+  parameters "ds_cbi_upload_files", "ds_cbi_create_bill_upload", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: ["/optima/orgs/", rs_org_id, "/billUploads/", ds_cbi_create_bill_upload["id"], "/operations"].join(''),
+    headers: { "User-Agent": "RS Policies" },
+    body_fields: {"operation": "commit" }
+  }
+EOS
+end
+
+datasource "ds_incident" do
+  run_script $js_incident, $ds_cbi_commit_bill_upload, $ds_applied_policy, $ds_dates, $param_account_id, $param_region, $param_bucket
+end
+
+script "js_incident", type: "javascript" do
+  parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_dates", "param_account_id", "param_region", "param_bucket"
+  result "result"
+  code <<-EOS
+  result = [{
+    policy_name: ds_applied_policy['name'],
+    id: ds_cbi_commit_bill_upload['id'],
+    status: ds_cbi_commit_bill_upload['status'],
+    createdAt: ds_cbi_commit_bill_upload['createdAt'],
+    updatedAt: ds_cbi_commit_bill_upload['updatedAt'],
+    billConnectId: ds_cbi_commit_bill_upload['billConnectId'],
+    billingPeriod: ds_cbi_commit_bill_upload['billingPeriod'],
+    account_id: param_account_id,
+    region: param_region,
+    bucket: param_bucket
+  }]
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_alibaba_cbi" do
+  validate_each $ds_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ with index data 0 }}{{ .billingPeriod }}{{ end }}"
+    check eq(0, 1)
+    escalate $esc_email
+    export do
+      resource_level true
+      field "billingPeriod" do
+        label "Billing Period"
+      end
+      field "account_id" do
+        label "Alibaba Account ID"
+      end
+      field "region" do
+        label "Alibaba Region"
+      end
+      field "bucket" do
+        label "Alibaba Object Storage"
+      end
+      field "id" do
+        label "Bill Upload ID"
+      end
+      field "createdAt" do
+        label "Bill Upload Date"
+      end
+      field "status" do
+        label "Bill Upload Status"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
