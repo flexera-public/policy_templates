@@ -1,0 +1,62 @@
+name: Update Change History
+
+on:
+  schedule:
+    #        ┌───────────── minute (0 - 59)
+    #        │  ┌───────────── hour (0 - 23)
+    #        │  │ ┌───────────── day of the month (1 - 31)
+    #        │  │ │ ┌───────────── month (1 - 12 or JAN-DEC)
+    #        │  │ │ │ ┌───────────── day of the week (0 - 6 or SUN-SAT)
+    #        │  │ │ │ │
+    #        │  │ │ │ │
+    #        │  │ │ │ │
+    #        *  * * * *
+    # At 01:00 UTC on Sundays
+    - cron: "0 1 * * 0"
+
+  # Workflow dispatch trigger allows manually running workflow
+  workflow_dispatch: {}
+
+jobs:
+  change-history:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Speed up checkout by not fetching history
+
+      - name: Install Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true # runs 'bundle install' and caches installed gems automatically
+
+      - name: Install Ruby Gems
+        shell: bash -l {0} # https://github.com/actions/virtual-environments/issues/4
+        run: |
+          bundle install --without documentation --path bundle
+
+      - name: Run Generate Change History Script
+        id: generate_change_history
+        shell: bash -l {0} # https://github.com/actions/virtual-environments/issues/4
+        run: |
+          bundle exec ruby tools/change_history/generate_change_history.rb
+        env:
+          GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Pull Request
+        id: cpr
+        uses: peter-evans/create-pull-request@v4
+        with:
+          commit-message: "Update Change History"
+          title: "Update Change History"
+          body: "Update Change History from GitHub Actions Workflow [${{ github.workflow }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          branch: "task/update-change-history"
+          delete-branch: true
+          labels: "automation"
+
+      - name: Check Outputs
+        if: ${{ steps.cpr.outputs.pull-request-number }}
+        run: |
+          echo "Pull Request Number - ${{ steps.cpr.outputs.pull-request-number }}"
+          echo "Pull Request URL - ${{ steps.cpr.outputs.pull-request-url }}"

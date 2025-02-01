@@ -7,11 +7,12 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "2.1",
+  version: "3.1.4",
   provider: "Google",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -72,10 +73,18 @@ end
 parameter "param_exclusion_labels" do
   type "list"
   category "Filters"
-  label "Exclusion Labels (Key:Value)"
-  description "Google labels to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific label key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
-  allowed_pattern /(^$)|[\w]*\:.*/
+  label "Exclusion Labels"
+  description "Cloud native labels to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_labels_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Labels: Any / All"
+  description "Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Labels' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_idle_or_underutilized" do
@@ -255,7 +264,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -376,7 +385,7 @@ datasource "ds_get_instances" do
   end
   result do
     encoding "json"
-    field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind,hostname,cpuPlatform,labels,description,machineType}]")
+    field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind,hostname,cpuPlatform,labels,description,machineType} ]")
     field "projectId", val(iter_item, "id")
     field "projectName", val(iter_item, "name")
     field "projectNumber", val(iter_item, "number")
@@ -445,33 +454,75 @@ EOS
 end
 
 datasource "ds_instances_label_filtered" do
-  run_script $js_instances_label_filtered, $ds_instances, $param_exclusion_labels
+  run_script $js_instances_label_filtered, $ds_instances, $param_exclusion_labels, $param_exclusion_labels_boolean
 end
 
 script "js_instances_label_filtered", type: "javascript" do
-  parameters "ds_instances", "param_exclusion_labels"
+  parameters "ds_instances", "param_exclusion_labels", "param_exclusion_labels_boolean"
   result "result"
   code <<-EOS
+  comparators = _.map(param_exclusion_labels, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
   if (param_exclusion_labels.length > 0) {
-    result = _.reject(ds_instances, function(instance) {
-      labels = []
+    result = _.reject(ds_instances, function(resource) {
+      resource_labels = {}
+      if (typeof(resource['labels']) == 'object') { resource_labels = resource['labels'] }
 
-      if (typeof(instance['labels']) == 'object') {
-        _.each(Object.keys(instance['labels']), function(key) {
-          labels.push([key, ":", instance['labels'][key]].join(''))
-          labels.push([key, ":*"].join(''))
-        })
-      }
+      // Store a list of found labels
+      found_labels = []
 
-      exclude_instance = false
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_label = resource_labels[comparator['key']]
 
-      _.each(param_exclusion_labels, function(exclusion_label) {
-        if (_.contains(labels, exclusion_label)) {
-          exclude_instance = true
+        if (comparison == 'key' && resource_label != undefined) { found_labels.push(string) }
+        if (comparison == '==' && resource_label == value) { found_labels.push(string) }
+        if (comparison == '!=' && resource_label != value) { found_labels.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_label != undefined && value.test(resource_label)) { found_labels.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_label == undefined) { found_labels.push(string) }
+          if (resource_label != undefined && value.test(resource_label)) { found_labels.push(string) }
         }
       })
 
-      return exclude_instance
+      all_labels_found = found_labels.length == comparators.length
+      any_labels_found = found_labels.length > 0 && param_exclusion_labels_boolean == 'Any'
+
+      return all_labels_found || any_labels_found
     })
   } else {
     result = ds_instances
@@ -698,11 +749,11 @@ script "js_currency", type:"javascript" do
   result = ds_currency_target
   result['exchange_rate'] = 1
 
-  if (ds_currency_conversion['to'] != undefined) {
+  if (ds_currency_conversion.length > 0) {
     currency_code = ds_currency_target['code']
     current_month = parseInt(new Date().toISOString().split('-')[1])
 
-    conversion_block = _.find(ds_currency_conversion['to'][currency_code], function(item) {
+    conversion_block = _.find(ds_currency_conversion[0]['to'][currency_code], function(item) {
       return item['month'] == current_month
     })
 
@@ -776,6 +827,10 @@ script "js_sorted_recommendations", type:"javascript" do
             resourceType = instance['machineType'].split('/')[10]
           }
 
+          cpuAverage = instance['cpuAverage'];
+          cpuMaximum = instance['cpuMaximum'];
+          cpuMinimum = instance['cpuMinimum'];
+
           idle_result.push({
             resourceID: instance['id'],
             resourceName: instance['name'],
@@ -790,9 +845,9 @@ script "js_sorted_recommendations", type:"javascript" do
             accountID: instance['projectId'],
             accountName: instance['projectName'],
             projectNumber: instance['projectNumber'],
-            cpuAverage: Number(instance['cpuAverage'].toFixed(2)),
-            cpuMaximum: Number(instance['cpuMaximum'].toFixed(2)),
-            cpuMinimum: Number(instance['cpuMinimum'].toFixed(2)),
+            cpuAverage: cpuAverage? Number(cpuAverage.toFixed(2)): cpuAverage,
+            cpuMaximum: cpuMaximum? Number(cpuMaximum.toFixed(2)): cpuMaximum,
+            cpuMinimum: cpuMinimum? Number(cpuMinimum.toFixed(2)): cpuMinimum,
             priority: recommendation['priority'],
             primaryImpact: recommendation['primaryImpact'],
             primaryImpactCategory: recommendation['primaryImpact']['category'],
@@ -801,6 +856,7 @@ script "js_sorted_recommendations", type:"javascript" do
             state: recommendation['state'],
             recommendationCategory: recommendation['recommendationCategory'],
             resourceType: resourceType,
+            newResourceType: "Stop VM Instance",
             policy_name: ds_applied_policy['name'],
             tags: labels.join(', '),
             savings: parseFloat(savings.toFixed(3)),
@@ -863,6 +919,10 @@ script "js_sorted_recommendations", type:"javascript" do
             newResourceType = recommendation['recommendedMachineType']['name']
           }
 
+          cpuAverage = instance['cpuAverage'];
+          cpuMaximum = instance['cpuMaximum'];
+          cpuMinimum = instance['cpuMinimum'];
+
           underutil_result.push({
             resourceID: instance['id'],
             resourceName: instance['name'],
@@ -877,9 +937,9 @@ script "js_sorted_recommendations", type:"javascript" do
             accountID: instance['projectId'],
             accountName: instance['projectName'],
             projectNumber: instance['projectNumber'],
-            cpuAverage: Number(instance['cpuAverage'].toFixed(2)),
-            cpuMaximum: Number(instance['cpuMaximum'].toFixed(2)),
-            cpuMinimum: Number(instance['cpuMinimum'].toFixed(2)),
+            cpuAverage: cpuAverage? Number(cpuAverage.toFixed(2)): cpuAverage,
+            cpuMaximum: cpuMaximum? Number(cpuMaximum.toFixed(2)): cpuMaximum,
+            cpuMinimum: cpuMinimum? Number(cpuMinimum.toFixed(2)): cpuMinimum,
             priority: recommendation['priority'],
             primaryImpact: recommendation['primaryImpact'],
             primaryImpactCategory: recommendation['primaryImpact']['category'],
@@ -921,21 +981,27 @@ script "js_idle_incident", type:"javascript" do
   code <<-'EOS'
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
-    var numString = number.toString()
-    var values = numString.split(".")
-    var formatted_number = ''
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   // Sort by descending order of savings value
@@ -959,7 +1025,7 @@ script "js_idle_incident", type:"javascript" do
   if (total_idle_instances > 1) { instance_verb = "are" }
 
   findings = [
-    "Out of ", total_instances , " Google VM ", instance_noun, " analyzed, ",
+    "Out of ", total_instances, " Google VM ", instance_noun, " analyzed, ",
     total_idle_instances, " (", idle_percentage,
     ") ", instance_verb, " idle and recommended for stopping.\n\n"
   ].join('')
@@ -974,17 +1040,39 @@ script "js_idle_incident", type:"javascript" do
 
   // Dummy item to ensure that the check statement in the policy executes at least once
   result.push({
-    resourceID: "",               resourceName: "",              description: "",
-    status: "",                   zone: "",                      selfLink: "",
-    cpuPlatform: "",              hostname: "",                  labels: "",
-    region: "",                   kind: "",                      accountID: "",
-    accountName: "",              projectNumber: "",             cpuAverage: "",
-    cpuMaximum: "",               cpuMinimum: "",                resourceType: "",
-    newResourceType: "",          priority: "",                  primaryImpact: "",
-    primaryImpactCategory: "",    recommendationDetails: "",     recommenderSubtype: "",
-    state: "",                    recommendationCategory: "",    policy_name: "",
-    tags: "",                     savings: "",                   savingsCurrency: "",
-    service: "",                  total_savings: "",             message: ""
+    resourceID: "",
+    resourceName: "",
+    description: "",
+    status: "",
+    zone: "",
+    selfLink: "",
+    cpuPlatform: "",
+    hostname: "",
+    labels: "",
+    region: "",
+    kind: "",
+    accountID: "",
+    accountName: "",
+    projectNumber: "",
+    cpuAverage: "",
+    cpuMaximum: "",
+    cpuMinimum: "",
+    resourceType: "",
+    newResourceType: "",
+    priority: "",
+    primaryImpact: "",
+    primaryImpactCategory: "",
+    recommendationDetails: "",
+    recommenderSubtype: "",
+    state: "",
+    recommendationCategory: "",
+    policy_name: "",
+    tags: "",
+    savings: "",
+    savingsCurrency: "",
+    service: "",
+    total_savings: "",
+    message: ""
   })
 
   result[0]['total_savings'] = savings_message
@@ -1002,21 +1090,27 @@ script "js_underutil_incident", type:"javascript" do
   code <<-'EOS'
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
-    var numString = number.toString()
-    var values = numString.split(".")
-    var formatted_number = ''
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   // Sort by descending order of savings value
@@ -1040,7 +1134,7 @@ script "js_underutil_incident", type:"javascript" do
   if (total_underutil_instances > 1) { instance_verb = "are" }
 
   findings = [
-    "Out of ", total_instances , " Google VM ", instance_noun, " analyzed, ",
+    "Out of ", total_instances, " Google VM ", instance_noun, " analyzed, ",
     total_underutil_instances, " (", underutil_percentage,
     ") ", instance_verb, " underutilized and recommended for downsizing.\n\n"
   ].join('')
@@ -1055,17 +1149,39 @@ script "js_underutil_incident", type:"javascript" do
 
   // Dummy item to ensure that the check statement in the policy executes at least once
   result.push({
-    resourceID: "",               resourceName: "",              description: "",
-    status: "",                   zone: "",                      selfLink: "",
-    cpuPlatform: "",              hostname: "",                  labels: "",
-    region: "",                   kind: "",                      accountID: "",
-    accountName: "",              projectNumber: "",             cpuAverage: "",
-    cpuMaximum: "",               cpuMinimum: "",                resourceType: "",
-    newResourceType: "",          priority: "",                  primaryImpact: "",
-    primaryImpactCategory: "",    recommendationDetails: "",     recommenderSubtype: "",
-    state: "",                    recommendationCategory: "",    policy_name: "",
-    tags: "",                     savings: "",                   savingsCurrency: "",
-    service: "",                  total_savings: "",             message: ""
+    resourceID: "",
+    resourceName: "",
+    description: "",
+    status: "",
+    zone: "",
+    selfLink: "",
+    cpuPlatform: "",
+    hostname: "",
+    labels: "",
+    region: "",
+    kind: "",
+    accountID: "",
+    accountName: "",
+    projectNumber: "",
+    cpuAverage: "",
+    cpuMaximum: "",
+    cpuMinimum: "",
+    resourceType: "",
+    newResourceType: "",
+    priority: "",
+    primaryImpact: "",
+    primaryImpactCategory: "",
+    recommendationDetails: "",
+    recommenderSubtype: "",
+    state: "",
+    recommendationCategory: "",
+    policy_name: "",
+    tags: "",
+    savings: "",
+    savingsCurrency: "",
+    service: "",
+    total_savings: "",
+    message: ""
   })
 
   result[0]['total_savings'] = savings_message
@@ -1077,7 +1193,7 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_recommendations" do
+policy "pol_recommendations" do
   validate_each $ds_underutil_incident do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Underutilized VM Instances Found"
     detail_template <<-'EOS'
@@ -1204,6 +1320,9 @@ policy "policy_recommendations" do
       field "resourceType" do
         label "Resource Type"
       end
+      field "newResourceType" do
+        label "Recommended Resource Type"
+      end
       field "zone" do
         label "Zone"
       end
@@ -1306,15 +1425,17 @@ define downsize_instances($data) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
-    sub on_error: handle_error() do
-      call stop_instance($instance) retrieve $stop_response
-      call resize_instance($instance) retrieve $resize_response
-      call start_instance($instance) retrieve $start_response
+    if $instance["newResourceType"] != "Delete VM Instance"
+      sub on_error: handle_error() do
+        call stop_instance($instance) retrieve $stop_response
+        call resize_instance($instance) retrieve $resize_response
+        call start_instance($instance) retrieve $start_response
+      end
     end
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1328,7 +1449,7 @@ define stop_instances($data) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1343,7 +1464,7 @@ define delete_instances($data) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1402,7 +1523,6 @@ define delete_instance($instance) return $response do
     task_label("Delete Google VM instance successful: " + $instance["resourceName"])
   end
 end
-
 
 define start_instance($instance) return $response do
   task_label("POST " + $instance['selfLink'] + '/start')
@@ -1502,7 +1622,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do

@@ -1,5 +1,21 @@
 # Changelog
 
+## v3.3.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.3.2
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v3.3.1
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
+## v3.3
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
 ## v3.2
 
 - Updated description of `Account Number` parameter

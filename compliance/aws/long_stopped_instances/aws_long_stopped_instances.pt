@@ -7,10 +7,11 @@ severity "low"
 category "Compliance"
 default_frequency "weekly"
 info(
-  version: "5.0",
+  version: "6.0.2",
   provider: "AWS",
   service: "Compute",
-  policy_set: "Long Stopped Instances"
+  policy_set: "Long Stopped Instances",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -46,18 +47,26 @@ parameter "param_regions_list" do
   type "list"
   category "Filters"
   label "Allow/Deny Regions List"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
 end
 
 parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
-  label "Exclusion Tags (Key:Value)"
-  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
-  allowed_pattern /(^$)|[\w]*\:.*/
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_stopped_days" do
@@ -65,9 +74,9 @@ parameter "param_stopped_days" do
   category "Policy Settings"
   label "Stopped Days"
   description "The number of days an instance needs to be stopped to include it in the incident report."
-  default 7
   min_value 1
   max_value 90
+  default 7
 end
 
 parameter "param_automatic_action" do
@@ -161,12 +170,11 @@ end
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
-    verb "GET"
     host "sts.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
@@ -202,7 +210,6 @@ end
 datasource "ds_describe_regions" do
   request do
     auth $auth_aws
-    verb "GET"
     host "ec2.amazonaws.com"
     path "/"
     query "Action", "DescribeRegions"
@@ -248,19 +255,19 @@ datasource "ds_instance_sets" do
     auth $auth_aws
     host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
     path '/'
-    header 'User-Agent', 'RS Policies'
-    header 'Content-Type', 'text/xml'
     query 'Action', 'DescribeInstances'
     query 'Version', '2016-11-15'
     query 'Filter.1.Name', 'instance-state-name'
     query 'Filter.1.Value.1', 'stopped'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
   end
   result do
     encoding "xml"
     collect xpath(response, "//DescribeInstancesResponse/reservationSet/item", "array") do
       field "instances_set" do
         collect xpath(col_item,"instancesSet/item","array") do
-          field "region",val(iter_item, "region")
+          field "region", val(iter_item, "region")
           field "instanceId", xpath(col_item, "instanceId")
           field "imageId", xpath(col_item, "imageId")
           field "resourceType", xpath(col_item, "instanceType")
@@ -268,7 +275,7 @@ datasource "ds_instance_sets" do
           field "privateDnsName", xpath(col_item, "privateDnsName")
           field "launchTime", xpath(col_item, "launchTime")
           field "tags" do
-            collect xpath(col_item,"tagSet/item", "array") do
+            collect xpath(col_item, "tagSet/item", "array") do
               field "key", xpath(col_item, "key")
               field "value", xpath(col_item, "value")
             end
@@ -280,36 +287,83 @@ datasource "ds_instance_sets" do
 end
 
 datasource "ds_instances_tag_filtered" do
-  run_script $js_instances_tag_filtered, $ds_instance_sets, $param_exclusion_tags
+  run_script $js_instances_tag_filtered, $ds_instance_sets, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_instances_tag_filtered", type: "javascript" do
-  parameters "ds_instance_sets", "param_exclusion_tags"
+  parameters "ds_instance_sets", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
   result = []
 
   _.each(ds_instance_sets, function(item) {
     if (param_exclusion_tags.length > 0) {
-      filtered_instances = _.reject(item['instances_set'], function(instance) {
-        instance_tags = []
+      filtered_instances = _.reject(item['instances_set'], function(resource) {
+        resource_tags = {}
 
-        if (instance['tags'] != null && instance['tags'] != undefined) {
-          _.each(instance['tags'], function(tag) {
-            instance_tags.push([tag['key'], tag['value']].join(':'))
-            instance_tags.push([tag['key'], '*'].join(':'))
+        if (typeof(resource['tags']) == 'object') {
+          _.each(resource['tags'], function(tag) {
+            resource_tags[tag['key']] = tag['value']
           })
         }
 
-        exclude_instance = false
+        // Store a list of found tags
+        found_tags = []
 
-        _.each(param_exclusion_tags, function(exclusion_tag) {
-          if (_.contains(instance_tags, exclusion_tag)) {
-            exclude_instance = true
+        _.each(comparators, function(comparator) {
+          comparison = comparator['comparison']
+          value = comparator['value']
+          string = comparator['string']
+          resource_tag = resource_tags[comparator['key']]
+
+          if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+          if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+          if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+          if (comparison == '=~') {
+            if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+          }
+
+          if (comparison == '!~') {
+            if (resource_tag == undefined) { found_tags.push(string) }
+            if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
           }
         })
 
-        return exclude_instance
+        all_tags_found = found_tags.length == comparators.length
+        any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+        return all_tags_found || any_tags_found
       })
 
       result = result.concat(filtered_instances)
@@ -598,11 +652,11 @@ policy "pol_long_stopped_instances" do
   validate_each $ds_long_stopped_instances do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Long Stopped EC2 Instances Found"
     detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_terminate_instances
     hash_exclude "message", "tags"
-    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     export do
       resource_level true
       field "accountID" do
@@ -688,7 +742,7 @@ define terminate_instances($data) do
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -776,7 +830,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do
@@ -784,7 +838,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

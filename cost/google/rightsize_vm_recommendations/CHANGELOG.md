@@ -1,4 +1,32 @@
-# Google Rightsize VM Recommender
+# Changelog
+
+## v3.1.4
+
+- Added validation to properly handle null values for cpuAverage, cpuMaximum, and cpuMinimum when sorting recommendations
+
+## v3.1.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.1.2
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v3.1.1
+
+- Idle VM Instances incident now includes a `Recommended Resource Type` field with a value of `Delete VM Instance` for ease of analyzing recommendations from the Flexera Optimization dashboard
+
+## v3.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v3.0
+
+- Added support for regex when filtering resources by label
+
+## v2.2
+
+- Fixed issue where currency conversion would sometimes not work as expected.
 
 ## v2.1
 

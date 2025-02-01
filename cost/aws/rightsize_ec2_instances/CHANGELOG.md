@@ -1,5 +1,41 @@
 # Changelog
 
+## v5.3.2
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v5.3.1
+
+- Added `hide_skip_approvals` field to the info section, enabling the UI to dynamically show or hide the "Skip Approval" option. Functionality unchanged.
+
+## v5.3.0
+
+- Added support for downsizing multiple sizes where appropriate
+
+## v5.2.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v5.2.0
+
+- Added `Resource ARN` to incident table.
+
+## v5.1.2
+
+- Fix bug preventing Memory metrics from being included in result for some EC2 Instances created by Autoscaling Group
+
+## v5.1.1
+
+- Idle EC2 Instances incident now includes a `Recommended Instance Size` field with a value of `Terminate EC2 Instance` for ease of analyzing recommendations from the Flexera Optimization dashboard
+
+## v5.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v5.0
+
+- Added support for regex when filtering resources by tag
+
 ## v4.5
 
 - Corrected API issue when executing policy in APAC

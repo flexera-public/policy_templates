@@ -2,20 +2,22 @@ name "Azure Old Snapshots"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks for snapshots older than specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/old_snapshots) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
 severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "6.2",
+  version: "7.2.2",
   provider: "Azure",
   service: "Storage",
   policy_set: "Old Snapshots",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
 )
 
-##############################################################################
+###############################################################################
 # Parameters
-##############################################################################
+###############################################################################
 
 parameter "param_email" do
   type "list"
@@ -89,10 +91,18 @@ end
 parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
-  label "Exclusion Tags (Key:Value)"
-  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
-  allowed_pattern /(^$)|[\w]*\:.*/
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_automatic_action" do
@@ -154,9 +164,9 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -190,7 +200,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -306,7 +316,7 @@ datasource "ds_azure_snapshots" do
       field "resourceID", jmes_path(col_item, "id")
       field "resourceName", jmes_path(col_item, "name")
       field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
-      field "resourceType", jmes_path(col_item, "type")
+      field "type", jmes_path(col_item, "type")
       field "region", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item, "tags")
       field "timeCreated", jmes_path(col_item, "properties.timeCreated")
@@ -318,33 +328,75 @@ datasource "ds_azure_snapshots" do
 end
 
 datasource "ds_azure_snapshots_tag_filtered" do
-  run_script $js_azure_snapshots_tag_filtered, $ds_azure_snapshots, $param_exclusion_tags
+  run_script $js_azure_snapshots_tag_filtered, $ds_azure_snapshots, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_azure_snapshots_tag_filtered", type: "javascript" do
-  parameters "ds_azure_snapshots", "param_exclusion_tags"
+  parameters "ds_azure_snapshots", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
   if (param_exclusion_tags.length > 0) {
-    result = _.reject(ds_azure_snapshots, function(snapshot) {
-      snapshot_tags = []
+    result = _.reject(ds_azure_snapshots, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
 
-      if (typeof(snapshot['tags']) == 'object') {
-        _.each(Object.keys(snapshot['tags']), function(key) {
-          snapshot_tags.push([key, ":", snapshot['tags'][key]].join(''))
-          snapshot_tags.push([key, ":*"].join(''))
-        })
-      }
+      // Store a list of found tags
+      found_tags = []
 
-      exclude_snapshot = false
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
 
-      _.each(param_exclusion_tags, function(exclusion_tag) {
-        if (_.contains(snapshot_tags, exclusion_tag)) {
-          exclude_snapshot = true
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
         }
       })
 
-      return exclude_snapshot
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
     })
   } else {
     result = ds_azure_snapshots
@@ -398,12 +450,12 @@ script "js_azure_old_snapshots", type: "javascript" do
     snapshotTime = Date.parse(snapshot['timeCreated'])
     age = Math.round((new Date().getTime() - new Date(snapshotTime).getTime()) / (1000 * 3600 * 24))
 
-    service = snapshot['resourceType'].split("/")[0]
+    service = snapshot['type'].split("/")[0]
 
     if (age > param_snapshot_age) {
       result.push({
         resourceID: snapshot['resourceID'],
-        resourceType: snapshot['resourceType'],
+        type: snapshot['type'],
         resourceName: snapshot['resourceName'],
         region: snapshot['region'],
         resourceGroup: snapshot['resourceGroup'],
@@ -542,21 +594,27 @@ script "js_azure_snapshots_incident", type:"javascript" do
   code <<-'EOS'
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
-    var numString = number.toString()
-    var values = numString.split(".")
-    var formatted_number = ''
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   result = []
@@ -585,7 +643,7 @@ script "js_azure_snapshots_incident", type:"javascript" do
         resourceID: snapshot['resourceID'],
         resourceName: snapshot['resourceName'],
         resourceGroup: snapshot['resourceGroup'],
-        resourceType: snapshot['resourceType'],
+        type: snapshot['type'],
         region: snapshot['region'],
         age: snapshot['age'],
         tags: snapshot['tags'],
@@ -684,6 +742,9 @@ policy "pol_azure_old_snapshots" do
       field "size" do
         label "Size (GB)"
       end
+      field "type" do
+        label "Type"
+      end
       field "service" do
         label "Service"
       end
@@ -698,9 +759,6 @@ policy "pol_azure_old_snapshots" do
       end
       field "savingsCurrency" do
         label "Savings Currency"
-      end
-      field "resourceType" do
-        label "Resource Type"
       end
       field "lookbackPeriod" do
         label "Snapshot Age Threshold (Days)"
@@ -748,7 +806,7 @@ define delete_snapshots($data, $param_azure_endpoint) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -800,7 +858,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do
@@ -808,7 +866,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

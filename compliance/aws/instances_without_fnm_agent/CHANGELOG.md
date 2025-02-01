@@ -1,5 +1,17 @@
 # Changelog
 
+## v4.3.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v4.3.2
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v4.3.1
+
+- Added default value for parameters that do not require user input
+
 ## v4.3
 
 - Updated description of `Account Number` parameter
@@ -25,7 +37,7 @@
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
 
-## 2.9
+## v2.9
 
 - Added filter for DescribeRegion to only return regions that are `opted-in` or `opt-in-not-required` [exclude `not-opted-in`] in the current AWS account.
 

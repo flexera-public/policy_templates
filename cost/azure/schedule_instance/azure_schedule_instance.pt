@@ -1,54 +1,115 @@
 name "Azure Schedule Instance"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy Template allows you to schedule start and stop times for your instance, along with the option to terminate instance, update and delete schedule. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/schedule_instance/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Schedules Azure virtual machines to start and stop at specific times based on a configuration stored in the virtual machine's tags. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/schedule_instance/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
-default_frequency "daily"
+default_frequency "15 minutes"
 info(
-  version: "3.1",
+  version: "6.1.0",
   provider: "Azure",
   service: "Compute",
-  policy_set: "Schedule Instance"
+  policy_set: "Schedule Instance",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
   type "list"
-  label "Email addresses"
-  description "A list of email addresses to notify"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
-parameter "param_subscription_allowed_list" do
-  label "Subscription Allowed List"
-  type "list"
-  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+parameter "param_tag_schedule" do
+  type "string"
+  category "Tag Keys"
+  label "Schedule Tag Key"
+  description "Tag key that schedule information is stored in. Default is recommended for most use cases."
+  default "schedule"
 end
 
-parameter "param_exclusion_tag_key" do
-  category "User Inputs"
-  label "Exclusion Tags"
-  description "Cloud native tag key to ignore instances. Example: exclude_utilization"
+parameter "param_exclusion_tags" do
   type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_skipshutdown" do
+  type "string"
+  category "Actions"
+  label "Power Off Type"
+  description "Whether to perform a graceful shutdown or a forced shutdown when powering off instances."
+  allowed_values "Graceful", "Forced"
+  default "Graceful"
 end
 
 parameter "param_automatic_action" do
   type "list"
-  label "Automatic Actions(s)"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Schedule Instances"]
-  default []
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Execute Schedules", "Start Notification", "Stop Notification", "Error Notification"]
+  default ["Execute Schedules", "Start Notification", "Stop Notification", "Error Notification"] # Schedules enabled by default because resource label required to action.  Can be disabled by removing from list which is helpful for debugging / manual triggers.
 end
 
 ###############################################################################
@@ -73,8 +134,7 @@ end
 # Pagination
 ###############################################################################
 
-#pagination support
-pagination "azure_pagination" do
+pagination "pagination_azure" do
   get_page_marker do
     body_path "nextLink"
   end
@@ -84,17 +144,168 @@ pagination "azure_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-#get all subscription details.
-datasource "ds_subscriptions" do
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# get azure directory name so we can construct the portal url
+# https://portal.azure.com/#@FLEXERA.onmicrosoft.com/resource/subscriptions/0db6431e-7324-4088-aae6-772079b7e198/resourceGroups/BK-SANDBOX/providers/Microsoft.Compute/virtualMachines/bk-tmp-scheduled-instance/overview
+# We need the FLEXERA.onmicrosoft.com part
+datasource "ds_azure_directory" do
   request do
     auth $auth_azure
-    pagination $azure_pagination
+    host $param_azure_endpoint
+    path "/tenants"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".value[]?") do
+      field "id", jq(col_item, ".id")
+      field "tenantId", jq(col_item, ".tenantId")
+      field "tenantCategory", jq(col_item, ".tenantCategory")
+    end
+  end
+end
+
+# Get Incident data for use later
+datasource "ds_policy_incident" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/incidents"])
+    query "applied_policy_id", policy_id
+    query "state", "triggered"
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".items[]?") do
+      field "incident_id", jq(col_item, ".id")
+      field "applied_policy_id", jq(col_item, ".applied_policy.id")
+      field "summary", jq(col_item, ".summary")
+      field "state", jq(col_item, ".state")
+      field "violation_data_count", jq(col_item, ".violation_data_count")
+      field "action_failed", jq(col_item, ".action_failed")
+      field "updated_at", jq(col_item, ".updated_at")
+    end
+  end
+end
+
+datasource "ds_policy_incident_action_failed" do
+  run_script $js_policy_incident_action_failed, $ds_policy_incident
+end
+
+script "js_policy_incident_action_failed", type: "javascript" do
+  parameters "ds_policy_incident"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_policy_incident, function(incident) {
+    return incident['action_failed'] == true
+  })
+EOS
+end
+
+datasource "ds_policy_incident_action_failed_status" do
+  iterate $ds_policy_incident_action_failed
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/action_status"])
+    query "incident_id", val(iter_item, 'incident_id')
+    query "view", "extended"
+    header "User-Agent", "RS Policies"
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".items[]?") do
+      field "applied_policy_id", jq(iter_item, ".applied_policy_id")
+      field "incident_id", jq(iter_item, ".incident_id")
+      field "incident_summary", jq(iter_item, ".summary")
+      field "action_status", jq(col_item, ".status")
+      field "action_items", jq(col_item, ".action_items")
+      field "action_label", jq(col_item, ".label")
+    end
+  end
+end
+
+#
+datasource "ds_policy_incident_action_failed_details" do
+  run_script $js_policy_incident_action_failed_details, $ds_policy_incident_action_failed_status, $ds_applied_policy, $ds_flexera_api_hosts
+end
+
+script "js_policy_incident_action_failed_details", type: "javascript" do
+  parameters "ds_policy_incident_action_failed_status", "ds_applied_policy", "ds_flexera_api_hosts"
+  result "result"
+  code <<-EOS
+  result = []
+  // Incidents can have multiple actions
+  // Loop through each action and compile list of failed actions
+  _.each(ds_policy_incident_action_failed_status, function(action) {
+    // Check if the incident action is status failed
+    if (action['action_status'] == 'failed') {
+      action['failed_action_items'] = _.filter(action['action_items'], function(item) {
+        return item['status'] == 'failed'
+      })
+      result.push(action)
+    }
+  })
+  // If we found any failed actions, add the policy name and UI host to the result
+  // These strings are used in the email template
+  if (result.length > 0) {
+    result[0]['policy_name'] = ds_applied_policy['name']
+    result[0]['ui_host'] = ds_flexera_api_hosts['ui']
+  }
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version", "2019-06-01"
+    query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
@@ -105,25 +316,44 @@ datasource "ds_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "displayName", jmes_path(col_item,"displayName")
-      field "state", jmes_path(col_item,"state")
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
 
-datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
-#get all virtual machines
-datasource "ds_azure_virtualmachines" do
-  iterate $ds_filtered_subscriptions
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-EOS
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_azure_instances" do
+  iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
-    pagination $azure_pagination
+    pagination $pagination_azure
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version", "2019-03-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
@@ -132,493 +362,1017 @@ datasource "ds_azure_virtualmachines" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item,"id")
-      field "rg", get(4,split(jmes_path(col_item,"id"),'/'))
-      field "name", jmes_path(col_item,"name")
-      field "location", jmes_path(col_item, "location")
-      field "tags", jmes_path(col_item,"tags")
-      field "subscriptionId",val(iter_item,"subscriptionId")
-      field "subscriptionName",val(iter_item,"displayName")
+      field "resourceID", jmes_path(col_item, "id")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "resourceKind", jmes_path(col_item, "type")
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
+      field "tags", jmes_path(col_item, "tags")
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
     end
   end
 end
 
-#get all deeper instance data from those machines
-datasource "ds_azure_instances" do
-  iterate $ds_azure_virtualmachines
+datasource "ds_azure_instances_tag_filtered" do
+  run_script $js_azure_instances_tag_filtered, $ds_azure_instances, $param_exclusion_tags, $param_exclusion_tags_boolean, $param_tag_schedule
+end
+
+script "js_azure_instances_tag_filtered", type: "javascript" do
+  parameters "ds_azure_instances", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_tag_schedule"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_instances, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_azure_instances
+  }
+
+  // Filter out any VMs that do not have the schedule tag key
+  result = _.filter(result, function(vm) {
+    tag_keys = []
+    if (typeof(vm['tags']) == 'object') { tag_keys = _.keys(vm['tags']) }
+
+    return _.contains(tag_keys, param_tag_schedule)
+  })
+EOS
+end
+
+datasource "ds_azure_instances_region_filtered" do
+  run_script $js_azure_instances_region_filtered, $ds_azure_instances_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_instances_region_filtered", type: "javascript" do
+  parameters "ds_azure_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_instances_tag_filtered, function(vm) {
+      include_vm = _.contains(param_regions_list, vm['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_vm = !include_vm
+      }
+
+      return include_vm
+    })
+  } else {
+    result = ds_azure_instances_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_azure_instances_with_status" do
+  iterate $ds_azure_instances_region_filtered
   request do
     auth $auth_azure
-    pagination $azure_pagination
+    pagination $pagination_azure
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resourceGroups/", val(iter_item,"rg"), "/providers/Microsoft.Compute/virtualMachines/",val(iter_item,"name"),"/instanceView"])
-    query "api-version", "2018-06-01"
+    path join([val(iter_item, "resourceID"), '/instanceView'])
+    query "api-version", "2019-03-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
-    # From the statuses[] list select the object with code matching PowerState
-    # With that object, we select the .code string, and use the status after "PowerState/" in the string
-    field "status", jq(response,'.statuses[] | select( .code | match("PowerState")).code | split("/")[1]')
-    field "id", val(iter_item,"id")
-    field "rg", val(iter_item,"rg")
-    field "name", val(iter_item,"name")
-    field "location", val(iter_item, "location")
-    field "tags", val(iter_item,"tags")
-    field "subscriptionId",val(iter_item,"subscriptionId")
-    field "subscriptionName",val(iter_item,"subscriptionName")
+    field "status", jq(response, '.statuses[] | select( .code | match("PowerState")).code | split("/")[1]')
+    field "resourceID", val(iter_item, "resourceID")
+    field "resourceGroup", val(iter_item, "resourceGroup")
+    field "resourceKind", val(iter_item, "resourceKind")
+    field "name", val(iter_item, "name")
+    field "region", val(iter_item, "region")
+    field "osType", val(iter_item, "osType")
+    field "resourceType", val(iter_item, "resourceType")
+    field "tags", val(iter_item, "tags")
+    field "subscriptionId", val(iter_item, "subscriptionId")
+    field "subscriptionName", val(iter_item, "subscriptionName")
   end
 end
 
-datasource "ds_filter_instances" do
-  run_script $js_filter_instances, $ds_azure_instances, $param_exclusion_tag_key
+datasource "ds_instances_with_schedule" do
+  run_script $js_instances_with_schedule, $ds_azure_instances_with_status, $ds_applied_policy, $ds_azure_directory, $param_tag_schedule
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_allowed_list"
-  result "results"
+script "js_instances_with_schedule", type: "javascript" do
+  parameters "ds_azure_instances_with_status", "ds_applied_policy", "ds_azure_directory", "param_tag_schedule"
+  result "result"
   code <<-EOS
-  var results = []
-  if ( param_subscription_allowed_list.length != 0){
-    results = []
-    _.each(param_subscription_allowed_list, function(sub){
-      var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+  result = []
+  now = new Date()
+
+  _.each(ds_azure_instances_with_status, function(instance) {
+    schedule = null
+
+    tags = []
+
+    tags_object = {}
+    if (typeof(instance['tags']) == 'object') {
+      // Store a copy of the tags object for export
+      tags_object = instance['tags']
+
+      // Loop through tags to build tags string for export
+      _.each(_.keys(instance['tags']), function(key) {
+        value = instance['tags'][key]
+
+        tags.push(key + '=' + value)
+
+        // If tag is the schedule tag, set schedule var for parsing
+        if (key == param_tag_schedule) { schedule = value }
       })
-      results.push(found)
-    })
-  } else {
-    results = ds_subscriptions
-  }
+    }
+
+    // Check that we have a schedule and it is not explicitely disabled before attempting to parse the schedule tag value
+    // Test the regex pattern for a valid schedule as well, in case the tag value is not a valid schedule
+    // schedule="08:00-17:30;MO,TU,WE,TH,FR"
+    // schedule="08:00-17:30;MO,TU,WE,TH,FR;America/Los_Angeles"
+    var schedule_is_valid = /([0-9]{1,2}.*)-([0-9]{1,2}.*);([A-Za-z,]*).*/.test(schedule)
+    if ((_.isString(schedule)) && (schedule_is_valid == false)) {
+      console.log("Skipping instance " + instance['resourceID'] + " with invalid schedule '" + schedule +"'"); // Excluded from console.log test
+    } else if ((_.isString(schedule)) && (schedule_is_valid)) {
+      var schedule_split = schedule.split(';')
+      // Parse Time - first part of schedule
+      // Should always exist but check anyways
+      if (schedule_split.length > 0) {
+        var time = schedule_split[0]
+        // start time is first part of time string split by '-'
+        var start_time = time.split('-')[0]
+        var start_time_split = start_time.split(':')
+        if (start_time_split.length == 1) {
+          var start_hour = start_time_split[0]
+          var start_minute = '00'
+        } else {
+          var start_hour = start_time_split[0]
+          var start_minute = start_time_split[1]
+        }
+        if (start_minute == null) { start_minute = '00' }
+
+        // stop time is second part of time string split by '-'
+        var stop_time = time.split('-')[1]
+        // Handle both HH:mm-HH:mm and HH formats (8:00-9:00 or 8-9)
+        var stop_time_split = stop_time.split(':')
+        if (stop_time_split.length == 1) {
+          var stop_hour = stop_time_split[0]
+          var stop_minute = '00'
+        } else {
+          var stop_hour = stop_time_split[0]
+          var stop_minute = stop_time_split[1]
+        }
+        if (stop_minute == null) { stop_minute = '00' }
+      }
+
+      // Parse Days - second part of schedule
+      // Default to Everyday
+      days = "SU,MO,TU,WE,TH,FR,SA"
+      if (schedule_split.length > 1) {
+        var days = schedule_split[1]
+        // replace all '-' with ','
+        // this is not needed as README calls out comma `,`, but may be helpful for some users that are also using GCP which uses dash separator `-`
+        days = days.replace(/-/g, ',')
+      }
+      var start_rule = 'FREQ=WEEKLY;BYDAY=' + days.toUpperCase()
+      var stop_rule = 'FREQ=WEEKLY;BYDAY=' + days.toUpperCase()
+
+      // Parse Timezone (if defined)
+      // Default to UTC
+      var timezone = "UTC"
+      if (schedule_split.length > 2) {
+        timezone = schedule_split[2]
+      }
+
+      result.push({
+        // Request Fields
+        start_hour: start_hour,
+        start_minute: start_minute,
+        start_rule: start_rule,
+        stop_hour: stop_hour,
+        stop_minute: stop_minute,
+        stop_rule: stop_rule,
+        tz: timezone,
+        // Resource Fields
+        tenantId: ds_azure_directory[0]['tenantId'],
+        accountID: instance['subscriptionId'],
+        accountName: instance['subscriptionName'],
+        resourceGroup: instance['resourceGroup'],
+        resourceName: instance['name'],
+        resourceID: instance['resourceID'],
+        resourceType: instance['resourceType'],
+        resourceKind: instance['resourceKind'],
+        region: instance['region'],
+        status: instance['status'],
+        osType: instance['osType'],
+        service: "Microsoft.Compute",
+        tags: tags.join(', '),
+        tags_object: tags_object,
+        policy_name: ds_applied_policy['name'],
+        schedule: schedule
+      })
+    }
+  })
+
+  result = _.sortBy(result, 'resourceID')
+  result = _.sortBy(result, 'region')
+  result = _.sortBy(result, 'resourceGroup')
+  result = _.sortBy(result, 'accountID')
 EOS
 end
 
-script "js_filter_instances", type: "javascript" do
-  parameters "ds_azure_instances", "param_exclusion_tag_key"
-  result "results"
-  code <<-EOF
-  var results = [];
-  _.each(ds_azure_instances, function (instance) {
-    if (_.has(instance.tags, param_exclusion_tag_key)) {
-    } else {
-      var tagsList = "";
-      var notMatched = true;
-      var next_start = null;
-      var next_stop = null;
-      var next_start_iso = null;
-      var next_stop_iso = null;
-      var now = new Date();
-      var schedule = "";
-      for (var prop in instance.tags) {
-        tagsList = tagsList + prop + ":" + instance.tags[prop] + ", ";
-        if (prop == 'schedule') {
-          schedule = instance.tags[prop];
-        }
-        else if (prop == 'next_start') {
-          next_start = new Date(instance.tags[prop]);
-          next_start_iso = next_start.toISOString();
-        }
-        else if (prop == 'next_stop') {
-          next_stop = new Date(instance.tags[prop]);
-          next_stop_iso = next_stop.toISOString();
-        }
-      }
-      var resource_tags = JSON.stringify(instance.tags);
-      var all_tags = {};
-      if (!(_.isEmpty(resource_tags))) {
-        all_tags = instance.tags;
-        delete all_tags.schedule;
-      }
-      if ((now > next_start || now > next_stop || next_start == null || next_stop == null) && (schedule !== "")) {
-        results.push({
-          "id": instance.id,
-          "state": instance.status,
-          "location": instance.location,
-          "schedule": schedule,
-          "rg": instance.rg,
-          "name": instance.name,
-          "subscriptionId": instance.subscriptionId,
-          "subscriptionName": instance.subscriptionName,
-          "all_tags": resource_tags,
-          "tags": all_tags,
-          "next_start": next_start_iso,
-          "next_stop": next_stop_iso
-        })
-      }
-      results = _.sortBy(results, 'subscriptionName');
-      results = _.sortBy(results, 'location');
+datasource "ds_instances_schedule_result" do
+  iterate $ds_instances_with_schedule
+  request do
+    verb "POST"
+    host "bjlaftw4kh.execute-api.us-east-1.amazonaws.com"
+    path "/production"
+    header "Content-Type", "application/json"
+    body_field "start_hour", val(iter_item, "start_hour")
+    body_field "start_minute", val(iter_item, "start_minute")
+    body_field "start_rule", val(iter_item, "start_rule")
+    body_field "stop_hour", val(iter_item, "stop_hour")
+    body_field "stop_minute", val(iter_item, "stop_minute")
+    body_field "stop_rule", val(iter_item, "stop_rule")
+    body_field "tz", val(iter_item, "tz")
+  end
+  result do
+    encoding "json"
+    # Request Fields
+    field "start_hour", val(iter_item, "start_hour")
+    field "start_minute", val(iter_item, "start_minute")
+    field "start_rule", val(iter_item, "start_rule")
+    field "stop_hour", val(iter_item, "stop_hour")
+    field "stop_minute", val(iter_item, "stop_minute")
+    field "stop_rule", val(iter_item, "stop_rule")
+    field "tz", val(iter_item, "tz")
+    # Resource Fields
+    field "tenantId", val(iter_item, "tenantId")
+    field "accountID", val(iter_item, "accountID")
+    field "accountName", val(iter_item, "accountName")
+    field "resourceGroup", val(iter_item, "resourceGroup")
+    field "resourceName", val(iter_item, "resourceName")
+    field "resourceID", val(iter_item, "resourceID")
+    field "resourceType", val(iter_item, "resourceType")
+    field "resourceKind", val(iter_item, "resourceKind")
+    field "region", val(iter_item, "region")
+    field "osType", val(iter_item, "osType")
+    field "service", "Microsoft.Compute"
+    field "status", val(iter_item, "status")
+    field "tags", val(iter_item, "tags")
+    field "tags_object", val(iter_item, "tags_object")
+    field "policy_name", val(iter_item, "policy_name")
+    field "schedule", val(iter_item, "schedule")
+    # Resource Response Fields
+    field "next_stop", val(response, "next_stop")
+    field "next_start", val(response, "next_start")
+    field "event_active", val(response, "event_active")
+  end
+end
+
+# Classify the results from ds_instances_schedule_result
+# This allows us to produce email notifications when actions are being taken
+datasource "ds_instances_schedule_result_action_start" do
+  run_script $js_instances_schedule_result_action_start, $ds_instances_schedule_result
+end
+
+script "js_instances_schedule_result_action_start", type: "javascript" do
+  parameters "ds_instances_schedule_result"
+  result "result"
+  code <<-EOS
+  result = []
+  _.each(ds_instances_schedule_result, function(instance) {
+    if (instance['event_active'] == "true" && /(running|creating)/.test(instance['status']) == false) {
+      instance['action'] = "start"
+      result.push(instance)
     }
   })
-EOF
+  EOS
 end
 
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_email" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
+datasource "ds_instances_schedule_result_action_stop" do
+  run_script $js_instances_schedule_result_action_stop, $ds_instances_schedule_result
 end
 
-escalation "esc_schedule_instance" do
-  automatic contains($param_automatic_action, "Schedule Instances")
-  label "Schedule"
-  description "Stop or Start the Instance"
-  run "schedule_instance", data, rs_optima_host
-end
-
-escalation "esc_terminate_instance" do
-  automatic false
-  label "Terminate Instance"
-  description "Terminate or delete the Instance"
-  run "terminate_instance", data, rs_optima_host
-end
-
-escalation "esc_update_schedule" do
-  automatic false
-  label "Update Schedule"
-  description "Update the existing schedule Tag"
-  parameter "param_schedule" do
-    type "string"
-    label "New Schedule"
-    description "Provide Schedule Value"
-  end
-  run "update_schedule", data, $param_schedule, rs_optima_host
-end
-
-escalation "esc_delete_schedule" do
-  automatic false
-  label "Delete Schedule"
-  description "Delete Schedule Tag"
-  run "delete_schedule", data, rs_optima_host
+script "js_instances_schedule_result_action_stop", type: "javascript" do
+  parameters "ds_instances_schedule_result"
+  result "result"
+  code <<-EOS
+  result = []
+  _.each(ds_instances_schedule_result, function(instance) {
+    if (instance['event_active'] == "false" && /(deallocated|deallocating)/.test(instance['status']) == false) {
+      instance['action'] = "stop"
+      result.push(instance)
+    }
+  })
+  EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_schedule_instance" do
-  validate $ds_filter_instances do
-    summary_template "Azure Schedule Instance list"
-    hash_include "next_start", "next_stop"
-    escalate $esc_email
-    escalate $esc_schedule_instance
-    escalate $esc_terminate_instance
-    escalate $esc_update_schedule
-    escalate $esc_delete_schedule
-    check logic_or($ds_parent_policy_terminated, eq(size(data),0))
+policy "pol_schedule_instance" do
+  validate $ds_policy_incident_action_failed_details do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Failed Actions"
+    detail_template <<-EOS
+The following actions failed:
+{{ range data }}
+**[{{ .incident_summary }}](https://{{ .ui_host }}/orgs/{{ rs_org_id }}/automation/incidents/projects/{{ rs_project_id }}?incidentId={{ .incident_id }})**
+{{ range .failed_action_items }}
+```
+{{ .error }}
+```
+{{ end }}
+{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
+    escalate $esc_email_error
+  end
+
+  validate_each $ds_instances_schedule_result_action_start do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Starting {{ len data }} Instances"
+    detail_template <<-EOS
+The following Azure Instances are scheduled to start now:
+{{ range data }}
+- [{{ .resourceName }}](https://portal.azure.com/#@{{ .tenantId }}/resource/subscriptions/{{ .accountID }}/resourceGroups/{{ .resourceGroup }}/providers/Microsoft.Compute/virtualMachines/{{ .resourceName }}/overview) in subscription `{{ .accountName }}` is scheduled to start at {{ .next_start }}.
+{{ end }}
+EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email_start
+    escalate $esc_execute_schedules
+    hash_exclude "tags"
+  end
+
+  validate_each $ds_instances_schedule_result_action_stop do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Stopping {{ len data }} Instances"
+    detail_template <<-EOS
+The following Azure Instances are scheduled to stop now:
+{{ range data }}
+- [{{ .resourceName }}](https://portal.azure.com/#@{{ .tenantId }}/resource/subscriptions/{{ .accountID }}/resourceGroups/{{ .resourceGroup }}/providers/Microsoft.Compute/virtualMachines/{{ .resourceName }}/overview) in subscription `{{ .accountName }}` is scheduled to stop at {{ .next_stop }}.
+{{ end }}
+EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email_stop
+    escalate $esc_execute_schedules
+    hash_exclude "tags"
+  end
+
+  validate_each $ds_instances_schedule_result do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Scheduled Instances"
+    detail_template <<-EOS
+    The following Azure Scheduled Instances have tag `{{ parameters.param_tag_schedule }}` and will be automatically started and stopped on a schedule.
+  EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_update_schedules
+    escalate $esc_delete_schedules
+    escalate $esc_start_instances
+    escalate $esc_stop_instances
+    escalate $esc_delete_instances
+    hash_exclude "tags", "tags_object"
     export do
       resource_level true
-      field "subscriptionName" do
-        label "SubscriptionName"
+      field "tenantId" do
+        label "Tenant ID"
       end
-      field "location" do
-        label "Location"
+      field "accountID" do
+        label "Subscription ID"
       end
-      field "id" do
-        label "Instance ID"
+      field "accountName" do
+        label "Subscription Name"
       end
-      field "name" do
-        label "Instance Name"
-      end
-      field "all_tags" do
-        label "Tags"
-      end
-      field "state" do
-        label "State"
-      end
-      field "rg" do
+      field "resourceGroup" do
         label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "osType" do
+        label "Operating System"
+      end
+      field "service" do
+        label "Service"
       end
       field "schedule" do
         label "Schedule"
       end
-      field "subscriptionId" do
-        label "SubscriptionId"
+      field "next_start" do
+        label "Next Start"
       end
-      field "tags" do
-        label "Tags Object"
+      field "next_stop" do
+        label "Next Stop"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+      field "tags_object" do
+        label "Tags (Object)"
+      end
+      field "event_active" do
+        label "Event Active"
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email_start" do
+  automatic contains($param_automatic_action, "Start Notification")
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_email_stop" do
+  automatic contains($param_automatic_action, "Stop Notification")
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_email_error" do
+  automatic contains($param_automatic_action, "Error Notification")
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_execute_schedules" do
+  automatic contains($param_automatic_action, "Execute Schedules")
+  label "Execute Schedules"
+  description "Approval to start or stop all selected instances based on schedule"
+  run "execute_schedules", data, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule
+end
+
+escalation "esc_update_schedules" do
+  automatic false
+  label "Update Schedules"
+  description "Approval to update the schedule tags on all selected instances"
+  parameter "param_schedule" do
+    type "string"
+    category "Policy Actions"
+    label "New Schedule"
+    description "Enter a new value for the schedule tag. See README for more details"
+    # No default value, user input required
+  end
+  run "update_schedules", data, $param_azure_endpoint, $param_schedule, $param_tag_schedule
+end
+
+escalation "esc_delete_schedules" do
+  automatic false
+  label "Delete Schedules"
+  description "Approval to delete the schedule tags on all selected instances"
+  run "delete_schedules", data, $param_azure_endpoint, $param_tag_schedule
+end
+
+escalation "esc_start_instances" do
+  automatic false
+  label "Power On Instances"
+  description "Approval to power on all selected instances"
+  run "start_instances", data, $param_azure_endpoint
+end
+
+escalation "esc_stop_instances" do
+  automatic false
+  label "Power Off Instances"
+  description "Approval to power off all selected instances"
+  run "stop_instances", data, $param_azure_endpoint, $param_skipshutdown
+end
+
+escalation "esc_delete_instances" do
+  automatic false
+  label "Delete Instances"
+  description "Approval to delete all selected instances"
+  run "delete_instances", data, $param_azure_endpoint
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define terminate_instance($data, $$rs_optima_host) return $all_response do
-  $all_responses = []
-  foreach $item in $data do
-    call sys_log('> ' + $item['id'] + ': Terminating ...', to_s($item))
-    sub on_error: skip do
-      $response= http_request(
-        auth: $$auth_azure,
-        verb: "delete",
-        host: "management.azure.com",
-        https: true,
-        href: $item['id'],
-        query_strings: {
-          "api-version": "2019-12-01"
-        },
-        headers: {
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        }
-      )
-      $all_responses << $response
+# Core CWF functions for iterating through items
+define execute_schedules($data, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call execute_schedule($instance, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule)
     end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
   end
 end
 
-define schedule_instance($data, $$rs_optima_host) return $all_responses do
-  $all_responses = []
-  foreach $item in $data do
-    $rule = split($item['schedule'],';')[1]
-    $time_range = split($item['schedule'],';')[0]
-    $start_time = split($time_range,'-')[0]
-    $start_hour = split($start_time, ':')[0]
-    $start_minute = split($start_time, ':')[1]
-    $stop_time = split($time_range,'-')[1]
-    $stop_hour = split($stop_time, ':')[0]
-    $stop_minute = split($stop_time, ':')[1]
-    $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-    $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-    $timezone = split($item['schedule'],';')[2]
-    if $start_minute == null
-      $start_minute = "00"
-    end
-    if $stop_minute == null
-      $stop_minute = "00"
-    end
-    if ! $timezone
-      $timezone = "UTC"
-    end
-    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
+define update_schedules($data, $param_azure_endpoint, $param_schedule, $param_tag_schedule) return $all_responses do
+  $$all_responses = []
 
-    call sys_log('window_active',$window_active)
-    call sys_log('next_start',$next_start)
-    call sys_log('next_stop',$next_stop)
-
-    if ($window_active)
-      call sys_log($item['schedule'] + ' schedule window is currently active: Instances may be started.', '')
-    else
-      call sys_log($item['schedule'] + ' schedule window is currently in-active: Instances may be stopped.', '')
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call update_schedule($instance, $param_azure_endpoint, $param_schedule, $param_tag_schedule)
     end
+  end
 
-    $stoppable = /^(running|starting|deallocating|deallocated)$/
-    $startable = /^(stopped|stopping|deallocating|deallocated)$/
-    call tag_resources($item, $item['schedule'], $next_start, $next_stop) retrieve $responses
-    if($window_active)
-      if($item['state']=~$startable)
-        call sys_log('> ' + $item['id'] + ': Starting ...', to_s($item))
-        sub on_error: skip do
-        $response= http_request(
-          auth: $$auth_azure,
-          verb: "post",
-          host: "management.azure.com",
-          https: true,
-          href: join([$item['id'],"/start"]),
-          query_strings: {
-              "api-version": "2019-12-01"
-          },
-          headers: {
-              "cache-control": "no-cache",
-              "content-type": "application/json"
-          }
-      )
-    $all_responses << $response
-        end
-      else
-        call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
-      end
-    else
-      if($item['state'] =~ $stoppable)
-        call sys_log('> ' + $item['id'] + ': Stopping ...', to_s($item))
-        sub on_error: skip do
-        $response= http_request(
-            auth: $$auth_azure,
-            verb: "post",
-            host: "management.azure.com",
-            https: true,
-            href: join([$item['id'],"/deallocate"]),
-            query_strings: {
-              "api-version": "2022-08-01"
-            },
-            headers: {
-              "cache-control": "no-cache",
-              "content-type": "application/json"
-            }
-        )
-    $all_responses << $response
-        end
-      else
-        call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
-      end
-    end
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
   end
 end
 
+define delete_schedules($data, $param_azure_endpoint, $param_tag_schedule) return $all_responses do
+  $$all_responses = []
 
-define update_schedule($data, $param, $$rs_optima_host) return $all_responses do
-  $all_responses = []
-  foreach $item in $data do
-    $rule = split($param,';')[1]
-    $time_range = split($param,';')[0]
-    $start_time = split($time_range,'-')[0]
-    $start_hour = split($start_time, ':')[0]
-    $start_minute = split($start_time, ':')[1]
-    $stop_time = split($time_range,'-')[1]
-    $stop_hour = split($stop_time, ':')[0]
-    $stop_minute = split($stop_time, ':')[1]
-    $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-    $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-    $timezone = split($param,';')[2]
-    if $start_minute == null
-      $start_minute = "00"
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_schedule($instance, $param_azure_endpoint, $param_tag_schedule)
     end
-    if $stop_minute == null
-      $stop_minute = "00"
-    end
-    if ! $timezone
-      $timezone = "UTC"
-    end
-    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
-    call sys_log('> ' + $item['id'] + ': Updating schedule Tag ...', to_s($item))
-    call tag_resources($item, $param, $next_start, $next_stop) retrieve $response
-    $all_responses << $response
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
   end
 end
 
-define delete_schedule($data, $$rs_optima_host) return $all_responses do
-  $all_responses = []
-  foreach $item in $data do
-    call sys_log('> ' + $item['id'] + ': Deleting schedule Tag ...', to_s($item))
-      $delete_tag = "delete"
-      call tag_resources($item, $delete_tag, $next_start, $next_stop) retrieve $response
-      $all_responses << $response
+define start_instances($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call start_instance($instance, $param_azure_endpoint)
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
   end
 end
 
-define tag_resources($item, $param, $next_start, $next_stop) return $update_resource_response do
-  $$log = []
-  $new_tags = {}
-  $old_tags = $item["tags"]
-  if $param == "delete"
-    foreach $tag_key in keys($old_tags) do
-      if $tag_key != "next_start" && $tag_key != "next_stop" && $tag_key != "schedule"
-        $new_tags[$tag_key] = $old_tags[$tag_key]
-      end
+define stop_instances($data, $param_azure_endpoint, $param_skipshutdown) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call stop_instance($instance, $param_azure_endpoint, $param_skipshutdown)
     end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_instances($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_instance($instance, $param_azure_endpoint)
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+# Secondary CWF functions for taking action on individual instances
+define execute_schedule($instance, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule) return $response do
+  if $instance['schedule'] == null
+    call task_label("Skipping instance without schedule: " + $instance["resourceID"])
   else
-    $new_tags = $old_tags
-    $new_tags["next_start"]= $next_start
-    $new_tags["next_stop"]= $next_stop
-    $new_tags["schedule"]= $param
-  end
-  $$log << to_s($new_tags)
-  $$log << $next_start
-  $$log << $next_stop
-  $$log << $param
-  call sys_log('all tags ', to_s($new_tags))
-  sub on_error: handle_error($update_resource_response) do
-    $update_resource_response = http_request(
-      auth: $$auth_azure,
-      verb: "patch",
-      host: "management.azure.com",
-      https: true,
-      href: $item["id"],
-      query_strings: {
-        "api-version": "2020-06-01"
-      },
-      headers: {
-        "cache-control": "no-cache",
-        "content-type": "application/json"
-      },
-      body: {"tags": $new_tags}
-    )
+    call task_label("Start executing schedule for instance: " + $instance["resourceID"])
+    # Get the current state of the instance
+    call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
+    sub timeout: 5m, on_timeout: handle_timeout() do
+      while $instance_state == null do
+        call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
+        sleep(10)
+      end
+    end
+
+    # If we still don't have a state, raise an error
+    if $instance_state == null
+      raise "Failed to retrieve state for instance: " + $instance["resourceID"]
+    end
+
+    call parse_schedule($instance['schedule']) retrieve $start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $schedule_days, $timezone
+    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active
+
+    if $window_active
+      # if window active, should be running
+      if $instance_state == "running"
+        call task_label("Skipping starting a running instance: " + $instance["resourceID"] + " " + $instance_state)
+      else
+        if $instance_state !~ /^(deallocated|deallocating|stopped|stopping)$/
+          call task_label("Skipping starting an instance that is not deallocated, deallocating, stopped, or stopping: " + $instance["resourceID"] + " " + $instance_state)
+        else
+          call start_instance($instance, $param_azure_endpoint)
+        end
+      end
+    else
+      if $instance_state =~ /^(deallocated|deallocating)$/
+        call task_label("Skipping stopping a stopped instance: " + $instance["resourceID"] + " " + $instance_state)
+      else
+        # else window not active, should NOT be running
+        if $instance_state !~ /^(running|creating)$/
+          call task_label("Skipping stopping an instance that not running or creating: " + $instance["resourceID"]+ " " + $instance_state)
+        else
+          call stop_instance($instance, $param_azure_endpoint, $param_skipshutdown)
+        end
+      end
+    end
+    call task_label("Finished executing schedule for instance: " + $instance["resourceID"])
   end
 end
 
-define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active, $next_start, $next_stop do
-  $params = {
-    verb: 'post',
-    host: 'bjlaftw4kh.execute-api.us-east-1.amazonaws.com',
+define parse_schedule($schedule) return $start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $schedule_days, $timezone do
+  # Time
+  $schedule_time = split($schedule, ";")[0]
+
+  $start_time = split($schedule_time, "-")[0]
+  $start_hour = split($start_time, ":")[0]
+  $start_minute = split($start_time, ":")[1]
+  if ! $start_minute
+    $start_minute = "00"
+  end
+
+  $stop_time = split($schedule_time, "-")[1]
+  $stop_hour = split($stop_time, ":")[0]
+  $stop_minute = split($stop_time, ":")[1]
+  if ! $stop_minute
+    $stop_minute = "00"
+  end
+
+  # Days
+  $schedule_days = split($schedule, ";")[1]
+  $start_rule = "FREQ=WEEKLY;BYDAY=" + $schedule_days
+  $stop_rule = "FREQ=WEEKLY;BYDAY=" + $schedule_days
+
+  # Timezone
+  $timezone = "UTC"
+  if size(split($schedule, ";")) >= 3
+    $timezone = split($schedule, ";")[2]
+  end
+end
+
+define update_schedule($instance, $param_azure_endpoint, $schedule, $param_tag_schedule) do
+  call parse_schedule($schedule) retrieve $start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $schedule_days, $timezone
+
+  $new_tags = $instance["tags_object"]
+  $new_tags[$param_tag_schedule] = $schedule
+
+  $host = $param_azure_endpoint
+  $href = $instance["resourceID"]
+  $params = "?api-version=2020-06-01"
+  $url = $host + $href + $params
+  call task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    verb: "patch",
+    host: $host,
     https: true,
-    href: '/production',
-    headers:{
-      'content-type': 'application/json'
+    href: $href,
+    query_strings: {
+      "api-version": "2020-06-01"
     },
-    body: {
-      'start_hour': $start_hour,
-      'start_minute': $start_minute,
-      'start_rule': $start_rule,
-      'stop_minute': $stop_minute,
-      'stop_hour': $stop_hour,
-      'stop_rule': $stop_rule,
-      'tz': $tz
-    }
-  }
-  call sys_log('window active $params', to_s($params))
-  $response = http_request($params)
-  call sys_log('window active $response', to_s($response))
-  $body = $response['body']
-  call sys_log('window active $body', to_s($body))
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: { "tags": $new_tags }
+  )
 
-  $window_active = to_b($body['event_active'])
-  $next_start   = $body['next_start']
-  $next_stop    = $body['next_stop']
-end
+  call task_label("Update Azure instance tags response: " + to_s($response["code"]))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
 
-define handle_error($response) do
-  $status_code = $response["code"]
-  if $status_code == 404
-    $_error_behavior = "skip"
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response updating Azure instance tags: " + $instance["resourceID"] + " " + to_json($response)
   else
-    $_error_behavior = "raise"
+    call task_label("Updating Azure instance tags successful: " + $instance["resourceName"])
   end
 end
 
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
+define delete_schedule($instance, $param_azure_endpoint, $param_tag_schedule) return $response do
+  $new_tags = {}
+
+  foreach $tag_key in keys($instance["tags_object"]) do
+    if $tag_key != $param_tag_schedule
+      $new_tags[$tag_key] = $instance["tags_object"][$tag_key]
+    end
+  end
+
+  $host = $param_azure_endpoint
+  $href = $instance["resourceID"]
+  $params = "?api-version=2020-06-01"
+  $url = $host + $href + $params
+  call task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    verb: "patch",
+    host: $host,
+    https: true,
+    href: $href,
+    query_strings: {
+      "api-version": "2020-06-01"
+    },
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: { "tags": $new_tags }
+  )
+
+  call task_label("Delete Azure instance tags response: " + to_s($response["code"]))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure instance tags: " + $instance["resourceID"] + " " + to_json($response)
+  else
+    call task_label("Deleting Azure instance tags successful: " + $instance["resourceName"])
+  end
+end
+
+define delete_instance($instance, $param_azure_endpoint) do
+  $host = $param_azure_endpoint
+  $href = $instance["resourceID"]
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  call task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2023-07-01" }
+  )
+
+  call task_label("Delete Azure VM instance response: " + to_s($response["code"]))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure VM instance: "+ $instance["resourceID"] + " " + to_json($response)
+  else
+    call task_label("Delete Azure VM instance successful: " + $instance["resourceName"])
+  end
+end
+
+# Tertiary CWF functions for specific tasks
+define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active do
+  $host = "bjlaftw4kh.execute-api.us-east-1.amazonaws.com"
+  $href = "/production"
+  $url = $host + $href
+  call task_label("POST " + $url)
+
+  $response = http_request(
+    https: true,
+    verb: "post",
+    href: $href,
+    host: $host,
+    headers: { "content-type": "application/json" },
+    body: {
+      "start_hour": $start_hour,
+      "start_minute": $start_minute,
+      "start_rule": $start_rule,
+      "stop_minute": $stop_minute,
+      "stop_hour": $stop_hour,
+      "stop_rule": $stop_rule,
+      "tz": $tz
+    }
+  )
+
+  call task_label("Post AWS API Gateway response: " + to_s($response["code"]))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response posting AWS API Gateway: " + $host + " " + to_json($response)
+  else
+    $window_active = to_b($response['body']['event_active'])
+    call task_label("Post AWS API Gateway successful: window_active=" + $response['body']['event_active'])
+  end
+end
+
+define get_instance_state($instance, $param_azure_endpoint) return $instance_state do
+  $host = $param_azure_endpoint
+  $href = $instance["resourceID"] + "/instanceView"
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  call task_label("GET " + $url)
+
+  $query_strings = { "api-version": "2023-07-01" }
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "get",
+    host: $host,
+    href: $href,
+    query_strings: $query_strings
+  )
+
+  call task_label("Get Azure VM instance status response: " + to_s($response["code"]))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  $instance_state = null
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response getting Azure VM instance status: "+ $instance["resourceID"] + " " + to_json($response)
+  else
+    foreach $status in $response["body"]["statuses"] do
+      if $status["code"] =~ /PowerState/
+        $instance_state = $status["code"]
+        $instance_state = split($instance_state, "/")[1]
+        call task_label("Get Azure VM instance status successful: " + $instance["resourceName"] + " " + $instance_state)
+      end
+    end
+  end
+end
+
+define start_instance($instance, $param_azure_endpoint) do
+  $host = $param_azure_endpoint
+  $href = $instance["resourceID"] + "/start"
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  call task_label("POST " + $url)
+
+  $query_strings = { "api-version": "2023-07-01" }
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    query_strings: $query_strings
+  )
+
+  call task_label("Power on Azure VM instance request response: " + to_s($response["code"]))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response powering on Azure VM instance: "+ $instance["resourceID"] + " " + to_json($response)
+  else
+    call task_label("Power on Azure VM instance request successful: " + $instance["resourceName"])
+    # Verify the requested state is reached
+    call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
+    sub timeout: 5m, on_timeout: handle_timeout() do
+      while $instance_state != "running" do
+        call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
+        sleep(10)
+      end
+    end
+  end
+end
+
+define stop_instance($instance, $param_azure_endpoint, $param_skipshutdown) do
+  $host = $param_azure_endpoint
+  $href = $instance["resourceID"] + "/deallocate"
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  call task_label("POST " + $url)
+
+  $query_strings = { "api-version": "2023-07-01" }
+
+  if $param_skipshutdown == "Forced"
+    $query_strings["skipShutdown"] = "true"
+    $params = $params + "&skipShutdown=true"
+  end
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    query_strings: $query_strings
+  )
+
+  call task_label("Power off Azure VM instance response: " + to_s($response["code"]))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response powering off Azure VM instance: "+ $instance["resourceID"] + " " + to_json($response)
+  else
+    call task_label("Power off Azure VM instance request successful: " + $instance["resourceName"])
+    # Verify the requested state is reached
+    call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
+    sub timeout: 5m, on_timeout: handle_timeout() do
+      while $instance_state != "deallocated" do
+        call get_instance_state($instance, $param_azure_endpoint) retrieve $instance_state
+        sleep(10)
+      end
+    end
+  end
+end
+
+define handle_error() do
   if !$$errors
     $$errors = []
   end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
 
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
+define handle_timeout() do
+  $err = "Timeout reached. Skipping item and continuing."
+  call task_label($err)
+  raise $err
+  $_timeout_behavior = "skip"
+end
+
+define task_label($label) do
+  $now = strftime(now(), "%Y/%m/%d %H:%M:%S")
+  if !$$label_log
+    $$label_log = "[" + $now + "] "+ $label
+  else
+    $$label_log = $$label_log + "\n" + "[" + $now + "] "+ $label
+  end
+  task_label($label)
 end
 
 ###############################################################################
@@ -633,7 +1387,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do
@@ -641,7 +1395,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

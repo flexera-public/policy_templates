@@ -1,0 +1,245 @@
+name "Policy Update Notification"
+rs_pt_ver 20180301
+type "policy"
+short_description "**Deprecated: This policy is no longer being updated. Please see [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/automation/policy_update_notification/) for more details.**  Checks for applied policies that use outdated policy catalog templates. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/automation/policy_update_notification/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Compliance"
+default_frequency "weekly"
+info(
+  version: "2.2.1",
+  provider: "Flexera Cloud Management",
+  service: "",
+  policy_set: "",
+  publish: "false",
+  deprecated: "true"
+)
+
+##############################################################################
+# Parameters
+##############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Gather applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_catalog_templates" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/orgs/", rs_org_id, "/published_templates"])
+    header "Api-Version", "1.0"
+    header "view", "extended"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "version", jmes_path(col_item, "info.version")
+      field "update_date", jmes_path(col_item, "updated_at")
+      field "short_description", jmes_path(col_item, "short_description")
+    end
+  end
+end
+
+datasource "ds_catalog_template_table" do
+  run_script $js_catalog_template_table, $ds_catalog_templates
+end
+
+script "js_catalog_template_table", type:"javascript" do
+  parameters "ds_catalog_templates"
+  result "result"
+  code <<-'EOS'
+  result = {}
+
+  _.each(ds_catalog_templates, function(template) {
+    // Extract links from short description
+    short_description = template['short_description']
+    readme_index = short_description.indexOf('README')
+    readme = ''
+    changelog = ''
+
+    if (readme_index != -1) {
+      link = short_description.substr(readme_index + 8).split(')')[0]
+      if (link[link.length - 1] != '/') { link += '/' }
+
+      readme = link + 'README.md'
+      changelog = link + 'CHANGELOG.md'
+    }
+
+    result[template['id']] = {
+      name: template['name'],
+      version: template['version'],
+      update_date: template['update_date'],
+      short_description: template['short_description'],
+      readme: readme,
+      changelog: changelog
+    }
+  })
+EOS
+end
+
+datasource "ds_applied_policies" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies"])
+    header "Api-Version", "1.0"
+    header "view", "default"
+    ignore_status [401]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "published_template_id", jmes_path(col_item, "published_template.id")
+      field "version", jmes_path(col_item, "info.version")
+      field "project_id", rs_project_id
+    end
+  end
+end
+
+datasource "ds_applied_policies_from_catalog" do
+  run_script $js_applied_policies_from_catalog, $ds_applied_policies
+end
+
+script "js_applied_policies_from_catalog", type:"javascript" do
+  parameters "ds_applied_policies"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_applied_policies, function(account) {
+    return typeof(account['published_template_id']) == 'string' && account['published_template_id'] != ''
+  })
+EOS
+end
+
+datasource "ds_update_notification" do
+  run_script $js_update_notification, $ds_applied_policies_from_catalog, $ds_catalog_template_table, $ds_applied_policy
+end
+
+script "js_update_notification", type:"javascript" do
+  parameters "ds_applied_policies_from_catalog", "ds_catalog_template_table", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(ds_applied_policies_from_catalog, function(policy) {
+    template_id = policy['published_template_id']
+    applied_version = policy['version']
+
+    catalog_version = null
+
+    if (ds_catalog_template_table[template_id] != undefined) {
+      catalog_version = ds_catalog_template_table[template_id]['version']
+    }
+
+    if (applied_version != catalog_version && catalog_version != null) {
+      result.push({
+        id: policy['id'],
+        name: policy['name'],
+        project_id: policy['project_id'],
+        template_id: template_id,
+        template_name: ds_catalog_template_table[template_id]['name'],
+        template_update_date: ds_catalog_template_table[template_id]['update_date'],
+        template_description: ds_catalog_template_table[template_id]['short_description'],
+        readme: ds_catalog_template_table[template_id]['readme'],
+        changelog: ds_catalog_template_table[template_id]['changelog'],
+        catalog_version: catalog_version,
+        applied_version: applied_version,
+        this_policy_name: ds_applied_policy['name']
+      })
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_update_notification" do
+  validate_each $ds_update_notification do
+    summary_template "{{ with index data 0 }}{{ .this_policy_name }}{{ end }}: {{ len data }} Outdated Flexera Catalog Policies Found"
+    escalate $esc_email
+    check eq(val(item, "id"), "")
+    hash_exclude "name", "catalog_version"
+    export do
+      resource_level false
+      field "project_id" do
+        label "Flexera Account ID"
+      end
+      field "id" do
+        label "Applied Policy ID"
+      end
+      field "name" do
+        label "Applied Policy Name"
+      end
+      field "applied_version" do
+        label "Applied Policy Version"
+      end
+      field "catalog_version" do
+        label "Catalog Template Version"
+      end
+      field "template_id" do
+        label "Catalog Template ID"
+      end
+      field "template_name" do
+        label "Catalog Template Name"
+      end
+      field "template_description" do
+        label "Catalog Template Description"
+      end
+      field "template_update_date" do
+        label "Catalog Template Updated Date"
+      end
+      field "readme" do
+        label "Catalog Template README"
+      end
+      field "changelog" do
+        label "Catalog Template CHANGELOG"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

@@ -1,5 +1,43 @@
 # Changelog
 
+## v5.1.0
+
+- Added email notifications for Start Action, Stop Action, and Errors
+
+## v5.0.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v5.0.1
+
+- Removed datasource that was not necessary for results
+
+## v5.0.0
+
+- Remove `next_stop`, `next_start` label requirements
+- Remove static zone to region mapping logic
+- Add task labels to improve status updates and debugging for CWF actions
+- Add error capture, graceful timeout handling for CWF actions
+
+## v4.0
+
+- Added support for regex when filtering resources by label
+
+## v3.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to specify custom label keys for tracking instance schedules
+- Added ability to filter resources by project
+- Added ability to filter resources by region
+- Added ability to filter resources by multiple label key:value pairs
+- Added ability for user to start and stop instances directly
+- Normalized incident export to be consistent with other policies
+- Added additional fields to incident export for additional context
+- Streamlined code for better readability and faster execution
+- Policy action error logging modernized and now works as expected in EU/APAC
+- Added logic required for "Meta Policy" use-cases
+- To facilitate "Meta Policy" use-cases, policy now requires a Flexera credential
+
 ## v2.5
 
 - Improved logging, and error capture/handling

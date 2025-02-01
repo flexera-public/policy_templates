@@ -18,7 +18,13 @@ the policy can be applied.
 - *Minimum Age (Days)* - The minimum age, in days, to consider an instance to be long running.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
-- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
+- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+  - `Key` - Filter all resources with the specified tag key.
+  - `Key==Value` - Filter all resources with the specified tag key:value pair.
+  - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
+  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
+  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
+- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Automatic Actions* - The policy will automatically take the selected action.
 
 Please note that the "Automatic Actions" parameter contains a list of actions that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter set to "No Automatic Actions" for *manual* action.
@@ -46,7 +52,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `ec2:TerminateInstances`*
   - `sts:GetCallerIdentity`
 
-\* Only required for taking action (stopping or terminating instances); the policy will still function in a read-only capacity without these permissions.
+  \* Only required for taking action (stopping or terminating instances); the policy will still function in a read-only capacity without these permissions.
 
   Example IAM Permission Policy:
 
@@ -81,6 +87,6 @@ This policy template supports the following clouds:
 
 - AWS
 
-## Costs
+## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

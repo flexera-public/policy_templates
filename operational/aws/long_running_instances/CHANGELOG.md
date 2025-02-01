@@ -1,5 +1,21 @@
 # Changelog
 
+## v5.1.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v5.1.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v5.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v5.0
+
+- Added support for regex when filtering resources by tag
+
 ## v4.3
 
 - Policy action error logging modernized and now works as expected in EU/APAC

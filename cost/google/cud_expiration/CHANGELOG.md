@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.0.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.0.0
+
+- Added ability to filter recommendations by project
+- Added ability to filter recommendations by region
+- Normalized incident export to be consistent with other policies
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v2.7
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`

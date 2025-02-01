@@ -7,15 +7,16 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "7.5",
+  version: "8.4.3",
   provider: "AWS",
   service: "Storage",
   policy_set: "Old Snapshots",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
@@ -38,9 +39,9 @@ parameter "param_snapshot_age" do
   type "number"
   category "Policy Settings"
   label "Snapshot Age Threshold"
-  default 30
   description "The number of days since the snapshot was created to consider a snapshot old."
   min_value 1
+  default 30
 end
 
 parameter "param_snapshot_include_ami" do
@@ -74,8 +75,8 @@ parameter "param_regions_list" do
   type "list"
   category "Filters"
   label "Allow/Deny Regions List"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details."
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
 end
 
@@ -108,10 +109,18 @@ end
 parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
-  label "Exclusion Tags (Key:Value)"
-  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
-  allowed_pattern /(^$)|[\w]*\:.*/
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_automatic_action" do
@@ -155,16 +164,6 @@ pagination "pagination_aws" do
   end
 end
 
-pagination "pagination_aws_describesnapshots_xml" do
-  get_page_marker do
-    body_path "//DescribeSnapshotsResponse/nextToken"
-  end
-  set_page_marker do
-    query "NextToken"
-  end
-end
-
-# https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeImages.html
 pagination "pagination_aws_describeimages_xml" do
   get_page_marker do
     body_path "//DescribeImagesResponse/nextToken"
@@ -174,7 +173,6 @@ pagination "pagination_aws_describeimages_xml" do
   end
 end
 
-# https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_DescribeDBSnapshots.html
 pagination "pagination_aws_describe_db_snapshots_xml" do
   get_page_marker do
     body_path "//DescribeDBSnapshotsResponse/DescribeDBSnapshotsResult/Marker"
@@ -184,7 +182,6 @@ pagination "pagination_aws_describe_db_snapshots_xml" do
   end
 end
 
-# https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_DescribeDBClusterSnapshots.html
 pagination "pagination_aws_describe_db_cluster_snapshots_xml" do
   get_page_marker do
     body_path "//DescribeDBClusterSnapshotsResponse/DescribeDBClusterSnapshotsResult/Marker"
@@ -257,12 +254,11 @@ end
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
-    verb "GET"
     host "sts.amazonaws.com"
     path "/"
-    header "User-Agent", "RS Policies"
     query "Action", "GetCallerIdentity"
     query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
@@ -300,9 +296,9 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -336,7 +332,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -390,7 +386,6 @@ end
 datasource "ds_describe_regions" do
   request do
     auth $auth_aws
-    verb "GET"
     host "ec2.amazonaws.com"
     path "/"
     query "Action", "DescribeRegions"
@@ -433,7 +428,7 @@ end
 datasource "ds_describe_snapshots" do
   iterate $ds_regions
   request do
-    run_script $js_describe_snapshots, val(iter_item,"region"), $ds_aws_account
+    run_script $js_describe_snapshots, val(iter_item, "region"), $ds_aws_account
   end
   result do
     encoding "xml"
@@ -483,17 +478,17 @@ script "js_describe_snapshots", type: "javascript" do
 EOS
 end
 
-datasource "ds_describe_db_snapshots" do
+datasource "ds_describe_db_snapshots_unfiltered" do
   iterate $ds_regions
   request do
     auth $auth_aws
     pagination $pagination_aws_describe_db_snapshots_xml
     host join(["rds.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
-    header "User-Agent", "RS Policies"
-    header "Content-Type", "text/xml"
     query "Action", "DescribeDBSnapshots"
     query "Version", "2014-10-31"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
     ignore_status [403, 404]
   end
   result do
@@ -520,6 +515,31 @@ datasource "ds_describe_db_snapshots" do
   end
 end
 
+datasource "ds_describe_db_snapshots" do
+  run_script $js_describe_db_snapshots, $ds_describe_db_snapshots_unfiltered
+end
+
+script "js_describe_db_snapshots", type:"javascript" do
+  parameters "ds_describe_db_snapshots_unfiltered"
+  result "result"
+  code <<-EOS
+  result = []
+  sorted_by_parent = {}
+
+  _.each(ds_describe_db_snapshots_unfiltered, function(snapshot) {
+    parent = snapshot["parentId"]
+
+    if (sorted_by_parent[parent] == undefined) { sorted_by_parent[parent] = [] }
+    sorted_by_parent[parent].push(snapshot)
+  })
+
+  _.each(_.keys(sorted_by_parent), function(parent) {
+    sorted_parents = _.sortBy(sorted_by_parent[parent], "startTime").reverse()
+    result.push(sorted_parents[0])
+  })
+EOS
+end
+
 datasource "ds_describe_db_cluster_snapshots" do
   iterate $ds_regions
   request do
@@ -527,10 +547,10 @@ datasource "ds_describe_db_cluster_snapshots" do
     pagination $pagination_aws_describe_db_cluster_snapshots_xml
     host join(["rds.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
-    header "User-Agent", "RS Policies"
-    header "Content-Type", "text/xml"
     query "Action", "DescribeDBClusterSnapshots"
     query "Version", "2014-10-31"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
     ignore_status [403, 404]
   end
   result do
@@ -557,32 +577,86 @@ datasource "ds_describe_db_cluster_snapshots" do
 end
 
 datasource "ds_snapshots_combined" do
-  run_script $js_snapshots_combined, $ds_describe_snapshots, $ds_describe_db_snapshots, $ds_describe_db_cluster_snapshots, $param_exclusion_tags, $param_exclusion_types, $param_exclusion_description, $param_exclusion_services
+  run_script $js_snapshots_combined, $ds_describe_snapshots, $ds_describe_db_snapshots, $ds_describe_db_cluster_snapshots, $param_exclusion_tags, $param_exclusion_tags_boolean, $param_exclusion_types, $param_exclusion_description, $param_exclusion_services
 end
 
 script "js_snapshots_combined", type: "javascript" do
-  parameters "ds_describe_snapshots", "ds_describe_db_snapshots", "ds_describe_db_cluster_snapshots", "param_exclusion_tags", "param_exclusion_types", "param_exclusion_description", "param_exclusion_services"
+  parameters "ds_describe_snapshots", "ds_describe_db_snapshots", "ds_describe_db_cluster_snapshots", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_exclusion_types", "param_exclusion_description", "param_exclusion_services"
   result "result"
   code <<-EOS
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
   combined = ds_describe_snapshots.concat(ds_describe_db_snapshots, ds_describe_db_cluster_snapshots)
 
-  result = _.reject(combined, function(snapshot) {
-    snapshot_tags = []
+  combined_tag_filtered = _.reject(combined, function(resource) {
+    resource_tags = {}
 
-    if (snapshot['tags'] != null && snapshot['tags'] != undefined) {
-      _.each(snapshot['tags'], function(tag) {
-        snapshot_tags.push([tag['key'], tag['value']].join(':'))
-        snapshot_tags.push([tag['key'], '*'].join(':'))
+    if (typeof(resource['tags']) == 'object') {
+      _.each(resource['tags'], function(tag) {
+        resource_tags[tag['key']] = tag['value']
       })
     }
 
-    exclude_snapshot = false
+    // Store a list of found tags
+    found_tags = []
 
-    _.each(param_exclusion_tags, function(exclusion_tag) {
-      if (_.contains(snapshot_tags, exclusion_tag)) {
-        exclude_snapshot = true
+    _.each(comparators, function(comparator) {
+      comparison = comparator['comparison']
+      value = comparator['value']
+      string = comparator['string']
+      resource_tag = resource_tags[comparator['key']]
+
+      if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+      if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+      if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+      if (comparison == '=~') {
+        if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+      }
+
+      if (comparison == '!~') {
+        if (resource_tag == undefined) { found_tags.push(string) }
+        if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
       }
     })
+
+    filtering_by_tag = param_exclusion_tags.length > 0
+    all_tags_found = found_tags.length == comparators.length
+    any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+    return filtering_by_tag && (all_tags_found || any_tags_found)
+  })
+
+  result = _.reject(combined_tag_filtered, function(snapshot) {
+    exclude_snapshot = false
 
     _.each(param_exclusion_types, function(exclusion_type) {
       if (snapshot['snapshotType'] == exclusion_type.toLowerCase().replace(' ', '') && snapshot['service'] == "RDS") {
@@ -660,12 +734,12 @@ datasource "ds_get_snapshot_ami" do
     pagination $pagination_aws_describeimages_xml
     host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
-    header "User-Agent", "RS Policies"
-    header "Content-Type", "text/xml"
     query "Action", "DescribeImages"
     query "Version", "2016-11-15"
     query "Filter.1.Name", "owner-id"
     query "Filter.1.Value.1", val($ds_aws_account, 'id')
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
     ignore_status [403, 404]
   end
   result do
@@ -674,7 +748,7 @@ datasource "ds_get_snapshot_ami" do
       field "region", val(iter_item, "region")
       field "imageId", xpath(col_item, "imageId")
       field "ownerId", xpath(col_item, "ownerId")
-      field "snapshotIds",  xpath(col_item, "blockDeviceMapping/item/*//snapshotId", "array")
+      field "snapshotIds", xpath(col_item, "blockDeviceMapping/item/*//snapshotId", "array")
     end
   end
 end
@@ -850,21 +924,27 @@ script "js_snapshots_cost_mapping", type: "javascript" do
   code <<-'EOS'
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
-    var numString = number.toString()
-    var values = numString.split(".")
-    var formatted_number = ''
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   result = []
@@ -886,10 +966,13 @@ script "js_snapshots_cost_mapping", type: "javascript" do
         "in AWS Account ", ds_aws_account['name'], " (", ds_aws_account['id'], ")"
       ].join('')
 
+      resourceARN = "arn:aws:" + snapshot['service'].toLowerCase().trim() + ":" + snapshot['region'] + ":" + ds_aws_account['id'] + ":snapshot/" + snapshot['snapshotId']
+
       result.push({
         accountID: ds_aws_account['id'],
         accountName: ds_aws_account['name'],
         resourceID: snapshot['snapshotId'],
+        resourceARN: resourceARN,
         snapshotType: snapshot['snapshotType'],
         description: snapshot['description'],
         region: snapshot['region'],
@@ -905,7 +988,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
         service: snapshot['service'],
         recommendationDetails: recommendationDetails,
         lookbackPeriod: param_snapshot_age,
-        resourceType: "Storage Snapshot",
+        type: "Storage Snapshot",
         // These are to avoid errors when we hash_exclude these fields
         total_savings: '',
         message: '',
@@ -1025,11 +1108,8 @@ policy "pol_utilization" do
       field "description" do
         label "Description"
       end
-      field "resourceName" do
-        label "Resource Name"
-      end
-      field "resourceType" do
-        label "Resource Type"
+      field "type" do
+        label "Type"
       end
       field "imageId" do
         label "AMI"
@@ -1043,11 +1123,11 @@ policy "pol_utilization" do
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "resourceType" do
-        label "Resource Type"
-      end
       field "lookbackPeriod" do
         label "Snapshot Age Threshold (Days)"
+      end
+      field "resourceARN" do
+        label "Resource ARN"
       end
       field "id" do
         label "ID"
@@ -1106,7 +1186,7 @@ define delete_snapshots($data, $param_snapshot_include_ami) return $all_response
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1252,7 +1332,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do
@@ -1260,7 +1340,6 @@ datasource "ds_get_policy" do
     field "id", jmes_path(response, "id")
   end
 end
-
 
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id

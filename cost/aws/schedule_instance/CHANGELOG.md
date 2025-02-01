@@ -1,5 +1,42 @@
 # Changelog
 
+## v7.1.0
+
+- Added email notifications for Start Action, Stop Action, and Errors
+
+## v7.0.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v7.0.2
+
+- Minor changes to policy template to pass lint tests. No functional changes.
+
+## v7.0.1
+
+- Minor changes to policy template to pass lint tests. No functional changes.
+
+## v7.0.0
+
+- Remove `next_stop`, `next_start` label requirements
+- Add task labels to improve status updates and debugging for CWF actions
+- Add error capture, graceful timeout handling for CWF actions
+
+## v6.0
+
+- Added support for regex when filtering resources by tag
+
+## v5.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to specify custom tag keys for tracking instance schedules
+- Added ability to filter resources by multiple tag key:value pairs
+- Added ability for user to start and stop instances directly
+- Normalized incident export to be consistent with other policies
+- Added additional fields to incident export for additional context
+- Streamlined code for better readability and faster execution
+- Policy action error logging modernized and now works as expected in EU/APAC
+
 ## v4.2
 
 - Improved logging, and error capture/handling

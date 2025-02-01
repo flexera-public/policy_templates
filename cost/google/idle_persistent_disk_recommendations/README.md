@@ -23,42 +23,6 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - If the Flexera organization is configured to use a currency other than the one Google Recommender is reporting the savings estimates in, the savings values will be converted using the exchange rate at the time that the policy executes.
 
-## Prerequisites
-
-This Policy Template requires that several APIs be enabled in your Google Cloud environment:
-
-- [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
-- [Compute Engine API](https://console.cloud.google.com/flows/enableapi?apiid=compute.googleapis.com)
-- [Recommender API](https://console.cloud.google.com/flows/enableapi?apiid=recommender.googleapis.com)
-
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
-
-- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
-  - Roles
-    - `Monitoring Viewer`
-    - `Compute Recommender Viewer`
-    - `Compute Recommender Admin`*
-
-  - Permissions
-    - `recommender.computeDiskIdleResourceRecommendations.list`
-    - `resourcemanager.projects.get`
-    - `compute.disks.list`
-    - `logging.logEntries.list`
-    - `logging.privateLogEntries.list`
-    - `logging.views.access`
-    - `compute.disks.createSnapshot`*
-    - `compute.disks.delete`*
-    - `compute.globalOperations.get`*
-    - `compute.zoneOperations.get`*
-    - `compute.snapshots.create`*
-
-\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
-
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `billing_center_viewer`
-
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
-
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
@@ -70,7 +34,13 @@ This policy has the following input parameters required when launching the polic
 - *Allow/Deny Projects List* - Filter results by project ID/name, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all projects
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
-- *Exclusion Labels (Key:Value)* - Google labels to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific label key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
+- *Exclusion Labels* - The policy will filter resources containing the specified labels from the results. The following formats are supported:
+  - `Key` - Filter all resources with the specified label key.
+  - `Key==Value` - Filter all resources with the specified label key:value pair.
+  - `Key!=Value` - Filter all resources missing the specified label key:value pair. This will also filter all resources missing the specified label key.
+  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
+  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified label key.
+- *Exclusion Labels: Any / All* - Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Labels` field.
 - *Create Final Snapshot* - Whether or not to take a final snapshot before deleting a disk.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
@@ -84,13 +54,43 @@ The following policy actions are taken on any resources found to be out of compl
 - Send an email report
 - Delete idle persistent disks after approval
 
+## Prerequisites
+
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
+  - `recommender.computeDiskIdleResourceRecommendations.list`
+  - `resourcemanager.projects.get`
+  - `compute.disks.list`
+  - `logging.logEntries.list`
+  - `logging.privateLogEntries.list`
+  - `logging.views.access`
+  - `compute.disks.createSnapshot`*
+  - `compute.disks.delete`*
+  - `compute.globalOperations.get`*
+  - `compute.zoneOperations.get`*
+  - `compute.snapshots.create`*
+
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
+Additionally, this policy template requires that several APIs be enabled in your Google Cloud environment:
+
+- [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
+- [Compute Engine API](https://console.cloud.google.com/flows/enableapi?apiid=compute.googleapis.com)
+- [Recommender API](https://console.cloud.google.com/flows/enableapi?apiid=recommender.googleapis.com)
+
 ## Supported Clouds
 
 - Google
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.
 
 ## API Quotas
 

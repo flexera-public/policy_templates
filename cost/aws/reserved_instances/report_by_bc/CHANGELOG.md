@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.0.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v2.0.2
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
+## v2.0.1
+
+- Deprecated: This policy is no longer being updated.
+
 ## v2.0
 
 - Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)

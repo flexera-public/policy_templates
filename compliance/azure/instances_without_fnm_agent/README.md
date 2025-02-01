@@ -1,12 +1,12 @@
 # Azure Instances not running FlexNet Inventory Agent
 
-## What it does
+## What It Does
 
 This policy uses the SOAP version of the FlexNet Manager Cloud APIs, checks all instances running in Azure to determine if the FlexNet Inventory Agent is running on the instance, and reports on any that are missing the agent.
 
 The policy is a recommendation only policy, no action is taken during the Policy Escalation.
 
-## Functional Details
+## How It Works
 
 The policy leverages the cloud API to get all current instances and the FlexNet Manager report (Custom view) API to get all azure cloud instances with agent. It cross-checks the two lists to determine if any instances are running on the cloud that aren't known to FlexNet Manager.  The policy matches the ComputerName from FlexNet Manager System and the VirtualMachine.name from Azure.
 
@@ -36,7 +36,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Compute/virtualMachines/read`
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+- [**Flexera ITAM Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `Web Service` or equivalent role in IT Asset Accounts (for calling ITAM SOAP APIs)
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
@@ -56,7 +56,7 @@ Once saved, note the report number in the URL field : ![Alt text][ReportNumber] 
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.
 
 <!-- Image referances -->
 [APIToken]: images/APIToken.png "APIToken"

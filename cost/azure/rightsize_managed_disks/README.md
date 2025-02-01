@@ -1,34 +1,48 @@
 # Azure Rightsize Managed Disks
 
-## What it does
+## What It Does
 
-This Policy Template scans all volumes in the given account and identifies any volume that meets the user-specified criteria for being oversized. The user can filter volumes based on usage percentage of IOPS, usage percentage of throughput, or any combination of these. Any volumes that meet the user-specified criteria are considered oversized. If any oversized volumes are found, an incident report will show the volumes and related information. An email will be sent to the user-specified email addresses.
+This policy template checks managed disks in Azure subscriptions and identifies underutilized disks based on disk performance metrics over a lookback period and a threshold specified by the user; if underutilized disks are found, then disk type downgrade is recommended. An email will be sent to the user-specified email addresses.
 
-- It is important that you keep constant LUN numbers for your data disks because when policy retrieves metrics for them. It will only look for the latest LUN number assigned to the data disk; if changed multiple times before running the policy, only the data points using the current LUN the disk has will be retrieved for analysis.
-- Currently the policy only works for righsizing using the disk used IOPS and throughput since disk capacity (GiB) is not retrievable from Azure.
+Note: It is preferred to keep the disk LUN number constant when detaching and re-attaching a data disk to a virtual machine. LUN number is used to retrieve disk performance metrics (IOPS and throughput).
+
+Note: This policy template does not currently produce recommendations or reporting on used disk space. This is because disk space usage is not something that can easily be assessed for managed disks. Disk space usage is contextual based on how the disk is partitioned and used by an operating system and can't meaningfully be assessed outside of that context.
 
 ### Policy Saving Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings are recognized if the resource is resized to the suggested size.
+The policy includes the estimated monthly savings. The estimated monthly savings are recognized if the resource is resized to the suggested size. The `Estimated Monthly Savings` is calculated via the following:
 
-- The `Estimated Monthly Savings` is calculated by obtaining the price of the disk per month from the Azure Pricing API.
+- The `monthly list price` of the current disk type obtained via the Azure Pricing API.
+- The `real monthly cost of the disk` is calculated by multiplying the amortized cost of the disk for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
+- The percentage difference between the two is calculated by dividing the `real monthly cost of the disk` by the `monthly list price` of the current disk type.
+- The `monthly list price of the new disk type` is multiplied by the above percentage to get an `estimated real monthly cost of the new disk` type under the assumption that any discounts or other changes from list price that applied to the old disk type will also apply to the new one.
+- The savings is then calculated by subtracting the `estimated real monthly cost of the new disk type` from the `real monthly cost of the disk`.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 
-## Input parameters
+## Input Parameters
 
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
-- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
+- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+  - `Key` - Filter all resources with the specified tag key.
+  - `Key==Value` - Filter all resources with the specified tag key:value pair.
+  - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
+  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
+  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
+- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Allow/Deny Subscriptions* - Determines whether the Allow/Deny Subscriptions List parameter functions as an allow list (only providing results for the listed subscriptions) or a deny list (providing results for all subscriptions except for the listed subscriptions).
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
-- *Minimum Used Disk IOPS %* - The minimum used disk IOPS percentage threshold at which to consider a disk to be 'oversized' and therefore be flagged for downsizing.
-- *Aggregation Type For Disk IOPS* - Statistic to use when determining if the disk IOPS is more than the disk actually uses.
-- *Minimum Used Disk Throughput %* - The minimum used disk throughput percentage threshold at which to consider a disk to be 'oversized' and therefore be flagged for downsizing.
-- *Aggregation Type For Disk Throughput* - Statistic to use when determining if the disk throughput is more than the disk actually uses.
+- *SKU Ignore List* - A list of disk SKUs to ignore and not include in the results. To remove HDDs from the results, add `Standard_LRS` and `Standard_ZRS` to this list. Leave blank to produce recommendations for all SKUs.
+- *IOPS Threshold (%)* - The IOPS threshold percentage at which to consider a managed disk to be underutilized.
+- *IOPS Threshold Statistic* - Statistic to use for IOPS when determining if a managed disk is underutilized.
+- *Throughput Threshold (%)* - The throughput threshold at which to consider a managed disk to be underutilized.
+- *Throughput Threshold Statistic* - Statistic to use for throughput when determining if a managed disk is underutilized.
+- *Statistic Interval* - The interval to use when gathering Azure metrics data.
 - *Lookback Period* - How many days back to look at disk IOPS and throughput data. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
+- *Recommend HDD tier* - Sometimes the user does not want the policy to recommend changing a disk tier to HDD, with this parameter user can decide if he wants HDD tier recommendations.
 
 ## Policy Actions
 
@@ -41,21 +55,19 @@ The following policy actions are taken on any resources found to be out of compl
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
-
   - `Microsoft.Compute/disks/read`
   - `Microsoft.Compute/virtualMachines/read`
   - `Microsoft.Insights/metrics/read`
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*).
-
-This is only required for the application of the metaparent policy.
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-## Supported clouds
+## Supported Clouds
 
 - Azure
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

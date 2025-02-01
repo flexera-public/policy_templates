@@ -1,5 +1,28 @@
 # Changelog
 
+## v3.1.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.1.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v3.1.0
+
+- Improved policy execution speed by batching CloudWatch requests.
+- Fixed issue where policy execution would fail when trying to retrieve bucket regions.
+
+## v3.0
+
+- Several parameters altered to be more descriptive and human-readable
+- `Size Threshold (GiB)` parameter no longer expects user to specify size in bytes
+- Added ability to filter buckets by region and tags
+- Normalized incident export to be consistent with other policies
+- Added additional fields to incident export
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v2.10
 
 - Updated description of `Account Number` parameter

@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.4.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v0.4.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v0.4.0
+
+- Policy template renamed to `Kubecost Container Request Rightsizing Recommendations` to better reflect its functionality
+- Kubecost API requests now use HTTPS for added security
+- Policy template now falls back to Flexera-configured currency if Kubecost does not report a currency
+- Added additional context to incident
+- Renamed some incident fields to conform with other recommendations policy templates
+- Streamlined code for better readability and faster execution
+- Policy template now requires a valid Flexera credential
+
 ## v0.3
 
 - Added `Scope` parameter to allow user to gather recommendations per cluster or across the entire account. Previously, the recommendations were always requested overall the account.

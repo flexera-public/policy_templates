@@ -1,11 +1,15 @@
 # AWS Subnet Name Tag Sync
 
-## What it does
+## Deprecated
+
+This policy is no longer being updated.
+
+## What It Does
 
 This Policy Template is used to automatically synchronize the AWS Subnet names to Cloud Management.
 When applied, the policy will iterate through all VPCs in all AWS regions and ensure the matching subnet reference in Cloud Management has the correct name.
 
-## Functional Details
+## How It Works
 
 This policy performs the following action:
 
@@ -62,4 +66,4 @@ Required permissions in the provider:
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

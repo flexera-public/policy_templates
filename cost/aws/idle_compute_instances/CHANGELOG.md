@@ -1,5 +1,25 @@
 # Changelog
 
+## v5.6.4
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v5.6.3
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v5.6.2
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
+## v5.6.1
+
+- Added default value for parameters that do not require user input
+
+## v5.6
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v5.5
 
 - Deprecated: This policy is no longer being updated. Please see policy README for more information.

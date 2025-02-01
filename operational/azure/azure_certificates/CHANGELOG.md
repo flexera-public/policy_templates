@@ -1,4 +1,29 @@
-# ChangeLog
+# Changelog
+
+## v4.0.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v4.0.1
+
+- Fixed issue where policy incident would show incorrect `Days Until Expiration` for several resources
+
+## v4.0.0
+
+- Added ability to delete Azure certificates automatically or manually
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to use Subscription filter as an allow or a deny list
+- Added ability to filter resources by multiple tag key:value pairs
+- Added ability to filter resources by region
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Policy no longer raises new escalations if inconsequential metadata like tag values change
+- Streamlined code for better readability and faster execution
+
+## v3.2.1
+
+- Added default value for parameters that do not require user input
 
 ## v3.2
 
@@ -34,6 +59,6 @@
 
 - Added subscription filter option and ability to specify Azure API endpoint
 
-## 2.0
+## v2.0
 
 - Initial Release

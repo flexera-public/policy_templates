@@ -1,5 +1,57 @@
 # Changelog
 
+## v5.6.0
+
+- Added `Connections (Daily)` field to incident table for added context
+
+## v5.5.3
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v5.5.2
+
+- Added `hide_skip_approvals` field to the info section, enabling the UI to dynamically show or hide the "Skip Approval" option. Functionality unchanged.
+
+## v5.5.1
+
+- Fixed issue where policy template would fail if "db.serverless" instances were found
+
+## v5.5.0
+
+- Added support for downsizing multiple sizes where appropriate
+
+## v5.4.2
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v5.4.1
+
+- Modified internal template name for ARN incident field to match other policy templates. Functionality unchanged.
+
+## v5.4.0
+
+- Added memory and network throughput metrics to incident output for underutilized RDS instances
+
+## v5.3.1
+
+- Unused RDS Instances incident now includes a `Recommended Instance Size` field with a value of `Terminate RDS Instance` for ease of analyzing recommendations from the Flexera Optimization dashboard
+
+## v5.3
+
+- Fixed issue with invalid API endpoint that caused policy to not work in Flexera APAC.
+
+## v5.2
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
+## v5.1
+
+- Added Availability Zone, License Model, and vCPUs to incident output
+
+## v5.0
+
+- Added support for regex when filtering resources by tag
+
 ## v4.2
 
 - Fixed issue with incorrectly reporting on instances with hyphens or underscores in their name.

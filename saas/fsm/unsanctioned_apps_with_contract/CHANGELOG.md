@@ -1,5 +1,21 @@
 # Changelog
 
+## v3.2.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.2.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v3.2
+
+- Policy updated so that policy is correctly identified as a Flexera policy
+
+## v3.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v3.0
 
 - Added support for APAC API endpoint

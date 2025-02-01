@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.2.2
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v3.2.1
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
+## v3.2
+
+- Deprecated: This policy is no longer being updated.
+
 ## v3.1
 
 - Updated description of `Account Number` parameter
