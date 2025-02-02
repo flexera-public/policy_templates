@@ -4,6 +4,8 @@
 
 This policy template creates a series of FinOps cloud dashboards within the Flexera organization. Created dashboards are public and can be accessed at the Dashboards -> Cloud page in Flexera One. Optionally, information about the newly created dashboards can be emailed.
 
+__NOTE: This policy template only needs to execute once to perform the above task. It is recommended that the policy template be terminated after execution completes.__
+
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new dashboards are created.
