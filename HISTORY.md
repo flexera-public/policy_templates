@@ -6,6 +6,48 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2928](https://github.com/flexera-public/policy_templates/pull/2928): FOPTS-6730 Fix negative memory statistics for recently rightsized resources | Policy: Azure Rightsize Compute Instances
+
+#### Description
+
+> This change skips memory recommendations when data from recently rightsized instances gets mixed with current data making negative values for memory usage.
+>
+> Here's a much more detailed explanation of the problem: https://flexera.atlassian.net/browse/SQ-12222?focusedCommentId=2672680
+>
+> ### Issues Resolved
+>
+> - https://flexera.atlassian.net/browse/SQ-12222
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md)
+- **Merged At**: 2025-01-27 15:35:43 UTC
+
+---
+
+### PR [#2920](https://github.com/flexera-public/policy_templates/pull/2920): FOPTS-6034 Make Azure New Marketplace Products Policy Support MSP Configurations
+
+#### Description
+
+> We changed the method used to obtain the bill connections, now instead of calling the bill-connects API we fetch cost data and get the bill connections from there, this change is required since MSP customers have a different way of configuring their bill connects, and that method would make the policy fail.
+>
+> This also adds support for MCA connections.
+>
+> Code change used here is based on already tested code for policy template **Azure Savings Realized from Reservations**.
+>
+> ### Issues Resolved
+>
+> - https://flexera.atlassian.net/browse/FOPTS-6315 (Refactor  Azure New Marketplace Products policy)
+>
+
+#### Metadata
+
+- **Policies**: [Azure New Marketplace Products](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/marketplace_new_products/README.md)
+- **Merged At**: 2025-01-27 15:33:40 UTC
+
+---
+
 ### PR [#2911](https://github.com/flexera-public/policy_templates/pull/2911): POL-1441 ITAM Reporting Policies
 
 #### Description
@@ -1677,40 +1719,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Oversized S3 Buckets](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_bucket_size/README.md), [Meta Parent: AWS Oversized S3 Buckets](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_bucket_size/README.md)
 - **Merged At**: 2024-08-22 18:51:35 UTC
-
----
-
-### PR [#2566](https://github.com/flexera-public/policy_templates/pull/2566): POL-1324 AWS Burstable EC2 Instances: Switch to GetMetricData
-
-#### Description
-
-> This updates the `AWS Burstable EC2 Instances` policy template to use batched GetMetricData requests to gather metrics in order to speed up execution.
->
-> Various small tweaks were also made to bring it in compliance with current Dangerfile tests.
->
-
-#### Metadata
-
-- **Policies**: [AWS Burstable EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/burstable_ec2_instances/README.md), [Meta Parent: AWS Burstable EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/burstable_ec2_instances/README.md)
-- **Merged At**: 2024-08-22 18:51:26 UTC
-
----
-
-### PR [#2557](https://github.com/flexera-public/policy_templates/pull/2557): POL-1323 - fix: AWS Rightsize EC2 get memory metrics for Autoscaling groups
-
-#### Description
-
-> Fix bug preventing Memory metrics from being included in result for some EC2 Instances created by Autoscaling Group
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/POL-1323
->
-
-#### Metadata
-
-- **Policies**: [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/README.md)
-- **Merged At**: 2024-08-20 13:21:54 UTC
 
 ---
 
