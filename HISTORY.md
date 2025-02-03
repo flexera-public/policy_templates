@@ -6,6 +6,24 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2932](https://github.com/flexera-public/policy_templates/pull/2932): FOPTS-6822 Enhance "Cloud Bill Processing Error Notification" Policy to Report Connections with Zero Imported Bills
+
+#### Description
+
+> Added a new parameter (disable by default) to report connections with no bills. This is asked by one of the customers (Accenture) as they want to be able to identify misconfigured bill connection.
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/SQ-12286
+>
+
+#### Metadata
+
+- **Policies**: [Cloud Bill Processing Error Notification](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/bill_processing_errors_notification/README.md)
+- **Merged At**: 2025-02-03 19:43:17 UTC
+
+---
+
 ### PR [#2928](https://github.com/flexera-public/policy_templates/pull/2928): FOPTS-6730 Fix negative memory statistics for recently rightsized resources | Policy: Azure Rightsize Compute Instances
 
 #### Description
@@ -1703,22 +1721,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Azure Savings Plan Utilization](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/savings_plan/utilization/README.md)
 - **Merged At**: 2024-08-27 13:30:34 UTC
-
----
-
-### PR [#2567](https://github.com/flexera-public/policy_templates/pull/2567): POL-1325 AWS Oversized S3 Buckets: Switch to GetMetricData
-
-#### Description
-
-> This updates the `AWS Oversized S3 Buckets` policy template to use batched GetMetricData requests to gather metrics in order to speed up execution.
->
-> Various small tweaks were also made to bring it in compliance with current Dangerfile tests.
->
-
-#### Metadata
-
-- **Policies**: [AWS Oversized S3 Buckets](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_bucket_size/README.md), [Meta Parent: AWS Oversized S3 Buckets](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_bucket_size/README.md)
-- **Merged At**: 2024-08-22 18:51:35 UTC
 
 ---
 
