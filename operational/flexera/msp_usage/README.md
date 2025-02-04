@@ -13,6 +13,7 @@ This policy generates a comprehensive report on the usage of MSP Customer Organi
 - It estimates 12-month costs using the most recent 3 months of costs.
 - It identifies organizations with 100% inactive users and includes their total costs in the report.
 - It allows excluding organizations with total costs below a specified threshold.
+- It allows excluding certain costs from the net cost calculations and reports excluded costs separately.
 
 ## Input Parameters
 
