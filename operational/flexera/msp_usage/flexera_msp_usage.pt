@@ -90,8 +90,8 @@ end
 parameter "param_get_costs_from_parent_org" do
   type "string"
   category "Filters"
-  label "Get Costs from Parent Org"
-  description "Select whether to get costs from the parent org or from customer orgs directly. Default is 'Yes' which gets costs from the parent org."
+  label "Get Customer Org Costs from MSP Parent Org"
+  description "Select whether to get customer org costs from the msp parent org or from customer orgs directly. Default is 'Yes' which gets costs from the parent org."
   allowed_values "Yes", "No"
   default "Yes"
 end
@@ -233,7 +233,7 @@ script "js_request_parent_org_costs_not_allocated", type: "javascript" do
   var f = {
     "type": "or",
     // TODO:
-    //   - AWS MCA Marketplace
+    //   - Azure MCA Marketplace
     //   - Azure EA + MCA Tax
     //   - GCP Marketplace
     //   - GCP Tax
@@ -569,11 +569,11 @@ datasource "ds_children_org_get_users_step6" do
 end
 
 datasource "ds_report" do
-  run_script $js_report, $ds_flexera_api_hosts, $ds_dates, $ds_request_parent_org_costs_not_allocated, $ds_parent_org_costs_not_allocated, $ds_children_org_get_users_step6, $ds_identify_errors, $param_excluded_user_domains, $param_active_days_threshold, $param_child_orgs_list, $param_child_orgs_allow_or_deny, $param_cost_threshold, $param_get_costs_from_parent_org
+  run_script $js_report, $ds_flexera_api_hosts, $ds_dates, $ds_request_parent_org_costs_not_allocated, $ds_parent_org_costs_not_allocated, $ds_children_org_get_users_step6, $ds_identify_errors, $param_excluded_user_domains, $param_active_days_threshold, $param_child_orgs_list, $param_child_orgs_allow_or_deny, $param_cost_threshold, $param_get_costs_from_parent_org, rs_org_id, rs_org_name
 end
 
 script "js_report", type: "javascript" do
-  parameters "ds_flexera_api_hosts", "ds_dates", "ds_request_parent_org_costs_not_allocated", "ds_parent_org_costs_not_allocated", "ds_children_org", "ds_identify_errors", "param_excluded_user_domains", "param_active_days_threshold", "param_child_orgs_list", "param_child_orgs_allow_or_deny", "param_cost_threshold", "param_get_costs_from_parent_org"
+  parameters "ds_flexera_api_hosts", "ds_dates", "ds_request_parent_org_costs_not_allocated", "ds_parent_org_costs_not_allocated", "ds_children_org", "ds_identify_errors", "param_excluded_user_domains", "param_active_days_threshold", "param_child_orgs_list", "param_child_orgs_allow_or_deny", "param_cost_threshold", "param_get_costs_from_parent_org", "rs_org_id", "rs_org_name"
   result "result"
   code <<-EOS
     function formatCurrency(value) {
@@ -743,6 +743,7 @@ script "js_report", type: "javascript" do
     // Generate markdown report
     var markdown = "# MSP Organizations Summary Report\\n\\n";
 
+    markdown += "Report for MSP Parent Org: " + rs_org_name + " ("+rs_org_id+")\\n\\n";
     markdown += "Report generated at: " + new Date().toISOString() + "\\n\\n";
     markdown += "Report period: " + sortedMonths[0] + " to " + sortedMonths[sortedMonths.length-1] + "\\n\\n";
     if (param_cost_threshold != -1) {
@@ -764,9 +765,20 @@ script "js_report", type: "javascript" do
     }
 
     if (param_get_costs_from_parent_org == "Yes") {
-      markdown += "Costs are being retrieved from the MSP Parent Org only\\n\\n";
+      markdown += "**Customer Costs are retrieved from the MSP Parent Org only**\\n\\n";
     } else {
-      markdown += "Costs are being retrieved from the MSP Parent Org and Customer Orgs directly\\n\\n";
+      markdown += "**Customer Costs are retrieved from the MSP Parent Org for costs not allocated to any Customer Org, and each Customer Orgs directly for Customer Org costs\\n\\n";
+    }
+
+    if (param_child_orgs_list.length > 0) {
+      var orgsUniq = _.uniq(param_child_orgs_list)
+      orgsUniq.sort();
+      if (param_child_orgs_allow_or_deny == "Allow") {
+        markdown += "**Org Filter Enabled** and this report **includes only** these Orgs: " + orgsUniq.join(", ");
+      } else {
+        markdown += "**Org Filter Enabled** and this report **excludes** these Orgs: " + orgsUniq.join(", ");
+      }
+      markdown += " ("+(orgsUniq.length/inclusiveCosts.length).toFixed(1)+" % Total Orgs)\\n";
     }
 
     if (ds_identify_errors.length > 0) {
@@ -781,18 +793,10 @@ script "js_report", type: "javascript" do
     markdown += "## Overall Statistics\\n\\n";
 
     markdown += "* Total Orgs: " + inclusiveCosts.length + "\\n";
-    if (param_child_orgs_list.length > 0) {
-      if (param_child_orgs_allow_or_deny == "Allow") {
-        markdown += "* Included Orgs: " + param_child_orgs_list.join(", ");
-      } else {
-        markdown += "* Excluded Orgs: " + param_child_orgs_list.join(", ");
-      }
-      markdown += " ("+(param_child_orgs_list.length/inclusiveCosts.length).toFixed(1)+" % Total Orgs)\\n";
-    }
     var warning = sortedMonths.length < 12 ? " (Warning: Less than 12 months of data available)" : "";
     markdown += "* Previous "+sortedMonths.length+"-Month Cost: " + formatCurrency(netTotalCost) + warning + "\\n";
-    markdown += "* Total Excluded Cost: " + formatCurrency(excludedTotalCost) + "\\n";
-    if (sortedMonths >= 3) {
+    markdown += "* Previous "+sortedMonths.length+"-Month Excluded Cost: " + formatCurrency(excludedTotalCost) + "\\n";
+    if (sortedMonths.length >= 3) {
       var recentMonths = sortedMonths.slice(-3);
       var recentTotalCost = 0;
       _.each(recentMonths, function(month) {
@@ -801,7 +805,18 @@ script "js_report", type: "javascript" do
         });
       });
       var estimated12MCostFromLast3Months = (recentTotalCost / 3) * 12;
-      markdown += "* Estimated 12-Month Cost using most recent last 3-Month Cost: " + formatCurrency(estimated12MCostFromLast3Months) + "\\n";
+      markdown += "* Estimated 12-Month Cost using Previous 3-Month: " + formatCurrency(estimated12MCostFromLast3Months) + "\\n";
+    }
+    if (sortedMonths.length >= 1) {
+      var previousMonth = _.last(sortedMonths);
+      var recentTotalCost = 0;
+      var recentExcludedTotalCost = 0;
+      _.each(costsBySource, function(source) {
+        recentTotalCost += source.monthlyAmounts[previousMonth] || 0;
+        recentExcludedTotalCost += source.monthlyAmounts_excluded[previousMonth] || 0;
+      });
+      markdown += "* Previous 1-Month Cost: " + formatCurrency(recentTotalCost) + " ("+previousMonth+")\\n";
+      markdown += "* Previous 1-Month Excluded Cost: " + formatCurrency(recentExcludedTotalCost) + " ("+previousMonth+")\\n";
     }
     markdown += "* Total Users: " + totalUsers + "\\n";
     markdown += "* Active Users: " + activeUsers + " (" + ((activeUsers/totalUsers)*100).toFixed(1) + "%) (Last UI login less than "+param_active_days_threshold+"days)" + "\\n";
@@ -1005,59 +1020,62 @@ script "js_report", type: "javascript" do
           }
         }
 
-        // Build table header
-        var header = "\\n| Source";
-        _.each(sortedMonths, function(month) {
-        header += " | " + month;
-        });
-        header += " | Total | % of Org Total | Excluded |\\n";
-        markdown += header;
-
-        // Build separator
-        var separator = "|--------";
-        _.each(sortedMonths, function(month) {
-        separator += "|--------";
-        });
-        separator += "|--------|-------------|--------|\\n";
-        markdown += separator;
-
-        // Add rows for each source
-        var sources = [
-        {name: "AWS", data: orgCosts.aws},
-        {name: "Azure", data: orgCosts.azure},
-        {name: "GCP", data: orgCosts.gcp},
-        {name: "Oracle", data: orgCosts.oracle},
-        {name: "Optima", data: orgCosts.optima},
-        {name: "FOCUS", data: orgCosts.focus},
-        {name: "Other", data: orgCosts.other}
-        ];
-
-        _.each(sources, function(source) {
-        if (source.data.cost > 0) {
-          var row = "| " + source.name;
+        // Only include table if there are costs or excluded costs
+        if (orgTotal != 0 || org.excludedTotalCost != 0) {
+          // Build table header
+          var header = "\\n| Source";
           _.each(sortedMonths, function(month) {
-          var amount = source.data.monthlyAmounts[month] || 0;
-          row += " | " + formatCurrency(amount);
+          header += " | " + month;
           });
-          row += " | " + formatCurrency(source.data.cost);
-          row += " | " + ((source.data.cost/orgTotal)*100).toFixed(1) + "%";
-          row += " | " + formatCurrency(source.data.cost_excluded) + " |\\n";
-          markdown += row;
-        }
-        });
+          header += " | Total | % of Org Total | Excluded |\\n";
+          markdown += header;
 
-        // Add total row
-        markdown += "| **Total**";
-        _.each(sortedMonths, function(month) {
-        var monthTotal = 0;
-        _.each(sources, function(source) {
-          monthTotal += source.data.monthlyAmounts[month] || 0;
-        });
-        markdown += " | " + formatCurrency(monthTotal);
-        });
-        markdown += " | " + formatCurrency(orgTotal);
-        markdown += " | 100%";
-        markdown += " | " + formatCurrency(org.excludedTotalCost) + " |\\n";
+          // Build separator
+          var separator = "|--------";
+          _.each(sortedMonths, function(month) {
+          separator += "|--------";
+          });
+          separator += "|--------|-------------|--------|\\n";
+          markdown += separator;
+
+          // Add rows for each source
+          var sources = [
+          {name: "AWS", data: orgCosts.aws},
+          {name: "Azure", data: orgCosts.azure},
+          {name: "GCP", data: orgCosts.gcp},
+          {name: "Oracle", data: orgCosts.oracle},
+          {name: "Optima", data: orgCosts.optima},
+          {name: "FOCUS", data: orgCosts.focus},
+          {name: "Other", data: orgCosts.other}
+          ];
+
+          _.each(sources, function(source) {
+          if (source.data.cost > 0) {
+            var row = "| " + source.name;
+            _.each(sortedMonths, function(month) {
+            var amount = source.data.monthlyAmounts[month] || 0;
+            row += " | " + formatCurrency(amount);
+            });
+            row += " | " + formatCurrency(source.data.cost);
+            row += " | " + ((source.data.cost/orgTotal)*100).toFixed(1) + "%";
+            row += " | " + formatCurrency(source.data.cost_excluded) + " |\\n";
+            markdown += row;
+          }
+          });
+
+          // Add total row
+          markdown += "| **Total**";
+          _.each(sortedMonths, function(month) {
+          var monthTotal = 0;
+          _.each(sources, function(source) {
+            monthTotal += source.data.monthlyAmounts[month] || 0;
+          });
+          markdown += " | " + formatCurrency(monthTotal);
+          });
+          markdown += " | " + formatCurrency(orgTotal);
+          markdown += " | 100%";
+          markdown += " | " + formatCurrency(org.excludedTotalCost) + " |\\n";
+        }
       }
     });
 
