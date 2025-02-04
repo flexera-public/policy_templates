@@ -220,6 +220,24 @@ script "js_request_parent_org_costs_not_allocated", type: "javascript" do
   parameters "ds_parent_org_rbds", "ds_parent_org_billing_centers", "rs_org_id", "rs_org_name"
   result "result"
   code <<-EOS
+  // initial filters for all requests
+  var f = {
+    "type": "or",
+    // TODO:
+    //   - AWS MCA Marketplace
+    //   - Azure EA + MCA Tax
+    //   - GCP Marketplace
+    //   - GCP Tax
+    // Ideally we could rely on Category = Marketplace, and/or Line Item Type = Tax but that's not normalized across all clouds by the backend
+    "expressions": [
+      // AWS Marketplace
+      { "type":"equal", "dimension":"bill_entity", "value":"AWS Marketplace" },
+      // Azure EA Marketplace
+      { "type":"equal", "dimension":"bill_entity", "value":"Marketplace" },
+      // AWS Taxes
+      { "type":"equal", "dimension":"line_item_type", "value":"Tax" },
+    ]
+  }
   // init request object
   request = {
     // org object to match the other costs for child orgs
@@ -229,7 +247,14 @@ script "js_request_parent_org_costs_not_allocated", type: "javascript" do
       // This is the MSP Parent Org
       // Can use this flag to identify the MSP Parent Org (i.e and skip for checking user activity)
       msp_parent: true
-    }
+    },
+    // use JSON Stringify+Parse to deep copy the original filter object
+    filter_excluded_costs: JSON.parse(JSON.stringify(f)),
+    filter_net_costs: {
+      "type": "not",
+      // use JSON Stringify+Parse to deep copy the original filter object
+      "expression": JSON.parse(JSON.stringify(f))
+    },
   }
 
   // Pluck out the top level billing centers for
@@ -238,6 +263,10 @@ script "js_request_parent_org_costs_not_allocated", type: "javascript" do
   });
   // Pluck just the IDs for the top level billing centers to pass as request parameter
   request["top_level_bc_ids"] = _.pluck(toplevel_bcs, "id");
+  // Append "unallocated" bc to also get unallocated costs
+  request["top_level_bc_ids"].push("unallocated");
+  // Deduplicate top_level_bc_ids just in case we added unallocated
+  request["top_level_bc_ids"] = _.uniq(request["top_level_bc_ids"]);
 
   // Check if rbd_partner_child_org exists
   var rbd_partner_child_org = _.find(ds_parent_org_rbds.values, function(rbd) {
@@ -245,8 +274,18 @@ script "js_request_parent_org_costs_not_allocated", type: "javascript" do
   });
   // If rbd_partner_child_org exists, the costs for the parent org should only be the costs that are not allocated to child orgs
   // We get the costs allocated to child orgs in another step
+  // use JSON Stringify+Parse to deep copy the filter_net_costs object
+  request["filter_net_costs_in_parent_org_no_customer_org"] = JSON.parse(JSON.stringify(request["filter_net_costs"]));
+  // If they are using the rbd_partner_child_org, we need to exclude costs that are allocated to child orgs
+  // Do this by adding an "and" clause to condition both the filter for net costs AND the rbd_partner_child_org==None (not allocated to child org)
   if (rbd_partner_child_org) {
-    request["filter"] = { "type": "equal", "dimension": "rbd_partner_child_org", "value": "None" };
+    request["filter_net_costs_in_parent_org_no_customer_org"] = {
+      "type": "and",
+      "expressions": [
+        JSON.parse(JSON.stringify(request["filter_net_costs"])),
+        { "type": "equal", "dimension": "rbd_partner_child_org", "value": "None" }
+      ]
+    }
   }
 
   // this result is always 1 item long containing the request object
@@ -266,7 +305,7 @@ datasource "ds_parent_org_costs_not_allocated" do
     body_field "dimensions", ["bill_source"]
     body_field "granularity", "month"
     body_field "billing_center_ids", val(iter_item, "top_level_bc_ids")
-    body_field "filter", val(iter_item, "filter")
+    body_field "filter", val(first($ds_request_parent_org_costs_not_allocated), "filter_net_costs_in_parent_org_no_customer_org")
     body_field "start_at", val($ds_dates, "start_at")
     body_field "end_at", val($ds_dates, "end_at")
     body_field "metrics", ["cost_nonamortized_unblended_adj"]
@@ -417,6 +456,7 @@ datasource "ds_children_org_get_costs_step4" do
     header "Content-Type", "application/json"
     body_field "dimensions", ["bill_source"]
     body_field "granularity", "month"
+    body_field "filter", val(first($ds_request_parent_org_costs_not_allocated), "filter_net_costs")
     body_field "start_at", val($ds_dates, "start_at")
     body_field "end_at", val($ds_dates, "end_at")
     body_field "metrics", ["cost_nonamortized_unblended_adj"]
@@ -427,12 +467,41 @@ datasource "ds_children_org_get_costs_step4" do
     field "org", val(iter_item, "org")
     field "roles", val(iter_item, "roles")
     field "billing_centers", val(iter_item, "billing_centers")
+    field "top_level_bc_ids", val(iter_item, "top_level_bc_ids")
     field "costs", jq(response, ".rows")
   end
 end
 
-datasource "ds_children_org_get_users_step5" do
+datasource "ds_children_org_get_costs_excluded_step5" do
   iterate $ds_children_org_get_costs_step4
+  request do
+    auth $auth_flexera
+    verb  "POST"
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", val(val(iter_item,"org"), "id"), "/costs/aggregated"])
+    header "Api-Version", "1.0"
+    header "Content-Type", "application/json"
+    body_field "dimensions", ["bill_source"]
+    body_field "granularity", "month"
+    body_field "filter", val(first($ds_request_parent_org_costs_not_allocated), "filter_excluded_costs")
+    body_field "start_at", val($ds_dates, "start_at")
+    body_field "end_at", val($ds_dates, "end_at")
+    body_field "metrics", ["cost_nonamortized_unblended_adj"]
+    body_field "billing_center_ids", val(iter_item, "top_level_bc_ids")
+  end
+  result do
+    encoding "json"
+    field "org", val(iter_item, "org")
+    field "roles", val(iter_item, "roles")
+    field "billing_centers", val(iter_item, "billing_centers")
+    field "top_level_bc_ids", val(iter_item, "top_level_bc_ids")
+    field "costs", val(iter_item, "costs")
+    field "costs_excluded", jq(response, ".rows")
+  end
+end
+
+datasource "ds_children_org_get_users_step6" do
+  iterate $ds_children_org_get_costs_excluded_step5
   request do
     auth $auth_flexera
     pagination $pagination_flexera
@@ -444,13 +513,15 @@ datasource "ds_children_org_get_users_step5" do
     field "org", val(iter_item, "org")
     field "roles", val(iter_item, "roles")
     field "billing_centers", val(iter_item, "billing_centers")
+    field "top_level_bc_ids", val(iter_item, "top_level_bc_ids")
     field "costs", val(iter_item, "costs")
+    field "costs_excluded", val(iter_item, "costs_excluded")
     field "users", jq(response, ".values")
   end
 end
 
 datasource "ds_report" do
-  run_script $js_report, $ds_flexera_api_hosts, $ds_dates, $ds_request_parent_org_costs_not_allocated, $ds_parent_org_costs_not_allocated, $ds_children_org_get_users_step5, $param_excluded_user_domains, $param_active_days_threshold, $param_child_orgs_list, $param_child_orgs_allow_or_deny, $param_cost_threshold
+  run_script $js_report, $ds_flexera_api_hosts, $ds_dates, $ds_request_parent_org_costs_not_allocated, $ds_parent_org_costs_not_allocated, $ds_children_org_get_users_step6, $param_excluded_user_domains, $param_active_days_threshold, $param_child_orgs_list, $param_child_orgs_allow_or_deny, $param_cost_threshold
 end
 
 script "js_report", type: "javascript" do
@@ -458,30 +529,35 @@ script "js_report", type: "javascript" do
   result "result"
   code <<-EOS
     function formatCurrency(value) {
+      if (value === 0  || _.isNumber(value) === false) {
+        return "$0.00";
+      }
       var parts = value.toFixed(2).split('.');
       var intPart = parts[0];
+      var length = intPart.length;
       var formattedInt = '';
-      for (var i = intPart.length - 1, count = 0; i >= 0; i--) {
-        if (count === 3 && i !== 0) {
-          formattedInt = ',' + formattedInt;
-          count = 0;
+
+      for (var i = 0; i < length; i++) {
+        if (i > 0 && (length - i) % 3 === 0) {
+          formattedInt += ',';
         }
-        formattedInt = intPart[i] + formattedInt;
-        count++;
+        formattedInt += intPart.charAt(i);
       }
+
       parts[0] = formattedInt;
       return "$" + parts.join('.');
     }
 
-    var totalCost = 0;
+    var excludedTotalCost = 0;
+    var netTotalCost = 0;
     var costsBySource = {
-      aws: {cost: 0, orgs: [], monthlyAmounts: {}},
-      azure: {cost: 0, orgs: [], monthlyAmounts: {}},
-      gcp: {cost: 0, orgs: [], monthlyAmounts: {}},
-      oracle: {cost: 0, orgs: [], monthlyAmounts: {}},
-      optima: {cost: 0, orgs: [], monthlyAmounts: {}},
-      focus: {cost: 0, orgs: [], monthlyAmounts: {}},
-      other: {cost: 0, orgs: [], monthlyAmounts: {}}
+      aws: {cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
+      azure: {cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
+      gcp: {cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
+      oracle: {cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
+      optima: {cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
+      focus: {cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
+      other: {cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}}
     };
 
     // Calculate stats across all orgs
@@ -500,11 +576,11 @@ script "js_report", type: "javascript" do
     // Calculate costs
     _.each(inclusiveCosts, function(org) {
       if (org.costs) {
-        org.totalCost = 0;
+        org.netTotalCost = 0;
         _.each(org.costs, function(cost) {
           var amount = cost.metrics.cost_nonamortized_unblended_adj;
-          totalCost += amount;
-          org.totalCost += amount;
+          netTotalCost += amount;
+          org.netTotalCost += amount;
           var orgId = org.org.id;
 
           // Get month from timestamp
@@ -514,28 +590,67 @@ script "js_report", type: "javascript" do
           var source = cost.dimensions.bill_source;
           var targetSource;
           if (/.*aws.*/.test(source)) {
-          targetSource = costsBySource.aws;
+            targetSource = costsBySource.aws;
           } else if (/.*azure.*/.test(source)) {
-          targetSource = costsBySource.azure;
+            targetSource = costsBySource.azure;
           } else if (/.*google|gcp.*/.test(source)) {
-          targetSource = costsBySource.gcp;
-        } else if (/.*cbi-oi-oracle.*/.test(source)) {
-          targetSource = costsBySource.oracle;
-        } else if (/.*cbi-oi-optima.*/.test(source)) {
-          targetSource = costsBySource.optima;
+            targetSource = costsBySource.gcp;
+          } else if (/.*cbi-oi-oracle.*/.test(source)) {
+            targetSource = costsBySource.oracle;
+          } else if (/.*cbi-oi-optima.*/.test(source)) {
+            targetSource = costsBySource.optima;
           } else if (/.*cbi-oi-focus.*/.test(source)) {
-          targetSource = costsBySource.focus;
+            targetSource = costsBySource.focus;
           } else {
-          targetSource = costsBySource.other;
+            targetSource = costsBySource.other;
           }
-          targetSource.cost += amount;
+            targetSource.cost += amount;
           if (!_.contains(targetSource.orgs, orgId)) {
-          targetSource.orgs.push(orgId);
+            targetSource.orgs.push(orgId);
           }
           if (!targetSource.monthlyAmounts[month]) {
-          targetSource.monthlyAmounts[month] = 0;
+            targetSource.monthlyAmounts[month] = 0;
           }
-          targetSource.monthlyAmounts[month] += amount;
+            targetSource.monthlyAmounts[month] += amount;
+        });
+      }
+      if (org.costs_excluded) {
+        org.excludedTotalCost = 0;
+        _.each(org.costs_excluded, function(cost) {
+          var amount = cost.metrics.cost_nonamortized_unblended_adj;
+          excludedTotalCost += amount;
+          org.excludedTotalCost += amount;
+          var orgId = org.org.id;
+
+          // Get month from timestamp
+          var month = cost.timestamp.substring(0,7);
+          months.push(month);
+
+          var source = cost.dimensions.bill_source;
+          var targetSource;
+          if (/.*aws.*/.test(source)) {
+            targetSource = costsBySource.aws;
+          } else if (/.*azure.*/.test(source)) {
+            targetSource = costsBySource.azure;
+          } else if (/.*google|gcp.*/.test(source)) {
+            targetSource = costsBySource.gcp;
+          } else if (/.*cbi-oi-oracle.*/.test(source)) {
+            targetSource = costsBySource.oracle;
+          } else if (/.*cbi-oi-optima.*/.test(source)) {
+            targetSource = costsBySource.optima;
+          } else if (/.*cbi-oi-focus.*/.test(source)) {
+            targetSource = costsBySource.focus;
+          } else {
+            targetSource = costsBySource.other;
+          }
+          targetSource.cost_excluded += amount;
+          if (!_.contains(targetSource.orgs, orgId)) {
+            targetSource.orgs.push(orgId);
+          }
+          if (!targetSource.monthlyAmounts_excluded[month]) {
+            targetSource.monthlyAmounts_excluded[month] = 0;
+          }
+          targetSource.monthlyAmounts_excluded[month] += amount;
         });
       }
       if (org.users) {
@@ -587,6 +702,13 @@ script "js_report", type: "javascript" do
     }
     markdown += "**Active** Users are defined as users who have logged in to the Flexera One UI in the last "+param_active_days_threshold+" days.\\n\\n";
 
+    // Check if we have any filter defined
+    // For now using the .type value, but we can more easily check user input parameter string if not empty
+    if (ds_request_parent_org_costs_not_allocated[0].filter_excluded_costs.type) {
+      markdown += "**Excluded Costs** are defined as:\\n\\n";
+      markdown += "`"+JSON.stringify(ds_request_parent_org_costs_not_allocated[0].filter_excluded_costs) + "`\\n\\n";
+    }
+
     markdown += "## Overall Statistics\\n\\n";
 
     markdown += "* Total Orgs: " + inclusiveCosts.length + "\\n";
@@ -599,7 +721,8 @@ script "js_report", type: "javascript" do
       markdown += " ("+(param_child_orgs_list.length/inclusiveCosts.length).toFixed(1)+" % Total Orgs)\\n";
     }
     var warning = sortedMonths.length < 12 ? " (Warning: Less than 12 months of data available)" : "";
-    markdown += "* Previous "+sortedMonths.length+"-Month Cost: " + formatCurrency(totalCost) + warning + "\\n";
+    markdown += "* Previous "+sortedMonths.length+"-Month Cost: " + formatCurrency(netTotalCost) + warning + "\\n";
+    markdown += "* Total Excluded Cost: " + formatCurrency(excludedTotalCost) + "\\n";
     if (sortedMonths >= 3) {
       var recentMonths = sortedMonths.slice(-3);
       var recentTotalCost = 0;
@@ -630,7 +753,7 @@ script "js_report", type: "javascript" do
     _.each(sortedMonths, function(month) {
       header += " | " + month;
     });
-    header += " | Total | % of Total |\\n";
+    header += " | Total | % of Total | Excluded |\\n";
     markdown += header;
 
     // Build separator row
@@ -638,7 +761,7 @@ script "js_report", type: "javascript" do
     _.each(sortedMonths, function(month) {
       separator += "|-------";
     });
-    separator += "|--------|------------|\\n";
+    separator += "|--------|------------|--------|\\n";
     markdown += separator;
 
     // Build data rows
@@ -659,14 +782,15 @@ script "js_report", type: "javascript" do
       row += " | " + formatCurrency(amount);
       });
       row += " | " + formatCurrency(source.data.cost);
-      row += " | " + ((source.data.cost/totalCost)*100).toFixed(1) + "% |\\n";
+      row += " | " + ((source.data.cost/netTotalCost)*100).toFixed(1) + "%";
+      row += " | " + formatCurrency(source.data.cost_excluded) + " |\\n";
       markdown += row;
     });
 
     // Process each child org
     // Sort organizations by total cost first
     var sortedOrgs = _.sortBy(inclusiveCosts, function(org) {
-      return -org.totalCost; // Negative for descending order
+      return -org.netTotalCost; // Negative for descending order
     });
 
     markdown += "\\n## Costs by Organization\\n\\n";
@@ -675,7 +799,7 @@ script "js_report", type: "javascript" do
     _.each(sortedMonths, function(month) {
       childOrgHeader += " | " + month;
     });
-    childOrgHeader += " | Total | % of Total |\\n";
+    childOrgHeader += " | Total | % of Total | Excluded |\\n";
     markdown += childOrgHeader;
 
     // Build separator row
@@ -683,13 +807,14 @@ script "js_report", type: "javascript" do
     _.each(sortedMonths, function(month) {
       childOrgSeparator += "|-------";
     });
-    childOrgSeparator += "|--------|------------|\\n";
+    childOrgSeparator += "|--------|------------|--------|\\n";
     markdown += childOrgSeparator;
 
     // Build data rows for each org
     _.each(sortedOrgs, function(org) {
       var orgTotal = 0;
       var monthlyTotals = {};
+      var monthlyExcludedTotals = {};
 
       if (org.costs) {
         _.each(org.costs, function(cost) {
@@ -703,6 +828,17 @@ script "js_report", type: "javascript" do
         });
       }
 
+      if (org.costs_excluded) {
+        _.each(org.costs_excluded, function(cost) {
+          var amount = cost.metrics.cost_nonamortized_unblended_adj;
+          var month = cost.timestamp.substring(0,7);
+          if (!monthlyExcludedTotals[month]) {
+            monthlyExcludedTotals[month] = 0;
+          }
+          monthlyExcludedTotals[month] += amount;
+        });
+      }
+
       if (param_cost_threshold == -1 || orgTotal > param_cost_threshold) {
         var row = "| " + org.org.name + " | " + org.org.id;
         _.each(sortedMonths, function(month) {
@@ -710,7 +846,8 @@ script "js_report", type: "javascript" do
           row += " | " + formatCurrency(amount);
         });
         row += " | " + formatCurrency(orgTotal);
-        row += " | " + ((orgTotal/totalCost)*100).toFixed(1) + "% |\\n";
+        row += " | " + ((orgTotal/netTotalCost)*100).toFixed(1) + "%";
+        row += " | " + formatCurrency(org.excludedTotalCost) + " |\\n";
         markdown += row;
       }
     });
@@ -726,17 +863,17 @@ script "js_report", type: "javascript" do
       }
 
       if (param_cost_threshold == -1 || orgTotal > param_cost_threshold) {
-        markdown += "\\n### " + org.org.name + " (" + org.org.id + ")\\n\\n";
+        markdown += "\\n\\n### " + org.org.name + " (" + org.org.id + ")\\n\\n";
 
         // Initialize cost tracking for this org
         var orgCosts = {
-        aws: {cost: 0, monthlyAmounts: {}},
-        azure: {cost: 0, monthlyAmounts: {}},
-        gcp: {cost: 0, monthlyAmounts: {}},
-        oracle: {cost: 0, monthlyAmounts: {}},
-        optima: {cost: 0, monthlyAmounts: {}},
-        focus: {cost: 0, monthlyAmounts: {}},
-        other: {cost: 0, monthlyAmounts: {}}
+        aws: {cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
+        azure: {cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
+        gcp: {cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
+        oracle: {cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
+        optima: {cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
+        focus: {cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
+        other: {cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}}
         };
 
         // Calculate costs for this org
@@ -762,16 +899,34 @@ script "js_report", type: "javascript" do
             targetSource.monthlyAmounts[month] += amount;
           });
         }
+
+        if (org.costs_excluded) {
+          _.each(org.costs_excluded, function(cost) {
+            var amount = cost.metrics.cost_nonamortized_unblended_adj;
+            var month = cost.timestamp.substring(0,7);
+            var source = cost.dimensions.bill_source;
+
+            var targetSource;
+            if (/.*aws.*/.test(source)) targetSource = orgCosts.aws;
+            else if (/.*azure.*/.test(source)) targetSource = orgCosts.azure;
+            else if (/.*google|gcp.*/.test(source)) targetSource = orgCosts.gcp;
+            else if (/.*cbi-oi-oracle.*/.test(source)) targetSource = orgCosts.oracle;
+            else if (/.*cbi-oi-optima.*/.test(source)) targetSource = orgCosts.optima;
+            else if (/.*cbi-oi-focus.*/.test(source)) targetSource = orgCosts.focus;
+            else targetSource = orgCosts.other;
+
+            targetSource.cost_excluded += amount;
+            if (!targetSource.monthlyAmounts_excluded[month]) {
+            targetSource.monthlyAmounts_excluded[month] = 0;
+            }
+            targetSource.monthlyAmounts_excluded[month] += amount;
+          });
+        }
+
         markdown += "* Previous "+sortedMonths.length+"-Month Cost: " + formatCurrency(orgTotal) + "\\n";
+        markdown += "* Excluded Cost: " + formatCurrency(org.excludedTotalCost) + "\\n";
         if (org.org.msp_parent == true) {
-          // Add filter to url if we used a filter in the query
-          var filter="";
-          if (ds_request_parent_org_costs_not_allocated[0].filter) {
-            filter="&filter."+ds_request_parent_org_costs_not_allocated[0].filter.dimension+"."+ds_request_parent_org_costs_not_allocated[0].filter.value
-          }
-          var url = "https://"+ds_flexera_api_hosts.ui+"/orgs/"+ org.org.id +"/optima/tabular-view?costType=cost_nonamortized_unblended_adj&dashboardID=default&endDate="+ds_dates.end_at+"-01"+filter+"&granularity=Monthly&groupBy=tabular-view.bill_source.0&startDate="+ds_dates.start_at+"-01&tableCostsVisible=tabular-view";
-          // https://app.flexera.com/orgs/36616/optima/tabular-view?costType=cost_nonamortized_unblended_adj&dashboardID=default&endDate=2025-01-01&filterBy=filter.rbd_partner_child_org.None&granularity=Monthly&groupBy=tabular-view.bill_source.0&startDate=2024-01-01&tableCostsVisible=tabular-view
-          markdown += "* **These are costs not allocated to any child organizations. ([Tabular View]("+url+"))**\\n";
+          markdown += "* **These are costs not allocated to any child organizations\\n";
           markdown += "* **This is the MSP Parent Organization, user activity is not reported**\\n";
         } else {
           markdown += "* Active Users: " + org.activeUsers + " (" + (org.totalUsers > 0 ? ((org.activeUsers/org.totalUsers)*100).toFixed(1) : 0) + "%)\\n";
@@ -787,7 +942,7 @@ script "js_report", type: "javascript" do
         _.each(sortedMonths, function(month) {
         header += " | " + month;
         });
-        header += " | Total | % of Org Total |\\n";
+        header += " | Total | % of Org Total | Excluded |\\n";
         markdown += header;
 
         // Build separator
@@ -795,7 +950,7 @@ script "js_report", type: "javascript" do
         _.each(sortedMonths, function(month) {
         separator += "|--------";
         });
-        separator += "|--------|-------------|\\n";
+        separator += "|--------|-------------|--------|\\n";
         markdown += separator;
 
         // Add rows for each source
@@ -817,7 +972,8 @@ script "js_report", type: "javascript" do
           row += " | " + formatCurrency(amount);
           });
           row += " | " + formatCurrency(source.data.cost);
-          row += " | " + ((source.data.cost/orgTotal)*100).toFixed(1) + "% |\\n";
+          row += " | " + ((source.data.cost/orgTotal)*100).toFixed(1) + "%";
+          row += " | " + formatCurrency(source.data.cost_excluded) + " |\\n";
           markdown += row;
         }
         });
@@ -832,7 +988,8 @@ script "js_report", type: "javascript" do
         markdown += " | " + formatCurrency(monthTotal);
         });
         markdown += " | " + formatCurrency(orgTotal);
-        markdown += " | 100% |\\n";
+        markdown += " | 100%";
+        markdown += " | " + formatCurrency(org.excludedTotalCost) + " |\\n";
       }
     });
 
@@ -843,8 +1000,9 @@ script "js_report", type: "javascript" do
         costs: {
           start_at: ds_dates.start_at,
           end_at: ds_dates.end_at,
-          totalCost: org.totalCost,
-          percentTotalCost: _.isNumber(org.totalCost) ? ((org.totalCost / totalCost) * 100).toFixed(1) : null,
+          netTotalCost: org.netTotalCost,
+          excludedTotalCost: org.excludedTotalCost,
+          percentTotalCost: _.isNumber(org.netTotalCost) ? ((org.netTotalCost / netTotalCost) * 100).toFixed(1) : null,
         },
         users: {
           activeUsers: org.activeUsers,
@@ -857,7 +1015,8 @@ script "js_report", type: "javascript" do
 
     result = {
       report: markdown,
-      totalCost: totalCost,
+      netTotalCost: netTotalCost,
+      excludedTotalCost: excludedTotalCost,
       data: orgData
     }
   EOS
@@ -885,7 +1044,11 @@ EOS
       end
       field "costTotal" do
         label "Cost Total"
-        path "costs.totalCost"
+        path "costs.netTotalCost"
+      end
+      field "excludedCostTotal" do
+        label "Excluded Cost Total"
+        path "costs.excludedTotalCost"
       end
       field "costPercentTotalCost" do
         label "Percent of Total Cost"
