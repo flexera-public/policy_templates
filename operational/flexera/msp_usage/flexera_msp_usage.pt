@@ -87,6 +87,15 @@ parameter "param_cost_threshold" do
   min_value -1
 end
 
+parameter "param_get_costs_from_parent_org" do
+  type "string"
+  category "Filters"
+  label "Get Costs from Parent Org"
+  description "Select whether to get costs from the parent org or from customer orgs directly. Default is 'Yes' which gets costs from the parent org."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -355,11 +364,11 @@ script "js_filter_organizations", type: "javascript" do
 end
 
 datasource "ds_identify_errors" do
-  run_script $js_identify_errors, $ds_organizations_filtered, $ds_children_org_get_roles_step1
+  run_script $js_identify_errors, $ds_organizations_filtered, $ds_children_org_get_roles_step1, $ds_children_org_get_users_step6
 end
 
 script "js_identify_errors", type: "javascript" do
-  parameters "ds_organizations_filtered", "ds_children_org_get_roles_step1"
+  parameters "ds_organizations_filtered", "ds_children_org_get_roles_step1", "ds_children_org_get_users_step6"
   result "errors"
   code <<-EOS
   var errors = [];
@@ -369,10 +378,10 @@ script "js_identify_errors", type: "javascript" do
     errors.push("403 Forbidden error received attempting to get Flexera MSP Customer Orgs.  You must deploy this policy in an account that has the `msp` capability enabled.");
   }
 
-  // Check if ds_children_org_get_roles_step1 is missing any children org responses
+  // Check if ds_children_org_get_users_step6 is missing any children org responses
   // This will identify Orgs that the credential does not have access to
   var accessible_child_orgs = []
-  _.each(ds_children_org_get_roles_step1, function(org) {
+  _.each(ds_children_org_get_users_step6, function(org) {
     accessible_child_orgs.push(org.org.id);
   });
   accessible_child_orgs = _.uniq(accessible_child_orgs);
@@ -385,7 +394,7 @@ script "js_identify_errors", type: "javascript" do
     var forbidden_org_ids = _.pluck(forbidden_orgs,"id");
     forbidden_org_ids = _.uniq(forbidden_org_ids);
     var orgs_string = forbidden_org_ids.join(", ");
-    errors.push("403 Forbidden error received attempting to access Flexera MSP Customer Orgs: "+orgs_string+". You should deploy this policy using a User Refresh Token credential associated with a User that has `org_owner` access in all MSP Child Orgs.  Alternatively, use the `Allow/Deny Child Orgs` parameter to filter the list of Child Orgs in scope.");
+    errors.push("403 Forbidden error received attempting to get user list from Flexera MSP Customer Orgs: "+orgs_string+". You should deploy this policy using a User Refresh Token credential associated with a User that has `org_owner` access in all MSP Child Orgs.  Alternatively, use the `Allow/Deny Child Orgs` parameter to filter the list of Child Orgs in scope.");
   }
 
   // Deduplicate identical errors
@@ -445,21 +454,59 @@ script "js_children_org_get_toplevel_billing_centers_step3", type: "javascript" 
 EOS
 end
 
+datasource "ds_request_children_org_get_costs_step4" do
+  run_script $js_request_children_org_get_costs_step4, $ds_children_org_get_toplevel_billing_centers_step3, $ds_request_parent_org_costs_not_allocated, $param_get_costs_from_parent_org,rs_org_id, rs_org_name
+end
+
+script "js_request_children_org_get_costs_step4", type: "javascript" do
+  parameters "ds_children_org_get_toplevel_billing_centers_step3", "ds_request_parent_org_costs_not_allocated", "param_get_costs_from_parent_org", "rs_org_id", "rs_org_name"
+  result "result"
+  code <<-EOS
+  var result = [];
+
+  _.each(ds_children_org_get_toplevel_billing_centers_step3, function(org) {
+    var request = org;
+    // Default request org ID and filter as if we are getting costs from the child org
+    request.request_org = org.org.id;
+    request.filter = ds_request_parent_org_costs_not_allocated[0].filter_net_costs;
+    // Check if we should get costs from the parent org
+    if (param_get_costs_from_parent_org == "Yes") {
+      // If yes, we need to update the request slightly to get customer org costs from the msp parent org
+      // Update the request org id to the parent org id
+      request.request_org = rs_org_id;
+      // Update the filter to filter costs from parent org to the costs allocated to child org
+      // Include the original filter that would have been used if we were getting costs directly from the child org (filter_net_costs)
+      request.filter = {
+        "type": "and",
+        "expressions": [
+          ds_request_parent_org_costs_not_allocated[0].filter_net_costs,
+          { "type": "equal", "dimension": "rbd_partner_child_org", "value": org.org.id.toFixed(0) }
+        ]
+      }
+      // Update the top_level_bc_ids to be the parent orgs top level billing centers
+      request.top_level_bc_ids = ds_request_parent_org_costs_not_allocated[0].top_level_bc_ids;
+    }
+    result.push(request);
+  });
+
+EOS
+end
+
 datasource "ds_children_org_get_costs_step4" do
-  iterate $ds_children_org_get_toplevel_billing_centers_step3
+  iterate $ds_request_children_org_get_costs_step4
   request do
     auth $auth_flexera
     verb  "POST"
     host rs_optima_host
-    path join(["/bill-analysis/orgs/", val(val(iter_item,"org"), "id"), "/costs/aggregated"])
+    path join(["/bill-analysis/orgs/", val(iter_item,"request_org"), "/costs/aggregated"])
     header "Api-Version", "1.0"
     header "Content-Type", "application/json"
     body_field "dimensions", ["bill_source"]
     body_field "granularity", "month"
-    body_field "filter", val(first($ds_request_parent_org_costs_not_allocated), "filter_net_costs")
     body_field "start_at", val($ds_dates, "start_at")
     body_field "end_at", val($ds_dates, "end_at")
     body_field "metrics", ["cost_nonamortized_unblended_adj"]
+    body_field "filter", val(iter_item, "filter")
     body_field "billing_center_ids", val(iter_item, "top_level_bc_ids")
   end
   result do
@@ -507,6 +554,7 @@ datasource "ds_children_org_get_users_step6" do
     pagination $pagination_flexera
     host val($ds_flexera_api_hosts, 'flexera')
     path join(["/iam/v1/orgs/", val(val(iter_item,"org"), "id"), "/users"])
+    ignore_status 403 # Ignore status 403 so we can gracefully handle that kind of error
   end
   result do
     encoding "json"
@@ -521,11 +569,11 @@ datasource "ds_children_org_get_users_step6" do
 end
 
 datasource "ds_report" do
-  run_script $js_report, $ds_flexera_api_hosts, $ds_dates, $ds_request_parent_org_costs_not_allocated, $ds_parent_org_costs_not_allocated, $ds_children_org_get_users_step6, $param_excluded_user_domains, $param_active_days_threshold, $param_child_orgs_list, $param_child_orgs_allow_or_deny, $param_cost_threshold
+  run_script $js_report, $ds_flexera_api_hosts, $ds_dates, $ds_request_parent_org_costs_not_allocated, $ds_parent_org_costs_not_allocated, $ds_children_org_get_users_step6, $ds_identify_errors, $param_excluded_user_domains, $param_active_days_threshold, $param_child_orgs_list, $param_child_orgs_allow_or_deny, $param_cost_threshold, $param_get_costs_from_parent_org
 end
 
 script "js_report", type: "javascript" do
-  parameters "ds_flexera_api_hosts", "ds_dates", "ds_request_parent_org_costs_not_allocated", "ds_parent_org_costs_not_allocated", "ds_children_org", "param_excluded_user_domains", "param_active_days_threshold", "param_child_orgs_list", "param_child_orgs_allow_or_deny", "param_cost_threshold"
+  parameters "ds_flexera_api_hosts", "ds_dates", "ds_request_parent_org_costs_not_allocated", "ds_parent_org_costs_not_allocated", "ds_children_org", "ds_identify_errors", "param_excluded_user_domains", "param_active_days_threshold", "param_child_orgs_list", "param_child_orgs_allow_or_deny", "param_cost_threshold", "param_get_costs_from_parent_org"
   result "result"
   code <<-EOS
     function formatCurrency(value) {
@@ -709,6 +757,27 @@ script "js_report", type: "javascript" do
       markdown += "`"+JSON.stringify(ds_request_parent_org_costs_not_allocated[0].filter_excluded_costs) + "`\\n\\n";
     }
 
+    if (param_excluded_user_domains.length > 0) {
+      markdown += "**Excluded User Domains** are defined as: " + param_excluded_user_domains.join(", ") + "\\n\\n";
+    } else {
+      markdown += "**Excluded User Domains** are not defined.\\n\\n";
+    }
+
+    if (param_get_costs_from_parent_org == "Yes") {
+      markdown += "Costs are being retrieved from the MSP Parent Org only\\n\\n";
+    } else {
+      markdown += "Costs are being retrieved from the MSP Parent Org and Customer Orgs directly\\n\\n";
+    }
+
+    if (ds_identify_errors.length > 0) {
+      markdown += "## Errors\\n\\n";
+      markdown += "The following errors were encountered while generating the report:\\n\\n";
+      _.each(ds_identify_errors, function(error) {
+        markdown += "* " + error + "\\n";
+      });
+      markdown += "\\n";
+    }
+
     markdown += "## Overall Statistics\\n\\n";
 
     markdown += "* Total Orgs: " + inclusiveCosts.length + "\\n";
@@ -738,7 +807,6 @@ script "js_report", type: "javascript" do
     markdown += "* Active Users: " + activeUsers + " (" + ((activeUsers/totalUsers)*100).toFixed(1) + "%) (Last UI login less than "+param_active_days_threshold+"days)" + "\\n";
     markdown += "* Inactive Users: " + (totalUsers-activeUsers) + " (" + (((totalUsers-activeUsers)/totalUsers)*100).toFixed(1) + "%)" + "\\n";
     markdown += "* Excluded Users: " + excludedUsers + "\\n";
-    markdown += "* Excluded User Domains: " + param_excluded_user_domains.join(", ") + "\\n";
     if (inactiveOrgs.length > 0) {
       markdown += "* Organizations with 100% Inactive Users: " + _.pluck(inactiveOrgs, "id").join(", ") + "\\n";
       markdown += "* Previous "+sortedMonths.length+"-Month Cost for Organizations with 100% Inactive Users: " + formatCurrency(inactiveOrgsTotalCost) + "\\n";
