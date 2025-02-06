@@ -1,8 +1,8 @@
 name "Spot Ocean - Common Bill Ingest"
 rs_pt_ver 20180301
 type "policy"
-short_description "Exposted costs from [Spot Ocean Cluster Aggregated Detailed Costs API](https://docs.spot.io/api/#tag/Ocean-AWS/operation/oceanAwsK8sClusterAggregatedDetailedCosts) and pushes them into the [Flexera Optima Bill Upload API](https://reference.rightscale.com/optima-bill-upload/#/)"
-long_description ""
+short_description "Ingests costs from [Spot Ocean Cluster Aggregated Detailed Costs API](https://docs.spot.io/api/#tag/Ocean-AWS/operation/oceanAwsK8sClusterAggregatedDetailedCosts) into Flexera using the [Flexera Optima Bill Upload API](https://reference.rightscale.com/optima-bill-upload/#/). See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/spot/ocean_cbi/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description "Ingests costs from [Spot Ocean Cluster Aggregated Detailed Costs API](https://docs.spot.io/api/#tag/Ocean-AWS/operation/oceanAwsK8sClusterAggregatedDetailedCosts) into Flexera using the [Flexera Optima Bill Upload API](https://reference.rightscale.com/optima-bill-upload/#/). See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/spot/ocean_cbi/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 category "Operational"
 severity "low"
 default_frequency "hourly"
@@ -183,7 +183,6 @@ script "js_dates", type: "javascript" do
     var one_month_ago = new Date(today)
     one_month_ago.setMonth(one_month_ago.getMonth() - 1)
 
-
     var start_date = new Date(one_month_ago.getFullYear(), one_month_ago.getMonth(), one_month_ago.getDate())
     var end_date = new Date(one_month_ago.getFullYear(), one_month_ago.getMonth() + 1, one_month_ago.getDate())
 
@@ -297,8 +296,8 @@ end
 datasource "ds_spotinst_cluster_aggregated_costs" do
   iterate $ds_requests_spotinst_cluster_aggregated_costs
   request do
-    verb "POST"
     auth $auth_spotinst
+    verb "POST"
     host "api.spotinst.io"
     path join(["/ocean/aws/k8s/cluster/", val(val(iter_item,"spotinst_cluster"),"id"), "/aggregatedCosts"])
     query "accountId", jq(iter_item,".spotinst_cluster.account.accountId")
@@ -454,7 +453,7 @@ script "js_calculated_proportions", type: "javascript" do
                 break;
 
               default:
-                console.log("Warning: No Matching Usage Category for '" + usageCategory + "'.  Skipping Line...")
+                console.log("Warning: No Matching Usage Category for '" + usageCategory + "'.  Skipping Line...") // Excluded from console.log test.  Needed to provide user and support visibility into why usage type is not visible in Flexera
                 break;
             } // End switch(usageCategory)
 
@@ -466,15 +465,6 @@ script "js_calculated_proportions", type: "javascript" do
   })
 EOS
 end
-
-policy 'pol_spot_ocean_cbi' do
-  validate $ds_cbi_commit do
-    summary_template 'CBI Commited: {{data.billingPeriod}}'
-    detail_template '{{ data }}'
-    check eq(0,1)
-  end
-end
-
 
 ###############################################################################
 # Common Logic for pushing to CBI
@@ -596,7 +586,7 @@ script "js_cbi_csv_rows", type: "javascript" do
     var log_entry = "[Event "+eventCount.toString()+" @ "+now.toISOString()+"] "+JSON.stringify(sample)
     // Check if eventLast was old than delaySecondsBetweenSample ago
     if (eventLast == null || (now - eventLast) > delaySecondsBetweenSample*1000) {
-      console.log(log_entry)
+      console.log(log_entry) // Excluded from console.log test
       eventLast = now
     }
   }
@@ -665,15 +655,14 @@ script "js_cbi_csv_rows", type: "javascript" do
 EOS
 end
 
-
 datasource "ds_existing_bill_uploads" do
   request do
     auth $auth_flexera
     host rs_optima_host
     path join(["/optima/orgs/", rs_org_id, "/billUploads"])
-    header "User-Agent", "RS Policies"
     query "billConnectId", $param_bill_connect_id
     query "billingPeriod", val($ds_dates, "period")
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
@@ -788,7 +777,7 @@ script "js_cbi_csv", type: "javascript" do
     var log_entry = "[Event "+eventCount.toString()+" @ "+now.toISOString()+"] "+JSON.stringify(sample)
     // Check if eventLast was old than delaySecondsBetweenSample ago
     if (eventLast == null || (now - eventLast) > delaySecondsBetweenSample*1000) {
-      console.log(log_entry)
+      console.log(log_entry) // Excluded from console.log test
       eventLast = now
     }
   }
@@ -866,7 +855,7 @@ script "js_cbi_csv", type: "javascript" do
     if ((row_index % batch_size == 0) || (row_index == row_total)) {
       // Add CSV to result and reset
       //batches.push(csv.join("\n"))
-      console.log("Added batch result number " + (result.length +1).toFixed(0) + " with rows " + (csv.length -1).toFixed(0))
+      console.log("Added batch result number " + (result.length +1).toFixed(0) + " with rows " + (csv.length -1).toFixed(0)) // Excluded from console.log test.  Needed for validating running+continuous progress during policy evaluation
       result.push({
         "bill_upload_id": ds_cbi_create_bill_upload.id,
         "index": result.length.toFixed(0),
@@ -931,3 +920,15 @@ end
 ###############################################################################
 # End Common Logic for pushing to CBI
 ###############################################################################
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy 'pol_spot_ocean_cbi' do
+  validate $ds_cbi_commit do
+    summary_template 'CBI Commited: {{data.billingPeriod}}'
+    detail_template '{{ data }}'
+    check eq(0,1)
+  end
+end
