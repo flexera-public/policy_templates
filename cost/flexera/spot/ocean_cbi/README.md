@@ -2,13 +2,13 @@
 
 ## What It Does
 
-This policy template exposes costs from the Spot Ocean Cluster Aggregated Detailed Costs API and pushes them into the Flexera Optima Bill Upload API.
+This policy template exposes costs from the Spot Ocean Cluster Aggregated Detailed Costs API and pushes them into the Flexera Bill Upload API.
 
 ## How It Works
 
 - The policy retrieves cost data from the Spot Ocean API.
 - It processes and formats the data according to the Flexera Common Bill Ingestion (CBI) format.
-- The policy uploads the formatted cost data to the Flexera Optima Bill Upload API.
+- The policy uploads the formatted cost data to the Flexera Bill Upload API.
 - An email notification is sent indicating the status of the bill upload.
 
 ## Input Parameters
@@ -26,7 +26,7 @@ This policy has the following input parameters required when launching the polic
 
 The following policy actions are taken on any resources found to be out of compliance.
 
-- Upload cost data to Flexera Optima Bill Upload API.
+- Upload cost data to Flexera Bill Upload API.
 - Send an email notification.
 
 ## Prerequisites
