@@ -48,6 +48,13 @@ end
 # Authentication
 ###############################################################################
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 credentials "auth_spotinst" do
   schemes "api_key"
   label "SpotInst"
@@ -72,6 +79,16 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
 
 # https://api.spotinst.io/setup/account
 # Docs: https://docs.spot.io/api/#tag/Accounts/operation/OrganizationsAndAccountsGetAccounts
@@ -220,12 +237,12 @@ end
 #   end
 # end
 
-datasource "ds_security_report" do
-  run_script $js_security_report, $ds_spot_misconfigurations_aws, $ds_spot_misconfigurations_azure
+datasource "ds_report" do
+  run_script $js_report, $ds_spot_misconfigurations_aws, $ds_spot_misconfigurations_azure, $ds_applied_policy
 end
 
-script "js_security_report", type: "javascript" do
-  parameters "ds_spot_misconfigurations_aws", "ds_spot_misconfigurations_azure"
+script "js_report", type: "javascript" do
+  parameters "ds_spot_misconfigurations_aws", "ds_spot_misconfigurations_azure", "ds_applied_policy"
   result "result"
   code <<-EOS
 
@@ -308,7 +325,8 @@ script "js_security_report", type: "javascript" do
 
   result = {
     "markdown": report,
-    "findings": misconfigurations
+    "findings": misconfigurations,
+    "ds_applied_policy": ds_applied_policy
   };
   EOS
 end
@@ -318,11 +336,11 @@ end
 ###############################################################################
 
 policy "spot_security_compliance_report" do
-  validate $ds_security_report do
-    summary_template "{{ len data.findings }} Security compliance findings discovered"
+  validate $ds_report do
+    summary_template "{{ data.ds_applied_policy.name }}: {{ len data.findings }} Security compliance findings discovered"
     detail_template "{{ data.markdown }}"
     check eq(size(val(data, "findings")), 0)
-    escalate $alert_email
+    escalate $esc_alert_email
     export "findings" do
       # resource_level true
       field "rule_name" do
@@ -373,7 +391,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "alert_email" do
+escalation "esc_alert_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
