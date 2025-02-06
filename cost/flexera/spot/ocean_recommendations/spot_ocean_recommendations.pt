@@ -68,6 +68,13 @@ end
 # Authentication
 ###############################################################################
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 credentials "auth_spotinst" do
   schemes "api_key"
   label "SpotInst"
@@ -78,6 +85,16 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
 
 # https://api.spotinst.io/setup/account
 # Docs: https://docs.spot.io/api/#tag/Accounts/operation/OrganizationsAndAccountsGetAccounts
@@ -474,12 +491,12 @@ EOS
 end
 
 # Add this new datasource before the policy block
-datasource "ds_spot_ocean_report" do
-  run_script $js_spot_ocean_report, $ds_spotinst_clusters_rightsizing_suggestions_filtered, $ds_spotinst_cluster_aggregated_costs_summed
+datasource "ds_report" do
+  run_script $js_report, $ds_spotinst_clusters_rightsizing_suggestions_filtered, $ds_spotinst_cluster_aggregated_costs_summed, $ds_applied_policy
 end
 
-script "js_spot_ocean_report", type: "javascript" do
-  parameters "ds_spotinst_clusters_rightsizing_suggestions_filtered", "ds_spotinst_cluster_aggregated_costs_summed"
+script "js_report", type: "javascript" do
+  parameters "ds_spotinst_clusters_rightsizing_suggestions_filtered", "ds_spotinst_cluster_aggregated_costs_summed", "ds_applied_policy"
   result "result"
   code <<-EOS
   function properCase(string) {
@@ -678,11 +695,11 @@ script "js_spot_ocean_report", type: "javascript" do
         cluster.namespaces[namespace].forEach(function(suggestion) {
           report.push("\\n#### " + properCase(suggestion.resourceType) + "/" + suggestion.resourceName + "\\n");
 
-          report.push("* CPU Savings: " + suggestion.requestedCPU + "m → " + suggestion.suggestedCPU + "m");
+          report.push("* CPU Savings: " + suggestion.requestedCPU + "m -> " + suggestion.suggestedCPU + "m");
           if (suggestion.estimatedCpuSavings) {
             report.push("* CPU 30day Cost Savings: $" + suggestion.estimatedCpuSavings.toFixed(2));
           }
-          report.push("* Memory Savings: " + suggestion.requestedMemory + "Mi → " + suggestion.suggestedMemory + "Mi");
+          report.push("* Memory Savings: " + suggestion.requestedMemory + "Mi -> " + suggestion.suggestedMemory + "Mi");
           if (suggestion.estimatedMemorySavings) {
             report.push("* Memory 30day Cost Savings: $" + suggestion.estimatedMemorySavings.toFixed(2));
           }
@@ -693,12 +710,12 @@ script "js_spot_ocean_report", type: "javascript" do
           }
 
           // Container table header
-          report.push("\\n| Container | Current CPU → Suggested CPU Request | Current Memory → Suggested Memory Request |");
+          report.push("\\n| Container | Current CPU -> Suggested CPU Request | Current Memory -> Suggested Memory Request |");
           report.push("|-----------|-------------------------------------|-------------------------------------------|");
 
           // Container rows
           suggestion.containers.forEach(function(container) {
-            report.push("| " + container.name + " | " + container.requestedCpu + "m → " + container.suggestedCpu +"m | " + container.requestedMemory + "Mi → " + container.suggestedMemory + "Mi |");
+            report.push("| " + container.name + " | " + container.requestedCpu + "m -> " + container.suggestedCpu +"m | " + container.requestedMemory + "Mi -> " + container.suggestedMemory + "Mi |");
           });
           report.push("");
         });
@@ -717,7 +734,8 @@ script "js_spot_ocean_report", type: "javascript" do
 
   result = {
     "markdown": markdown,
-    "suggestions": ds_spotinst_clusters_rightsizing_suggestions_filtered
+    "suggestions": ds_spotinst_clusters_rightsizing_suggestions_filtered,
+    "ds_applied_policy": ds_applied_policy
   };
 EOS
 end
@@ -728,7 +746,7 @@ end
 
 policy 'pol_spot_ocean_cbi' do
   validate $ds_spot_ocean_report do
-    summary_template 'Kubernetes Rightsizing Recommendations Report'
+    summary_template '{{ data.ds_applied_policy.name }}: Report'
     detail_template "{{ data.markdown }}"
     check eq(size(val(data,"suggestions")),0)
     escalate $esc_email
