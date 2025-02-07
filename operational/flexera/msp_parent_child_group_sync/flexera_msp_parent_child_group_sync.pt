@@ -874,8 +874,27 @@ define sync_groups($data, $rs_org_id) do
           },
           body: $group_payload
         )
+
         if $child_group["code"] != 201
-          raise "Error creating group "+to_json($child_group)+" on with payload "+to_json($group_payload) # For debug
+          # Handle if group already exists / race condition between multiple runs
+          if $child_group["code"] == 400 && $child_group["body"]["name"] == "conflict"
+            $child_groups = http_request(
+              auth: $$auth_flexera,
+              verb: "get",
+              https: true,
+              host: "api.flexera.com",
+              href: join(["/iam/v1/orgs/", $task["target_org_id"], "/groups"])
+            )
+            foreach $group in $child_groups["body"]["values"] do
+              if $group["name"] == $task["target_group_name"]
+                $child_group_ref = $group["ref"]
+                $child_group_id = $group["id"]
+              end
+            end
+            $$debug << "Group "+$task["target_group_name"]+" already exists in org "+$task["target_org_id"]+" ("+$child_group_ref+")"
+          else
+            raise "Error creating group "+to_json($child_group)+" on with payload "+to_json($group_payload) # For debug
+          end
         else
           $$debug << "Success creating group "+$task["target_group_name"]+" in org "+$task["target_org_id"] # For debug
           $child_group_ref = $child_group["body"]["ref"]
