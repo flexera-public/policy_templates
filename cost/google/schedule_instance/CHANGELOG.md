@@ -1,9 +1,5 @@
 # Changelog
 
-## v5.2.0
-
-- Added support for filtering system and Google Apps Script projects from the results.
-
 ## v5.1.0
 
 - Added email notifications for Start Action, Stop Action, and Errors
