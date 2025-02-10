@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.0
+
+- Added support for filtering system and Google Apps Script projects from the results.
+
 ## v0.1.3
 
 - Minor code improvements to conform with current standards. Functionality unchanged.

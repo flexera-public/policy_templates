@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.1",
+  version: "0.2.0",
   provider: "Google",
   service: "Storage",
   policy_set: "",
@@ -41,6 +41,24 @@ parameter "param_projects_list" do
   label "Allow/Deny Projects List"
   description "A list of allowed or denied Project IDs/names. See the README for more details."
   default []
+end
+
+parameter "param_projects_ignore_sys" do
+  type "string"
+  category "Filters"
+  label "Ignore System Projects"
+  description "Whether or not to automatically ignore system projects e.g. projects whose id begins with 'sys-'"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_projects_ignore_app" do
+  type "string"
+  category "Filters"
+  label "Ignore Google Apps Script Projects"
+  description "Whether or not to automatically ignore Google Apps Script projects e.g. projects whose id begins with 'app-'"
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_exclusion_labels" do
@@ -127,15 +145,15 @@ datasource "ds_google_projects" do
 end
 
 datasource "ds_google_projects_filtered" do
-  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list, $param_projects_ignore_sys, $param_projects_ignore_app
 end
 
 script "js_google_projects_filtered", type: "javascript" do
-  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
   result "result"
   code <<-EOS
   if (param_projects_list.length > 0) {
-    result = _.filter(ds_google_projects, function(project) {
+    filtered = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
 
       if (param_projects_allow_or_deny == "Deny") {
@@ -145,8 +163,12 @@ script "js_google_projects_filtered", type: "javascript" do
       return include_project
     })
   } else {
-    result = ds_google_projects
+    filtered = ds_google_projects
   }
+
+  result = _.reject(filtered, function(project) {
+    return (project['id'].substring(0, 4) == "sys-" && param_projects_ignore_sys == "Yes") || (project['id'].substring(0, 4) == "app-" && param_projects_ignore_app == "Yes")
+  })
 EOS
 end
 
