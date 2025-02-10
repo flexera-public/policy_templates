@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.4
+
+- Added batch processing for large datasources as a performance enhancement (reduces memory usage) with no changes to logic or functionality.
+
 ## v3.1.3
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
