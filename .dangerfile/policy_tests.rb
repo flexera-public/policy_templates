@@ -22,6 +22,19 @@ def policy_deprecated?(file, file_parsed)
   return false
 end
 
+def policy_missing_info_block?(file, file_parsed)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has required info() block..."
+
+  fail_message = ""
+
+  if file_parsed.parsed_info.nil?
+    fail_message = "Policy Template file is missing the required info() block. Please add this block to the policy template and include `version` metadata at minimum."
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Deprecated without info flag test
 # Returns true if policy is described as deprecated in short_description
 # but lacks deprecated field in info() block

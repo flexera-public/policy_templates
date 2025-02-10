@@ -370,6 +370,9 @@ changed_pt_files.each do |file|
   file_lines = File.readlines(file)
   file_diff = git.diff_for_file(file)
 
+  # Raise error if policy is missing info block
+  test = policy_missing_info_block?(file, file_parsed); failures << test if test
+
   # Raise error if policy is deprecated but missing deprecated field in info() block
   test = policy_missing_deprecated_field?(file, file_parsed); failures << test if test
 
