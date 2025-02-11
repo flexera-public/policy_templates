@@ -29,7 +29,7 @@ end
 
 parameter "param_dimensions_rbds" do
   type "list"
-  label "Dimensions for Rule-Based Dimension Outputs. Example: rbd_business_area,rbd_customer,rbd_customer_type"
+  label "Dimensions for Rule-Based Dimension Outputs. Example: rbd_business_area, rbd_customer, rbd_customer_type"
   # No default value, user input required
 end
 
@@ -223,12 +223,28 @@ script "js_csv_to_object", type: "javascript" do
 EOS
 end
 
+datasource "ds_existing_rbds" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'api')
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/policy-templates"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "dated_rules", jmes_path(col_item, "dated_rules")
+    end
+  end
+end
+
 datasource "ds_rbds" do
-  run_script $js_rbds, $ds_csv_to_object, $param_effective_date, $param_dimensions_rules, $param_dimensions_rbds
+  run_script $js_rbds, $ds_existing_rbds, $ds_csv_to_object, $param_effective_date, $param_dimensions_rules, $param_dimensions_rbds
 end
 
 script "js_rbds", type: "javascript" do
-  parameters "ds_csv_to_object", "param_effective_date", "param_dimensions_rules", "param_dimensions_rbds"
+  parameters "ds_existing_rbds", "ds_csv_to_object", "param_effective_date", "param_dimensions_rules", "param_dimensions_rbds"
   result "result"
   code <<-EOS
   rbd_ids = [];
@@ -255,7 +271,7 @@ script "js_rbds", type: "javascript" do
       "id": rbd_id.trim(),
     }
     // Construct a nicer name using the rbd_id
-    // This can be improved to use a parameter to define the mapping (i.e. rbd_customer=Customer,rbd_customer_type=Customer Type)
+    // This can be improved to use a parameter to define the mapping (i.e. rbd_customer=Customer, rbd_customer_type=Customer Type)
     // Remove rbd_ prefix
     rbd_name = rbd_id.replace("rbd_", "");
     // Replace underscores with spaces
@@ -320,6 +336,12 @@ script "js_rbds", type: "javascript" do
         }
       }
     });
+    // Check if the RBD exists, and set the verb accordingly
+    // Default to POST
+    verb = "POST"
+    // If already exists, then change verb to GET to make no changes
+    if (_.contains(_.pluck(ds_existing_rbds, 'id'), rbd_object.id)) { verb = "GET" }
+    rbd_object["verb"] = verb;
     // After looping through all rows, add the rbd_object to the result
     result.rule_based_dimensions.push(rbd_object);
   });
@@ -327,39 +349,35 @@ script "js_rbds", type: "javascript" do
 EOS
 end
 
-datasource "ds_apply_rbds_requests" do
+datasource "ds_create_rbds" do
   iterate $ds_rbds
-  run_script $js_apply_rbds_requests, $ds_rbds, rs_optima_host, rs_org_id
+  request do
+    run_script $js_create_rbds, $ds_existing_rbds, $ds_flexera_api_hosts, val(iter_item, "id"), val(iter_item, "verb"), val(iter_item, "name"), rs_org_id
+  end
+  result do
+    encoding "text"
+  end
 end
 
-script "js_apply_rbds_requests", type: "javascript" do
-  parameters "ds_rbds", "rs_optima_host", "rs_org_id"
-  result "requests"
+script "js_create_rbds", type: "javascript" do
+  parameters "ds_existing_rbds", "ds_flexera_api_hosts", "rbd_id", "verb", "name", "rs_org_id"
+  result "request"
   code <<-EOS
-  requests = []
-  _.each(ds_rbds, function(rbd) {
-    id = rbd.id;
-    name = rbd.name;
-    dated_rules = rbd.dated_rules;
-
-    requests.push({
-      auth: "auth_flexera",
-      host: "api.flexera.com",
-      path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", id, "/rules/", dated_rules[0].effective_at].join(''),
-      verb: "PUT",
-      headers: {
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({ "rules": dated_rules[0].rules })
-    });
-  });
+  var request = {
+    auth: "auth_flexera",
+    verb: verb,
+    host: ds_flexera_api_hosts.api,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id].join(''),
+    body_fields: { name: name }
+  }
 EOS
 end
 
 datasource "ds_apply_rbds" do
   iterate $ds_rbds
   request do
-    run_script $js_apply_rbds, val(iter_item, "id"), val(iter_item, "name"), val(iter_item, "dated_rules"), rs_optima_host, rs_org_id
+    # ds_create_rbds reference only needed to force create to run before apply
+    run_script $js_apply_rbds, $ds_flexera_api_hosts, $ds_create_rbds, val(iter_item, "id"), val(iter_item, "name"), val(iter_item, "dated_rules"), rs_org_id
   end
   result do
     encoding "text"
@@ -367,12 +385,12 @@ datasource "ds_apply_rbds" do
 end
 
 script "js_apply_rbds", type: "javascript" do
-  parameters "id", "name", "dated_rules", "rs_optima_host", "rs_org_id"
+  parameters "ds_flexera_api_hosts", "ds_create_rbds", "id", "name", "dated_rules", "rs_org_id"
   result "request"
   code <<-EOS
   request = {
     auth: "auth_flexera",
-    host: "api.flexera.com",
+    host: ds_flexera_api_hosts.api,
     path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", id, "/rules/", dated_rules[0].effective_at].join(''),
     verb: "PUT",
     headers: {
@@ -402,137 +420,5 @@ policy "rbds" do
 - {{ .name }} (`{{ .id }}`) - {{ len (index .dated_rules 0).rules }} rules
 {{ end -}}
 EOS
-    # escalate $flexera_rbd_upsert ## Using CWF flexera_rbd_upsert escalation disabled for now because we ran into CWF's MongoDB BSON max size limit, revert to datasource ds_apply_rbds method
-    # Not using an export table because it limits what data is passed to the escalation
-    # If we include the export table dated_rules which is required for escalation it makes the incident table very large and hard to read
-    # export do
-    #   field "id" do
-    #     label "RBD ID"
-    #   end
-    #   field "name" do
-    #     label "RBD Name"
-    #   end
-    # end
   end
-end
-
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "flexera_rbd_upsert" do
-  automatic true # Always automatically run when triggered
-  label "Update / Create Rule Based Dimensions"
-  run "flexera_rbd_upsert", data, rs_org_id, rs_optima_host
-end
-
-###############################################################################
-# Cloud Workflow
-###############################################################################
-
-# Core CWF function to upsert RBD and dated rules
-# Expects 1 RBD per data[] item
-define flexera_rbd_upsert($data, $rs_org_id, $rs_optima_host) do
-  # Wrap the call in a "sub" process to gracefully handle any errors
-  sub on_error: handle_error() do
-    # Get API Host Map using rs_optima_host from incident
-    call get_api_hostnames($rs_optima_host) retrieve $host_map
-    # Loop through each item in the data array
-    $item_index = 0
-    $item_total = size($data)
-    foreach $data_item in $data do
-      # Check if the RBD exists
-      $request = {
-        auth: $$auth_flexera,
-        url: join(['https://',$host_map['flexera'],'/finops-customizations/v1/orgs/', $rs_org_id, '/rule-based-dimensions/', $data_item["id"]], ""),
-        headers: { "Content-Type": "application/json" }
-      }
-      $response = http_get($request)
-      call log_message(to_json({"request": $request, "response": $response}))
-      # If response code is 404, RBD does not exist
-      if to_n($response["code"]) == 404
-        # construct request to create RBD
-        $request = {
-          auth: $$auth_flexera,
-          url: join(['https://',$host_map['flexera'],'/finops-customizations/v1/orgs/', $rs_org_id, '/rule-based-dimensions/', $data_item["id"] ], ""),
-          headers: { "Content-Type": "application/json" },
-          body: {
-            "name": $data_item["name"]
-          }
-        }
-        $response = http_post($request)
-        # Log all request and response details
-        call log_message(to_json({"request": $request, "response": $response}))
-      end
-      # Construct request to update/create RBD dated rules
-      $request = {
-        auth: $$auth_flexera,
-        url: join(['https://',$host_map['flexera'],'/finops-customizations/v1/orgs/', $rs_org_id, '/rule-based-dimensions/', $data_item["id"] ,"/rules/", $data_item["dated_rules"][0]["effective_at"] ], ""),
-        headers: { "Content-Type": "application/json" },
-        body: {
-          "rules": $data_item["dated_rules"][0]["rules"]
-        }
-      }
-      $response = http_put($request)
-      # Log all request and response details
-      call log_message(to_json({"request": $request, "response": $response}))
-      # Check that the request was successful -- expect 204 HTTP response code
-      if to_n($response["code"]) != 204
-        # Raise error if request was not successful
-        raise join(["Unexpected result updating/creating RBD ",$data_item["id"],": ",to_json({"request": join(["PUT"," https://",$request['host'],$request['href']],""), "response": $response})], "")
-      end
-    end # end foreach
-  end # end sub
-
-  # If we encountered any errors, use `raise` to mark the CWF process as errored
-  if inspect($$errors) != "null"
-    raise join($$errors,"\n")
-  end
-end
-
-# CWF function to handle errors
-define handle_error() do
-  if !$$errors
-    $$errors = []
-  end
-  $$errors << $_error["type"] + ": " + $_error["message"]
-  # We check for errors at the end, and raise them all together
-  # Skip errors handled by this definition
-  $_error_behavior = "skip"
-end
-
-# CWF function to help with capturing log output
-define log_message($message) do
-  if !$$log_messages
-    $$log_messages = []
-  end
-  # Convert response object to JSON string.  Easier to interpret
-  $$log_messages << to_json($message)
-end
-
-# CWF function to get API hostnames
-define get_api_hostnames($rs_optima_host) return $host_map do
-  # Use rs_optima_host and a static map to determine the correct Flexera API host
-  $host_mappings = {
-    "api.optima.flexeraeng.com": {
-      flexera: "api.flexera.com",
-      fsm: "api.fsm.flexeraeng.com"
-    },
-    "api.optima-eu.flexeraeng.com": {
-      flexera: "api.flexera.eu",
-      fsm: "api.fsm-eu.flexeraeng.com"
-    },
-    "api.optima-apac.flexeraeng.com": {
-      flexera: "api.flexera.au",
-      fsm: "api.fsm-apac.flexeraeng.com"
-    }
-  }
-  if type($host_mappings[$rs_optima_host]) == "object"
-    $host_map = $host_mappings[$rs_optima_host]
-  else
-    raise "Unable to lookup host map using rs_optima_host="+$rs_optima_host
-  end
-  # Log the host table for debugging
-  call log_message("Host table: " + to_json($host_map))
 end
