@@ -8,6 +8,7 @@ severity "low"
 default_frequency "daily"
 info(
   version: "0.1.0",
+  provider: "Flexera",
   hide_skip_approvals: "true"
 )
 
@@ -17,27 +18,34 @@ info(
 
 parameter "param_effective_date" do
   type "string"
+  category "Policy Settings"
+  description "Year/month you want rule-based dimensions to start applying in YYYY-MM format"
   label "Year/month you want rule-based dimensions to start applying in YYYY-MM format"
   default "1970-01"
 end
 
 parameter "param_dimensions_rules" do
   type "list"
+  category "Policy Settings"
+  description "Dimensions for Rules. Example: vendor_account"
   label "Dimensions for Rules. Example: vendor_account"
   # No default value, user input required
 end
 
 parameter "param_dimensions_rbds" do
   type "list"
+  category "Policy Settings"
   label "Dimensions for Rule-Based Dimension Outputs. Example: rbd_business_area, rbd_customer, rbd_customer_type"
   # No default value, user input required
 end
 
 parameter "param_csv_deliminator" do
   type "string"
+  category "Policy Settings"
   label "Deliminator used in the CSV"
-  default "Tab (copy/paste from Excel)"
+  description "Deliminator used in the CSV"
   allowed_values ["Tab (copy/paste from Excel)", "Comma (CSV)", "Semicolon"]
+  default "Tab (copy/paste from Excel)"
 end
 
 ###############################################################################
@@ -65,7 +73,7 @@ pagination "pagination_flexera" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 datasource "ds_flexera_api_hosts" do
@@ -262,8 +270,6 @@ script "js_rbds", type: "javascript" do
       dimension_ids.push(c)
     }
   })
-  console.log("rbd_ids: " + JSON.stringify(rbd_ids))
-  console.log("dimension_ids: " + JSON.stringify(dimension_ids))
   _.each(rbd_ids, function(rbd_id) {
     // Create the RBD object
     rbd_object = {
@@ -351,7 +357,7 @@ end
 datasource "ds_create_rbds" do
   iterate $ds_rbds
   request do
-    run_script $js_create_rbds, $ds_existing_rbds, $ds_flexera_api_hosts, val(iter_item, "id"), val(iter_item, "verb"), val(iter_item, "name"), rs_org_id
+    run_script $js_create_rbds, val(iter_item, "id"), val(iter_item, "verb"), val(iter_item, "name"), $ds_existing_rbds, $ds_flexera_api_hosts, rs_org_id
   end
   result do
     encoding "text"
@@ -359,7 +365,7 @@ datasource "ds_create_rbds" do
 end
 
 script "js_create_rbds", type: "javascript" do
-  parameters "ds_existing_rbds", "ds_flexera_api_hosts", "rbd_id", "verb", "name", "rs_org_id"
+  parameters "rbd_id", "verb", "name", "ds_existing_rbds", "ds_flexera_api_hosts", "rs_org_id"
   result "request"
   code <<-EOS
   var request = {
@@ -376,7 +382,7 @@ datasource "ds_apply_rbds" do
   iterate $ds_rbds
   request do
     # ds_create_rbds reference only needed to force create to run before apply
-    run_script $js_apply_rbds, $ds_flexera_api_hosts, $ds_create_rbds, val(iter_item, "id"), val(iter_item, "name"), val(iter_item, "dated_rules"), rs_org_id
+    run_script $js_apply_rbds, val(iter_item, "id"), val(iter_item, "name"), val(iter_item, "dated_rules"), $ds_flexera_api_hosts, $ds_create_rbds, rs_org_id
   end
   result do
     encoding "text"
@@ -384,7 +390,7 @@ datasource "ds_apply_rbds" do
 end
 
 script "js_apply_rbds", type: "javascript" do
-  parameters "ds_flexera_api_hosts", "ds_create_rbds", "id", "name", "dated_rules", "rs_org_id"
+  parameters "id", "name", "dated_rules", "ds_flexera_api_hosts", "ds_create_rbds", "rs_org_id"
   result "request"
   code <<-EOS
   request = {
@@ -404,20 +410,20 @@ end
 # Policy
 ###############################################################################
 
-policy "rbds" do
+policy "pol_rbds_from_csv" do
   validate $ds_apply_rbds do
     summary_template "RBDs Generated & Applied"
-    check eq(0, 0)
     detail_template ''
+    check eq(0, 0)
   end
 
   validate $ds_rbds do
-    check eq(0, 1) # Always trigger
     summary_template "Rule Based Dimensions Updated/Created: {{ len data }}"
     detail_template <<-EOS
 {{- range data -}}
 - {{ .name }} (`{{ .id }}`) - {{ len (index .dated_rules 0).rules }} rules
 {{ end -}}
 EOS
+    check eq(0, 1) # Always trigger
   end
 end
