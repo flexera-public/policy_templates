@@ -1,5 +1,9 @@
 # Changelog
 
+
+## v2.5.3
+- Implemented to exclude certain fields, allowing for more precise data management that focuses on the values essential for preventing email duplication.
+
 ## v2.5.2
 
 - Added `Report Connection With Zero Bills` parameter to help users detect connections without bills and spot potential misconfigurations.
