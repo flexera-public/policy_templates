@@ -12,7 +12,7 @@ This policy template requires two steps:
 
    ![Using Excel CSV data to Upload Helper Policy Template](rbds_from_csv.gif)
 
-2. Then you can apply this policy template (rbds_from_csv.pt) which will read the CSV data from the helper policy template and create/update the Rule-Based Dimensions accordingly.
+1. Then you can apply this policy template (rbds_from_csv.pt) which will read the CSV data from the helper policy template and create/update the Rule-Based Dimensions accordingly.
 
 ### CSV Data Format
 
