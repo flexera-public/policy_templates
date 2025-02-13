@@ -767,6 +767,7 @@ end
 
 define remove_members($data, $rs_org_id) do
   $$debug = []
+  $$errors = []
   foreach $task in $data do
     sub on_error: handle_error() do
       $child_member = http_request(
@@ -780,14 +781,15 @@ define remove_members($data, $rs_org_id) do
         }
       )
       if $child_member["code"] != 204
-        raise "Error removing membership "+$task["id"]+" in org "+$task["org_id"] # For debug
+        $$errors << "Error removing membership "+$task["id"]+" in org "+$task["org_id"] # For debug
       else
         $$debug << "Success removing membership "+$task["id"]+" in org "+$task["org_id"] # For debug
       end
     end
   end
+
   # If we encountered any errors, use `raise` to mark the CWF process as errored
-  if inspect($$errors) != "null"
+  if inspect($$errors) != "null" && size($$errors) > 0
     raise join($$errors,"\n")
   end
 
@@ -798,6 +800,7 @@ end
 
 define remove_roles($data, $rs_org_id) do
   $$debug = []
+  $$errors = []
   foreach $task in $data do
     sub on_error: handle_error() do
       $role_payload = {
@@ -834,14 +837,15 @@ define remove_roles($data, $rs_org_id) do
       $child_role = http_put($request)
       $$debug_revoke_role = "revoke-response="+to_json($child_role)+" request="+to_json($request)
       if $child_role["code"] != 204
-        raise "Error revoking access rule "+to_json($child_role)+" on with payload "+to_json($role_payload) # For debug
+        $$errors << "Error revoking access rule "+to_json($child_role)+" on with payload "+to_json($role_payload) # For debug
       else
         $$debug << "Success revoking access rule "+$task["group_ref"]+" with role "+$task["role"]["name"]  # For debug
       end
     end
   end
+
   # If we encountered any errors, use `raise` to mark the CWF process as errored
-  if inspect($$errors) != "null"
+  if inspect($$errors) != "null" && size($$errors) > 0
     raise join($$errors,"\n")
   end
 
@@ -853,6 +857,7 @@ end
 # Cloud workflow
 define sync_groups($data, $rs_org_id) do
   $$debug = []
+  $$errors = []
   foreach $task in $data do
     sub on_error: handle_error() do
       $child_group_id = ""
@@ -901,7 +906,7 @@ define sync_groups($data, $rs_org_id) do
             end
             $$debug << "Group "+$task["target_group_name"]+" already exists in org "+$task["target_org_id"]+" ("+$child_group_ref+")"
           else
-            raise "Error creating group "+to_json($child_group)+" on with payload "+to_json($group_payload) # For debug
+            $$errors << "Error creating group "+to_json($child_group)+" on with payload "+to_json($group_payload) # For debug
           end
         else
           $$debug << "Success creating group "+$task["target_group_name"]+" in org "+$task["target_org_id"] # For debug
@@ -916,7 +921,7 @@ define sync_groups($data, $rs_org_id) do
           if $role["action"] == "skip"
             $$debug << "Role exists, skipping granting access rule "+$role["role"]["name"]+" in org "+$task["target_org_id"]+" group "+$task["target_group_name"]
           elsif $role["action"] == "add_capability"
-            raise "Unable to grant role "+$role["role"]["name"]+" in org "+$task["target_org_id"]+" group "+$task["target_group_name"]+" because the org is missing the capabilities: "+join($role["missing_capabilities"],",")
+            $$errors << "Unable to grant role "+$role["role"]["name"]+" in org "+$task["target_org_id"]+" group "+$task["target_group_name"]+" because the org is missing the capabilities: "+join($role["missing_capabilities"],",")
           else
             # Else action is "create"
             # We can assume the scope reg is org scope
@@ -947,7 +952,7 @@ define sync_groups($data, $rs_org_id) do
             $child_role = http_put($request)
             $$debug_grant_role = "grant-response="+to_json($child_role)+" request="+to_json($request)
             if $child_role["code"] != 204
-              raise "Error granting access rule "+to_json($child_role)+" on with payload "+to_json($role_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/access-rules/grant"]) # For debug
+              $$errors << "Error granting access rule "+to_json($child_role)+" on with payload "+to_json($role_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/access-rules/grant"]) # For debug
             else
               $$debug << "Success granting access rule "+$child_group_ref+" with role "+$role["role"]["name"]  # For debug
             end
@@ -1006,12 +1011,12 @@ define sync_groups($data, $rs_org_id) do
                 body: $invite_payload
               )
               if $child_member["code"] != 201
-                raise "Error inviting user "+to_json($child_member)+" with payload "+to_json($invite_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/invitations"])
+                $$errors << "Error inviting user "+to_json($child_member)+" with payload "+to_json($invite_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/invitations"])
               else
                 $$debug << "Success inviting user "+$member["user_details"]["email"]+" to org "+$task["target_org_id"]+" to group "+$child_group_id  # For debug
               end
             elsif $child_member["code"] != 200
-              raise "Error adding user "+to_json($child_member)+" with payload "+to_json($invite_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/users"])
+              $$errors << "Error adding user "+to_json($child_member)+" with payload "+to_json($invite_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/users"])
             else
               $$debug << "Success adding user "+$member["user_details"]["email"]+" to org "+$task["target_org_id"]  # For debug
             end
@@ -1034,7 +1039,7 @@ define sync_groups($data, $rs_org_id) do
               body: $member_payload
             )
             if $child_member["code"] != 201
-              raise "Error adding user to group "+to_json($child_member)+" on with payload "+to_json($member_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/groups/", $child_group_id, "/memberships"])
+              $$errors << "Error adding user to group "+to_json($child_member)+" on with payload "+to_json($member_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/groups/", $child_group_id, "/memberships"])
             else
               $$debug << "Success adding user "+$member["user_id"]+" to group "+$child_group_ref # For debug
             end
@@ -1043,8 +1048,9 @@ define sync_groups($data, $rs_org_id) do
       end
     end
   end
+
   # If we encountered any errors, use `raise` to mark the CWF process as errored
-  if inspect($$errors) != "null"
+  if inspect($$errors) != "null" && size($$errors) > 0
     raise join($$errors,"\n")
   end
 
