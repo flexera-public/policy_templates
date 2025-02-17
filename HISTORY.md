@@ -6,6 +6,24 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2955](https://github.com/flexera-public/policy_templates/pull/2955): POL-1451 Add sys- and app- Project Filtering to Google Policy Templates
+
+#### Description
+
+> Adds two new parameters to most Google policy templates to enable easy filtering of sys- and app- projects. This can help in situations where a user has thousands of these projects and no need for them to be checked for recommendations.
+>
+> - "sys-*" projects generally refer to system-generated projects that are automatically created for internal Google services and management functions in google sheets
+>
+> - "app-*" projects typically refer to projects associated with Google Apps Script
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2955) for these details.
+- **Merged At**: 2025-02-13 13:02:48 UTC
+
+---
+
 ### PR [#2932](https://github.com/flexera-public/policy_templates/pull/2932): FOPTS-6822 Enhance "Cloud Bill Processing Error Notification" Policy to Report Connections with Zero Imported Bills
 
 #### Description
@@ -1703,24 +1721,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Azure Unused App Service Plans](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_app_service_plans/README.md), [Meta Parent: Azure Unused App Service Plans](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_app_service_plans/README.md)
 - **Merged At**: 2024-08-30 12:05:05 UTC
-
----
-
-### PR [#1917](https://github.com/flexera-public/policy_templates/pull/1917): POL-727 Azure Savings Plan Utilization v0.1.0
-
-#### Description
-
-> Adds Azure Savings Plan Utilization Report to bring parity with what we have for AWS
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/POL-727
->
-
-#### Metadata
-
-- **Policies**: [Azure Savings Plan Utilization](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/savings_plan/utilization/README.md)
-- **Merged At**: 2024-08-27 13:30:34 UTC
 
 ---
 
