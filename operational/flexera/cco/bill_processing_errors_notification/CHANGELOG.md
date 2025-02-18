@@ -1,7 +1,7 @@
 # Changelog
 
-
 ## v2.5.3
+
 - Added sort to prevent sending email for same result but in different order
 - Exclude updated at to not send email when only updated at changed (as this change is not a meaning full one based on policy goal)
 
