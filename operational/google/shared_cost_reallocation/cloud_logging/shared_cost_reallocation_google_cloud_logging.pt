@@ -198,7 +198,7 @@ datasource "ds_prometheus_cloud_logging_utilization" do
   request do
     auth $auth_google
     host "monitoring.googleapis.com"
-    path join(["/v1/projects/", val(iter_item, "id"), "/location/", val(iter_item,"region"), "/prometheus/api/v1/query"])
+    path join(["/v1/projects/", val(iter_item, "id"), "/location/", val(iter_item, "region"), "/prometheus/api/v1/query"])
     query "query", "sum by (log_bucket_id,log_source,resource_type)(logging_googleapis_com:billing_log_bucket_monthly_bytes_ingested)"
     query "time", val($ds_dates, "end_date_google_metrics")
   end
@@ -223,38 +223,37 @@ script "js_cloud_logging_utilization_allocations", type: "javascript" do
   parameters "ds_prometheus_cloud_logging_utilization"
   result "result"
   code <<-EOS
+  var metric_to_use = "log_bucket_monthly_bytes_ingested"
 
-var metric_to_use = "log_bucket_monthly_bytes_ingested"
+  var total_usage = 0
+  _.each(ds_prometheus_cloud_logging_utilization, function(project) {
+    total_usage += project[metric_to_use]
+  })
 
-var total_usage = 0
-_.each(ds_prometheus_cloud_logging_utilization, function(project) {
-  total_usage += project[metric_to_use]
-})
-
-var grouped = {}
-var np_bytes_total = 0
-_.each(ds_prometheus_cloud_logging_utilization, function(project) {
-  var log_source_type = project.metric_log_source.split('/')[0]
-  var log_source_id = project.metric_log_source.split('/')[1]
-  if (grouped[log_source_type] == undefined) {
-    grouped[log_source_type] = {}
+  var grouped = {}
+  var np_bytes_total = 0
+  _.each(ds_prometheus_cloud_logging_utilization, function(project) {
+    var log_source_type = project.metric_log_source.split('/')[0]
+    var log_source_id = project.metric_log_source.split('/')[1]
+    if (grouped[log_source_type] == undefined) {
+      grouped[log_source_type] = {}
+    }
+    if (grouped[log_source_type][log_source_id] == undefined) {
+      grouped[log_source_type][log_source_id] = {}
+    }
+    if (grouped[log_source_type][log_source_id][project.metric_log_bucket_id] == undefined) {
+      grouped[log_source_type][log_source_id][project.metric_log_bucket_id] = {}
+    }
+    if (grouped[log_source_type][log_source_id][project.metric_log_bucket_id][project.metric_resource_type] == undefined) {
+      grouped[log_source_type][log_source_id][project.metric_log_bucket_id][project.metric_resource_type] = 0
+    }
+    grouped[log_source_type][log_source_id][project.metric_log_bucket_id][project.metric_resource_type] += project[metric_to_use]
+  })
+  result = {
+    np_bytes_total: np_bytes_total,
+    total_usage: total_usage,
+    grouped: grouped
   }
-  if (grouped[log_source_type][log_source_id] == undefined) {
-    grouped[log_source_type][log_source_id] = {}
-  }
-  if (grouped[log_source_type][log_source_id][project.metric_log_bucket_id] == undefined) {
-    grouped[log_source_type][log_source_id][project.metric_log_bucket_id] = {}
-  }
-  if (grouped[log_source_type][log_source_id][project.metric_log_bucket_id][project.metric_resource_type] == undefined) {
-    grouped[log_source_type][log_source_id][project.metric_log_bucket_id][project.metric_resource_type] = 0
-  }
-  grouped[log_source_type][log_source_id][project.metric_log_bucket_id][project.metric_resource_type] += project[metric_to_use]
-})
-result = {
-  np_bytes_total: np_bytes_total,
-  total_usage: total_usage,
-  grouped: grouped
-}
 EOS
 end
 
