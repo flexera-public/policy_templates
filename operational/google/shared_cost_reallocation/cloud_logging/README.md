@@ -73,7 +73,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
   \* The `org_owner` role is only required if the Bill Connect does not already exist. If the Bill Connect already exists, the `org_owner` role is not required.
 
-- [**Google Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=gce*) with the following permissions:
+- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
   - `cloudresourcemanager.projects.get`
   - `cloudresourcemanager.projects.list`
   - `compute.regions.list`
