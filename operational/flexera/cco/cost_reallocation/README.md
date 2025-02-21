@@ -127,7 +127,9 @@ To distribute CloudTrail costs from all AWS Organization accounts to an account 
 
 ## Input Parameters
 
-- *Bill Connect ID* - Bill Connect ID to use for reallocating costs. Usually does not need to be changed, will be created if not exists.
+- *Bill Connect ID* - Bill Connect ID to use for reallocating costs. Should be changed to identify the use-case for the reallocation.  Example: `cbi-oi-optima-costreallocation-centralizedlogging`
+
+  This policy requires a Bill Connect ID. By default it will use `cbi-oi-optima-costreallocation-default` but you should specify a custom ID. The Bill Connect will be created if it does not already exist.
 
 - *Origin Filter* - JSON filter to scope the origin costs that will be reallocated. The filter should be structured as:
   ```json
@@ -159,6 +161,15 @@ To distribute CloudTrail costs from all AWS Organization accounts to an account 
   - `Day` - Daily line items (preferred)
   - `Month` - Monthly line items (use for very large environments to prevent timeouts)
 
+    When using "Day" granularity (default and preferred):
+    - Costs are allocated per day, providing more detailed cost distribution
+    - May take longer to process in very large environments
+
+    When using "Month" granularity:
+    - Costs are summarized monthly into fewer line items
+    - Recommended only for very large environments to prevent timeouts
+    - Trade-off between processing speed and granularity of cost allocation
+
 ## Policy Actions
 
 - Creates Common Bill Ingest Bill Connect if not exists
@@ -173,10 +184,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `billing_center_viewer`
-  - `org_owner`*
-
-  \* The `org_owner` role is only required if the Bill Connect does not already exist. If the Bill Connect already exists, the `org_owner` role is not required.
+  - `billing_center_viewer` - Required for accessing cost data
+  - `org_owner` - Required only if the Bill Connect needs to be created. Not required if the Bill Connect already exists.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
