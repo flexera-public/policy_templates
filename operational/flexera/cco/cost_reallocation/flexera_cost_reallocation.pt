@@ -34,9 +34,8 @@ parameter "param_origin_filter" do
   type "string"
   category "Policy Settings"
   label "Origin Filter"
-  description "Filter to scope to the origin costs."
-  # TODO Remove default value, this should require user input
-  default <<-EOS
+  description <<-EOS
+Filter to scope to the origin costs.
 {
   "dimension": "vendor_account_name",
   "type": "equal",
@@ -544,7 +543,7 @@ end
 
 datasource "ds_destination_cost" do
   request do
-    run_script $js_destination_cost, $ds_billing_centers, $ds_dates, $ds_tag_dimensions_used_in_rbd_rules, $param_bill_connect_id, $param_origin_filter, $param_destination_filter, $param_destination_group, rs_org_id, rs_optima_host
+    run_script $js_destination_cost, $ds_billing_centers, $ds_dates, $ds_tag_dimensions_used_in_rbd_rules, $param_bill_connect_id, $param_origin_filter, $param_destination_filter, $param_destination_group, $param_destination_method, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -561,7 +560,7 @@ datasource "ds_destination_cost" do
 end
 
 script "js_destination_cost", type: "javascript" do
-  parameters "ds_billing_centers", "ds_dates", "ds_tag_dimensions_used_in_rbd_rules", "param_bill_connect_id", "param_origin_filter", "param_destination_filter", "param_destination_group", "rs_org_id", "rs_optima_host"
+  parameters "ds_billing_centers", "ds_dates", "ds_tag_dimensions_used_in_rbd_rules", "param_bill_connect_id", "param_origin_filter", "param_destination_filter", "param_destination_group", "param_destination_method", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   // Get all billing center IDs from top-level billing centers
@@ -577,7 +576,9 @@ script "js_destination_cost", type: "javascript" do
   var dimensions = param_destination_group.concat(ds_tag_dimensions_used_in_rbd_rules)
   // Usage Unit is required when requesting usage_amount
   // Usage Amount is required value for CBI
-  dimensions.push("usage_unit")
+  if (param_destination_method != "Equal Portions") {
+    dimensions.push("usage_unit")
+  }
   // If dimensions contains "vendor_account", add "vendor_account_name" to the dimensions
   if (_.contains(dimensions, "vendor_account")) {
     dimensions.push("vendor_account_name")
@@ -617,12 +618,16 @@ script "js_destination_cost", type: "javascript" do
     "granularity": ds_dates['granularity'],
 
     "metrics": [
-      "usage_amount",
       "cost_nonamortized_unblended_adj"
     ],
 
     "end_at": ds_dates['end_date'],
     "start_at": ds_dates['start_date']
+  }
+
+  if (_.contains(payload.dimension, "usage_unit")) {
+    // Usage Unit is required for Usage Amount
+    payload.metrics.push("usage_amount")
   }
 
   // If granularity is month, summarize the costs
@@ -745,11 +750,11 @@ EOS
 end
 
 datasource "ds_calculated_proportions" do
-  run_script $js_calculated_proportions, $ds_cleaned_costs, $ds_dates, $ds_tag_dimensions_used_in_rbd_rules_tag_key, $param_destination_group
+  run_script $js_calculated_proportions, $ds_cleaned_costs, $ds_dates, $ds_tag_dimensions_used_in_rbd_rules_tag_key, $param_destination_group, $param_destination_method
 end
 
 script "js_calculated_proportions", type: "javascript" do
-  parameters "ds_cleaned_costs", "ds_dates", "ds_tag_dimensions_used_in_rbd_rules_tag_key", "param_destination_group"
+  parameters "ds_cleaned_costs", "ds_dates", "ds_tag_dimensions_used_in_rbd_rules_tag_key", "param_destination_group", "param_destination_method"
   result "result"
   code <<-'EOS'
   // function logSample() logs a sample to the console every 5 minutes
@@ -796,10 +801,15 @@ script "js_calculated_proportions", type: "javascript" do
   // Calculate proportion of origin cost to other costs
   _.each(_.keys(ds_cleaned_costs['destination_costs']), function(destination_cost_day) {
     _.each(ds_cleaned_costs['destination_costs'][destination_cost_day], function(destination_cost) {
-      var allocation_percentage = destination_cost['costs'] / ds_cleaned_costs['destination_costs_total']
-      if (allocation_percentage >= 1) {
-        console.log("Warning: allocation_percentage >= 1.  This is not expected.")
-        console.log("vendor_account=" + destination_cost['vendor_account'] + " costs=" + destination_cost['costs'] + " total_cost_for_day=" + total_cost_for_day + " allocation_percentage=" + allocation_percentage)
+      if (param_destination_method == "Equal Portions") {
+        console.log("Debug-equalportions"+JSON.stringify(destination_cost))
+        var allocation_percentage = 1 / (ds_cleaned_costs['destination_costs'][destination_cost_day]).length
+      } else {
+        var allocation_percentage = destination_cost['costs'] / ds_cleaned_costs['destination_costs_total']
+      }
+      if (allocation_percentage > 1) {
+        console.log("Warning: allocation_percentage greater than 1.  This is not expected.")
+        console.log("vendor_account=" + destination_cost['vendor_account'] + " costs=" + destination_cost['costs'] + " allocation_percentage=" + allocation_percentage)
         console.log("destination_cost=" + JSON.stringify(destination_cost))
       }
       if (allocation_percentage != 0) {
@@ -1137,31 +1147,31 @@ policy "pol_cost_reallocation" do
 
   # TODO Remove this before merge to master
   # Debug Incident
-  validate $ds_cbi_csv_rows do
-    summary_template "Debug"
-    detail_template "Debug"
-    check eq(0,1)
-    export do
-      field "Category"
-      field "CloudVendorAccountID"
-      field "CloudVendorAccountName"
-      field "Cost"
-      field "CurrencyCode"
-      field "InstanceType"
-      field "InvoiceID"
-      field "InvoiceYearMonth"
-      field "LineItemType"
-      field "Region"
-      field "ResourceGroup"
-      field "ResourceID"
-      field "ResourceType"
-      field "Service"
-      field "Tags"
-      field "UsageAmount"
-      field "UsageStartTime"
-      field "UsageType"
-      field "UsageUnit"
-    end
-  end
+  # validate $ds_cbi_csv_rows do
+  #   summary_template "Debug"
+  #   detail_template "Debug"
+  #   check eq(0,1)
+  #   export do
+  #     field "Category"
+  #     field "CloudVendorAccountID"
+  #     field "CloudVendorAccountName"
+  #     field "Cost"
+  #     field "CurrencyCode"
+  #     field "InstanceType"
+  #     field "InvoiceID"
+  #     field "InvoiceYearMonth"
+  #     field "LineItemType"
+  #     field "Region"
+  #     field "ResourceGroup"
+  #     field "ResourceID"
+  #     field "ResourceType"
+  #     field "Service"
+  #     field "Tags"
+  #     field "UsageAmount"
+  #     field "UsageStartTime"
+  #     field "UsageType"
+  #     field "UsageUnit"
+  #   end
+  # end
   # End Debug Incident
 end
