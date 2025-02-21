@@ -1,10 +1,16 @@
 # Cost Reallocation
 
-## What it Does
+## What It Does
 
-This policy template provides a flexible way to reallocate costs from one scope (Origin) to another scope (Destination) using various reallocation strategies. The policy template uses Flexera's "Common Bill Ingest" (CBI) capability to negate the original costs with negative cost line items and write the reallocated portions as new line items.
+This policy template provides a flexible way to reallocate costs from one scope (Origin) to another scope (Destination) using various reallocation strategies.
+
+
+## How it Works
+
+The policy template uses Flexera's "Common Bill Ingest" (CBI) capability to negate the original costs with negative cost line items and write the reallocated portions as new line items.
 
 For example, you can use this template to:
+
 - Reallocate centralized costs like AWS Support to individual AWS accounts based on their total spend
 - Redistribute shared service costs (like CloudTrail, Security Hub, etc.) to the accounts consuming them
 - Reallocate costs from one resource group to others based on custom allocation rules
@@ -122,7 +128,6 @@ To distribute CloudTrail costs from all AWS Organization accounts to an account 
   "param_destination_group": ["vendor_account"],
   "param_destination_method": "Percent of Total Spend"
 }
-
 ```
 
 ## Input Parameters
@@ -132,13 +137,14 @@ To distribute CloudTrail costs from all AWS Organization accounts to an account 
   This policy requires a Bill Connect ID. By default it will use `cbi-oi-optima-costreallocation-default` but you should specify a custom ID. The Bill Connect will be created if it does not already exist.
 
 - *Origin Filter* - JSON filter to scope the origin costs that will be reallocated. The filter should be structured as:
-  ```json
-  {
-    "dimension": "<dimension_name>",
-    "type": "equal",
-    "value": "<dimension_value>"
-  }
-  ```
+
+    ```json
+    {
+      "dimension": "<dimension_name>",
+      "type": "equal",
+      "value": "<dimension_value>"
+    }
+    ```
 
 - *Destination Filter* - Optional JSON filter to scope which destinations can receive reallocated costs. Uses the same format as Origin Filter. Leave empty to allow all destinations.
 
