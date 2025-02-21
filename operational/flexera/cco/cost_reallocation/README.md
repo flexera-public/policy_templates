@@ -189,8 +189,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `billing_center_viewer` - Required for accessing cost data
-  - `org_owner` - Required only if the Bill Connect needs to be created. Not required if the Bill Connect already exists.
+  - `billing_center_viewer`
+  - `org_owner` *
+
+  `*` Required only if the Bill Connect needs to be created. Not required if the Bill Connect already exists.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
