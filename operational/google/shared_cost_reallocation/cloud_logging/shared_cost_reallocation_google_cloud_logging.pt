@@ -36,7 +36,6 @@ parameter "param_centralized_logging_projects" do
   # No default value, user input required
 end
 
-
 # This is only needed so we can deploy 2 applied policies -- one for current month, one for previous month
 # TODO: enhance this PT so only 1 applied policy needs to be deployed to update previous + current month at least once daily
 parameter "param_period" do
@@ -199,7 +198,6 @@ datasource "ds_prometheus_cloud_logging_utilization" do
   request do
     auth $auth_google
     host "monitoring.googleapis.com"
-    verb "GET"
     path join(["/v1/projects/", val(iter_item, "id"), "/location/", val(iter_item,"region"), "/prometheus/api/v1/query"])
     query "query", "sum by (log_bucket_id,log_source,resource_type)(logging_googleapis_com:billing_log_bucket_monthly_bytes_ingested)"
     query "time", val($ds_dates, "end_date_google_metrics")
@@ -686,124 +684,6 @@ script "js_shared_cost", type: "javascript" do
 EOS
 end
 
-# Get the Costs grouped by Cloud Account, and any Tag Dimensions used in RBDs
-# This will enable us to reallocate the costs later using the tag dimension portions
-datasource "ds_google_project_tag_costs" do
-  request do
-    run_script $js_google_project_tag_costs, $ds_shared_cost, $ds_billing_centers, $ds_dates, $ds_tag_dimensions_used_in_rbd_rules, $param_bill_connect_id, rs_org_id, rs_optima_host
-  end
-  result do
-    encoding "json"
-    collect jq(response, '.rows[]') do
-      # Dimensions
-      field "dimensions", jq(col_item, ".dimensions")
-      # Metrics
-      field "costs", jq(col_item, ".metrics.cost_nonamortized_unblended_adj")
-      field "usage_amount", jq(col_item, ".metrics.usage_amount")
-      # Timestamp
-      field "timestamp", jq(col_item, ".timestamp")
-    end
-  end
-end
-
-script "js_google_project_tag_costs", type: "javascript" do
-  parameters "ds_shared_cost", "ds_billing_centers", "ds_dates", "ds_tag_dimensions_used_in_rbd_rules", "param_bill_connect_id", "rs_org_id", "rs_optima_host"
-  result "request"
-  code <<-EOS
-  // Get all billing center IDs from top-level billing centers
-  var top_level_bcs = _.filter(ds_billing_centers, function(bc) {
-    return bc.parent_id == null
-  })
-  // Pluck the IDs from the top-level billing centers
-  var top_level_bc_ids = _.pluck(top_level_bcs, 'id')
-
-  // Pluck the Vendor Account IDs from the shared costs
-  // We want to exclude the costs from the master payer account from what "other costs"
-  var shared_vendor_account_ids = _.chain(ds_shared_cost).pluck('dimensions').pluck('vendor_account').uniq().value()
-  var shared_vendor_account_ids_expression = _.map(shared_vendor_account_ids, function(id) {
-    return {
-      "dimension": "vendor_account",
-      "type": "equal",
-      "value": id
-    }
-  })
-
-  // Append the tag dimensions used in RBD rules to the dimensions used in the cost API
-  // The grouping by tag value and cost breakdown is needed to get reallocated portion of costs allocated correctly if they have tag conditions in the RBDs
-  var dimensions = [
-    "vendor_account",
-    "vendor_account_name"
-  ].concat(ds_tag_dimensions_used_in_rbd_rules)
-
-  var payload = {
-    "billing_center_ids": top_level_bc_ids,
-    "dimensions": dimensions,
-    "filter": {
-      "type": "and",
-      "expressions": [
-        // Only Google Costs
-        {
-          "dimension": "vendor",
-          "type": "equal",
-          "value": "GCP"
-        },
-        {
-          "dimension": "bill_source",
-          "type": "substring",
-          "substring": "gcp-"
-        },
-        // Only Raw Costs (Exclude Adjustments)
-        {
-          "dimension": "adjustment_name",
-          "type": "equal",
-          "value": "Raw Cost"
-        },
-        // Exclude costs managed by this Policy Template
-        {
-          "type": "not",
-          "expression": {
-            "type":"equal", "dimension":"bill_source", "value": param_bill_connect_id
-          }
-        },
-        // Exclude costs from Shared Cost Accounts
-        {
-          "type": "not",
-          "expression": {
-            "type": "or",
-            "expressions": shared_vendor_account_ids_expression
-          }
-        }
-      ]
-    },
-    "granularity": ds_dates['granularity'],
-    "metrics": [
-      "cost_nonamortized_unblended_adj"
-    ],
-    "end_at": ds_dates['end_date'],
-    "start_at": ds_dates['start_date']
-  }
-
-  // If granularity is month, summarize the costs
-  // This will group everything by the dimensions specified and provide only 1 timestamp (the start_at date)
-  // This is OK because we only pull one month at a time so summarizing that 1 month period is fine
-  // Helps reduce the number of line items we have to process, and total policy runtime
-  if (payload.granularity == "month") {
-    payload.summarized = true
-  }
-
-  var request = {
-    auth: "auth_flexera",
-    host: rs_optima_host,
-    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
-    verb: 'POST',
-    body_fields: payload,
-    headers: {
-      "User-Agent": "RS Policies",
-    }
-  }
-EOS
-end
-
 datasource "ds_cleaned_costs" do
   run_script $js_cleaned_costs, $ds_shared_cost
 end
@@ -1093,9 +973,9 @@ datasource "ds_existing_bill_uploads" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/optima/orgs/", rs_org_id, "/billUploads"])
-    header "User-Agent", "RS Policies"
     query "billConnectId", $param_bill_connect_id
     query "billingPeriod", val($ds_dates, "period")
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
