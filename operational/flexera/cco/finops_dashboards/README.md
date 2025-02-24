@@ -9,7 +9,8 @@ __NOTE: This policy template only needs to execute once to perform the above tas
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new dashboards are created.
-- *Dashboards* - The specific dashboards you wish to create.
+- *Dashboards (Built-In)* - The specific built-in dashboards you wish to create.
+- *Dashboards (External)* - The full URLs of any external dashboards you wish to also create. External dashboards must be publicly accessible and in JSON format matching the Flexera Dashboard API. Example JSON files can be found [here](https://github.com/flexera-public/policy_templates/tree/master/data/dashboards). Example: https[]()://awebdomain.com/path/dashboard_file.json
 
 ## Policy Actions
 

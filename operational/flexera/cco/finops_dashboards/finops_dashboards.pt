@@ -29,10 +29,19 @@ end
 parameter "param_dashboards" do
   type "list"
   category "Policy Settings"
-  label "Dashboards"
-  description "Select the specific dashboards you wish to create."
+  label "Dashboards (Built-In)"
+  description "Select the specific built-in dashboards you wish to create."
   allowed_values [ "Global CIO YTD View", "Marketplace / Operating System Overview", "Business / Product Owner", "Engineering / Operations", "Executive Summary", "Finance & Procurement", "Reservation Coverage", "Reservation Management" ]
   default [ "Global CIO YTD View", "Marketplace / Operating System Overview", "Business / Product Owner", "Engineering / Operations", "Executive Summary", "Finance & Procurement", "Reservation Coverage", "Reservation Management" ]
+end
+
+parameter "param_dashboards_external" do
+  type "list"
+  category "Policy Settings"
+  label "Dashboards (External)"
+  description "Provide the full URLs of any external dashboards you wish to also create. External dashboards must be publicly accessible and in JSON format. Please see README for more information."
+  allowed_pattern /^https://.*\.json$/
+  default []
 end
 
 ###############################################################################
@@ -54,32 +63,71 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-datasource "ds_prebaked_dashboards" do
+datasource "ds_dashboards_to_get" do
+  run_script $js_dashboards_to_get, $param_dashboards, $param_dashboards_external
+end
+
+script "js_dashboards_to_get", type: "javascript" do
+  parameters "param_dashboards", "param_dashboards_external"
+  result "result"
+  code <<-EOS
+  url_table = {
+    "Global CIO YTD View": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_global_cio_ytd_view.json",
+    "Marketplace / Operating System Overview": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_marketplace.json",
+    "Business / Product Owner": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_business_product.json",
+    "Engineering / Operations": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_engineering_operations.json",
+    "Executive Summary": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_executive_summary.json",
+    "Finance & Procurement": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_finance_procurement.json",
+    "Reservation Coverage": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_reservation_coverage.json",
+    "Reservation Management": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_reservation_management.json"
+  }
+
+  urls = _.map(param_dashboards, function(item) { return url_table[item] }).concat(param_dashboards_external)
+
+  result = _.map(urls, function(url) {
+    parts = url.split("/")
+
+    parts.shift()
+    parts.shift()
+    host = parts.shift()
+
+    return {
+      host: host,
+      path: "/" + parts.join("/")
+    }
+  })
+EOS
+end
+
+datasource "ds_dashboards" do
+  iterate $ds_dashboards_to_get
   request do
-    host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/dashboards/finops_dashboards.json"
+    host val(iter_item, "host")
+    path val(iter_item, "path")
     header "User-Agent", "RS Policies"
+    ignore_status [ 404 ] # Ignore 404s since user may have provided invalid URLs
+  end
+  result do
+    encoding "json"
+    field "name", jmes_path(response, "name")
+    field "config", jmes_path(response, "config")
   end
 end
 
 datasource "ds_dashboards_to_create" do
-  run_script $js_dashboards_to_create, $ds_prebaked_dashboards, $param_dashboards
+  run_script $js_dashboards_to_create, $ds_dashboards
 end
 
 script "js_dashboards_to_create", type: "javascript" do
-  parameters "ds_prebaked_dashboards", "param_dashboards"
+  parameters "ds_dashboards"
   result "result"
   code <<-EOS
-  filtered = _.filter(ds_prebaked_dashboards, function(dashboard) {
-    return _.contains(param_dashboards, dashboard["name"])
-  })
-
-  result = _.map(filtered, function(dashboard) {
+  result = _.map(ds_dashboards, function(dashboard) {
     return {
       area: "OrgDashboard",
       id: "new-dashboard",
       config: dashboard["config"],
-      name: [ "FinOps - ", dashboard["name"] ].join(""),
+      name: dashboard["name"],
       visibility: "public",
       isDefault: false
     }
