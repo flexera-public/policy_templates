@@ -120,14 +120,14 @@ parameter "param_automatic_action" do
   default ["Execute Schedules", "Start Notification", "Stop Notification", "Error Notification", "Success Notification"] # Schedules enabled by default because resource label required to action.  Can be disabled by removing from list which is helpful for debugging / manual triggers.
 end
 
-# parameter "param_enforce_schedules" do
-#   type "string"
-#   category "Actions"
-#   label "Enforce Schedules"
-#   description "Whether to enforce schedules on instances that are not in the correct state. If set to 'No', the policy will not action if the instance is not in the expected state when an action is to be taken.  Can be disabled to allow starting the instance outside the schedule, and the virtual machine must be stopped manually or will be stopped at the next scheduled stop time."
-#   allowed_values "Yes", "No"
-#   default "Yes"
-# end
+parameter "param_enforce_schedules" do
+  type "string"
+  category "Actions"
+  label "Enforce Schedules"
+  description "Whether to enforce schedules on instances that are not in the correct state. If set to 'No', the policy will not action if the instance is not in the expected state when an action is to be taken.  Can be disabled to allow starting the instance outside the schedule, and the virtual machine must be stopped manually or will be stopped at the next scheduled stop time."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
 
 ###############################################################################
 # Authentication
@@ -374,10 +374,22 @@ script "js_policy_incident_action_completed_details", type: "javascript" do
   parameters "ds_policy_incident_action_most_recent"
   result "result"
   code <<-EOS
-  // Filter only the failed actions
-  var result = _.filter(ds_policy_incident_action_most_recent, function(action) {
+  // Filter only the completed actions
+  var actions = _.filter(ds_policy_incident_action_most_recent, function(action) {
     return action.action_status == 'completed'
   })
+  // Compile instance list from action_items
+  var instances = [];
+  _.each(actions, function(action) {
+    _.each(action['violation_data'], function(item) {
+      item.action_label = action.action_label
+      instances.push(item)
+    })
+  })
+  var result = {
+    "actions": actions,
+    "instances": instances
+  }
 EOS
 end
 
@@ -785,7 +797,7 @@ end
 # Classify the results from ds_instances_schedule_result
 # This allows us to produce email notifications when actions are being taken
 datasource "ds_instances_schedule_result_action_start" do
-  run_script $js_instances_schedule_result_action_start, $ds_instances_schedule_result_with_last_action_status, "Yes", $param_tag_schedule_action
+  run_script $js_instances_schedule_result_action_start, $ds_instances_schedule_result_with_last_action_status, $param_enforce_schedules, $param_tag_schedule_action
 end
 
 script "js_instances_schedule_result_action_start", type: "javascript" do
@@ -793,12 +805,15 @@ script "js_instances_schedule_result_action_start", type: "javascript" do
   result "result"
   code <<-EOS
   var result = []
-  var enforce_schedules_enabled = param_enforce_schedules == "Yes"
+  var enforce_schedule_enabled = param_enforce_schedules == "Yes"
   // Force Action is a static string unless force action is enabled
   var enforce_schedule = ""
   // If enabled setting the string to current timestamp will ensure the resulting hash of the result updates each evaluation
   // This will force the action to be taken on the instance each run if param_enforce_schedules is set to "Yes"
-  if (enforce_schedules_enabled) { enforce_schedule = new Date().toISOString() }
+  var now = new Date()
+  if (enforce_schedule_enabled) {
+    enforce_schedule = now.toISOString()
+  }
 
   // Loop through each instance and check if we should start it
   _.each(ds_instances_schedule_result, function(instance) {
@@ -806,6 +821,23 @@ script "js_instances_schedule_result_action_start", type: "javascript" do
     var schedule_action = "startstop"
     if (instance.tags_object && instance.tags_object[param_tag_schedule_action]) {
       schedule_action = instance.tags_object[param_tag_schedule_action].toLowerCase()
+    }
+
+    // Check if enforce schedule is disabled
+    if (!enforce_schedule_enabled) {
+      // Check if the last_stop_finished time is defined
+      // Check if the last stop attempt was successful
+      if (instance['last_start_finished'] && instance['last_start_finished'] != "Unknown" && instance['last_start_status'] == "completed") {
+        // We successfully stopped the instance and have a time recorded
+        // Convert timedate strings to Date objects
+        var last_action_date = new Date(instance['last_start_finished'])
+        var next_action_date = new Date(instance['next_stop'])
+        // Check that the last START was in the past (we have not attempted to START it yet)
+        if ((last_action_date <= now) && (now <= next_action_date)) {
+          console.log("Skipping starting VM " + instance['resourceID'] + " because Enforce Schedules is disabled and the VM was started succesfully once at the last scheduled start time.  Next stop time is "+instance['next_stop']); // Excluded from console.log test
+          should_stop = false
+        }
+      }
     }
 
     // Only start instances if:
@@ -824,7 +856,7 @@ script "js_instances_schedule_result_action_start", type: "javascript" do
 end
 
 datasource "ds_instances_schedule_result_action_stop" do
-  run_script $js_instances_schedule_result_action_stop, $ds_instances_schedule_result_with_last_action_status, "Yes", $param_tag_schedule_action
+  run_script $js_instances_schedule_result_action_stop, $ds_instances_schedule_result_with_last_action_status, $param_enforce_schedules, $param_tag_schedule_action
 end
 
 script "js_instances_schedule_result_action_stop", type: "javascript" do
@@ -837,7 +869,10 @@ script "js_instances_schedule_result_action_stop", type: "javascript" do
   var enforce_schedule = ""
   // If enabled setting the string to current timestamp will ensure the resulting hash of the result updates each evaluation
   // This will force the action to be taken on the instance each run if param_enforce_schedules is set to "Yes"
-  if (enforce_schedule_enabled) { enforce_schedule = new Date().toISOString() }
+  var now = new Date()
+  if (enforce_schedule_enabled) {
+    enforce_schedule = now.toISOString()
+  }
 
   // Loop through each instance and check if we should stop it
   _.each(ds_instances_schedule_result, function(instance) {
@@ -858,6 +893,23 @@ script "js_instances_schedule_result_action_stop", type: "javascript" do
     } else if (schedule_action == "startstop") {
       // Startstop action stops outside active window
       should_stop = (instance['event_active'] == "false")
+    }
+
+    // Check if enforce schedule is disabled
+    if (!enforce_schedule_enabled) {
+      // Check if the last_stop_finished time is defined
+      // Check if the last stop attempt was successful
+      if (instance['last_stop_finished'] && instance['last_stop_finished'] != "Unknown" && instance['last_stop_status'] == "completed") {
+        // We successfully stopped the instance and have a time recorded
+        // Convert timedate strings to Date objects
+        var last_action_date = new Date(instance['last_stop_finished'])
+        var next_action_date = new Date(instance['next_start'])
+        // Check that the last stop was in the past (we have not attempted to stop it yet)
+        if ((last_action_date <= now) && (now <= next_action_date)) {
+          console.log("Skipping stopping VM " + instance['resourceID'] + " because Enforce Schedules is disabled and the VM was stopped succesfully once at the last scheduled stop time. Next start time is "+instance["next_start"]); // Excluded from console.log test
+          should_stop = false
+        }
+      }
     }
 
     if (should_stop && /(deallocated|deallocating)/.test(instance['status']) == false) {
@@ -892,8 +944,8 @@ script "js_instances_schedule_result_with_last_action_status", type: "javascript
 
     // For each instance in ds_instances_schedule_result, check if there is details from previous runs
     _.each(result, function(instance) {
-      var instance_details = instance_map[instance['resourceID']]
-      if (instance_details) {
+      if (instance_map && instance_map[instance['resourceID']]) {
+        var instance_details = instance_map[instance['resourceID']]
         instance['last_start_status'] = instance_details[0]['last_start_status']? instance_details[0]['last_start_status'] : "Unknown"
         instance['last_start_finished'] = instance_details[0]['last_start_finished']? instance_details[0]['last_start_finished'] : "Unknown"
         instance['last_stop_status'] = instance_details[0]['last_stop_status']? instance_details[0]['last_stop_status'] : "Unknown"
@@ -915,6 +967,7 @@ script "js_instances_schedule_result_with_last_action_status", type: "javascript
     _.each(result, function(instance) {
       // If the instance is in the incident
       if (starting_instance_map[instance['resourceID']]) {
+        // var instance_details = starting_instance_map[instance['resourceID']]
         // Update the instance with the last start status from previous state
         instance['last_start_status'] = starting_incident.action_status
         instance['last_start_finished'] = starting_incident.action_finished_at
@@ -935,6 +988,7 @@ script "js_instances_schedule_result_with_last_action_status", type: "javascript
     _.each(result, function(instance) {
       // If the instance is in the incident
       if (stopping_instance_map[instance['resourceID']]) {
+        // Update the instance with the last start status from previous state
         instance['last_stop_status'] = stopping_incident.action_status
         instance['last_stop_finished'] = stopping_incident.action_finished_at
       }
@@ -949,13 +1003,13 @@ end
 
 policy "pol_schedule_instance" do
   validate $ds_policy_incident_action_completed_details do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Completed Actions"
+    summary_template "{{ with index data.actions 0 }}{{ .policy_name }}{{ end }}: Completed Actions"
     detail_template <<-EOS
 **Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})**
 
 The following actions completed successfully:
 
-{{ range data -}}
+{{ range data.actions -}}
 **[{{ .incident_summary }}](https://{{ .ui_host }}/orgs/{{ rs_org_id }}/automation/incidents/projects/{{ rs_project_id }}?incidentId={{ .incident_id }})**
 
 {{- range .action_items }}
@@ -970,8 +1024,69 @@ The following actions completed successfully:
 {{ end -}}
 {{ end }}
     EOS
-    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
+    check logic_or($ds_parent_policy_terminated, eq(size(val(data,"actions")), 0))
     escalate $esc_email_success
+    export "instances" do
+      resource_level true
+      field "event_active" do
+        label "Event Active"
+      end
+      field "action_label" do
+        label "Action Label"
+      end
+      field "tenantId" do
+        label "Tenant ID"
+      end
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "osType" do
+        label "Operating System"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "schedule" do
+        label "Schedule"
+      end
+      field "next_start" do
+        label "Next Start"
+      end
+      field "next_stop" do
+        label "Next Stop"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+      field "tags_object" do
+        label "Tags (Object)"
+      end
+    end
   end
 
   validate $ds_policy_incident_action_failed_details do
@@ -981,6 +1096,7 @@ The following actions completed successfully:
 
 The following actions failed:
 {{ range data.actions }}
+
 **[{{ .incident_summary }}](https://{{ .ui_host }}/orgs/{{ rs_org_id }}/automation/incidents/projects/{{ rs_project_id }}?incidentId={{ .incident_id }})**
 Failed:
 {{ range .action_items }}
@@ -990,6 +1106,7 @@ Failed:
 ```
 {{ end -}}
 {{ end }}
+
 {{ end }}
     EOS
     check logic_or($ds_parent_policy_terminated, eq(size(val(data,"actions")), 0))
@@ -1394,7 +1511,7 @@ end
 define execute_schedules($data, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule, $param_tag_schedule_action) return $all_responses do
   $$all_responses = []
 
-  foreach $instance in $data do
+  concurrent foreach $instance in $data do
     sub on_error: handle_error() do
       call execute_schedule($instance, $param_azure_endpoint, $param_skipshutdown, $param_tag_schedule, $param_tag_schedule_action)
     end
@@ -1442,7 +1559,7 @@ end
 define start_instances($data, $param_azure_endpoint) return $all_responses do
   $$all_responses = []
 
-  foreach $instance in $data do
+  concurrent foreach $instance in $data do
     sub on_error: handle_error() do
       call start_instance($instance, $param_azure_endpoint)
     end
@@ -1458,7 +1575,7 @@ end
 define stop_instances($data, $param_azure_endpoint, $param_skipshutdown) return $all_responses do
   $$all_responses = []
 
-  foreach $instance in $data do
+  concurrent foreach $instance in $data do
     sub on_error: handle_error() do
       call stop_instance($instance, $param_azure_endpoint, $param_skipshutdown)
     end
