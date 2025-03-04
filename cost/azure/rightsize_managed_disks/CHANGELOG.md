@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5.1
+
+- Added batch processing for large datasources as a performance enhancement (reduces memory usage) with no changes to logic or functionality.
+
 ## v2.5.0
 
 - Savings are now calculated using cost data stored in Flexera Cloud Cost Optimization instead of only via Azure list price.

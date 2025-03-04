@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0.4
+
+- Added batch processing for large datasources as a performance enhancement (reduces memory usage) with no changes to logic or functionality.
+
 ## v6.0.3
 
 - Fixed error that caused showing negative values at the incident fields for memory statistics for recently rightsized instances. Functionality unchanged.
