@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0.4
+
+- Fix for v6.0.3, changed the approach for handling memory statics for rightsized instances. Functionality unchanged.
+
 ## v6.0.3
 
 - Fixed error that caused showing negative values at the incident fields for memory statistics for recently rightsized instances. Functionality unchanged.
