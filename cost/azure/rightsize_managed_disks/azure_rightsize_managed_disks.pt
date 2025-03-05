@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "2.5.0",
+  version: "2.5.1",
   provider: "Azure",
   service: "Managed Disks",
   policy_set: "Rightsize Storage",
@@ -569,6 +569,7 @@ EOS
 end
 
 datasource "ds_azure_virtual_machines_with_metrics" do
+  batch true
   iterate $ds_azure_virtual_machines_with_disks
   request do
     run_script $js_azure_virtual_machines_with_metrics, val(iter_item, "vmId"), $ds_stats_interval, $param_azure_endpoint, $param_stats_lookback
@@ -715,7 +716,15 @@ script "js_azure_disks_with_metrics", type: "javascript" do
   // Disk IOPS and throughput
   for (var i in ds_azure_virtual_machines_with_disks) {
     var vmWithDisk = ds_azure_virtual_machines_with_disks[i]
-    var correspondingVmWithMetrics = _.find(ds_azure_virtual_machines_with_metrics, function(vmWithMt) { return vmWithMt.vmId.toLowerCase() === vmWithDisk.vmId.toLowerCase() })
+    var correspondingVmWithMetrics = undefined
+
+    getIterator(ds_azure_virtual_machines_with_metrics).Each(function(vmWithMt, idx) {
+      if (vmWithMt.vmId.toLowerCase() === vmWithDisk.vmId.toLowerCase()) {
+        correspondingVmWithMetrics = vmWithMt
+        return true
+      }
+    })
+      
     if (correspondingVmWithMetrics === undefined) continue;
     // OS disk
     for (var j in correspondingVmWithMetrics.metrics) {

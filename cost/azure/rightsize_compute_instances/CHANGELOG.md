@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0.5
+
+- Added batch processing for large datasources as a performance enhancement (reduces memory usage) with no changes to logic or functionality.
+
 ## v6.0.4
 
 - Fix for v6.0.3, changed the approach for handling memory statics for rightsized instances. Functionality unchanged.
