@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0.5
+
+- Fix for memory stats showing decimal (such as 0.5 for half) instead of showing percentage (such as 50 for half).
+
 ## v6.0.4
 
 - Fix for v6.0.3, changed the approach for handling memory statics for rightsized instances. Functionality unchanged.
