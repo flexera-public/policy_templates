@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5.3
+
+- Fixed error that caused some incident fields to show invalid negative values for memory statistics for recently rightsized instances. Functionality unchanged.
+
 ## v2.5.2
 
 - Added `Report Connection With Zero Bills` parameter to help users detect connections without bills and spot potential misconfigurations.
