@@ -2,7 +2,7 @@
 
 ## v2.5.3
 
-- Fixed error that caused showing negative values at the incident fields for memory statistics for recently rightsized instances. Functionality unchanged.
+- Fixed error that caused some incident fields to show invalid negative values for memory statistics for recently rightsized instances. Functionality unchanged.
 
 ## v2.5.2
 
