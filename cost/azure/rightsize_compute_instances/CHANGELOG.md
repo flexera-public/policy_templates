@@ -1,6 +1,10 @@
 # Changelog
 
-## v6.0.5
+## v6.1.1
+
+- Fix for memory stats showing decimal (such as 0.5 for half) instead of showing percentage (such as 50 for half).
+
+## v6.1.0
 
 - Added batch processing for large datasources as a performance enhancement (reduces memory usage) with no changes to logic or functionality.
 
