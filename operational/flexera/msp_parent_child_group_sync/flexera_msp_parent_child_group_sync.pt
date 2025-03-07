@@ -52,6 +52,14 @@ parameter "param_prefix" do
   default "GroupSync"
 end
 
+parameter "param_invitation_flow" do
+  type "string"
+  label "Invitation Flow"
+  description "Disable/Enable the invitation flow.  Users that can't be added directly to the Org due to missing required Identity Provider configuration will raise an error."
+  allowed_values "User Invitations Disabled", "User Invitations Enabled"
+  default "User Invitations Disabled"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -118,6 +126,98 @@ script "js_flexera_api_hosts", type: "javascript" do
 EOS
 end
 
+#### Begin Context
+datasource "ds_policy_incident" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/incidents"])
+    query "applied_policy_id", policy_id
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, 'items[*]') do
+      field "incident", jq(col_item, ".")
+    end
+  end
+end
+
+datasource "ds_policy_incident_context" do
+  run_script $js_policy_incident_context, $ds_policy_incident
+end
+
+script "js_policy_incident_context", type: "javascript" do
+  parameters "ds_policy_incident"
+  result "result"
+  code <<-EOS
+  grouped = _.filter(ds_policy_incident, function(incident) {
+    return incident.incident.summary == "_context_incident";
+  })
+  sorted = _.sortBy(grouped, function(incident) {
+    return incident.incident.updated_at;
+  })
+  // Return the most recently updated incident
+  // This will be the last in the list after default sorting
+  incident = sorted[sorted.length - 1];
+
+  result = _.isObject(incident) ? [incident] : [];
+EOS
+end
+
+datasource "ds_policy_incident_context_details" do
+  iterate $ds_policy_incident_context
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/incidents/",val(val(iter_item,'incident'), 'id')])
+    query "view", "extended"
+    header "User-Agent", "RS Policies"
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "incident", jq(response, ".")
+  end
+end
+
+# A datasource to help persist "context" across policy evaluation runs
+datasource "ds_context" do
+  run_script $js_context, $ds_policy_incident_context_details
+end
+
+script "js_context", type: "javascript" do
+  parameters "ds_policy_incident_context_details"
+  result "result"
+  code <<-EOS
+  var ctx = {};
+  // Restore previous context if exists
+  if (ds_policy_incident_context_details && ds_policy_incident_context_details.length > 0 && _.isString(ds_policy_incident_context_details[0].incident.detail)) {
+    // Get the first incident in the list and parse it incident details as JSON
+    ctx = JSON.parse(ds_policy_incident_context_details[0].incident.detail);
+  }
+  // Do not edit above this line
+  // Begin policy-specific context
+
+  // Set or increment the batch index
+  if (!_.isNumber(ctx.batch_index)) {
+    ctx.batch_index = 0;
+  } else {
+    ctx.batch_index = parseInt(ctx.batch_index) + 1;
+    if (ctx.batch_index >= 4) { // assuming splitting into 4 batches.  Will be param later
+      ctx.batch_index = 0;
+    }
+  }
+
+  // End policy-specific context
+  // Do not edit below this line
+  // JSON stringify the result for the incident
+  result = JSON.stringify(ctx);
+EOS
+end
+
+#### End Context
+
 # Get organizations
 datasource "ds_organizations" do
   request do
@@ -136,14 +236,15 @@ datasource "ds_organizations" do
 end
 
 datasource "ds_organizations_filtered" do
-  run_script $js_filter_organizations, $ds_organizations, $param_child_orgs_allow_or_deny, $param_child_orgs_list
+  run_script $js_filter_organizations, $ds_organizations, $ds_context, $param_child_orgs_allow_or_deny, $param_child_orgs_list
 end
 
 script "js_filter_organizations", type: "javascript" do
-  parameters "ds_organizations", "param_child_orgs_allow_or_deny", "param_child_orgs_list"
+  parameters "ds_organizations", "ds_context", "param_child_orgs_allow_or_deny", "param_child_orgs_list"
   result "result"
   code <<-EOS
-  var result = [];
+  var orgs = [];
+  ctx = JSON.parse(ds_context)
 
   // Convert param_child_orgs_list list of strings to integers
   var org_list = _.map(param_child_orgs_list, function(org_id) {
@@ -151,22 +252,27 @@ script "js_filter_organizations", type: "javascript" do
   });
 
   if (_.isEmpty(param_child_orgs_list)) {
-    result = ds_organizations;
+    orgs = ds_organizations;
   } else {
     _.each(ds_organizations, function(org) {
 
       if (param_child_orgs_allow_or_deny == "Allow") {
         if (_.contains(org_list, parseInt(org.id))) {
-          result.push(org);
+          orgs.push(org);
         }
       } else {
         if (!_.contains(org_list, parseInt(org.id))) {
-            result.push(org);
+          orgs.push(org);
         }
       }
 
     });
   }
+  var batches = _.groupBy(orgs, function(org, index) {
+    return (index % 4).toFixed(0);
+  });
+
+  result = batches[ctx.batch_index.toFixed(0)];
   EOS
 end
 
@@ -342,6 +448,24 @@ datasource "ds_children_invitations_pending" do
   end
 end
 
+datasource "ds_children_invitations_pending_rm" do
+  iterate $ds_children_invitations_pending
+  request do
+    verb "DELETE"
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/iam/v1/orgs/", val(iter_item, "org_id"), "/invitations/", val(iter_item, "id")])
+  end
+  result do
+    encoding "json"
+    field "org_id", val(iter_item, "org_id")
+    field "id", val(iter_item, "id")
+    field "email", val(iter_item, "email")
+    field "groups", jmes_path(iter_item, "groups")
+  end
+end
+
 datasource "ds_children_idps" do
   iterate $ds_organizations_filtered_with_access
   request do
@@ -504,15 +628,19 @@ script "js_parent_groups_allorgs", type: "javascript" do
 end
 
 datasource "ds_process_sync" do
-  run_script $js_process_sync, $ds_parent_groups_allorgs, $ds_parent_group_members, $ds_parent_group_roles, $ds_children_groups, $ds_children_group_members, $ds_children_group_roles, $ds_children_groups, $ds_parent_roles, $ds_children_roles, $ds_parent_users, $ds_children_users, $ds_children_invitations_pending, $param_prefix, $ds_applied_policy
+  run_script $js_process_sync, $ds_parent_groups_allorgs, $ds_parent_group_members, $ds_parent_group_roles, $ds_children_groups, $ds_children_group_members, $ds_children_group_roles, $ds_children_groups, $ds_parent_roles, $ds_children_roles, $ds_parent_users, $ds_children_users, $ds_children_invitations_pending, $param_prefix, $ds_applied_policy, $ds_children_invitations_pending_rm
 end
 
 # Process data and generate sync tasks
 script "js_process_sync", type: "javascript" do
-  parameters "ds_parent_groups_allorgs", "ds_parent_group_members", "ds_parent_group_roles", "ds_children_groups", "ds_children_group_members", "ds_children_group_roles", "ds_children_groups", "ds_parent_roles", "ds_children_roles", "ds_parent_users", "ds_children_users", "ds_children_invitations_pending", "param_prefix", "ds_applied_policy"
+  parameters "ds_parent_groups_allorgs", "ds_parent_group_members", "ds_parent_group_roles", "ds_children_groups", "ds_children_group_members", "ds_children_group_roles", "ds_children_groups", "ds_parent_roles", "ds_children_roles", "ds_parent_users", "ds_children_users", "ds_children_invitations_pending", "param_prefix", "ds_applied_policy", "ds_children_invitations_pending_rm"
   result "sync_tasks"
   code <<-EOS
   var sync_tasks = [];
+
+  var ds_children_groups_index = _.groupBy(ds_children_groups, function(child_group) {
+    return child_group.org_id + child_group.name;
+  });
 
   // Process each parent group
   _.each(ds_parent_groups_allorgs, function(group) {
@@ -694,6 +822,7 @@ end
 
 # Policy
 policy "pol_group_sync" do
+
   validate $ds_process_sync do
     summary_template "{{ len data }} groups being synchronized"
     detail_template <<-EOS
@@ -714,6 +843,7 @@ EOS
     check eq(size(data), 0)
     escalate $esc_sync_groups
   end
+
   validate $ds_process_sync_remove_roles do
     summary_template "{{ len data }} roles being removed"
     detail_template <<-EOS
@@ -724,6 +854,7 @@ EOS
     check eq(size(data), 0)
     escalate $esc_remove_roles
   end
+
   validate $ds_process_sync_remove_members do
     summary_template "{{ len data }} members being removed"
     detail_template <<-EOS
@@ -734,6 +865,7 @@ EOS
     check eq(size(data), 0)
     escalate $esc_remove_members
   end
+
   validate $ds_identify_errors do
     summary_template "Errors identified"
     detail_template <<-EOS
@@ -741,14 +873,27 @@ EOS
 EOS
     check eq(size(data), 0)
   end
+
+  validate $ds_context do
+    summary_template "_context_incident"
+    detail_template "{{ data }}"
+    check eq(1, 0)
+    escalate $esc_auto_resolve
+  end
 end
 
 # Escalations
+escalation "esc_auto_resolve" do
+  automatic true
+  email []
+  resolve_incident # Automatically close the incident once the escalation has run
+end
+
 escalation "esc_sync_groups" do
   automatic contains($param_automatic_actions, "Sync Groups")
   label "Sync Groups"
   description "Sync groups to child orgs"
-  run "sync_groups", data, rs_org_id
+  run "sync_groups", data, $param_invitation_flow, rs_org_id
 end
 
 escalation "esc_remove_roles" do
@@ -766,8 +911,9 @@ escalation "esc_remove_members" do
 end
 
 define remove_members($data, $rs_org_id) do
+  $$debug_enabled = false
   $$debug = []
-  $$errors = []
+  $$errors = ""
   foreach $task in $data do
     sub on_error: handle_error() do
       $child_member = http_request(
@@ -781,16 +927,18 @@ define remove_members($data, $rs_org_id) do
         }
       )
       if $child_member["code"] != 204
-        $$errors << "Error removing membership "+$task["id"]+" in org "+$task["org_id"] # For debug
+        call append_error("Error removing membership "+$task["id"]+" in org "+$task["org_id"]) # For debug
       else
-        $$debug << "Success removing membership "+$task["id"]+" in org "+$task["org_id"] # For debug
+        if $$debug_enabled
+          $$debug << "Success removing membership "+$task["id"]+" in org "+$task["org_id"] # For debug
+        end
       end
     end
   end
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null" && size($$errors) > 0
-    raise join($$errors,"\n")
+    raise $$errors
   end
 
   # If we made it here, all actions completed successfully
@@ -799,8 +947,9 @@ define remove_members($data, $rs_org_id) do
 end
 
 define remove_roles($data, $rs_org_id) do
+  $$debug_enabled = false
   $$debug = []
-  $$errors = []
+  $$errors = ""
   foreach $task in $data do
     sub on_error: handle_error() do
       $role_payload = {
@@ -837,16 +986,18 @@ define remove_roles($data, $rs_org_id) do
       $child_role = http_put($request)
       $$debug_revoke_role = "revoke-response="+to_json($child_role)+" request="+to_json($request)
       if $child_role["code"] != 204
-        $$errors << "Error revoking access rule "+to_json($child_role)+" on with payload "+to_json($role_payload) # For debug
+        call append_error("Error revoking access rule "+to_json($child_role)+" on with payload "+to_json($role_payload)) # For debug
       else
-        $$debug << "Success revoking access rule "+$task["group_ref"]+" with role "+$task["role"]["name"]  # For debug
+        if $$debug_enabled
+          $$debug << "Success revoking access rule "+$task["group_ref"]+" with role "+$task["role"]["name"]  # For debug
+        end
       end
     end
   end
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null" && size($$errors) > 0
-    raise join($$errors,"\n")
+    raise $$errors
   end
 
   # If we made it here, all actions completed successfully
@@ -855,15 +1006,38 @@ define remove_roles($data, $rs_org_id) do
 end
 
 # Cloud workflow
-define sync_groups($data, $rs_org_id) do
+define sync_groups($data, $param_invitation_flow, $rs_org_id) do
+  $$debug_enabled = false
   $$debug = []
-  $$errors = []
+  $$errors = ""
+  $$label = ""
+  $groupIndex = 0
+  $groupTotal = size($data)
+  $totalDuration = 0
+  $start = now()
+  $duration = 0
+  $estimatedDuration = ""
   foreach $task in $data do
+    # Get Size and set starting index for other loops
+    $rolesIndex = 0
+    $rolesTotal = size($task["roles"])
+    $membersIndex = 0
+    $membersTotal = size($task["members"])
+
+    $groupIndex = $groupIndex + 1
+    if $groupIndex > 0
+      $avg = (($duration / $groupIndex)/60)
+      $estimatedDuration = " Estimated "+to_s($avg * $groupTotal)+"m Total"
+      $estimatedDuration = $estimatedDuration + " with "+to_s($avg * ($groupTotal - $groupIndex))+"m Remaining"
+    end
+    task_label("Group"+to_s($groupIndex)+"/"+to_s($groupTotal)+ " Role"+to_s($rolesIndex)+"/"+to_s($rolesTotal)+ " Member"+to_s($membersIndex)+"/"+to_s($membersTotal)+ $estimatedDuration)
     sub on_error: handle_error() do
       $child_group_id = ""
       $child_group_ref = ""
       if $task["target_group_ref"] != null && $task["target_group_id"] != ""
-        $$debug << "Group exists, skipping creation of "+$task["target_group_name"]+" in org "+$task["target_org_id"]
+        if $$debug_enabled
+          $$debug << "Group exists, skipping creation of "+$task["target_group_name"]+" in org "+$task["target_org_id"]
+        end
         $child_group_ref = $task["target_group_ref"]
         $child_group_id = $task["target_group_id"]
         # Currently Flexera IAM does not support updating Groups
@@ -904,24 +1078,33 @@ define sync_groups($data, $rs_org_id) do
                 $child_group_id = $group["id"]
               end
             end
-            $$debug << "Group "+$task["target_group_name"]+" already exists in org "+$task["target_org_id"]+" ("+$child_group_ref+")"
+            if $$debug_enabled
+              $$debug << "Group "+$task["target_group_name"]+" already exists in org "+$task["target_org_id"]+" ("+$child_group_ref+")"
+            end
           else
-            $$errors << "Error creating group "+to_json($child_group)+" on with payload "+to_json($group_payload) # For debug
+            call append_error("Error creating group "+to_json($child_group)+" on with payload "+to_json($group_payload)) # For debug
           end
         else
-          $$debug << "Success creating group "+$task["target_group_name"]+" in org "+$task["target_org_id"] # For debug
+          if $$debug_enabled
+            $$debug << "Success creating group "+$task["target_group_name"]+" in org "+$task["target_org_id"] # For debug
+          end
           $child_group_ref = $child_group["body"]["ref"]
           $child_group_id = $child_group["body"]["id"]
         end
       end
 
       # Sync roles
+
       foreach $role in $task["roles"] do
+        $rolesIndex = $rolesIndex + 1
+        task_label("Group"+to_s($groupIndex)+"/"+to_s($groupTotal)+ " Role"+to_s($rolesIndex)+"/"+to_s($rolesTotal)+ " Member"+to_s($membersIndex)+"/"+to_s($membersTotal)+ $estimatedDuration)
         sub on_error: handle_error() do
           if $role["action"] == "skip"
-            $$debug << "Role exists, skipping granting access rule "+$role["role"]["name"]+" in org "+$task["target_org_id"]+" group "+$task["target_group_name"]
+            if $$debug_enabled
+              $$debug << "Role exists, skipping granting access rule "+$role["role"]["name"]+" in org "+$task["target_org_id"]+" group "+$task["target_group_name"]
+            end
           elsif $role["action"] == "add_capability"
-            $$errors << "Unable to grant role "+$role["role"]["name"]+" in org "+$task["target_org_id"]+" group "+$task["target_group_name"]+" because the org is missing the capabilities: "+join($role["missing_capabilities"],",")
+            call append_error("Unable to grant role "+$role["role"]["name"]+" in org "+$task["target_org_id"]+" group "+$task["target_group_name"]+" because the org is missing the capabilities: "+join($role["missing_capabilities"],","))
           else
             # Else action is "create"
             # We can assume the scope reg is org scope
@@ -950,11 +1133,12 @@ define sync_groups($data, $rs_org_id) do
               body: $role_payload
             }
             $child_role = http_put($request)
-            $$debug_grant_role = "grant-response="+to_json($child_role)+" request="+to_json($request)
             if $child_role["code"] != 204
-              $$errors << "Error granting access rule "+to_json($child_role)+" on with payload "+to_json($role_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/access-rules/grant"]) # For debug
+              call append_error("Error granting access rule "+to_json($child_role)+" on with payload "+to_json($role_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/access-rules/grant"])) # For debug
             else
-              $$debug << "Success granting access rule "+$child_group_ref+" with role "+$role["role"]["name"]  # For debug
+              if $$debug_enabled
+                $$debug << "Success granting access rule "+$child_group_ref+" with role "+$role["role"]["name"]  # For debug
+              end
             end
           end
         end
@@ -962,12 +1146,18 @@ define sync_groups($data, $rs_org_id) do
 
       # Sync members
       foreach $member in $task["members"] do
+        $membersIndex = $membersIndex + 1
+        task_label("Group"+to_s($groupIndex)+"/"+to_s($groupTotal)+ " Role"+to_s($rolesIndex)+"/"+to_s($rolesTotal)+ " Member"+to_s($membersIndex)+"/"+to_s($membersTotal)+ $estimatedDuration)
         sub on_error: handle_error() do
           # Skip adding user to group if they are already a member
           if $member["action"] == "skip"
-            $$debug << "Member exists, skipping adding user "+$member["user_id"]+" in org "+$task["target_org_id"]+" group "+$task["target_group_name"]
+            if $$debug_enabled
+              $$debug << "Member exists, skipping adding user "+$member["user_id"]+" in org "+$task["target_org_id"]+" group "+$task["target_group_name"]
+            end
           elsif $member["action"] == "invite_pending"
-            $$debug << "User "+$member["user_details"]["email"]+" has existing invite pending to org "+$task["target_org_id"]+" group "+$task["target_group_name"]+" with invitation ID "+$member["invitation_id"]+" and expires at "+to_s($member["invite_expires"])
+            if $$debug_enabled
+              $$debug << "User "+$member["user_details"]["email"]+" has existing invite pending to org "+$task["target_org_id"]+" group "+$task["target_group_name"]+" with invitation ID "+$member["invitation_id"]+" and expires at "+to_s($member["invite_expires"])
+            end
           elsif $member["action"] == "invite_user"
             # Attempt to directly add the user to the Child Org
             # We will handle errors gracefully if the Child Org is not configured to allow directly adding the user to the Org
@@ -988,10 +1178,14 @@ define sync_groups($data, $rs_org_id) do
               body: $invite_payload
             )
             if $child_member["code"] == 400 && $child_member["body"]["name"] == "conflict"
-              $$debug << $child_member["body"]["message"]
-            elsif $child_member["code"] == 404 && $child_member["body"]["message"] == "no IDPs found in org "+$task["target_org_id"]
+              if $$debug_enabled
+                $$debug << $child_member["body"]["message"]
+              end
+            elsif $child_member["code"] == 404 && $child_member["body"]["message"] == "no IDPs found in org "+$task["target_org_id"] && $param_invitation_flow == "User Invitations Enabled"
               # If the error code is 404, and message contains "no IDPs found in org", then the child org is not configured to allow direct user addition
-              $$debug << "No Identity Providers found in org "+$task["target_org_id"]+" to directly add user user "+$member["user_details"]["email"]+". Attempting to use invite flow"
+              if $$debug_enabled
+                $$debug << "No Identity Providers found in org "+$task["target_org_id"]+" to directly add user user "+$member["user_details"]["email"]+". Attempting to use invite flow"
+              end
               # We can attempt to invite the user to the org, which requires no IdP Configuration
               $invite_payload = {
                 "groupIds": [
@@ -1011,14 +1205,22 @@ define sync_groups($data, $rs_org_id) do
                 body: $invite_payload
               )
               if $child_member["code"] != 201
-                $$errors << "Error inviting user "+to_json($child_member)+" with payload "+to_json($invite_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/invitations"])
+                call append_error("Error inviting user. response="+to_json($child_member)+" payload="+to_json($invite_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/invitations"]))
               else
-                $$debug << "Success inviting user "+$member["user_details"]["email"]+" to org "+$task["target_org_id"]+" to group "+$child_group_id  # For debug
+                if $$debug_enabled
+                  $$debug << "Success inviting user "+$member["user_details"]["email"]+" to org "+$task["target_org_id"]+" to group "+$child_group_id  # For debug
+                end
               end
             elsif $child_member["code"] != 200
-              $$errors << "Error adding user "+to_json($child_member)+" with payload "+to_json($invite_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/users"])
+              $message = "response="+to_json($child_member)
+              if inspect($child_member["body"]["message"]) == "string"
+                $message = "message="+$child_member["body"]["message"]
+              end
+              call append_error("Error adding user. "+$message+" payload="+to_json($invite_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/users"]))
             else
-              $$debug << "Success adding user "+$member["user_details"]["email"]+" to org "+$task["target_org_id"]  # For debug
+              if $$debug_enabled
+                $$debug << "Success adding user "+$member["user_details"]["email"]+" to org "+$task["target_org_id"]  # For debug
+              end
             end
           else
             # Else matches "create"
@@ -1039,19 +1241,22 @@ define sync_groups($data, $rs_org_id) do
               body: $member_payload
             )
             if $child_member["code"] != 201
-              $$errors << "Error adding user to group "+to_json($child_member)+" on with payload "+to_json($member_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/groups/", $child_group_id, "/memberships"])
+              call append_error("Error adding user to group "+to_json($child_member)+" on with payload "+to_json($member_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/groups/", $child_group_id, "/memberships"]))
             else
-              $$debug << "Success adding user "+$member["user_id"]+" to group "+$child_group_ref # For debug
+              if $$debug_enabled
+                $$debug << "Success adding user "+$member["user_id"]+" to group "+$child_group_ref # For debug
+              end
             end
           end
         end
       end
     end
+    $duration = now() - $start
   end
 
   # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null" && size($$errors) > 0
-    raise join($$errors,"\n")
+    raise $$errors
   end
 
   # If we made it here, all actions completed successfully
@@ -1059,12 +1264,21 @@ define sync_groups($data, $rs_org_id) do
   task_label("All org groups synchronized successfully!")
 end
 
+define append_error($message) do
+  if !$$errors
+    $$errors = ""
+  end
+  # Append to errors message
+  $$errors = $$errors + "\n\n" + $message
+end
+
 # CWF function to handle errors
 define handle_error() do
   if !$$errors
-    $$errors = []
+    $$errors = ""
   end
-  $$errors << $_error["type"] + ": " + $_error["message"]
+  # Append to errors message
+  $$errors = $$errors + "\n\n" + $_error["type"] + ": " + $_error["message"]
   # We check for errors at the end, and raise them all together
   # Skip errors handled by this definition
   $_error_behavior = "skip"
