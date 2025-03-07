@@ -43,7 +43,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `org_owner`*
 
-  \* Must use a User Refresh Token credential associated with a User that has `org_owner` access in all MSP Child Orgs
+  \* Must be a **User Refresh Token** credential (not a Service Account Client ID/Secret) which has `org_owner` access in all MSP Child Orgs
 
 - Must be deployed in an Org that has the `msp` capability enabled
 
