@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.3.3",
+  version: "0.3.4",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes",
@@ -646,6 +646,7 @@ EOS
 end
 
 datasource "ds_metricdataqueries_iops_utilization" do
+  batch true
   run_script $js_metricdataqueries_iops_utilization, $ds_volumes_map, $param_stats_threshold
 end
 
@@ -685,7 +686,6 @@ script "js_metricdataqueries_iops_utilization", type: "javascript" do
     })
   })
 
-  result = []
 
   end_date = parseInt(new Date().getTime() / 1000)
   start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 30)).getTime() / 1000)
@@ -697,16 +697,18 @@ script "js_metricdataqueries_iops_utilization", type: "javascript" do
     for (i = 0; i < queries[region].length; i += chunk_size) {
       chunk = queries[region].slice(i, i + chunk_size)
 
-      result.push({
+      appendToResult({
         'MetricDataQueries': chunk,
         'region': region
       })
     }
   })
+  
 EOS
 end
 
 datasource "ds_cloudwatch_getmetricdata_iops_utilization" do
+  batch true
   iterate $ds_metricdataqueries_iops_utilization
   request do
     run_script $js_cloudwatch_getmetricdata_iops_utilization, val(iter_item, "region"), val(iter_item, "MetricDataQueries"), $param_unused_days
@@ -780,7 +782,9 @@ script "js_idle_volumes", type: "javascript" do
     read_label = volume['volume_id'] + ' VolumeReadOps '+param_stats_threshold
     write_label = volume['volume_id'] + ' VolumeWriteOps '+param_stats_threshold
 
-    volume_metrics = _.filter(ds_cloudwatch_getmetricdata_iops_utilization, function(item) {
+    volume_metrics = []
+
+    getIterator(ds_cloudwatch_getmetricdata_iops_utilization).Each(function(item, idx) {
       values_exist = true
 
       // This is to handle scenarios that we consider "zero activity"
@@ -792,7 +796,9 @@ script "js_idle_volumes", type: "javascript" do
         values_exist = false
       }
       // Return a metrics match if values_exist=true AND the label matches the read or write label
-      return values_exist && (item['label'] == read_label || item['label'] == write_label)
+      if (values_exist && (item['label'] == read_label || item['label'] == write_label)){
+        volume_metrics.push(item)
+        }
     })
 
     // volume["metrics"] = volume_metrics
@@ -850,7 +856,9 @@ script "js_underutilized_volumes", type: "javascript" do
     read_label  = [volume['volume_id'], "VolumeReadOps", param_stats_threshold].join(' ')
     write_label = [volume['volume_id'], "VolumeWriteOps", param_stats_threshold].join(' ')
 
-    volume_metrics = _.filter(ds_cloudwatch_getmetricdata_iops_utilization, function(item) {
+    volume_metrics=[]
+
+    getIterator(ds_cloudwatch_getmetricdata_iops_utilization).Each(function(item, idx) {
       values_exist = true
 
       // This is to handle scenarios where a value exists but is 0
@@ -863,8 +871,11 @@ script "js_underutilized_volumes", type: "javascript" do
         }
       }
 
-      return values_exist && (item['label'] == read_label || item['label'] == write_label)
+      if (values_exist && (item['label'] == read_label || item['label'] == write_label)){
+        volume_metrics.push(item)
+      }
     })
+
     // volume["metrics"] = volume_metrics
     volume["savings"] = 0.0
     volume["read_ops"] = 0.0
