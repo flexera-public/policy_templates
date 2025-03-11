@@ -518,6 +518,7 @@ These templates can generate savings estimates for your environment.
 - Cloud Cost Optimization
 
   - [Cloud Bill Processing Error Notification](./operational/flexera/cco/bill_processing_errors_notification)
+  - [FinOps Dashboards](./operational/flexera/cco/finops_dashboards)
 
 - FlexNet Manager
 
@@ -724,7 +725,7 @@ These templates can generate savings estimates for your environment.
 :categories:
   Compliance: 34
   Cost: 140
-  Operational: 35
+  Operational: 36
   SaaS Management: 11
   Security: 74
 :optimization_count: 72
@@ -736,7 +737,7 @@ These templates can generate savings estimates for your environment.
   Burstable Compute Instances: 1
   CIS: 61
   Cheaper Regions: 3
-  Cloud Cost Optimization: 16
+  Cloud Cost Optimization: 17
   Committed Use Discount: 2
   Common Bill Ingestion: 5
   Data Lake Optimization: 1
@@ -799,7 +800,7 @@ These templates can generate savings estimates for your environment.
   AWS: 104
   Azure: 105
   Azure China: 1
-  Flexera: 47
+  Flexera: 48
   GCE: 2
   GitHub: 7
   Google: 22
@@ -814,7 +815,7 @@ These templates can generate savings estimates for your environment.
   All: 6
   App Service: 1
   Automation: 2
-  Cloud Cost Optimization: 20
+  Cloud Cost Optimization: 21
   CloudTrail: 8
   Common Bill Ingestion: 5
   Compute: 80
@@ -850,7 +851,7 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 3
   Tags: 3
   Usage Discount: 6
-:total_count: 294
+:total_count: 295
 -->
 <!-- End Policy Template Stats -->
 
