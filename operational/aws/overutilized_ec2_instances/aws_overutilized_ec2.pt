@@ -1,10 +1,10 @@
 name "AWS Overutilized EC2 Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for EC2 instances that are overutilized for a specified number of days and upsize them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/overutilized_ec2_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Check for EC2 instances that are overutilized for a specified number of days and upsize them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/overutilized_ec2_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
-category "Cost"
+category "Operational"
 default_frequency "weekly"
 info(
   version: "0.1.0",
@@ -32,24 +32,6 @@ parameter "param_aws_account_number" do
   label "Account Number"
   description "Leave blank; this is for automated use with Meta Policies. See README for more details."
   default ""
-end
-
-parameter "param_min_savings" do
-  type "number"
-  category "Policy Settings"
-  label "Minimum Savings Threshold"
-  description "Minimum potential savings required to generate a recommendation"
-  min_value 0
-  default 0
-end
-
-parameter "param_downsize_multiple" do
-  type "string"
-  category "Policy Settings"
-  label "Skip Instance Sizes"
-  description "Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate."
-  allowed_values "Yes", "No"
-  default "No"
 end
 
 parameter "param_exclusion_tags" do
@@ -87,41 +69,21 @@ parameter "param_regions_list" do
   default []
 end
 
-parameter "param_stats_idle_threshold_cpu_value" do
+parameter "param_stats_threshold_cpu_value" do
   type "number"
   category "Statistics"
-  label "Idle Instance CPU Threshold (%)"
-  description "The CPU threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore CPU utilization"
-  min_value -1
-  max_value 100
-  default 5
-end
-
-parameter "param_stats_idle_threshold_mem_value" do
-  type "number"
-  category "Statistics"
-  label "Idle Instance Memory Threshold (%)"
-  description "The Memory threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore memory utilization"
-  min_value -1
-  max_value 100
-  default 5
-end
-
-parameter "param_stats_underutil_threshold_cpu_value" do
-  type "number"
-  category "Statistics"
-  label "Underutilized Instance CPU Threshold (%)"
-  description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization"
+  label "CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be overutilized and therefore be flagged for upsizing. Set to -1 to ignore CPU utilization"
   min_value -1
   max_value 100
   default 40
 end
 
-parameter "param_stats_underutil_threshold_mem_value" do
+parameter "param_stats_threshold_mem_value" do
   type "number"
   category "Statistics"
-  label "Underutilized Instance Memory Threshold (%)"
-  description "The Memory threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore memory utilization"
+  label "Memory Threshold (%)"
+  description "The Memory threshold at which to consider an instance to be overutilized and therefore be flagged for upsizing. Set to -1 to ignore memory utilization"
   min_value -1
   max_value 100
   default 40
@@ -130,8 +92,8 @@ end
 parameter "param_stats_check_both" do
   type "string"
   category "Statistics"
-  label "Idle/Utilized for both CPU/Memory or either"
-  description "Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1"
+  label "Both CPU and Memory or Either"
+  description "Set whether an instance should be considered overutilized only if both CPU and memory are over the thresholds or if either CPU or memory are over. Note: this parameter is only functional when neither the CPU nor the Memory threshold is set to -1."
   allowed_values "Both CPU and Memory", "Either CPU or Memory"
   default "Either CPU or Memory"
 end
@@ -140,7 +102,7 @@ parameter "param_stats_threshold" do
   type "string"
   category "Statistics"
   label "Threshold Statistic"
-  description "Statistic to use when determining if an instance is idle/underutilized"
+  description "Statistic to use when determining if an instance is overutilized"
   allowed_values "Average", "Maximum", "p99", "p95", "p90"
   default "Average"
 end
@@ -160,7 +122,7 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Downsize Instances", "Stop Instances", "Terminate Instances"]
+  allowed_values [ "Upsize Instances" ]
   default []
 end
 
@@ -556,37 +518,13 @@ EOS
 end
 
 datasource "ds_cloudwatch_queries" do
-  run_script $js_cloudwatch_queries, $ds_instances, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_lookback
+  run_script $js_cloudwatch_queries, $ds_instances, $param_stats_threshold_cpu_value, $param_stats_threshold_mem_value, $param_stats_lookback
 end
 
 script "js_cloudwatch_queries", type: "javascript" do
-  parameters "ds_instances", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_lookback"
+  parameters "ds_instances", "param_stats_threshold_cpu_value", "param_stats_threshold_mem_value", "param_stats_lookback"
   result "result"
   code <<-EOS
-  // Set CPU threshold for CloudWatch call
-  // If Underutilized threshold is ignored, then check for Idle threshold
-  var param_avg_cpu = -1
-
-  if (param_stats_underutil_threshold_cpu_value != -1) {
-    param_avg_cpu = param_stats_underutil_threshold_cpu_value
-  } else {
-    if (param_stats_idle_threshold_cpu_value != -1) {
-      param_avg_cpu = param_stats_idle_threshold_cpu_value
-    }
-  }
-
-  // Set Memory threshold for CloudWatch call
-  // If Underutilized threshold is ignored, then check for Idle threshold
-  var param_avg_mem = -1
-
-  if (param_stats_underutil_threshold_mem_value != -1) {
-    param_avg_mem = param_stats_underutil_threshold_mem_value
-  } else {
-    if (param_stats_idle_threshold_mem_value != -1) {
-      param_avg_mem = param_stats_idle_threshold_mem_value
-    }
-  }
-
   // Create the various queries we're going to send to CloudWatch for each instance
   result = {}
 
@@ -601,7 +539,7 @@ script "js_cloudwatch_queries", type: "javascript" do
     lookback = param_stats_lookback * 86400
 
     // Only query for CPU usage if we're actually checking it
-    if (param_avg_cpu != -1) {
+    if (param_stats_threshold_cpu_value != -1) {
       _.each(stats, function(stat) {
         query = {
           "Id": instance['instanceId'].replace('-', '_') + "_cpu" + stat,
@@ -624,7 +562,7 @@ script "js_cloudwatch_queries", type: "javascript" do
     }
 
     // Only query for MEM usage if we're actually checking it
-    if (param_avg_mem != -1) {
+    if (param_stats_threshold_mem_value != -1) {
       if (instance['platform'] == "Windows") {
         // If platform is Windows, we need to use the Windows custom metric
         mem_metricname = "Memory % Committed Bytes In Use"
@@ -951,18 +889,16 @@ script "js_merged_metrics", type: "javascript" do
           "hostname": instance['privateDnsName'].split('.')[0],
           "tags": tags.join(', '),
           "resourceType": instance['resourceType'],
-          "savings": null,
+          "cost": null,
           "accountID": ds_aws_account['id'],
           "accountName": ds_aws_account['name'],
-          "savingsCurrency": ds_currency['symbol'],
+          "currency": ds_currency['symbol'],
           "thresholdType": param_stats_threshold,
           "lookbackPeriod": param_stats_lookback,
           "resourceName": resourceName,
           // These are to avoid errors when we hash_exclude these fields
-          "underutil_message": "",
-          "idle_message": "",
-          "underutil_total_savings": "",
-          "idle_total_savings": "",
+          "overutil_message": "",
+          "overutil_total_cost": "",
           "policy_name": ""
         }
 
@@ -996,12 +932,12 @@ script "js_merged_metrics", type: "javascript" do
 EOS
 end
 
-datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_downsize_multiple
+datasource "ds_overutil_instances" do
+  run_script $js_overutil_instances, $ds_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_currency, $ds_applied_policy, $param_stats_threshold_cpu_value, $param_stats_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_stats_lookback
 end
 
-script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_instances", "ds_merged_metrics", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_downsize_multiple"
+script "js_overutil_instances", type:"javascript" do
+  parameters "ds_instances", "ds_merged_metrics", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_currency", "ds_applied_policy", "param_stats_threshold_cpu_value", "param_stats_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_stats_lookback"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -1033,14 +969,11 @@ script "js_idle_and_underutil_instances", type:"javascript" do
   threshold_statistic = param_stats_threshold.toLowerCase()
 
   // Determine whether we're checking for CPU, memory, or both
-  checking_cpu = param_stats_underutil_threshold_cpu_value != -1 || param_stats_idle_threshold_cpu_value != -1
-  checking_mem = param_stats_underutil_threshold_mem_value != -1 || param_stats_idle_threshold_mem_value != -1
+  checking_cpu = param_stats_threshold_cpu_value != -1
+  checking_mem = param_stats_threshold_mem_value != -1
 
-  underutil_total_savings = 0.0
-  idle_total_savings = 0.0
-
-  underutil_list = []
-  idle_list = []
+  overutil_total_cost = 0.0
+  result = []
 
   // Only bother doing anything if we're checking at least one metric
   if (checking_cpu || checking_mem) {
@@ -1049,116 +982,49 @@ script "js_idle_and_underutil_instances", type:"javascript" do
       id = instance['id'].toLowerCase()
 
       // Assume cost is 0 unless we have cost data for the instance
-      total_cost = 0.0
-      if (ds_instance_costs_grouped[id] != undefined) { total_cost = ds_instance_costs_grouped[id] }
+      instance['cost'] = 0.0
+      if (ds_instance_costs_grouped[id] != undefined) { instance['cost'] = ds_instance_costs_grouped[id] }
 
       // Store relevant CPU and memory stats into these variables for later use
       cpu_value = instance['cpu_' + threshold_statistic]
       mem_value = instance['mem_' + threshold_statistic]
 
-      // Test for whether to consider the instance idle or underutilized.
-      // Assume instance is not idle or underutilized by default.
-      is_idle = false
-      is_underutil = false
+      // Test for whether to consider the instance overutilized.
+      // Assume instance is not overutilized by default.
+      is_overutil = false
 
-      // Determine if the instance is idle or underutilized for each category.
+      // Determine if the instance is overutilized for each category.
       // Store boolean result for later use.
-      is_idle_cpu = cpu_value < param_stats_idle_threshold_cpu_value
-      is_underutil_cpu = cpu_value < param_stats_underutil_threshold_cpu_value
-      is_idle_mem = mem_value < param_stats_idle_threshold_mem_value
-      is_underutil_mem = mem_value < param_stats_underutil_threshold_mem_value
+      is_overutil_cpu = cpu_value > param_stats_threshold_cpu_value
+      is_overutil_mem = mem_value > param_stats_threshold_mem_value
 
-      // If we're only checking CPU, simply set is_idle/is_underutil to their CPU equivalents
-      if (!checking_mem) { is_idle = is_idle_cpu }
-      if (!checking_mem) { is_underutil = is_underutil_cpu }
+      // If we're only checking CPU, simply set is_overutil to their CPU equivalents
+      if (!checking_mem) { is_overutil = is_overutil_cpu }
 
-      // If we're only checking memory, simply set is_idle/is_underutil to their memory equivalents
-      if (!checking_cpu) { is_idle = is_idle_mem }
-      if (!checking_cpu) { is_underutil = is_underutil_mem }
+      // If we're only checking memory, simply set is_overutil to their memory equivalents
+      if (!checking_cpu) { is_overutil = is_overutil_mem }
 
       // If we're checking both, do an 'and' or an 'or' depending on the value of param_stats_check_both
       if (checking_cpu && checking_mem) {
         if (param_stats_check_both == "Both CPU and Memory") {
-          is_idle = is_idle_cpu && is_idle_mem
-          is_underutil = is_underutil_cpu && is_underutil_mem
+          is_overutil = is_overutil_cpu && is_overutil_mem
         } else {
-          is_idle = is_idle_cpu || is_idle_mem
-          is_underutil = is_underutil_cpu || is_underutil_mem
+          is_overutil = is_overutil_cpu || is_overutil_mem
         }
       }
 
       instance["newResourceType"] = null
 
-      // Set appropriate values based on whether instance is idle or underutilized
+      // Set appropriate values based on whether instance is overutilized
       // and then add it to the appropriate list
-      if (is_idle) {
-        instance["savings"] = parseFloat(parseFloat(total_cost).toFixed(3))
-        instance["recommendationType"] = "Terminate"
-        instance["threshold"] = param_stats_idle_threshold_cpu_value
-        instance["memoryThreshold"] = param_stats_idle_threshold_mem_value
-
-        recommendationDetails = [
-          "Terminate EC2 instance ", instance["resourceID"], " ",
-          "in AWS Account ", instance["accountName"], " ",
-          "(", instance["accountID"], ")"
-        ]
-
-        instance["recommendationDetails"] = recommendationDetails.join('')
-        instance["newResourceType"] = "Terminate EC2 Instance"
-
-        if (instance['savings'] >= param_min_savings) {
-          idle_total_savings += total_cost
-          idle_list.push(instance)
-        }
-      } else if (is_underutil) {
-        savingsMultiplier = 1
-
-        instance["recommendationType"] = "Downsize"
-        instance["threshold"] = param_stats_underutil_threshold_cpu_value
-        instance["memoryThreshold"] = param_stats_underutil_threshold_mem_value
+      if (is_overutil) {
+        instance["recommendationType"] = "Upsize"
+        instance["threshold"] = param_stats_threshold_cpu_value
+        instance["memoryThreshold"] = param_stats_threshold_mem_value
 
         if (ds_aws_instance_size_map[instance['resourceType']]) {
           instance["newResourceType"] = ds_aws_instance_size_map[instance['resourceType']]['down']
         }
-
-        if (param_downsize_multiple == "Yes") {
-          if (checking_cpu && checking_mem && param_stats_check_both == "Both CPU and Memory") {
-            while (ds_aws_instance_size_map[instance['newResourceType']]['down'] && cpu_value * 2 < param_stats_underutil_threshold_cpu_value && mem_value * 2 < param_stats_underutil_threshold_mem_value) {
-              cpu_value = cpu_value * 2
-              mem_value = mem_value * 2
-              instance["newResourceType"] = ds_aws_instance_size_map[instance['newResourceType']]['down']
-              savingsMultiplier += 1
-            }
-          }
-
-          if (checking_cpu && checking_mem && param_stats_check_both == "Either CPU or Memory") {
-            while (ds_aws_instance_size_map[instance['newResourceType']]['down'] && (cpu_value * 2 < param_stats_underutil_threshold_cpu_value || mem_value * 2 < param_stats_underutil_threshold_mem_value)) {
-              cpu_value = cpu_value * 2
-              mem_value = mem_value * 2
-              instance["newResourceType"] = ds_aws_instance_size_map[instance['newResourceType']]['down']
-              savingsMultiplier += 1
-            }
-          }
-
-          if (checking_cpu && !checking_mem) {
-            while (ds_aws_instance_size_map[instance['newResourceType']]['down'] && cpu_value * 2 < param_stats_underutil_threshold_cpu_value) {
-              cpu_value = cpu_value * 2
-              instance["newResourceType"] = ds_aws_instance_size_map[instance['newResourceType']]['down']
-              savingsMultiplier += 1
-            }
-          }
-
-          if (!checking_cpu && checking_mem) {
-            while (ds_aws_instance_size_map[instance['newResourceType']]['down'] && mem_value * 2 < param_stats_underutil_threshold_mem_value) {
-              mem_value = mem_value * 2
-              instance["newResourceType"] = ds_aws_instance_size_map[instance['newResourceType']]['down']
-              savingsMultiplier += 1
-            }
-          }
-        }
-
-        savings = total_cost - (total_cost / (2 * savingsMultiplier))
-        instance["savings"] = Math.round(savings * 1000) / 1000
 
         recommendationDetails = [
           "Change instance type of EC2 instance ", instance["resourceID"], " ",
@@ -1169,12 +1035,12 @@ script "js_idle_and_underutil_instances", type:"javascript" do
         ]
 
         instance["recommendationDetails"] = recommendationDetails.join('')
+        instance["overutil_message"] = ""
+        instance["overutil_total_cost"] = ""
 
         if (instance["newResourceType"] != null && instance["newResourceType"] != undefined) {
-          if (instance['savings'] >= param_min_savings) {
-            underutil_total_savings += savings
-            underutil_list.push(instance)
-          }
+          overutil_total_cost += instance["cost"]
+          result.push(instance)
         }
       }
     })
@@ -1183,24 +1049,15 @@ script "js_idle_and_underutil_instances", type:"javascript" do
   // Build out the detail_template for the incidents
   if (checking_cpu || checking_mem) {
     instances_total = ds_instances.length.toString()
-    underutil_instances_total = underutil_list.length.toString()
-    underutil_instances_percentage = (underutil_instances_total / instances_total * 100).toFixed(2).toString() + '%'
-    idle_instances_total = idle_list.length.toString()
-    idle_instances_percentage = (idle_instances_total / instances_total * 100).toFixed(2).toString() + '%'
+    overutil_instances_total = overutil_list.length.toString()
+    overutil_instances_percentage = (overutil_instances_total / instances_total * 100).toFixed(2).toString() + '%'
 
-    underutil_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(underutil_total_savings).toFixed(2), ds_currency['separator'])
-    idle_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), ds_currency['separator'])
+    overutil_total_cost = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(overutil_total_cost).toFixed(2), ds_currency['separator'])
 
-    underutil_findings = [
+    overutil_findings = [
       "Out of ", instances_total, " EC2 instances analyzed, ",
-      underutil_instances_total, " (", underutil_instances_percentage,
-      ") are underutilized and recommended for downsizing. "
-    ].join('')
-
-    idle_findings = [
-      "Out of ", instances_total, " EC2 instances analyzed, ",
-      idle_instances_total, " (", idle_instances_percentage,
-      ") are idle and recommended for termination. "
+      overutil_instances_total, " (", overutil_instances_percentage,
+      ") are overutilized and recommended for upsizing. "
     ].join('')
 
     if (checking_cpu && checking_mem) {
@@ -1210,24 +1067,12 @@ script "js_idle_and_underutil_instances", type:"javascript" do
         message_boolean = "and"
       }
 
-      underutil_analysis_message = [
-        "An EC2 instance is considered underutilized if its CPU usage (",
-        param_stats_threshold.toLowerCase(), ") is below ",
-        param_stats_underutil_threshold_cpu_value, "% ", message_boolean,
+      overutil_analysis_message = [
+        "An EC2 instance is considered overutilized if its CPU usage (",
+        param_stats_threshold.toLowerCase(), ") is above ",
+        param_stats_threshold_cpu_value, "% ", message_boolean,
         " its memory usage (", param_stats_threshold.toLowerCase(),
-        ") is below ", param_stats_underutil_threshold_mem_value,
-        "% but its CPU usage is still above or equal to ",
-        param_stats_idle_threshold_cpu_value, "% ", message_boolean,
-        " its memory usage is still above or equal to ",
-        param_stats_idle_threshold_mem_value, "%. "
-      ].join('')
-
-      idle_analysis_message = [
-        "An EC2 instance is considered idle if its CPU usage (",
-        param_stats_threshold.toLowerCase(), ") is below ",
-        param_stats_idle_threshold_cpu_value, "% ", message_boolean,
-        " its memory usage (", param_stats_threshold.toLowerCase(),
-        ") is below ", param_stats_idle_threshold_mem_value, "%. "
+        ") is above ", param_stats_threshold_mem_value, "%. "
       ].join('')
 
       lookback_message = [
@@ -1237,18 +1082,10 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     }
 
     if (checking_cpu && !checking_mem) {
-      underutil_analysis_message = [
-        "An EC2 instance is considered underutilized if its CPU usage (",
-        param_stats_threshold.toLowerCase(), ") is below ",
-        param_stats_underutil_threshold_cpu_value,
-        "% but its CPU usage is still above or equal to ",
-        param_stats_idle_threshold_cpu_value, "%. "
-      ].join('')
-
-      idle_analysis_message = [
-        "An EC2 instance is considered idle if its CPU usage (",
-        param_stats_threshold.toLowerCase(), ") is below ",
-        param_stats_idle_threshold_cpu_value, "%. "
+      overutil_analysis_message = [
+        "An EC2 instance is considered overutilized if its CPU usage (",
+        param_stats_threshold.toLowerCase(), ") is above ",
+        param_stats_threshold_cpu_value, "%. "
       ].join('')
 
       lookback_message = [
@@ -1258,18 +1095,10 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     }
 
     if (!checking_cpu && checking_mem) {
-      underutil_analysis_message = [
-        "An EC2 instance is considered underutilized if its memory usage (",
-        param_stats_threshold.toLowerCase(), ") is below ",
-        param_stats_underutil_threshold_mem_value,
-        "% but its memory usage is still above or equal to ",
-        param_stats_idle_threshold_mem_value, "%. "
-      ].join('')
-
-      idle_analysis_message = [
-        "An EC2 instance is considered idle if its memory usage (",
-        param_stats_threshold.toLowerCase(), ") is below ",
-        param_stats_idle_threshold_mem_value, "%. "
+      overutil_analysis_message = [
+        "An EC2 instance is considered overutilized if its memory usage (",
+        param_stats_threshold.toLowerCase(), ") is above ",
+        param_stats_threshold_mem_value, "%. "
       ].join('')
 
       lookback_message = [
@@ -1280,27 +1109,22 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
     disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
 
-    underutil_message = underutil_findings + underutil_analysis_message + lookback_message + disclaimer
-    idle_message = idle_findings + idle_analysis_message + lookback_message + disclaimer
+    overutil_message = overutil_findings + overutil_analysis_message + lookback_message + disclaimer
   } else {
-    underutil_message = "No results were found because all CPU and memory parameters were set to -1 when this policy was applied. Please terminate and reapply this policy with one of these settings enabled."
-    idle_message = underutil_message
+    overutil_message = "No results were found because all CPU and memory parameters were set to -1 when this policy was applied. Please terminate and reapply this policy with one of these settings enabled."
   }
 
-  // Sort by descending order of savings value
-  idle_list = _.sortBy(idle_list, function(item) { return item['savings'] * -1 })
-  underutil_list = _.sortBy(underutil_list, function(item) { return item['savings'] * -1 })
+  // Sort by descending order of cost value
+  result = _.sortBy(result, "cost")
 
   // Add a dummy entry to ensure that the policy's check statement executes at least once
-  dummy_entry = {
+  result.push({
     "recommendationType": "",
-    "underutil_message": "",
-    "idle_message": "",
-    "underutil_total_savings": "",
-    "idle_total_savings": "",
+    "overutil_message": "",
+    "overutil_total_cost": "",
     "tags": "",
-    "savings": "",
-    "savingsCurrency": "",
+    "cost": "",
+    "currency": "",
     "cpu_maximum": "",
     "cpu_minimum": "",
     "cpu_average": "",
@@ -1313,40 +1137,12 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     "mem_p99": "",
     "mem_p95": "",
     "mem_p90": ""
-  }
+  })
 
-  idle_list.push(dummy_entry)
-  underutil_list.push(dummy_entry)
-
-  // Add these to both lists to ensure the first item that fails validation for each
-  // contains the necessary data for the summary and detail templates
-  idle_list[0]['idle_message'] = idle_message
-  idle_list[0]['idle_total_savings'] = idle_total_savings
-  idle_list[0]['policy_name'] = ds_applied_policy['name']
-
-  underutil_list[0]['underutil_message'] = underutil_message
-  underutil_list[0]['underutil_total_savings'] = underutil_total_savings
-  underutil_list[0]['policy_name'] = ds_applied_policy['name']
-
-  result =  {
-    idle_list: idle_list,
-    underutil_list: underutil_list
-  }
+  result[0]['overutil_message'] = overutil_message
+  result[0]['overutil_total_cost'] = overutil_total_cost
+  result[0]['policy_name'] = ds_applied_policy['name']
 EOS
-end
-
-datasource "ds_underutil_instances" do
-  run_script $js_split_incidents, $ds_idle_and_underutil_instances, "underutil_list"
-end
-
-datasource "ds_idle_instances" do
-  run_script $js_split_incidents, $ds_idle_and_underutil_instances, "idle_list"
-end
-
-script "js_split_incidents", type:"javascript" do
-  parameters "ds_idle_and_underutil_instances", "incident"
-  result "result"
-  code "result = ds_idle_and_underutil_instances[incident]"
 end
 
 ###############################################################################
@@ -1354,17 +1150,17 @@ end
 ###############################################################################
 
 policy "pol_utilization" do
-  validate_each $ds_underutil_instances do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Underutilized EC2 Instances Found"
+  validate_each $ds_overutil_instances do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Overutilized EC2 Instances Found"
     detail_template <<-'EOS'
-    **Potential Monthly Savings:** {{ with index data 0 }}{{ .underutil_total_savings }}{{ end }}
+    **Potential Monthly Cost:** {{ with index data 0 }}{{ .overutil_total_cost }}{{ end }}
 
-    {{ with index data 0 }}{{ .underutil_message }}{{ end }}
+    {{ with index data 0 }}{{ .overutil_message }}{{ end }}
     EOS
     check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Downsize"))
     escalate $esc_email
-    escalate $esc_downsize_instances
-    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "mem_maximum", "mem_minimum", "mem_average", "mem_p99", "mem_p95", "mem_p90"
+    escalate $esc_upsize_instances
+    hash_exclude "overutil_message", "overutil_total_cost", "tags", "cost", "currency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "mem_maximum", "mem_minimum", "mem_average", "mem_p99", "mem_p95", "mem_p90"
     export do
       resource_level true
       field "accountID" do
@@ -1400,139 +1196,11 @@ policy "pol_utilization" do
       field "hostname" do
         label "Hostname"
       end
-      field "savings" do
-        label "Estimated Monthly Savings"
+      field "cost" do
+        label "Estimated Monthly Cost"
       end
-      field "savingsCurrency" do
-        label "Savings Currency"
-      end
-      field "launchTime" do
-        label "Launch Time"
-      end
-      field "cpuMaximum" do
-        label "CPU Maximum %"
-        path "cpu_maximum"
-      end
-      field "cpuMinimum" do
-        label "CPU Minimum %"
-        path "cpu_minimum"
-      end
-      field "cpuAverage" do
-        label "CPU Average %"
-        path "cpu_average"
-      end
-      field "cpuP99" do
-        label "CPU p99"
-        path "cpu_p99"
-      end
-      field "cpuP95" do
-        label "CPU p95"
-        path "cpu_p95"
-      end
-      field "cpuP90" do
-        label "CPU p90"
-        path "cpu_p90"
-      end
-      field "memMaximum" do
-        label "Memory Maximum %"
-        path "mem_maximum"
-      end
-      field "memMinimum" do
-        label "Memory Minimum %"
-        path "mem_minimum"
-      end
-      field "memAverage" do
-        label "Memory Average %"
-        path "mem_average"
-      end
-      field "memP99" do
-        label "Memory p99"
-        path "mem_p99"
-      end
-      field "memP95" do
-        label "Memory p95"
-        path "mem_p95"
-      end
-      field "memP90" do
-        label "Memory p90"
-        path "mem_p90"
-      end
-      field "thresholdType" do
-        label "Threshold Statistic"
-      end
-      field "threshold" do
-        label "CPU Threshold"
-      end
-      field "memoryThreshold" do
-        label "Memory Threshold"
-      end
-      field "lookbackPeriod" do
-        label "Look Back Period (Days)"
-      end
-      field "service" do
-        label "Service"
-      end
-      field "resourceARN" do
-        label "Resource ARN"
-      end
-      field "id" do
-        label "ID"
-        path "resourceID"
-      end
-    end
-  end
-  validate_each $ds_idle_instances do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Idle EC2 Instances Found"
-    detail_template <<-'EOS'
-    **Potential Monthly Savings:** {{ with index data 0 }}{{ .idle_total_savings }}{{ end }}
-
-    {{ with index data 0 }}{{ .idle_message }}{{ end }}
-    EOS
-    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Terminate"))
-    escalate $esc_email
-    escalate $esc_stop_instances
-    escalate $esc_terminate_instances
-    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "mem_maximum", "mem_minimum", "mem_average", "mem_p99", "mem_p95", "mem_p90"
-    export do
-      resource_level true
-      field "accountID" do
-        label "Account ID"
-      end
-      field "accountName" do
-        label "Account Name"
-      end
-      field "resourceID" do
-        label "Resource ID"
-      end
-      field "resourceName" do
-        label "Resource Name"
-      end
-      field "tags" do
-        label "Resource Tags"
-      end
-      field "recommendationDetails" do
-        label "Recommendation"
-      end
-      field "resourceType" do
-        label "Instance Size"
-      end
-      field "newResourceType" do
-        label "Recommended Instance Size"
-      end
-      field "region" do
-        label "Region"
-      end
-      field "platform" do
-        label "Platform"
-      end
-      field "hostname" do
-        label "Hostname"
-      end
-      field "savings" do
-        label "Estimated Monthly Savings"
-      end
-      field "savingsCurrency" do
-        label "Savings Currency"
+      field "currency" do
+        label "Currency"
       end
       field "launchTime" do
         label "Launch Time"
@@ -1622,53 +1290,19 @@ escalation "esc_email" do
   email $param_email
 end
 
-escalation "esc_downsize_instances" do
-  automatic contains($param_automatic_action, "Downsize Instances")
-  label "Downsize Instances"
+escalation "esc_upsize_instances" do
+  automatic contains($param_automatic_action, "Upsize Instances")
+  label "Upsize Instances"
   description "Approval to downsize all selected instances"
-  run "downsize_instances", data
-end
-
-escalation "esc_stop_instances" do
-  automatic contains($param_automatic_action, "Stop Instances")
-  label "Stop Instances"
-  description "Approval to stop all selected instances"
-  run "stop_instances", data
-end
-
-escalation "esc_terminate_instances" do
-  automatic contains($param_automatic_action, "Terminate Instances")
-  label "Terminate Instances"
-  description "Approval to terminate all selected instances"
-  run "terminate_instances", data
+  run "upsize_instances", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-# Core CWF function to stop instances
-define stop_instances($data) do
-  foreach $instance in $data do
-    sub on_error: handle_error() do
-      call get_instance_state($instance) retrieve $initial_state
-
-      if $initial_state != "terminated" && $initial_state != "pending"
-        if $initial_state != "stopped"
-          call stop_instance($instance)
-        end
-      end
-    end
-  end
-
-  # If we encountered any errors, use `raise` to mark the CWF process as errored
-  if inspect($$errors) != "null"
-    raise join($$errors, "\n")
-  end
-end
-
 # Core CWF function to downsize instances
-define downsize_instances($data) do
+define upsize_instances($data) do
   foreach $instance in $data do
     sub on_error: handle_error() do
       if $instance["newResourceType"] != "Terminate EC2 Instance"
@@ -1687,24 +1321,6 @@ define downsize_instances($data) do
             call start_instance($instance)
           end
         end
-      end
-    end
-  end
-
-  # If we encountered any errors, use `raise` to mark the CWF process as errored
-  if inspect($$errors) != "null"
-    raise join($$errors, "\n")
-  end
-end
-
-# Core CWF function to terminate instances
-define terminate_instances($data) do
-  foreach $instance in $data do
-    sub on_error: handle_error() do
-      call get_instance_state($instance) retrieve $initial_state
-
-      if $initial_state != "terminated" && $initial_state != "pending"
-        call terminate_instance($instance)
       end
     end
   end
@@ -1805,38 +1421,6 @@ define resize_instance($instance) return $response do
     while $instance_state != "stopped" do
       call get_instance_state($instance) retrieve $instance_state
       task_label("Waiting for \"stopped\".. Instance State: " + $instance["id"] +" "+ $instance_state)
-      sleep(10)
-    end
-    task_label("Completed Modify Instance: " + $instance["id"])
-  end
-end
-
-# CWF function to terminate an instance
-define terminate_instance($instance) return $response do
-  task_label("Terminating Instance: " + $instance["id"])
-  $response = http_request(
-    auth: $$auth_aws,
-    https: true,
-    verb: "post",
-    href: "/",
-    host: "ec2." + $instance["region"] + ".amazonaws.com",
-    query_strings: {
-      "Action": "TerminateInstances",
-      "Version": "2016-11-15",
-      "InstanceId.1": $instance["id"]
-    }
-  )
-  call handle_response($response)
-
-  task_label("Checking for expected response code for Terminate Instance: " + $instance["id"])
-  if $response["code"] != 202 && $response["code"] != 200
-    raise 'Unexpected response Terminate Instance: '+to_json($response)
-  else
-    task_label("Successful Terminate Instance: " + $instance["id"])
-    call get_instance_state($instance) retrieve $instance_state
-    while $instance_state != "terminated" do
-      call get_instance_state($instance) retrieve $instance_state
-      task_label("Waiting for Terminate Instance: " + $instance["id"] +" "+ $instance_state)
       sleep(10)
     end
     task_label("Completed Modify Instance: " + $instance["id"])
