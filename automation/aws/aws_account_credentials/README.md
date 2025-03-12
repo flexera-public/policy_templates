@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template tests whether the selected AWS credential is able to successfully make a GetCallerIdentity request to AWS STS. If this request succeeds, an incident is raised reporting the success, and optionally, this incident can be emailed. If this request fails, the policy template will fail to complete and will show an error in Flexera One.
+This policy template tests whether the selected AWS credential is able to successfully make an "sts:GetCallerIdentity" REST API request to AWS STS. If this request succeeds, an incident is raised reporting the success, and optionally, this incident can be emailed. If this request fails, the policy template will fail to complete and will show an error in Flexera One.
 
 __NOTE: This policy template is intended to be used in conjunction with its associated meta parent policy template to provide a complete report of all AWS accounts and the status of their associated cross-account roles. Please see the [Meta README](https://github.com/flexera-public/policy_templates/tree/master/automation/aws/aws_account_credentials/META_README.md) for more information.__
 
