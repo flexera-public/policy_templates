@@ -4,7 +4,7 @@
 
 This policy template provides a flexible way to reallocate costs from one scope (Origin) to another scope (Destination) using various reallocation strategies.
 
-## How it Works
+## How It Works
 
 The policy template uses Flexera's "Common Bill Ingest" (CBI) capability to negate the original costs with negative cost line items and write the reallocated portions as new line items.
 

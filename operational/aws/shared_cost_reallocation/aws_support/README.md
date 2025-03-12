@@ -47,11 +47,11 @@ The reallocated costs would be:
 - *Bill Connect ID* - Bill Connect ID to use for reallocating costs. Usually does not need to be changed, will be created if not exists.
 - *Billing Period* - Billing Period this applied policy will update. Allowed values: *"Previous Month"*, *"Current Month"*, *"Specific Month"*. If *"Specific Month"* is selected, use the *"Billing Period - Specific Month"* parameter to specify the month in \"YYYY-MM\" format.
 - *Billing Period - Specific Month* - If *"Specific Month"* is selected for Billing Period, use this parameter to specify the month in `YYYY-MM` format. Example: 2024-01.  This is intended to be used for backfilling/reprocessing reallocation for previous months.
-- *Reallocated Cost Granularity* - Reallocated Cost Granularity configures the granularity for the new line items. Typically "Day" is preferred.  For some extremely large environments, you may need to change this to 'Month' to prevent Policy Engine timeouts.
+- *Reallocated Cost Granularity* - Reallocated Cost Granularity configures the granularity for the new line items. Typically "Day" is preferred.  For some extremely large environments, you may need to change this to "Month" to prevent Policy Engine timeouts.
 
 ## Policy Actions
 
-- Creates Common Bill Ingest Bill Connect if not exists.
+- Creates Common Bill Ingest Bill Connect if it does not exists.
 - Uploads reallocated cost line items to the Common Bill Ingest Bill Connect.
 
 ## Prerequisites
