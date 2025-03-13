@@ -3,8 +3,9 @@
 ## v6.0.0
 
 - Corrected issue where policy template incorrectly calculated length of time an instance had been stopped for.
-- Added potential savings information to policy output, including disk savings.
-- Changed policy category from "Compliance" to "Cost"
+- Added potential savings information to policy output, including optional disk savings.
+- Policy recommendations will now appear in the Optimization dashboard in Flexera One.
+- Changed policy category from "Compliance" to "Cost".
 
 ## v5.0.2
 
