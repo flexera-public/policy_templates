@@ -1,16 +1,17 @@
 name "Azure Long Stopped Compute Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for virtual machines that have been stopped for a long time with the option to delete them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_long_stopped_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Check for virtual machines that have been stopped for a long time and delete them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/azure_long_stopped_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.0.2",
+  version: "6.0.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Long Stopped Instances",
+  recommendation_type: "Usage Reduction",
   hide_skip_approvals: "true"
 )
 
@@ -91,9 +92,18 @@ parameter "param_stopped_days" do
   category "Policy Settings"
   label "Stopped Days"
   description "The number of days an instance needs to be stopped to include it in the incident report."
+  default 90
   min_value 1
   max_value 90
-  default 7
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
 end
 
 parameter "param_automatic_action" do
@@ -101,7 +111,7 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Delete Instances"]
+  allowed_values [ "Delete Instances" ]
   default []
 end
 
@@ -109,18 +119,18 @@ end
 # Authentication
 ###############################################################################
 
-credentials "auth_azure" do
-  schemes "oauth2"
-  label "Azure"
-  description "Select the Azure Resource Manager Credential from the list."
-  tags "provider=azure_rm"
-end
-
 credentials "auth_flexera" do
   schemes "oauth2"
   label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
+end
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
 end
 
 ###############################################################################
@@ -147,7 +157,100 @@ datasource "ds_applied_policy" do
     host rs_governance_host
     path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
     header "Api-Version", "1.0"
+    ignore_status [400, 403, 404]
   end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
 end
 
 datasource "ds_azure_subscriptions" do
@@ -214,13 +317,16 @@ datasource "ds_azure_instances" do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "resourceID", jmes_path(col_item, "id")
-      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
       field "resourceKind", jmes_path(col_item, "type")
       field "name", jmes_path(col_item, "name")
       field "region", jmes_path(col_item, "location")
+      field "imagePublisher", jmes_path(col_item, "properties.storageProfile.imageReference.publisher")
+      field "imageOffer", jmes_path(col_item, "properties.storageProfile.imageReference.offer")
+      field "imageSKU", jmes_path(col_item, "properties.storageProfile.imageReference.sku")
       field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
       field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "tags", jmes_path(col_item, "tags")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
       field "subscriptionId", val(iter_item, "id")
       field "subscriptionName", val(iter_item, "name")
     end
@@ -315,11 +421,7 @@ script "js_azure_instances_region_filtered", type: "javascript" do
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_instances_tag_filtered, function(vm) {
       include_vm = _.contains(param_regions_list, vm['region'])
-
-      if (param_regions_allow_or_deny == "Deny") {
-        include_vm = !include_vm
-      }
-
+      if (param_regions_allow_or_deny == "Deny") { include_vm = !include_vm }
       return include_vm
     })
   } else {
@@ -343,76 +445,457 @@ datasource "ds_azure_instances_with_data" do
   result do
     encoding "json"
     field "statuses", jmes_path(response, "statuses")
+    field "disks", jmes_path(response, "disks[*].name")
+    field "disk", jmes_path(response, "disks[0].name")
     field "resourceID", val(iter_item, "resourceID")
-    field "resourceGroup", val(iter_item, "resourceGroup")
     field "resourceKind", val(iter_item, "resourceKind")
     field "name", val(iter_item, "name")
     field "region", val(iter_item, "region")
+    field "imagePublisher", val(iter_item, "imagePublisher")
+    field "imageOffer", val(iter_item, "imageOffer")
+    field "imageSKU", val(iter_item, "imageSKU")
     field "osType", val(iter_item, "osType")
     field "resourceType", val(iter_item, "resourceType")
     field "tags", val(iter_item, "tags")
+    field "resourceGroup", val(iter_item, "resourceGroup")
     field "subscriptionId", val(iter_item, "subscriptionId")
     field "subscriptionName", val(iter_item, "subscriptionName")
   end
 end
 
-datasource "ds_long_stopped_instances" do
-  run_script $js_long_stopped_instances, $ds_azure_instances_with_data, $ds_applied_policy, $param_stopped_days
+datasource "ds_azure_instances_stopped" do
+  run_script $js_azure_instances_stopped, $ds_azure_instances_with_data
 end
 
-script "js_long_stopped_instances", type: "javascript" do
-  parameters "ds_azure_instances_with_data", "ds_applied_policy", "param_stopped_days"
+script "js_azure_instances_stopped", type: "javascript" do
+  parameters "ds_azure_instances_with_data"
   result "result"
+  code <<-EOS
+  result = _.reject(ds_azure_instances_with_data, function(instance) {
+    return _.contains(_.pluck(instance['statuses'], 'code'), "PowerState/running")
+  })
+EOS
+end
+
+datasource "ds_azure_instances_with_logs" do
+  iterate $ds_azure_instances_stopped
+  request do
+    run_script $js_azure_instances_with_logs, iter_item, $param_azure_endpoint
+  end
+  result do
+    encoding "json"
+    field "logs", jmes_path(response, "value")
+    field "resourceID", val(iter_item, "resourceID")
+    field "resourceKind", val(iter_item, "resourceKind")
+    field "name", val(iter_item, "name")
+    field "region", val(iter_item, "region")
+    field "imagePublisher", val(iter_item, "imagePublisher")
+    field "imageOffer", val(iter_item, "imageOffer")
+    field "imageSKU", val(iter_item, "imageSKU")
+    field "osType", val(iter_item, "osType")
+    field "resourceType", val(iter_item, "resourceType")
+    field "tags", val(iter_item, "tags")
+    field "statuses", val(iter_item, "statuses")
+    field "disks", val(iter_item, "disks")
+    field "disk", val(iter_item, "disk")
+    field "resourceGroup", val(iter_item, "resourceGroup")
+    field "subscriptionId", val(iter_item, "subscriptionId")
+    field "subscriptionName", val(iter_item, "subscriptionName")
+  end
+end
+
+script "js_azure_instances_with_logs", type: "javascript" do
+  parameters "instance", "param_azure_endpoint"
+  result "request"
   code <<-'EOS'
-  result = []
+  end_date = new Date()
+  end_date.setMilliseconds(999)
+  end_date.setSeconds(59)
+  end_date.setMinutes(59)
+  end_date.setHours(23)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 90)
+  start_date.setMilliseconds(0)
+  start_date.setSeconds(0)
+  start_date.setMinutes(0)
+
+  filter = [
+    "resourceId eq '", instance["resourceID"], "' and ",
+    "eventTimestamp ge '", start_date.toISOString(), "' and ",
+    "eventTimestamp le '", end_date.toISOString(), "'"
+  ].join('')
+
+  var request = {
+    auth: "auth_azure",
+    pagination: "pagination_azure",
+    host: param_azure_endpoint,
+    path: [ "/subscriptions/", instance['subscriptionId'], "/providers/Microsoft.Insights/eventtypes/management/values" ].join(''),
+    query_params: {
+      "api-version": "2015-04-01",
+      "$filter": filter,
+      "$top": 500
+    },
+    headers: {
+      "User-Agent": "RS Policies"
+    }
+  }
+EOS
+end
+
+datasource "ds_azure_instances_with_stop_times" do
+  run_script $js_azure_instances_with_stop_times, $ds_azure_instances_with_logs
+end
+
+script "js_azure_instances_with_stop_times", type: "javascript" do
+  parameters "ds_azure_instances_with_logs"
+  result "result"
+  code <<-EOS
   today = new Date()
 
-  _.each(ds_azure_instances_with_data, function(instance) {
-    codes = _.pluck(instance['statuses'], 'code')
+  result = _.map(ds_azure_instances_with_logs, function(instance) {
+    new_instance = {}
 
-    if (_.contains(codes, "PowerState/deallocated")) {
-      provision_state = _.where(instance.statuses, {"code": "ProvisioningState/succeeded"})
-      provision_time = new Date(provision_state[0]["time"])
-      time_stopped = Math.round((today - provision_time) / 1000 / 60 / 60 / 24)
+    _.each(_.keys(instance), function(key) {
+      if (key != "logs") { new_instance[key] = instance[key] }
+    })
 
-      if (time_stopped >= param_stopped_days) {
-        recommendationDetails = [
-          "Delete Azure virtual machine ", instance["resourceName"], " ",
-          "in Azure Subscription ", instance["subscriptionName"], " ",
-          "(", instance["subscriptionId"], ")"
-        ].join('')
+    logs = _.filter(instance['logs'], function(entry) {
+      return entry['operationName'] && entry['operationName']['value'].toLowerCase().indexOf("/deallocate/") != -1
+    })
 
-        instance_tags = []
+    new_instance['stopTime'] = "> 90 Days Ago"
+    new_instance['stopDays'] = "> 90"
 
-        if (typeof(instance['tags']) == 'object') {
-          _.each(Object.keys(instance['tags']), function(key) {
-            instance_tags.push(key + '=' + instance['tags'][key])
-          })
+    if (logs.length > 0) {
+      eventTime = new Date(logs[0]['eventTimestamp'])
+      new_instance['stopTime'] = eventTime.toISOString()
+      new_instance['stopDays'] = Math.round((today - eventTime) / 1000 / 60 / 60 / 24)
+    }
+
+    return new_instance
+  })
+EOS
+end
+
+datasource "ds_azure_instances_long_stopped" do
+  run_script $js_azure_instances_long_stopped, $ds_azure_instances_with_stop_times, $param_stopped_days
+end
+
+script "js_azure_instances_long_stopped", type: "javascript" do
+  parameters "ds_azure_instances_with_stop_times", "param_stopped_days"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_azure_instances_with_stop_times, function(instance) {
+    return instance['stopTime'] == "> 90 Days Ago" || (!isNaN(instance['stopDays']) && instance['stopDays'] >= param_stopped_days)
+  })
+EOS
+end
+
+datasource "ds_disk_list" do
+  run_script $js_disk_list, $ds_azure_instances_long_stopped
+end
+
+script "js_disk_list", type: "javascript" do
+  parameters "ds_azure_instances_long_stopped"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_azure_instances_long_stopped, function(instance) {
+    if (instance['disks']) {
+      disks = _.map(instance['disks'], function(disk) {
+        new_disk = { diskName: disk }
+
+        _.each(_.keys(instance), function(key) {
+          if (key != "disk" && key != "disks") { new_disk[key] = instance[key]  }
+        })
+
+        return new_disk
+      })
+
+      result = result.concat(disks)
+    }
+  })
+EOS
+end
+
+datasource "ds_azure_disks" do
+  iterate $ds_disk_list
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/resourceGroups/", val(iter_item, "resourceGroup"), "/providers/Microsoft.Compute/disks/", val(iter_item, "diskName")])
+    query "api-version", "2019-03-01"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    field "name", jmes_path(response, "name")
+    field "resourceID", jmes_path(response, "id")
+    field "region", jmes_path(response, "location")
+    field "sku", jmes_path(response, "sku.name")
+    field "vmName", val(iter_item, "name")
+    field "resourceGroup", val(iter_item, "resourceGroup")
+    field "subscriptionId", val(iter_item, "subscriptionId")
+    field "subscriptionName", val(iter_item, "subscriptionName")
+  end
+end
+
+datasource "ds_azure_subscriptions_for_cost" do
+  run_script $js_azure_subscriptions_for_cost, $ds_azure_instances_long_stopped
+end
+
+script "js_azure_subscriptions_for_cost", type: "javascript" do
+  parameters "ds_azure_instances_long_stopped"
+  result "result"
+  code "result = _.uniq(_.pluck(ds_azure_instances_long_stopped, 'subscriptionId'))"
+end
+
+datasource "ds_azure_costs" do
+  iterate $ds_azure_subscriptions_for_cost
+  request do
+    run_script $js_azure_costs, iter_item, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceID", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_azure_costs", type:"javascript" do
+  parameters "subscription_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  //Get Start and End dates
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split("T")[0]
+
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split("T")[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      "dimensions": ["resource_id"],
+      "granularity": "day",
+      "start_at": start_date,
+      "end_at": end_date,
+      "metrics": ["cost_amortized_unblended_adj"],
+      "billing_center_ids": ds_top_level_bcs,
+      "limit": 100000,
+      "filter": {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "resource_id",
+                "type": "substring",
+                "substring": "/providers/Microsoft.Compute/"
+              },
+              {
+                "dimension": "resource_id",
+                "type": "substring",
+                "substring": "/providers/microsoft.compute/"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": subscription_id
+          },
+          {
+            "dimension": "adjustment_rule_label",
+            "type": "equal",
+            "value": "None"
+          }
+        ]
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_azure_costs_grouped" do
+  run_script $js_azure_costs_grouped, $ds_azure_costs
+end
+
+script "js_azure_costs_grouped", type: "javascript" do
+  parameters "ds_azure_costs"
+  result "result"
+  code <<-EOS
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_azure_costs, function(item) {
+    id = item['resourceID'].toLowerCase().trim()
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_azure_instances_with_costs" do
+  run_script $js_azure_instances_with_costs, $ds_azure_instances_long_stopped, $ds_azure_disks, $ds_azure_costs_grouped
+end
+
+script "js_azure_instances_with_costs", type: "javascript" do
+  parameters "ds_azure_instances_long_stopped", "ds_azure_disks", "ds_azure_costs_grouped"
+  result "result"
+  code <<-EOS
+  disks_by_vm = _.groupBy(ds_azure_disks, function(disk) {
+    return [
+      "/subscriptions/",
+      disk['subscriptionId'],
+      "/resourceGroups/",
+      disk['resourceGroup'],
+      "/providers/Microsoft.Compute/virtualMachines/",
+      disk['vmName']
+    ].join('').toLowerCase().trim()
+  })
+
+  result = _.map(ds_azure_instances_long_stopped, function(instance) {
+    new_instance = { disks: [], diskCount: 0, vmCost: 0.0, diskCost: 0.0 }
+
+    if (disks_by_vm[instance['resourceID'].toLowerCase().trim()]) {
+      new_instance['disks'] = disks_by_vm[instance['resourceID'].toLowerCase().trim()]
+      new_instance['diskCount'] = new_instance['disks'].length
+    }
+
+    _.each(_.keys(instance), function(key) {
+      if (key != "disks") { new_instance[key] = instance[key]  }
+    })
+
+    new_instance['vmCost'] = 0.0
+
+    if (ds_azure_costs_grouped[instance['resourceID'].toLowerCase().trim()]) {
+      new_instance['vmCost'] = ds_azure_costs_grouped[instance['resourceID'].toLowerCase().trim()]
+    }
+
+    _.each(new_instance['disks'], function(disk) {
+      if (ds_azure_costs_grouped[disk['resourceID'].toLowerCase().trim()]) {
+        new_instance['diskCost'] += ds_azure_costs_grouped[disk['resourceID'].toLowerCase().trim()]
+      }
+    })
+
+    return new_instance
+  })
+EOS
+end
+
+datasource "ds_azure_incident_results" do
+  run_script $js_azure_incident_results, $ds_azure_instances_region_filtered, $ds_azure_instances_with_costs, $ds_applied_policy, $ds_currency, $param_stopped_days, $param_min_savings
+end
+
+script "js_azure_incident_results", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_with_costs", "ds_applied_policy", "ds_currency", "param_stopped_days", "param_min_savings"
+  result "result"
+  code <<-'EOS'
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator) {
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
         }
 
-        result.push({
-          accountID: instance['subscriptionId'],
-          accountName: instance['subscriptionName'],
-          resourceGroup: instance['resourceGroup'],
-          resourceName: instance['name'],
-          resourceID: instance['resourceID'],
-          resourceType: instance['resourceType'],
-          resourceKind: instance['resourceKind'],
-          region: instance['region'],
-          osType: instance['osType'],
-          policy_name: ds_applied_policy['name'],
-          tags: instance_tags.join(', '),
-          time_stopped: time_stopped,
-          lookbackPeriod: param_stopped_days,
-          recommendationDetails: recommendationDetails,
-          service: 'Microsoft.Compute',
-          message: ''
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  result = []
+  total_savings = 0.0
+
+  _.each(ds_azure_instances_with_costs, function(instance) {
+    if (instance["vmCost"] + instance["diskCost"] >= param_min_savings) {
+      total_savings += instance["vmCost"] + instance["diskCost"]
+
+      status_codes = _.pluck(instance['statuses'], 'code')
+      powerstate = _.find(status_codes, function(code) { return code.indexOf('PowerState') == 0 })
+      state = powerstate.split('/')[1]
+
+      instance_tags = []
+
+      if (typeof(instance['tags']) == 'object') {
+        instance_tags = _.map(_.keys(instance['tags']), function(key) {
+          return [ key, instance['tags'][key] ].join('=')
         })
       }
+
+      recommendationDetails = [
+        "Delete Azure virtual machine ", instance["name"], " ",
+        "in Azure Subscription ", instance["subscriptionName"], " ",
+        "(", instance["subscriptionId"], ")"
+      ].join('')
+
+      result.push({
+        accountId: instance["subscriptionId"],
+        accountName: instance["subscriptionName"],
+        resourceGroup: instance["resourceGroup"],
+        diskCount: instance["diskCount"],
+        diskNames: _.pluck(instance["disks"], "name").join(", "),
+        resourceID: instance["resourceID"],
+        resourceType: instance["resourceType"],
+        statuses: JSON.stringify(instance["statuses"]),
+        region: instance["region"],
+        vmCost: parseFloat(parseFloat(instance["vmCost"]).toFixed(3)),
+        diskCost: parseFloat(parseFloat(instance["diskCost"]).toFixed(3)),
+        savings: parseFloat(parseFloat(instance["vmCost"] + instance["diskCost"]).toFixed(3)),
+        resourceKind: instance["resourceKind"],
+        resourceName: instance["name"],
+        osType: instance["osType"],
+        stopTime: instance["stopTime"],
+        stopDays: instance["stopDays"],
+        savingsCurrency: ds_currency["symbol"],
+        policy_name: ds_applied_policy["name"],
+        tags: instance_tags.join(", "),
+        state: state,
+        recommendationDetails: recommendationDetails,
+        service: "Microsoft.Compute",
+        total_savings: "",
+        message: ""
+      })
     }
   })
 
-  instances_total = ds_azure_instances_with_data.length.toString()
+  savings_message = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+
+  instances_total = ds_azure_instances_region_filtered.length.toString()
   long_instances_total = result.length.toString()
   long_instances_percentage = (long_instances_total / instances_total * 100).toFixed(2).toString() + '%'
 
@@ -434,29 +917,38 @@ script "js_long_stopped_instances", type: "javascript" do
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
 
-  result = _.sortBy(result, function(item) { return item['time_stopped'] * -1 })
+  result = _.sortBy(result, function(item) { return item['stopDays'] * -1 })
 
   // Add a dummy entry to ensure that the policy's check statement executes at least once
   result.push({
-    accountID: "",
+    accountId: "",
     accountName: "",
     resourceGroup: "",
-    resourceName: "",
+    diskCount: "",
+    diskNames: "",
     resourceID: "",
     resourceType: "",
-    resourceKind: "",
+    statuses: "",
     region: "",
+    savings: "",
+    diskSavings: "",
+    resourceKind: "",
+    resourceName: "",
     osType: "",
+    stopTime: "",
+    stopDays: "",
+    savingsCurrency: "",
     policy_name: "",
     tags: "",
-    time_stopped: "",
-    lookbackPeriod: "",
+    state: "",
     recommendationDetails: "",
     service: "",
+    total_savings: "",
     message: ""
   })
 
   result[0]['message'] = findings + disclaimer
+  result[0]['total_savings'] = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
 EOS
 end
 
@@ -464,17 +956,20 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_long_stopped_instances" do
-  validate_each $ds_long_stopped_instances do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Long Stopped Compute Instances Found"
-    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+policy "pol_stopped_instances" do
+  validate_each $ds_azure_incident_results do
+    summary_template "{{ len data }} Azure Long Stopped Compute Instances Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_delete_instances
-    hash_exclude "message", "tags"
     export do
       resource_level true
-      field "accountID" do
+      field "accountId" do
         label "Subscription ID"
       end
       field "accountName" do
@@ -492,17 +987,11 @@ policy "pol_long_stopped_instances" do
       field "tags" do
         label "Resource Tags"
       end
-      field "time_stopped" do
-        label "Time Stopped (Days)"
-      end
       field "recommendationDetails" do
         label "Recommendation"
       end
       field "resourceType" do
         label "Instance Size"
-      end
-      field "resourceKind" do
-        label "Resource Kind"
       end
       field "region" do
         label "Region"
@@ -510,11 +999,32 @@ policy "pol_long_stopped_instances" do
       field "osType" do
         label "Operating System"
       end
-      field "lookbackPeriod" do
-        label "Look Back Period (Days)"
+      field "state" do
+        label "Status"
       end
-      field "service" do
-        label "Service"
+      field "diskNames" do
+        label "Disk Names"
+      end
+      field "diskCount" do
+        label "Disk Count"
+      end
+      field "stopTime" do
+        label "Resource Stop Time"
+      end
+      field "stopDays" do
+        label "Days Resource Stopped (#)"
+      end
+      field "vmCost" do
+        label "Monthly VM Cost"
+      end
+      field "diskCost" do
+        label "Monthly Disk Cost"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Currency"
       end
       field "id" do
         label "ID"
@@ -556,7 +1066,7 @@ define delete_instances($data, $param_azure_endpoint) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors, "\n")
+    raise join($$errors,"\n")
   end
 end
 
@@ -608,7 +1118,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do
