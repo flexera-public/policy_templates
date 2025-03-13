@@ -6,6 +6,188 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2976](https://github.com/flexera-public/policy_templates/pull/2976): FOPTS-7572 Fixed memory stats showing decimal instead of percentage | Policy: Azure Rightsize Compute Instances
+
+#### Description
+
+> Memory stats were showing decimal numbers (such as `0.5` for half), instead of showing percentage (such as `50` for half).
+> Showing `50` for half and `100` for all is the expected behavior.
+>
+> ### Issues Resolved
+>
+> - https://flexera.atlassian.net/browse/SQ-12222
+> - https://flexera.atlassian.net/browse/FOPTS-7572
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md)
+- **Merged At**: 2025-03-06 14:05:52 UTC
+
+---
+
+### PR [#2965](https://github.com/flexera-public/policy_templates/pull/2965): FOPTS-6833 - Batch Processing Adoption for Azure RightSize Policies
+
+#### Description
+
+> This represents the second step in enabling Batch Processing for prioritized policies. The selected policies are the ones with the highest overall and cross-organizational usage, as well as those consuming the most memory.
+>
+> In this PR, the identified policies have been refactored to leverage Batch Processing. Specifically, the datasource operations that involve large datasets have been optimized to use EFS (Elastic File System) instead of in-memory processing. This change ensures that **memory usage is reduced** while **maintaining** or improving **execution times**
+>
+> - [x] Azure Rightsize SQL Databases
+> - [x] Azure Rightsize Manage Disk
+> - [x] Azure Rightsize  Database SQL Storage
+> - Note : excluded Azure Rightsize Compute Instance  as the refactored version (enable batch processing) result in considerable increase in execution time)
+>
+> For each policy these steps got taken :
+> -  **Investigate Memory and Time Usage** : Analyze the memory and execution time of data sources in to identify bottlenecks.
+> - **Enable Batch Processing**: Refactor the identified data sources to use batch processing.
+> - **Test Consistency**: Run both the original and batch-enabled versions on staging data to ensure error-free execution and consistent results across both.
+> - **Create Mock Policies**: Generate mock versions of both the original and batch-enabled policies to simulate real-world use cases.
+> - **Performance Analysis**: Verified that the changes effectively reduce memory usage without significantly increasing execution time.
+>
+>
+>
+> ### Issues Resolved
+>
+> ### Policy Links
+> | **Policy Name**                          | **Policy Template Link**                                                                                                                                      | **Applied Policy Link**                                                                                                                                                             |
+> |------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+> | **Azure Rightsize SQL Databases (Original)** | [Policy Template](https://app.flexeratest.com/orgs/1105/automation/projects/60073/policy-templates/648b5b712cf8400001f65b88) | [Applied Policy](https://app.flexeratest.com/orgs/1105/automation/applied-policies/projects/60073?policyId=67b8cf99b9e273c766cd3784)                                               |
+> | **Azure Rightsize SQL Databases - Batch Enabled** | [Policy Template](https://app.flexeratest.com/orgs/1105/automation/projects/60073/policy-templates/67b8ce1049c80a0e0d61409d) | [Applied Policy](https://app.flexeratest.com/orgs/1105/automation/applied-policies/projects/60073?templateId=67b8ce1049c80a0e0d61409d)                                             |
+> | **Azure Rightsize SQL Databases - Mock** | [Policy Template](https://app.flexeratest.com/orgs/1105/automation/projects/60073/policy-templates/67bcd52449c80a0e0d6140a5) | [Applied Policy](https://app.flexeratest.com/orgs/1105/automation/applied-policies/projects/60073?policyId=67bcd9b7b9e273c766cd37ae)                                               |
+> | **Azure Rightsize SQL Databases - Batch Enabled Mock** | [Policy Template](https://app.flexeratest.com/orgs/1105/automation/projects/60073/policy-templates/67bcbe4383e1caded0020cc1) | [Applied Policy](https://app.flexeratest.com/orgs/1105/automation/applied-policies/projects/60073?policyId=67bcd9bab9e273c766cd37b0)                                               |
+>
+>
+>
+> Grafana Reference:
+>
+> [Azure Rightsize SQL Databases](https://g-1cda041840.grafana-workspace.us-east-1.amazonaws.com/d/6r9N9ysIk/evaluation-service-usage?orgId=1&var-dataSource=Prometheus%20Staging&var-pod=All&viewPanel=2&from=1740429756026&to=1740430085811)
+>
+> ![image](https://github.com/user-attachments/assets/1d0eb87c-0c0f-4f4f-a42f-c0c73a255c89)
+>
+>
+> ### Policy Links
+> | **Policy**                           | **Policy Link** | **Applied Policy Link** |
+> |--------------------------------------|---------------|----------------------|
+> | **Azure Right Size Manage Disk - Original**                         | [Policy Template](https://app.flexeratest.com/orgs/1105/automation/projects/60073/policy-templates/6528a556bfded20001d27b9b) | [Applied Policy](https://app.flexeratest.com/orgs/1105/automation/applied-policies/projects/60073?policyId=67be5445b9e273c766cd37f5) |
+> | **Azure Right Size Manage Disk - Batch Enabled**         | [Policy Template](https://app.flexeratest.com/orgs/1105/automation/projects/60073/policy-templates/67be53ef49c80a0e0d6140c3) | [Applied Policy](https://app.flexeratest.com/orgs/1105/automation/applied-policies/projects/60073?policyId=67c89aed95fb64065b19720e) |
+> | **Azure Right Size Manage Disk - Mock**                    | [Policy Template](https://app.flexeratest.com/orgs/1105/automation/projects/60073/policy-templates/67bfa20283e1caded0020cda) | [Applied Policy](https://app.flexeratest.com/orgs/1105/automation/applied-policies/projects/60073?policyId=67bfd2e459b111bc2fcb25d2) |
+> | **Azure Right Size Manage Disk - Batch Enabled Mock**  | [Policy Template](https://app.flexeratest.com/orgs/1105/automation/projects/60073/policy-templates/67bfd28183e1caded0020cde) | [Applied Policy](https://app.flexeratest.com/orgs/1105/automation/applied-policies/projects/60073?policyId=67bfd2e859b111bc2fcb25d4) |
+>
+> Grafana Reference:
+> [Azure Right Size Manage Disk](https://g-1cda041840.grafana-workspace.us-east-1.amazonaws.com/d/6r9N9ysIk/evaluation-service-usage?orgId=1&var-dataSource=Prometheus%20Staging&var-pod=All&from=1740624600689&to=1740624900897&viewPanel=2)
+>
+> ![image](https://github.com/user-attachments/assets/46046d93-7e9a-43ba-8f84-bd32d2052cd8)
+>
+>
+>
+> ### Policy Links
+> | **Policy**                           | **Policy Link** | **Applied Policy Link** |
+> |--------------------------------------|---------------|----------------------|
+> | **Azure Rightsize Compute Instance - Original**                         | [Policy Template](https://app.flexeratest.com/orgs/1105/automation/projects/60073/policy-templates/648b803cfa3d220001edf8cf) | [Applied Policy](https://app.flexeratest.com/orgs/1105/automation/applied-policies/projects/60073?policyId=67c223ef35d5a39d62c1068d) |
+> | **Azure Rightsize Compute Instance - Batch Enabled**         | [Policy Template](https://app.flexeratest.com/orgs/1105/automation/projects/60073/policy-templates/67c0ccea83e1caded0020ce6) | [Applied Policy](https://app.flexeratest.com/orgs/1105/automation/applied-policies/projects/60073?policyId=67c223fd95fb64065b196d71) |
+> | **Azure Rightsize Compute Instance - Mock**                    | [Policy Template](https://app.flexeratest.com/orgs/1105/automation/projects/60073/policy-templates/67c0ebd783e1caded0020ce8) | [Applied Policy](https://app.flexeratest.com/orgs/1105/automation/applied-policies/projects/60073?policyId=67c224cd95fb64065b196d73) |
+> | **Azure Rightsize Compute Instance - Batch Enabled Mock**  | [Policy Template](https://app.flexeratest.com/orgs/1105/automation/projects/60073/policy-templates/67c0ebe583e1caded0020cea) | [Applied Policy](https://app.flexeratest.com/orgs/1105/automation/applied-policies/projects/60073?policyId=67c224cb35d5a39d62c1068f) |
+>
+> Grafana Reference:
+> [Azure Rightsize Compute Instance](https://g-1cda041840.grafana-workspace.us-east-1.amazonaws.com/d/6r9N9ysIk/evaluation-service-usage?orgId=1&var-dataSource=Prometheus%20Staging&var-pod=All&from=1740777008217&to=1740777120717&viewPanel=2)
+>
+> ![image](https://github.com/user-attachments/assets/24684b11-d6b5-4bc8-a424-85774667b7d0)
+>
+>
+> <!-- URL to the Applied Policy that was used for dev/testing below -->
+> <!-- This can be helpful for a reviewer to validate the changes proposed resulted in the expected behavior. If you do not have access or ability to apply the policy template, please mention this in your PR description.-->
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2965) for these details.
+- **Merged At**: 2025-03-05 22:22:54 UTC
+
+---
+
+### PR [#2957](https://github.com/flexera-public/policy_templates/pull/2957): FOPTS-7277 Excluded fields to avoid sent email each execution
+
+#### Description
+
+> The client has been receiving error notification emails about invoice processing approximately 3 to 4 times per hour. Additionally, the client mentioned that this issue is impacting their ability to manage invoices efficiently and has requested a solution to reduce the frequency of these error notifications, as they are unnecessary and do not add value to resolving the billing issues.
+>
+> ### Issues Resolved
+>
+> We are including 'hash_exclude ` "created_at"`,`"updated_at"` to ensure that changes to these fields do not trigger an email notification unless a significant modification occurs. At the same time, we are adding `result = _.sortBy(result, 'created_at')` to ensure that the collection is ordered by 'created_at'. Without sorting, the collection may arrive in a different order, which could unnecessarily trigger a new email notification even when the "incident" contains the same information but in a different sequence.
+>
+>
+
+#### Metadata
+
+- **Policies**: [Cloud Bill Processing Error Notification](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/bill_processing_errors_notification/README.md)
+- **Merged At**: 2025-03-05 22:21:17 UTC
+
+---
+
+### PR [#2967](https://github.com/flexera-public/policy_templates/pull/2967): FOPTS-7572 Changed the way to calculate used memory | Policy: Azure Rightsize Compute Instances
+
+#### Description
+
+> This PR changed the way to calculate "used memory" for Azure instances.
+> Previously the policy is trying to compute "used memory" by substracting "available memory" from "total memory".
+> This PR has changed to directly retrieving "available memory" from Azure metrics.
+>
+> The previous method had flawed if the "total memory" is changed due to instance resizing.
+>
+> ### Issues Resolved
+>
+> - https://flexera.atlassian.net/browse/SQ-12222
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md)
+- **Merged At**: 2025-03-04 22:56:01 UTC
+
+---
+
+### PR [#2942](https://github.com/flexera-public/policy_templates/pull/2942): FOPTS-6829 - Batch Proccessing Adoption for AWS Tag Cardinality Report Policy
+
+#### Description
+
+> This PR represents the first step in enabling Batch Processing for prioritized policies—those with the highest overall and cross-organizational usage, as well as those consuming the most memory.
+>
+> In this update, the `AWS Tag Cardinality Report` policy has been refactored to implement batch processing for data sources that handle large datasets.
+>
+>
+> ### Issues Resolved
+>
+> Related Task : https://flexera.atlassian.net/browse/FOPTS-6829
+> Epic : https://flexera.atlassian.net/browse/FOPTS-6341
+>
+
+#### Metadata
+
+- **Policies**: [AWS Tag Cardinality Report](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/tag_cardinality/README.md), [Meta Parent: AWS Tag Cardinality Report](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/tag_cardinality/README.md)
+- **Merged At**: 2025-02-20 20:54:30 UTC
+
+---
+
+### PR [#2955](https://github.com/flexera-public/policy_templates/pull/2955): POL-1451 Add sys- and app- Project Filtering to Google Policy Templates
+
+#### Description
+
+> Adds two new parameters to most Google policy templates to enable easy filtering of sys- and app- projects. This can help in situations where a user has thousands of these projects and no need for them to be checked for recommendations.
+>
+> - "sys-*" projects generally refer to system-generated projects that are automatically created for internal Google services and management functions in google sheets
+>
+> - "app-*" projects typically refer to projects associated with Google Apps Script
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2955) for these details.
+- **Merged At**: 2025-02-13 13:02:48 UTC
+
+---
+
 ### PR [#2932](https://github.com/flexera-public/policy_templates/pull/2932): FOPTS-6822 Enhance "Cloud Bill Processing Error Notification" Policy to Report Connections with Zero Imported Bills
 
 #### Description
@@ -1629,98 +1811,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Cloud Cost Anomaly Alerts](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cloud_cost_anomaly_alerts/README.md)
 - **Merged At**: 2024-09-03 20:08:10 UTC
-
----
-
-### PR [#2596](https://github.com/flexera-public/policy_templates/pull/2596): POL-1334 Meta Parent Fix: Empty Policy Responses
-
-#### Description
-
-> This is a fix for an issue with Meta Parents where the policy template would fail if no applied policies exist. To fix this issue, the jq statements that were causing the issue have been replaced with standard jmes_path statements, and any additional filtering has been moved to separate javascript blocks.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2596) for these details.
-- **Merged At**: 2024-09-03 18:11:14 UTC
-
----
-
-### PR [#2597](https://github.com/flexera-public/policy_templates/pull/2597): POL-1336 AWS Savings Plan Recommendations: Remove "Any" Option From Savings Plan Term Parameter
-
-#### Description
-
-> Removes invalid "Any" option from the `Savings Plan Term` parameter in the `AWS Savings Plan Recommendations` policy template. The only valid values for this parameter are 1 year and 3 year.
->
-> A handful of other small changes were made to bring policy template into compliance with current Dangerfile tests.
->
-
-#### Metadata
-
-- **Policies**: [AWS Savings Plan Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/recommendations/README.md)
-- **Merged At**: 2024-09-03 18:06:30 UTC
-
----
-
-### PR [#2584](https://github.com/flexera-public/policy_templates/pull/2584): POL-1335 Add ARN to AWS Recommendation Policy Template Incident Tables
-
-#### Description
-
-> This adds a resource ARN field to the incidents of all existing AWS recommendations policy templates. This is because the ARN is a useful value for other functionality that might build off of the incident or recommendations table, such as using the AWS tagging API to tag resources.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2584) for these details.
-- **Merged At**: 2024-09-03 13:10:25 UTC
-
----
-
-### PR [#2544](https://github.com/flexera-public/policy_templates/pull/2544): POL-802 New Policy: Azure Unused Virtual Network Gateways
-
-#### Description
-
-> This is a new policy template to report on unused Azure Virtual Network Gateways.
->
-> Currently, savings is not reported because Azure billing data stored in Flexera does not appear to contain Virtual Network Gateway costs at the resource level. This may be added with a later update if a solution is found.
->
-
-#### Metadata
-
-- **Policies**: [Azure Unused Virtual Network Gateways](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_vngs/README.md), [Meta Parent: Azure Unused Virtual Network Gateways](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_vngs/README.md)
-- **Merged At**: 2024-08-30 15:52:31 UTC
-
----
-
-### PR [#2543](https://github.com/flexera-public/policy_templates/pull/2543): POL-803 New Policy: Azure Unused App Service Plans
-
-#### Description
-
-> This is a new policy template to report on unused App Service Plans in Azure.
->
-
-#### Metadata
-
-- **Policies**: [Azure Unused App Service Plans](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_app_service_plans/README.md), [Meta Parent: Azure Unused App Service Plans](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_app_service_plans/README.md)
-- **Merged At**: 2024-08-30 12:05:05 UTC
-
----
-
-### PR [#1917](https://github.com/flexera-public/policy_templates/pull/1917): POL-727 Azure Savings Plan Utilization v0.1.0
-
-#### Description
-
-> Adds Azure Savings Plan Utilization Report to bring parity with what we have for AWS
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/POL-727
->
-
-#### Metadata
-
-- **Policies**: [Azure Savings Plan Utilization](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/savings_plan/utilization/README.md)
-- **Merged At**: 2024-08-27 13:30:34 UTC
 
 ---
 

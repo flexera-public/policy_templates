@@ -492,6 +492,7 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Bring-Your-Own-License (BYOL) Report](./operational/azure/byol_report)
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
+  - [Azure Overutilized Compute Instances](./operational/azure/overutilized_compute_instances)
   - [Azure Usage Report - Amount of Instance Memory Used](./operational/azure/total_instance_memory)
   - [Azure Usage Report - Instance Time Used](./operational/azure/total_instance_usage_report)
   - [Azure Usage Report - Number of Instance Hours Used](./operational/azure/total_instance_hours)
@@ -518,6 +519,7 @@ These templates can generate savings estimates for your environment.
 - Cloud Cost Optimization
 
   - [Cloud Bill Processing Error Notification](./operational/flexera/cco/bill_processing_errors_notification)
+  - [FinOps Dashboards](./operational/flexera/cco/finops_dashboards)
 
 - FlexNet Manager
 
@@ -724,7 +726,7 @@ These templates can generate savings estimates for your environment.
 :categories:
   Compliance: 34
   Cost: 140
-  Operational: 35
+  Operational: 37
   SaaS Management: 11
   Security: 74
 :optimization_count: 72
@@ -736,7 +738,7 @@ These templates can generate savings estimates for your environment.
   Burstable Compute Instances: 1
   CIS: 61
   Cheaper Regions: 3
-  Cloud Cost Optimization: 16
+  Cloud Cost Optimization: 17
   Committed Use Discount: 2
   Common Bill Ingestion: 5
   Data Lake Optimization: 1
@@ -767,6 +769,7 @@ These templates can generate savings estimates for your environment.
   Old Snapshots: 3
   Open Buckets: 1
   Open S3 Buckets: 1
+  Overutilized Compute Instances: 1
   PaaS Optimization: 2
   Reserved Instance: 3
   Reserved Instances: 8
@@ -797,9 +800,9 @@ These templates can generate savings estimates for your environment.
   Usage Report: 10
 :providers:
   AWS: 104
-  Azure: 105
+  Azure: 106
   Azure China: 1
-  Flexera: 47
+  Flexera: 48
   GCE: 2
   GitHub: 7
   Google: 22
@@ -814,10 +817,10 @@ These templates can generate savings estimates for your environment.
   All: 6
   App Service: 1
   Automation: 2
-  Cloud Cost Optimization: 20
+  Cloud Cost Optimization: 21
   CloudTrail: 8
   Common Bill Ingestion: 5
-  Compute: 80
+  Compute: 81
   Config: 1
   DBS: 1
   Database: 2
@@ -850,7 +853,7 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 3
   Tags: 3
   Usage Discount: 6
-:total_count: 294
+:total_count: 296
 -->
 <!-- End Policy Template Stats -->
 

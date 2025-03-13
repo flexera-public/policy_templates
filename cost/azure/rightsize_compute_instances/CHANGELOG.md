@@ -1,5 +1,17 @@
 # Changelog
 
+## v6.1.1
+
+- Fix for memory stats showing decimal (such as 0.5 for half) instead of showing percentage (such as 50 for half).
+
+## v6.1.0
+
+- Added batch processing for large datasources as a performance enhancement (reduces memory usage) with no changes to logic or functionality.
+
+## v6.0.4
+
+- Fix for v6.0.3, changed the approach for handling memory statics for rightsized instances. Functionality unchanged.
+
 ## v6.0.3
 
 - Fixed error that caused showing negative values at the incident fields for memory statistics for recently rightsized instances. Functionality unchanged.
