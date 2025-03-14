@@ -1,13 +1,13 @@
 name "Meta Parent: Azure Long Stopped Compute Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Long Stopped Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_long_stopped_instances) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Long Stopped Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/long_stopped_instances) Policies."
 severity "low"
 category "Meta"
 default_frequency "15 minutes"
 info(
   provider: "Azure",
-  version: "5.0.2", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "6.0.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "true",
   deprecated: "false",
   hide_skip_approvals: "true"
@@ -117,9 +117,27 @@ parameter "param_stopped_days" do
   category "Policy Settings"
   label "Stopped Days"
   description "The number of days an instance needs to be stopped to include it in the incident report."
+  default 30
   min_value 1
   max_value 90
-  default 7
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_include_disk_savings" do
+  type "string"
+  category "Policy Settings"
+  label "Include Disk Savings"
+  description "Whether to include savings related to attached disks in the savings estimate for long stopped instances."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_automatic_action" do
@@ -127,25 +145,25 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Delete Instances"]
+  allowed_values [ "Delete Instances" ]
   default []
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
-credentials "auth_azure" do
-  schemes "oauth2"
-  label "Azure"
-  description "Select the Azure Resource Manager Credential from the list."
-  tags "provider=azure_rm"
-end
-
 credentials "auth_flexera" do
   schemes "oauth2"
   label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
+end
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
 end
 
 ###############################################################################
@@ -867,11 +885,11 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_long_stopped_instances_combined_incidents" do
-  run_script $js_ds_long_stopped_instances_combined_incidents, $ds_child_incident_details
+datasource "ds_azure_incident_results_combined_incidents" do
+  run_script $js_ds_azure_incident_results_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_long_stopped_instances_combined_incidents", type: "javascript" do
+script "js_ds_azure_incident_results_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
@@ -912,14 +930,14 @@ end
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
     # Consolidated incident for Azure Long Stopped Compute Instances Found
-  validate $ds_long_stopped_instances_combined_incidents do
+  validate $ds_azure_incident_results_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} Azure Long Stopped Compute Instances Found"
     escalate $esc_email
     escalate $esc_delete_instances
     check eq(size(data), 0)
     export do
       resource_level true
-      field "accountID" do
+      field "accountId" do
         label "Subscription ID"
       end
       field "accountName" do
@@ -937,17 +955,11 @@ policy "policy_scheduled_report" do
       field "tags" do
         label "Resource Tags"
       end
-      field "time_stopped" do
-        label "Time Stopped (Days)"
-      end
       field "recommendationDetails" do
         label "Recommendation"
       end
       field "resourceType" do
         label "Instance Size"
-      end
-      field "resourceKind" do
-        label "Resource Kind"
       end
       field "region" do
         label "Region"
@@ -955,11 +967,32 @@ policy "policy_scheduled_report" do
       field "osType" do
         label "Operating System"
       end
-      field "lookbackPeriod" do
-        label "Look Back Period (Days)"
+      field "state" do
+        label "Status"
       end
-      field "service" do
-        label "Service"
+      field "diskNames" do
+        label "Disk Names"
+      end
+      field "diskCount" do
+        label "Disk Count"
+      end
+      field "stopTime" do
+        label "Resource Stop Time"
+      end
+      field "stopDays" do
+        label "Days Resource Stopped (#)"
+      end
+      field "vmCost" do
+        label "Monthly VM Cost"
+      end
+      field "diskCost" do
+        label "Monthly Disk Cost"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Currency"
       end
       field "id" do
         label "ID"
