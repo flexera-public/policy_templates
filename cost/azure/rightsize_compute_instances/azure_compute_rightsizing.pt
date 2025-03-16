@@ -454,7 +454,7 @@ datasource "ds_azure_instances" do
       field "imageSKU", jmes_path(col_item, "properties.storageProfile.imageReference.sku")
       field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
       field "dataDisks", jmes_path(col_item, "properties.storageProfile.dataDisks")
-      field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
+      field "instanceSize", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "tags", jmes_path(col_item, "tags")
       field "subscriptionId", val(iter_item, "id")
       field "subscriptionName", val(iter_item, "name")
@@ -513,7 +513,7 @@ script "js_azure_instances_with_status", type: "javascript" do
       imageSKU: vm["imageSKU"],
       osType: vm["osType"],
       dataDiskCount: dataDiskCount,
-      resourceType: vm["resourceType"],
+      instanceSize: vm["instanceSize"],
       tags: vm["tags"],
       subscriptionId: vm["subscriptionId"],
       subscriptionName: vm["subscriptionName"],
@@ -684,7 +684,7 @@ datasource "ds_azure_instances_metrics" do
     field "imageSKU", val(iter_item, "imageSKU")
     field "osType", val(iter_item, "osType")
     field "dataDiskCount", val(iter_item, "dataDiskCount")
-    field "resourceType", val(iter_item, "resourceType")
+    field "instanceSize", val(iter_item, "instanceSize")
     field "subscriptionId", val(iter_item, "subscriptionId")
     field "subscriptionName", val(iter_item, "subscriptionName")
   end
@@ -876,7 +876,7 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
       imageSKU: vm['imageSKU'],
       osType: vm['osType'],
       dataDiskCount: vm['dataDiskCount'],
-      resourceType: vm['resourceType'],
+      instanceSize: vm['instanceSize'],
       accountID: vm['subscriptionId'],
       accountName: vm['subscriptionName'],
       tags: vm_tags.join(', '),
@@ -1170,7 +1170,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
         }
       }
 
-      instance["newResourceType"] = null
+      instance["newInstanceSize"] = null
 
       // Set appropriate values based on whether instance is idle or underutilized
       // and then add it to the appropriate list
@@ -1179,7 +1179,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
         instance["recommendationType"] = "Delete"
         instance["threshold"] = param_stats_idle_threshold_cpu_value
         instance["memoryThreshold"] = param_stats_idle_threshold_mem_value
-        instance["newResourceType"] = "Delete Virtual Machine"
+        instance["newInstanceSize"] = "Delete Virtual Machine"
 
         recommendationDetails = [
           "Delete Azure virtual machine ", instance["resourceName"], " ",
@@ -1200,41 +1200,41 @@ script "js_idle_and_underutil_instances", type:"javascript" do
         instance["threshold"] = param_stats_underutil_threshold_cpu_value
         instance["memoryThreshold"] = param_stats_underutil_threshold_mem_value
 
-        if (ds_azure_instance_size_map[instance['resourceType']] && ds_azure_instance_size_map[instance['resourceType']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['resourceType']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['resourceType']]['down']] >= instance["dataDiskCount"]) {
-          instance["newResourceType"] = ds_azure_instance_size_map[instance['resourceType']]['down']
+        if (ds_azure_instance_size_map[instance['instanceSize']] && ds_azure_instance_size_map[instance['instanceSize']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['instanceSize']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['instanceSize']]['down']] >= instance["dataDiskCount"]) {
+          instance["newInstanceSize"] = ds_azure_instance_size_map[instance['instanceSize']]['down']
         }
 
-        if (instance["newResourceType"] && param_downsize_multiple == "Yes") {
+        if (instance["newInstanceSize"] && param_downsize_multiple == "Yes") {
           if (checking_cpu && checking_mem && param_stats_check_both == "Both CPU and Memory") {
-            while (ds_azure_instance_size_map[instance['newResourceType']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] >= instance["dataDiskCount"] && cpu_value * 2 < param_stats_underutil_threshold_cpu_value && mem_value * 2 < param_stats_underutil_threshold_mem_value) {
+            while (ds_azure_instance_size_map[instance['newInstanceSize']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newInstanceSize']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newInstanceSize']]['down']] >= instance["dataDiskCount"] && cpu_value * 2 < param_stats_underutil_threshold_cpu_value && mem_value * 2 < param_stats_underutil_threshold_mem_value) {
               cpu_value = cpu_value * 2
               mem_value = mem_value * 2
-              instance["newResourceType"] = ds_azure_instance_size_map[instance['newResourceType']]['down']
+              instance["newInstanceSize"] = ds_azure_instance_size_map[instance['newInstanceSize']]['down']
               savingsMultiplier += 1
             }
           }
 
           if (checking_cpu && checking_mem && param_stats_check_both == "Either CPU or Memory") {
-            while (ds_azure_instance_size_map[instance['newResourceType']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] >= instance["dataDiskCount"] && (cpu_value * 2 < param_stats_underutil_threshold_cpu_value || mem_value * 2 < param_stats_underutil_threshold_mem_value)) {
+            while (ds_azure_instance_size_map[instance['newInstanceSize']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newInstanceSize']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newInstanceSize']]['down']] >= instance["dataDiskCount"] && (cpu_value * 2 < param_stats_underutil_threshold_cpu_value || mem_value * 2 < param_stats_underutil_threshold_mem_value)) {
               cpu_value = cpu_value * 2
               mem_value = mem_value * 2
-              instance["newResourceType"] = ds_azure_instance_size_map[instance['newResourceType']]['down']
+              instance["newInstanceSize"] = ds_azure_instance_size_map[instance['newInstanceSize']]['down']
               savingsMultiplier += 1
             }
           }
 
           if (checking_cpu && !checking_mem) {
-            while (ds_azure_instance_size_map[instance['newResourceType']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] >= instance["dataDiskCount"] && cpu_value * 2 < param_stats_underutil_threshold_cpu_value) {
+            while (ds_azure_instance_size_map[instance['newInstanceSize']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newInstanceSize']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newInstanceSize']]['down']] >= instance["dataDiskCount"] && cpu_value * 2 < param_stats_underutil_threshold_cpu_value) {
               cpu_value = cpu_value * 2
-              instance["newResourceType"] = ds_azure_instance_size_map[instance['newResourceType']]['down']
+              instance["newInstanceSize"] = ds_azure_instance_size_map[instance['newInstanceSize']]['down']
               savingsMultiplier += 1
             }
           }
 
           if (!checking_cpu && checking_mem) {
-            while (ds_azure_instance_size_map[instance['newResourceType']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] >= instance["dataDiskCount"] && mem_value * 2 < param_stats_underutil_threshold_mem_value) {
+            while (ds_azure_instance_size_map[instance['newInstanceSize']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newInstanceSize']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newInstanceSize']]['down']] >= instance["dataDiskCount"] && mem_value * 2 < param_stats_underutil_threshold_mem_value) {
               mem_value = mem_value * 2
-              instance["newResourceType"] = ds_azure_instance_size_map[instance['newResourceType']]['down']
+              instance["newInstanceSize"] = ds_azure_instance_size_map[instance['newInstanceSize']]['down']
               savingsMultiplier += 1
             }
           }
@@ -1247,13 +1247,13 @@ script "js_idle_and_underutil_instances", type:"javascript" do
           "Resize Azure virtual machine ", instance["resourceName"], " ",
           "in Azure Subscription ", instance["accountName"], " ",
           "(", instance["accountID"], ") ",
-          "from ", instance["resourceType"], " ",
-          "to ", instance["newResourceType"]
+          "from ", instance["instanceSize"], " ",
+          "to ", instance["newInstanceSize"]
         ]
 
         instance["recommendationDetails"] = recommendationDetails.join('')
 
-        if (instance["newResourceType"] != null && instance["newResourceType"] != undefined) {
+        if (instance["newInstanceSize"] != null && instance["newInstanceSize"] != undefined) {
           if (savings >= param_min_savings) {
             underutil_total_savings += savings
             underutil_list.push(instance)
@@ -1511,10 +1511,10 @@ policy "pol_utilization" do
       field "recommendationDetails" do
         label "Recommendation"
       end
-      field "resourceType" do
+      field "instanceSize" do
         label "Instance Size"
       end
-      field "newResourceType" do
+      field "newInstanceSize" do
         label "Recommended Instance Size"
       end
       field "resourceKind" do
@@ -1652,10 +1652,10 @@ policy "pol_utilization" do
       field "recommendationDetails" do
         label "Recommendation"
       end
-      field "resourceType" do
+      field "instanceSize" do
         label "Instance Size"
       end
-      field "newResourceType" do
+      field "newInstanceSize" do
         label "Recommended Instance Size"
       end
       field "resourceKind" do
@@ -1800,7 +1800,7 @@ define downsize_instances($data, $param_azure_endpoint) return $all_responses do
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      if $instance["newResourceType"] != "Delete Virtual Machine"
+      if $instance["newInstanceSize"] != "Delete Virtual Machine"
         call downsize_instance($instance, $param_azure_endpoint) retrieve $downsize_response
       end
     end
@@ -1828,7 +1828,7 @@ define downsize_instance($instance, $param_azure_endpoint) return $response do
     body: {
       "properties":{
         "hardwareProfile": {
-          "vmSize": $instance["newResourceType"]
+          "vmSize": $instance["newInstanceSize"]
         }
       }
     }
