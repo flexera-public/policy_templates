@@ -6,6 +6,58 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#2996](https://github.com/flexera-public/policy_templates/pull/2996): FOPTS-8007 Fixed OAuth authentication for `Common Bill Ingestion from Azure Blob Storage` policy
+
+#### Description
+
+> Fixed OAuth2 authentication for `Common Bill Ingestion from Azure Blob Storage` policy.
+>
+> This is caused by the request missing `x-ms-version` header.
+> (See section "**Requests that use an OAuth 2.0 token from Microsoft Entra**" in Microsoft documentation [Versioning for Azure Storage](https://learn.microsoft.com/en-us/rest/api/storageservices/versioning-for-the-azure-storage-services#specify-service-versions-in-requests))
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/FOPTS-8007
+> https://flexera.atlassian.net/browse/SQ-13259
+>
+
+#### Metadata
+
+- **Policies**: [Common Bill Ingestion from Azure Blob Storage](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cbi_ingestion_azure_blob/README.md)
+- **Merged At**: 2025-03-14 22:12:33 UTC
+
+---
+
+### PR [#2990](https://github.com/flexera-public/policy_templates/pull/2990): POL-1460 New Policy: Azure Overutilized Compute Instances
+
+#### Description
+
+> This adds a new policy template to the catalog, Azure Overutilized Compute Instances, that reports instances above a certain threshold of CPU and/or memory usage.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Overutilized Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/overutilized_compute_instances/README.md), [Meta Parent: Azure Overutilized Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/overutilized_compute_instances/README.md)
+- **Merged At**: 2025-03-13 17:30:30 UTC
+
+---
+
+### PR [#2950](https://github.com/flexera-public/policy_templates/pull/2950): POL-1448 New Policy: FinOps Dashboards
+
+#### Description
+
+> This policy template creates a series of FinOps cloud dashboards within the Flexera organization. Created dashboards are public and can be accessed at the Dashboards -> Cloud page in Flexera One. Optionally, information about the newly created dashboards can be emailed.
+>
+> Configuration information for these dashboards is stored in separate JSON files located at `data/dashboards/`
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2950) for these details.
+- **Merged At**: 2025-03-11 17:09:10 UTC
+
+---
+
 ### PR [#2976](https://github.com/flexera-public/policy_templates/pull/2976): FOPTS-7572 Fixed memory stats showing decimal instead of percentage | Policy: Azure Rightsize Compute Instances
 
 #### Description
@@ -1761,56 +1813,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md), [Meta Parent: AWS Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/README.md)
 - **Merged At**: 2024-09-12 12:21:20 UTC
-
----
-
-### PR [#2576](https://github.com/flexera-public/policy_templates/pull/2576): POL-1331 New Policy: Azure Advisor Carbon Reduction Recommendations
-
-#### Description
-
-> This is a new policy to report all CO2 emissions reduction opportunities reported by Azure Advisor.
->
-> ### Issues Resolved
->
-> https://app.flexera.com/orgs/6/automation/applied-policies/projects/7954?policyId=66ce16f9a79b5457a281dbba
->
-
-#### Metadata
-
-- **Policies**: [Azure Advisor Carbon Reduction Recommendations](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/advisor_carbon/README.md), [Meta Parent: Azure Advisor Carbon Reduction Recommendations](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/advisor_carbon/README.md)
-- **Merged At**: 2024-09-04 12:07:47 UTC
-
----
-
-### PR [#2560](https://github.com/flexera-public/policy_templates/pull/2560): POL-411 Low Usage: Added Resource List
-
-#### Description
-
-> This adds a link to the Resource Analyzer Dashboard with the appropriate settings to the incident table to make it easy for the user to see the specific resources that exist in the dimension value with low usage.
->
-
-#### Metadata
-
-- **Policies**: [Low Usage Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/low_usage/README.md)
-- **Merged At**: 2024-09-03 20:17:23 UTC
-
----
-
-### PR [#2601](https://github.com/flexera-public/policy_templates/pull/2601): POL-1252 Cloud Cost Anomaly Alerts: Additional Parameters
-
-#### Description
-
-> New functionality added to `Cloud Cost Anomaly Alerts` policy template. From the CHANGELOG:
->
-> - Added `Minimum Period Spend Variance` parameter to optionally limit results based on amount of variance
-> - Added `Anomalies To Report` parameter to optionally limit results based on whether the anomaly is upward or downward
-> - Added `Variance From Average` field to incident table containing the difference (absolute value) between the total cost and the moving average
->
-
-#### Metadata
-
-- **Policies**: [Cloud Cost Anomaly Alerts](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cloud_cost_anomaly_alerts/README.md)
-- **Merged At**: 2024-09-03 20:08:10 UTC
 
 ---
 
