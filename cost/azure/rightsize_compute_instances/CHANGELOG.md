@@ -2,6 +2,10 @@
 
 ## v6.1.2
 
+- Renamed `resourceType` to `instanceSize`, and renamed `resourceKind` to `resourceType` in violation data. This only affects the Flexera All Recommendations dashboard.
+
+## v6.1.2
+
 - Fixed incorrect calculation for memory related fields "Memory Average %", "Memory p90", Memory p95", and "Memory p99".
 
 ## v6.1.1

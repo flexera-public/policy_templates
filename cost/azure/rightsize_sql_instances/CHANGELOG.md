@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.5.4
+
+- Fixed incorrect value for `resourceType` in violation data. This only affects the Flexera All Recommendations dashboard.
+
 ## v5.5.3
 
 - Added batch processing for large datasources as a performance enhancement (reduces memory usage) with no changes to logic or functionality.
