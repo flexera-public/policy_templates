@@ -321,7 +321,8 @@ end
   # Get the checks
   # Use regex to extract the validate and validate_each checks from the policy template string s
   # The regex is not perfect, but it works for now
-  checks = pt.scan(/^\s+validate.*?do.*?^  end/m)
+  checks = pt.scan(/^\s+validate.*?do.*?^  end/m).select { |check| check.include?("export ") }
+
   checks.each do |validate_block|
     # Print Raw Validate Block as a String
     # print("Raw Validate Block:\n")
