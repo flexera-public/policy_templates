@@ -15,6 +15,8 @@ This policy template checks for Google Cloud resources missing the user-specifie
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Allow/Deny Projects* - Whether to treat Allow/Deny Projects List parameter as allow or deny list. Has no effect if Allow/Deny Projects List is left empty.
 - *Allow/Deny Projects List* - Filter results by project ID/name, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all projects.
+- *Ignore System Projects* - Whether or not to automatically ignore system projects e.g. projects whose id begins with `sys-`
+- *Ignore Google Apps Script Projects* - Whether or not to automatically ignore Google Apps Script projects e.g. projects whose id begins with `app-`
 - *Resource Types* - The types of resources to check labels for. Any options not selected will not be reported on.
 - *Labels* - The policy will report resources missing the specified labels. The following formats are supported:
   - `Key` - Find all resources missing the specified label key.

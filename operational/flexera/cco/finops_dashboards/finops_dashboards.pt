@@ -1,0 +1,206 @@
+name "FinOps Dashboards"
+rs_pt_ver 20180301
+type "policy"
+short_description "Adds additional FinOps dashboards within the Flexera One organization. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/finops_dashboards/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Operational"
+severity "low"
+default_frequency "monthly"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: "Cloud Cost Optimization",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new dashboards are created"
+  default []
+end
+
+parameter "param_dashboards" do
+  type "list"
+  category "Policy Settings"
+  label "Dashboards (Built-In)"
+  description "Select the specific built-in dashboards you wish to create."
+  allowed_values [ "Global CIO YTD View", "Marketplace / Operating System Overview", "Business / Product Owner", "Engineering / Operations", "Executive Summary", "Finance & Procurement", "Reservation Coverage", "Reservation Management" ]
+  default [ "Global CIO YTD View", "Marketplace / Operating System Overview", "Business / Product Owner", "Engineering / Operations", "Executive Summary", "Finance & Procurement", "Reservation Coverage", "Reservation Management" ]
+end
+
+parameter "param_dashboards_external" do
+  type "list"
+  category "Policy Settings"
+  label "Dashboards (External)"
+  description "Provide the full URLs of any external dashboards you wish to also create. External dashboards must be publicly accessible and in JSON format. Please see README for more information."
+  allowed_pattern /^https:\/\/.*\.json$/
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credential."
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_dashboards_to_get" do
+  run_script $js_dashboards_to_get, $param_dashboards, $param_dashboards_external
+end
+
+script "js_dashboards_to_get", type: "javascript" do
+  parameters "param_dashboards", "param_dashboards_external"
+  result "result"
+  code <<-EOS
+  url_table = {
+    "Global CIO YTD View": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_global_cio_ytd_view.json",
+    "Marketplace / Operating System Overview": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_marketplace.json",
+    "Business / Product Owner": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_business_product.json",
+    "Engineering / Operations": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_engineering_operations.json",
+    "Executive Summary": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_executive_summary.json",
+    "Finance & Procurement": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_finance_procurement.json",
+    "Reservation Coverage": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_reservation_coverage.json",
+    "Reservation Management": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_reservation_management.json"
+  }
+
+  urls = _.map(param_dashboards, function(item) { return url_table[item] }).concat(param_dashboards_external)
+
+  result = _.map(urls, function(url) {
+    parts = url.split("/")
+
+    parts.shift()
+    parts.shift()
+    host = parts.shift()
+
+    return {
+      host: host,
+      path: "/" + parts.join("/")
+    }
+  })
+EOS
+end
+
+datasource "ds_dashboards" do
+  iterate $ds_dashboards_to_get
+  request do
+    host val(iter_item, "host")
+    path val(iter_item, "path")
+    header "User-Agent", "RS Policies"
+    ignore_status [ 404 ] # Ignore 404s since user may have provided invalid URLs
+  end
+  result do
+    encoding "json"
+    field "name", jmes_path(response, "name")
+    field "config", jmes_path(response, "config")
+  end
+end
+
+datasource "ds_dashboards_to_create" do
+  run_script $js_dashboards_to_create, $ds_dashboards
+end
+
+script "js_dashboards_to_create", type: "javascript" do
+  parameters "ds_dashboards"
+  result "result"
+  code <<-EOS
+  result = _.map(ds_dashboards, function(dashboard) {
+    return {
+      area: "OrgDashboard",
+      id: "new-dashboard",
+      config: dashboard["config"],
+      name: dashboard["name"],
+      visibility: "public",
+      isDefault: false
+    }
+  })
+EOS
+end
+
+datasource "ds_create_dashboards" do
+  iterate $ds_dashboards_to_create
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/dashboards"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    body_field "area", val(iter_item, "area")
+    body_field "id", val(iter_item, "id")
+    body_field "config", val(iter_item, "config")
+    body_field "name", val(iter_item, "name")
+    body_field "visibility", val(iter_item, "visibility")
+    body_field "isDefault", val(iter_item, "isDefault")
+    ignore_status [ 409 ] # Ignore conflicts since user may have already created one of these dashboards
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "kind", jmes_path(response, "kind")
+    field "href", jmes_path(response, "href")
+    field "area", jmes_path(response, "area")
+    field "name", jmes_path(response, "name")
+    field "config", jmes_path(response, "config")
+    field "visibility", jmes_path(response, "visibility")
+    field "scope", jmes_path(response, "scope")
+    field "created_at", jmes_path(response, "created_at")
+    field "updated_at", jmes_path(response, "updated_at")
+  end
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_utilization" do
+  validate_each $ds_create_dashboards do
+    summary_template "FinOps Dashboards: {{ len data }} Dashboards Created"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    export do
+      resource_level true
+      field "id" do
+        label "ID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "visibility" do
+        label "Visibility"
+      end
+      field "created_at" do
+        label "Created At"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
