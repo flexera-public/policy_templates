@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1.2
+
+- Fix for incorrect calculation for "available average memory".
+
 ## v6.1.1
 
 - Fix for memory stats showing decimal (such as 0.5 for half) instead of showing percentage (such as 50 for half).
