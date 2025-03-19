@@ -2,7 +2,7 @@
 
 ## v6.1.2
 
-- Fix for incorrect calculation for "available average memory".
+- Fixed incorrect calculation for "average used memory".
 
 ## v6.1.1
 
