@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1.2
+
+- Fixed incorrect calculation for memory related fields "Memory Average %", "Memory p90", Memory p95", and "Memory p99".
+
 ## v6.1.1
 
 - Fix for memory stats showing decimal (such as 0.5 for half) instead of showing percentage (such as 50 for half).
