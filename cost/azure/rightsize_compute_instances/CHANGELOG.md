@@ -2,7 +2,7 @@
 
 ## v6.1.2
 
-- Fixed incorrect calculation for "average used memory".
+- Fixed incorrect calculation for memory related fields "memAverage", "memP90", memP95", and "memP99".
 
 ## v6.1.1
 
