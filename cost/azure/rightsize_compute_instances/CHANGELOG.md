@@ -2,7 +2,7 @@
 
 ## v6.1.2
 
-- Fixed incorrect calculation for memory related fields "memAverage", "memP90", memP95", and "memP99".
+- Fixed incorrect calculation for memory related fields "Memory Average %", "Memory p90", Memory p95", and "Memory p99".
 
 ## v6.1.1
 
