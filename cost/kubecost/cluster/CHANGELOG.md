@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.1
+
+- Added `resourceType` in violation data. This is to show correct value for "Resource Type" in Optimization Dashboard.
+
 ## v0.4.0
 
 - Updated API endpoint for cluster sizing.
