@@ -2,7 +2,7 @@
 
 ## v0.4.1
 
-- Added `resourceType` in violation data. This is to have "All Recommendations" to show correct "Resource Type".
+- Added `resourceType` in violation data. This is to show correct value for "Resource Type" in Optimization Dashboard.
 
 ## v0.4.0
 

@@ -1,8 +1,8 @@
 # Changelog
 
-## v6.1.2
+## v6.1.3
 
-- Renamed `resourceType` to `instanceSize`, and renamed `resourceKind` to `resourceType` in violation data. This only affects the Flexera All Recommendations dashboard.
+- Renamed `resourceType` to `instanceSize`, and renamed `resourceKind` to `resourceType` in violation data. This fixes incorrect value shown for "Resource Type" in Optimization dashboard.
 
 ## v6.1.2
 

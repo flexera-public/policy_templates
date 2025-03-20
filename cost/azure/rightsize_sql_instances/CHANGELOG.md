@@ -2,7 +2,7 @@
 
 ## v5.5.4
 
-- Fixed incorrect value for `resourceType` in violation data. This only affects the Flexera All Recommendations dashboard.
+- Fixed incorrect value for `resourceType` in violation data. This fixes incorrect value shown for "Resource Type" in Optimization dashboard.
 
 ## v5.5.3
 
