@@ -455,7 +455,7 @@ end
 
 ### Abbreviated info field test
 # Return false if no fields in the info block have known invalid abbreviations
-def policy_missing_info_field?(file, file_parsed)
+def policy_abbreviated_info_field?(file, file_parsed)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing Policy Template file info() block for abbreviated fields..."
 
   info = file_parsed.parsed_info
@@ -470,11 +470,13 @@ def policy_missing_info_field?(file, file_parsed)
     end
 
     unless info[:policy_set].nil?
-      fail_message += "Please change service field in info() block to \"Managed Service Provider\".\n\n" if info[:service] == "MSP"
+      fail_message += "Please change policy_set field in info() block to \"Identity & Access Management\".\n\n" if info[:policy_set] == "IAM"
+      fail_message += "Please change policy_set field in info() block to \"Managed Service Provider\".\n\n" if info[:policy_set] == "MSP"
+      fail_message += "Please change policy_set field in info() block to \"Hybrid Use Benefit\".\n\n" if info[:policy_set] == "AHUB"
     end
   end
 
-  fail_message = "Invalid abbreviated metadata fields found:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "Invalidly abbreviated metadata fields found:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false

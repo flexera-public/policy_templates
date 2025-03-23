@@ -437,10 +437,14 @@ changed_pt_files.each do |file|
 
     # Raise errors or warnings if bad info block metadata is found
     if !test
+      # Test for missing fields
       info_test = policy_missing_info_field?(file, file_parsed, "version"); failures << info_test if info_test
       info_test = policy_missing_info_field?(file, file_parsed, "provider"); failures << info_test if info_test
       info_test = policy_missing_info_field?(file, file_parsed, "service"); warnings << info_test if info_test
       info_test = policy_missing_info_field?(file, file_parsed, "policy_set"); warnings << info_test if info_test
+
+      # Test for invalidly abbreviated fields
+      info_test = policy_abbreviated_info_field?(file, file_parsed); failures << info_test if info_test
     end
 
     # Raise error if policy version number does not use semantic versioning
