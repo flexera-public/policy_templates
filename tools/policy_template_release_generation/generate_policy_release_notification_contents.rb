@@ -92,7 +92,7 @@ changelogs.each do |changelog|
 end
 
 # Output Notification Content as a JSON string to be used directly in YAML workflow file
-all_notification_content = JSON.generate(all_notification_content_array).gsub('\\', '\\\\\\\\').gsub('"', '\\"')
+all_notification_content = JSON.dump(all_notification_content_array)
 puts "::set-output name=notification_content::#{all_notification_content}"
 
 # Output GitHub Commit URL to be used directly in YAML workflow file
