@@ -862,25 +862,25 @@ def policy_bad_block_name?(file, file_lines, block_name)
   case block_name
   when "parameter"
     proper_name = "param_"
-    block_regex = /^parameter\s+"(?!param_[^"]+")[^"]*"\s+do$/
+    block_regex = /^parameter\s+(["'])(?!param_[^"']+\1)[^"']*\1\s+do$/
   when "credentials"
     proper_name = "auth_"
-    block_regex = /^credentials\s+"(?!auth_[^"]+")[^"]*"\s+do$/
+    block_regex = /^credentials\s+(["'])(?!auth_[^"']+\1)[^"']*\1\s+do$/
   when "pagination"
     proper_name = "pagination_"
-    block_regex = /^pagination\s+"(?!pagination_[^"]+")[^"]*"\s+do$/
+    block_regex = /^pagination\s+(["'])(?!pagination_[^"']+\1)[^"']*\1\s+do$/
   when "datasource"
     proper_name = "ds_"
-    block_regex = /^datasource\s+"(?!ds_[^"]+")[^"]*"\s+do$/
+    block_regex = /^datasource\s+(["'])(?!ds_[^"']+\1)[^"']*\1\s+do$/
   when "script"
     proper_name = "js_"
-    block_regex = /^script\s+"(?!js_[^"]+)([^"]*)",\s+type:\s+"javascript"\s+do$/
+    block_regex = /^script\s+(["'])(?!js_[^"']+\1)([^"']*)\1,\s+type:\s+(["'])javascript\3\s+do$/
   when "policy"
     proper_name = "pol_"
-    block_regex = /^policy\s+"(?!pol_[^"]+")[^"]*"\s+do$/
+    block_regex = /^policy\s+(["'])(?!pol_[^"']+\1)[^"']*\1\s+do$/
   when "escalation"
     proper_name = "esc_"
-    block_regex = /^escalation\s+"(?!esc_[^"]+")[^"]*"\s+do$/
+    block_regex = /^escalation\s+(["'])(?!esc_[^"']+\1)[^"']*\1\s+do$/
   else
     proper_name = ""
     block_regex = /.*/
