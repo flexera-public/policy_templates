@@ -453,6 +453,33 @@ def policy_missing_info_field?(file, file_parsed, field_name)
   return false
 end
 
+### Abbreviated info field test
+# Return false if no fields in the info block have known invalid abbreviations
+def policy_missing_info_field?(file, file_parsed)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing Policy Template file info() block for abbreviated fields..."
+
+  info = file_parsed.parsed_info
+
+  fail_message = ""
+
+  unless info.nil?
+    unless info[:service].nil?
+      fail_message += "Please change service field in info() block to \"Identity & Access Management\".\n\n" if info[:service] == "IAM"
+      fail_message += "Please change service field in info() block to \"Cloud Cost Optimization\".\n\n" if info[:service] == "CCO"
+      fail_message += "Please change service field in info() block to \"Cloud Cost Optimization\".\n\n" if info[:service] == "Optima"
+    end
+
+    unless info[:policy_set].nil?
+      fail_message += "Please change service field in info() block to \"Managed Service Provider\".\n\n" if info[:service] == "MSP"
+    end
+  end
+
+  fail_message = "Invalid abbreviated metadata fields found:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Semantic Version Test
 # Return false if policy's version number is compliant with semantic versioning
 def policy_nonsemantic_version?(file, file_parsed)

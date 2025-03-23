@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.4
+
+- Updated service field in metadata to "Identity & Access Management". Functionality unchanged.
+
 ## v0.1.3
 
 - Fixed issue with logic that determines if an incident is raised or not
