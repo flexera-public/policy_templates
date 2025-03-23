@@ -395,6 +395,29 @@ def policy_bad_metadata?(file, file_parsed, field_name)
   return false
 end
 
+### Defunct Metadata test
+# Return false if no defunct policy metadata has been found
+def policy_defunct_metadata?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing Policy Template for defunct metadata fields..."
+
+  fail_message = ""
+
+  tenancy_regex = /^tenancy ["']/
+
+  file_lines.each_with_index do |line, index|
+    line_number = index + 1
+
+    if tenancy_regex.match?(line)
+      fail_message += "Line #{line_number.to_s}: #{line}\n"
+    end
+  end
+
+  fail_message = "Deprecated metadata fields found. Please remove the following deprecated fields as they are no longer useful or needed:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Info block test
 # Return false if policy info block has missing or problematic fields
 def policy_missing_info_field?(file, file_parsed, field_name)
