@@ -1522,7 +1522,7 @@ def policy_missing_master_permissions?(file, file_parsed, permissions_yaml)
     if pt_file_enabled.empty? && !file.start_with?("saas/fsm/")
       # If the PT file has not been manually validated, then print an error message which will block the PR from being merged
       # This will help improve coverage as we touch more PT files
-      fail_message = "Policy Template file has **not** yet been enabled for automated permission generation. Please help us improve coverage by [following the steps documented in `tools/policy_master_permission_generation/`](https://github.com/flexera-public/policy_templates/tree/master/tools/policy_master_permission_generation) to resolve this."
+      fail_message = "Policy Template file has **not** yet been enabled for automated permission generation. Please help us improve coverage by [following the steps documented in `tools/policy_master_permission_generation/`](https://github.com/flexera-public/policy_templates/tree/master/tools/policy_master_permission_generation) to resolve this. If there are valid reasons not to enable this for this policy template, please add `skip_permissions: \"true\"` to the policy template's info() block."
     end
   end
 
