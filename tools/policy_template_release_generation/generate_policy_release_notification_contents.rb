@@ -32,7 +32,7 @@ policy_templates = []
 changed_files.each do |file|
   next unless file.match?(/CHANGELOG\.md$/) || file.match?(/\.pt$/) #Consider pulling README as well
 
-  if file.match?(/CHANGELOG\.md$/) 
+  if file.match?(/CHANGELOG\.md$/)
     changelog_content = File.read(file)
     version = changelog_content.match(/^##\s*v([\d.]+)/)&.captures&.first
     changes = []
@@ -92,7 +92,7 @@ changelogs.each do |changelog|
 end
 
 # Output Notification Content as a JSON string to be used directly in YAML workflow file
-all_notification_content = JSON.generate(all_notification_content_array).gsub('"', '\\"').gsub('\\\"', '\\\\\\\\\\"')
+all_notification_content = JSON.generate(all_notification_content_array).gsub('\\', '\\\\\\\\').gsub('"', '\\"')
 puts "::set-output name=notification_content::#{all_notification_content}"
 
 # Output GitHub Commit URL to be used directly in YAML workflow file
