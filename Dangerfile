@@ -423,6 +423,9 @@ changed_pt_files.each do |file|
     # Raise error if policy contains multiple blank lines
     test = policy_consecutive_empty_lines?(file, file_lines); failures << test if test
 
+    # Raise errors or warnings if defunct metadata is found
+    test = policy_defunct_metadata?(file, file_lines); failures << test if test
+
     # Raise errors or warnings if bad metadata is found
     test = policy_bad_metadata?(file, file_parsed, "name"); failures << test if test
     test = policy_bad_metadata?(file, file_parsed, "short_description"); failures << test if test
