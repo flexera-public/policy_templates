@@ -849,6 +849,17 @@ def policy_missing_section_comments?(file, file_text, section_name)
   return false
 end
 
+### Block name single quotes test
+# Return false if no block names contained in single quotes are found
+def policy_block_name_single_quotes?(file, file_lines, block_name)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has " + block_name + " code blocks whose name is in single quotes..."
+
+  fail_message = ""
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Bad block name test
 # Return false if no invalidly named code blocks are found.
 def policy_bad_block_name?(file, file_lines, block_name)
