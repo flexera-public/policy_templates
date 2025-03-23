@@ -1500,23 +1500,30 @@ end
 
 ### Master permissions test
 # Return false if master permissions have been recorded for the policy
-def policy_missing_master_permissions?(file, permissions_yaml)
+def policy_missing_master_permissions?(file, file_parsed, permissions_yaml)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has been included in the verified permissions file..."
 
   fail_message = ""
 
-  # Use regex to look for blocks that have a "datasource", "request", and "auth" sections of the datasource
-  # Example String:
-  #   "diff --git a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\nindex 14b3236f..bf6a161d 100644\n--- a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n+++ b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n@@ -193,6 +193,16 @@ datasource \"ds_applied_policy\" do\n   end\n end\n \n+datasource \"ds_applied_policy_test_will_be_removed_later\" do\n+  request do\n+    auth $auth_flexera\n+    host rs_governance_host\n+    path join([\"/api/governance/projects/\", rs_project_id, \"/applied_policies/\", policy_id])\n+    header \"Api-Version\", \"1.0\"\n+    header \"Test\", \"True\"\n+  end\n+end\n+\n # Get region-specific Flexera API endpoints\n datasource \"ds_flexera_api_hosts\" do\n   run_script $js_flexera_api_hosts, rs_optima_host"
-  regex = /datasource.*do(\s)+.*request.*do(\s)+.*auth.*([\s\S])+end([\s\+])+end/
+  # Ignore policies with an explicit "skip_permissions" statement in their info block()
+  info = file_parsed.parsed_info
+  skip_permissions = ""
+  skip_permissions = info[:skip_permissions] unless info.nil?
 
-  # First check if the PT file has been manually validated and enabled for permission generation
-  pt_file_enabled = permissions_yaml["validated_policy_templates"].select { |pt| pt.include?(file) }
+  unless skip_permissions == "true"
+    # Use regex to look for blocks that have a "datasource", "request", and "auth" sections of the datasource
+    # Example String:
+    #   "diff --git a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\nindex 14b3236f..bf6a161d 100644\n--- a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n+++ b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n@@ -193,6 +193,16 @@ datasource \"ds_applied_policy\" do\n   end\n end\n \n+datasource \"ds_applied_policy_test_will_be_removed_later\" do\n+  request do\n+    auth $auth_flexera\n+    host rs_governance_host\n+    path join([\"/api/governance/projects/\", rs_project_id, \"/applied_policies/\", policy_id])\n+    header \"Api-Version\", \"1.0\"\n+    header \"Test\", \"True\"\n+  end\n+end\n+\n # Get region-specific Flexera API endpoints\n datasource \"ds_flexera_api_hosts\" do\n   run_script $js_flexera_api_hosts, rs_optima_host"
+    regex = /datasource.*do(\s)+.*request.*do(\s)+.*auth.*([\s\S])+end([\s\+])+end/
 
-  if pt_file_enabled.empty? && !file.start_with?("saas/fsm/")
-    # If the PT file has not been manually validated, then print an error message which will block the PR from being merged
-    # This will help improve coverage as we touch more PT files
-    fail_message = "Policy Template file has **not** yet been enabled for automated permission generation. Please help us improve coverage by [following the steps documented in `tools/policy_master_permission_generation/`](https://github.com/flexera-public/policy_templates/tree/master/tools/policy_master_permission_generation) to resolve this."
+    # First check if the PT file has been manually validated and enabled for permission generation
+    pt_file_enabled = permissions_yaml["validated_policy_templates"].select { |pt| pt.include?(file) }
+
+    if pt_file_enabled.empty? && !file.start_with?("saas/fsm/")
+      # If the PT file has not been manually validated, then print an error message which will block the PR from being merged
+      # This will help improve coverage as we touch more PT files
+      fail_message = "Policy Template file has **not** yet been enabled for automated permission generation. Please help us improve coverage by [following the steps documented in `tools/policy_master_permission_generation/`](https://github.com/flexera-public/policy_templates/tree/master/tools/policy_master_permission_generation) to resolve this."
+    end
   end
 
   return fail_message.strip if !fail_message.empty?

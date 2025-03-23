@@ -396,7 +396,7 @@ changed_pt_files.each do |file|
     # Raise error if policy is not in the master permissions file.
     # Raise warning if policy is in this file, but datasources have been added.
     # Only raise the above warning if the more general warning about updating the README doesn't exist.
-    test = policy_missing_master_permissions?(file, permissions_yaml); failures << test if test
+    test = policy_missing_master_permissions?(file, file_parsed, permissions_yaml); failures << test if test
     ds_test = policy_new_datasource?(file, file_diff, permissions_yaml); warnings << ds_test if ds_test && !test && !rd_test
 
     # Raise error if policy filename/path contains any uppercase letters
