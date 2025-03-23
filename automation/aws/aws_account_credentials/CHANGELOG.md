@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.3
+
+- Fixed issue with logic that determines if an incident is raised or not
+
 ## v0.1.2
 
 - Fixed issue in meta policy that would prevent child policies from being created

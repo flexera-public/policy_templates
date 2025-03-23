@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.5.0
+
+- Added support for organizations with Microsoft MCA accounts.
+- Refactored for supporting MSP clients.
+
 ## v0.4.3
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.

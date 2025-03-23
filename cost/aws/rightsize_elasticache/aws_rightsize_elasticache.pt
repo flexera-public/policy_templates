@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.2",
+  version: "0.2.3",
   provider: "AWS",
   service: "Database",
   policy_set: "Rightsize Database Instances",
@@ -1046,7 +1046,7 @@ script "js_underutilized_elasticache_clusters", type: "javascript" do
     mem_underutilized = mem_stat > param_stats_threshold_mem_value || param_stats_threshold_mem_value == -1
 
     // Check if cluster is underutilized and if savings is above threshold
-    if (cpu_underutilized && mem_underutilized && savings >= param_min_savings) {
+    if (cpu_underutilized && mem_underutilized) {
       normalizedNewType = ds_aws_instance_size_map[cluster['normalizedType']]['down']
       savingsMultiplier = 1
 
@@ -1085,61 +1085,63 @@ script "js_underutilized_elasticache_clusters", type: "javascript" do
         savings = ds_cluster_costs_grouped[cluster['id']] / (2 * savingsMultiplier)
       }
 
-      total_savings += savings
+      if (savings >= param_min_savings) {
+        total_savings += savings
 
-      recommendationDetails = [
-        "Change node type of ElastiCache cluster ", cluster['id'], " ",
-        "in AWS Account ", ds_aws_account['name'], " ",
-        "(", ds_aws_account['id'], ") ",
-        "from ", cluster['resourceType'], " ",
-        "to ", cluster['newResourceType']
-      ].join('')
+        recommendationDetails = [
+          "Change node type of ElastiCache cluster ", cluster['id'], " ",
+          "in AWS Account ", ds_aws_account['name'], " ",
+          "(", ds_aws_account['id'], ") ",
+          "from ", cluster['resourceType'], " ",
+          "to ", cluster['newResourceType']
+        ].join('')
 
-      tags = []
+        tags = []
 
-      if (typeof(cluster['tags']) == 'object') {
-        tags = _.map(cluster['tags'], function(tag) { return [tag['Key'], tag['Value']].join('=') })
+        if (typeof(cluster['tags']) == 'object') {
+          tags = _.map(cluster['tags'], function(tag) { return [tag['Key'], tag['Value']].join('=') })
+        }
+
+        result.push({
+          accountID: ds_aws_account['id'],
+          accountName: ds_aws_account['name'],
+          id: cluster["id"],
+          resourceID: cluster["resourceID"],
+          resourceName: cluster["resourceName"],
+          resourceARN: cluster["resourceARN"],
+          status: cluster["status"],
+          numberOfNodes: cluster["numberOfNodes"],
+          autoMinorVersionUpgrade: cluster["autoMinorVersionUpgrade"],
+          availabilityZone: cluster["availabilityZone"],
+          createTime: cluster["createTime"],
+          engine: cluster["engine"],
+          engineVersion: cluster["engineVersion"],
+          region: cluster["region"],
+          resourceType: cluster["resourceType"],
+          newResourceType: cluster["newResourceType"],
+          tags: tags.join(', '),
+          cpuAverage: Math.round(cluster["cpuAverage"] * 100) / 100,
+          cpuMinimum: Math.round(cluster["cpuMinimum"] * 100) / 100,
+          cpuMaximum: Math.round(cluster["cpuMaximum"] * 100) / 100,
+          cpuP90: Math.round(cluster["cpuP90"] * 100) / 100,
+          cpuP95: Math.round(cluster["cpuP95"] * 100) / 100,
+          cpuP99: Math.round(cluster["cpuP99"] * 100) / 100,
+          memAverage: Math.round(cluster["memAverage"] * 100) / 100,
+          memMinimum: Math.round(cluster["memMinimum"] * 100) / 100,
+          memMaximum: Math.round(cluster["memMaximum"] * 100) / 100,
+          memP90: Math.round(cluster["memP90"] * 100) / 100,
+          memP95: Math.round(cluster["memP95"] * 100) / 100,
+          memP99: Math.round(cluster["memP99"] * 100) / 100,
+          service: "AmazonElastiCache",
+          recommendationDetails: recommendationDetails,
+          savings: Math.round(savings * 1000) / 1000,
+          savingsCurrency: ds_currency['symbol'],
+          policy_name: ds_applied_policy['name'],
+          // These are to avoid errors when we hash_exclude these fields
+          message: "",
+          total_savings: ""
+        })
       }
-
-      result.push({
-        accountID: ds_aws_account['id'],
-        accountName: ds_aws_account['name'],
-        id: cluster["id"],
-        resourceID: cluster["resourceID"],
-        resourceName: cluster["resourceName"],
-        resourceARN: cluster["resourceARN"],
-        status: cluster["status"],
-        numberOfNodes: cluster["numberOfNodes"],
-        autoMinorVersionUpgrade: cluster["autoMinorVersionUpgrade"],
-        availabilityZone: cluster["availabilityZone"],
-        createTime: cluster["createTime"],
-        engine: cluster["engine"],
-        engineVersion: cluster["engineVersion"],
-        region: cluster["region"],
-        resourceType: cluster["resourceType"],
-        newResourceType: cluster["newResourceType"],
-        tags: tags.join(', '),
-        cpuAverage: Math.round(cluster["cpuAverage"] * 100) / 100,
-        cpuMinimum: Math.round(cluster["cpuMinimum"] * 100) / 100,
-        cpuMaximum: Math.round(cluster["cpuMaximum"] * 100) / 100,
-        cpuP90: Math.round(cluster["cpuP90"] * 100) / 100,
-        cpuP95: Math.round(cluster["cpuP95"] * 100) / 100,
-        cpuP99: Math.round(cluster["cpuP99"] * 100) / 100,
-        memAverage: Math.round(cluster["memAverage"] * 100) / 100,
-        memMinimum: Math.round(cluster["memMinimum"] * 100) / 100,
-        memMaximum: Math.round(cluster["memMaximum"] * 100) / 100,
-        memP90: Math.round(cluster["memP90"] * 100) / 100,
-        memP95: Math.round(cluster["memP95"] * 100) / 100,
-        memP99: Math.round(cluster["memP99"] * 100) / 100,
-        service: "AmazonElastiCache",
-        recommendationDetails: recommendationDetails,
-        savings: Math.round(savings * 1000) / 1000,
-        savingsCurrency: ds_currency['symbol'],
-        policy_name: ds_applied_policy['name'],
-        // These are to avoid errors when we hash_exclude these fields
-        message: "",
-        total_savings: ""
-      })
     }
   })
 

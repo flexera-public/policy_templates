@@ -77,6 +77,7 @@ default_child_policy_template_files = [
   "../../cost/azure/reserved_instances/recommendations/azure_reserved_instance_recommendations.pt",
   "../../cost/azure/idle_compute_instances/azure_idle_compute_instances.pt",
   "../../cost/azure/blob_storage_optimization/azure_blob_storage_optimization.pt",
+  "../../cost/azure/data_lake_optimization/data_lake_optimization.pt",
   "../../cost/azure/old_snapshots/azure_delete_old_snapshots.pt",
   "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
   "../../cost/azure/rightsize_managed_disks/azure_rightsize_managed_disks.pt",
@@ -87,7 +88,6 @@ default_child_policy_template_files = [
   "../../cost/azure/rightsize_netapp/azure_rightsize_netapp.pt",
   "../../cost/azure/rightsize_sql_instances/azure_rightsize_sql_instances.pt",
   "../../cost/azure/rightsize_sql_storage/azure_rightsize_sql_storage.pt",
-  #"../../cost/azure/rightsize_synapse_sql_pools/azure_rightsize_synapse_sql_pools.pt",
   "../../cost/azure/unoptimized_web_app_scaling/azure_unoptimized_web_app_scaling.pt",
   "../../cost/azure/sql_servers_without_elastic_pool/azure_sql_servers_without_elastic_pool.pt",
   "../../cost/azure/unused_app_service_plans/azure_unused_app_service_plans.pt",
@@ -112,6 +112,7 @@ default_child_policy_template_files = [
   "../../operational/azure/compute_poweredoff_report/azure_compute_poweredoff_report.pt",
   "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
   "../../operational/azure/vms_without_managed_disks/azure_vms_without_managed_disks.pt",
+  "../../operational/azure/overutilized_compute_instances/azure_compute_overutilized.pt",
   "../../security/azure/blob_storage_logging/blob_storage_logging.pt",
   "../../security/azure/mysql_ssl/mysql_ssl.pt",
   "../../security/azure/mysql_tls_version/mysql_tls_version.pt",
@@ -320,7 +321,8 @@ end
   # Get the checks
   # Use regex to extract the validate and validate_each checks from the policy template string s
   # The regex is not perfect, but it works for now
-  checks = pt.scan(/^\s+validate.*?do.*?^  end/m)
+  checks = pt.scan(/^\s+validate.*?do.*?^  end/m).select { |check| check.include?("export ") }
+
   checks.each do |validate_block|
     # Print Raw Validate Block as a String
     # print("Raw Validate Block:\n")

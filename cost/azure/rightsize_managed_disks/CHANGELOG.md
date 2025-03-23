@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.5.1
+
+- Added batch processing for large datasources as a performance enhancement (reduces memory usage) with no changes to logic or functionality.
+
+## v2.5.0
+
+- Savings are now calculated using cost data stored in Flexera Cloud Cost Optimization instead of only via Azure list price.
+- Currency conversion functionality has been removed. It is no longer needed due to actual cost data stored in Flexera Cloud Cost Optimization being used to assess cost and savings.
+
 ## v2.4.2
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
