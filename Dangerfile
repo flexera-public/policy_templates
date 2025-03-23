@@ -470,6 +470,15 @@ changed_pt_files.each do |file|
     test = policy_missing_section_comments?(file, file_text, "escalation"); failures << test if test
     test = policy_missing_section_comments?(file, file_text, "cwf"); failures << test if test
 
+    # Report on code blocks with their names in single quotes
+    test = policy_block_name_single_quotes?(file, file_lines, "parameter"); failures << test if test
+    test = policy_block_name_single_quotes?(file, file_lines, "credentials"); failures << test if test
+    test = policy_block_name_single_quotes?(file, file_lines, "pagination"); failures << test if test
+    test = policy_block_name_single_quotes?(file, file_lines, "datasource"); failures << test if test
+    test = policy_block_name_single_quotes?(file, file_lines, "script"); failures << test if test
+    test = policy_block_name_single_quotes?(file, file_lines, "policy"); failures << test if test
+    test = policy_block_name_single_quotes?(file, file_lines, "escalation"); failures << test if test
+
     # Report on invalidly named code blocks
     test = policy_bad_block_name?(file, file_lines, "parameter"); failures << test if test
     test = policy_bad_block_name?(file, file_lines, "credentials"); failures << test if test

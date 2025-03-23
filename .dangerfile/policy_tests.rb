@@ -856,6 +856,34 @@ def policy_block_name_single_quotes?(file, file_lines, block_name)
 
   fail_message = ""
 
+  # Set values based on which section we're checking.
+  # block_regex: Test for presence of block with invalid single quotes
+  case block_name
+  when "parameter"
+    block_regex = /^parameter\s+'[^']+'\s+do$/
+  when "credentials"
+    block_regex = /^credentials\s+'[^']+'\s+do$/
+  when "pagination"
+    block_regex = /^pagination\s+'[^']+'\s+do$/
+  when "datasource"
+    block_regex = /^datasource\s+'[^']+'\s+do$/
+  when "script"
+    block_regex = /^script\s+'([^']+)',\s+type:\s+'javascript'\s+do$/
+  when "policy"
+    block_regex = /^policy\s+'[^']+'\s+do$/
+  when "escalation"
+    block_regex = /^escalation\s+'[^']+'\s+do$/
+  else
+    block_regex = /.*/
+  end
+
+  file_lines.each_with_index do |line, index|
+    line_number = index + 1
+    fail_message += "Line #{line_number.to_s}: #{line}\n" if block_regex.match?(line)
+  end
+
+  fail_message = "Invalidly quoted #{block_name} blocks. Please ensure all #{block_name} blocks have names encapsulated in double quotes (\") instead of single quotes ('):\n\n" + fail_message if !fail_message.empty?
+
   return fail_message.strip if !fail_message.empty?
   return false
 end
@@ -899,7 +927,7 @@ def policy_bad_block_name?(file, file_lines, block_name)
 
   file_lines.each_with_index do |line, index|
     line_number = index + 1
-    fail_message += "Line #{line_number.to_s}\n" if block_regex.match?(line)
+    fail_message += "Line #{line_number.to_s}: #{line}\n" if block_regex.match?(line)
   end
 
   fail_message = "Invalidly named #{block_name} blocks. Please ensure all #{block_name} blocks have names that begin with `#{proper_name}`:\n\n" + fail_message if !fail_message.empty?
