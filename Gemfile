@@ -13,7 +13,6 @@ gem "pry", "~> 0.15"
 gem "rb-readline", "~> 0.5"
 gem "mdl", "~> 0.13"
 gem "octokit", "~> 9.2"
-gem "uri", "~> 1.0"
 
 # Removed for now since we don't use them. May be readded later if we decide to use them again.
 #gem "danger-prose", "~> 2.0"
