@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.0
+
+- Added support for filtering system and Google Apps Script projects from the results.
+
 ## v3.1.4
 
 - Added validation to properly handle null values for cpuAverage, cpuMaximum, and cpuMinimum when sorting recommendations

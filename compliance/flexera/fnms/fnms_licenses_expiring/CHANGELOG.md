@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.4.3
+
+- Minor code improvements to bring template in line with current standards. Functionality unchanged.
+
+## v2.4.2
+
+- Fixed 'Retired' status not being filtered out of the results
+
 ## v2.4.1
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.

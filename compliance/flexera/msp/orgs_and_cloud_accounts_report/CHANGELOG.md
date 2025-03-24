@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.1
+
+- Minor code improvements to bring template in line with current standards. Functionality unchanged.
+
 ## v2.0.0
 
 - Minor code improvements to conform with current standards. Functionality unchanged.
