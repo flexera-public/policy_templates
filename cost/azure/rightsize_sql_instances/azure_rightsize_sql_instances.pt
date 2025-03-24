@@ -7,11 +7,12 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.4.1",
+  version: "5.5.3",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Database Instances",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -149,6 +150,15 @@ parameter "param_stats_lookback" do
   min_value 1
   max_value 90
   default 30
+end
+
+parameter "param_downsize_multiple" do
+  type "string"
+  category "Policy Settings"
+  label "Skip Instance Sizes"
+  description "Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_automatic_action" do
@@ -579,6 +589,7 @@ EOS
 end
 
 datasource "ds_azure_sql_database_metrics" do
+  batch true
   iterate $ds_azure_sql_databases_region_filtered
   request do
     run_script $js_azure_sql_database_metrics, val(iter_item, "id"), $ds_stats_interval, $param_azure_endpoint, $param_stats_lookback
@@ -631,7 +642,6 @@ script "js_azure_sql_database_metrics", type: "javascript" do
     auth: "auth_azure",
     pagination: "pagination_azure",
     host: param_azure_endpoint,
-    verb: "GET",
     path: resource_id + "/providers/microsoft.insights/metrics",
     query_params: {
       "api-version": "2018-01-01",
@@ -651,7 +661,6 @@ end
 
 datasource "ds_azure_sql_resize_map" do
   request do
-    verb "GET"
     host "raw.githubusercontent.com"
     path "/flexera-public/policy_templates/master/data/azure/sql_service_tier_types.json"
     header "User-Agent", "RS Policies"
@@ -659,11 +668,11 @@ datasource "ds_azure_sql_resize_map" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $ds_azure_sql_resize_map, $ds_applied_policy, $param_stats_underutil_threshold_cpu_value, $param_stats_lookback, $param_unused_or_underutilized, $param_stats_threshold
+  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $ds_azure_sql_resize_map, $ds_applied_policy, $param_stats_underutil_threshold_cpu_value, $param_stats_lookback, $param_unused_or_underutilized, $param_stats_threshold, $param_downsize_multiple
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_azure_sql_database_metrics", "ds_azure_sql_resize_map", "ds_applied_policy", "param_stats_underutil_threshold_cpu_value", "param_stats_lookback", "param_unused_or_underutilized", "param_stats_threshold"
+  parameters "ds_azure_sql_database_metrics", "ds_azure_sql_resize_map", "ds_applied_policy", "param_stats_underutil_threshold_cpu_value", "param_stats_lookback", "param_unused_or_underutilized", "param_stats_threshold", "param_downsize_multiple"
   result "result"
   code <<-EOS
   // Function to calculate percentiles from metrics
@@ -680,7 +689,7 @@ script "js_merged_metrics", type: "javascript" do
 
   result = []
 
-  _.each(ds_azure_sql_database_metrics, function(db) {
+  getIterator(ds_azure_sql_database_metrics).Each(function(db, idx) {
     tags = []
 
     if (typeof(db['tags']) == 'object') {
@@ -805,6 +814,16 @@ script "js_merged_metrics", type: "javascript" do
             if (ds_azure_sql_resize_map[tier][type] != undefined) {
               if (typeof(ds_azure_sql_resize_map[tier][type]['down']) == 'string') {
                 instance['newResourceType'] = ds_azure_sql_resize_map[tier][type]['down']
+
+                if (param_downsize_multiple == "Yes") {
+                  type = instance['sku']['name'] + '_' + instance['newResourceType']
+
+                  while (typeof(ds_azure_sql_resize_map[tier][type]['down']) == 'string' && cpu_test_value * 2 <= param_stats_underutil_threshold_cpu_value) {
+                    cpu_test_value = cpu_test_value * 2
+                    instance['newResourceType'] = ds_azure_sql_resize_map[tier][type]['down']
+                    type = instance['sku']['name'] + '_' + instance['newResourceType']
+                  }
+                }
 
                 instance["recommendationDetails"] = [
                   "Downsize Azure SQL database ", instance["name"], " ",
@@ -955,21 +974,27 @@ script "js_downsize_sql_incident", type: "javascript" do
   code <<-'EOS'
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
-    var numString = number.toString()
-    var values = numString.split(".")
-    var formatted_number = ''
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   result = []
@@ -1128,21 +1153,27 @@ script "js_unused_sql_incident", type: "javascript" do
   code <<-'EOS'
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
-    var numString = number.toString()
-    var values = numString.split(".")
-    var formatted_number = ''
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   result = []

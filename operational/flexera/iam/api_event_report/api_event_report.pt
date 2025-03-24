@@ -1,0 +1,340 @@
+name "Flexera One API Event Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports Flexera API events for the user-specified amount of time. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/iam/api_event_report) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Operational"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "Identity & Access Management",
+  policy_set: "Identity & Access Management"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify."
+  default []
+end
+
+parameter "param_days_back" do
+  type "number"
+  category "Policy Settings"
+  label "Days Back"
+  description "How many days of API events to include in the report. All events from this many days back until today will be reported."
+  min_value 1
+  default 7
+end
+
+parameter "param_url_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny URL Filters"
+  description "Allow or Deny requests whose URLs contain the listed strings. Only applicable if 'Allow/Deny URL Filter List' isn't empty. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_url_filter_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny URL Filter List"
+  description "A list of strings to allow or deny when filtering API requests by URL. Leave empty to not filter requests by URL. See the README for more details."
+  default []
+end
+
+parameter "param_email_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Email Filters"
+  description "Allow or Deny requests made by users with the specified email addresses. Only applicable if 'Allow/Deny Email Filter List' isn't empty."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_email_filter_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Email Filter List"
+  description "A list of user email addresses to allow or deny when filtering API requests. Leave empty to not filter requests by user email address."
+  default []
+end
+
+parameter "param_response_type" do
+  type "list"
+  category "Filters"
+  label "Response Filter"
+  description "Whether to include API calls that received a good (Code 2XX/3XX) response, a bad (Code 4XX/5XX) response, or both."
+  allowed_values ["Good", "Bad"]
+  default ["Good", "Bad"]
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_flexera" do
+  get_page_marker do
+    body_path jmes_path(response, "nextPage")
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_api_timestamp_filter" do
+  run_script $js_api_timestamp_filter, $param_days_back
+end
+
+script "js_api_timestamp_filter", type: "javascript" do
+  parameters "param_days_back"
+  result "result"
+  code <<-EOS
+  date = new Date()
+  date.setDate(date.getDate() - param_days_back)
+  result = { filter: ["(timestamp ge '", date.toISOString(), "')"].join('') }
+EOS
+end
+
+datasource "ds_api_events" do
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/iam/v1/orgs/", rs_org_id, "/api-events"])
+    query "filter", val($ds_api_timestamp_filter, "filter")
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "eventType", jmes_path(col_item, "eventType")
+      field "timestamp", jmes_path(col_item, "timestamp")
+      field "userId", jmes_path(col_item, "principal.id")
+      field "userEmail", jmes_path(col_item, "principal.email")
+      field "userName", jmes_path(col_item, "principal.name")
+      field "userFirstName", jmes_path(col_item, "principal.firstName")
+      field "userLastName", jmes_path(col_item, "principal.lastName")
+      field "id", jmes_path(col_item, "request.id")
+      field "requestVerb", jmes_path(col_item, "request.httpMethod")
+      field "requestHost", jmes_path(col_item, "request.httpHost")
+      field "requestPath", jmes_path(col_item, "request.httpPath")
+      field "requestIP", jmes_path(col_item, "request.ip")
+      field "requestUserAgent", jmes_path(col_item, "request.userAgent")
+      field "responseCode", jmes_path(col_item, "response.httpCode")
+      field "responseStatus", jmes_path(col_item, "response.httpStatus")
+    end
+  end
+end
+
+datasource "ds_api_events_url_filtered" do
+  run_script $js_api_events_url_filtered, $ds_api_events, $param_url_allow_or_deny, $param_url_filter_list
+end
+
+script "js_api_events_url_filtered", type: "javascript" do
+  parameters "ds_api_events", "param_url_allow_or_deny", "param_url_filter_list"
+  result "result"
+  code <<-EOS
+  if (param_url_filter_list.length > 0) {
+    result = _.filter(ds_api_events, function(event) {
+      include_event = false
+
+      _.each(param_url_filter_list, function(item) {
+        if (event['requestPath'].indexOf(item) != -1) { include_event = true }
+      })
+
+      if (param_url_allow_or_deny == "Deny") { include_event = !include_event }
+
+      return include_event
+    })
+  } else {
+    result = ds_api_events
+  }
+EOS
+end
+
+datasource "ds_api_events_email_filtered" do
+  run_script $js_api_events_email_filtered, $ds_api_events_url_filtered, $param_email_allow_or_deny, $param_email_filter_list
+end
+
+script "js_api_events_email_filtered", type: "javascript" do
+  parameters "ds_api_events_url_filtered", "param_email_allow_or_deny", "param_email_filter_list"
+  result "result"
+  code <<-EOS
+  if (param_email_filter_list.length > 0) {
+    result = _.filter(ds_api_events_url_filtered, function(event) {
+      include_event = false
+      if (_.contains(param_email_filter_list, event['userEmail'])) { include_event = true }
+      if (param_email_allow_or_deny == "Deny") { include_event = !include_event }
+      return include_event
+    })
+  } else {
+    result = ds_api_events_url_filtered
+  }
+EOS
+end
+
+datasource "ds_api_events_status_filtered" do
+  run_script $js_api_events_status_filtered, $ds_api_events_email_filtered, $param_response_type
+end
+
+script "js_api_events_status_filtered", type: "javascript" do
+  parameters "ds_api_events_email_filtered", "param_response_type"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_api_events_email_filtered, function(event) {
+    include_event = false
+    code_letter = event['responseCode'].toString().substring(0, 1)
+
+    if ((code_letter == 2 || code_letter == 3) && _.contains(param_response_type, "Good")) { include_event = true }
+    if ((code_letter != 2 && code_letter != 3) && _.contains(param_response_type, "Bad")) { include_event = true }
+
+    return include_event
+  })
+EOS
+end
+
+datasource "ds_api_events_report" do
+  run_script $js_api_events_report, $ds_api_events_status_filtered, $ds_applied_policy, $param_days_back
+end
+
+script "js_api_events_report", type: "javascript" do
+  parameters "ds_api_events_status_filtered", "ds_applied_policy", "param_days_back"
+  result "result"
+  code <<-EOS
+  result = _.map(ds_api_events_status_filtered, function(event) {
+    return {
+      timestamp: event['timestamp'],
+      eventType: event['eventType'],
+      userId: event['userId'],
+      userName: event['userName'],
+      userEmail: event['userEmail'],
+      requestIP: event['requestIP'],
+      id: event['id'],
+      request: [ event['requestVerb'], event['requestPath'] ].join(' '),
+      response: [ event['responseCode'], event['responseStatus'] ].join(' '),
+      days_back: param_days_back,
+      policy_name: ds_applied_policy["name"]
+    }
+  })
+
+  result = _.sortBy(result, "timestamp").reverse()
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_api_events_report" do
+  validate_each $ds_api_events_report do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Last {{ with index data 0 }}{{ .days_back }}{{ end }} Days"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    export do
+      resource_level true
+      field "timestamp" do
+        label "Timestamp"
+      end
+      field "eventType" do
+        label "Event Type"
+      end
+      field "userId" do
+        label "User ID"
+      end
+      field "userName" do
+        label "User Name"
+      end
+      field "userEmail" do
+        label "User Email"
+      end
+      field "requestIP" do
+        label "IP Address"
+      end
+      field "id" do
+        label "Request ID"
+      end
+      field "request" do
+        label "Request"
+      end
+      field "response" do
+        label "Response"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

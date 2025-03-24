@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.0.2
+
+- Fixed bug that would cause policy execution to fail when not filtering by region
+
+## v3.0.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v3.0.0
 
 - Policy template renamed to `Azure Publicly-Accessible Blob Containers` to better reflect its functionality

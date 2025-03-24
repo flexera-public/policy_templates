@@ -8,11 +8,12 @@ severity "low"
 default_frequency "weekly"
 info(
   deprecated: "true",
-  version: "8.2.0",
+  version: "8.3.3",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -219,7 +220,6 @@ end
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
-    verb "GET"
     host "sts.amazonaws.com"
     path "/"
     query "Action", "GetCallerIdentity"
@@ -352,7 +352,6 @@ end
 datasource "ds_describe_regions" do
   request do
     auth $auth_aws
-    verb "GET"
     host "ec2.amazonaws.com"
     path "/"
     query "Action", "DescribeRegions"
@@ -854,21 +853,28 @@ script "js_volume_cost_mapping", type:"javascript" do
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
-  function formatNumber(number, separator){
-    numString = number.toString()
-    values = numString.split(".")
-    formatted_number = ''
+  function formatNumber(number, separator) {
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   result = []
@@ -892,10 +898,13 @@ script "js_volume_cost_mapping", type:"javascript" do
         "(", ds_aws_account['id'], ")"
       ].join('')
 
+      resourceARN = "arn:aws:ec2:" + volume['region'] + ":" + ds_aws_account['id'] + ":volume/" + volume['volume_id']
+
       result.push({
         accountID: ds_aws_account['id'],
         accountName: ds_aws_account['name'],
         resourceID: volume['volume_id'],
+        resourceARN: resourceARN,
         resourceName: volume['name'],
         region: volume['region'],
         availability_zone: volume['availability_zone'],
@@ -1045,6 +1054,9 @@ policy "pol_unused_volumes" do
       end
       field "service" do
         label "Service"
+      end
+      field "resourceARN" do
+        label "Resource ARN"
       end
       field "id" do
         label "ID"

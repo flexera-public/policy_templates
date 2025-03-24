@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.1.7
+
+- Updated names of code blocks to align with current formatting standards. Functionality unchanged.
+
+## v0.1.6
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v0.1.5
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v0.1.4
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for

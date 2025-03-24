@@ -12,6 +12,8 @@ This policy template reports a Kubecost cluster rightsizing recommendation gener
 - *Lookback Period (Days)* - Number of historical days of usage to analyze when generating recommendations.
 - *Target Utilization (%)* - Utilization target to use when generating recommendations.
 - *Recommendation Strategy* - Recommendation strategy to use. 'Optimal' will automatically select whichever strategy has the highest potential savings.
+- *Allow Shared Core* - Whether to include shared core node types for recommendations.
+- *Architecture* - Chipset architecture for recommended nodes (e.g., 'x86' or 'ARM'). Note: 'ARM' is currently supported only on AWS clusters.
 
 ## Policy Actions
 
@@ -39,4 +41,4 @@ This Policy Template requires a minimum Kubecost version of 1.100.2 and does not
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

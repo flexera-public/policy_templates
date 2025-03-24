@@ -10,9 +10,13 @@ Note: This policy template does not currently produce recommendations or reporti
 
 ### Policy Saving Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings are recognized if the resource is resized to the suggested size.
+The policy includes the estimated monthly savings. The estimated monthly savings are recognized if the resource is resized to the suggested size. The `Estimated Monthly Savings` is calculated via the following:
 
-- The `Estimated Monthly Savings` is calculated by obtaining the price of the disk per month from the Azure Pricing API.
+- The `monthly list price` of the current disk type obtained via the Azure Pricing API.
+- The `real monthly cost of the disk` is calculated by multiplying the amortized cost of the disk for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
+- The percentage difference between the two is calculated by dividing the `real monthly cost of the disk` by the `monthly list price` of the current disk type.
+- The `monthly list price of the new disk type` is multiplied by the above percentage to get an `estimated real monthly cost of the new disk` type under the assumption that any discounts or other changes from list price that applied to the old disk type will also apply to the new one.
+- The savings is then calculated by subtracting the `estimated real monthly cost of the new disk type` from the `real monthly cost of the disk`.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 
 ## Input Parameters
@@ -66,4 +70,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

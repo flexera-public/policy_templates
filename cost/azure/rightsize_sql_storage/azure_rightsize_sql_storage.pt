@@ -7,11 +7,12 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.0",
+  version: "0.1.3",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Database Instances",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -595,7 +596,6 @@ script "js_azure_sql_database_metrics", type: "javascript" do
     auth: "auth_azure",
     pagination: "pagination_azure",
     host: param_azure_endpoint,
-    verb: "GET",
     path: resource_id + "/providers/microsoft.insights/metrics",
     query_params: {
       "api-version": "2018-01-01",
@@ -782,7 +782,6 @@ end
 
 datasource "ds_azure_db_storage_cost_map" do
   request do
-    verb "GET"
     host "raw.githubusercontent.com"
     path "/flexera-public/policy_templates/master/data/azure/azure_db_storage_pricing.json"
     header "User-Agent", "RS Policies"
@@ -798,21 +797,28 @@ script "js_azure_sql_storage_incident", type: "javascript" do
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
-  function formatNumber(number, separator){
-    numString = number.toString()
-    values = numString.split(".")
-    formatted_number = ''
+  function formatNumber(number, separator) {
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   result = []

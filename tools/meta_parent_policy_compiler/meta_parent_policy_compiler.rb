@@ -26,7 +26,11 @@ default_child_policy_template_files = [
   "../../cost/aws/rightsize_rds_instances/aws_rightsize_rds_instances.pt",
   "../../cost/aws/rds_instance_license_info/rds_instance_license_info.pt",
   "../../cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt",
+  "../../cost/aws/rightsize_elasticache/aws_rightsize_elasticache.pt",
+  "../../cost/aws/rightsize_redshift/aws_rightsize_redshift.pt",
   "../../cost/aws/s3_bucket_size/aws_bucket_size.pt",
+  "../../cost/aws/s3_lifecycle/aws_s3_lifecycle.pt",
+  "../../cost/aws/s3_multipart_uploads/aws_s3_multipart_uploads.pt",
   "../../cost/aws/s3_storage_policy/aws_s3_bucket_policy_check.pt",
   "../../cost/aws/schedule_instance/aws_schedule_instance.pt",
   "../../cost/aws/superseded_instances/aws_superseded_instances.pt",
@@ -38,9 +42,11 @@ default_child_policy_template_files = [
   "../../cost/aws/unused_volumes/aws_delete_unused_volumes.pt",
   "../../operational/aws/ec2_stopped_report/aws_ec2_stopped_report.pt",
   "../../operational/aws/lambda_functions_with_high_error_rate/lambda_functions_with_high_error_rate.pt",
+  "../../operational/aws/lambda_provisioned_concurrency/aws_lambda_provisioned_concurrency.pt",
   "../../operational/aws/long_running_instances/long_running_instances.pt",
   "../../operational/aws/scheduled_ec2_events/aws_scheduled_ec2_events.pt",
   "../../operational/aws/tag_cardinality/aws_tag_cardinality.pt",
+  "../../operational/aws/overutilized_ec2_instances/aws_overutilized_ec2.pt",
   "../../security/aws/aws_config_enabled/aws_config_enabled.pt",
   "../../security/aws/ebs_ensure_encryption_default/ebs_ensure_encryption_default.pt",
   "../../security/aws/ebs_unencrypted_volumes/aws_unencrypted_volumes.pt",
@@ -59,6 +65,7 @@ default_child_policy_template_files = [
   "../../cost/aws/superseded_ebs_volumes/aws_superseded_ebs_volumes.pt",
   "../../cost/aws/rightsize_ebs_volumes/aws_rightsize_ebs_volumes.pt",
   # Azure Policy Templates
+  "../../compliance/azure/advisor_carbon/azure_advisor_carbon.pt",
   "../../compliance/azure/azure_disallowed_regions/azure_disallowed_regions.pt",
   "../../compliance/azure/azure_policy_audit/azure_policy_audit.pt",
   "../../compliance/azure/azure_untagged_vms/untagged_vms.pt",
@@ -71,19 +78,25 @@ default_child_policy_template_files = [
   "../../cost/azure/reserved_instances/recommendations/azure_reserved_instance_recommendations.pt",
   "../../cost/azure/idle_compute_instances/azure_idle_compute_instances.pt",
   "../../cost/azure/blob_storage_optimization/azure_blob_storage_optimization.pt",
+  "../../cost/azure/data_lake_optimization/data_lake_optimization.pt",
   "../../cost/azure/old_snapshots/azure_delete_old_snapshots.pt",
   "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
   "../../cost/azure/rightsize_managed_disks/azure_rightsize_managed_disks.pt",
   "../../cost/azure/rightsize_managed_sql/azure_rightsize_managed_sql.pt",
-  "../../cost/azure/rightsize_netapp_files/azure_rightsize_netapp_files.pt",
+  "../../cost/azure/rightsize_managed_sql_storage/azure_rightsize_managed_sql_storage.pt",
+  "../../cost/azure/rightsize_mysql_flexible/azure_rightsize_mysql_flexible.pt",
+  "../../cost/azure/rightsize_mysql_single/azure_rightsize_mysql_single.pt",
+  "../../cost/azure/rightsize_netapp/azure_rightsize_netapp.pt",
   "../../cost/azure/rightsize_sql_instances/azure_rightsize_sql_instances.pt",
   "../../cost/azure/rightsize_sql_storage/azure_rightsize_sql_storage.pt",
-  #"../../cost/azure/rightsize_synapse_sql_pools/azure_rightsize_synapse_sql_pools.pt",
   "../../cost/azure/unoptimized_web_app_scaling/azure_unoptimized_web_app_scaling.pt",
   "../../cost/azure/sql_servers_without_elastic_pool/azure_sql_servers_without_elastic_pool.pt",
+  "../../cost/azure/unused_app_service_plans/azure_unused_app_service_plans.pt",
   "../../cost/azure/unused_firewalls/azure_unused_firewalls.pt",
   "../../cost/azure/unused_ip_addresses/azure_unused_ip_addresses.pt",
+  "../../cost/azure/unused_load_balancers/azure_unused_load_balancers.pt",
   "../../cost/azure/unused_sql_databases/azure_unused_sql_databases.pt",
+  "../../cost/azure/unused_vngs/azure_unused_vngs.pt",
   "../../cost/azure/unused_volumes/azure_unused_volumes.pt",
   "../../cost/azure/hybrid_use_benefit/azure_hybrid_use_benefit.pt",
   "../../cost/azure/hybrid_use_benefit_linux/ahub_linux.pt",
@@ -100,6 +113,7 @@ default_child_policy_template_files = [
   "../../operational/azure/compute_poweredoff_report/azure_compute_poweredoff_report.pt",
   "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
   "../../operational/azure/vms_without_managed_disks/azure_vms_without_managed_disks.pt",
+  "../../operational/azure/overutilized_compute_instances/azure_compute_overutilized.pt",
   "../../security/azure/blob_storage_logging/blob_storage_logging.pt",
   "../../security/azure/mysql_ssl/mysql_ssl.pt",
   "../../security/azure/mysql_tls_version/mysql_tls_version.pt",
@@ -134,8 +148,10 @@ default_child_policy_template_files = [
   "../../compliance/google/long_stopped_instances/google_long_stopped_instances.pt",
   "../../compliance/google/unlabeled_resources/unlabeled_resources.pt",
   "../../cost/google/cloud_sql_idle_instance_recommendations/google_sql_idle_instance_recommendations.pt",
+  "../../cost/google/cloud_storage_lifecycle/google_cloud_storage_lifecycle.pt",
   "../../cost/google/idle_ip_address_recommendations/google_idle_ip_address_recommendations.pt",
   "../../cost/google/idle_persistent_disk_recommendations/google_idle_persistent_disk_recommendations.pt",
+  "../../cost/google/rightsize_cloudsql_recommendations/google_rightsize_cloudsql_recommendations.pt",
   "../../cost/google/object_storage_optimization/google_object_storage_optimization.pt",
   "../../cost/google/recommender/recommender.pt",
   "../../cost/google/rightsize_vm_recommendations/google_rightsize_vm_recommendations.pt",
@@ -145,6 +161,7 @@ default_child_policy_template_files = [
   "../../cost/google/cud_report/google_committed_use_discount_report.pt",
   "../../cost/google/old_snapshots/google_delete_old_snapshots.pt",
   "../../operational/google/label_cardinality/google_label_cardinality.pt",
+  "../../operational/google/overutilized_vms/google_overutilized_vms.pt",
   "../../security/google/public_buckets/google_public_buckets.pt"
 ]
 
@@ -170,9 +187,13 @@ def compile_meta_parent_policy(file_path)
   publish = "true"
   publish = publish_scan[0][0] if !publish_scan.empty?
   # get the deprecated string if it exists, defaulting to false if not present
-  deprecated_scan = pt.scan(/publish: "(.*?)"/)
+  deprecated_scan = pt.scan(/deprecated: "(.*?)"/)
   deprecated = "false"
   deprecated = deprecated_scan[0][0] if !deprecated_scan.empty?
+  # get the hide_skip_approvals string if it exists, defaulting to false if not present
+  hide_skip_approvals_scan = pt.scan(/hide_skip_approvals: "(.*?)"/)
+  hide_skip_approvals = ""
+  hide_skip_approvals = hide_skip_approvals_scan[0][0] if !hide_skip_approvals_scan.empty?
   # print("Name: #{name}\n")
   # print("Description: #{description}\n")
   # print("\n###########################\n")
@@ -302,7 +323,8 @@ end
   # Get the checks
   # Use regex to extract the validate and validate_each checks from the policy template string s
   # The regex is not perfect, but it works for now
-  checks = pt.scan(/^\s+validate.*?do.*?^  end/m)
+  checks = pt.scan(/^\s+validate.*?do.*?^  end/m).select { |check| check.include?("export ") }
+
   checks.each do |validate_block|
     # Print Raw Validate Block as a String
     # print("Raw Validate Block:\n")
@@ -323,7 +345,11 @@ end
     # print(export_block)
     # print("\n---\n")
     # From the export block, capture the field blocks
-    fields = export_block[0].scan(/(^.*field\s+\".*?\".*?end)/m).flatten
+    fields = [] # Provide a default value, which is no fields declared
+    # Check if export_block is length > 0
+    if export_block.length > 0
+      fields = export_block[0].scan(/(^.*field\s+\".*?\".*?end)/m).flatten
+    end
     fields.each do |field|
       # Remove path from the field output in the meta parent
       field.gsub!(/\n.*?path.*?\n/, "\n")
@@ -408,6 +434,13 @@ end
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_VERSION__", version)
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PUBLISH__", publish)
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_DEPRECATED__", deprecated)
+  if !hide_skip_approvals.empty?
+    output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_HIDE_SKIP_APPROVALS__", hide_skip_approvals)
+  else
+    # Remove the entire line containing hide_skip_approvals
+    output_pt = output_pt.gsub(/^\s*,?\s*hide_skip_approvals: "__PLACEHOLDER_FOR_CHILD_POLICY_HIDE_SKIP_APPROVALS__",?\s*\n/, "")
+    output_pt = output_pt.gsub(/,\s*\)/, "\n)")
+  end
   # Attempt to identify the URL to the child policy template file on github using the file_path provided
   # This would only work if the pt file is located under the `policy_templates` repo directory
   # If it is not, then the URL will be incorrect

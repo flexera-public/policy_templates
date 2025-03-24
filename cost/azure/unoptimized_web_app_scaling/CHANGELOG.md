@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v0.2.0
 
 - Modified internal names for incident fields for more accurate scraping into Optimization dashboard

@@ -7,10 +7,11 @@ severity "low"
 category "Operational"
 default_frequency "weekly"
 info(
-  version: "3.1.1",
+  version: "3.1.4",
   provider: "AWS",
   service: "Tags",
-  policy_set: "Tag Cardinality"
+  policy_set: "Tag Cardinality",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -124,6 +125,7 @@ datasource "ds_aws_accounts_without_tags" do
 end
 
 datasource "ds_aws_accounts" do
+  batch true
   iterate $ds_aws_accounts_without_tags
   request do
     auth $auth_aws
@@ -150,7 +152,6 @@ end
 datasource "ds_describe_regions" do
   request do
     auth $auth_aws
-    verb "GET"
     host "ec2.amazonaws.com"
     path "/"
     query "Action", "DescribeRegions"
@@ -191,6 +192,7 @@ EOS
 end
 
 datasource "ds_aws_resources" do
+  batch true
   iterate $ds_regions
   request do
     auth $auth_aws
@@ -214,22 +216,27 @@ datasource "ds_aws_resources" do
 end
 
 datasource "ds_aws_accounts_sorted" do
+  batch true
   run_script $js_tag_sorter, $ds_aws_accounts
 end
 
 datasource "ds_aws_resources_sorted" do
+  batch true
   run_script $js_tag_sorter, $ds_aws_resources
 end
 
 datasource "ds_aws_accounts_tag_list" do
+  batch true
   run_script $js_tag_lister, $ds_aws_accounts_sorted, "Account"
 end
 
 datasource "ds_aws_resources_tag_list" do
+  batch true
   run_script $js_tag_lister, $ds_aws_resources_sorted, "Resource"
 end
 
 datasource "ds_tag_report" do
+  batch true
   run_script $js_tag_report, $ds_aws_accounts_tag_list, $ds_aws_resources_tag_list
 end
 
@@ -241,9 +248,9 @@ script "js_tag_sorter", type: "javascript" do
   parameters "tagged_list"
   result "result"
   code <<-EOS
-  result = []
+  tagged_list_sorted = []
 
-  _.each(tagged_list, function(item) {
+  getIterator(tagged_list).Each(function(item, idx) {
     sorted_tags = {}
 
     _.each(item['tags_unsorted'], function(tag) {
@@ -251,9 +258,10 @@ script "js_tag_sorter", type: "javascript" do
     })
 
     item['tags'] = sorted_tags
-
-    result.push(item)
+    tagged_list_sorted.push(item)
   })
+
+  appendToResult(tagged_list_sorted);
 EOS
 end
 
@@ -262,9 +270,9 @@ script "js_tag_lister", type: "javascript" do
   result "result"
   code <<-EOS
   tags = {}
-  result = []
+  tag_stats = []
 
-  _.each(tagged_list, function(item) {
+  getIterator(tagged_list).Each(function(item, idx) {
     if (item['tags'] != undefined && item['tags'] != null) {
       _.each(Object.keys(item['tags']), function(key) {
         if (tags[key] == undefined || tags[key] == null) {
@@ -277,7 +285,7 @@ script "js_tag_lister", type: "javascript" do
   })
 
   _.each(Object.keys(tags), function(key) {
-    result.push({
+    tag_stats.push({
       'type': tag_type,
       'key': key,
       'cardinality': _.uniq(tags[key]).length,
@@ -285,7 +293,10 @@ script "js_tag_lister", type: "javascript" do
     })
   })
 
-  result = _.sortBy(result, 'cardinality').reverse()
+  _.each(_.sortBy(tag_stats, 'cardinality').reverse(), function(item) {
+    appendToResult(item);
+  })
+
 EOS
 end
 
@@ -293,7 +304,8 @@ script "js_tag_report", type: "javascript" do
   parameters "ds_aws_accounts_tag_list", "ds_aws_resources_tag_list"
   result "result"
   code <<-EOS
-  result = ds_aws_accounts_tag_list.concat(ds_aws_resources_tag_list)
+  getIterator(ds_aws_accounts_tag_list).Each(appendToResult)
+  getIterator(ds_aws_resources_tag_list).Each(appendToResult)
 EOS
 end
 

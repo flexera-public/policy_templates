@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.0.2
+
+- Updated service field in metadata to "Identity & Access Management". Functionality unchanged.
+
+## v3.0.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v3.0.0
 
 - Policy template renamed to `Azure Subscriptions Without Log Analytics Auto-Provisioning` to better reflect its functionality

@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.0.3
+
+- Updated service field in metadata to "Identity & Access Management". Functionality unchanged.
+
+## v3.0.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v3.0.1
 
 - Added `deprecated` field to policy metadata. Functionality is unchanged.

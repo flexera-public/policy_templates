@@ -22,8 +22,23 @@ def policy_deprecated?(file, file_parsed)
   return false
 end
 
-### Deprecated without info flag test
-# Returns true if policy is described as deprecated in short_description
+### Missing Info Block test
+# Returns false if an info() block exists in the policy template
+def policy_missing_info_block?(file, file_parsed)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has required info() block..."
+
+  fail_message = ""
+
+  if file_parsed.parsed_info.nil?
+    fail_message = "Policy Template file is missing the required info() block. Please add this block to the policy template and include `version` metadata at minimum."
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Missing Deprecated Info Flag test
+# Returns true if policy template is described as deprecated in short_description
 # but lacks deprecated field in info() block
 def policy_missing_deprecated_field?(file, file_parsed)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file is deprecated but lacks appropriate setting in info() block..."
@@ -51,7 +66,7 @@ def policy_missing_deprecated_field?(file, file_parsed)
   return false
 end
 
-### Nested directory test
+### Nested Directory test
 # Return false if policy is correctly sorted within the directory structure
 def policy_bad_directory?(file)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file is in the correct location..."
@@ -69,8 +84,34 @@ def policy_bad_directory?(file)
     fail_message += "Policy is not located within a subdirectory specific to the cloud provider or service it is applicable for. For example, AWS cost policies should be in the `/cost/aws` subdirectory, Azure operational policies in the `/operational/azure` subdirectory, etc.\n\n"
   end
 
-  if (parts[1] == 'flexera' && parts[3].include?('.pt')) && parts[0] != "tools"
+  if (parts[1] == 'flexera' && parts[3].include?('.pt')) && parts[0] != "tools" && parts[0] != "automation"
     fail_message += "Flexera policy is not contained in a subdirectory specific to the Flexera service it is for. For example, Flexera CCO cost policies should be in the `/cost/flexera/cco` subdirectory.\n\n"
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### README Name Match test
+# Verify that the policy template name field matches first line of README
+def policy_readme_correct_name?(file, file_parsed)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template name matches first line of README.md..."
+
+  fail_message = ""
+
+  # Get policy template name from parsed data
+  template_name = file_parsed.parsed_name
+
+  # Get file path for readme file
+  file_sections = file.split('/')
+  file_sections.pop
+  readme_file_path = file_sections.join('/') + "/README.md"
+
+  # Get first line of README.md and remove #
+  readme_name = File.read(readme_file_path).split("\n")[0].split("# ")[1].strip()
+
+  if (template_name != readme_name)
+    fail_message = "Policy Template name `" + template_name + "` does not match the first line of the README.md file. Please ensure that README.md has the correct policy template name on the first line."
   end
 
   return fail_message.strip if !fail_message.empty?
@@ -369,6 +410,29 @@ def policy_bad_metadata?(file, file_parsed, field_name)
   return false
 end
 
+### Defunct Metadata test
+# Return false if no defunct policy metadata has been found
+def policy_defunct_metadata?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing Policy Template for defunct metadata fields..."
+
+  fail_message = ""
+
+  tenancy_regex = /^tenancy ["']/
+
+  file_lines.each_with_index do |line, index|
+    line_number = index + 1
+
+    if tenancy_regex.match?(line)
+      fail_message += "Line #{line_number.to_s}: #{line}\n"
+    end
+  end
+
+  fail_message = "Deprecated metadata fields found. Please remove the following deprecated fields as they are no longer useful or needed:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Info block test
 # Return false if policy info block has missing or problematic fields
 def policy_missing_info_field?(file, file_parsed, field_name)
@@ -399,6 +463,35 @@ def policy_missing_info_field?(file, file_parsed, field_name)
   end
 
   fail_message = "Bad #{field_name} info metadata field found:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Abbreviated info field test
+# Return false if no fields in the info block have known invalid abbreviations
+def policy_abbreviated_info_field?(file, file_parsed)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing Policy Template file info() block for abbreviated fields..."
+
+  info = file_parsed.parsed_info
+
+  fail_message = ""
+
+  unless info.nil?
+    unless info[:service].nil?
+      fail_message += "Please change service field in info() block to \"Identity & Access Management\".\n\n" if info[:service] == "IAM"
+      fail_message += "Please change service field in info() block to \"Cloud Cost Optimization\".\n\n" if info[:service] == "CCO"
+      fail_message += "Please change service field in info() block to \"Cloud Cost Optimization\".\n\n" if info[:service] == "Optima"
+    end
+
+    unless info[:policy_set].nil?
+      fail_message += "Please change policy_set field in info() block to \"Identity & Access Management\".\n\n" if info[:policy_set] == "IAM"
+      fail_message += "Please change policy_set field in info() block to \"Managed Service Provider\".\n\n" if info[:policy_set] == "MSP"
+      fail_message += "Please change policy_set field in info() block to \"Hybrid Use Benefit\".\n\n" if info[:policy_set] == "AHUB"
+    end
+  end
+
+  fail_message = "Invalidly abbreviated metadata fields found:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -507,6 +600,7 @@ def policy_readme_missing_credentials?(file, file_lines)
   flexera_regex = /(?i)(?=.*flexera)(?=.*credential)(?=.*provider=flexera).*/
   aws_regex = /(?i)(?=.*aws)(?=.*credential)(?=.*provider=aws).*/
   azure_regex = /(?i)(?=.*azure)(?=.*credential)(?=.*provider=azure_rm).*/
+  azure_storage_regex = /(?i)(?=.*azure)(?=.*credential)(?=.*provider=azure_storage).*/
   google_regex = /(?i)(?=.*google)(?=.*credential)(?=.*provider=gce).*/
   oracle_regex = /(?i)(?=.*oracle)(?=.*credential)(?=.*provider=oracle).*/
 
@@ -515,7 +609,7 @@ def policy_readme_missing_credentials?(file, file_lines)
 
     readme_flexera_credential = true if line.strip.match?(flexera_regex)
     readme_aws_credential = true if line.strip.match?(aws_regex)
-    readme_azure_credential = true if line.strip.match?(azure_regex) && !line.include?("Azure China")
+    readme_azure_credential = true if (line.strip.match?(azure_regex) || line.strip.match?(azure_storage_regex)) && !line.include?("Azure China")
     readme_google_credential = true if line.strip.match?(google_regex)
     readme_oracle_credential = true if line.strip.match?(oracle_regex)
   end
@@ -593,6 +687,29 @@ def policy_sections_out_of_order?(file, file_lines)
   policy_fail = false
   escalations_fail = false
 
+  # Record whether certain policy blocks exist at all
+  metadata_exists = false
+  parameters_exists = false
+  credentials_exists = false
+  pagination_exists = false
+  datasources_exists = false
+  policy_exists = false
+  escalations_exists = false
+  cwf_exists = false
+
+  file_lines.each_with_index do |line, index|
+    metadata_exists = true if line.start_with?('name ')
+    parameters_exists = true if line.strip.start_with?('parameter ') && line.strip.end_with?('do')
+    credentials_exists = true if line.strip.start_with?('credentials ') && line.strip.end_with?('do')
+    pagination_exists = true if line.strip.start_with?('pagination ') && line.strip.end_with?('do')
+    datasources_exists = true if line.strip.start_with?('datasource ') && line.strip.end_with?('do')
+    policy_exists = true if line.strip.start_with?('policy ') && line.strip.end_with?('do')
+    escalations_exists = true if line.strip.start_with?('escalation ') && line.strip.end_with?('do')
+    cwf_exists = true if line.strip.start_with?('define ') && line.strip.end_with?('do')
+
+    break if line.strip.start_with?('# Meta Policy [alpha]')
+  end
+
   # Failsafe for meta policy code which won't be in the correct order by design
   found_meta = false
 
@@ -611,32 +728,32 @@ def policy_sections_out_of_order?(file, file_lines)
       found_escalations = true if line.strip.start_with?('escalation ') && line.strip.end_with?('do')
       found_cwf = true if line.strip.start_with?('define ') && line.strip.end_with?('do')
 
-      if !metadata_fail && !found_metadata && (found_parameters || found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
+      if metadata_exists && !metadata_fail && !found_metadata && (found_parameters || found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
         fail_message += "Line #{line_number.to_s}: Invalid blocks found before metadata\n\n"
         metadata_fail = true
       end
 
-      if !parameters_fail && !found_parameters && (found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
+      if parameters_exists && !parameters_fail && !found_parameters && (found_credentials || found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
         fail_message += "Line #{line_number.to_s}: Invalid blocks found before parameter\n\n"
         parameters_fail = true
       end
 
-      if !credentials_fail && !found_credentials && (found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
+      if credentials_exists && !credentials_fail && !found_credentials && (found_pagination || found_datasources || found_policy || found_escalations || found_cwf)
         fail_message += "Line #{line_number.to_s}: Invalid blocks found before credentials\n\n"
         credentials_fail = true
       end
 
-      if !datasources_fail && !found_datasources && (found_policy || found_escalations || found_cwf)
+      if datasources_exists && !datasources_fail && !found_datasources && (found_policy || found_escalations || found_cwf)
         fail_message += "Line #{line_number.to_s}: Invalid blocks found before datasources\n\n"
         datasources_fail = true
       end
 
-      if !policy_fail && !found_policy && (found_escalations || found_cwf)
+      if policy_exists && !policy_fail && !found_policy && (found_escalations || found_cwf)
         fail_message += "Line #{line_number.to_s}: Invalid blocks found before policy block\n\n"
         policy_fail = true
       end
 
-      if !escalations_fail && !found_escalations && (found_cwf)
+      if escalations_exists && !escalations_fail && !found_escalations && (found_cwf)
         fail_message += "Line #{line_number.to_s}: Invalid blocks found before escalations\n\n"
         escalations_fail = true
       end
@@ -799,6 +916,45 @@ def policy_missing_section_comments?(file, file_text, section_name)
   return false
 end
 
+### Block name single quotes test
+# Return false if no block names contained in single quotes are found
+def policy_block_name_single_quotes?(file, file_lines, block_name)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has " + block_name + " code blocks whose name is in single quotes..."
+
+  fail_message = ""
+
+  # Set values based on which section we're checking.
+  # block_regex: Test for presence of block with invalid single quotes
+  case block_name
+  when "parameter"
+    block_regex = /^parameter\s+'[^']+'\s+do$/
+  when "credentials"
+    block_regex = /^credentials\s+'[^']+'\s+do$/
+  when "pagination"
+    block_regex = /^pagination\s+'[^']+'\s+do$/
+  when "datasource"
+    block_regex = /^datasource\s+'[^']+'\s+do$/
+  when "script"
+    block_regex = /^script\s+'([^']+)',\s+type:\s+'javascript'\s+do$/
+  when "policy"
+    block_regex = /^policy\s+'[^']+'\s+do$/
+  when "escalation"
+    block_regex = /^escalation\s+'[^']+'\s+do$/
+  else
+    block_regex = /.*/
+  end
+
+  file_lines.each_with_index do |line, index|
+    line_number = index + 1
+    fail_message += "Line #{line_number.to_s}: #{line}\n" if block_regex.match?(line)
+  end
+
+  fail_message = "Invalidly quoted #{block_name} blocks. Please ensure all #{block_name} blocks have names encapsulated in double quotes (\") instead of single quotes ('):\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Bad block name test
 # Return false if no invalidly named code blocks are found.
 def policy_bad_block_name?(file, file_lines, block_name)
@@ -812,25 +968,25 @@ def policy_bad_block_name?(file, file_lines, block_name)
   case block_name
   when "parameter"
     proper_name = "param_"
-    block_regex = /^parameter\s+"(?!param_[^"]+")[^"]*"\s+do$/
+    block_regex = /^parameter\s+(["'])(?!param_[^"']+\1)[^"']*\1\s+do$/
   when "credentials"
     proper_name = "auth_"
-    block_regex = /^credentials\s+"(?!auth_[^"]+")[^"]*"\s+do$/
+    block_regex = /^credentials\s+(["'])(?!auth_[^"']+\1)[^"']*\1\s+do$/
   when "pagination"
     proper_name = "pagination_"
-    block_regex = /^pagination\s+"(?!pagination_[^"]+")[^"]*"\s+do$/
+    block_regex = /^pagination\s+(["'])(?!pagination_[^"']+\1)[^"']*\1\s+do$/
   when "datasource"
     proper_name = "ds_"
-    block_regex = /^datasource\s+"(?!ds_[^"]+")[^"]*"\s+do$/
+    block_regex = /^datasource\s+(["'])(?!ds_[^"']+\1)[^"']*\1\s+do$/
   when "script"
     proper_name = "js_"
-    block_regex = /^script\s+"(?!js_[^"]+)([^"]*)",\s+type:\s+"javascript"\s+do$/
+    block_regex = /^script\s+(["'])(?!js_[^"']+\1)([^"']*)\1,\s+type:\s+(["'])javascript\3\s+do$/
   when "policy"
     proper_name = "pol_"
-    block_regex = /^policy\s+"(?!pol_[^"]+")[^"]*"\s+do$/
+    block_regex = /^policy\s+(["'])(?!pol_[^"']+\1)[^"']*\1\s+do$/
   when "escalation"
     proper_name = "esc_"
-    block_regex = /^escalation\s+"(?!esc_[^"]+")[^"]*"\s+do$/
+    block_regex = /^escalation\s+(["'])(?!esc_[^"']+\1)[^"']*\1\s+do$/
   else
     proper_name = ""
     block_regex = /.*/
@@ -838,7 +994,7 @@ def policy_bad_block_name?(file, file_lines, block_name)
 
   file_lines.each_with_index do |line, index|
     line_number = index + 1
-    fail_message += "Line #{line_number.to_s}\n" if block_regex.match?(line)
+    fail_message += "Line #{line_number.to_s}: #{line}\n" if block_regex.match?(line)
   end
 
   fail_message = "Invalidly named #{block_name} blocks. Please ensure all #{block_name} blocks have names that begin with `#{proper_name}`:\n\n" + fail_message if !fail_message.empty?
@@ -1015,7 +1171,7 @@ def policy_run_script_incorrect_order?(file, file_lines)
       value_found = false     # Whether we've found a raw value, like a number or string
 
       parameters.each_with_index do |parameter, index|
-        if parameter.include?("iter_item") || parameter.include?("val(")
+        if parameter.include?("iter_item") || parameter.include?("val(") || parameter.include?("jq(")
           val_found = true
           val_index = index
           disordered = true if ds_found || param_found || constant_found || value_found
@@ -1225,18 +1381,33 @@ def policy_bad_comma_spacing?(file, file_lines)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has improper comma spacing..."
 
   fail_message = ""
-
   file_lines.each_with_index do |line, index|
     line_number = index + 1
+    line = line.strip
+    test_line = line
+    parts = []
 
-    if line.include?(",") && !line.include?("allowed_pattern") && !line.include?('= ","') && !line.include?("(',')") && !line.include?('(",")') && !line.include?("jq(") && !line.include?("/,/")
-      if line.strip.match(/,\s{2,}/) || line.strip.match(/\s,/) || line.strip.match(/,[^\s]/)
-        fail_message += "Line #{line_number.to_s}: Possible invalid spacing between comma-separated items found.\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear\n\n"
+    # Look for stuff quotations and remove those
+    # This is to reduce false positives
+    parts = line.split("\"") if line.include?("\"") && !line.include?("'") && !line.start_with?("\"")
+    parts = line.split("'") if !line.include?("\"") && line.include?("'") && !line.start_with?("'")
+
+    if parts.length > 2
+      test_parts = []
+      parts.each_with_index { |part, index| test_parts << part if index % 2 == 0 }
+      test_line = test_parts.join("'")
+      test_line += "'" if line.end_with?("'") || line.end_with?("\"")
+    end
+
+    if test_line.include?(",") && !test_line.include?("allowed_pattern") && !test_line.include?('= ","') && !test_line.include?("(',')") && !test_line.include?('(",")') && !test_line.include?("jq(") && !test_line.include?("/,/")
+      if test_line.match(/,\s{2,}/) || test_line.match(/\s,/) || test_line.match(/,[^\s]/) && !(test_line.match(/\',\'/) || test_line.match(/\",\"/) || test_line.match(/\`,\`/))
+        fail_message += "\n\n" if fail_message.empty?
+        fail_message += "Line #{line_number.to_s}: `" + line + "`\n\n"
       end
     end
   end
 
-  fail_message = "Issues with comma-separation found:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "Possible invalid spacing between comma-separated items found:\n\n" + fail_message + "\n\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear" if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -1344,23 +1515,30 @@ end
 
 ### Master permissions test
 # Return false if master permissions have been recorded for the policy
-def policy_missing_master_permissions?(file, permissions_yaml)
+def policy_missing_master_permissions?(file, file_parsed, permissions_yaml)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has been included in the verified permissions file..."
 
   fail_message = ""
 
-  # Use regex to look for blocks that have a "datasource", "request", and "auth" sections of the datasource
-  # Example String:
-  #   "diff --git a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\nindex 14b3236f..bf6a161d 100644\n--- a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n+++ b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n@@ -193,6 +193,16 @@ datasource \"ds_applied_policy\" do\n   end\n end\n \n+datasource \"ds_applied_policy_test_will_be_removed_later\" do\n+  request do\n+    auth $auth_flexera\n+    host rs_governance_host\n+    path join([\"/api/governance/projects/\", rs_project_id, \"/applied_policies/\", policy_id])\n+    header \"Api-Version\", \"1.0\"\n+    header \"Test\", \"True\"\n+  end\n+end\n+\n # Get region-specific Flexera API endpoints\n datasource \"ds_flexera_api_hosts\" do\n   run_script $js_flexera_api_hosts, rs_optima_host"
-  regex = /datasource.*do(\s)+.*request.*do(\s)+.*auth.*([\s\S])+end([\s\+])+end/
+  # Ignore policies with an explicit "skip_permissions" statement in their info block()
+  info = file_parsed.parsed_info
+  skip_permissions = ""
+  skip_permissions = info[:skip_permissions] unless info.nil?
 
-  # First check if the PT file has been manually validated and enabled for permission generation
-  pt_file_enabled = permissions_yaml["validated_policy_templates"].select { |pt| pt.include?(file) }
+  unless skip_permissions == "true"
+    # Use regex to look for blocks that have a "datasource", "request", and "auth" sections of the datasource
+    # Example String:
+    #   "diff --git a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\nindex 14b3236f..bf6a161d 100644\n--- a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n+++ b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n@@ -193,6 +193,16 @@ datasource \"ds_applied_policy\" do\n   end\n end\n \n+datasource \"ds_applied_policy_test_will_be_removed_later\" do\n+  request do\n+    auth $auth_flexera\n+    host rs_governance_host\n+    path join([\"/api/governance/projects/\", rs_project_id, \"/applied_policies/\", policy_id])\n+    header \"Api-Version\", \"1.0\"\n+    header \"Test\", \"True\"\n+  end\n+end\n+\n # Get region-specific Flexera API endpoints\n datasource \"ds_flexera_api_hosts\" do\n   run_script $js_flexera_api_hosts, rs_optima_host"
+    regex = /datasource.*do(\s)+.*request.*do(\s)+.*auth.*([\s\S])+end([\s\+])+end/
 
-  if pt_file_enabled.empty? && !file.start_with?("saas/fsm/")
-    # If the PT file has not been manually validated, then print an error message which will block the PR from being merged
-    # This will help improve coverage as we touch more PT files
-    fail_message = "Policy Template file has **not** yet been enabled for automated permission generation. Please help us improve coverage by [following the steps documented in `tools/policy_master_permission_generation/`](https://github.com/flexera-public/policy_templates/tree/master/tools/policy_master_permission_generation) to resolve this."
+    # First check if the PT file has been manually validated and enabled for permission generation
+    pt_file_enabled = permissions_yaml["validated_policy_templates"].select { |pt| pt.include?(file) }
+
+    if pt_file_enabled.empty? && !file.start_with?("saas/fsm/")
+      # If the PT file has not been manually validated, then print an error message which will block the PR from being merged
+      # This will help improve coverage as we touch more PT files
+      fail_message = "Policy Template file has **not** yet been enabled for automated permission generation. Please help us improve coverage by [following the steps documented in `tools/policy_master_permission_generation/`](https://github.com/flexera-public/policy_templates/tree/master/tools/policy_master_permission_generation) to resolve this. If there are valid reasons not to enable this for this policy template, please add `skip_permissions: \"true\"` to the policy template's info() block."
+    end
   end
 
   return fail_message.strip if !fail_message.empty?
@@ -1401,10 +1579,33 @@ def policy_console_log?(file, file_lines)
 
   file_lines.each_with_index do |line, index|
     line_number = index + 1
+    # Exclude the line if it contains the specific phrase `// Excluded from console.log test.*`
+    next if line.include?("// Excluded from console.log test")
     fail_message += "Line #{line_number.to_s}\n" if line.include?("console.log")
   end
 
   fail_message = "Policy Template has console.log() statements. These are used for debugging and should not be present in catalog policy templates:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### verb "GET" test
+# Return false if a datasource never specifies "GET" as a verb value
+def policy_verb_get?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file datasources have any verb \"GET\" statements..."
+
+  # Message to return of test fails
+  fail_message = ""
+
+  file_lines.each_with_index do |line, index|
+    break if line.strip.start_with?("# Cloud Workflow")
+
+    line_number = index + 1
+    fail_message += "Line #{line_number.to_s}\n" if line.strip.start_with?("verb \"GET\"") || line.strip.start_with?("verb: \"GET\"") || line.strip.start_with?("verb 'GET'") || line.strip.start_with?("verb: 'GET'")
+  end
+
+  fail_message = "Policy Template has verb \"GET\" statements. The verb field defaults to this value and should only be specified for other values, such as PATCH or POST:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false

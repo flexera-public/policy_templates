@@ -7,11 +7,12 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.2",
+  version: "4.3.0",
   provider: "Google",
   service: "Compute",
   recommendation_type: "Rate Reduction",
-  policy_set: "Reserved Instances"
+  policy_set: "Reserved Instances",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -52,6 +53,24 @@ parameter "param_projects_list" do
   default []
 end
 
+parameter "param_projects_ignore_sys" do
+  type "string"
+  category "Filters"
+  label "Ignore System Projects"
+  description "Whether or not to automatically ignore system projects e.g. projects whose id begins with 'sys-'"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_projects_ignore_app" do
+  type "string"
+  category "Filters"
+  label "Ignore Google Apps Script Projects"
+  description "Whether or not to automatically ignore Google Apps Script projects e.g. projects whose id begins with 'app-'"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
 parameter "param_regions_allow_or_deny" do
   type "string"
   category "Filters"
@@ -74,8 +93,8 @@ parameter "param_term" do
   category "Reservation Settings"
   label "Term"
   description "Length of Committed Use Discount term to provide recommendations for."
-  default "1 Year"
   allowed_values "1 Year", "3 Year"
+  default "1 Year"
 end
 
 parameter "param_algorithm" do
@@ -83,8 +102,8 @@ parameter "param_algorithm" do
   category "Reservation Settings"
   label "Recommendation Algorithm"
   description "The algorithm to use for generating Committed Use Discount recommendations. See README for more information."
-  default "Optimal"
   allowed_values "Optimal", "Stable Usage"
+  default "Optimal"
 end
 
 ###############################################################################
@@ -196,15 +215,15 @@ datasource "ds_google_projects" do
 end
 
 datasource "ds_google_projects_filtered" do
-  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list, $param_projects_ignore_sys, $param_projects_ignore_app
 end
 
 script "js_google_projects_filtered", type: "javascript" do
-  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
   result "result"
   code <<-EOS
   if (param_projects_list.length > 0) {
-    result = _.filter(ds_google_projects, function(project) {
+    filtered = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
 
       if (param_projects_allow_or_deny == "Deny") {
@@ -214,8 +233,12 @@ script "js_google_projects_filtered", type: "javascript" do
       return include_project
     })
   } else {
-    result = ds_google_projects
+    filtered = ds_google_projects
   }
+
+  result = _.reject(filtered, function(project) {
+    return (project['id'].substring(0, 4) == "sys-" && param_projects_ignore_sys == "Yes") || (project['id'].substring(0, 4) == "app-" && param_projects_ignore_app == "Yes")
+  })
 EOS
 end
 
@@ -226,7 +249,7 @@ datasource "ds_google_regions" do
     pagination $pagination_google
     host "compute.googleapis.com"
     path join(["/compute/v1/projects/", val(iter_item, "id"), "/regions/"])
-    ignore_status [403,404]
+    ignore_status [403, 404]
   end
   result do
     encoding "json"
@@ -418,21 +441,27 @@ script "js_recommendations_incident", type:"javascript" do
   code <<-'EOS'
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
-    var numString = number.toString()
-    var values = numString.split(".")
-    var formatted_number = ''
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   algorithm_table = {
@@ -557,13 +586,26 @@ script "js_recommendations_incident", type:"javascript" do
 
   // Dummy item to ensure validation runs at least once
   result.push({
-    accountID: "",        accountName: "",     projectNumber: "",
-    resourceID: "",       region: "",          recommendationDetails: "",
-    priority: "",         scope: "",           state: "",
-    algorithm: "",        savings: "",         savingsCurrency: "",
-    resourceName: "",     resourceType: "",    resourcesToPurchase: "",
-    term: "",             service: "",         policy_name: "",
-    total_savings: "",    message: ""
+    accountID: "",
+    accountName: "",
+    projectNumber: "",
+    resourceID: "",
+    region: "",
+    recommendationDetails: "",
+    priority: "",
+    scope: "",
+    state: "",
+    algorithm: "",
+    savings: "",
+    savingsCurrency: "",
+    resourceName: "",
+    resourceType: "",
+    resourcesToPurchase: "",
+    term: "",
+    service: "",
+    policy_name: "",
+    total_savings: "",
+    message: ""
   })
 
   result[0]['total_savings'] = savings_message
@@ -575,7 +617,7 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_recommendations" do
+policy "pol_recommendations" do
   validate_each $ds_recommendations_incident do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Committed Use Discount Recommendations"
     detail_template <<-'EOS'
@@ -636,6 +678,9 @@ policy "policy_recommendations" do
       field "state" do
         label "State"
       end
+      field "service" do
+        label "Service"
+      end
       field "id" do
         label "ID"
         path "resourceID"
@@ -667,7 +712,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do

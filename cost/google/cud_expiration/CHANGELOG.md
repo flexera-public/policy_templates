@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.1.0
+
+- Added support for filtering system and Google Apps Script projects from the results.
+
+## v3.0.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v3.0.0
 
 - Added ability to filter recommendations by project

@@ -1,5 +1,24 @@
 # Changelog
 
+## v5.1.0
+
+- Added email notifications for Start Action, Stop Action, and Errors
+
+## v5.0.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v5.0.1
+
+- Removed datasource that was not necessary for results
+
+## v5.0.0
+
+- Remove `next_stop`, `next_start` label requirements
+- Remove static zone to region mapping logic
+- Add task labels to improve status updates and debugging for CWF actions
+- Add error capture, graceful timeout handling for CWF actions
+
 ## v4.0
 
 - Added support for regex when filtering resources by label

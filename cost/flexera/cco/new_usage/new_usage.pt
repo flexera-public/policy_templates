@@ -7,10 +7,11 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "3.0.0",
+  version: "3.0.3",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
-  policy_set: "Cloud Cost Optimization"
+  policy_set: "Cloud Cost Optimization",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -249,7 +250,7 @@ end
 
 datasource "ds_current_bill" do
   request do
-    run_script $js_get_bill, $ds_billing_centers_filtered, $ds_dimension, $param_cost_metric, rs_org_id, rs_optima_host, 3
+    run_script $js_get_bill, $ds_billing_centers_filtered, $ds_dimension, $param_cost_metric, 3, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -263,7 +264,7 @@ end
 
 datasource "ds_previous_bill" do
   request do
-    run_script $js_get_bill, $ds_billing_centers_filtered, $ds_dimension, $param_cost_metric, rs_org_id, rs_optima_host, $param_lookback
+    run_script $js_get_bill, $ds_billing_centers_filtered, $ds_dimension, $param_cost_metric, $param_lookback, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -276,7 +277,7 @@ datasource "ds_previous_bill" do
 end
 
 script "js_get_bill", type: "javascript" do
-  parameters "ds_billing_centers_filtered", "ds_dimension", "param_cost_metric", "rs_org_id", "rs_optima_host", "lookback"
+  parameters "ds_billing_centers_filtered", "ds_dimension", "param_cost_metric", "param_lookback", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   cost_metric_table = {
@@ -287,11 +288,11 @@ script "js_get_bill", type: "javascript" do
   }
 
   end_date = new Date()
-  end_date.setDate(end_date.getDate() - (lookback - 1))
+  end_date.setDate(end_date.getDate() - (param_lookback - 1))
   end_date = end_date.toISOString().split('T')[0]
 
   start_date = new Date()
-  start_date.setDate(start_date.getDate() - lookback)
+  start_date.setDate(start_date.getDate() - param_lookback)
   start_date = start_date.toISOString().split('T')[0]
 
   var request = {
@@ -324,21 +325,27 @@ script "js_new_usage", type: "javascript" do
   code <<-'EOS'
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
-    var numString = number.toString()
-    var values = numString.split(".")
-    var formatted_number = ''
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   cost_metric_table = {

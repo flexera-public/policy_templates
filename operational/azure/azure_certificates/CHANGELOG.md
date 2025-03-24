@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.0.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v4.0.1
+
+- Fixed issue where policy incident would show incorrect `Days Until Expiration` for several resources
+
 ## v4.0.0
 
 - Added ability to delete Azure certificates automatically or manually

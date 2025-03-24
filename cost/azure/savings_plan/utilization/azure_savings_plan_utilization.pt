@@ -7,10 +7,11 @@ severity "medium"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "0.1.0",
+  version: "0.1.2",
   provider: "Azure",
   service: "Compute",
-  policy_set: "Savings Plans"
+  policy_set: "Savings Plans",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -204,7 +205,7 @@ datasource "ds_savings_plan_details" do
       field "agreementType", val(iter_item, "agreementType")
       field "savingsPlanOrderId", jmes_path(col_item, "id")
       field "savingsPlanOrderName", jmes_path(col_item, "name")
-    end  
+    end
   end
 end
 
@@ -296,12 +297,12 @@ script "js_filtered_savings_plans", type: "javascript" do
     // Applied Scope Properties
     if (sp.scopeProperties) {
       if (sp.scopeProperties.managementGroupId) {
-        sp["scopeDetailId"] = sp.scopeProperties.managementGroupId 
-        sp["scopeDetailName"] = sp.scopeProperties.displayName 
+        sp["scopeDetailId"] = sp.scopeProperties.managementGroupId
+        sp["scopeDetailName"] = sp.scopeProperties.displayName
       } else if (sp.scopeProperties.subscriptionId) {
-        sp["scopeDetailId"] = sp.scopeProperties.subscriptionId 
-        sp["scopeDetailName"] = sp.scopeProperties.displayName 
-      } 
+        sp["scopeDetailId"] = sp.scopeProperties.subscriptionId
+        sp["scopeDetailName"] = sp.scopeProperties.displayName
+      }
 
       sp = _.omit(sp, "scopeProperties")
     } else {
@@ -314,7 +315,7 @@ script "js_filtered_savings_plans", type: "javascript" do
       if (sp.utilization.trend) {
         sp["utilizationTrend"] = sp.utilization.trend
       }
-      
+
       if (_.size(sp.utilization.aggregates) > 0) {
         // Add the trend and utilization values to the savings plan object
         // This makes it easier to path to in the export
@@ -326,7 +327,7 @@ script "js_filtered_savings_plans", type: "javascript" do
       utilization_aggregate = _.find(sp.utilization.aggregates, function(agg) {
         return agg.grain == param_lookback_days
       })
-      
+
       if (utilization_aggregate != undefined) {
         sp["utilizationAmount"] = utilization_aggregate.value
         sp["utilizationAmountUnit"] = utilization_aggregate.valueUnit
@@ -334,7 +335,7 @@ script "js_filtered_savings_plans", type: "javascript" do
 
       sp = _.omit(sp, "utilization")
     }
- 
+
     return sp
   })
   EOS
@@ -352,21 +353,27 @@ script "js_sp_data_for_incident", type: "javascript" do
 
   // function for formatting spend number
   function formatNumber(number, separator) {
-    var numString = number.toString();
-    var values = numString.split(".");
-    var result = ''
-    while ( values[0].length > 3 ) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      result = separator + chunk + result
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
-    if ( values[0].length > 0 ) {
-      result = values[0] + result
-    }
-    if ( values[1] == undefined ) {
-      return result;
-    }
-    return result + "." + values[1];
+
+    return formatted_number
   }
 
   // format costs with currency symbol and thousands separator
@@ -401,12 +408,12 @@ script "js_sp_data_for_incident", type: "javascript" do
     if (sp.commitmentAmount && sp.commitmentAmount != null) {
       total_wastage += Number(sp.commitmentAmount)
     }
-    
+
     sp["policyName"] = ds_applied_policy.name
   })
 
   total_wastage = cur + " " + formatNumber((Math.round(total_wastage * 100) / 100), separator)
-  
+
   result = {
     "savings_plan_details": filtered_sps,
     "message": "The total estimated hourly wasted spend is " + total_wastage
