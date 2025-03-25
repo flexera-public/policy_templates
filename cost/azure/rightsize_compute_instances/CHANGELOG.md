@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1.3
+
+- Renamed `resourceType` to `instanceSize`, and renamed `resourceKind` to `resourceType` in violation data. This fixes incorrect value shown for "Resource Type" in Optimization dashboard.
+
 ## v6.1.2
 
 - Fixed incorrect calculation for memory related fields "Memory Average %", "Memory p90", Memory p95", and "Memory p99".
