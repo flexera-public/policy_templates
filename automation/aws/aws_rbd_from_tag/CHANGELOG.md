@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3.3
+
+- Updated service field in metadata to "Cloud Cost Optimization". Functionality unchanged.
+
 ## v2.3.2
 
 - Fixed issue where tag keys that were not lowercase would not be properly detected and used
