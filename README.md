@@ -462,6 +462,7 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [AWS Long Running Instances](./operational/aws/long_running_instances)
+  - [AWS Overutilized EC2 Instances](./operational/aws/overutilized_ec2_instances)
   - [AWS Scheduled EC2 Events](./operational/aws/scheduled_ec2_events)
   - [AWS Usage Forecast - Instance Time Used](./operational/aws/total_instance_usage_forecast)
   - [AWS Usage Forecast - Number of Instance Hours Used](./operational/aws/total_instance_hours_forecast)
@@ -726,7 +727,7 @@ These templates can generate savings estimates for your environment.
 :categories:
   Compliance: 34
   Cost: 140
-  Operational: 37
+  Operational: 38
   SaaS Management: 11
   Security: 74
 :optimization_count: 72
@@ -769,7 +770,7 @@ These templates can generate savings estimates for your environment.
   Old Snapshots: 3
   Open Buckets: 1
   Open S3 Buckets: 1
-  Overutilized Compute Instances: 1
+  Overutilized Compute Instances: 2
   PaaS Optimization: 2
   Reserved Instance: 3
   Reserved Instances: 8
@@ -799,7 +800,7 @@ These templates can generate savings estimates for your environment.
   Unused Volumes: 7
   Usage Report: 10
 :providers:
-  AWS: 104
+  AWS: 105
   Azure: 106
   Azure China: 1
   Flexera: 48
@@ -820,7 +821,7 @@ These templates can generate savings estimates for your environment.
   Cloud Cost Optimization: 21
   CloudTrail: 8
   Common Bill Ingestion: 5
-  Compute: 81
+  Compute: 82
   Config: 1
   DBS: 1
   Database: 2
@@ -852,7 +853,7 @@ These templates can generate savings estimates for your environment.
   Storage Accounts: 3
   Tags: 3
   Usage Discount: 6
-:total_count: 296
+:total_count: 297
 -->
 <!-- End Policy Template Stats -->
 
