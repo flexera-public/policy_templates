@@ -1,28 +1,25 @@
-# AWS Rightsize EC2 Instances
+# AWS Overutilized EC2 Instances
 
 ## What It Does
 
-This policy checks all of the EC2 instances in an AWS Account for CPU and Memory usage over a user-specified number of days. If the usage is less than the user provided Idle Instance CPU/Memory percentage threshold then the EC2 instance is recommended for termination. If the usage is less than the user provided Underutilized Instance CPU/Memory percentage threshold then the EC2 instance is recommended for downsizing. Both sets of EC2 instances returned from this policy are emailed to the user.
-
-NOTE: This policy template only reports on underutilized and idle EC2 instances. Please use the [AWS Overutilized EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/overutilized_ec2_instances) policy template to report on overutilized EC2 instances.
+This policy checks all of the EC2 instances in an AWS Account for CPU and Memory usage over a user-specified number of days. If the usage is above the user provided CPU/Memory percentage thresholds then the EC2 instance is recommended for upsizing. Optionally, a list of oversized EC2 instances is emailed.
 
 ## How It Works
 
 - The policy leverages the AWS API to retrieve all instances and then uses the AWS CloudWatch API to check the instance CPU and Memory utilization over a specified number of days.
 - The utilization data is provided for the following statistics: Average, Maximum, Minimum, 99th percentile, 95th percentile, 90th percentile.
-- The policy identifies all instances that have CPU utilization and/or Memory utilization below the Idle Instance CPU/Memory Threshold(s) defined by the user. The recommendation provided for Idle Instances is a termination action; termination can be performed in an automated manner or after approval.
-- The policy identifies all instances that have CPU utilization and/or Memory utilization below the Underutilized Instance CPU/Memory Threshold(s) defined by the user. The recommendation provided for Inefficient/Underutilized Instances is a downsize action; downsizing can be performed in an automated manner or after approval.
+- The policy identifies all instances that have CPU utilization and/or Memory utilization above the CPU/Memory Threshold(s) defined by the user. The recommendation provided for oversized EC2 instances is upsizing.
 
-### Policy Savings Details
+### Policy Costs Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized for idle resources if the resource is stopped, terminated, and for underutilized resources if the resource is downsized.
+The policy includes the estimated monthly costs. The estimated monthly costs will be incurred for resources that are upsized.
 
-- The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
-- For idle resources, the savings is the full cost of the resource. For underutilized resources, the savings is the difference of the current cost of the resource and the estimated cost of the recommended resource type.
+- The `Estimated Monthly Cost` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
+- The cost of the upsize action is the full cost of the resource. This is because upsizing an EC2 instance doubles the cost.
 - Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
-- If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
-- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
-- Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
+- If the resource cannot be found in Flexera CCO, the `Estimated Monthly Cost` is 0.
+- The incident message detail includes the sum of each resource `Estimated Monthly Cost` as `Potential Monthly Cost`.
+- Both `Estimated Monthly Cost` and `Potential Monthly Cost` will be reported in the currency of the Flexera organization the policy is applied in.
 
 ## Input Parameters
 
@@ -37,26 +34,20 @@ The policy includes the estimated monthly savings. The estimated monthly savings
   - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
-- *Skip Instance Sizes* - Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate.
-- *Idle Instance CPU Threshold (%)* - The CPU threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore CPU utilization for idle instance recommendations.
-- *Idle Instance Memory Threshold (%)* - The Memory threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore memory utilization for idle instance recommendations.
-- *Underutilized Instance CPU Threshold (%)* - The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization for underutilized instance recommendations.
-- *Underutilized Instance Memory Threshold (%)* - The Memory threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore memory utilization for underutilized instance recommendations.
-- *Idle/Utilized for both CPU/Memory or either* - Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Has no effect if other parameters are configured such that only CPU or memory is being considered.
-- *Threshold Statistic* - Statistic to use when determining if an instance is idle/underutilized.
+- *CPU Threshold (%)* - The CPU threshold at which to consider an instance to be overutilized and therefore be flagged for upsizing. Set to -1 to ignore CPU utilization for overutilized instance recommendations.
+- *Memory Threshold (%)* - The Memory threshold at which to consider an instance to be overutilized and therefore be flagged for upsizing. Set to -1 to ignore memory utilization for overutilized instance recommendations.
+- *Both CPU and Memory or Either* - Set whether an instance should be considered overutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Has no effect if other parameters are configured such that only CPU or memory is being considered.
+- *Threshold Statistic* - Statistic to use when determining if an instance is overutilized.
 - *Statistic Lookback Period* - How many days back to look at CPU and/or memory data for instances in Cloudwatch.
-- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
-For example if a user selects the "Terminate Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be terminated.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Upsize Instances" action while applying the policy, all reported overutilized EC2 instances will be upsized.
 
 ## Policy Actions
 
 - Sends an email notification
-- Stop EC2 instances (if idle) after approval
-- Terminate EC2 instances (if idle) after approval
-- Downsize EC2 instances (if underutilized but not idle) after approval
+- Upsize EC2 instances after approval
 
 ## Prerequisites
 
@@ -74,7 +65,6 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `ec2:ModifyInstanceAttribute`*
   - `ec2:StartInstances`*
   - `ec2:StopInstances`*
-  - `ec2:TerminateInstances`*
   - `cloudwatch:GetMetricStatistics`
   - `cloudwatch:GetMetricData`
   - `cloudwatch:ListMetrics`
@@ -98,7 +88,6 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
                   "ec2:ModifyInstanceAttribute",
                   "ec2:StartInstances",
                   "ec2:StopInstances",
-                  "ec2:TerminateInstances",
                   "cloudwatch:GetMetricStatistics",
                   "cloudwatch:GetMetricData",
                   "cloudwatch:ListMetrics",
