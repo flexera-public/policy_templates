@@ -1,5 +1,6 @@
 require 'uri'
 require 'yaml'
+require 'fileutils'
 require_relative '../../.dangerfile/policy_parser'
 
 
@@ -19,7 +20,7 @@ if (pt_files.length != 0)
   pt_files.each do |file|
     ## Begin Policy Exclusions ##
     # Exclude Policies that have publish: "false" in the metadata
-    if open(file).grep(/publish: \"false\"/).length > 0 then next end
+    if File.open(file).grep(/publish: \"false\"/).length then next end
 
     # Exclude Meta Parent Policies
     if file.include?("meta_parent") then next end
@@ -57,7 +58,7 @@ if (pt_files.length != 0)
     # Optimization Policies will be listed separately with intent to highlight them
     # Requirements for Optimization Policies:
     # - Must have all required fields and metadata (https://docs.flexera.com/flexera/EN/Automation/CreateRecomendationFromPolicyTemp.htm)
-    pt_file = open(file)
+    pt_file = File.open(file)
 
     if (pt_file.grep(/field \"savings\" do/).length > 0 \
       and p[:provider] != nil and p[:provider].length > 0) then
