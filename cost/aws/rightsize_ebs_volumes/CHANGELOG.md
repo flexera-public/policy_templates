@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.4
+
+- Added batch processing for large datasources as a performance enhancement (reduces memory usage) with no changes to logic or functionality.
+
 ## v0.3.3
 
 - Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators

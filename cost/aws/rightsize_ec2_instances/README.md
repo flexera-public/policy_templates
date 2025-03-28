@@ -2,11 +2,13 @@
 
 ## What It Does
 
-This policy checks all the instances in an AWS Account for CPU and Memory usage over a user-specified number of days. If the usage is less than the user provided Idle Instance CPU/Memory percentage threshold then the Virtual Machine is recommended for termination. If the usage is less than the user provided Underutilized Instance CPU/Memory percentage threshold then the Virtual Machine is recommended for downsizing. Both sets of Virtual Machines returned from this policy are emailed to the user.
+This policy checks all of the EC2 instances in an AWS Account for CPU and Memory usage over a user-specified number of days. If the usage is less than the user provided Idle Instance CPU/Memory percentage threshold then the EC2 instance is recommended for termination. If the usage is less than the user provided Underutilized Instance CPU/Memory percentage threshold then the EC2 instance is recommended for downsizing. Both sets of EC2 instances returned from this policy are emailed to the user.
+
+NOTE: This policy template only reports on underutilized and idle EC2 instances. Please use the [AWS Overutilized EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/overutilized_ec2_instances) policy template to report on overutilized EC2 instances.
 
 ## How It Works
 
-- The policy leverages the AWS API to retrieve all instances and then uses the AWS CloudWatch API to check the instance average CPU and Memory utilization over a specified number of days.
+- The policy leverages the AWS API to retrieve all instances and then uses the AWS CloudWatch API to check the instance CPU and Memory utilization over a specified number of days.
 - The utilization data is provided for the following statistics: Average, Maximum, Minimum, 99th percentile, 95th percentile, 90th percentile.
 - The policy identifies all instances that have CPU utilization and/or Memory utilization below the Idle Instance CPU/Memory Threshold(s) defined by the user. The recommendation provided for Idle Instances is a termination action; termination can be performed in an automated manner or after approval.
 - The policy identifies all instances that have CPU utilization and/or Memory utilization below the Underutilized Instance CPU/Memory Threshold(s) defined by the user. The recommendation provided for Inefficient/Underutilized Instances is a downsize action; downsizing can be performed in an automated manner or after approval.
@@ -52,9 +54,9 @@ For example if a user selects the "Terminate Instances" action while applying th
 ## Policy Actions
 
 - Sends an email notification
-- Stop virtual machines (if idle) after approval
-- Terminate virtual machines (if idle) after approval
-- Downsize virtual machines (if underutilized but not idle) after approval
+- Stop EC2 instances (if idle) after approval
+- Terminate EC2 instances (if idle) after approval
+- Downsize EC2 instances (if underutilized but not idle) after approval
 
 ## Prerequisites
 

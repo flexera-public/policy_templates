@@ -46,6 +46,7 @@ default_child_policy_template_files = [
   "../../operational/aws/long_running_instances/long_running_instances.pt",
   "../../operational/aws/scheduled_ec2_events/aws_scheduled_ec2_events.pt",
   "../../operational/aws/tag_cardinality/aws_tag_cardinality.pt",
+  "../../operational/aws/overutilized_ec2_instances/aws_overutilized_ec2.pt",
   "../../security/aws/aws_config_enabled/aws_config_enabled.pt",
   "../../security/aws/ebs_ensure_encryption_default/ebs_ensure_encryption_default.pt",
   "../../security/aws/ebs_unencrypted_volumes/aws_unencrypted_volumes.pt",
@@ -321,7 +322,8 @@ end
   # Get the checks
   # Use regex to extract the validate and validate_each checks from the policy template string s
   # The regex is not perfect, but it works for now
-  checks = pt.scan(/^\s+validate.*?do.*?^  end/m)
+  checks = pt.scan(/^\s+validate.*?do.*?^  end/m).select { |check| check.include?("export ") }
+
   checks.each do |validate_block|
     # Print Raw Validate Block as a String
     # print("Raw Validate Block:\n")

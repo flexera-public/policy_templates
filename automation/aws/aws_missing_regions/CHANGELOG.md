@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.2
+
+- Updated service field in metadata to "Cloud Cost Optimization". Functionality unchanged.
+
 ## v0.2.1
 
 - Minor code improvements to conform with current standards. Functionality unchanged.

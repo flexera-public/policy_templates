@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.2
+
+- Minor code improvements to bring template in line with current standards. Functionality unchanged.
+
 ## v2.0.1
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.

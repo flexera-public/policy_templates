@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.3.2
+
+- Updated service field in metadata to "Cloud Cost Optimization". Functionality unchanged.
+
 ## v1.3.1
 
 - Fixed issue that would sometimes cause execution to fail if an Azure Subscription had no tag keys
