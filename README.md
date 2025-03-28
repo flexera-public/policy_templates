@@ -124,7 +124,7 @@ These templates can generate savings estimates for your environment.
   - [AWS Untagged Resources](./compliance/aws/untagged_resources)
   - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused)
 
-- IAM
+- Identity & Access Management
 
   - [AWS IAM Role Audit](./compliance/aws/iam_role_audit)
 
@@ -153,7 +153,7 @@ These templates can generate savings estimates for your environment.
   - [Azure Untagged Resources](./compliance/azure/azure_untagged_resources)
   - [Azure Untagged Virtual Machines](./compliance/azure/azure_untagged_vms)
 
-- IAM
+- Identity & Access Management
 
   - [Azure Policy Audit](./compliance/azure/azure_policy_audit)
   - [Azure Subscription Access](./compliance/azure/subscription_access)
@@ -602,7 +602,7 @@ These templates can generate savings estimates for your environment.
 
   - [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted)
 
-- IAM
+- Identity & Access Management
 
   - [AWS IAM Account Missing Support Role](./security/aws/iam_support_role_created)
   - [AWS IAM Attached Admin Policies](./security/aws/iam_no_admin_iam_policies_attached)
@@ -657,7 +657,7 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Resources with public IP address](./security/azure/resources_with_public_ip_address)
 
-- IAM
+- Identity & Access Management
 
   - [Azure Guest Users](./security/azure/guest_users)
   - [Azure Subscriptions Without Log Analytics Auto-Provisioning](./security/azure/log_analytics_autoprovision)
@@ -829,9 +829,8 @@ These templates can generate savings estimates for your environment.
   ELB: 1
   FlexNet Manager: 1
   Git: 7
-  IAM: 20
   IT Asset Management: 9
-  Identity & Access Management: 3
+  Identity & Access Management: 23
   KMS: 1
   Kubernetes: 2
   Managed Disks: 1
