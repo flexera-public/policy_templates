@@ -37,18 +37,18 @@ print(f"Retrieved {len(sku_dicts)} instance types.")
 data = {}
 
 for item in sku_dicts:
-    if item.get("name") != None:
+    if item.get("name", "None") != "None" and item.get("tier", "None") != "None":
         # Extract the relevant fields from the SKU
         details = {
             "name": item.get("name", "None"),
             "tier": item.get("tier", "None"),
             "size": item.get("size", "None"),
             "family": item.get("family", "None"),
-            "regions": item.get("locations", "None")
+            "specs": {}
         }
 
         for capability in item.get("capabilities", []):
-            details[capability.get("name")] = capability.get("value", "None")
+            details["specs"][capability.get("name")] = capability.get("value", "None")
 
         data[item.get("name")] = details
 
