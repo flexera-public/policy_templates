@@ -1,5 +1,12 @@
 # Changelog
 
+## v6.0.0
+
+- Corrected issue where policy template incorrectly calculated length of time an instance had been stopped for.
+- Added potential savings information to policy output, including optional disk savings.
+- Policy recommendations will now appear in the Optimization dashboard in Flexera One.
+- Changed policy category from "Compliance" to "Cost".
+
 ## v5.0.2
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
