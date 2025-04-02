@@ -32,11 +32,9 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ### Configure ITAM Custom View
 
-You must configure a Custom View for the ITAM report that you'd like to email.
+You must configure a [Custom View](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/operational/flexera/itam/schedule_itam_report/images/itam_cv_report.png) for the ITAM report that you'd like to email. The report number will be visible in your browser's address bar:
 
-Create a custom view in ITAM that could look like this: ![Alt text][FNMSReport]
-
-Once saved note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the policy template.
+![Report Number](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/operational/flexera/itam/schedule_itam_report/images/report_number.png)
 
 ## Supported Clouds
 
@@ -45,12 +43,3 @@ Once saved note the report number in the URL field : ![Alt text][ReportNumber] y
 ## Cost
 
 This policy template does not incur any cloud costs.
-
-<!-- Image references -->
-[emailoutput]: images/email_output.png "email output"
-[APIToken]: images/APIToken.png "APIToken"
-[CreateServeceAccount]: images/CreateServiceAccount.png "Create Service Account"
-[FNMSReport]: images/FNMS_cv_Report.png "FNMS Cloud Instance Report"
-[ReportNumber]: images/ReportNumber.png "ReportNumber"
-[WebServiceRole]: images/WebServiceRole.png "WebServiceRole"
-[CMPToken]: images/CMP_NewToken.png "CMP Token"
