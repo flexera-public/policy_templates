@@ -4,7 +4,7 @@
 
 This policy template uses the [Flexera ITAM Cloud REST APIs](https://docs.flexera.com/FlexeraOneAPI/ITAMDataAPI/#api-Reports-reportsExecute) to run a report (Custom View) and email it. [View an example email.](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/operational/flexera/itam/schedule_itam_report/images/email_output.png)
 
-NOTE: Only the first 100,000 rows of the report will be included. This is due to the limitation in e-mail body size.
+NOTE: Only the first 100,000 rows of the report will be included. This is due to email size limitations.
 
 ## Input Parameters
 
@@ -13,7 +13,9 @@ This policy has the following input parameters required when launching the polic
 - *Email Addresses* - Email addresses of the recipients you wish to send the report to.
 - *Flexera ITAM Report ID* - The ID of the Flexera ITAM Custom View Report in Flexera One.
 - *Report Title* - The title of the report. This will also be the subject of the report email.
-- *Show Full Date/Time* - Whether to include the full date and time in ISO-8601 format in the report. Set to 'No' to just show the date without the time or ISO-8601 formatting.
+- *Show Full Date/Time* - Whether to show dates with full ISO-8601 formatting in the report. Set to 'No' to just show the date without the time or ISO-8601 formatting.
+  - "Yes" Example: 2023-07-02T06:25:36.436Z
+  - "No" Example: 2023-07-02
 
 ## Policy Actions
 

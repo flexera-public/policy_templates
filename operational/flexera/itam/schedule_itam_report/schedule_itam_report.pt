@@ -46,7 +46,7 @@ parameter "param_report_datetime" do
   type "string"
   category "Policy Settings"
   label "Show Full Date/Time"
-  description "Whether to include the full date and time in ISO-8601 format in the report. Set to 'No' to just show the date without the time or ISO-8601 formatting."
+  description "Whether to show dates with full ISO-8601 formatting in the report. Set to 'No' to just show the date without the time or ISO-8601 formatting. See the README for more details."
   allowed_values "Yes", "No"
   default "Yes"
 end
@@ -181,13 +181,15 @@ script "js_markdown_report", type: "javascript" do
   // This assumes that all rows have the same columns
   // Put object keys and labels into an ordered array to make the output consistent
   columns = _.map(_.keys(ds_fnms_reports_combined[0]).sort(), function(key) {
+    label = humanizeColumnName(key)
+
     return {
       // key is used to get the value from the row
       // label is used in the output report as a column header
       // label_pad is used for the second row of the markdown table to create a separator
       key: key,
-      label: humanizeColumnName(key),
-      label_pad: pad('-', humanizeColumnName(key).length)
+      label: label,
+      label_pad: pad('-', label.length)
     }
   })
 
@@ -202,8 +204,14 @@ script "js_markdown_report", type: "javascript" do
 
   // Now the rest of the table the data
   _.each(ds_fnms_reports_combined, function(line) {
-    entries = _.map(columns, function(column) {`
-      return [ line[column['key']], " | " ].join('')
+    entries = _.map(columns, function(column) {
+      entry = line[column['key']] ? line[column['key']] : ""
+
+      if (param_report_datetime == "No" && entry.length == 20 && entry.indexOf("T") == 10 && entry.indexOf("Z") == 19 && new Date(entry).toString != "Invalid Date") {
+        entry = new Date(entry).toISOString().substring(0, 10)
+      }
+
+      return [ entry, " | " ].join('')
     })
 
     details.push([ "| " ].concat(entries).concat([ " |" ]).join('').trim())
