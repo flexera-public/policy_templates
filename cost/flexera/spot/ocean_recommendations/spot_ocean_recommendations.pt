@@ -1,0 +1,892 @@
+name "Kubernetes - Rightsizing Recommendations"
+rs_pt_ver 20180301
+type "policy"
+short_description "Get rightsizing recommendations for Kubernetes clusters. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/spot/ocean_recommendations/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Operational"
+severity "low"
+default_frequency "hourly"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "Kubernetes",
+  policy_set: "Rightsize Containers",
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
+end
+
+# Optional include recommendations because request and cpu memory are not defined
+parameter "param_include_recommendations_request_undefined" do
+  type "string"
+  category "Recommendations"
+  label "Include Recommendations with Request Undefined"
+  description "Include recommendations where the requested CPU and Memory are not defined."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+# parameter "param_min_savings" do
+#   type "number"
+#   category "Policy Settings"
+#   label "Minimum Savings Threshold"
+#   description "Minimum potential savings required to generate a recommendation"
+#   min_value 0
+#   default 0
+# end
+
+parameter "param_spotinst_accounts_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Spot Accounts"
+  description "Allow or Deny entered Spot Accounts. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_spotinst_accounts_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Spot Accounts List"
+  description "A list of allowed or denied Spot Accounts. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+credentials "auth_spotinst" do
+  schemes "api_key"
+  label "SpotInst"
+  description "Select the SpotInst Credential from the list."
+  tags "provider=spotinst"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# https://api.spotinst.io/setup/account
+# Docs: https://docs.spot.io/api/#tag/Accounts/operation/OrganizationsAndAccountsGetAccounts
+datasource "ds_spotinst_accounts" do
+  request do
+    auth $auth_spotinst
+    host "api.spotinst.io"
+    path "/setup/account"
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".response.items[]") do
+      # response field
+      field "account", jq(col_item, ".")
+    end
+  end
+end
+
+datasource "ds_spotinst_accounts_filtered" do
+  run_script $js_spotinst_accounts_filtered, $ds_spotinst_accounts, $param_spotinst_accounts_allow_or_deny, $param_spotinst_accounts_list
+end
+
+script "js_spotinst_accounts_filtered", type: "javascript" do
+  parameters "ds_spotinst_accounts", "param_spotinst_accounts_allow_or_deny", "param_spotinst_accounts_list"
+  result "result"
+  code <<-EOS
+  if (param_spotinst_accounts_list.length > 0) {
+    result = _.filter(ds_spotinst_accounts, function(subscription) {
+      include = _.contains(param_spotinst_accounts_list, subscription['account']['accountId']) || _.contains(param_spotinst_accounts_list, subscription['account']['name'])
+
+      if (param_spotinst_accounts_allow_or_deny == "Deny") {
+        include = include
+      }
+
+      return include
+    })
+  } else {
+    result = ds_spotinst_accounts
+  }
+EOS
+end
+
+# https://api.spotinst.io/ocean/aws/k8s/cluster
+# Docs: https://docs.spot.io/api/#tag/Ocean-AWS/operation/OceanAWSClusterList
+datasource "ds_spotinst_clusters" do
+  iterate $ds_spotinst_accounts_filtered
+  request do
+    auth $auth_spotinst
+    host "api.spotinst.io"
+    path "/ocean/aws/k8s/cluster"
+    query "accountId", val(val(iter_item, "account"), "accountId")
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".response.items[]") do
+      # iteration fields
+      field "account", jq(iter_item, ".account")
+      # response field
+      field "cluster", jq(col_item, ".")
+    end
+  end
+end
+
+# https://api.spotinst.io/ocean/aws/k8s/cluster/o-86a443f1/rightSizing/suggestion?accountId=act-b04d40ef
+# Docs: https://docs.spot.io/api/#tag/Ocean-AWS/operation/oceanAwsFilterRightSizingWithFilter
+datasource "ds_spotinst_clusters_rightsizing_suggestions" do
+  iterate $ds_spotinst_clusters
+  request do
+    auth $auth_spotinst
+    host "api.spotinst.io"
+    path join(["/ocean/aws/k8s/cluster/", val(val(iter_item, "cluster"), "id"), "/rightSizing/suggestion"])
+    query "accountId", val(val(iter_item, "account"), "accountId")
+    # ignore_status 400 # Ignore 400 status code -- when ocean cluster no longer exists
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".response.items.suggestions[]") do
+      # iteration fields
+      field "account", jq(iter_item, ".account")
+      field "cluster", jq(iter_item, ".cluster")
+      # response field
+      field "suggestion", jq(col_item, ".")
+    end
+  end
+end
+
+# Filter out suggestions based on used input parameters
+datasource "ds_spotinst_clusters_rightsizing_suggestions_filtered" do
+  run_script $js_spotinst_clusters_rightsizing_suggestions_filtered, $ds_spotinst_clusters_rightsizing_suggestions, $param_include_recommendations_request_undefined
+end
+
+script "js_spotinst_clusters_rightsizing_suggestions_filtered", type: "javascript" do
+  parameters "ds_spotinst_clusters_rightsizing_suggestions", "param_include_recommendations_request_undefined"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_spotinst_clusters_rightsizing_suggestions, function(suggestion) {
+    var checkHasRequest = param_include_recommendations_request_undefined == "No" \
+                          && suggestion.suggestion.requestedCPU > 0 \
+                          && suggestion.suggestion.requestedMemory > 0
+
+    return checkHasRequest
+  })
+EOS
+end
+
+datasource "ds_date_periods" do
+  run_script $js_date_periods
+end
+
+script "js_date_periods", type: "javascript" do
+  result "result"
+  code <<-EOS
+  var result = []
+
+  // Get all the day periods for today to 30 days ago
+  // End date is 1 day after the start date
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  for (var i = 0; i < 30; i++) {
+    var start_date = new Date(today)
+    start_date.setDate(today.getDate() - i)
+    var end_date = new Date(start_date)
+    end_date.setDate(start_date.getDate() + 1)
+    // 2024-12-02 00:00:00.000
+
+    result.push({
+      // ISO Date String Example: 2024-12-02T00:00:00.000Z
+      start_date: start_date.toISOString().replace("T"," ").replace("Z",""),
+      end_date: end_date.toISOString().replace("T"," ").replace("Z",""),
+    });
+  }
+EOS
+end
+
+# Zip all the clusters and all the date periods into a single list
+datasource "ds_requests_spotinst_cluster_aggregated_costs" do
+  run_script $js_requests_spotinst_cluster_aggregated_costs, $ds_date_periods, $ds_spotinst_clusters
+end
+
+script "js_requests_spotinst_cluster_aggregated_costs", type: "javascript" do
+  parameters "ds_date_periods", "ds_spotinst_clusters"
+  result "result"
+  code <<-EOS
+  var result = []
+  _.each(ds_date_periods, function(date_period) {
+    _.each(ds_spotinst_clusters, function(spotinst_cluster) {
+      result.push({
+        spotinst_cluster: spotinst_cluster,
+        date_period: date_period,
+      })
+    })
+  })
+EOS
+end
+
+# https://api.spotinst.io/ocean/aws/k8s/cluster/{oceanClusterId}/aggregatedCosts
+# Docs: https://docs.spot.io/api/#tag/Ocean-AWS/operation/oceanAwsK8sClusterAggregatedDetailedCosts
+# We need to get costs so we can calculated estimated savings
+datasource "ds_spotinst_cluster_aggregated_costs" do
+  iterate $ds_requests_spotinst_cluster_aggregated_costs
+  request do
+    auth $auth_spotinst
+    verb "POST"
+    host "api.spotinst.io"
+    path join(["/ocean/aws/k8s/cluster/", jq(iter_item,".spotinst_cluster.cluster.id"), "/aggregatedCosts"])
+    query "accountId", jq(iter_item, ".spotinst_cluster.account.accountId")
+    body_field "startTime", jq(iter_item, ".date_period.start_date")
+    body_field "endTime",   jq(iter_item, ".date_period.end_date")
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".response.items[].result.totalForDuration") do
+      field "account", val(iter_item, "account")
+      field "date_period", val(iter_item, "date_period")
+      field "spotinst_cluster", val(iter_item, "spotinst_cluster")
+      field "detailedCosts", jq(col_item, ".detailedMetrics")
+      field "endTime", jq(col_item, ".endTime")
+      field "startTime", jq(col_item, ".startTime")
+      field "summary", jq(col_item, ".summary")
+    end
+  end
+end
+
+datasource "ds_calculated_proportions" do
+  run_script $js_calculated_proportions, $ds_spotinst_cluster_aggregated_costs
+end
+
+script "js_calculated_proportions", type: "javascript" do
+  parameters "ds_spotinst_cluster_aggregated_costs"
+  result "result"
+  code <<-EOS
+  var result = []
+
+  function properCase(string) {
+    // Capitalize the first letter of each word
+    var words = string.split(" ")
+    var properWords = []
+    _.each(words, function(word) {
+      properWords.push(word.charAt(0).toUpperCase() + word.slice(1))
+    })
+    return properWords.join(" ")
+  }
+
+  // Loop through ds_spotinst_cluster_aggregated_costs
+  _.each(ds_spotinst_cluster_aggregated_costs, function(cost){
+    // Check if we have any costs
+    if (cost.detailedCosts) {
+      // Loop through the aggregations{} object
+      _.each(cost.detailedCosts.aggregations, function(aggregation){
+        // Loop through each resource in the aggregation
+        _.each(aggregation.resources, function(resource) {
+          // These fields in the resource object are not cost dimensions
+          // We will skip them when creating the CBI object
+          var skipKeys = ["metadata","total"]
+          // Currently supported usage categories returned by Spot API
+          var usageCategories = ["compute", "storage", "networking"]
+          // Loop through each usage category to append the cost data
+          _.each(usageCategories, function(usageCategory){
+            // Values that are the same for all usage categories
+            var obj = {
+              "CloudVendorAccountID": cost.spotinst_cluster.account.providerExternalId, // Should be the Cloud Account the K8S cluster resides in
+              "CloudVendorAccountName": cost.spotinst_cluster.account.named, // Should be the Cloud Account Name the K8S cluster resides in
+              "Category": properCase(usageCategory), // Category can be the usage, with proper case (Networking, Storage, Compute)
+              "InstanceType": "",
+              "LineItemType": "Usage", // Static value used in other bills
+              "Region": cost.spotinst_cluster.cluster.region,
+              "ResourceGroup": "", // Can be the namespace?  Or the K8S cluster name?
+              "ResourceType": "", // Handled per usageCategory below
+              "ResourceID": resource.metadata.type + "/" + resource.metadata.name,
+              "Service": "",
+              "UsageType": properCase(usageCategory),
+              // Use lowercase tags and allow the common logic in next step to convert it from object to CSV string with escaped quotes
+              "tags": {
+                "kubernetes_cluster_name": cost.spotinst_cluster.cluster.name,
+                "kubernetes_resource_namespace": resource.metadata.namespace? resource.metadata.namespace : "", // Namespace is not always present
+                "kubernetes_resource_type": resource.metadata.type,
+                "kubernetes_resource_name": resource.metadata.name,
+              },
+              "UsageAmount": 0,
+              "UsageUnit": "",
+              "Cost": 0.0,
+              "CurrencyCode": "USD",
+              // Convert cost.date_period.start_date "2025-01-02 00:00:00.000" to RFC3339 format "2025-01-02T00:00:00Z"
+              // Replace space with T, and remove the milliseconds, append Z for UTC
+              "UsageStartTime": cost.date_period.start_date.replace(" ", "T").replace(".000", "") + "Z",
+              "InvoiceYearMonth": cost.date_period.start_date.split(" ")[0].split("-").slice(0, 2).join(""), // YYYYMM
+              "InvoiceID": cost.date_period.start_date.split(" ")[0].split("-").slice(0, 2).join("-") // Potentially bill period (YYYY-MM), but if we can reconcilate actual costs w/ cloud vendor bill, then should be the invoice id from cloud vendor bill
+            }
+
+            switch (usageCategory) {
+              case "compute":
+                var compute_cost_obj = _.clone(obj)
+                compute_cost_obj["Cost"] = resource[usageCategory].total
+                compute_cost_obj["UsageAmount"] = resource[usageCategory].total
+                compute_cost_obj["UsageUnit"] = "USD" // For compute we only get costs in USD from SpotInst API today
+                compute_cost_obj["ResourceType"] = resource.metadata.type
+                if ((compute_cost_obj["Cost"] + compute_cost_obj["UsageAmount"]) > 0) {
+                  result.push(compute_cost_obj)
+                }
+                break;
+
+              case "networking":
+                var network_usage_types = ["interAZ", "interRegion", "internet", "intraAZ"]
+                _.each(network_usage_types, function(network_usage_type) {
+                  var network_usage_subtypes = ["in", "out"]
+                  _.each(network_usage_subtypes, function(network_usage_subtype) {
+                    // Check that the usage type and subtype exist in the resource object
+                    if (resource[usageCategory] && resource[usageCategory][network_usage_type] && resource[usageCategory][network_usage_type][network_usage_subtype]) {
+                      var network_usage_type_obj = _.clone(obj)
+                      c = resource[usageCategory][network_usage_type][network_usage_subtype].cost
+                      network_usage_type_obj["UsageAmount"] = resource[usageCategory][network_usage_type][network_usage_subtype].usage
+                      network_usage_type_obj["UsageUnit"] = "Bytes" // Assuming Bytes for now, need to confirm
+                      network_usage_type_obj["ResourceType"] = resource.metadata.type
+                      network_usage_type_obj["UsageType"] = properCase(network_usage_type) + " " + properCase(network_usage_subtype)
+                      // Only push if we have a cost or usage amount
+                      if ((network_usage_type_obj["Cost"] + network_usage_type_obj["UsageAmount"]) > 0) {
+                        result.push(network_usage_type_obj)
+                      }
+                    }
+                  })
+                })
+                break;
+
+              case "storage":
+                var storage_usage_types = ["block", "file"]
+                _.each(storage_usage_types, function(storage_usage_type) {
+                  // Check if we have the storage usage type in the resource object
+                  if (resource[usageCategory][storage_usage_type]) {
+                    // Get the storage types dynamically to attempt to handle cross-vendor storage usage subtypes
+                    // i.e. AWS has `ebsPv`, `efsPv`
+                    // This is all fields except for "total"
+                    var storage_usage_subtypes = _.filter(_.keys(resource[usageCategory][storage_usage_type]), function(key) {
+                      return key != "total"
+                    })
+                    _.each(storage_usage_subtypes, function(storage_usage_subtype) {
+                      if (resource[usageCategory][storage_usage_type] && resource[usageCategory][storage_usage_type][storage_usage_subtype]) {
+                        var storage_usage_type_obj = _.clone(obj)
+                        storage_usage_type_obj["Cost"] = resource[usageCategory][storage_usage_type][storage_usage_subtype].total
+                        storage_usage_type_obj["UsageAmount"] = resource[usageCategory][storage_usage_type][storage_usage_subtype].total
+                        storage_usage_type_obj["UsageUnit"] = "USD" // For storage we only get costs in USD from SpotInst API today
+                        storage_usage_type_obj["ResourceType"] = resource.metadata.type
+                        storage_usage_type_obj["UsageType"] = properCase(storage_usage_type) + " " + properCase(storage_usage_subtype)
+
+                        // Handle UnusedStorage as a special case
+                        if (resource.metadata.type == "UnusedStorage") {
+                          storage_usage_type_obj["Cost"] = resource[usageCategory].total
+                          storage_usage_type_obj["UsageType"] = resource.metadata.type
+                          storage_usage_type_obj["ResourceID"] = resource.metadata.type
+                        }
+
+                        result.push(storage_usage_type_obj)
+                      }
+                    })
+                  }
+                })
+                break;
+
+              default:
+                console.log("Warning: No Matching Usage Category for '" + usageCategory + "'.  Skipping Line...") // Excluded from console.log test.  Needed to provide user and support visibility into why no savings value in the recommendation
+                break;
+            } // End switch(usageCategory)
+
+          })
+        })
+
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_spotinst_cluster_aggregated_costs_summed" do
+  run_script $js_spotinst_cluster_aggregated_costs_summed, $ds_calculated_proportions
+end
+
+script "js_spotinst_cluster_aggregated_costs_summed", type: "javascript" do
+  parameters "ds_calculated_proportions"
+  result "result"
+  code <<-EOS
+  var result = {}
+
+  // Group by to make lookups faster
+  var indexed = _.groupBy(ds_calculated_proportions, function(cost) {
+    var key_values = [
+      cost.CloudVendorAccountID,
+      cost.Region,
+      cost.tags.kubernetes_cluster_name,
+      cost.tags.kubernetes_resource_namespace,
+      cost.tags.kubernetes_resource_type,
+      cost.tags.kubernetes_resource_name,
+      cost.Category,
+      // cost.UsageStartTime,
+    ]
+    var lookup_key = key_values.join("/").toLowerCase()
+    return lookup_key
+  })
+
+  // Calculate total costs for each group
+  var group_sum = {}
+  _.each(indexed, function(group, key) {
+    // Get the average daily cost for this resource
+    // Each cost is already costs for a 24hr period
+    var total_cost = _.reduce(group, function(sum, cost) {
+      return sum + cost.Cost
+    }, 0)
+    // Number of days that actually had cost or usage > 0
+
+    var costsGroupedByDay = _.groupBy(group, function(cost) {
+      return cost.UsageStartTime
+    })
+    // Filter out days with zero usage and cost value
+    var days_with_usage = _.filter(costsGroupedByDay, function(day) {
+      return _.reduce(day, function(sum, cost) {
+        return sum + (cost.Cost + cost.UsageAmount)
+      }, 0) > 0
+    })
+    // Calc avg daily cost
+    var avg_daily_cost = "N/A"
+    if (days_with_usage.length > 0) {
+      var avg_daily_cost = total_cost / days_with_usage.length
+    }
+
+    group_sum[key] = {
+      "key": key,
+      "total_cost": total_cost,
+      "avg_cost_24h": avg_daily_cost,
+      // Handle N/A case and do not multiple a string and a number
+      "avg_cost_30d": _.isNumber(avg_daily_cost) ? avg_daily_cost * 30 : "N/A",
+      "days_with_usage": days_with_usage.length
+    }
+  })
+  var result = group_sum
+EOS
+end
+
+# Add this new datasource before the policy block
+datasource "ds_report" do
+  run_script $js_report, $ds_spotinst_clusters_rightsizing_suggestions_filtered, $ds_spotinst_cluster_aggregated_costs_summed, $ds_applied_policy
+end
+
+script "js_report", type: "javascript" do
+  parameters "ds_spotinst_clusters_rightsizing_suggestions_filtered", "ds_spotinst_cluster_aggregated_costs_summed", "ds_applied_policy"
+  result "result"
+  code <<-EOS
+  function properCase(string) {
+    // Capitalize the first letter of each word
+    var words = string.split(" ")
+    var properWords = []
+    _.each(words, function(word) {
+      properWords.push(word.charAt(0).toUpperCase() + word.slice(1))
+    })
+    return properWords.join(" ")
+  }
+
+  // Step 1: Calculate all metrics and organize data
+  function calculateMetrics(suggestions) {
+    var metrics = {
+      clusters: {},
+      globalCpuSavings: 0,
+      globalCpuCostSavings: 0,
+      globalMemorySavings: 0,
+      globalMemoryCostSavings: 0
+      globalUnderprovisioned: 0,
+      globalOverprovisioned: 0
+    };
+
+    // Group by cluster name and calculate savings
+    _.each(suggestions, function(item) {
+      var clusterName = item.cluster.name;
+      if (!metrics.clusters[clusterName]) {
+        metrics.clusters[clusterName] = {
+          items: [],
+          cpuSavings: 0,
+          cpuCostSavings: 0,
+          memorySavings: 0,
+          memoryCostSavings: 0,
+          underprovisioned: 0,
+          overprovisioned: 0,
+          account: item.account,
+          cluster: item.cluster,
+          namespaces: {}
+        };
+      }
+      metrics.clusters[clusterName].items.push(item);
+
+      // Calculate savings
+      var cpuSavings = item.suggestion.requestedCPU - item.suggestion.suggestedCPU;
+      var cpuPercentChange = 0
+      if (item.suggestion.requestedCPU > 0) {
+        cpuPercentChange = cpuSavings / item.suggestion.requestedCPU;
+      }
+      var memorySavings = item.suggestion.requestedMemory - item.suggestion.suggestedMemory;
+      var memoryPercentChange = 0
+      if (item.suggestion.requestedMemory > 0) {
+        memoryPercentChange = memorySavings / item.suggestion.requestedMemory;
+      }
+      metrics.clusters[clusterName].cpuSavings += cpuSavings;
+      metrics.clusters[clusterName].memorySavings += memorySavings;
+      metrics.globalCpuSavings += cpuSavings;
+      metrics.globalMemorySavings += memorySavings;
+      if ((cpuSavings + memorySavings) < 0) {
+        metrics.globalUnderprovisioned += 1;
+        metrics.clusters[clusterName].underprovisioned += 1;
+      } else if ((cpuSavings + memorySavings) > 0) {
+        metrics.globalOverprovisioned += 1;
+        metrics.clusters[clusterName].overprovisioned += 1;
+      }
+
+      // Construct lookup key
+      var key = [
+        item.account.providerExternalId,
+        item.cluster.region,
+        item.cluster.name,
+        item.suggestion.namespace,
+        item.suggestion.resourceType,
+        item.suggestion.resourceName,
+        "compute"
+      ].join("/").toLowerCase();
+      // Check if we have costs using the lookup key
+      if (ds_spotinst_cluster_aggregated_costs_summed[key]) {
+        var cost = ds_spotinst_cluster_aggregated_costs_summed[key];
+        if (cost.avg_cost_30d > 0) {
+          var cpu30dCostSavings = (cost.avg_cost_30d * cpuPercentChange)/2;
+          var memory30dCostSavings = (cost.avg_cost_30d * memoryPercentChange)/2;
+          metrics.clusters[clusterName].cpuCostSavings += cpu30dCostSavings;
+          metrics.clusters[clusterName].memoryCostSavings += memory30dCostSavings;
+          metrics.globalCpuCostSavings += cpu30dCostSavings;
+          metrics.globalMemoryCostSavings += memory30dCostSavings;
+          item.suggestion.estimatedSavings = cpu30dCostSavings + memory30dCostSavings;
+          if (item.suggestion.estimatedSavings < 0) {
+            console.log("Unexpected Negative Savings: " + item.suggestion.estimatedSavings) // Excluded from console.log test.  Needed for initial troubleshooting unexpected values from Spot API
+          }
+        }
+      }
+
+      // Group by namespace
+      var ns = item.suggestion.namespace;
+      if (!metrics.clusters[clusterName].namespaces[ns]) {
+        metrics.clusters[clusterName].namespaces[ns] = [];
+      }
+      metrics.clusters[clusterName].namespaces[ns].push(item.suggestion);
+    });
+    return metrics;
+  }
+
+  // Step two take resulted from calculateMetrics and add estimated savings for each suggestion
+  _.each(ds_spotinst_clusters_rightsizing_suggestions_filtered, function(suggestion) {
+    var resourceId = [
+      suggestion.account.providerExternalId,
+      suggestion.cluster.region,
+      suggestion.cluster.name,
+      suggestion.suggestion.namespace,
+      suggestion.suggestion.resourceType,
+      suggestion.suggestion.resourceName
+    ].join("/").toLowerCase();
+    suggestion.resourceId = resourceId;
+
+    // Convert containers object to string for display in Flexera UI
+    suggestion.suggestion_containers = _.map (suggestion.suggestion.containers, function(container) {
+      return JSON.stringify(container)
+    })
+    // Convert tags object to string for display in Flexera UI
+    // Set some tags that align with CBI to provide values in the Cloud > Optimization view
+    // tags must be a string, number, or array of strings.
+    // TODO this should be the resource labels not tags
+    suggestion.tags = _.map(suggestion.tags, function(value, key) {
+      return key + "=" + value
+    })
+
+    // TODO get these values to populate dynamically or with improved logic
+    // Just filling in for now
+    suggestion.service = "AmazonEKS"; // TODO map service name using the suggestion.account.cloudProvider
+    suggestion.recommendationDetails = "Update container request specification in cluster `" + suggestion.cluster.name + "`, namespace `"+ suggestion.suggestion.namespace  +"`, resource `" + properCase(suggestion.suggestion.resourceType)
+     + "/" + suggestion.suggestion.resourceName + "`.\\n\\nThe container request specification is currently `" + suggestion.suggestion.requestedCPU + "m` CPU and `" + suggestion.suggestion.requestedMemory + "Mi` Memory.  The suggested request specification is `" + suggestion.suggestion.suggestedCPU + "m` CPU and `" + suggestion.suggestion.suggestedMemory + "Mi` Memory.  The suggested request specifications will more closely match actual usage, and reduce usage by enabling more containers to run on each node.";
+    // Lookup key is resourceId+`/${usageType}` (compute, storage, networking)
+    var key = resourceId+"/compute"
+    if (ds_spotinst_cluster_aggregated_costs_summed[key]) {
+      var cost = ds_spotinst_cluster_aggregated_costs_summed[key];
+      if (cost.avg_cost_30d > 0) {
+        var cpuPercentChange = 0
+        if (suggestion.suggestion.requestedCPU > 0) {
+          cpuPercentChange = (suggestion.suggestion.requestedCPU - suggestion.suggestion.suggestedCPU) / suggestion.suggestion.requestedCPU;
+        }
+        var memoryPercentChange = 0
+        if (suggestion.suggestion.requestedMemory > 0) {
+          memoryPercentChange = (suggestion.suggestion.requestedMemory - suggestion.suggestion.suggestedMemory) / suggestion.suggestion.requestedMemory;
+        }
+        var cpu30dCostSavings = (cost.avg_cost_30d * cpuPercentChange)/2;
+        var memory30dCostSavings = (cost.avg_cost_30d * memoryPercentChange)/2;
+        suggestion.estimatedSavings = cpu30dCostSavings + memory30dCostSavings;
+        suggestion.estimatedCpuSavings = cpu30dCostSavings;
+        suggestion.estimatedMemorySavings = memory30dCostSavings;
+        if (suggestion.estimatedSavings < 0) {
+          console.log("Unexpected Savings: " + suggestion.estimatedSavings) // Excluded from console.log test.  Needed for initial troubleshooting unexpected values from Spot API
+        }
+      }
+    }
+  })
+
+  function generateReport(metrics) {
+    var report = [];
+
+    // Global Summary
+    report.push("# Kubernetes Rightsizing Recommendations Report\\n");
+    report.push("## Global Summary");
+    report.push("* Total Estimated Cost Savings: $" + (metrics.globalCpuCostSavings + metrics.globalMemoryCostSavings).toFixed(2)+"\\n");
+
+    report.push("* Total CPU Savings: " + Math.round(metrics.globalCpuSavings * 100) / 100 + "m");
+    report.push("* Total CPU Cost Savings: $" + Math.round(metrics.globalCpuCostSavings * 100) / 100);
+    report.push("* Total Memory Savings: " + Math.round(metrics.globalMemorySavings * 100) / 100 + " Mi");
+    report.push("* Total Memory Cost Savings: $" + metrics.globalMemoryCostSavings.toFixed(2));
+    report.push("* Total Underprovisioned: " + metrics.globalUnderprovisioned);
+    report.push("* Total Overprovisioned: " + metrics.globalOverprovisioned + "\\n");
+
+    // Cluster details
+    Object.keys(metrics.clusters).forEach(function(clusterName) {
+      var cluster = metrics.clusters[clusterName];
+      var cpuSavingsPct = (cluster.cpuSavings / metrics.globalCpuSavings * 100).toFixed(1);
+      var memorySavingsPct = (cluster.memorySavings / metrics.globalMemorySavings * 100).toFixed(1);
+
+      report.push("\\n## Cluster: " + clusterName + "\\n");
+
+      report.push("Account: " + cluster.account.name + " (" + cluster.account.providerExternalId + ")" + "\\n");
+      report.push("Region: " + cluster.cluster.region + "\\n");
+
+      report.push("* CPU Savings: " + Math.round(cluster.cpuSavings * 100) / 100 + " m (" + cpuSavingsPct + "% of total)");
+      report.push("* CPU 30day Cost Savings: $" + cluster.cpuCostSavings.toFixed(2));
+      report.push("* Memory Savings: " + Math.round(cluster.memorySavings * 100) / 100 + " Mi (" + memorySavingsPct + "% of total)");
+      report.push("* Memory 30day Cost Savings: $" + cluster.memoryCostSavings.toFixed(2));
+      report.push("* Underprovisioned: " + cluster.underprovisioned);
+      report.push("* Overprovisioned: " + cluster.overprovisioned + "\\n");
+
+      // Output by namespace
+      Object.keys(cluster.namespaces).forEach(function(namespace) {
+        report.push("### Namespace: " + namespace);
+
+        // Group by resource type and name
+        cluster.namespaces[namespace].forEach(function(suggestion) {
+          report.push("\\n#### " + properCase(suggestion.resourceType) + "/" + suggestion.resourceName + "\\n");
+
+          report.push("* CPU Savings: " + suggestion.requestedCPU + "m -> " + suggestion.suggestedCPU + "m");
+          if (suggestion.estimatedCpuSavings) {
+            report.push("* CPU 30day Cost Savings: $" + suggestion.estimatedCpuSavings.toFixed(2));
+          }
+          report.push("* Memory Savings: " + suggestion.requestedMemory + "Mi -> " + suggestion.suggestedMemory + "Mi");
+          if (suggestion.estimatedMemorySavings) {
+            report.push("* Memory 30day Cost Savings: $" + suggestion.estimatedMemorySavings.toFixed(2));
+          }
+
+          report.push("* Estimated 30day Cost Savings: $" + suggestion.estimatedSavings.toFixed(2));
+          if (suggestion.estimatedSavings < 0) {
+            report.push("(Negative Cost Savings due to Current Request Specification being lower than Suggested Request Specification)");
+          }
+
+          // Container table header
+          report.push("\\n| Container | Current CPU -> Suggested CPU Request | Current Memory -> Suggested Memory Request |");
+          report.push("|-----------|-------------------------------------|-------------------------------------------|");
+
+          // Container rows
+          suggestion.containers.forEach(function(container) {
+            report.push("| " + container.name + " | " + container.requestedCpu + "m -> " + container.suggestedCpu +"m | " + container.requestedMemory + "Mi -> " + container.suggestedMemory + "Mi |");
+          });
+          report.push("");
+        });
+      });
+    });
+
+    report.push("\\n_Report generated at: " + new Date().toISOString() + "_");
+    report.push("\\n_Full raw table included below_\\n");
+
+    return report.join("\\n");
+  }
+
+  // Main execution
+  var metrics = calculateMetrics(ds_spotinst_clusters_rightsizing_suggestions_filtered);
+  var markdown = generateReport(metrics);
+
+  result = {
+    "markdown": markdown,
+    "suggestions": ds_spotinst_clusters_rightsizing_suggestions_filtered,
+    "ds_applied_policy": ds_applied_policy
+  };
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy 'pol_spot_ocean_recommendation_report' do
+  validate $ds_report do
+    summary_template '{{ data.ds_applied_policy.name }}: Report'
+    detail_template "{{ data.markdown }}"
+    check eq(size(val(data, "suggestions")), 0)
+    escalate $esc_email
+    export "suggestions" do
+      resource_level true
+      field "savings" do
+        label "Estimated Monthly Savings"
+        path "estimatedSavings"
+      end
+      field "vendor" do
+        label "Vendor"
+        path "account.cloudProvider"
+      end
+      field "accountID" do
+        label "Account ID"
+        path "account.providerExternalId"
+      end
+      field "accountName" do
+        label "Account Name"
+        path "account.providerExternalId" # TODO Map account name from flexera bill data
+      end
+      field "region" do
+        label "Region"
+        path "cluster.region"
+      end
+      field "service" do
+        label "Service"
+        path "service"
+      end
+      field "resourceID" do
+        label "Resource ID"
+        path "resourceId"
+      end
+      field "id" do
+        label "ID"
+        path "resourceId"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+        path "recommendationDetails"
+      end
+      field "cluster_cluster_name" do
+        label "Cluster Name"
+        path "cluster.name"
+      end
+      field "suggestion_containers" do
+        label "Containers"
+        path "suggestion_containers"
+      end
+      field "suggestion_namespace" do
+        label "Kubernetes Namespace"
+        path "suggestion.namespace"
+      end
+      field "suggestion_requestedCPU" do
+        label "Current Requested CPU Spec"
+        path "suggestion.requestedCPU"
+      end
+      field "suggestion_requestedMemory" do
+        label "Current Requested Memory Spec"
+        path "suggestion.requestedMemory"
+      end
+      field "resourceType" do
+        label "Resource Type"
+        path "suggestion.resourceType"
+      end
+      field "suggestion_suggestedCPU" do
+        label "Suggested CPU Spec"
+        path "suggestion.suggestedCPU"
+      end
+      field "suggestion_suggestedMemory" do
+        label "Suggested Memory Spec"
+        path "suggestion.suggestedMemory"
+      end
+      field "resourceName" do
+        label "Resource Name"
+        path "suggestion.resourceName"
+      end
+      field "tags" do
+        label "Resource Tags"
+        path "tags"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+        path "suggestion.suggestedCPU" # TODO
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+        path "suggestion.suggestedCPU" # TODO
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+        path "suggestion.suggestedCPU" # TODO
+      end
+      field "cpuP99" do
+        label "CPU p99"
+        path "suggestion.suggestedCPU" # TODO
+      end
+      field "cpuP95" do
+        label "CPU p95"
+        path "suggestion.suggestedCPU" # TODO
+      end
+      field "cpuP90" do
+        label "CPU p90"
+        path "suggestion.suggestedCPU" # TODO
+      end
+      field "memMaximum" do
+        label "Memory Maximum %"
+        path "suggestion.suggestedMemory" # TODO
+      end
+      field "memMinimum" do
+        label "Memory Minimum %"
+        path "suggestion.suggestedMemory" # TODO
+      end
+      field "memAverage" do
+        label "Memory Average %"
+        path "suggestion.suggestedMemory" # TODO
+      end
+      field "memP99" do
+        label "Memory p99"
+        path "suggestion.suggestedMemory" # TODO
+      end
+      field "memP95" do
+        label "Memory p95"
+        path "suggestion.suggestedMemory" # TODO
+      end
+      field "memP90" do
+        label "Memory p90"
+        path "suggestion.suggestedMemory" # TODO
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
