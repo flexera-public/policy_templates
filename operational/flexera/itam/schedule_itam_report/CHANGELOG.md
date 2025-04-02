@@ -2,7 +2,7 @@
 
 ## v0.2.0
 
-- Added parameter to allow user to see full ISO-8601 date and time in the report
+- Added parameter to normalize dates in report to match Flexera One UI
 - Streamlined code for better readability and faster execution
 
 ## v0.1.7
