@@ -1,8 +1,15 @@
+import os
+import json
 import google.auth
 from googleapiclient.discovery import build
-import json
+
+# File names for reading/writing
+output_filename = 'data/google/google_compute_instance_types.json'
+os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
 def list_all_machine_types():
+    print("Gathering data from Google API...")
+
     # Get default credentials and project from the environment.
     credentials, project = google.auth.default()
 
@@ -28,10 +35,52 @@ def list_all_machine_types():
         request = compute_service.machineTypes().aggregatedList_next(
             previous_request=request, previous_response=response)
 
+    print(f"Retrieved {len(machine_types_list)} instance types.")
+
     return machine_types_list
 
 if __name__ == '__main__':
     machine_types = list_all_machine_types()
-    print(f"Retrieved {len(machine_types)} machine types.")
-    # Optionally, print the detailed metadata in JSON format.
-    print(json.dumps(machine_types, indent=2))
+
+    data = {}
+
+    for item in machine_types:
+        name = item.get("name", "None")
+        zone = item.get("zone", "None")
+
+        if name in data:
+            if zone != "None" and zone not in data[name]["zones"]:
+                data[name]["zones"].append(zone)
+        else:
+            data[name] = {
+                "name": name,
+                "description": item.get("description", "None"),
+                "zones": [ zone ],
+                "specs": {
+                    "guestCpus": item.get("guestCpus", "None"),
+                    "memoryMb": item.get("memoryMb", "None"),
+                    "imageSpaceGb": item.get("imageSpaceGb", "None"),
+                    "maximumPersistentDisks": item.get("maximumPersistentDisks", "None"),
+                    "maximumPersistentDisksSizeGb": item.get("maximumPersistentDisksSizeGb", "None"),
+                    "isSharedCpu": item.get("isSharedCpu", "None"),
+                    "architecture": item.get("architecture", "None"),
+                    "accelerators": item.get("accelerators", "None"),
+                    "scratchDisks": item.get("scratchDisks", "None")
+                }
+            }
+
+    print("Writing final output to file...")
+
+    with open(output_filename, "w") as type_file:
+        type_file.write(
+            json.dumps(data, sort_keys=True, indent=2)
+                .replace(': ""', ': null')
+                .replace(': "none"', ': null')
+                .replace(': "None"', ': null')
+                .replace(': "true"', ': true')
+                .replace(': "True"', ': true')
+                .replace(': "false"', ': false')
+                .replace(': "False"', ': false')
+        )
+
+    print("DONE!")
