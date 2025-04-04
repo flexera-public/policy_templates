@@ -127,4 +127,5 @@ end
 
 readme_string += File.read("tools/readme_policy_table_of_contents/FOOTER.md")
 
-puts readme_string
+# Store output as local README.md file
+File.write("README.md", readme_string)
