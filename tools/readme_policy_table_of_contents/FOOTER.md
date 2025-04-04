@@ -38,7 +38,7 @@ Visit [Flexera Community](https://community.flexera.com) to join!
 
 ### Opening an Issue
 
-Github issues contain a template for three types of requests(Bugs, New Features to an existing Policy Template, New Policy Template Request)
+Github issues contain a template for three types of requests:
 
 - Bugs: Any issue you are having with an existing policy template not functioning correctly, this does not include missing features, or actions.
 - New Feature Request: Any feature(Field, Action, Link, Output, etc) that are to be added to an existing policy template.
