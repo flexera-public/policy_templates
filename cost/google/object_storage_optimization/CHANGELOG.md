@@ -1,5 +1,29 @@
 # Changelog
 
+## v3.0.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.0.2
+
+- Deprecated: This policy is no longer being updated. See README for more details.
+
+## v3.0.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v3.0.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to filter resources by project
+- Added ability to use wildcards and regex when filtering resources by label
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Added additional fields to incident export
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera One credential
+
 ## v2.7
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM

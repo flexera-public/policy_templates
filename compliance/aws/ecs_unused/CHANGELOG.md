@@ -1,5 +1,22 @@
 # Changelog
 
+## v4.0.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v4.0.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v4.0.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Added ability to filter resources by multiple tag key:value pairs and with regex
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v3.1
 
 - Updated description of `Account Number` parameter
@@ -21,7 +38,7 @@
 
 - Added default to aws_account_number parameter to enable existing API users.
 
-## 2.6
+## v2.6
 
 - Added support for a single AWS STS Cross account role to be used for multiple policies.
 

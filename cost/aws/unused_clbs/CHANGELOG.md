@@ -1,5 +1,38 @@
 # Changelog
 
+## v6.4.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v6.4.2
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v6.4.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v6.4.0
+
+- Added `Resource ARN` and `Resource Name` to incident table.
+
+## v6.3.0
+
+- Changed default value of `Automatic Actions` parameter to conform with other similar policy templates
+- Modified incident title to explicitly indicate `AWS` as the cloud provider
+
+## v6.2.1
+
+- Fixed minor spelling issue in policy template description
+
+## v6.2.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+
+## v6.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v6.0
 
 - Added support for regex when filtering resources by tag

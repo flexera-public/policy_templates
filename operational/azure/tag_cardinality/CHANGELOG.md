@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.2.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.2.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v3.2
+
+- Added support for region filtering and more robust support for Subscription filtering.
+
 ## v3.1
 
 - Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.

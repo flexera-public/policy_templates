@@ -4,7 +4,7 @@
 
 This Policy Template scans all IP addresses in the given account and identifies any unused IP addresses. If any are found, an incident report will show the IP addresses, and related information, and an email will be sent to the user-specified email address. If the user approves that the IP addresses should be deleted, the policy will delete the IP addresses. Optionally, the user can specify one or more tags that if found on an IP address will exclude the IP address from the list, as well as specify a minimum number of days for an IP address to be unattached before considering it unused.
 
-## Functional Details
+## How It Works
 
 The policy utilizes the AWS EC2 API to get a list of unattached IP addresses and the AWS CloudTrail API to determine when the IP address was detached from an instance. An incident is raised with any unattached IP addresses that have been detached for longer than the user-specified threshold.
 
@@ -12,7 +12,7 @@ The policy utilizes the AWS EC2 API to get a list of unattached IP addresses and
 
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is terminated.
 
-- The `Estimated Monthly Savings` is calculated using the per hour price of unused IPs, obtained from the AWS Pricing API, multiplied by 24 and then 30.44 to get an estimated monthly price.
+- The `Estimated Monthly Savings` is calculated using the hourly price of unused IPs (currently $0.005 USD) converted to a monthly price with the following formula: `(Hourly Price * 24 * 365.25) / 12`
 - Since the prices of individual resources are *not* obtained from Flexera CCO, they will *not* take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
@@ -33,7 +33,6 @@ This policy has the following input parameters required when launching the polic
   - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
-- *AWS Regional Pricing API* - The regional AWS Pricing API to use when retrieving pricing data. Pricing may vary based on region. More details on these endpoints and how functionality differs between them can be found in the [AWS Price List Query API documentation](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/using-price-list-query-api.html#price-list-query-api-endpoints).
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
@@ -54,7 +53,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `ec2:DescribeRegions`
   - `ec2:DescribeAddresses`
   - `ec2:ReleaseAddress`*
-  - `pricing:GetProducts`
   - `sts:GetCallerIdentity`
   - `cloudtrail:LookupEvents`
 
@@ -72,8 +70,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
                   "ec2:DescribeRegions",
                   "ec2:DescribeAddresses",
                   "ec2:ReleaseAddress",
-                  "pricing:GetProducts",
-                  "sts:GetCallerIdentity"
+                  "sts:GetCallerIdentity",
+                  "cloudtrail:LookupEvents"
               ],
               "Resource": "*"
           }
@@ -92,4 +90,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This policy template does not incur any cloud costs.

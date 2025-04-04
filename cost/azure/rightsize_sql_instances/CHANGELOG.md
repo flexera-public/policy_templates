@@ -1,5 +1,55 @@
 # Changelog
 
+## v5.5.3
+
+- Added batch processing for large datasources as a performance enhancement (reduces memory usage) with no changes to logic or functionality.
+
+## v5.5.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v5.5.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v5.5.0
+
+- Added support for downsizing multiple sizes where appropriate
+
+## v5.4.2
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v5.4.1
+
+- Fixed minor issue with policy actions logging a patch action as a delete action
+
+## v5.4.0
+
+- Added ability to set metrics granularity when gathering resource metrics from Azure
+- Added `Threshold Statistic` parameter to assess utilization based on various CPU metrics
+- Added CPU minimum, maximum, p90, p95, and p99 metrics to incident table
+
+## v5.3.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+
+## v5.2.1
+
+- Fixed a bug causing $0 recommendations
+
+## v5.2.0
+
+- New fields added to incident output: `Last Accessed` and `Status`
+
+## v5.1.1
+
+- Unused SQL Databases incident now includes a `Recommended Capacity` field with a value of `Delete Instance` for ease of analyzing recommendations from the Flexera Optimization dashboard
+
+## v5.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v5.0
 
 - Added support for regex when filtering resources by tag

@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.1.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.1.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v3.1
+
+- fixed link to README in policy description
+
 ## v3.0
 
 - Several parameters altered to be more descriptive and human-readable
@@ -32,6 +44,6 @@
 
 - Adding subscription filter to deal with timeout
 
-## 2.0
+## v2.0
 
 - Initial Release

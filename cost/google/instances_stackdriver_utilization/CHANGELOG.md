@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.12.3
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v2.12.2
+
+- Added `deprecated` field to policy metadata. Functionality is unchanged.
+
+## v2.12.1
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
 ## v2.12
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM

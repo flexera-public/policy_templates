@@ -1,5 +1,28 @@
 # Changelog
 
+## v5.2.0
+
+- Added support for filtering system and Google Apps Script projects from the results.
+
+## v5.1.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v5.1.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v5.1.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+
+## v5.0.0
+
+- Added estimated savings based on Google's Cloud Billing API
+- Added `Minimum Savings Threshold` parameter to filter results
+- Added support for automatic currency conversion for savings
+- To facilitate the above, policy template now requires additional permissions
+
 ## v4.0
 
 - Added support for regex when filtering resources by label

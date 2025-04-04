@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.3.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v2.3.0
+
+- Switched from cookie-based authentication to token-based authentication
+
 ## v2.2
 
 - Shows the actual name of the compute instance at field **Current Compute Tier**.

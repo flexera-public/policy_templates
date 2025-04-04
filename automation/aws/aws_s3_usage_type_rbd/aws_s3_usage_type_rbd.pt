@@ -1,0 +1,398 @@
+name "AWS S3 Usage Type Rule-Based Dimension"
+rs_pt_ver 20180301
+type "policy"
+short_description "Creates and/or updates a single Rule-Based Dimension for S3 usage types. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/aws/aws_s3_usage_type_rbd) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: "Automation",
+  publish: "false"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_effective_date" do
+  type "string"
+  category "Policy Settings"
+  label "Effective Date"
+  description "Year/month you want rules to start applying in YYYY-MM format"
+  allowed_pattern /^\d{4}-\d{2}$/
+  default "2010-01"
+end
+
+parameter "param_rbd_id" do
+  type "string"
+  category "Policy Settings"
+  label "Rule-Based Dimension ID"
+  description "The ID of the Rule-Based Dimension to create/update. ID must begin with 'rbd_' and contain only lowercase letters, numbers, and underscores."
+  allowed_pattern /^rbd_[a-z0-9_]+$/
+  default "rbd_s3_usage_type"
+end
+
+parameter "param_rbd_name" do
+  type "string"
+  category "Policy Settings"
+  label "Rule-Based Dimension Name"
+  description "The Name of the Rule-Based Dimension to create/update."
+  default "S3 Usage Type"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credential."
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_flexera_s3_costs" do
+  request do
+    run_script $js_flexera_s3_costs, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "usage_type", jmes_path(col_item, "dimensions.usage_type")
+    end
+  end
+end
+
+script "js_flexera_s3_costs", type:"javascript" do
+  parameters "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  year = Number(new Date().toISOString().substring(0, 4))
+  month = Number(new Date().toISOString().substring(5, 7))
+  month += 1
+  if (month == 13) { year += 1; month = 1 }
+  if (month < 10) { month = '0' + month }
+  end_date = year.toString() + '-' + month.toString()
+
+  past_year = year - 1
+  start_date = past_year.toString() + '-' + month.toString()
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      "dimensions": [ "usage_type" ],
+      "granularity": "month",
+      "start_at": start_date,
+      "end_at": end_date,
+      "metrics": [ "cost_amortized_unblended_adj" ],
+      "billing_center_ids": ds_top_level_bcs,
+      "limit": 100000,
+      "filter": { dimension: "service", type: "equal", value: "AmazonS3" }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_s3_usage_types" do
+  run_script $js_s3_usage_types, $ds_flexera_s3_costs
+end
+
+script "js_s3_usage_types", type: "javascript" do
+  parameters "ds_flexera_s3_costs"
+  result "result"
+  code <<-EOS
+  // Function to check for presence of substring in a string in a case-insensitive way
+  function strContains(string, value) { return string.toLowerCase().indexOf(value.toLowerCase()) != -1 }
+
+  // Grab the fill list of usage types with invalid or duplicate values removed
+  usage_type_list = _.uniq(_.compact(_.pluck(ds_flexera_s3_costs, "usage_type")))
+
+  // Determine the RBD value based on the presence of substrings in the usage type
+  usage_type_map = _.map(usage_type_list, function(usage_type) {
+    value = null
+
+    if (strContains(usage_type, "STANDARD")) { value = "Standard" }
+    if (strContains(usage_type, "TimedStorage-ByteHrs")) { value = "Standard" }
+    if (strContains(usage_type, "Select-Scanned-Bytes")) { value = "Standard" }
+    if (strContains(usage_type, "Select-Returned-Bytes")) { value = "Standard" }
+
+    if (strContains(usage_type, "BatchOperations")) { value = "Batch Operations" }
+    if (strContains(usage_type, "Bulk-Retrieval")) { value = "Bulk Retrieval" }
+    if (strContains(usage_type, "CloudFront")) { value = "CloudFront" }
+    if (strContains(usage_type, "S3DSSE")) { value = "Dual Encrypted" }
+    if (strContains(usage_type, "C3DataTransfer")) { value = "EC2 DataTransfer" }
+    if (strContains(usage_type, "Expedited")) { value = "Expedited" }
+    if (strContains(usage_type, "-XZ") || strContains(usage_type, "XZ-")) { value = "Express One Zone" }
+    if (strContains(usage_type, "GLACIER")) { value = "Glacier" }
+    if (strContains(usage_type, "-GDA") || strContains(usage_type, "GDA-")) { value = "Glacier Deep Archive" }
+    if (strContains(usage_type, "EarlyDelete-ByteHrs")) { value = "Glacier Flexible Retrieval" }
+    if (strContains(usage_type, "-GIR") || strContains(usage_type, "GIR-")) { value = "Glacier Instance Retrieval" }
+    if (strContains(usage_type, "Inventory")) { value = "Inventory" }
+    if (strContains(usage_type, "-MRAP") || strContains(usage_type, "MRAP-")) { value = "Multi Region Access Point" }
+    if (strContains(usage_type, "-ZIA") || strContains(usage_type, "ZIA-")) { value = "One Zone Infrequent Access" }
+    if (strContains(usage_type, "-RRS") || strContains(usage_type, "RRS-")) { value = "Reduced Redundancy Storage" }
+    if (strContains(usage_type, "-S3RTC") || strContains(usage_type, "S3RTC-")) { value = "Replication Time Control" }
+    if (strContains(usage_type, "-SIA") || strContains(usage_type, "SIA-")) { value = "Standard Infrequent Access" }
+    if (strContains(usage_type, "StorageAnalytics")) { value = "Storage Analytics" }
+    if (strContains(usage_type, "StorageObjectCount")) { value = "Storage Object Count" }
+    if (strContains(usage_type, "TagStorage")) { value = "Tag Storage" }
+
+    if (strContains(usage_type, "-INT") || strContains(usage_type, "INT-")) {
+      if (strContains(usage_type, "INT-FA")) {
+        value = "Intelligent Tiering Storage Frequent Access"
+      } else if (strContains(usage_type, "INT-IA")) {
+        value = "Intelligent Tiering Storage Infrequent Access"
+      } else if (strContains(usage_type, "INT-AA")) {
+        value = "Intelligent Tier Storage Archive Access"
+      } else if (strContains(usage_type, "INT-AIA")) {
+        value = "Intelligent Tier Storage Archive Infrequent Access"
+      } else if (strContains(usage_type, "INT-DAA")) {
+        value = "Intelligent Tier Storage Deep Archive Access"
+      } else {
+        value = "Intelligent Tiering Storage"
+      }
+    }
+
+    if (strContains(usage_type, "Requests")) {
+      if (strContains(usage_type, "-GDA") || strContains(usage_type, "GDA-")) {
+        value = "Glacier Deep Archive Requests"
+      } else if (strContains(usage_type, "-XZ") || strContains(usage_type, "XZ-")) {
+        value = "Express One Zone Requests"
+      } else {
+        value = "Requests"
+      }
+    }
+
+    if (strContains(usage_type, "DataTransfer")) {
+      if (strContains(usage_type, "DataTransfer-Regional")) {
+        value = "Regional Data Transfer"
+      } else if (strContains(usage_type, "S3G-DataTransfer")) {
+        value = "S3G Data Transfer"
+      } else {
+        value = "Internet Data Transfer"
+      }
+    }
+
+    if (strContains(usage_type, "StorageLens")) {
+      if (strContains(usage_type, "StorageLensFreeTier")) {
+        value = "Storage Lens"
+      } else {
+        value = "Storage Lens Free Tier"
+      }
+    }
+
+    if (value == null) {
+      if (strContains(usage_type, "-AWS-In") || strContains(usage_type, "AWS-In-")) { value = "Regions Data Transferred" }
+      if (strContains(usage_type, "-AWS-Out") || strContains(usage_type, "AWS-Out-")) { value = "Regions Data Transferred" }
+    }
+
+    return {
+      usage_type: usage_type,
+      value: value
+    }
+  })
+
+  // Filter out any usage types where we did not find a valid value to assign
+  result = _.filter(usage_type_map, function(item) { return item["value"] })
+EOS
+end
+
+datasource "ds_existing_rbds" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/rule_based_dimensions"])
+    header "Api-Version", "1.0"
+    header "content-type", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rule_based_dimensions") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "dated_rules", jmes_path(col_item, "dated_rules")
+    end
+  end
+end
+
+datasource "ds_rbds" do
+  run_script $js_rbds, $ds_s3_usage_types, $ds_existing_rbds, $param_rbd_id, $param_rbd_name, $param_effective_date
+end
+
+script "js_rbds", type: "javascript" do
+  parameters "ds_s3_usage_types", "ds_existing_rbds", "param_rbd_id", "param_rbd_name", "param_effective_date"
+  result "result"
+  code <<-'EOS'
+  verb = "POST"
+  if (_.contains(_.pluck(ds_existing_rbds, 'id'), param_rbd_id)) { verb = "PATCH" }
+
+  rules = _.map(ds_s3_usage_types, function(item) {
+    return {
+      condition: {
+        type: "and",
+        expressions: [
+          { type: "dimension_equals", dimension: "service", value: "AmazonS3" },
+          { type: "dimension_equals", dimension: "usage_type", value: item["usage_type"] }
+        ]
+      },
+      value: { text: item["value"] }
+    }
+  })
+
+  rules.push({
+    condition: { type: "dimension_equals", dimension: "service", value: "AmazonS3GlacierDeepArchive" },
+    value: { text: "Glacier Deep Archive" }
+  })
+
+  result = [{
+    id: param_rbd_id,
+    name: param_rbd_name,
+    verb: verb,
+    effective_at: param_effective_date,
+    rules: rules
+  }]
+EOS
+end
+
+datasource "ds_create_rbds" do
+  iterate $ds_rbds
+  request do
+    run_script $js_create_rbds, val(iter_item, "id"), val(iter_item, "verb"), val(iter_item, "name"), val($ds_flexera_api_hosts, "flexera"), rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_create_rbds", type: "javascript" do
+  parameters "rbd_id", "verb", "name", "api_host", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    verb: verb,
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id].join(''),
+    body_fields: { name: name }
+  }
+EOS
+end
+
+datasource "ds_apply_rbds" do
+  iterate $ds_rbds
+  request do
+    # ds_create_rbds is a parameter to ensure that it executes before ds_apply_rbds does
+    run_script $js_apply_rbds, val(iter_item, "id"), val(iter_item, "effective_at"), val(iter_item, "rules"), val($ds_flexera_api_hosts, "flexera"), $ds_create_rbds, rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_apply_rbds", type: "javascript" do
+  parameters "rbd_id", "effective_at", "rules", "api_host", "ds_create_rbds", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    verb: "PUT",
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id, "/rules/", effective_at].join(''),
+    body_fields: { rules: rules }
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_s3_rbd" do
+  validate $ds_apply_rbds do
+    summary_template "AWS S3 Usage Type RBD Generated & Applied"
+    detail_template ""
+    check eq(0, 0)
+  end
+end

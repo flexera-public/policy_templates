@@ -1,5 +1,34 @@
 # Changelog
 
+## v8.4.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v8.4.2
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v8.4.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v8.4.0
+
+- Added `Resource ARN` to incident table.
+- Removed redundant `Resource Name` field from incident table.
+
+## v8.3.0
+
+- Modified internal names for incident fields for more accurate scraping into Optimization dashboard
+
+## v8.2
+
+- Fixed issue where duplicate results would sometimes occur for RDS DB snapshots.
+
+## v8.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v8.0
 
 - Added support for regex when filtering resources by tag
@@ -130,13 +159,11 @@
 ## v2.13
 
 - Improve error handling and debug logging so that errors from taking action are actually surfaced
-- Add a `param_log_to_cm_audit_entries` parameter to control whether action debug logging is sent to CM Audit
-  Entries; this should be left set to No on Flexera EU
+- Add a `param_log_to_cm_audit_entries` parameter to control whether action debug logging is sent to CM Audit Entries; this should be left set to No on Flexera EU
 
 ## v2.12
 
-- Add a parameter to override the Flexera One org ID to use when querying Optima for cases when the project is not
-  in the same org where the AWS bill is registered in Optima
+- Add a parameter to override the Flexera One org ID to use when querying Optima for cases when the project is not in the same org where the AWS bill is registered in Optima
 
 ## v2.11
 
@@ -156,8 +183,7 @@
 
 ## v2.7
 
-- Use `DescribeSnapshots` instead of `DescribeRegions` to more accurately check if the call is enabled by the
-  Service Control Policy in each region
+- Use `DescribeSnapshots` instead of `DescribeRegions` to more accurately check if the call is enabled by the Service Control Policy in each region
 
 ## v2.6
 

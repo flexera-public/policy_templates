@@ -1,5 +1,17 @@
 # Changelog
 
+## v4.0.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v4.0.0
+
+- Policy template renamed to `AWS Regions Without Default EBS Encryption` to better reflect its functionality
+- Expanded region filtering options
+- Several parameters altered to be more descriptive and human-readable
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v3.0
 
 - Added parameter to enable Allow or Deny filtering by user entered regions

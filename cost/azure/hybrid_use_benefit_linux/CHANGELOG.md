@@ -1,5 +1,21 @@
 # Changelog
 
+## v5.1.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v5.1.2
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v5.1.1
+
+- Fixed issue where policy actions were not properly reporting errors
+
+## v5.1.0
+
+- Added `Resource Hourly Cost` and `Currency` to incident table for added context
+
 ## v5.0
 
 - Added support for regex when filtering resources by tag

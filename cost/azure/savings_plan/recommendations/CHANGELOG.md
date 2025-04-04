@@ -1,5 +1,26 @@
 # Changelog
 
+## v3.1.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.1.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v3.1.0
+
+- Updated Azure API versions to provide more up to date and accurate results
+
+## v3.0.0
+
+- Recommendations can now be generated at the "Resource Group" scope
+- Removed redundant API requests to speed up execution for "Shared" scope
+
+## v2.2
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v2.1
 
 - Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.

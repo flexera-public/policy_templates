@@ -1,5 +1,28 @@
 # Changelog
 
+## v3.0.3
+
+- Updated service field in metadata to "Identity & Access Management". Functionality unchanged.
+
+## v3.0.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.0.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v3.0.0
+
+- Policy template renamed to `AWS IAM User Accounts Without MFA` to better reflect its functionality
+- Added toggle to include or ignore user accounts without a console password
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
+## v2.7
+
+- fixed link to README in policy description
+
 ## v2.6
 
 - Updated description of `Account Number` parameter

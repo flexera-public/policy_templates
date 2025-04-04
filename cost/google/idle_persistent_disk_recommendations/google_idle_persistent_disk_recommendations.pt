@@ -7,11 +7,12 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "4.0",
-  provider:"Google",
+  version: "4.3.0",
+  provider: "Google",
   service: "Storage",
   policy_set: "Unused Volumes",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -31,9 +32,9 @@ parameter "param_unattached_days" do
   category "Policy Settings"
   label "Days Unattached"
   description "The number of days since the disk was last attached to an instance to include it in the results. Cannot be set to less than 15 days because Google does not produce recommendations for disks that have been idle for < 15 days."
-  default 15
   min_value 15
   max_value 90
+  default 15
 end
 
 parameter "param_min_savings" do
@@ -60,6 +61,24 @@ parameter "param_projects_list" do
   label "Allow/Deny Projects List"
   description "A list of allowed or denied Subscription IDs/names. See the README for more details."
   default []
+end
+
+parameter "param_projects_ignore_sys" do
+  type "string"
+  category "Filters"
+  label "Ignore System Projects"
+  description "Whether or not to automatically ignore system projects e.g. projects whose id begins with 'sys-'"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_projects_ignore_app" do
+  type "string"
+  category "Filters"
+  label "Ignore Google Apps Script Projects"
+  description "Whether or not to automatically ignore Google Apps Script projects e.g. projects whose id begins with 'app-'"
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -101,12 +120,13 @@ parameter "param_take_snapshot" do
   category "Actions"
   label "Create Final Snapshot"
   description "Whether or not to take a final snapshot before deleting a disk."
-  default "Yes"
   allowed_values "Yes", "No"
+  default "Yes"
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Delete Disks"]
@@ -272,7 +292,7 @@ end
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -332,15 +352,15 @@ datasource "ds_google_projects" do
 end
 
 datasource "ds_google_projects_filtered" do
-  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list, $param_projects_ignore_sys, $param_projects_ignore_app
 end
 
 script "js_google_projects_filtered", type: "javascript" do
-  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
   result "result"
   code <<-EOS
   if (param_projects_list.length > 0) {
-    result = _.filter(ds_google_projects, function(project) {
+    filtered = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
 
       if (param_projects_allow_or_deny == "Deny") {
@@ -350,8 +370,12 @@ script "js_google_projects_filtered", type: "javascript" do
       return include_project
     })
   } else {
-    result = ds_google_projects
+    filtered = ds_google_projects
   }
+
+  result = _.reject(filtered, function(project) {
+    return (project['id'].substring(0, 4) == "sys-" && param_projects_ignore_sys == "Yes") || (project['id'].substring(0, 4) == "app-" && param_projects_ignore_app == "Yes")
+  })
 EOS
 end
 
@@ -766,21 +790,27 @@ script "js_recommendations_incident", type:"javascript" do
   code <<-'EOS'
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
-    var numString = number.toString()
-    var values = numString.split(".")
-    var formatted_number = ''
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   disks_object = {}
@@ -839,7 +869,7 @@ script "js_recommendations_incident", type:"javascript" do
           resourceID: disk['id'],
           resourceName: disk['name'],
           kind: disk['kind'],
-          resourceType: disk['type'],
+          type: disk['type'],
           description: disk['description'],
           status: disk['status'],
           size: disk['sizeGb'],
@@ -890,7 +920,7 @@ script "js_recommendations_incident", type:"javascript" do
   if (total_unused_disks > 1) { disk_verb = "are" }
 
   findings = [
-    "Out of ", total_disks , " ", disk_noun, " analyzed, ",
+    "Out of ", total_disks, " ", disk_noun, " analyzed, ",
     total_unused_disks, " (", unused_disks_percentage,
     ") ", disk_verb, " idle and recommended for deletion. "
   ].join('')
@@ -906,16 +936,36 @@ script "js_recommendations_incident", type:"javascript" do
 
   // Dummy item to ensure that the check statement in the policy executes at least once
   result.push({
-    resourceID: "",               resourceName: "",             kind: "",
-    resourceType: "",             description: "",              labels: "",
-    status: "",                   size: "",                     selfLink: "",
-    zone: "",                     region: "",                   creationTime: "",
-    accountID: "",                accountName: "",              projectNumber: "",
-    age: "",                      priority: "",                 primaryImpact: "",
-    primaryImpactCategory: "",    recommendationDetails: "",    recommenderSubtype: "",
-    state: "",                    policy_name: "",              tags: "",
-    savings: "",                  savingsCurrency: "",          service: "",
-    total_savings: "",            message: "",                  days_unattached: ""
+    resourceID: "",
+    resourceName: "",
+    kind: "",
+    type: "",
+    description: "",
+    labels: "",
+    status: "",
+    size: "",
+    selfLink: "",
+    zone: "",
+    region: "",
+    creationTime: "",
+    accountID: "",
+    accountName: "",
+    projectNumber: "",
+    age: "",
+    priority: "",
+    primaryImpact: "",
+    primaryImpactCategory: "",
+    recommendationDetails: "",
+    recommenderSubtype: "",
+    state: "",
+    policy_name: "",
+    tags: "",
+    savings: "",
+    savingsCurrency: "",
+    service: "",
+    total_savings: "",
+    message: "",
+    days_unattached: ""
   })
 
   result[0]['total_savings'] = savings_message
@@ -927,7 +977,7 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_recommendations" do
+policy "pol_recommendations" do
   validate_each $ds_recommendations_incident do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Idle Persistent Disks Found"
     detail_template <<-'EOS'
@@ -956,8 +1006,8 @@ policy "policy_recommendations" do
       field "resourceName" do
         label "Resource Name"
       end
-      field "resourceType" do
-        label "Resource Type"
+      field "type" do
+        label "Type"
       end
       field "zone" do
         label "Zone"
@@ -1054,7 +1104,7 @@ define delete_disks($data, $param_take_snapshot) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1161,7 +1211,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do

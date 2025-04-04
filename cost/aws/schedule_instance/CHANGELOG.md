@@ -1,5 +1,27 @@
 # Changelog
 
+## v7.1.0
+
+- Added email notifications for Start Action, Stop Action, and Errors
+
+## v7.0.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v7.0.2
+
+- Minor changes to policy template to pass lint tests. No functional changes.
+
+## v7.0.1
+
+- Minor changes to policy template to pass lint tests. No functional changes.
+
+## v7.0.0
+
+- Remove `next_stop`, `next_start` label requirements
+- Add task labels to improve status updates and debugging for CWF actions
+- Add error capture, graceful timeout handling for CWF actions
+
 ## v6.0
 
 - Added support for regex when filtering resources by tag

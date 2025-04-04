@@ -1,5 +1,21 @@
 # Changelog
 
+## v3.1.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.1.2
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v3.1.1
+
+- Fixed Microsoft VM Size Flexibility URL which prevented the policy from completing without error. Policy functionality is unchanged.
+
+## v3.1
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v3.0
 
 - Updated policy to move away from Azure Legacy EA API endpoints and use the Azure Modern API endpoints due to EA Key deprecation in 2024

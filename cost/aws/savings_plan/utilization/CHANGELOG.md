@@ -1,5 +1,28 @@
 # Changelog
 
+## v4.0.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v4.0.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v4.0.0
+
+- Policy can now be run against an arbitrary number of days in the past
+- Policy can now filter for several Savings Plans at once
+- Improved incident output for better readability
+- Streamlined code for better readability and faster execution
+
+## v3.3
+
+- Updated policy metadata to align policy to other `Savings Plans` policies.
+
+## v3.2
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v3.1
 
 - Parameter `Savings Plan ARN` is now optional.  If not provided, the policy will return utilization for all Savings Plans in the account.

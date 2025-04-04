@@ -1,5 +1,26 @@
 # Changelog
 
+## v4.3.0
+
+- Added support for filtering system and Google Apps Script projects from the results.
+
+## v4.2.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v4.2.2
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v4.2.1
+
+- Added `Service` field to incident table
+- Minor code improvements to conform with current standards.
+
+## v4.2
+
+- Updated policy to use new source for currency information. Policy functionality is unchanged.
+
 ## v4.1
 
 - Fixed issue where currency conversion would sometimes not work as expected.

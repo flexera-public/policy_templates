@@ -1,0 +1,147 @@
+name "ITAM Missing Active Machines"
+rs_pt_ver 20180301
+type "policy"
+short_description "Looks for machines that are active but haven't checked in and sends the result as an email.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/fnms/missing_active_machines/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "medium"
+category "Compliance"
+default_frequency "weekly"
+
+info(
+  version: "2.4.2",
+  provider: "Flexera",
+  service: "IT Asset Management",
+  policy_set: "IT Asset Management",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_days_missing" do
+  type "number"
+  category "Policy Settings"
+  label "Days missing while active"
+  description "Number of missing for a machine to be reported"
+  default 30
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexeraone" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_itam" do
+  get_page_marker do
+    body_path jq(response, "if .total == 0 then null else .offset + 10000 end")
+  end
+  set_page_marker do
+    query "offset"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_inventories" do
+  request do
+    auth $auth_flexeraone
+    pagination $pagination_itam
+    host join(["api.", get(1, split(f1_app_host, "app."))])
+    path join(["/fnms/v1/orgs/", rs_org_id, "/inventories"])
+    query "status", "Active"
+    query "limit", "10000"
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_check_date" do
+  run_script $js_check_date, $ds_inventories, $param_days_missing
+end
+
+script "js_check_date", type: "javascript" do
+  parameters "ds_inventories", "param_days_missing"
+  result "results"
+  code <<-EOF
+  var results = [];
+  _.each(ds_inventories[0].values, function (asset) {
+
+    var startDate = new Date(asset.inventorySourceData.lastInventoryDate); // Inventory Date
+    var endDate = new Date();
+    var timeDifference = endDate.getTime() - startDate.getTime();
+    var daysDifference = parseInt(timeDifference / (1000 * 3600 * 24));
+    if (daysDifference >= param_days_missing) {
+      asset.missing = 1;
+      results.push(asset);
+    }
+  });
+EOF
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_itam" do
+  validate_each $ds_check_date do
+    summary_template "ITAM - Missing active machines"
+    check eq(to_n(val(item, "missing")), 0)
+    escalate $esc_send_report
+    export do
+      field "name"
+      field "serialNumber"
+      field "os"
+      field "LastInventoryDate" do
+        path "inventorySourceData.lastInventoryDate"
+      end
+      field "LastInventorySource" do
+        path "inventorySourceData.lastInventorySource"
+      end
+      field "assetId"
+      field "complianceStatus"
+      field "computerId"
+      field "deviceType"
+      field "inventorySourceData"
+      field "ipAddress"
+      field "macAddresses"
+      field "manufacturer"
+      field "model"
+      field "ownership"
+      field "processorType"
+      field "ram"
+      field "userData"
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_send_report" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

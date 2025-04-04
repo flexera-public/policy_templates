@@ -1,5 +1,26 @@
 # Changelog
 
+## v4.3.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v4.3.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v4.3.0
+
+- Added `Resource ARN` to incident table.
+
+## v4.2.0
+
+- Added parameter `Statistic Lookback Period` to specify how many days of CloudWatch data to gather.
+- Improved policy execution speed by batching CloudWatch requests.
+
+## v4.1
+
+- fixed link to README in policy description
+
 ## v4.0
 
 - Policy name changed to reference EC2 service directly

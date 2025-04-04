@@ -1,5 +1,31 @@
 # Changelog
 
+## v3.9.3
+
+- Fixed a bug that prevented the policy incident from being created in some edge cases.
+
+## v3.9.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.9.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v3.9.0
+
+- Added parameter to select between showing the currency code or the currency symbol in the incident report
+- Fixed a bug introduced at v3.8 that made the policy show greater savings: if there were no MCA bill connections the policy still pulled aggregated costs thus making the savings bigger.
+
+## v3.8
+
+- Added support for organizations with Microsoft MCA accounts
+- Policy incident report now presents the savings in the same currency as the organization
+
+## v3.7
+
+- Added support for organizations with no Microsoft Azure Enterprise Agreement (Legacy) bill connects
+
 ## v3.6
 
 - Incident subject is now the name of the applied policy
