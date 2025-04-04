@@ -698,7 +698,7 @@ These templates can generate savings estimates for your environment.
 
 ## Policy Data Sets
 
-Some policies require external data sets to function.  These data sets are stored in the [data](./data) directory.  The following data sets are available:
+Some policies require external data sets to function. These data sets are stored in the [data](./data) directory.  The following data sets are available:
 
 - [AWS Regions](./data/aws/regions.json)
 - [AWS Instance Types](./data/aws/instance_types.json)
@@ -709,7 +709,7 @@ Some policies require external data sets to function.  These data sets are store
 - [Azure SQL Managed Instance Tier Types](./data/azure/sqlmi_tier_types.json)
 - [TZ database Timezone List](./data/tz_database/timezones_list.json)
 
-## Instructions to upload policy templates to Flexera CMP Policies
+## How To Upload
 
 - The policy templates in the repo are the files that have a .pt extension.
 - Select the desired policy template, click on the “Raw” button, and then right-click and choose “Save As” to save the file to your computer.
