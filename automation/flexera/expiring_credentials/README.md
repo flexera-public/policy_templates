@@ -4,6 +4,8 @@
 
 This policy template reports expired or soon-to-expire credentials in Flexera Automation. Optionally, the list can be emailed and expired or soon-to-expire credentials can be deleted.
 
+NOTE: Credential expiration dates must be manually entered for the credential in Flexera One on the Automation -> Credentials page for this policy template to correctly discern when the credential is going to expire.
+
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify
