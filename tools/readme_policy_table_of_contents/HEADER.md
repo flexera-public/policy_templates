@@ -2,8 +2,6 @@
 
 This repository contains a library of open source [Flexera Policy Templates](https://docs.flexera.com/flexera/EN/Automation/AboutPolicies.htm). All contributions are shared under the MIT license.
 
-Please contact sales@flexera.com to learn more.
-
 ## Released Policy Templates
 
 <!-- Begin Policy Template Table of Contents -->
