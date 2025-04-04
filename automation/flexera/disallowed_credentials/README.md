@@ -1,15 +1,14 @@
-# Flexera Automation Expiring Credentials
+# Flexera Automation Disallowed Credentials
 
 ## What It Does
 
-This policy template reports expired or soon-to-expire credentials in Flexera Automation. Optionally, the list can be emailed and expired or soon-to-expire credentials can be deleted.
+This policy template reports credentials in Flexera Automation that are not in a user-specified list of allowed credentials. Optionally, the list can be emailed and disallowed credentials can be deleted.
 
 ## Input Parameters
 
-- *Email Addresses* - Email addresses of the recipients you wish to notify
+- *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Credential Scope* - Whether to report on Organization-level or Project-level credentials. Select both to report both. Only Project-level credentials in the specific project this policy template is applied in will be reported.
-- *Report Credentials With No Expiration Date* - Whether or not to consider credentials with no expiration date expired and report on them.
-- *Days Until Expiration* - The number of days before expiration to report on an expiring credential. Set to 0 to only report on already-expired credentials.
+- *Credential Allow List* - The names/IDs of credentials that are allowed to exist in Flexera Automation. If a credential is not on this list, it will be reported as disallowed.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 ## Policy Actions
