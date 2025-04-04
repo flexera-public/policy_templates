@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.3
+
+- Fixed minor error in action logging where a DELETE request was logged as a POST request. Functionality unchanged.
+
 ## v0.2.2
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
