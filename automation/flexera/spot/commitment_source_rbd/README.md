@@ -8,6 +8,8 @@ This policy template creates a rule-based dimension in Flexera Cloud Cost Optimi
 - "Non-Eco" - The commitment was not purchased by Spot Eco.
 - "None" - The cost is not a commitment and therefore the commitment source is not applicable.
 
+**NOTE: This policy template should be considered an alpha release and currently only works with a single Spot Eco organization. Support for multiple organizations may be added in a future iteration.**
+
 ## Input Parameters
 
 - *Spot Organization ID* - The organization ID of the Spot Eco account to use for the commitment source.

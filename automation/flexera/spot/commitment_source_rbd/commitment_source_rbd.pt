@@ -124,26 +124,45 @@ datasource "ds_applied_policy" do
   end
 end
 
-datasource "ds_commitment_sources" do
+datasource "ds_eco_commitments" do
   request do
-    run_script $js_commitment_sources, $param_spot_org_id
+    run_script $js_eco_commitments, $param_spot_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "response.items") do
+      field "commitment_type", jmes_path(col_item, "commitment_type")
+      field "commitment_id", jmes_path(col_item, "commitment_id")
+      field "account_id", jmes_path(col_item, "account_id")
+      field "generated_savings", jmes_path(col_item, "generated_savings")
+      field "dollar_used", jmes_path(col_item, "dollar_used")
+      field "percentage_used", jmes_path(col_item, "percentage_used")
+      field "equivalent_od", jmes_path(col_item, "equivalent_od")
+      field "source", jmes_path(col_item, "source")
+    end
   end
 end
 
-script "js_commitment_sources", type: "javascript" do
+script "js_eco_commitments", type: "javascript" do
   parameters "param_spot_org_id"
   result "request"
   code <<-EOS
+  start_date = new Date("2010-01-01")
+  start_date = Math.round(start_date.getTime() / 1000).toString()
+
+  end_date = new Date()
+  end_date = Math.round(end_date.getTime() / 1000).toString()
+
   var request = {
     auth: "auth_spot",
     host: "n3hlz25n15.execute-api.us-east-1.amazonaws.com",
     path: "/prod/aws/v2/billing/commitmentDistribution",
     headers: {
-      "Spotinst-Organization-ID": param_spot_org_id,
+      "Spotinst-Organization-ID": param_spot_org_id
     },
     query_params: {
-      "start_date": 1735689600,
-      "end_date": 1743847749
+      "start_date": start_date,
+      "end_date": end_date
     }
   }
 EOS
@@ -152,43 +171,40 @@ end
 datasource "ds_existing_rbds" do
   request do
     auth $auth_flexera
-    host rs_optima_host
-    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/rule_based_dimensions"])
-    header "Api-Version", "1.0"
-    header "content-type", "application/json"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions"])
   end
   result do
     encoding "json"
-    collect jmes_path(response, "rule_based_dimensions") do
+    collect jmes_path(response, "values[*]") do
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
-      field "dated_rules", jmes_path(col_item, "dated_rules")
+      field "ruleListLinks", jmes_path(col_item, "ruleListLinks")
     end
   end
 end
 
 datasource "ds_rbds" do
-  run_script $js_rbds, $ds_commitment_sources, $ds_existing_rbds, $ds_applied_policy, $param_rbd_name, $param_rbd_id, $param_effective_date
+  run_script $js_rbds, $ds_eco_commitments, $ds_existing_rbds, $ds_applied_policy, $param_rbd_name, $param_rbd_id, $param_effective_date
 end
 
 script "js_rbds", type: "javascript" do
-  parameters "ds_commitment_sources", "ds_existing_rbds", "ds_applied_policy", "param_rbd_name", "param_rbd_id", "param_effective_date"
+  parameters "ds_eco_commitments", "ds_existing_rbds", "ds_applied_policy", "param_rbd_name", "param_rbd_id", "param_effective_date"
   result "result"
   code <<-'EOS'
-  rbd_id_list = _.pluck(ds_existing_rbds, 'id')
+  eco_rbd = _.find(ds_existing_rbds, function(rbd) { return rbd['id'] == param_rbd_id })
+  eco_purchased = _.filter(ds_eco_commitments, function(entry) { return entry["source"] == "Eco" })
 
-  rules = []
-
-  _.each(ds_commitment_sources, function(entry) {
-    rules.push({
+  rules = _.map(eco_purchased, function(entry) {
+    return {
       condition: {
         type: "dimension_contains",
         dimension: "commitment_id",
-        value: "",
+        substring: entry["commitment_id"],
         caseInsensitive: true
       },
       value: { text: "Eco" }
-    })
+    }
   })
 
   // Catch-all rule for commitments not purchased by Eco
@@ -220,7 +236,7 @@ script "js_rbds", type: "javascript" do
     {
       id: param_rbd_id,
       name: param_rbd_name,
-      verb: _.contains(rbd_id_list, param_rbd_id) ? "PATCH" : "POST",
+      verb: eco_rbd ? "PATCH" : "POST",
       effective_at: param_effective_date,
       rules: rules
     }
