@@ -11,7 +11,8 @@ info(
   provider: "Flexera",
   service: "Spot Eco",
   policy_set: "Spot Eco",
-  hide_skip_approvals: "true"
+  hide_skip_approvals: "true",
+  skip_permissions: "true"
 )
 
 ###############################################################################
@@ -22,7 +23,7 @@ parameter "param_spot_org_id" do
   type "string"
   category "Policy Settings"
   label "Spot Organization ID"
-  description "The organization ID of the Spot account to use for the commitment source."
+  description "The organization ID of the Spot Eco account to use for the commitment source."
   # No default value, user input required
 end
 
@@ -30,7 +31,7 @@ parameter "param_rbd_name" do
   type "string"
   category "Policy Settings"
   label "Dimension Name"
-  description "The name to give the new dimension for the commitment source."
+  description "The name to give the new dimension for the commitment source. This is how the dimension will appear in Flexera One."
   default "Commitment Source (Eco)"
 end
 
@@ -121,6 +122,45 @@ datasource "ds_applied_policy" do
     path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
     header "Api-Version", "1.0"
   end
+end
+
+datasource "ds_commitment_sources" do
+  request do
+    run_script $js_commitment_sources, $param_spot_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rule_based_dimensions") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "dated_rules", jmes_path(col_item, "dated_rules")
+    end
+  end
+end
+
+script "js_commitment_sources", type: "javascript" do
+  parameters "param_spot_org_id"
+  result "request"
+  code <<-EOS
+  end_date = new Date().toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_lookback)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_spot",
+    host: "n3hlz25n15.execute-api.us-east-1.amazonaws.com",
+    path: "/prod/aws/v2/billing/commitmentDistribution",
+    headers: {
+      "Spotinst-Organization-ID": param_spot_org_id,
+    },
+    query_params: {
+      "start_date": 1735689600,
+      "end_date": null
+    }
+  }
+EOS
 end
 
 datasource "ds_existing_rbds" do
