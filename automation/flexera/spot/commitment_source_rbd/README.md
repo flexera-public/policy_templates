@@ -25,7 +25,7 @@ This policy template creates a rule-based dimension in Flexera Cloud Cost Optimi
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-- [**Spot Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=spotinst*) created within a Spot organization that has the Spot Eco product.
+- [**Spot Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1137485) (*provider=spotinst*) created within a Spot organization that has the Spot Eco product.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `observer`
