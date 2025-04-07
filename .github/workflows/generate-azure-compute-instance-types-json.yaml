@@ -1,0 +1,64 @@
+name: Generate Azure Compute Instance Types JSON
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  schedule:
+    #        ┌───────────── minute (0 - 59)
+    #        │  ┌───────────── hour (0 - 23)
+    #        │  │ ┌───────────── day of the month (1 - 31)
+    #        │  │ │ ┌───────────── month (1 - 12 or JAN-DEC)
+    #        │  │ │ │ ┌───────────── day of the week (0 - 6 or SUN-SAT)
+    #        │  │ │ │ │
+    #        │  │ │ │ │
+    #        │  │ │ │ │
+    #        *  * * * *
+    # At 02:00 UTC on Sundays
+    - cron: "30 6 * * 0"
+
+  # Workflow dispatch trigger allows manually running workflow
+  workflow_dispatch: {}
+
+jobs:
+  aws_ec2_instance_types:
+    name: "Generate Azure Compute Instance Types"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Speed up checkout by not fetching history
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.13.2
+          cache: 'pip' # caching pip dependencies
+
+      - run: pip install -r requirements.txt
+
+      - name: Generate Azure Compute Instance Types List
+        shell: bash -l {0} # https://github.com/actions/virtual-environments/issues/4
+        run: python3 tools/cloud_data/azure/azure_compute_instance_types.py
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+
+      - name: Create Pull Request
+        id: cpr
+        uses: peter-evans/create-pull-request@v4
+        with:
+          commit-message: "Update Azure Compute Instance Types Data"
+          title: "Update Azure Compute Instance Types Data"
+          body: "Updated Azure Compute Instance Types from GitHub Actions Workflow [${{ github.workflow }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          branch: "task/update-azure-compute-instance-types"
+          delete-branch: true
+          labels: "automation, data, azure"
+
+      - name: Check outputs
+        if: ${{ steps.cpr.outputs.pull-request-number }}
+        run: |
+          echo "Pull Request Number - ${{ steps.cpr.outputs.pull-request-number }}"
+          echo "Pull Request URL - ${{ steps.cpr.outputs.pull-request-url }}"
