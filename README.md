@@ -379,16 +379,6 @@ These templates can generate savings estimates for your environment.
   - [Common Bill Ingestion from Azure Blob Storage](./cost/flexera/cco/cbi_ingestion_azure_blob)
   - [Fixed Cost Common Bill Ingestion](./cost/flexera/cco/fixed_cost_cbi)
 
-#### GCE
-
-- Compute
-
-  - [Google Idle Compute Instances](./cost/google/idle_compute_instances)
-
-- SQL
-
-  - [Google Rightsize CloudSQL Instances](./cost/google/cloudsql_rightsizing)
-
 #### Google
 
 - All
@@ -400,7 +390,12 @@ These templates can generate savings estimates for your environment.
 
   - [Google Committed Use Discount Report](./cost/google/cud_report)
   - [Google Expiring Committed Use Discounts (CUD)](./cost/google/cud_expiration)
+  - [Google Idle Compute Instances](./cost/google/idle_compute_instances)
   - [Google Schedule Instance](./cost/google/schedule_instance)
+
+- SQL
+
+  - [Google Rightsize CloudSQL Instances](./cost/google/cloudsql_rightsizing)
 
 - Storage
 
