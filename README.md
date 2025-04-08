@@ -140,6 +140,16 @@ These templates can generate savings estimates for your environment.
   - [Turbonomic Rightsize Databases Recommendations Azure](./cost/turbonomics/rightsize_databases_recommendations/azure)
   - [Turbonomic Rightsize Virtual Volumes Recommendations Azure](./cost/turbonomics/rightsize_virtual_volumes_recommendations/azure)
 
+#### Flexera
+
+- Kubernetes
+
+  - [Kubernetes - Rightsizing Recommendations](./cost/flexera/spot/ocean_recommendations)
+
+- Spot Security
+
+  - [Spot Security - Compliance Report](./compliance/flexera/spot/security_report)
+
 #### Google
 
 - Compute
@@ -490,6 +500,10 @@ These templates can generate savings estimates for your environment.
 
   - [Flexera One API Event Report](./operational/flexera/iam/api_event_report)
   - [Flexera One User Access Report](./operational/flexera/iam/iam_user_report)
+
+- Kubernetes
+
+  - [Spot Ocean - Common Bill Ingest](./cost/flexera/spot/ocean_cbi)
 
 - N/A
 
