@@ -4,6 +4,8 @@
 
 This policy creates and updates custom Rule-Based Dimensions based on data provided in CSV format. It allows you to create multiple Rule-Based Dimensions at once using data from a CSV file that maps dimension values to other values that should be used as rules.
 
+> **Important:** There is a **1MB** file size limit for Policy Template files.  If your CSV is larger than this already, please use one of the other methods to transform your CSV into Rule-Based Dimensions
+
 ## How It Works
 
 This policy template requires two steps:
