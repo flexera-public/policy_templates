@@ -1,4 +1,4 @@
-# Rule-Based Dimensions from CSV
+# Rule-Based Dimensions from CSV in Policy Template
 
 ## What It Does
 
