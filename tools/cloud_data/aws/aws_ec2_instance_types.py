@@ -3,6 +3,7 @@ import json
 import xmltodict
 import os
 import boto3
+from collections import defaultdict
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 
@@ -37,7 +38,7 @@ nfu_table = {
 
 print("Gathering data from AWS API...")
 
-data = {}
+data = []
 
 # AWS region and session setup
 region = 'us-east-1'
@@ -93,6 +94,21 @@ while True:
 print(f"Retrieved {len(instance_list)} instance types.")
 
 # Process each instance item and build the final data dictionary
+sizes = {
+  "nano": 1,
+  "micro": 2,
+  "small": 4,
+  "medium": 8,
+  "large": 16,
+  "xlarge": 32,
+}
+
+for i in range(2, 513):
+    sizes[str(i) + "xlarge"] = i * 32
+
+with open("./data/aws/instance_types.json", 'r') as f:
+    manual_data = json.load(f)
+
 for item in instance_list:
     cpu = {
         "cores": int(item["vCpuInfo"]["defaultCores"]),
@@ -183,22 +199,49 @@ for item in instance_list:
         "phcSupport": item["phcSupport"] == "supported"
     }
 
-    data[item["instanceType"]] = {
+    burst_info = "none"
+    superseded = "none"
+    ec2_classic = "none"
+
+    if item["instanceType"] in manual_data and "burst_info" in manual_data[item["instanceType"]]:
+        burst_info = manual_data[item["instanceType"]]["burst_info"]
+
+    if item["instanceType"] in manual_data and "superseded" in manual_data[item["instanceType"]]:
+        superseded = manual_data[item["instanceType"]]["superseded"]
+
+    if item["instanceType"] in manual_data and "ec2_classic" in manual_data[item["instanceType"]]:
+        ec2_classic = manual_data[item["instanceType"]]["ec2_classic"]
+
+    family = item["instanceType"].split('.')[0]
+    size = item["instanceType"].split('.')[1]
+    size_rank = sizes.get(size, "None")
+
+    data.append({
+        "name": item["instanceType"],
+        "family": family,
+        "size": size,
+        "size_rank": size_rank,
         "cpu": cpu,
         "memory": memory,
         "network": network,
         "storage": storage,
-        "properties": properties
-    }
+        "properties": properties,
+        "burst_info": burst_info,
+        "superseded": superseded,
+        "ec2_classic": ec2_classic
+    })
 
 print("Writing final output to file...")
 
 with open(output_filename, "w") as type_file:
     type_file.write(
-        json.dumps(data, sort_keys=True, indent=2)
-               .replace(': "none",', ': null,')
-               .replace(': "true",', ': true,')
-               .replace(': "false",', ': false,')
+        json.dumps(data, sort_keys=False, indent=2)
+               .replace(': "none"', ': null')
+               .replace(': "None"', ': null')
+               .replace(': "true"', ': true')
+               .replace(': "false"', ': false')
+               .replace(': "True"', ': true')
+               .replace(': "False"', ': false')
     )
 
 print("DONE!")
