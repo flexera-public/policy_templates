@@ -7,6 +7,16 @@ from collections import defaultdict
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 
+def remove_duplicates(data):
+    seen = set()
+    unique_data = []
+    for entry in data:
+        name = entry.get('name')
+        if name not in seen:
+            unique_data.append(entry)
+            seen.add(name)
+    return unique_data
+
 # File names for reading/writing
 output_filename = 'data/aws/aws_ec2_instance_types.json'
 os.makedirs(os.path.dirname(output_filename), exist_ok=True)
@@ -235,13 +245,14 @@ print("Writing final output to file...")
 
 with open(output_filename, "w") as type_file:
     type_file.write(
-        json.dumps(data, sort_keys=False, indent=2)
-               .replace(': "none"', ': null')
-               .replace(': "None"', ': null')
-               .replace(': "true"', ': true')
-               .replace(': "false"', ': false')
-               .replace(': "True"', ': true')
-               .replace(': "False"', ': false')
+        json.dumps(remove_duplicates(data), sort_keys=False, indent=2)
+            .replace(': ""', ': null')
+            .replace(': "none"', ': null')
+            .replace(': "None"', ': null')
+            .replace(': "true"', ': true')
+            .replace(': "True"', ': true')
+            .replace(': "false"', ': false')
+            .replace(': "False"', ': false')
     )
 
 print("DONE!")
