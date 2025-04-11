@@ -14,7 +14,7 @@ This policy template reports credentials in Flexera Automation that are not in a
 ## Policy Actions
 
 - Sends an email notification
-- Delete expiring credential after approval
+- Delete disallowed credential after approval
 
 ## Prerequisites
 
