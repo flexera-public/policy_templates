@@ -21,19 +21,22 @@ This policy uses the schedule tag value (default key: schedule) for scheduling t
 The policy uses two optional tags to control scheduling:
 
 1. **Schedule Tag** (Required, Default `schedule`) with format: `HH:mm-HH:mm;DAYS[;Optional TIMEZONE]`
-   - Example: `08:00-17:30;MO,TU,WE,TH,FR;America/Los_Angeles`
-   - Time range in 24hr format (HH:mm-HH:mm)
-   - Days using two letter format (SU,MO,TU,WE,TH,FR,SA)
-   - Optional timezone (defaults to UTC if not specified)
 
   `<Schedule Tag>` = `<Hours>;<Days of the Week>[;<Optional Timezone>]`
 
-1. **Schedule Action Tag** (Not Required, Default `schedule_action`) to control scheduling behavior:
-   - `startstop` (default if not specified): Start during window, stop outside window
-   - `start`: Only start during window, never stop
-   - `stop`: Only stop during window, never start
+- Example: `08:00-17:30;MO,TU,WE,TH,FR;America/Los_Angeles`
+- Time range in 24hr format (HH:mm-HH:mm)
+- Days using two letter format (SU,MO,TU,WE,TH,FR,SA)
+- Optional timezone (defaults to UTC if not specified)
 
+1. **Schedule Action Tag** (Not Required, Default `schedule_action`) to control scheduling behavior:
+  
   `<Schedule Action Tag>` = `startstop|start|stop`
+
+- `startstop` (default if not specified): Start during window, stop outside window
+- `start`: Only start during window, never stop
+- `stop`: Only stop during window, never start
+
 
 The Schedule Tag value is a string consisting of 2 or 3 semicolon-separated (`;`) substrings (Hours, Days of the Week, and optional Timezone) with the following format:
 
