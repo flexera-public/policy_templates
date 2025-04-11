@@ -30,7 +30,7 @@ The policy uses two optional tags to control scheduling:
 - Optional timezone (defaults to UTC if not specified)
 
 1. **Schedule Action Tag** (Not Required, Default `schedule_action`) to control scheduling behavior:
-  
+
   `<Schedule Action Tag>` = `startstop|start|stop`
 
 - `startstop` (default if not specified): Start during window, stop outside window
