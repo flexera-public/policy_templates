@@ -5,6 +5,7 @@
 - Added retry mechanism in case of failed actions or timeout waiting for the expected status change
 - Fixed issue preventing schedules being enforced when first action attempt fails
 - Added support for "Schedule Action Tag" to control scheduling behavior
+- Added "Enforce Schedules" capability to allow machines to be turned on/off outside their scheduled window
 
 ## v6.1.0
 
