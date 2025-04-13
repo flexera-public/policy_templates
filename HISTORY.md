@@ -6,6 +6,66 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3055](https://github.com/flexera-public/policy_templates/pull/3055): POL-1478 New Policy Template: Spot Eco - Commitment Source Dimension
+
+#### Description
+
+> This policy template creates a rule-based dimension in Flexera Cloud Cost Optimization that reports on whether commitments were purchased by Spot Eco or not. Costs will have one of three values for this dimension:
+>
+> - "Eco" - The commitment was purchased by Spot Eco.
+> - "Non-Eco" - The commitment was not purchased by Spot Eco.
+> - "None" - The cost is not a commitment and therefore the commitment source is not applicable.
+>
+> **NOTE: This policy template should be considered an alpha release and currently only works with a single Spot Eco organization. Support for multiple organizations may be added in a future iteration.**
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3055) for details about unpublished policies.
+- **Merged At**: 2025-04-11 21:27:17 UTC
+
+---
+
+### PR [#2941](https://github.com/flexera-public/policy_templates/pull/2941): POL-1449 - Initial Spot Policy Templates
+
+#### Description
+
+> Adds 3 new policy templates showcasing early integrations between Flexera and Spot after the announcement of [definitive agreement to acquire the Spot by NetApp FinOps business from NetApp®](https://www.flexera.com/about-us/press-center/flexera-to-acquire-finops-business-from-netapp-to-strengthen-portfolio)
+>
+> **Spot Ocean - Common Bill Ingest**
+> Brings cost and usage visibility from Kubernetes Clusters into Flexera.
+>
+> **Spot Security - Compliance Report**
+> Brings misconfigurations and compliance recommendations into Flexera.
+>
+> **Spot Ocean - Rightsize Recommendations**
+> Brings rightsizing recommendations for Kubernetes Containers into Flexera.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2941) for these details.
+- **Merged At**: 2025-04-07 19:07:19 UTC
+
+---
+
+### PR [#3038](https://github.com/flexera-public/policy_templates/pull/3038): POL-1477 Update Repository README Automation
+
+#### Description
+
+> This updates and improves the automation for generating the repository's README file. It now makes use of the active policy JSON file.
+>
+> PR also updates the provider for a couple of Google policies from "GCE" to "Google" for accurate categorization in the README file.
+>
+> (Ignore linting warnings for FOOTER.md. That file is just used to generate the README.md. As long as the linting warnings don't persist in README.md, they aren't an issue)
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3038) for these details.
+- **Merged At**: 2025-04-07 17:04:16 UTC
+
+---
+
 ### PR [#2995](https://github.com/flexera-public/policy_templates/pull/2995): POL-1462 Azure Long Stopped Compute Instances: Savings and Disk Support
 
 #### Description
@@ -1766,59 +1826,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Azure Hybrid Use Benefit for Windows Server](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/hybrid_use_benefit/README.md), [Meta Parent: Azure Hybrid Use Benefit for Windows Server](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/hybrid_use_benefit/README.md), [Azure Hybrid Use Benefit for Linux Server](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/hybrid_use_benefit_linux/README.md), [Meta Parent: Azure Hybrid Use Benefit for Linux Server](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/hybrid_use_benefit_linux/README.md)
 - **Merged At**: 2024-09-24 12:10:41 UTC
-
----
-
-### PR [#2638](https://github.com/flexera-public/policy_templates/pull/2638): POL-1356 AWS Rightsize EBS Volume: Type Filtering
-
-#### Description
-
-> Adds a parameter to `AWS Rightsize EBS Volume` to enable the user to filter any arbitrary volume type from the results if desired.
->
-
-#### Metadata
-
-- **Policies**: [AWS Rightsize EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/README.md), [Meta Parent: AWS Rightsize EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/README.md)
-- **Merged At**: 2024-09-24 12:10:33 UTC
-
----
-
-### PR [#2663](https://github.com/flexera-public/policy_templates/pull/2663): POL-1364 Update Azure Savings Plan Expiration - Fix Policy Set value
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> The policy_set field in the policy template metadata has been changed from its current value of "Savings Plan" to "Savings Plans" .
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
-> This does not change the functionality of the policy but it does help us internally with reporting on templates in our repository.
->
-
-#### Metadata
-
-- **Policies**: [Azure Expiring Savings Plans](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/savings_plan/expiration/README.md)
-- **Merged At**: 2024-09-23 17:07:43 UTC
-
----
-
-### PR [#2656](https://github.com/flexera-public/policy_templates/pull/2656): POL-1013 Add Azure Expiring Savings Plans Policy
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> Pretty self-explanatory. This is a change to add Azure Expiring Savings Plans policy to the Catalog. This policy will be added to remain consistent with its AWS counterpart. This policy will report on Savings Plans that are expired and/or nearing expiration.
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
-> Maintains parity between AWS and Azure. Customers can now be alerted via email when Savings Plans are nearing expiration or have expired.
->
-
-#### Metadata
-
-- **Policies**: [Azure Expiring Savings Plans](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/savings_plan/expiration/README.md)
-- **Merged At**: 2024-09-23 15:53:39 UTC
 
 ---
 
