@@ -389,6 +389,10 @@ These templates can generate savings estimates for your environment.
   - [Common Bill Ingestion from Azure Blob Storage](./cost/flexera/cco/cbi_ingestion_azure_blob)
   - [Fixed Cost Common Bill Ingestion](./cost/flexera/cco/fixed_cost_cbi)
 
+- Spot Eco
+
+  - [Spot Eco - Commitment Source Dimension](./automation/flexera/spot/commitment_source_rbd)
+
 #### Google
 
 - All
