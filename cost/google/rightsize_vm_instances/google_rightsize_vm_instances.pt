@@ -14,3 +14,913 @@ info(
   recommendation_type: "Usage Reduction",
   hide_skip_approvals: "true"
 )
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_projects_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Projects"
+  description "Allow or Deny entered Projects. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_projects_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Projects List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_projects_ignore_sys" do
+  type "string"
+  category "Filters"
+  label "Ignore System Projects"
+  description "Whether or not to automatically ignore system projects e.g. projects whose id begins with 'sys-'"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_projects_ignore_app" do
+  type "string"
+  category "Filters"
+  label "Ignore Google Apps Script Projects"
+  description "Whether or not to automatically ignore Google Apps Script projects e.g. projects whose id begins with 'app-'"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_labels" do
+  type "list"
+  category "Filters"
+  label "Exclusion Labels"
+  description "Cloud native labels to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_labels_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Labels: Any / All"
+  description "Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Labels' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_stats_idle_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore CPU utilization"
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_idle_threshold_mem_value" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance Memory Threshold (%)"
+  description "The Memory threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore memory utilization"
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_underutil_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization"
+  min_value -1
+  max_value 100
+  default 40
+end
+
+parameter "param_stats_underutil_threshold_mem_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance Memory Threshold (%)"
+  description "The Memory threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore memory utilization"
+  min_value -1
+  max_value 100
+  default 40
+end
+
+parameter "param_stats_check_both" do
+  type "string"
+  category "Statistics"
+  label "Idle/Utilized for both CPU/Memory or either"
+  description "Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1"
+  allowed_values "Both CPU and Memory", "Either CPU or Memory"
+  default "Either CPU or Memory"
+end
+
+parameter "param_stats_threshold" do
+  type "string"
+  category "Statistics"
+  label "Threshold Statistic"
+  description "Statistic to use when determining if an instance is idle/underutilized."
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
+  default "Average"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at CPU and/or memory data for instances. This value cannot be set higher than 42 because Google does not retain metrics for longer than 42 days (6 weeks)."
+  min_value 1
+  max_value 42
+  default 30
+end
+
+parameter "param_downsize_multiple" do
+  type "string"
+  category "Policy Settings"
+  label "Skip Instance Sizes"
+  description "Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Downsize VM Instances", "Stop VM Instances", "Delete VM Instances"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_google" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Table to derive region from zone
+datasource "ds_zone_to_region" do
+  run_script $js_zone_to_region
+end
+
+script "js_zone_to_region", type:"javascript" do
+  result "result"
+  code <<-EOS
+  result = {
+    "us-east1-b": "us-east1",
+    "us-east1-c": "us-east1",
+    "us-east1-d": "us-east1",
+    "us-east4-c": "us-east4",
+    "us-east4-b": "us-east4",
+    "us-east4-a": "us-east4",
+    "us-central1-c": "us-central1",
+    "us-central1-a": "us-central1",
+    "us-central1-f": "us-central1",
+    "us-central1-b": "us-central1",
+    "us-west1-b": "us-west1",
+    "us-west1-c": "us-west1",
+    "us-west1-a": "us-west1",
+    "europe-west4-a": "europe-west4",
+    "europe-west4-b": "europe-west4",
+    "europe-west4-c": "europe-west4",
+    "europe-west1-b": "europe-west1",
+    "europe-west1-d": "europe-west1",
+    "europe-west1-c": "europe-west1",
+    "europe-west3-c": "europe-west3",
+    "europe-west3-a": "europe-west3",
+    "europe-west3-b": "europe-west3",
+    "europe-west2-c": "europe-west2",
+    "europe-west2-b": "europe-west2",
+    "europe-west2-a": "europe-west2",
+    "asia-east1-b": "asia-east1",
+    "asia-east1-a": "asia-east1",
+    "asia-east1-c": "asia-east1",
+    "asia-southeast1-b": "asia-southeast1",
+    "asia-southeast1-a": "asia-southeast1",
+    "asia-southeast1-c": "asia-southeast1",
+    "asia-northeast1-b": "asia-northeast1",
+    "asia-northeast1-c": "asia-northeast1",
+    "asia-northeast1-a": "asia-northeast1",
+    "asia-south1-c": "asia-south1",
+    "asia-south1-b": "asia-south1",
+    "asia-south1-a": "asia-south1",
+    "australia-southeast1-b": "australia-southeast1",
+    "australia-southeast1-c": "australia-southeast1",
+    "australia-southeast1-a": "australia-southeast1",
+    "southamerica-east1-b": "southamerica-east1",
+    "southamerica-east1-c": "southamerica-east1",
+    "southamerica-east1-a": "southamerica-east1",
+    "asia-east2-a": "asia-east2",
+    "asia-east2-b": "asia-east2",
+    "asia-east2-c": "asia-east2",
+    "asia-northeast2-a": "asia-northeast2",
+    "asia-northeast2-b": "asia-northeast2",
+    "asia-northeast2-c": "asia-northeast2",
+    "asia-northeast3-a": "asia-northeast3",
+    "asia-northeast3-b": "asia-northeast3",
+    "asia-northeast3-c": "asia-northeast3",
+    "asia-south2-a": "asia-south2",
+    "asia-south2-b": "asia-south2",
+    "asia-south2-c": "asia-south2",
+    "asia-southeast2-a": "asia-southeast2",
+    "asia-southeast2-b": "asia-southeast2",
+    "asia-southeast2-c": "asia-southeast2",
+    "australia-southeast2-a": "australia-southeast2",
+    "australia-southeast2-b": "australia-southeast2",
+    "australia-southeast2-c": "australia-southeast2",
+    "europe-central2-a": "europe-central2",
+    "europe-central2-b": "europe-central2",
+    "europe-central2-c": "europe-central2",
+    "europe-north1-a": "europe-north1",
+    "europe-north1-b": "europe-north1",
+    "europe-north1-c": "europe-north1",
+    "europe-southwest1-a": "europe-southwest1",
+    "europe-southwest1-b": "europe-southwest1",
+    "europe-southwest1-c": "europe-southwest1",
+    "europe-west6-a": "europe-west6",
+    "europe-west6-b": "europe-west6",
+    "europe-west6-c": "europe-west6",
+    "northamerica-northeast1-a": "northamerica-northeast1",
+    "northamerica-northeast1-b": "northamerica-northeast1",
+    "northamerica-northeast1-c": "northamerica-northeast1",
+    "northamerica-northeast2-a": "northamerica-northeast2",
+    "northamerica-northeast2-b": "northamerica-northeast2",
+    "northamerica-northeast2-c": "northamerica-northeast2",
+    "us-west2-a": "us-west2",
+    "us-west2-b": "us-west2",
+    "us-west2-c": "us-west2",
+    "us-west3-a": "us-west3",
+    "us-west3-b": "us-west3",
+    "us-west3-c": "us-west3",
+    "us-west4-a": "us-west4",
+    "us-west4-b": "us-west4",
+    "us-west4-c": "us-west4",
+    "us-west5-a": "us-west5",
+    "us-west5-b": "us-west5",
+    "us-west5-c": "us-west5",
+    "us-west6-a": "us-west6",
+    "us-west6-b": "us-west6",
+    "us-west6-c": "us-west6",
+    "us-west7-a": "us-west7",
+    "us-west7-b": "us-west7",
+    "us-west7-c": "us-west7"
+  }
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_google_projects" do
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+    query "filter", "(lifecycleState:ACTIVE)"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "number", jmes_path(col_item, "projectNumber")
+      field "id", jmes_path(col_item, "projectId")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_google_projects_filtered" do
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list, $param_projects_ignore_sys, $param_projects_ignore_app
+end
+
+script "js_google_projects_filtered", type: "javascript" do
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
+  result "result"
+  code <<-EOS
+  if (param_projects_list.length > 0) {
+    filtered = _.filter(ds_google_projects, function(project) {
+      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
+
+      if (param_projects_allow_or_deny == "Deny") {
+        include_project = !include_project
+      }
+
+      return include_project
+    })
+  } else {
+    filtered = ds_google_projects
+  }
+
+  result = _.reject(filtered, function(project) {
+    return (project['id'].substring(0, 4) == "sys-" && param_projects_ignore_sys == "Yes") || (project['id'].substring(0, 4) == "app-" && param_projects_ignore_app == "Yes")
+  })
+EOS
+end
+
+datasource "ds_get_google_vms" do
+  iterate $ds_google_projects_filtered
+  request do
+    auth $auth_google
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/", val(iter_item, 'id'), "/aggregated/instances"])
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
+    ignore_status [403, 404]
+  end
+  result do
+    encoding "json"
+    field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind,hostname,cpuPlatform,labels,description,machineType} ]")
+    field "projectId", val(iter_item, "id")
+    field "projectName", val(iter_item, "name")
+    field "projectNumber", val(iter_item, "number")
+  end
+end
+
+datasource "ds_google_vms" do
+  run_script $js_google_vms, $ds_get_google_vms, $ds_zone_to_region
+end
+
+script "js_google_vms", type: "javascript" do
+  parameters "ds_get_google_vms", "ds_zone_to_region"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_get_google_vms, function(response) {
+    _.each(response['instances'], function(vm) {
+      if (vm['status'] == "RUNNING") {
+        zone = vm['zone'].split('/')[8]
+        region = ds_zone_to_region[zone]
+
+        result.push({
+          id: vm['id'],
+          name: vm['name'],
+          description: vm['description'],
+          status: vm['status'],
+          selfLink: vm['selfLink'],
+          cpuPlatform: vm['cpuPlatform'],
+          machineType: vm['machineType'],
+          hostname: vm['hostname'],
+          kind: vm['kind'],
+          labels: vm['labels'],
+          projectId: response['projectId'],
+          projectName: response['projectName'],
+          projectNumber: response['projectNumber'],
+          zone: zone,
+          region: region
+        })
+      }
+    })
+  })
+EOS
+end
+
+datasource "ds_google_vms_label_filtered" do
+  run_script $js_google_vms_label_filtered, $ds_google_vms, $param_exclusion_labels, $param_exclusion_labels_boolean
+end
+
+script "js_google_vms_label_filtered", type: "javascript" do
+  parameters "ds_google_vms", "param_exclusion_labels", "param_exclusion_labels_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_labels, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_labels.length > 0) {
+    result = _.reject(ds_google_vms, function(resource) {
+      resource_labels = {}
+      if (typeof(resource['labels']) == 'object') { resource_labels = resource['labels'] }
+
+      // Store a list of found labels
+      found_labels = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_label = resource_labels[comparator['key']]
+
+        if (comparison == 'key' && resource_label != undefined) { found_labels.push(string) }
+        if (comparison == '==' && resource_label == value) { found_labels.push(string) }
+        if (comparison == '!=' && resource_label != value) { found_labels.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_label != undefined && value.test(resource_label)) { found_labels.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_label == undefined) { found_labels.push(string) }
+          if (resource_label != undefined && value.test(resource_label)) { found_labels.push(string) }
+        }
+      })
+
+      all_labels_found = found_labels.length == comparators.length
+      any_labels_found = found_labels.length > 0 && param_exclusion_labels_boolean == 'Any'
+
+      return all_labels_found || any_labels_found
+    })
+  } else {
+    result = ds_google_vms
+  }
+EOS
+end
+
+datasource "ds_google_vms_region_filtered" do
+  run_script $js_google_vms_region_filtered, $ds_google_vms_label_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_google_vms_region_filtered", type: "javascript" do
+  parameters "ds_google_vms_label_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_google_vms_label_filtered, function(instance) {
+      include_instance = _.contains(param_regions_list, instance['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_instance = !include_instance
+      }
+
+      return include_instance
+    })
+  } else {
+    result = ds_google_vms_label_filtered
+  }
+EOS
+end
+
+datasource "ds_cpu_stats" do
+  iterate $ds_google_projects_filtered
+  request do
+    run_script $js_stats, val(iter_item, "id"), $param_stats_lookback, "compute.googleapis.com/instance/cpu/utilization"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "timeSeriesData[*]") do
+      field "resourceName", jmes_path(col_item, "labelValues[3].stringValue")
+      field "resourceID", jmes_path(col_item, "labelValues[2].stringValue")
+      field "zone", jmes_path(col_item, "labelValues[1].stringValue")
+      field "cpuAverage", prod(jmes_path(col_item, "pointData[0].values[0].doubleValue"), 100)
+      field "cpuMaximum", prod(jmes_path(col_item, "pointData[0].values[1].doubleValue"), 100)
+      field "cpuMinimum", prod(jmes_path(col_item, "pointData[0].values[2].doubleValue"), 100)
+      field "cpuP99", prod(jmes_path(col_item, "pointData[0].values[3].doubleValue"), 100)
+      field "cpuP95", prod(jmes_path(col_item, "pointData[0].values[4].doubleValue"), 100)
+      field "cpuP90", prod(jmes_path(col_item, "pointData[0].values[5].doubleValue"), 100)
+      field "projectId", val(iter_item, "id")
+      field "projectName", val(iter_item, "name")
+      field "projectNumber", val(iter_item, "number")
+    end
+  end
+end
+
+datasource "ds_mem_stats" do
+  iterate $ds_google_projects_filtered
+  request do
+    run_script $js_stats, val(iter_item, "id"), $param_stats_lookback, "agent.googleapis.com/memory/percent_used"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "timeSeriesData[*]") do
+      field "resourceName", jmes_path(col_item, "labelValues[3].stringValue")
+      field "resourceID", jmes_path(col_item, "labelValues[2].stringValue")
+      field "zone", jmes_path(col_item, "labelValues[1].stringValue")
+      field "memAverage", prod(jmes_path(col_item, "pointData[0].values[0].doubleValue"), 100)
+      field "memMaximum", prod(jmes_path(col_item, "pointData[0].values[1].doubleValue"), 100)
+      field "memMinimum", prod(jmes_path(col_item, "pointData[0].values[2].doubleValue"), 100)
+      field "memP99", prod(jmes_path(col_item, "pointData[0].values[3].doubleValue"), 100)
+      field "memP95", prod(jmes_path(col_item, "pointData[0].values[4].doubleValue"), 100)
+      field "memP90", prod(jmes_path(col_item, "pointData[0].values[5].doubleValue"), 100)
+      field "projectId", val(iter_item, "id")
+      field "projectName", val(iter_item, "name")
+      field "projectNumber", val(iter_item, "number")
+    end
+  end
+end
+
+script "js_stats", type: "javascript" do
+  parameters "projectId", "param_stats_lookback", "metric"
+  result "request"
+  code <<-EOS
+  group_by = [
+    "group_by sliding(" + param_stats_lookback + "d), .mean",
+    "group_by sliding(" + param_stats_lookback + "d), .max",
+    "group_by sliding(" + param_stats_lookback + "d), .min",
+    "group_by sliding(" + param_stats_lookback + "d), .percentile(99)",
+    "group_by sliding(" + param_stats_lookback + "d), .percentile(95)",
+    "group_by sliding(" + param_stats_lookback + "d), .percentile(90)"
+  ].join(' ; ')
+
+  query = [
+    "fetch gce_instance",
+    "metric " + metric,
+    "within " + param_stats_lookback + "d",
+    "{ " + group_by + " }",
+    "join"
+  ].join(" | ")
+
+  var request = {
+    auth: "auth_google",
+    verb: "POST",
+    host: "monitoring.googleapis.com",
+    path: [ "/v3/projects/", projectId, "/timeSeries:query" ].join(''),
+    header: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json"
+    },
+    body_fields: { "query": query },
+    ignore_status: [ 403, 404 ]
+  }
+EOS
+end
+
+datasource "ds_google_vms_with_stats" do
+  run_script $js_google_vms_with_stats, $ds_google_vms_region_filtered, $ds_cpu_stats, $ds_mem_stats
+end
+
+script "js_google_vms_with_stats", type: "javascript" do
+  parameters "ds_google_vms_region_filtered", "ds_cpu_stats", "ds_mem_stats"
+  result "result"
+  code <<-EOS
+  cpu_stats_by_resource = {}
+
+  _.each(ds_cpu_stats, function(item) {
+    id = item['resourceID'].toLowerCase()
+    cpu_stats_by_resource[id] = item
+  })
+
+  mem_stats_by_resource = {}
+
+  _.each(ds_mem_stats, function(item) {
+    id = item['resourceID'].toLowerCase()
+    mem_stats_by_resource[id] = item
+  })
+
+  result = _.map(ds_google_vms_region_filtered, function(vm) {
+    new_vm = {
+      cpuAverage: null,
+      cpuMaximum: null,
+      cpuMinimum: null,
+      cpuP99: null,
+      cpuP95: null,
+      cpuP90: null,
+      memAverage: null,
+      memMaximum: null,
+      memMinimum: null,
+      memP99: null,
+      memP95: null,
+      memP90: null
+    }
+
+    _.each(_.keys(vm), function(key) { new_vm[key] = vm[key] })
+
+    id = vm['id'].toLowerCase()
+
+    if (cpu_stats_by_resource[id] != undefined) {
+      new_vm["cpuAverage"] = cpu_stats_by_resource[id]['cpuAverage']
+      new_vm["cpuMaximum"] = cpu_stats_by_resource[id]['cpuMaximum']
+      new_vm["cpuMinimum"] = cpu_stats_by_resource[id]['cpuMinimum']
+      new_vm["cpuP99"] = cpu_stats_by_resource[id]['cpuP99']
+      new_vm["cpuP95"] = cpu_stats_by_resource[id]['cpuP95']
+      new_vm["cpuP90"] = cpu_stats_by_resource[id]['cpuP90']
+    }
+
+    if (mem_stats_by_resource[id] != undefined) {
+      new_vm["memAverage"] = cpu_stats_by_resource[id]['cpuAverage']
+      new_vm["memMaximum"] = cpu_stats_by_resource[id]['cpuMaximum']
+      new_vm["memMinimum"] = cpu_stats_by_resource[id]['cpuMinimum']
+      new_vm["memP99"] = cpu_stats_by_resource[id]['cpuP99']
+      new_vm["memP95"] = cpu_stats_by_resource[id]['cpuP95']
+      new_vm["memP90"] = cpu_stats_by_resource[id]['cpuP90']
+    }
+
+    return new_vm
+  })
+EOS
+end
+
+datasource "ds_vm_costs" do
+  iterate $ds_google_projects_filtered
+  request do
+    run_script $js_vm_costs, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceID", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_vm_costs", type: "javascript" do
+  parameters "project_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Compute Engine"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "compute engine"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor",
+            "type": "equal",
+            "value": "GCP"
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": project_id
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_vm_costs_grouped" do
+  run_script $js_vm_costs_grouped, $ds_vm_costs
+end
+
+script "js_vm_costs_grouped", type: "javascript" do
+  parameters "ds_vm_costs"
+  result "result"
+  code <<-EOS
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_vm_costs, function(item) {
+    id = item['resourceID'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_google_instance_sizes" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/google/google_compute_instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_idle_and_underutil_vms" do
+  run_script $js_idle_and_underutil_vms, $ds_google_vms_with_stats, $ds_vm_costs_grouped, $ds_google_instance_sizes, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_downsize_multiple, $param_stats_threshold, $param_stats_lookback, $param_min_savings
+end
+
+script "js_idle_and_underutil_vms", type:"javascript" do
+  parameters "ds_google_vms_with_stats", "ds_vm_costs_grouped", "ds_google_instance_sizes", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_downsize_multiple", "param_stats_threshold", "param_stats_lookback", "param_min_savings"
+  result "result"
+  code <<-'EOS'
+
+EOS
+end
