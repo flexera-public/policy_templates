@@ -90,6 +90,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 Additionally, this Policy Template requires that several APIs be enabled in your Google Cloud environment:
 
 - [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
+- [Cloud Monitoring API](https://console.cloud.google.com/flows/enableapi?apiid=monitoring.googleapis.com)
 - [Compute Engine API](https://console.cloud.google.com/flows/enableapi?apiid=compute.googleapis.com)
 - [Recommender API](https://console.cloud.google.com/flows/enableapi?apiid=recommender.googleapis.com)
 
