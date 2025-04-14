@@ -154,6 +154,7 @@ default_child_policy_template_files = [
   "../../cost/google/rightsize_cloudsql_recommendations/google_rightsize_cloudsql_recommendations.pt",
   "../../cost/google/object_storage_optimization/google_object_storage_optimization.pt",
   "../../cost/google/recommender/recommender.pt",
+  "../../cost/google/rightsize_vm_instances/google_rightsize_vm_instances.pt",
   "../../cost/google/rightsize_vm_recommendations/google_rightsize_vm_recommendations.pt",
   "../../cost/google/schedule_instance/google_schedule_instance.pt",
   "../../cost/google/cud_expiration/google_cud_expiration_report.pt",
