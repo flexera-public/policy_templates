@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.11.6
+
+- Policy template metadata updated to no longer publish it in the catalog.
+
 ## v2.11.5
 
 - Updated policy template metadata provider from "GCE" to "Google". Functionality unchanged.

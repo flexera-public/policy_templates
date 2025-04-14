@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.1
+
+- Updated policy template description to clarify that it reports native Google recommendations.
+
 ## v3.2.0
 
 - Added support for filtering system and Google Apps Script projects from the results.
