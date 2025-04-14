@@ -36,6 +36,15 @@ parameter "param_min_savings" do
   default 0
 end
 
+parameter "param_cross_family" do
+  type "string"
+  category "Policy Settings"
+  label "Enable Cross-Family Recommendations"
+  description "Whether to recommend downsizing instances to machine types outside of their current machine type family"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
 parameter "param_projects_allow_or_deny" do
   type "string"
   category "Filters"
@@ -171,15 +180,6 @@ parameter "param_stats_lookback" do
   min_value 1
   max_value 42
   default 30
-end
-
-parameter "param_downsize_multiple" do
-  type "string"
-  category "Policy Settings"
-  label "Skip Instance Sizes"
-  description "Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate."
-  allowed_values "Yes", "No"
-  default "No"
 end
 
 parameter "param_automatic_action" do
@@ -517,7 +517,7 @@ script "js_google_vms", type: "javascript" do
 
   _.each(ds_get_google_vms, function(response) {
     _.each(response['instances'], function(vm) {
-      if (vm['status'] == "RUNNING") {
+      if (vm['status'] == "RUNNING" && vm['machineType'].indexOf("custom") == -1) {
         zone = vm['zone'].split('/')[8]
         region = ds_zone_to_region[zone]
 
@@ -529,6 +529,7 @@ script "js_google_vms", type: "javascript" do
           selfLink: vm['selfLink'],
           cpuPlatform: vm['cpuPlatform'],
           machineType: vm['machineType'],
+          family: vm['machineType'].split('-')[0],
           hostname: vm['hostname'],
           kind: vm['kind'],
           labels: vm['labels'],
@@ -913,14 +914,1234 @@ datasource "ds_google_instance_sizes" do
   end
 end
 
-datasource "ds_idle_and_underutil_vms" do
-  run_script $js_idle_and_underutil_vms, $ds_google_vms_with_stats, $ds_vm_costs_grouped, $ds_google_instance_sizes, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_downsize_multiple, $param_stats_threshold, $param_stats_lookback, $param_min_savings
+datasource "ds_idle_vms" do
+  run_script $js_idle_vms, $ds_google_vms_with_stats, $ds_vm_costs_grouped, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_stats_lookback, $param_min_savings
 end
 
-script "js_idle_and_underutil_vms", type:"javascript" do
-  parameters "ds_google_vms_with_stats", "ds_vm_costs_grouped", "ds_google_instance_sizes", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_downsize_multiple", "param_stats_threshold", "param_stats_lookback", "param_min_savings"
+script "js_idle_vms", type:"javascript" do
+  parameters "ds_google_vms_with_stats", "ds_vm_costs_grouped", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_stats_lookback", "param_min_savings"
   result "result"
   code <<-'EOS'
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator) {
+    formatted_number = "0"
 
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  checking_cpu = param_stats_idle_threshold_cpu_value != -1
+  checking_mem = param_stats_idle_threshold_mem_value != -1
+
+  // Find idle VMs
+  idle_vms = _.filter(ds_google_vms_with_stats, function(vm) {
+    idle = false
+    idle_cpu = false
+    idle_mem = false
+    cpu_test_stat = null
+    mem_test_stat = null
+
+    if (checking_cpu) {
+      if (param_stats_threshold == "Average" && vm['cpuAverage']) {
+        cpu_test_stat = vm['cpuAverage']
+      } else if (param_stats_threshold == "Maximum" && vm['cpuMaximum']) {
+        cpu_test_stat = vm['cpuMaximum']
+      } else if (param_stats_threshold == "p99" && vm['cpuP99']) {
+        cpu_test_stat = vm['cpuP99']
+      } else if (param_stats_threshold == "p95" && vm['cpuP95']) {
+        cpu_test_stat = vm['cpuP95']
+      } else if (param_stats_threshold == "p90" && vm['cpuP90']) {
+        cpu_test_stat = vm['cpuP90']
+      }
+    }
+
+    if (checking_mem) {
+      if (param_stats_threshold == "Average" && vm['memAverage']) {
+        mem_test_stat = vm['memAverage']
+      } else if (param_stats_threshold == "Maximum" && vm['memMaximum']) {
+        mem_test_stat = vm['memMaximum']
+      } else if (param_stats_threshold == "p99" && vm['memP99']) {
+        mem_test_stat = vm['memP99']
+      } else if (param_stats_threshold == "p95" && vm['memP95']) {
+        mem_test_stat = vm['memP95']
+      } else if (param_stats_threshold == "p90" && vm['memP90']) {
+        mem_test_stat = vm['memP90']
+      }
+    }
+
+    if (checking_cpu && cpu_test_stat && cpu_test_stat <= param_stats_idle_threshold_cpu_value) {
+      idle_cpu = true
+    }
+
+    if (checking_mem && mem_test_stat && mem_test_stat <= param_stats_idle_threshold_mem_value) {
+      idle_mem = true
+    }
+
+    if (checking_cpu && !checking_mem) {
+      idle = idle_cpu
+    } else if (!checking_cpu && checking_mem) {
+      idle = idle_mem
+    } else if (checking_cpu && checking_mem) {
+      if (param_stats_check_both == "Both CPU and Memory") {
+        idle = idle_cpu && idle_mem
+      } else {
+        idle = idle_cpu || idle_mem
+      }
+    }
+
+    return idle
+  })
+
+  result = []
+  total_savings = 0.0
+
+  _.each(idle_vms, function(vm) {
+    savings = 0.0
+    if (ds_vm_costs_grouped[vm['id'].toLowerCase()]) { savings = ds_vm_costs_grouped[vm['id'].toLowerCase()] }
+
+    if (savings >= param_min_savings) {
+      total_savings += savings
+
+      tags = []
+
+      if (vm['labels']) {
+        tags = _.map(_.keys(vm['labels']), function(key) {
+          return [ key, vm['labels'][key] ].join('=')
+        })
+      }
+
+      recommendationDetails = [
+        "Stop Google virtual machine ", vm["name"], " ",
+        "in Google Project ", vm["projectName"], " ",
+        "(", vm["projectId"], ")"
+      ]
+
+      result.push({
+        accountID: vm['projectId'],
+        accountName: vm['projectName'],
+        projectNumber: vm['projectNumber'],
+        resourceID: vm['id'],
+        resourceName: vm['name'],
+        family: vm['family'],
+        resourceType: vm['machineType'],
+        newResourceType: "Stop VM Instance",
+        zone: vm['zone'],
+        region: vm['region'],
+        hostname: vm['hostname'],
+        platform: vm['cpuPlatform'],
+        cpuMaximum: vm['cpuMaximum'],
+        cpuMinimum: vm['cpuMinimum'],
+        cpuAverage: vm['cpuAverage'],
+        cpuP99: vm['cpuP99'],
+        cpuP95: vm['cpuP95'],
+        cpuP90: vm['cpuP90'],
+        memMaximum: vm['memMaximum'],
+        memMinimum: vm['memMinimum'],
+        memAverage: vm['memAverage'],
+        memP99: vm['memP99'],
+        memP95: vm['memP95'],
+        memP90: vm['memP90'],
+        tags: tags.join(', '),
+        service: "Compute Engine",
+        savings: Math.round(savings * 1000) / 1000,
+        savingsCurrency: ds_currency['symbol'],
+        recommendationDetails: recommendationDetails,
+        state: vm['status'],
+        selfLink: vm['selfLink'],
+        thresholdType: param_stats_threshold,
+        threshold: param_stats_idle_threshold_cpu_value,
+        memoryThreshold: param_stats_idle_threshold_mem_value,
+        lookbackPeriod: param_stats_lookback,
+        policy_name: ds_applied_policy['name'],
+        total_savings: "",
+        message: ""
+      })
+    }
+  })
+
+  result = _.sortBy(result, "savings").reverse()
+
+  instances_total = ds_google_vms_with_stats.length
+  idle_total = result.length
+  idle_percentage = (idle_total / instances_total * 100).toFixed(2).toString() + '%'
+
+  verb = instances_total == 1 ? "is" : "are"
+
+  findings = [
+    "Out of ", instances_total, " Google virtual machines analyzed, ",
+    idle_total, " (", idle_percentage,
+    ") ", idle_verb, " idle and recommended for stopping. "
+  ].join('')
+
+  message_boolean = param_stats_check_both == "Both CPU and Memory" ? "and" : "or"
+
+  if (param_stats_idle_threshold_cpu_value != -1 && param_stats_idle_threshold_mem_value != -1) {
+    analysis = [
+      "A virtual machine is considered idle if its CPU usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_idle_threshold_cpu_value, "% ", message_boolean,
+      " its memory usage (", param_stats_threshold.toLowerCase(),
+      ") is below ", param_stats_idle_threshold_mem_value, "%. "
+    ].join('')
+
+    lookback = [
+      "CPU and memory usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  } else if (param_stats_idle_threshold_cpu_value != -1 && param_stats_idle_threshold_mem_value == -1) {
+    analysis = [
+      "A virtual machine is considered idle if its CPU usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_idle_threshold_cpu_value, "%. "
+    ].join('')
+
+    lookback = [
+      "CPU usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  } else if (param_stats_idle_threshold_cpu_value == -1 && param_stats_idle_threshold_mem_value != -1) {
+    analysis = [
+      "A virtual machine is considered idle if its memory usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_idle_threshold_mem_value, "%. "
+    ].join('')
+
+    lookback = [
+      "Memory usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  } else {
+    analysis = "No idle virtual machines were reported because neither CPU nor Memory metrics were configured for analysis. "
+    lookback = "\n\n"
+  }
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  result.push({
+    accountID: "",
+    accountName: "",
+    projectNumber: "",
+    resourceID: "",
+    resourceName: "",
+    family: "",
+    resourceType: "",
+    newResourceType: "",
+    zone: "",
+    region: "",
+    hostname: "",
+    platform: "",
+    cpuMaximum: "",
+    cpuMinimum: "",
+    cpuAverage: "",
+    cpuP99: "",
+    cpuP95: "",
+    cpuP90: "",
+    memMaximum: "",
+    memMinimum: "",
+    memAverage: "",
+    memP99: "",
+    memP95: "",
+    memP90: "",
+    tags: "",
+    service: "",
+    savings: "",
+    savingsCurrency: "",
+    recommendationDetails: "",
+    state: "",
+    selfLink: "",
+    thresholdType: "",
+    threshold: "",
+    memoryThreshold: "",
+    lookbackPeriod: "",
+    policy_name: "",
+    total_savings: "",
+    message: ""
+  })
+
+  result[0]["message"] = findings + analysis + lookback + disclaimer
+  result[0]["total_savings"] = ds_currency['symbol'] + ' ' + formatNumber(Math.round(total_savings * 100) / 100, ds_currency['separator'])
 EOS
+end
+
+
+datasource "ds_underutil_vms" do
+  run_script $js_underutil_vms, $ds_idle_vms, $ds_google_vms_with_stats, $ds_vm_costs_grouped, $ds_google_instance_sizes, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_stats_lookback, $param_min_savings, $param_cross_family
+end
+
+script "js_underutil_vms", type:"javascript" do
+  parameters "ds_idle_vms", "ds_google_vms_with_stats", "ds_vm_costs_grouped", "ds_google_instance_sizes", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_stats_lookback", "param_min_savings", "param_cross_family"
+  result "result"
+  code <<-'EOS'
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator) {
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  types_by_machinetype = {}
+  types_by_family = {}
+
+  _.each(ds_google_instance_sizes, function(size) {
+    types_by_family[size['machineType']] = size
+
+    if (types_by_family[size['family']] == undefined) { types_by_family[size['family']] = [] }
+    types_by_family[size['family']].push(size)
+  })
+
+  checking_cpu = param_stats_underutil_threshold_cpu_value != -1
+  checking_mem = param_stats_underutil_threshold_mem_value != -1
+
+  // Find underutilized VMs. Purposely exclude anything we've already determined is idle
+  idle_vm_ids = _.compact(_.pluck(ds_idle_vms, "resourceID"))
+
+  non_idle_vms = _.reject(ds_google_vms_with_stats, function(vm) {
+    return _.contains(idle_vm_ids, vm['id'])
+  })
+
+  underutil_vms = _.filter(non_idle_vms, function(vm) {
+    underutil = false
+    underutil_cpu = false
+    underutil_mem = false
+    cpu_test_stat = null
+    mem_test_stat = null
+
+    if (checking_cpu) {
+      if (param_stats_threshold == "Average" && vm['cpuAverage']) {
+        cpu_test_stat = vm['cpuAverage']
+      } else if (param_stats_threshold == "Maximum" && vm['cpuMaximum']) {
+        cpu_test_stat = vm['cpuMaximum']
+      } else if (param_stats_threshold == "p99" && vm['cpuP99']) {
+        cpu_test_stat = vm['cpuP99']
+      } else if (param_stats_threshold == "p95" && vm['cpuP95']) {
+        cpu_test_stat = vm['cpuP95']
+      } else if (param_stats_threshold == "p90" && vm['cpuP90']) {
+        cpu_test_stat = vm['cpuP90']
+      }
+    }
+
+    if (checking_mem) {
+      if (param_stats_threshold == "Average" && vm['memAverage']) {
+        mem_test_stat = vm['memAverage']
+      } else if (param_stats_threshold == "Maximum" && vm['memMaximum']) {
+        mem_test_stat = vm['memMaximum']
+      } else if (param_stats_threshold == "p99" && vm['memP99']) {
+        mem_test_stat = vm['memP99']
+      } else if (param_stats_threshold == "p95" && vm['memP95']) {
+        mem_test_stat = vm['memP95']
+      } else if (param_stats_threshold == "p90" && vm['memP90']) {
+        mem_test_stat = vm['memP90']
+      }
+    }
+
+    if (checking_cpu && cpu_test_stat && cpu_test_stat <= param_stats_underutil_threshold_cpu_value) {
+      underutil_cpu = true
+    }
+
+    if (checking_mem && mem_test_stat && mem_test_stat <= param_stats_underutil_threshold_mem_value) {
+      underutil_mem = true
+    }
+
+    if (checking_cpu && !checking_mem) {
+      underutil = underutil_cpu
+    } else if (!checking_cpu && checking_mem) {
+      underutil = underutil_mem
+    } else if (checking_cpu && checking_mem) {
+      if (param_stats_check_both == "Both CPU and Memory") {
+        underutil = underutil_cpu && underutil_mem
+      } else {
+        underutil = underutil_cpu || underutil_mem
+      }
+    }
+
+    return underutil
+  })
+
+  result = []
+  total_savings = 0.0
+
+  _.each(underutil_vms, function(vm) {
+    resourceType = vm['machineType']
+    newResourceType = vm['machineType']
+    savings = 0.0
+
+    if (checking_cpu) {
+      if (param_stats_threshold == "Average" && vm['cpuAverage']) {
+        cpu_test_stat = vm['cpuAverage']
+      } else if (param_stats_threshold == "Maximum" && vm['cpuMaximum']) {
+        cpu_test_stat = vm['cpuMaximum']
+      } else if (param_stats_threshold == "p99" && vm['cpuP99']) {
+        cpu_test_stat = vm['cpuP99']
+      } else if (param_stats_threshold == "p95" && vm['cpuP95']) {
+        cpu_test_stat = vm['cpuP95']
+      } else if (param_stats_threshold == "p90" && vm['cpuP90']) {
+        cpu_test_stat = vm['cpuP90']
+      }
+    }
+
+    if (checking_mem) {
+      if (param_stats_threshold == "Average" && vm['memAverage']) {
+        mem_test_stat = vm['memAverage']
+      } else if (param_stats_threshold == "Maximum" && vm['memMaximum']) {
+        mem_test_stat = vm['memMaximum']
+      } else if (param_stats_threshold == "p99" && vm['memP99']) {
+        mem_test_stat = vm['memP99']
+      } else if (param_stats_threshold == "p95" && vm['memP95']) {
+        mem_test_stat = vm['memP95']
+      } else if (param_stats_threshold == "p90" && vm['memP90']) {
+        mem_test_stat = vm['memP90']
+      }
+    }
+
+    if (types_by_family[vm['family']] && types_by_machinetype[vm['machineType']]) {
+      current_type = types_by_machinetype[vm['resourceType']]
+      current_cores = types_by_machinetype[vm['machineType']]['specs']['guestCpus']
+      current_memory = types_by_machinetype[vm['memoryGb']]['specs']['memoryGb']
+
+      // Calculate the optimal number of cores to get CPU usage below user-specified threshold
+      if (checking_cpu) {
+        optimal_cores = current_cores
+        temp_stat = cpu_test_stat
+
+        while (optimal_cores > 1 && temp_stat <= param_stats_underutil_threshold_cpu_value) {
+          temp_stat = temp_stat * (optimal_cores / (optimal_cores - 1))
+          optimal_cores = optimal_cores - 1
+        }
+      }
+
+      // Calculate the optimal GB of memory to get memory usage below user-specified threshold
+      if (checking_mem) {
+        optimal_mem = current_mem
+        temp_stat = mem_test_stat
+
+        while (optimal_mem > 1 && temp_stat <= param_stats_underutil_threshold_mem_value) {
+          temp_stat = temp_stat * (optimal_mem / (optimal_mem - 1))
+          optimal_mem = optimal_mem - 1
+        }
+      }
+
+      // Create a list of resource types that meet the criteria
+      possible_types = []
+      possible_type_list = param_cross_family == "Yes" ? ds_google_instance_sizes : types_by_family[vm['family']]
+
+      _.each(possible_type_list, function(type) {
+        new_type = {
+          name: type['name'],
+          cores: type['specs']['guestCpus'],
+          memory: type['specs']['memoryGb']
+        }
+
+        if (checking_cpu && !checking_mem && type['cores'] >= optimal_cores && type['cores'] < current_type['specs']['guestCpus']) {
+          possible_types.push(new_type)
+        }
+
+        if (!checking_cpu && checking_mem && type['memory'] >= optimal_mem && type['memory'] < current_type['specs']['memoryGb']) {
+          possible_types.push(new_type)
+        }
+
+        if (checking_cpu && checking_mem && type['cores'] >= optimal_cores && type['memory'] >= optimal_mem && (type['cores'] < current_type['specs']['guestCpus'] || type['memory'] < current_type['specs']['memoryGb'])) {
+          possible_types.push(new_type)
+        }
+      })
+
+      // Sort the list to grab the smallest instance size from the list
+      if (possible_types.length > 0) {
+        if (!checking_cpu && checking_mem) {
+          sorted_types = _.sortBy(possible_types, 'cores')
+          sorted_types = _.sortBy(possible_types, 'memory')
+        } else {
+          sorted_types = _.sortBy(possible_types, 'memory')
+          sorted_types = _.sortBy(possible_types, 'cores')
+        }
+
+        newResourceType = sorted_types[0]['name']
+      }
+
+      // Get current monthly cost of instance and calculate savings
+      if (newResourceType != resourceType && ds_vm_costs_grouped[vm['id'].toLowerCase()]) {
+        monthly_cost = ds_vm_costs_grouped[vm['id'].toLowerCase()]
+        cpu_cost_percentage = types_by_machinetype[resourceType]['specs']['guestCpus'] / types_by_machinetype[newResourceType]['specs']['guestCpus']
+        mem_cost_percentage = types_by_machinetype[resourceType]['specs']['memoryGb'] / types_by_machinetype[newResourceType]['specs']['memoryGb']
+
+        // Adjust the memory percentage to be less severe.
+        // This is because CPU cores affect pricing about twice as much as memory does, generally speaking
+        adjusted_mem = mem_cost_percentage + ((1 - mem_cost_percentage) / 2)
+
+        new_cost = monthly_cost * cpu_cost_percentage * adjusted_mem
+        savings = monthly_cost - new_cost
+      }
+    }
+
+    if (newResourceType != resourceType && savings >= param_min_savings && savings >= 0) {
+      total_savings += savings
+
+      tags = []
+
+      if (vm['labels']) {
+        tags = _.map(_.keys(vm['labels']), function(key) {
+          return [ key, vm['labels'][key] ].join('=')
+        })
+      }
+
+      recommendationDetails = [
+        "Resize Google virtual machine ", vm["name"], " ",
+        "in Google Project ", vm["projectName"], " ",
+        "(", vm["projectId"], ") ",
+        "from ", resourceType, " ",
+        "to ", newResourceType
+      ]
+
+      result.push({
+        accountID: vm['projectId'],
+        accountName: vm['projectName'],
+        projectNumber: vm['projectNumber'],
+        resourceID: vm['id'],
+        resourceName: vm['name'],
+        family: vm['family'],
+        resourceType: resourceType,
+        newResourceType: newResourceType,
+        zone: vm['zone'],
+        region: vm['region'],
+        hostname: vm['hostname'],
+        platform: vm['cpuPlatform'],
+        cpuMaximum: vm['cpuMaximum'],
+        cpuMinimum: vm['cpuMinimum'],
+        cpuAverage: vm['cpuAverage'],
+        cpuP99: vm['cpuP99'],
+        cpuP95: vm['cpuP95'],
+        cpuP90: vm['cpuP90'],
+        memMaximum: vm['memMaximum'],
+        memMinimum: vm['memMinimum'],
+        memAverage: vm['memAverage'],
+        memP99: vm['memP99'],
+        memP95: vm['memP95'],
+        memP90: vm['memP90'],
+        tags: tags.join(', '),
+        service: "Compute Engine",
+        savings: Math.round(savings * 1000) / 1000,
+        savingsCurrency: ds_currency['symbol'],
+        recommendationDetails: recommendationDetails,
+        state: vm['status'],
+        selfLink: vm['selfLink'],
+        thresholdType: param_stats_threshold,
+        threshold: param_stats_underutil_threshold_cpu_value,
+        memoryThreshold: param_stats_underutil_threshold_mem_value,
+        lookbackPeriod: param_stats_lookback,
+        policy_name: ds_applied_policy['name'],
+        total_savings: "",
+        message: ""
+      })
+    }
+  })
+
+  result = _.sortBy(result, "savings").reverse()
+
+  instances_total = ds_google_vms_with_stats.length
+  underutil_total = result.length
+  underutil_percentage = (underutil_total / instances_total * 100).toFixed(2).toString() + '%'
+
+  verb = instances_total == 1 ? "is" : "are"
+
+  findings = [
+    "Out of ", instances_total, " Google virtual machines analyzed, ",
+    underutil_total, " (", underutil_percentage,
+    ") ", idle_verb, " underutilized and recommended for downsizing. "
+  ].join('')
+
+  message_boolean = param_stats_check_both == "Both CPU and Memory" ? "and" : "or"
+
+  if (param_stats_idle_threshold_cpu_value != -1 && param_stats_idle_threshold_mem_value != -1) {
+    analysis = [
+      "A virtual machine is considered underutilized if its CPU usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_underutil_threshold_cpu_value, "% ", message_boolean,
+      " its memory usage (", param_stats_threshold.toLowerCase(),
+      ") is below ", param_stats_underutil_threshold_mem_value,
+      "% but its CPU usage is still above or equal to ",
+      param_stats_idle_threshold_cpu_value, "% ", message_boolean,
+      " its memory usage is still above or equal to ",
+      param_stats_idle_threshold_mem_value, "%. "
+    ].join('')
+
+    lookback = [
+      "CPU and memory usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  } else if (param_stats_idle_threshold_cpu_value != -1 && param_stats_idle_threshold_mem_value == -1) {
+    analysis = [
+      "A virtual machine is considered underutilized if its CPU usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_underutil_threshold_cpu_value,
+      "% but its CPU usage is still above or equal to ",
+      param_stats_idle_threshold_cpu_value, "%. "
+    ].join('')
+
+    lookback = [
+      "CPU usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  } else if (param_stats_idle_threshold_cpu_value == -1 && param_stats_idle_threshold_mem_value != -1) {
+    analysis  = [
+      "A virtual machine is considered underutilized if its memory usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_underutil_threshold_mem_value,
+      "% but its memory usage is still above or equal to ",
+      param_stats_idle_threshold_mem_value, "%. "
+    ].join('')
+
+    lookback = [
+      "Memory usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  } else {
+    analysis = "No underutilized virtual machines were reported because neither CPU nor Memory metrics were configured for analysis. "
+    lookback = "\n\n"
+  }
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  result.push({
+    accountID: "",
+    accountName: "",
+    projectNumber: "",
+    resourceID: "",
+    resourceName: "",
+    family: "",
+    resourceType: "",
+    newResourceType: "",
+    zone: "",
+    region: "",
+    hostname: "",
+    platform: "",
+    cpuMaximum: "",
+    cpuMinimum: "",
+    cpuAverage: "",
+    cpuP99: "",
+    cpuP95: "",
+    cpuP90: "",
+    memMaximum: "",
+    memMinimum: "",
+    memAverage: "",
+    memP99: "",
+    memP95: "",
+    memP90: "",
+    tags: "",
+    service: "",
+    savings: "",
+    savingsCurrency: "",
+    recommendationDetails: "",
+    state: "",
+    selfLink: "",
+    thresholdType: "",
+    threshold: "",
+    memoryThreshold: "",
+    lookbackPeriod: "",
+    policy_name: "",
+    total_savings: "",
+    message: ""
+  })
+
+  result[0]["message"] = findings + analysis + lookback + disclaimer
+  result[0]["total_savings"] = ds_currency['symbol'] + ' ' + formatNumber(Math.round(total_savings * 100) / 100, ds_currency['separator'])
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_recommendations" do
+  validate_each $ds_underutil_vms do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Underutilized VM Instances Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_downsize_instances
+    hash_exclude "tags", "savings", "savingsCurrency", "total_savings", "message", "cpuMaximum", "cpuMinimum", "cpuAverage", "cpuP99", "cpuP95", "cpuP90", "memMaximum", "memMinimum", "memAverage", "memP99", "memP95", "memP90"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Project ID"
+      end
+      field "accountName" do
+        label "Project Name"
+      end
+      field "projectNumber" do
+        label "Project Number"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "newResourceType" do
+        label "Recommended Resource Type"
+      end
+      field "zone" do
+        label "Zone"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "cpuP90" do
+        label "CPU p90"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+      end
+      field "cpuP99" do
+        label "CPU p99"
+      end
+      field "memMaximum" do
+        label "Memory Maximum %"
+      end
+      field "memMinimum" do
+        label "Memory Minimum %"
+      end
+      field "memAverage" do
+        label "Memory Average %"
+      end
+      field "memP90" do
+        label "Memory p90"
+      end
+      field "memP95" do
+        label "Memory p95"
+      end
+      field "memP99" do
+        label "Memory p99"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "threshold" do
+        label "CPU Threshold"
+      end
+      field "memoryThreshold" do
+        label "Memory Threshold"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "tags" do
+        label "Labels"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Currency"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "state" do
+        label "Status"
+      end
+      field "selfLink" do
+        label "Resource Link"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+  validate_each $ds_idle_vms do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Idle VM Instances Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_stop_instances
+    escalate $esc_delete_instances
+    hash_exclude "tags", "savings", "savingsCurrency", "total_savings", "message", "cpuMaximum", "cpuMinimum", "cpuAverage", "cpuP99", "cpuP95", "cpuP90", "memMaximum", "memMinimum", "memAverage", "memP99", "memP95", "memP90"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Project ID"
+      end
+      field "accountName" do
+        label "Project Name"
+      end
+      field "projectNumber" do
+        label "Project Number"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "newResourceType" do
+        label "Recommended Resource Type"
+      end
+      field "zone" do
+        label "Zone"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "cpuP90" do
+        label "CPU p90"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+      end
+      field "cpuP99" do
+        label "CPU p99"
+      end
+      field "memMaximum" do
+        label "Memory Maximum %"
+      end
+      field "memMinimum" do
+        label "Memory Minimum %"
+      end
+      field "memAverage" do
+        label "Memory Average %"
+      end
+      field "memP90" do
+        label "Memory p90"
+      end
+      field "memP95" do
+        label "Memory p95"
+      end
+      field "memP99" do
+        label "Memory p99"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "threshold" do
+        label "CPU Threshold"
+      end
+      field "memoryThreshold" do
+        label "Memory Threshold"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "tags" do
+        label "Labels"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Currency"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "state" do
+        label "Status"
+      end
+      field "selfLink" do
+        label "Resource Link"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_downsize_instances" do
+  automatic contains($param_automatic_action, "Downsize VM Instances")
+  label "Downsize VM Instances"
+  description "Approval to downsize all selected VM instances"
+  run "downsize_instances", data
+end
+
+escalation "esc_stop_instances" do
+  automatic contains($param_automatic_action, "Stop VM Instances")
+  label "Stop VM Instances"
+  description "Approval to stop all selected VM instances"
+  run "stop_instances", data
+end
+
+escalation "esc_delete_instances" do
+  automatic contains($param_automatic_action, "Delete VM Instances")
+  label "Delete VM Instances"
+  description "Approval to delete all selected VM instances"
+  run "delete_instances", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define downsize_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    if $instance["newResourceType"] != "Delete VM Instance"
+      sub on_error: handle_error() do
+        call stop_instance($instance) retrieve $stop_response
+        call resize_instance($instance) retrieve $resize_response
+        call start_instance($instance) retrieve $start_response
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define stop_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call stop_instance($instance) retrieve $stop_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call stop_instance($instance) retrieve $stop_response
+      call delete_instance($instance) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define resize_instance($instance) return $response do
+  task_label("POST " + $instance['selfLink'] + '/setMachineType')
+
+  $body = '{ machineType: "zones/' + $instance['zone'] + '/machineTypes/' + $instance['newResourceType'] + '" }'
+
+  $response = http_post(
+    url: $instance['selfLink'] + '/setMachineType',
+    auth: $$auth_google,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: $body
+  )
+
+  task_label("Post Google VM instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $instance['selfLink'] + '/setMachineType', "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response posting Google VM instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("Post Google VM instance successful: " + $instance["resourceName"])
+  end
+
+  sleep(5)
+  call get_instance_state($instance) retrieve $state_response, $current_state
+  sleep(5)
+
+  while $current_state != "STOPPED" && $current_state != "TERMINATED" do
+    call get_instance_state($instance) retrieve $state_response, $current_state
+    sleep(5)
+  end
+end
+
+define delete_instance($instance) return $response do
+  task_label("DELETE " + $instance['selfLink'])
+
+  $response = http_delete(
+    url: $instance['selfLink'],
+    auth: $$auth_google,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Delete Google VM instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $instance['selfLink'], "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Google VM instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("Delete Google VM instance successful: " + $instance["resourceName"])
+  end
+end
+
+define start_instance($instance) return $response do
+  task_label("POST " + $instance['selfLink'] + '/start')
+
+  $response = http_post(
+    url: $instance['selfLink'] + '/start',
+    auth: $$auth_google,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Post Google VM instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $instance['selfLink'] + '/start', "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response posting Google VM instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("Post Google VM instance successful: " + $instance["resourceName"])
+  end
+end
+
+define stop_instance($instance) return $response do
+  task_label("POST " + $instance['selfLink'] + '/stop')
+
+  $response = http_post(
+    url: $instance['selfLink'] + '/stop',
+    auth: $$auth_google,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Post Google VM instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $instance['selfLink'] + '/stop', "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response posting Google VM instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("Post Google VM instance successful: " + $instance["resourceName"])
+  end
+
+  sleep(5)
+  call get_instance_state($instance) retrieve $state_response, $current_state
+  sleep(5)
+
+  while $current_state != "STOPPED" && $current_state != "TERMINATED" do
+    call get_instance_state($instance) retrieve $state_response, $current_state
+    sleep(5)
+  end
+end
+
+define get_instance_state($instance) return $response, $instance_state do
+  task_label("GET " + $instance['selfLink'])
+
+  $response = http_get(
+    url: $instance['selfLink'],
+    auth: $$auth_google,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Get Google VM instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $instance['selfLink'], "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response getting Google VM instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("Get Google VM instance successful: " + $instance["resourceName"])
+    $instance_state = $response["body"]["status"]
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
 end
