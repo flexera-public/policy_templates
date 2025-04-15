@@ -37,7 +37,9 @@ This policy has the following input parameters required when launching the polic
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `org_owner` access in all MSP Child Orgs
+  - `org_owner`*
+
+  * `org_owner` role in the MSP Parent Org always.  If parameter `Get Customer Org Costs from MSP Parent Org` is set to `true`, then the `org_owner` must be granted to the identify in all Child Orgs in addition to MSP Parent Org.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
