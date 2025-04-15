@@ -914,6 +914,14 @@ datasource "ds_google_instance_sizes" do
   end
 end
 
+datasource "ds_google_instance_prices" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/google/google_vm_pricing.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 datasource "ds_idle_vms" do
   run_script $js_idle_vms, $ds_google_vms_with_stats, $ds_vm_costs_grouped, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_stats_lookback, $param_min_savings
 end
@@ -1181,11 +1189,11 @@ EOS
 end
 
 datasource "ds_underutil_vms" do
-  run_script $js_underutil_vms, $ds_idle_vms, $ds_google_vms_with_stats, $ds_vm_costs_grouped, $ds_google_instance_sizes, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_stats_lookback, $param_min_savings, $param_cross_family
+  run_script $js_underutil_vms, $ds_idle_vms, $ds_google_vms_with_stats, $ds_vm_costs_grouped, $ds_google_instance_sizes, $ds_google_instance_prices, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_stats_lookback, $param_min_savings, $param_cross_family
 end
 
 script "js_underutil_vms", type:"javascript" do
-  parameters "ds_idle_vms", "ds_google_vms_with_stats", "ds_vm_costs_grouped", "ds_google_instance_sizes", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_stats_lookback", "param_min_savings", "param_cross_family"
+  parameters "ds_idle_vms", "ds_google_vms_with_stats", "ds_vm_costs_grouped", "ds_google_instance_sizes", "ds_google_instance_prices", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_stats_lookback", "param_min_savings", "param_cross_family"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -1394,14 +1402,23 @@ script "js_underutil_vms", type:"javascript" do
       // Get current monthly cost of instance and calculate savings
       if (newResourceType != resourceType && ds_vm_costs_grouped[vm['id'].toLowerCase()]) {
         monthly_cost = ds_vm_costs_grouped[vm['id'].toLowerCase()]
-        cpu_cost_percentage = types_by_machinetype[resourceType]['specs']['guestCpus'] / types_by_machinetype[newResourceType]['specs']['guestCpus']
-        mem_cost_percentage = types_by_machinetype[resourceType]['specs']['memoryGb'] / types_by_machinetype[newResourceType]['specs']['memoryGb']
 
-        // Adjust the memory percentage to be less severe.
-        // This is because CPU cores affect pricing about twice as much as memory does, generally speaking
-        adjusted_mem = mem_cost_percentage + ((1 - mem_cost_percentage) / 2)
+        // If we have list price for both sizes, use that to estimate cost.
+        // Otherwise, do a rougher calculation using memory and cores.
+        if (ds_google_instance_prices[resourceType] && ds_google_instance_prices[newResourceType]) {
+          ratio = ds_google_instance_prices[newResourceType] / ds_google_instance_prices[resourceType]
+          new_cost = monthly_cost * ratio
+        } else {
+          cpu_cost_percentage = types_by_machinetype[resourceType]['specs']['guestCpus'] / types_by_machinetype[newResourceType]['specs']['guestCpus']
+          mem_cost_percentage = types_by_machinetype[resourceType]['specs']['memoryGb'] / types_by_machinetype[newResourceType]['specs']['memoryGb']
 
-        new_cost = monthly_cost * cpu_cost_percentage * adjusted_mem
+          // Adjust the memory percentage to be less severe.
+          // This is because CPU cores affect pricing about twice as much as memory does, generally speaking
+          adjusted_mem = mem_cost_percentage + ((1 - mem_cost_percentage) / 2)
+
+          new_cost = monthly_cost * cpu_cost_percentage * adjusted_mem
+        }
+
         savings = monthly_cost - new_cost
       }
     }
