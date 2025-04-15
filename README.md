@@ -491,6 +491,11 @@ These templates can generate savings estimates for your environment.
   - [Cloud Bill Processing Error Notification](./operational/flexera/cco/bill_processing_errors_notification)
   - [FinOps Dashboards](./operational/flexera/cco/finops_dashboards)
 
+- FinOps Customizations
+
+  - [CSV for Rule-Based Dimensions from CSV](./operational/flexera/cco/rbds_from_csv_in_policy_template)
+  - [Rule-Based Dimensions from CSV in Policy Template](./operational/flexera/cco/rbds_from_csv_in_policy_template)
+
 - FlexNet Manager
 
   - [Schedule FlexNet Manager Report](./operational/flexera/fnms/schedule_fnms_reports)
