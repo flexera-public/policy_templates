@@ -37,7 +37,6 @@ The policy uses two optional tags to control scheduling:
 - `start`: Only start during window, never stop
 - `stop`: Only stop during window, never start
 
-
 The Schedule Tag value is a string consisting of 2 or 3 semicolon-separated (`;`) substrings (Hours, Days of the Week, and optional Timezone) with the following format:
 
 - *Hours* - Start and stop hours are 24 hour format. For example, a value of `8:15-17:30` will start instances at 8:15 and stop them at 17:30 (5:30 pm). If the minute field is left blank, the minute value of `00` will be assumed.
