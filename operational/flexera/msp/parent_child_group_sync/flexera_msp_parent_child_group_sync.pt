@@ -63,6 +63,15 @@ parameter "param_invitation_flow" do
   default "User Invitations Disabled"
 end
 
+parameter "param_batch_count" do
+  type "number"
+  category "Policy Settings"
+  label "Batch Count"
+  description "If Batch Count is > 1 then Orgs will be synced incrementally over multiple runs in batches.  This is intended to be used if you are hitting timeout issues during applied policy evaluation."
+  min_value 1
+  default 1
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -239,11 +248,11 @@ datasource "ds_organizations" do
 end
 
 datasource "ds_organizations_filtered" do
-  run_script $js_organizations_filtered, $ds_organizations, $ds_context, $param_child_orgs_allow_or_deny, $param_child_orgs_list
+  run_script $js_organizations_filtered, $ds_organizations, $ds_context, $param_child_orgs_allow_or_deny, $param_child_orgs_list, $param_batch_count
 end
 
 script "js_organizations_filtered", type: "javascript" do
-  parameters "ds_organizations", "ds_context", "param_child_orgs_allow_or_deny", "param_child_orgs_list"
+  parameters "ds_organizations", "ds_context", "param_child_orgs_allow_or_deny", "param_child_orgs_list", "param_batch_count"
   result "result"
   code <<-EOS
   var orgs = [];
@@ -272,7 +281,7 @@ script "js_organizations_filtered", type: "javascript" do
     });
   }
   var batches = _.groupBy(orgs, function(org, index) {
-    return (index % 4).toFixed(0);
+    return (index % param_batch_count).toFixed(0);
   });
 
   result = batches[ctx.batch_index.toFixed(0)];
