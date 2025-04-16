@@ -95,6 +95,16 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -386,23 +396,18 @@ datasource "ds_existing_rbds_with_rules" do
 end
 
 datasource "ds_rbds" do
-  run_script $js_rbds, $ds_new_rules, $ds_existing_rbds, $ds_existing_rbds_with_rules, $param_subscription_fallback
+  run_script $js_rbds, $ds_new_rules, $ds_existing_rbds, $ds_existing_rbds_with_rules, $ds_applied_policy, $param_subscription_fallback
 end
 
 script "js_rbds", type: "javascript" do
-  parameters "ds_new_rules", "ds_existing_rbds", "ds_existing_rbds_with_rules", "param_subscription_fallback"
+  parameters "ds_new_rules", "ds_existing_rbds", "ds_existing_rbds_with_rules", "ds_applied_policy", "param_subscription_fallback"
   result "result"
   code <<-'EOS'
   existing_rbd_ids = _.pluck(ds_existing_rbds, "id")
 
-  // Create rules that mark the beginning and end of the generated AWS rules.
-  if (param_subscription_fallback == "Yes") {
-    start_block_value = "Start: Generated Azure Resource Group / Subscription Rules"
-    end_block_value = "End: Generated Azure Resource Group / Subscription Rules"
-  } else {
-    start_block_value = "Start: Generated Azure Resource Group Rules"
-    end_block_value = "End: Generated Azure Resource Group Rules"
-  }
+  // Create rules that mark the beginning and end of the generated Azure rules.
+  start_block_value = "Start: " + ds_applied_policy["name"]
+  end_block_value = "End: " + ds_applied_policy["name"]
 
   block_start_rule = {
     condition: { dimension: "vendor_account", type: "dimension_equals", value: start_block_value },
