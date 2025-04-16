@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.3.3",
+  version: "3.0.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Automation",
@@ -151,8 +151,6 @@ script "js_new_rules", type: "javascript" do
   code <<-'EOS'
   rule_lists = []
 
-  rbd_id_list = _.pluck(existing_rbds, 'id')
-
   _.each(param_tag_list, function(tag, index) {
     rbd_name = tag.replace('.', ' ').replace('-', ' ')
     rbd_name = rbd_name.replace(/\W/g, " ").trim()
@@ -224,7 +222,7 @@ script "js_existing_rbds_that_match", type: "javascript" do
   parameters "ds_existing_rbds", "ds_new_rules"
   result "result"
   code <<-'EOS'
-  new_ids = _.pluck(ds_new_rules, "id")
+  new_ids = _.pluck(ds_new_rules["rule_lists"], "id")
   result = _.filter(ds_existing_rbds, function(rbd) { return _.contains(new_ids, rbd["id"]) })
 EOS
 end
@@ -247,15 +245,18 @@ datasource "ds_existing_rbds_with_rules" do
 end
 
 datasource "ds_rbds" do
-  run_script $js_rbds, $ds_new_rules, $ds_existing_rbds_with_rules
+  run_script $js_rbds, $ds_new_rules, $ds_existing_rbds, $ds_existing_rbds_with_rules
 end
 
 script "js_rbds", type: "javascript" do
-  parameters "ds_new_rules", "ds_existing_rbds_with_rules"
+  parameters "ds_new_rules", "ds_existing_rbds", "ds_existing_rbds_with_rules"
   result "result"
   code <<-'EOS'
-  start_block_value = "Start: Generated AWS Rules"
-  end_block_value = "End: Generated AWS Rules"
+  existing_rbd_ids = _.pluck(ds_existing_rbds, "id")
+
+  // Create rules that mark the beginning and end of the generated AWS rules.
+  start_block_value = "Start: Generated AWS Account Rules"
+  end_block_value = "End: Generated AWS Account Rules"
 
   block_start_rule = {
     condition: { dimension: "vendor_account", type: "dimension_equals", value: start_block_value },
@@ -267,23 +268,29 @@ script "js_rbds", type: "javascript" do
     value: { text: end_block_value }
   }
 
+  // Create tables to easily reference the existing rules and our generated rules by RBD ID
   new_rules_table = {}
-  _.each(ds_new_rules, function(rbd) { new_rules_table[rbd["id"]] = rbd })
+  _.each(ds_new_rules["rule_lists"], function(rbd) { new_rules_table[rbd["id"]] = rbd })
 
   existing_rules_table = {}
   _.each(ds_existing_rbds_with_rules, function(rbd) { existing_rules_table[rbd["id"]] = rbd["rules"] })
 
   result = []
 
+  // Build combined rule sets
   _.each(_.keys(new_rules_table), function(rbd_id) {
     rules = []
 
-    if (existing_rules_table[rbd_id]) {
-      found_block = false
-      injected_rules = false
+    // Track whether we've found an existing block of generated rules or not.
+    // Also track whether we've replaced them with the newly generated rules
+    found_block = false
+    injected_rules = false
 
+    if (existing_rules_table[rbd_id]) {
       _.each(existing_rules_table[rbd_id], function(rule) {
         if (!found_block) {
+          // When we find the beginning of the existing block of generated rules,
+          // replace them with our new rules
           if (rule["condition"]["value"] == start_block_value) {
             found_block = true
             injected_rules = true
@@ -294,22 +301,26 @@ script "js_rbds", type: "javascript" do
           } else {
             rules.push(rule)
           }
-        } else {
-          if (rule["condition"]["value"] == end_block_value) {
-            found_block = false
-          }
         }
+
+        if (found_block && rule["condition"]["value"] == end_block_value) { found_block = false }
       })
     }
 
-    if (!injected_rules) { rules = rules.concat(new_rules_table[rbd_id]["rules"]) }
+    // If we never injected the rules because we never found an existing block of generated rules,
+    // add them now to the end of the rules instead.
+    if (!injected_rules) {
+      rules.push(block_start_rule)
+      rules = rules.concat(new_rules_table[rbd_id]["rules"])
+      rules.push(block_end_rule)
+    }
 
     if (rules.length > 0) {
       result.push({
         id: rbd_id,
         name: new_rules_table[rbd_id]["name"],
-        verb: existing_rules_table[rbd_id] : "PATCH" ? "POST",
-        effective_at: new_rules_table[rbd_id]["name"]["effective_at"],
+        verb: _.contains(existing_rbd_ids, rbd_id) ? "PATCH" : "POST",
+        effective_at: new_rules_table[rbd_id]["effective_at"],
         rules: rules
       })
     }
