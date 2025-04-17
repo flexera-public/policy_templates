@@ -1,0 +1,433 @@
+name "Rule-Based Dimensions from CSV in Policy Template"
+rs_pt_ver 20180301
+type "policy"
+short_description "Creates and updates custom Rule-Based Dimensions based on data provided in CSV format. Please see the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/rbds_from_csv_in_policy_template/) for more information."
+long_description ""
+category "Operational"
+severity "low"
+default_frequency "daily"
+info(
+  publish: "false",
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "FinOps Customizations",
+  policy_set: "Automation",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_effective_date" do
+  type "string"
+  category "Policy Settings"
+  label "Year/month you want rule-based dimensions to start applying in YYYY-MM format"
+  description "Year/month you want rule-based dimensions to start applying in YYYY-MM format"
+  default "1970-01"
+end
+
+parameter "param_dimensions_rules" do
+  type "list"
+  category "Policy Settings"
+  label "Dimensions for Rules. Example: vendor_account"
+  description "Dimensions for Rules. Example: vendor_account"
+  # No default value, user input required
+end
+
+parameter "param_dimensions_rbds" do
+  type "list"
+  category "Policy Settings"
+  label "Dimensions for Rule-Based Dimension Outputs. Example: rbd_business_area, rbd_customer, rbd_customer_type"
+  description "Dimensions for Rule-Based Dimension Outputs. Example: rbd_business_area, rbd_customer, rbd_customer_type"
+  # No default value, user input required
+end
+
+parameter "param_csv_deliminator" do
+  type "string"
+  category "Policy Settings"
+  label "Deliminator used in the CSV"
+  description "Deliminator used in the CSV"
+  allowed_values ["Tab (copy/paste from Excel)", "Comma (CSV)", "Semicolon"]
+  default "Tab (copy/paste from Excel)"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_flexera" do
+  get_page_marker do
+    body_path jmes_path(response, "nextPage")
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_policy_templates" do
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, 'api')
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/policy-templates"])
+    query "filter", "name co 'CSV for Rule-Based Dimensions from CSV'"
+    query "orderBy", "updatedAt desc"
+    query "limit", "1"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jq(col_item, ".id")
+      field "name", jq(col_item, ".name")
+      field "updatedAt", jq(col_item, ".updatedAt")
+      field "updatedBy", jq(col_item, ".updatedBy")
+    end
+  end
+end
+
+datasource "ds_policy_template_details" do
+  iterate $ds_policy_templates
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, 'api')
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/policy-templates/", val(iter_item, "id")])
+    query "view", "source"
+  end
+end
+
+datasource "ds_raw_csv" do
+  run_script $js_raw_csv, $ds_policy_templates, $ds_policy_template_details
+end
+
+script "js_raw_csv", type: "javascript" do
+  parameters "ds_policy_templates", "ds_policy_template_details"
+  result "result"
+  code <<-EOS
+  var startDelim = "///////////////////////////////////////////////////////////\\n//    Copy from Excel and paste BELOW this block         //\\n///////////////////////////////////////////////////////////\\n";
+  var endDelim = "///////////////////////////////////////////////////////////\\n//    Copy from Excel and paste ABOVE this block         //\\n///////////////////////////////////////////////////////////\\n";
+
+  // Verify both start and end delimiters are present
+  if (ds_policy_template_details.length != 1) {
+    throw "Expected 1 policy template, but found " + ds_policy_template_details.length;
+  }
+
+  var policy_template = ds_policy_template_details[0];
+  var csv = policy_template.source;
+  var start = csv.indexOf(startDelim);
+  var end = csv.indexOf(endDelim);
+  if (start == -1 || end == -1) {
+    var err = ""
+    if (start == -1 && end == -1) {
+      err = "start and end"
+    } else if (start == -1) {
+      err = "start"
+    } else {
+      err = "end"
+    }
+    throw "Could not find "+err+" delimiters in policy template";
+  }
+
+  // Extract the CSV
+  csv = csv.substring(start + startDelim.length, end).trim();
+  result = csv;
+EOS
+end
+
+datasource "ds_csv_to_object" do
+  run_script $js_csv_to_object, $ds_raw_csv, $param_csv_deliminator
+end
+
+script "js_csv_to_object", type: "javascript" do
+  parameters "ds_raw_csv", "param_csv_deliminator"
+  result "result"
+  code <<-EOS
+  // Delimiter used in the CSV
+
+  // Default to "  " (two spaces) which is what tabs (\t) are converted to by policy template upload
+  var delimiter = "  ";
+  if (param_csv_deliminator == "Comma (CSV)") {
+    delimiter = ",";
+  } else if (param_csv_deliminator == "Semicolon") {
+    delimiter = ";";
+  }
+
+  var csv = ds_raw_csv;
+  // Remove any trailing whitespace
+  csv = csv.trim();
+  // Remove any carriage returns
+  csv = csv.replace(/\\r/g, '');
+  // Split the CSV into lines
+  var lines = csv.split('\\n');
+  // Extract the column names
+  var column_names = lines.shift().split(delimiter);
+  // Initialize the result array
+  rows = [];
+  // Iterate over the lines
+  _.each(lines, function(line) {
+    // Split the line into an array of values
+    var values = line.split(delimiter);
+    // Initialize the object
+    var obj = {};
+    // Iterate over the column names
+    _.each(column_names, function(column_name, index) {
+      // Add the value to the object
+      // Check if value is defined before adding it to the object
+      if (typeof values[index] !== "undefined") {
+        obj[column_name] = values[index];
+      } else {
+        // If not defined, provide an empty string so all objects have the same keys
+        obj[column_name] = "";
+      }
+    });
+    // Add the object to the result array
+    rows.push(obj);
+  });
+  result = {
+    "columns": column_names,
+    "rows": rows
+  }
+EOS
+end
+
+datasource "ds_existing_rbds" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'api')
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_rbds" do
+  run_script $js_rbds, $ds_existing_rbds, $ds_csv_to_object, $param_effective_date, $param_dimensions_rules, $param_dimensions_rbds
+end
+
+script "js_rbds", type: "javascript" do
+  parameters "ds_existing_rbds", "ds_csv_to_object", "param_effective_date", "param_dimensions_rules", "param_dimensions_rbds"
+  result "result"
+  code <<-EOS
+  rbd_ids = [];
+  dimension_ids = [];
+  var result = {
+    "rule_based_dimensions": []
+  }
+  // Identify which of the columns are intended for ooutput RBDs and which are intended for rule dimensions
+  // For now the assumption here is that any column that starts with "rbd_" is an RBD
+  // This could be made more sophisticated in the future.. i.e. all columns to right of, or after column matching "||" (a separator column) are RBDs.. This would enable using rbd_ dimensions in as rule dimensions
+  _.each(ds_csv_to_object.columns, function(c) {
+    // if column in param_dimensions_rbds then add to rbd_ids
+    if ( _.contains(param_dimensions_rbds, c) ) {
+      rbd_ids.push(c)
+    } else if ( _.contains(param_dimensions_rules, c) ) {
+      dimension_ids.push(c)
+    }
+  })
+  _.each(rbd_ids, function(rbd_id) {
+    // Create the RBD object
+    rbd_object = {
+      "id": rbd_id.trim(),
+    }
+    // Construct a nicer name using the rbd_id
+    // This can be improved to use a parameter to define the mapping (i.e. rbd_customer=Customer, rbd_customer_type=Customer Type)
+    // Remove rbd_ prefix
+    rbd_name = rbd_id.replace("rbd_", "");
+    // Replace underscores with spaces
+    rbd_name = rbd_name.replace(/_/g, " ");
+    // Take each word and capitalize the first letter
+    rbd_name = rbd_name.split(" ").map(function(word) {
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    }).join(" ");
+    // Add the name to the rbd_object
+    rbd_object["name"] = rbd_name.trim();
+    // Add the rules for each row
+    rbd_object["dated_rules"] = [
+      {
+        "effective_at": param_effective_date,
+        "rules": []
+      }
+    ];
+    // loop through all rows to create a rule for each row
+    _.each(ds_csv_to_object.rows, function(row) {
+      // Check that the row + rbd column has a value
+      // We do not need to create rules for rows where the rbd column is empty
+      if (row[rbd_id] != "") {
+        // If there's >1 one rule dimension, we need to create a condition object
+        // Assumption here is that if there's more than one rule dimension, they are all required (condition type "and")
+        if (dimension_ids.length > 1) {
+          // Intialize the condition object for the rule
+          r = {
+            "condition": {
+              "type": "and",
+              "expressions": []
+            },
+            "value": {
+              "text": row[rbd_id].trim()
+            }
+          }
+          // For each rule dimension, if the value is not empty, add it to the condition
+          // Assumption here is that if the row value is empty, it's not intended to be a condition of the rule for that row
+          _.each(dimension_ids, function(d) {
+            if (row[d] !== "") {
+              r.condition.expressions.push({
+                  "type": "dimension_equals",
+                  "dimension": d.trim(),
+                  "value": row[d].trim()
+                });
+            }
+          });
+          // Add the rule to the rules array
+          rbd_object["dated_rules"][0].rules.push(r);
+        } else {
+          // Else we don't need to create an "and" condition object
+          // Just push the rule and value to rules list of the rbd_object
+          rbd_object["dated_rules"][0].rules.push({
+            "condition": {
+              "type": "dimension_equals",
+              "dimension": dimension_ids[0].trim(),
+              "value": row[dimension_ids[0].trim()]
+            },
+            "value": {
+              "text": row[rbd_id].trim()
+            }
+          });
+        }
+      }
+    });
+    // Check if the RBD exists, and set the verb accordingly
+    // Default to POST
+    verb = "POST"
+    // If already exists, then change verb to GET to make no changes
+    if (_.contains(_.pluck(ds_existing_rbds, 'id'), rbd_object.id)) { verb = "GET" }
+    rbd_object["verb"] = verb;
+    // After looping through all rows, add the rbd_object to the result
+    result.rule_based_dimensions.push(rbd_object);
+  });
+  result = result['rule_based_dimensions'];
+EOS
+end
+
+datasource "ds_create_rbds" do
+  iterate $ds_rbds
+  request do
+    run_script $js_create_rbds, val(iter_item, "id"), val(iter_item, "verb"), val(iter_item, "name"), $ds_existing_rbds, $ds_flexera_api_hosts, rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_create_rbds", type: "javascript" do
+  parameters "rbd_id", "verb", "name", "ds_existing_rbds", "ds_flexera_api_hosts", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    verb: verb,
+    host: ds_flexera_api_hosts.api,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id].join(''),
+    body_fields: { name: name }
+  }
+EOS
+end
+
+datasource "ds_apply_rbds" do
+  iterate $ds_rbds
+  request do
+    # ds_create_rbds reference only needed to force create to run before apply
+    run_script $js_apply_rbds, val(iter_item, "id"), val(iter_item, "name"), val(iter_item, "dated_rules"), $ds_flexera_api_hosts, $ds_create_rbds, rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_apply_rbds", type: "javascript" do
+  parameters "id", "name", "dated_rules", "ds_flexera_api_hosts", "ds_create_rbds", "rs_org_id"
+  result "request"
+  code <<-EOS
+  request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts.api,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", id, "/rules/", dated_rules[0].effective_at].join(''),
+    verb: "PUT",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({ "rules": dated_rules[0].rules })
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_rbds_from_csv_in_policy_template" do
+  validate $ds_apply_rbds do
+    summary_template "RBDs Generated & Applied"
+    detail_template ''
+    check eq(0, 0)
+  end
+
+  validate $ds_rbds do
+    summary_template "Rule Based Dimensions Updated/Created: {{ len data }}"
+    detail_template <<-EOS
+{{- range data -}}
+- {{ .name }} (`{{ .id }}`) - {{ len (index .dated_rules 0).rules }} rules
+{{ end -}}
+EOS
+    check eq(0, 1) # Always trigger
+  end
+end
