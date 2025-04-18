@@ -579,14 +579,10 @@ def policy_readme_missing_credentials?(file, file_lines)
 
     if line.start_with?("credentials ")
       pol_flexera_credential = true if line.include?("flexera")
-      pol_aws_credential = true if line.include?("aws")
-      pol_aws_credential = true if line.include?("amazon")
+      pol_aws_credential = true if line.include?("aws") || line.include?("amazon") || line.include?("alibaba")
       pol_azure_credential = true if line.include?("azure") && !line.include?("china") && !line.include?("graph")
-      pol_google_credential = true if line.include?("google")
-      pol_google_credential = true if line.include?("gcp")
-      pol_google_credential = true if line.include?("gce")
-      pol_oracle_credential = true if line.include?("oracle")
-      pol_oracle_credential = true if line.include?("oci")
+      pol_google_credential = true if line.include?("google") || line.include?("gcp") || line.include?("gce")
+      pol_oracle_credential = true if line.include?("oracle") || line.include?("oci")
     end
   end
 
