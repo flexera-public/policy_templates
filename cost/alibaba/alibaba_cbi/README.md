@@ -22,6 +22,7 @@ This policy has the following input parameters required when launching the polic
 - *Alibaba Cloud Account ID* - Account ID for the Alibaba Cloud Account
 - *Alibaba Cloud Region* - Region of the Alibaba Cloud Object Storage bucket containing the cost reports. Example: oss-cn-shanghai
 - *Alibaba Cloud Billing Report Bucket* - Alibaba Cloud Object Storage bucket containing the billing reports. Example: flexera-billing-data
+- *Alibaba Cloud Billing Report Path* - The path within the Alibaba Cloud Object Storage bucket containing the Billing reports. Leave blank if reports are at the root level. Example: /billing
 
 ## Policy Actions
 
