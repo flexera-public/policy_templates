@@ -216,32 +216,6 @@ script "js_dates_list", type: "javascript" do
   code "result = ds_dates['date_list']"
 end
 
-datasource "ds_cost_reports" do
-  iterate $ds_dates_list
-  request do
-    run_script $js_cost_reports, $param_bucket, $param_path, $param_region, $param_account_id, val(iter_item, "date")
-  end
-  result do
-    encoding "text"
-  end
-end
-
-script "js_cost_reports", type: "javascript" do
-  parameters "param_bucket", "param_path", "param_region", "param_account_id", "date"
-  result "request"
-  code <<-'EOS'
-  root_path = param_path.replace(/\/$/, '')
-  if (root_path.indexOf("/") != 0) { root_path = "/" + root_path }
-
-  var request = {
-    auth: "auth_alibaba",
-    host: param_bucket + "." + param_region + ".aliyuncs.com",
-    path: root_path + "/" + param_account_id + "_BillingItemDetail_" + date,
-    ignore_status: [404]
-  }
-EOS
-end
-
 datasource "ds_cbi_endpoint_id" do
   run_script $js_cbi_endpoint_id, $param_cbi_endpoint
 end
@@ -267,8 +241,6 @@ datasource "ds_existing_bill_connects" do
     collect jmes_path(response, "values[*]") do
       field "id", jmes_path(col_item, "id")
       field "kind", jmes_path(col_item, "kind")
-      field "created_at", jmes_path(col_item, "created_at")
-      field "updated_at", jmes_path(col_item, "updated_at")
       field "billIdentifier", jmes_path(col_item, "cbi.billIdentifier")
       field "integrationId", jmes_path(col_item, "cbi.integrationId")
       field "name", jmes_path(col_item, "cbi.name")
@@ -326,8 +298,6 @@ datasource "ds_create_bill_connect" do
     encoding "json"
     field "id", jmes_path(response, "id")
     field "kind", jmes_path(response, "kind")
-    field "created_at", jmes_path(response, "created_at")
-    field "updated_at", jmes_path(response, "updated_at")
     field "billIdentifier", jmes_path(response, "cbi.billIdentifier")
     field "integrationId", jmes_path(response, "cbi.integrationId")
     field "name", jmes_path(response, "cbi.name")
@@ -373,15 +343,15 @@ datasource "ds_existing_bill_uploads" do
 end
 
 datasource "ds_pending_bill_uploads" do
-  run_script $js_pending_bill_uploads, $ds_existing_bill_uploads
+  run_script $js_pending_bill_uploads, $ds_existing_bill_uploads, $ds_cbi_endpoint_id
 end
 
 script "js_pending_bill_uploads", type: "javascript" do
-  parameters "ds_existing_bill_uploads"
+  parameters "ds_existing_bill_uploads", "ds_cbi_endpoint_id"
   result "result"
   code <<-EOS
   result = _.filter(ds_existing_bill_uploads, function(item) {
-    return item["status"] != "complete" && item["status"] != "aborted"
+    return item["billConnectId"] == ds_cbi_endpoint_id && item["status"] != "complete" && item["status"] != "aborted"
   })
 EOS
 end
@@ -408,37 +378,10 @@ datasource "ds_abort_pending_bill_uploads" do
   end
 end
 
-# Branching logic: This exists purely to be referenced later to ensure policy execution aborts
-# any pending bill uploads before attempting to create a new one.
-datasource "ds_aborted_pending_bill_uploads_done" do
-  run_script $js_aborted_pending_bill_uploads_done, $ds_abort_pending_bill_uploads
-end
-
-script "js_aborted_pending_bill_uploads_done", type: "javascript" do
-  parameters "ds_abort_pending_bill_uploads"
-  result "result"
-  code <<-EOS
-  // Intentional wait time to ensure there is some time between aborting a bill upload
-  // and creating a new one
-  api_wait = 60
-  var now = new Date().getTime()
-  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
-
-  result = { abortedUploads: (ds_abort_pending_bill_uploads.length != 0).toString() }
-EOS
-end
-
 datasource "ds_cbi_create_bill_upload" do
   request do
-    auth $auth_flexera
-    verb "POST"
-    host rs_optima_host
-    path join(["/optima/orgs/", rs_org_id, "/billUploads"])
-    header "User-Agent", "RS Policies"
-    # This is to ensure that any pending bill uploads were aborted prior to creating a new one
-    header "AbortedUploads", val($ds_aborted_pending_bill_uploads_done, "abortedUploads")
-    body_field "billConnectId", val($ds_cbi_endpoint, "id")
-    body_field "billingPeriod", val($ds_dates, "period")
+    # Include $ds_abort_pending_bill_uploads as a parameter to ensure it always executes before this
+    run_script $js_cbi_create_bill_upload, val($ds_cbi_endpoint, "id"), val($ds_dates, "period"), $ds_abort_pending_bill_uploads, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -451,10 +394,90 @@ datasource "ds_cbi_create_bill_upload" do
   end
 end
 
-datasource "ds_cbi_upload_files" do
-  iterate $ds_cost_reports
+script "js_cbi_create_bill_upload", type: "javascript" do
+  parameters "cbi_endpoint", "period", "ds_aborted_pending_bill_uploads_done", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  // Slow down rate of requests to prevent throttling
+  api_wait = 3
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: [ "/optima/orgs/", rs_org_id, "/billUploads" ].join(''),
+    headers: { "User-Agent": "RS Policies" },
+    body_fields: {
+      billConnectId: cbi_endpoint,
+      billingPeriod: period
+    }
+  }
+EOS
+end
+
+datasource "ds_cost_reports" do
+  iterate $ds_dates_list
   request do
-    run_script $js_cbi_upload_files, iter_item, $ds_cbi_create_bill_upload, $ds_dates, rs_org_id, rs_optima_host
+    run_script $js_cost_reports, $ds_cbi_create_bill_upload, $param_bucket, $param_path, $param_region, $param_account_id, val(iter_item, "date")
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_cost_reports", type: "javascript" do
+  parameters "ds_cbi_create_bill_upload", "param_bucket", "param_path", "param_region", "param_account_id", "date"
+  result "request"
+  code <<-'EOS'
+  root_path = param_path.replace(/\/$/, '')
+  if (root_path.indexOf("/") != 0) { root_path = [ "/", root_path ].join('') }
+
+  var request = {
+    auth: "auth_alibaba",
+    host: [ param_bucket, ".", param_region, ".aliyuncs.com" ].join(''),
+    path: [ root_path, "/", param_account_id, "_BillingItemDetail_", date ].join(''),
+    ignore_status: [404]
+  }
+EOS
+end
+
+datasource "ds_cost_reports_organized" do
+  run_script $js_cost_reports_organized, $ds_cost_reports
+end
+
+script "js_cost_reports_organized", type: "javascript" do
+  parameters "ds_cost_reports"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  for (var i = 0; i < ds_cost_reports.length; i++) {
+    number = i + 1
+
+    if (number < 10) {
+      number = "000" + number.toString()
+    } else if (number < 100) {
+      number = "00" + number.toString()
+    } else if (number < 1000) {
+      number = "0" + number.toString()
+    } else {
+      number = number.toString()
+    }
+
+    result.push({
+      number: number,
+      contents: ds_cost_reports[i]
+    })
+  }
+EOS
+end
+
+datasource "ds_cbi_upload_files" do
+  iterate $ds_cost_reports_organized
+  request do
+    run_script $js_cbi_upload_files, val(iter_item, "number"), val(iter_item, "contents"), $ds_cbi_create_bill_upload, $ds_dates, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -469,15 +492,16 @@ datasource "ds_cbi_upload_files" do
 end
 
 script "js_cbi_upload_files", type: "javascript" do
-  parameters "alibaba_cost_file", "ds_cbi_create_bill_upload", "ds_dates", "rs_org_id", "rs_optima_host"
+  parameters "file_number", "file_contents", "ds_cbi_create_bill_upload", "ds_dates", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
-  path = [ "/optima/orgs/", rs_org_id, "/billUploads/", ds_cbi_create_bill_upload["id"], "/files/", now, "_", Math.random().toString().split(".")[1], "_", ds_dates["period"], ".csv" ].join('')
-
   // Slow down rate of requests to prevent throttling
   api_wait = 3
   var now = new Date().getTime()
   while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  filename = [ ds_dates["period"], "_", file_number, ".csv" ].join('')
+  path = [ "/optima/orgs/", rs_org_id, "/billUploads/", ds_cbi_create_bill_upload["id"], "/files/", filename ].join('')
 
   var request = {
     auth: "auth_flexera",
@@ -485,7 +509,7 @@ script "js_cbi_upload_files", type: "javascript" do
     host: rs_optima_host,
     path: path,
     headers: { "User-Agent": "RS Policies" },
-    body: alibaba_cost_file
+    body: file_contents
   }
 EOS
 end
@@ -526,11 +550,11 @@ EOS
 end
 
 datasource "ds_incident" do
-  run_script $js_incident, $ds_cbi_commit_bill_upload, $ds_applied_policy, $ds_dates, $param_account_id, $param_region, $param_bucket
+  run_script $js_incident, $ds_cbi_commit_bill_upload, $ds_applied_policy, $ds_dates, $param_account_id, $param_region, $param_bucket, $param_path
 end
 
 script "js_incident", type: "javascript" do
-  parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_dates", "param_account_id", "param_region", "param_bucket"
+  parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_dates", "param_account_id", "param_region", "param_bucket", "param_path"
   result "result"
   code <<-EOS
   result = [{
@@ -543,7 +567,8 @@ script "js_incident", type: "javascript" do
     billingPeriod: ds_cbi_commit_bill_upload['billingPeriod'],
     account_id: param_account_id,
     region: param_region,
-    bucket: param_bucket
+    bucket: param_bucket,
+    path: param_path
   }]
 EOS
 end
@@ -563,13 +588,16 @@ policy "pol_alibaba_cbi" do
         label "Billing Period"
       end
       field "account_id" do
-        label "Alibaba Account ID"
+        label "Account ID"
       end
       field "region" do
-        label "Alibaba Region"
+        label "Region"
       end
       field "bucket" do
-        label "Alibaba Object Storage"
+        label "Object Storage Bucket"
+      end
+      field "path" do
+        label "Object Storage Path"
       end
       field "id" do
         label "Bill Upload ID"
