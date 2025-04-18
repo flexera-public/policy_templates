@@ -317,7 +317,7 @@ def readme_invalid_credentials?(file, file_lines)
     end
 
     # Check if no permission list was found
-    if permission_list_found == 0
+    if permission_list_found == 0 && !aws_permission_text[0].start_with?("- [**Alibaba Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*)")
       fail_message += "AWS permission list missing or formatted incorrectly. Please ensure there is a list of permissions beneath the AWS permission statement. Each list item should begin with [space][space][hyphen][space] like so:\n\n"
       fail_message += "```  - `rds:DeleteDBSnapshot`*```\n"
       fail_message += "```  - `ec2:TerminateInstances`†```\n"
