@@ -179,7 +179,7 @@ def readme_invalid_credentials?(file, file_lines)
 
     credential_footnote = true if line.start_with?("The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.")
 
-    aws_policy = true if (line.include?("AWS") || line.include?("aws")) && (line.include?("Credential") || line.include?("credential"))
+    aws_policy = true if (line.include?("AWS") || line.include?("aws") || line.include?("Alibaba") || line.include?("alibaba")) && (line.include?("Credential") || line.include?("credential"))
     azure_policy = true if (line.include?("Azure") || line.include?("azure")) && (line.include?("Credential") || line.include?("credential")) && !line.include?("China") && !line.include?("china") && !line.include?("Graph") && !line.include?("graph")
     google_policy = true if (line.include?("Google") || line.include?("google") || line.include?("GCP") || line.include?("gcp")) && (line.include?("Credential") || line.include?("credential"))
 
@@ -205,7 +205,7 @@ def readme_invalid_credentials?(file, file_lines)
       flexera_permission_stop_scanning = true
     end
 
-    aws_permission_scanning = false if line.start_with?("- [") && (!line.include?("AWS") && !line.include?("aws"))
+    aws_permission_scanning = false if line.start_with?("- [") && (!line.include?("AWS") && !line.include?("aws") && !line.include?("Alibaba") && !line.include?("alibaba"))
     aws_permission_scanning = false if azure_permission_scanning || google_permission_scanning || flexera_permission_scanning
     aws_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !aws_permission_stop_scanning && !aws_permission_scanning && prereq_line_number > 0 && (line.include?("[**AWS") || line.include?("[**aws"))
     aws_permission_line = line_number if !aws_permission_line && aws_permission_scanning
