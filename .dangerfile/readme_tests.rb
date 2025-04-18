@@ -207,7 +207,7 @@ def readme_invalid_credentials?(file, file_lines)
 
     aws_permission_scanning = false if line.start_with?("- [") && (!line.include?("AWS") && !line.include?("aws") && !line.include?("Alibaba") && !line.include?("alibaba"))
     aws_permission_scanning = false if azure_permission_scanning || google_permission_scanning || flexera_permission_scanning
-    aws_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !aws_permission_stop_scanning && !aws_permission_scanning && prereq_line_number > 0 && (line.include?("[**AWS") || line.include?("[**aws" || line.include?("[**Alibaba") || line.include?("[**alibaba"))
+    aws_permission_scanning = true if !line.start_with?("This Policy Template uses [Credentials]") && !aws_permission_stop_scanning && !aws_permission_scanning && prereq_line_number > 0 && (line.include?("[**AWS") || line.include?("[**aws") || line.include?("[**Alibaba") || line.include?("[**alibaba"))
     aws_permission_line = line_number if !aws_permission_line && aws_permission_scanning
     aws_permission_text << line if aws_permission_scanning
 
