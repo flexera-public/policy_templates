@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. The [Google Idle Cloud SQL Instance Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cloud_sql_idle_instance_recommendations/) policy should be used instead.
+This policy template is no longer being updated. The [Google Idle Cloud SQL Instance Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cloud_sql_idle_instance_recommendations/) policy template should be used instead.
 
 ## What It Does
 
