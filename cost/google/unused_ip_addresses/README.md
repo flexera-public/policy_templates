@@ -4,7 +4,7 @@
 
 This policy template reports on unused Google IP addresses and, optionally, deletes them. An IP address is considered unused if it is currently detached and has been detached for a user-specified number of days.
 
-NOTE: If you prefer to receive recommendations produced by the Google Recommender service rather than Flexera, please use the [Google Idle IP Address Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/idle_ip_address_recommendations) policy template instead of this one.
+NOTE: If you prefer to receive recommendations produced by the Google Recommender service rather than Flexera, or have not configured Flexera One to ingest detailed billing information from Google, please use the [Google Idle IP Address Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/idle_ip_address_recommendations) policy template instead of this one.
 
 ### Policy Savings Details
 
