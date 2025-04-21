@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. The [Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations) policy is the recommended policy for getting idle and rightsize VM recommendations.
+This policy is no longer being updated. The [Google Rightsize VM Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_instances) policy is the recommended policy for getting idle and rightsize VM recommendations.
 
 ## What It Does
 
