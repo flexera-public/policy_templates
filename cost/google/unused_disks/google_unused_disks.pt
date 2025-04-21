@@ -1,7 +1,7 @@
-name "Google Unused IP Addresses"
+name "Google Unused Disks"
 rs_pt_ver 20180301
 type "policy"
-short_description "Reports on unused Google IP addresses and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/unused_ip_addresses/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports on unused Google disks and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/unused_disks/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
@@ -9,8 +9,8 @@ default_frequency "daily"
 info(
   version: "0.1.0",
   provider: "Google",
-  service: "Compute",
-  policy_set: "Unused IP Addresses",
+  service: "Storage",
+  policy_set: "Unused Volumes",
   recommendation_type: "Usage Reduction",
   hide_skip_approvals: "true"
 )
@@ -40,9 +40,8 @@ parameter "param_days_unattached" do
   type "number"
   category "Policy Settings"
   label "Days Unattached"
-  description "The number of days an IP address needs to be detached to be considered unused. This value cannot be set above 42 due to Google only storing 42 days (6 weeks) of log data. If this value is set to 0, all unattached IP addresses will be considered unused."
+  description "The number of days a disk needs to be detached to be considered unused. If this value is set to 0, all unattached disks will be considered unused."
   min_value 0
-  max_value 42
   default 30
 end
 
@@ -115,12 +114,21 @@ parameter "param_exclusion_labels_boolean" do
   default "Any"
 end
 
+parameter "param_take_snapshot" do
+  type "string"
+  category "Actions"
+  label "Create Final Snapshot"
+  description "Whether or not to take a final snapshot before deleting a disk."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+
 parameter "param_automatic_action" do
   type "list"
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Delete Unused IP Addresses"]
+  allowed_values ["Delete Unused Disks"]
   default []
 end
 
@@ -309,19 +317,21 @@ script "js_google_projects_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_regions" do
+datasource "ds_zones" do
   iterate $ds_google_projects_filtered
   request do
     auth $auth_google
     pagination $pagination_google
     host "compute.googleapis.com"
-    path join(["/compute/v1/projects/", val(iter_item, "id"), "/regions"])
+    path join(["/compute/v1/projects/", val(iter_item, "id"), "/zones"])
+    query "project", val(iter_item, "projectId")
     ignore_status [403, 404]
   end
   result do
     encoding "json"
-    collect jmes_path(response, "items[*]") do
-      field "region", jmes_path(col_item, "name")
+    collect jmes_path(response,"items[*]") do
+      field "zone", jmes_path(col_item, "name")
+      field "region", last(split(jmes_path(col_item, "region"), '/'))
       field "projectId", val(iter_item, "id")
       field "projectName", val(iter_item, "name")
       field "projectNumber", val(iter_item, "number")
@@ -329,60 +339,62 @@ datasource "ds_regions" do
   end
 end
 
-datasource "ds_regions_filtered" do
-  run_script $js_regions_filtered, $ds_regions, $param_regions_allow_or_deny, $param_regions_list
+datasource "ds_zones_filtered" do
+  run_script $js_zones_filtered, $ds_zones, $param_regions_allow_or_deny, $param_regions_list
 end
 
-script "js_regions_filtered", type: "javascript" do
-  parameters "ds_regions", "param_regions_allow_or_deny", "param_regions_list"
+script "js_zones_filtered", type: "javascript" do
+  parameters "ds_zones", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-EOS
   if (param_regions_list.length > 0) {
-    result = _.filter(ds_regions, function(region) {
-      include_region = _.contains(param_regions_list, region['region'])
+    result = _.filter(ds_regions, function(zone) {
+      include_zone = _.contains(param_regions_list, zone['region'])
 
       if (param_regions_allow_or_deny == "Deny") {
-        include_region = !include_region
+        include_zone = !include_zone
       }
 
-      return include_region
+      return include_zone
     })
   } else {
-    result = ds_regions
+    result = ds_zones
   }
 EOS
 end
 
-datasource "ds_addresses" do
-  iterate $ds_regions_filtered
+datasource "ds_disks" do
+  iterate $ds_zones
   request do
     auth $auth_google
     pagination $pagination_google
     host "compute.googleapis.com"
-    path join(["/compute/v1/projects/", val(iter_item, "projectId"), "/regions/", val(iter_item, "region"), "/addresses"])
-    query "filter", '(status != "IN_USE") AND (addressType != "INTERNAL")'
-    header "User-Agent", "RS Policies"
+    path join(["/compute/v1/projects/", val(iter_item, "projectId"), "/zones/", val(iter_item, "zone"), "/disks"])
+    query "filter", "NOT users:*"
     ignore_status [403, 404]
   end
   result do
     encoding "json"
-    collect jmes_path(response, "items[*]") do
+    collect jmes_path(response,"items[*]") do
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
-      field "address", jmes_path(col_item, "address")
       field "description", jmes_path(col_item, "description")
       field "kind", jmes_path(col_item, "kind")
       field "creationTimestamp", jmes_path(col_item, "creationTimestamp")
-      field "prefixLength", jmes_path(col_item, "prefixLength")
+      field "sizeGb", jmes_path(col_item, "sizeGb")
       field "status", jmes_path(col_item, "status")
+      field "options", jmes_path(col_item, "options")
       field "selfLink", jmes_path(col_item, "selfLink")
+      field "type", jmes_path(col_item, "type")
       field "labels", jmes_path(col_item, "labels")
-      field "ipVersion", jmes_path(col_item, "ipVersion")
-      field "addressType", jmes_path(col_item, "addressType")
-      field "purpose", jmes_path(col_item, "purpose")
-      field "network", jmes_path(col_item, "network")
-      field "subnetwork", jmes_path(col_item, "subnetwork")
-      field "ipv6EndpointType", jmes_path(col_item, "ipv6EndpointType")
+      field "attachDate", jmes_path(col_item, "lastAttachTimestamp")
+      field "detachDate", jmes_path(col_item, "lastDetachTimestamp")
+      field "sourceImage", jmes_path(col_item, "sourceImage")
+      field "sourceImageId", jmes_path(col_item, "sourceImageId")
+      field "sourceSnapshot", jmes_path(col_item, "sourceSnapshot")
+      field "sourceSnapshotId", jmes_path(col_item, "sourceSnapshotId")
+      field "sourceStorageObject", jmes_path(col_item, "sourceStorageObject")
+      field "zone", val(iter_item, "zone")
       field "region", val(iter_item, "region")
       field "projectId", val(iter_item, "projectId")
       field "projectName", val(iter_item, "projectName")
@@ -391,12 +403,12 @@ datasource "ds_addresses" do
   end
 end
 
-datasource "ds_addresses_label_filtered" do
-  run_script $js_addresses_label_filtered, $ds_addresses, $param_exclusion_labels, $param_exclusion_labels_boolean
+datasource "ds_disks_label_filtered" do
+  run_script $js_disks_label_filtered, $ds_disks, $param_exclusion_labels, $param_exclusion_labels_boolean
 end
 
-script "js_addresses_label_filtered", type: "javascript" do
-  parameters "ds_addresses", "param_exclusion_labels", "param_exclusion_labels_boolean"
+script "js_disks_label_filtered", type: "javascript" do
+  parameters "ds_disks", "param_exclusion_labels", "param_exclusion_labels_boolean"
   result "result"
   code <<-EOS
   comparators = _.map(param_exclusion_labels, function(item) {
@@ -430,7 +442,7 @@ script "js_addresses_label_filtered", type: "javascript" do
   })
 
   if (param_exclusion_labels.length > 0) {
-    result = _.reject(ds_addresses, function(resource) {
+    result = _.reject(ds_disks, function(resource) {
       resource_labels = {}
       if (typeof(resource['labels']) == 'object') { resource_labels = resource['labels'] }
 
@@ -463,103 +475,40 @@ script "js_addresses_label_filtered", type: "javascript" do
       return all_labels_found || any_labels_found
     })
   } else {
-    result = ds_addresses
+    result = ds_disks
   }
 EOS
 end
 
-datasource "ds_addresses_with_logs" do
-  iterate $ds_addresses_label_filtered
-  request do
-    run_script $js_addresses_with_logs, val(iter_item, 'projectId'), val(iter_item, 'address')
-  end
-  result do
-    encoding "json"
-    field "logs", jmes_path(response, "entries")
-    field "id", val(iter_item, "id")
-    field "name", val(iter_item, "name")
-    field "address", val(iter_item, "address")
-    field "description", val(iter_item, "description")
-    field "kind", val(iter_item, "kind")
-    field "creationTimestamp", val(iter_item, "creationTimestamp")
-    field "prefixLength", val(iter_item, "prefixLength")
-    field "status", val(iter_item, "status")
-    field "selfLink", val(iter_item, "selfLink")
-    field "labels", val(iter_item, "labels")
-    field "ipVersion", val(iter_item, "ipVersion")
-    field "addressType", val(iter_item, "addressType")
-    field "purpose", val(iter_item, "purpose")
-    field "network", val(iter_item, "network")
-    field "subnetwork", val(iter_item, "subnetwork")
-    field "ipv6EndpointType", val(iter_item, "ipv6EndpointType")
-    field "region", val(iter_item, "region")
-    field "projectId", val(iter_item, "projectId")
-    field "projectName", val(iter_item, "projectName")
-    field "projectNumber", val(iter_item, "projectNumber")
-  end
+datasource "ds_unused_disks" do
+  run_script $js_unused_disks, $ds_disks_label_filtered, $param_days_unattached
 end
 
-script "js_addresses_with_logs", type: "javascript" do
-  parameters "projectId", "address"
-  result "request"
-  code <<-'EOS'
-  filter = [
-    "resource.type=\"gce_instance\"",
-    "protoPayload.serviceName=\"compute.googleapis.com\"",
-    "protoPayload.methodName=\"v1.compute.instances.deleteAccessConfig\"",
-    "protoPayload.request.accessConfig.natIP=\"" + address + "\""
-  ].join(" AND ")
-
-  var request = {
-    auth: "auth_google",
-    pagination: "pagination_google",
-    host: "logging.googleapis.com",
-    verb: "POST",
-    ignore_status: [400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410],
-    path: "v2/entries:list",
-    body_fields: {
-      "resourceNames": [ "projects/" + projectId ],
-      "filter": filter,
-      "orderBy": "timestamp desc",
-      "pageSize": 1
-    }
-  }
-EOS
-end
-
-datasource "ds_unused_ip_addresses" do
-  run_script $js_unused_ip_addresses, $ds_addresses_with_logs, $param_days_unattached
-end
-
-script "js_unused_ip_addresses", type: "javascript" do
-  parameters "ds_addresses_with_logs", "param_days_unattached"
+script "js_unused_disks", type: "javascript" do
+  parameters "ds_disks_label_filtered", "param_days_unattached"
   result "result"
   code <<-'EOS'
   result = []
 
-  _.each(ds_addresses_with_logs, function(address) {
-    new_address = {}
-    _.each(_.keys(address), function(key) { new_address[key] = address[key] })
+  _.each(ds_disks_label_filtered, function(disk) {
+    new_disk = {}
+    _.each(_.keys(disk), function(key) { new_disk[key] = disk[key] })
 
-    new_address['detachDate'] = null
-    new_address['detachDays'] = null
-
-    if (address['logs'] != undefined && address['logs'].length > 0) {
-      new_address['detachDate'] = address['logs'][0]['timestamp']
-      new_address['detachDays'] = Math.floor((new Date() - new Date(new_address['detachDate'])) / (1000 * 60 * 60 * 24))
+    if (new_disk['detachDate']) {
+      new_disk['detachDays'] = Math.floor((new Date() - new Date(new_disk['detachDate'])) / (1000 * 60 * 60 * 24))
     }
 
-    if (new_address['detachDays'] == null || new_address['detachDays'] >= param_days_unattached || param_days_unattached == 0) {
-      result.push(new_address)
+    if (new_disk['detachDays'] == undefined || new_disk['detachDays'] >= param_days_unattached || param_days_unattached == 0) {
+      result.push(new_disk)
     }
   })
 EOS
 end
 
-datasource "ds_address_costs" do
+datasource "ds_disk_costs" do
   iterate $ds_google_projects_filtered
   request do
-    run_script $js_address_costs, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host
+    run_script $js_disk_costs, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -570,7 +519,7 @@ datasource "ds_address_costs" do
   end
 end
 
-script "js_address_costs", type: "javascript" do
+script "js_disk_costs", type: "javascript" do
   parameters "project_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
@@ -643,12 +592,12 @@ script "js_address_costs", type: "javascript" do
 EOS
 end
 
-datasource "ds_address_costs_grouped" do
-  run_script $js_address_costs_grouped, $ds_address_costs
+datasource "ds_disk_costs_grouped" do
+  run_script $js_disk_costs_grouped, $ds_disk_costs
 end
 
-script "js_address_costs_grouped", type: "javascript" do
-  parameters "ds_address_costs"
+script "js_disk_costs_grouped", type: "javascript" do
+  parameters "ds_disk_costs"
   result "result"
   code <<-'EOS'
   // Multiple a single day's cost by the average number of days in a month.
@@ -658,7 +607,7 @@ script "js_address_costs_grouped", type: "javascript" do
   // Group cost data by resourceId for later use
   result = {}
 
-  _.each(ds_address_costs, function(item) {
+  _.each(ds_disk_costs, function(item) {
     id = item['resourceID'].toLowerCase()
 
     if (result[id] == undefined) { result[id] = 0.0 }
@@ -668,11 +617,11 @@ EOS
 end
 
 datasource "ds_incident" do
-  run_script $js_incident, $ds_addresses_label_filtered, $ds_unused_ip_addresses, $ds_address_costs_grouped, $ds_currency, $ds_applied_policy, $param_min_savings, $param_days_unattached
+  run_script $js_incident, $ds_disks, $ds_unused_disks, $ds_disk_costs_grouped, $ds_currency, $ds_applied_policy, $param_min_savings, $param_days_unattached
 end
 
 script "js_incident", type: "javascript" do
-  parameters "ds_addresses_label_filtered", "ds_unused_ip_addresses", "ds_address_costs_grouped", "ds_currency", "ds_applied_policy", "param_min_savings", "param_days_unattached"
+  parameters "ds_disks", "ds_unused_disks", "ds_disk_costs_grouped", "ds_currency", "ds_applied_policy", "param_min_savings", "param_days_unattached"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -703,49 +652,44 @@ script "js_incident", type: "javascript" do
   result = []
   total_savings = 0.0
 
-  _.each(ds_unused_ip_addresses, function(address) {
-    id = address['id'].toLowerCase()
-    savings = ds_address_costs_grouped[id] ? ds_address_costs_grouped[id] : 0.0
+  _.each(ds_unused_disks, function(disk) {
+    id = disk['id'].toLowerCase()
+    savings = ds_disk_costs_grouped[id] ? ds_disk_costs_grouped[id] : 0.0
 
     if (savings >= param_min_savings) {
       total_savings += savings
 
       tags = []
 
-      if (address['labels']) {
-        tags = _.map(_.keys(address['labels']), function(key) {
-          return [ key, address['labels'][key] ].join('=')
+      if (disk['labels']) {
+        tags = _.map(_.keys(disk['labels']), function(key) {
+          return [ key, disk['labels'][key] ].join('=')
         })
       }
 
       recommendationDetails = [
-        "Delete Google IP address ", address["address"], " ",
-        "in Google Project ", address["projectName"], " ",
-        "(", address["projectId"], ")"
+        "Delete Google persistent disk ", disk["name"], " ",
+        "in Google Project ", disk["projectName"], " ",
+        "(", disk["projectId"], ")"
       ].join('')
 
       result.push({
-        accountID: address['projectId'],
-        accountName: address['projectName'],
-        projectNumber: address['projectNumber'],
-        resourceID: address['id'],
-        resourceName: address['name'],
-        ipAddress: address['address'],
-        description: address['description'],
-        kind: address['kind'],
-        created_at: address['creationTimestamp'],
-        prefixLength: address['prefixLength'],
-        state: address['status'],
-        selfLink: address['selfLink'],
-        ipVersion: address['ipVersion'],
-        addressType: address['addressType'],
-        purpose: address['purpose'],
-        network: address['network'],
-        subnetwork: address['subnetwork'],
-        ipv6EndpointType: address['ipv6EndpointType'],
-        region: address['region'],
-        detachDate: address['detachDate'],
-        detachDays: address['detachDays'],
+        accountID: disk['projectId'],
+        accountName: disk['projectName'],
+        projectNumber: disk['projectNumber'],
+        resourceID: disk['id'],
+        resourceName: disk['name'],
+        description: disk['description'],
+        kind: disk['kind'],
+        created_at: disk['creationTimestamp'],
+        state: disk['status'],
+        selfLink: disk['selfLink'],
+        sizeGb: disk['sizeGb'],
+        type: disk['type'],
+        zone: disk['zone'],
+        region: disk['region'],
+        detachDate: disk['detachDate'],
+        detachDays: disk['detachDays'],
         tags: tags.join(', '),
         recommendationDetails: recommendationDetails,
         service: "Compute Engine",
@@ -761,13 +705,13 @@ script "js_incident", type: "javascript" do
 
   result = _.sortBy(result, "savings").reverse()
 
-  total_ips = ds_addresses_label_filtered.length
-  total_unused_ips = result.length
-  unused_ips_percentage = (total_unused_ips / total_ips * 100).toFixed(2).toString() + '%'
+  total_disks = ds_disks.length
+  total_unused_disks = result.length
+  unused_disks_percentage = (total_unused_disks / total_disks * 100).toFixed(2).toString() + '%'
 
   findings = [
-    "Out of ", total_ips, " IP addresses analyzed, ",
-    total_unused_ips, " (", unused_ips_percentage,
+    "Out of ", total_disks, " persistent disks analyzed, ",
+    total_unused_disks, " (", unused_disks_percentage,
     ") are unused and recommended for deletion. "
   ].join('')
 
@@ -776,11 +720,11 @@ script "js_incident", type: "javascript" do
     if (param_days_unattached.length > 1) { day_message += "s" }
 
     idle_message = [
-      "An unattached IP address is considered unused if it has not been attached to an instance ",
+      "An unattached persistent disk is considered unused if it has not been attached to an instance ",
       "for at least ", param_days_unattached, " ", day_message, ".\n\n"
     ].join('')
   } else {
-    idle_message = "An IP address is considered unused if it is not attached to an instance regardless of how long it's been unattached for.\n\n"
+    idle_message = "A persistent disk is considered unused if it is not attached to an instance regardless of how long it's been unattached for.\n\n"
   }
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
@@ -797,19 +741,14 @@ script "js_incident", type: "javascript" do
     projectNumber: "",
     resourceID: "",
     resourceName: "",
-    ipAddress: "",
     description: "",
     kind: "",
     created_at: "",
-    prefixLength: "",
     state: "",
     selfLink: "",
-    ipVersion: "",
-    addressType: "",
-    purpose: "",
-    network: "",
-    subnetwork: "",
-    ipv6EndpointType: "",
+    sizeGb: "",
+    type: "",
+    zone: "",
     region: "",
     detachDate: "",
     detachDays: "",
@@ -833,9 +772,9 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_unused_ip_addresses" do
+policy "pol_unused_disks" do
   validate_each $ds_incident do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Unused IP Addresses Found"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Unused Disks Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
 
@@ -862,11 +801,11 @@ policy "pol_unused_ip_addresses" do
       field "resourceName" do
         label "Resource Name"
       end
-      field "ipAddress" do
-        label "IP Address"
-      end
       field "region" do
         label "Region"
+      end
+      field "zone" do
+        label "Zone"
       end
       field "tags" do
         label "Labels"
@@ -874,11 +813,11 @@ policy "pol_unused_ip_addresses" do
       field "description" do
         label "Description"
       end
-      field "addressType" do
-        label "Address Type"
-      end
       field "state" do
         label "Status"
+      end
+      field "sizeGb" do
+        label "Size (GB)"
       end
       field "created_at" do
         label "Created At"
@@ -927,22 +866,26 @@ escalation "esc_email" do
 end
 
 escalation "esc_delete_ip_address" do
-  automatic contains($param_automatic_action, "Delete Unused IP Addresses")
-  label "Delete Unused IP Addresses"
-  description "Approval to delete all selected IP addresses"
-  run "delete_ip_addresses", data
+  automatic contains($param_automatic_action, "Delete Unused Disks")
+  label "Delete Unused Disks"
+  description "Approval to delete all selected disks"
+  run "delete_disks", data, $param_take_snapshot
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_ip_addresses($data) return $all_responses do
+define delete_disks($data, $param_take_snapshot) return $all_responses do
   $$all_responses = []
 
-  foreach $address in $data do
+  foreach $disk in $data do
     sub on_error: handle_error() do
-      call delete_ip_address($address)
+      if ($param_take_snapshot == "Yes")
+        call snapshot_disk($disk) retrieve $snapshot_response
+      end
+
+      call delete_disk($disk) retrieve $delete_response
     end
   end
 
@@ -951,11 +894,47 @@ define delete_ip_addresses($data) return $all_responses do
   end
 end
 
-define delete_ip_address($address) do
-  task_label("DELETE " + $address['selfLink'])
+define snapshot_disk($disk) return $response do
+  task_label("POST " + $disk['selfLink'] + '/createSnapshot')
 
-  $response = http_delete(
-    url: $address['selfLink'],
+  $response = http_post(
+    url: $disk['selfLink'] + '/createSnapshot',
+    auth: $$auth_google,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: {
+      name: join([$disk["resourceName"], "-final-snapshot"])
+    }
+  )
+
+  task_label("Post Google disk response: " + $disk["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $disk['selfLink'] + '/createSnapshot', "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response posting Google disk: "+ $disk["resourceName"] + " " + to_json($response)
+  else
+    task_label("Post Google disk successful: " + $disk["resourceName"])
+
+    $operation = $response["body"]
+
+    sleep(5)
+    call get_operation_status($operation) retrieve $status_response, $current_status
+    sleep(5)
+
+    while $current_status != "DONE" do
+      call get_operation_status($operation) retrieve $status_response, $current_status
+      sleep(5)
+    end
+  end
+end
+
+define get_operation_status($operation) return $response, $operation_status do
+  task_label("GET " + $operation['selfLink'])
+
+  $response = http_get(
+    url: $operation['selfLink'],
     auth: $$auth_google,
     headers: {
       "cache-control": "no-cache",
@@ -963,13 +942,36 @@ define delete_ip_address($address) do
     }
   )
 
-  task_label("Delete Google IP address response: " + $address["ipAddress"] + " " + to_json($response))
-  $$all_responses << to_json({"req": "DELETE " + $address['selfLink'], "resp": $response})
+  task_label("Get Google operation response: " + $operation["name"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $operation['selfLink'], "resp": $response})
 
-  if $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response deleting Google IP address: "+ $address["ipAddress"] + " " + to_json($response)
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response getting Google operation: "+ $operation["name"] + " " + to_json($response)
   else
-    task_label("Delete Google IP address successful: " + $address["ipAddress"])
+    task_label("Get Google operation successful: " + $operation["name"])
+    $operation_status = $response["body"]["status"]
+  end
+end
+
+define delete_disk($disk) return $response do
+  task_label("DELETE " + $disk['selfLink'])
+
+  $response = http_delete(
+    url: $disk['selfLink'],
+    auth: $$auth_google,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Delete Google disk response: " + $disk["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $disk['selfLink'], "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Google disk: "+ $disk["resourceName"] + " " + to_json($response)
+  else
+    task_label("Delete Google disk successful: " + $disk["resourceName"])
   end
 end
 

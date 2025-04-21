@@ -1,10 +1,10 @@
-# Google Unused IP Addresses
+# Google Unused Disks
 
 ## What It Does
 
-This policy template reports on unused Google IP addresses and, optionally, deletes them. An IP address is considered unused if it is currently detached and has been detached for a user-specified number of days.
+This policy template reports on unused Google persistent disks and, optionally, deletes them. A persistent disk is considered unused if it is currently detached and has been detached for a user-specified number of days.
 
-NOTE: If you prefer to receive recommendations produced by the Google Recommender service rather than Flexera, please use the [Google Idle IP Address Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/idle_ip_address_recommendations) policy template instead of this one.
+NOTE: If you prefer to receive recommendations produced by the Google Recommender service rather than Flexera, please use the [Google Idle Persistent Disk Recommenderr](https://github.com/flexera-public/policy_templates/tree/master/cost/google/idle_persistent_disk_recommendations) policy template instead of this one.
 
 ### Policy Savings Details
 
@@ -22,7 +22,7 @@ This policy has the following input parameters required when launching the polic
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
-- *Days Unattached* - The number of days an IP address needs to be detached to be considered unused. This value cannot be set above 42 due to Google only storing 42 days (6 weeks) of log data. If this value is set to 0, all unattached IP addresses will be considered unused.
+- *Days Unattached* - The number of days a disk needs to be detached to be considered unused. If this value is set to 0, all unattached disks will be considered unused.
 - *Allow/Deny Projects* - Whether to treat Allow/Deny Projects List parameter as allow or deny list. Has no effect if Allow/Deny Projects List is left empty.
 - *Allow/Deny Projects List* - Filter results by project ID/name, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all projects
 - *Ignore System Projects* - Whether or not to automatically ignore system projects e.g. projects whose id begins with `sys-`
@@ -36,17 +36,18 @@ This policy has the following input parameters required when launching the polic
   - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified label key.
 - *Exclusion Labels: Any / All* - Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Labels` field.
+- *Create Final Snapshot* - Whether or not to take a final snapshot before deleting a disk.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example, if a user selects the "Delete Unused IP Addresses" action while applying the policy, all unused IP addresses will be deleted.
+For example, if a user selects the "Delete Unused Disks" action while applying the policy, all unused persistent disks will be deleted.
 
 ## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report
-- Delete unused IP addresses after approval
+- Delete unused persistent disks after approval
 
 ## Prerequisites
 
@@ -54,10 +55,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
   - `resourcemanager.projects.get`
-  - `logging.logEntries.list`
-  - `compute.regions.list`
-  - `compute.addresses.list`
-  - `compute.addresses.delete`*
+  - `compute.zones.list`
+  - `compute.disks.list`
+  - `compute.disks.createSnapshot`*
+  - `compute.disks.delete`*
 
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
@@ -69,7 +70,6 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 Additionally, this policy template requires that several APIs be enabled in your Google Cloud environment:
 
 - [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
-- [Cloud Logging API](https://console.cloud.google.com/flows/enableapi?apiid=logging.googleapis.com)
 - [Compute Engine API](https://console.cloud.google.com/flows/enableapi?apiid=compute.googleapis.com)
 
 ## Supported Clouds

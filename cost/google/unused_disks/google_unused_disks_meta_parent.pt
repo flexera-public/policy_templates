@@ -1,7 +1,7 @@
-name "Meta Parent: Google Unused IP Addresses"
+name "Meta Parent: Google Unused Disks"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Google Unused IP Addresses](https://github.com/flexera-public/policy_templates/tree/master/cost/google/unused_ip_addresses) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Google Unused Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/google/unused_disks) Policies."
 severity "low"
 category "Meta"
 default_frequency "15 minutes"
@@ -63,7 +63,7 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"Google Unused IP Addresses\" Policy Template from Catalog.  Optionally, you can use the \"Google Unused IP Addresses\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"Google Unused Disks\" Policy Template from Catalog.  Optionally, you can use the \"Google Unused Disks\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
@@ -82,9 +82,8 @@ parameter "param_days_unattached" do
   type "number"
   category "Policy Settings"
   label "Days Unattached"
-  description "The number of days an IP address needs to be detached to be considered unused. This value cannot be set above 42 due to Google only storing 42 days (6 weeks) of log data. If this value is set to 0, all unattached IP addresses will be considered unused."
+  description "The number of days a disk needs to be detached to be considered unused. If this value is set to 0, all unattached disks will be considered unused."
   min_value 0
-  max_value 42
   default 30
 end
 
@@ -122,12 +121,21 @@ parameter "param_exclusion_labels_boolean" do
   default "Any"
 end
 
+parameter "param_take_snapshot" do
+  type "string"
+  category "Actions"
+  label "Create Final Snapshot"
+  description "Whether or not to take a final snapshot before deleting a disk."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+
 parameter "param_automatic_action" do
   type "list"
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Delete Unused IP Addresses"]
+  allowed_values ["Delete Unused Disks"]
   default []
 end
 
@@ -270,7 +278,7 @@ script "js_published_child_policy_information", type: "javascript" do
   result "result"
   code <<-EOS
   result = _.filter(ds_get_published_child_policy_information, function(item) {
-    return item['name'] == "Google Unused IP Addresses" && item['created_by'] == "support@flexera.com"
+    return item['name'] == "Google Unused Disks" && item['created_by'] == "support@flexera.com"
   })
 EOS
 end
@@ -303,7 +311,7 @@ script "js_project_child_policy_information", type: "javascript" do
   result "result"
   code <<-EOS
   result = _.filter(ds_get_project_child_policy_information, function(item) {
-    return item['name'] == "Google Unused IP Addresses"
+    return item['name'] == "Google Unused Disks"
   })
 EOS
 end
@@ -878,8 +886,8 @@ script "js_ds_incident_combined_incidents", type: "javascript" do
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Google Unused IP Addresses Found" then include it in the filter result
-    if (s.indexOf("Google Unused IP Addresses Found") > -1) {
+    // If the incident summary contains "Google Unused Disks Found" then include it in the filter result
+    if (s.indexOf("Google Unused Disks Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -890,18 +898,18 @@ EOS
 end
 
 
-# Escalation for Delete Unused IP Addresses
+# Escalation for Delete Unused Disks
 escalation "esc_delete_ip_address" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Delete Unused IP Addresses"
-  description "Approval to delete all selected IP addresses"
+  label "Delete Unused Disks"
+  description "Approval to delete all selected disks"
 
   # Run declaration should go at end, after any parameters that may exist
   run "esc_delete_ip_address", data, rs_governance_host, rs_project_id
 end
 define esc_delete_ip_address($data, $governance_host, $rs_project_id) do
   $actions_options = []
-  call child_run_action($data, $governance_host, $rs_project_id, "Delete Unused IP Addresses", $action_options)
+  call child_run_action($data, $governance_host, $rs_project_id, "Delete Unused Disks", $action_options)
 end
 
 
@@ -911,9 +919,9 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Google Unused IP Addresses Found
+    # Consolidated incident for Google Unused Disks Found
   validate $ds_incident_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Google Unused IP Addresses Found"
+    summary_template "Consolidated Incident: {{ len data }} Google Unused Disks Found"
     escalate $esc_email
     escalate $esc_delete_ip_address
     check eq(size(data), 0)
@@ -934,11 +942,11 @@ policy "policy_scheduled_report" do
       field "resourceName" do
         label "Resource Name"
       end
-      field "ipAddress" do
-        label "IP Address"
-      end
       field "region" do
         label "Region"
+      end
+      field "zone" do
+        label "Zone"
       end
       field "tags" do
         label "Labels"
@@ -946,11 +954,11 @@ policy "policy_scheduled_report" do
       field "description" do
         label "Description"
       end
-      field "addressType" do
-        label "Address Type"
-      end
       field "state" do
         label "Status"
+      end
+      field "sizeGb" do
+        label "Size (GB)"
       end
       field "created_at" do
         label "Created At"
