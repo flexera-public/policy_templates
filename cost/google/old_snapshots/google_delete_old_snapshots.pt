@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.2.0",
+  version: "5.3.0",
   provider:"Google",
   service: "Storage",
   policy_set: "Old Snapshots",
@@ -102,7 +102,7 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Delete Snapshots"]
+  allowed_values ["Delete Old Snapshots"]
   default []
 end
 
@@ -261,7 +261,43 @@ datasource "ds_applied_policy" do
   end
 end
 
-# Gather local currency info
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -286,85 +322,32 @@ datasource "ds_currency_code" do
   end
 end
 
-datasource "ds_currency_target" do
-  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
-end
-
-script "js_currency_target", type:"javascript" do
-  parameters "ds_currency_reference", "ds_currency_code"
-  result "result"
-  code <<-EOS
-  // Default to USD if currency is not found
-  result = ds_currency_reference['USD']
-
-  if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
-    result = ds_currency_reference[ds_currency_code['value']]
-  }
-EOS
-end
-
-# Branching logic:
-# This datasource returns an empty array if the target currency is USD.
-# This prevents ds_currency_conversion from running if it's not needed.
-datasource "ds_conditional_currency_conversion" do
-  run_script $js_conditional_currency_conversion, $ds_currency_target
-end
-
-script "js_conditional_currency_conversion", type: "javascript" do
-  parameters "ds_currency_target"
-  result "result"
-  code <<-EOS
-  result = []
-  // Make the request only if the target currency is not USD
-  if (ds_currency_target['code'] != 'USD') {
-    result = [1]
-  }
-EOS
-end
-
-datasource "ds_currency_conversion" do
-  # Only make a request if the target currency is not USD
-  iterate $ds_conditional_currency_conversion
-  request do
-    host "api.xe-auth.flexeraeng.com"
-    path "/prod/{proxy+}"
-    query "from", "USD"
-    query "to", val($ds_currency_target, 'code')
-    query "amount", "1"
-    # Ignore currency conversion if API has issues
-    ignore_status [400, 404, 502]
-  end
-  result do
-    encoding "json"
-    field "from", jmes_path(response, "from")
-    field "to", jmes_path(response, "to")
-    field "amount", jmes_path(response, "amount")
-    field "year", jmes_path(response, "year")
-  end
-end
-
 datasource "ds_currency" do
-  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
 end
 
 script "js_currency", type:"javascript" do
-  parameters "ds_currency_target", "ds_currency_conversion"
+  parameters "ds_currency_reference", "ds_currency_code"
   result "result"
   code <<-EOS
-  result = ds_currency_target
-  result['exchange_rate'] = 1
+  symbol = "$"
+  separator = ","
 
-  if (ds_currency_conversion.length > 0) {
-    currency_code = ds_currency_target['code']
-    current_month = parseInt(new Date().toISOString().split('-')[1])
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
 
-    conversion_block = _.find(ds_currency_conversion[0]['to'][currency_code], function(item) {
-      return item['month'] == current_month
-    })
-
-    if (conversion_block != undefined) {
-      result['exchange_rate'] = conversion_block['monthlyAverage']
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
     }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
   }
 EOS
 end
@@ -737,128 +720,128 @@ script "js_google_old_snapshots_with_region", type: "javascript" do
 EOS
 end
 
-datasource "ds_google_billing_services" do
+datasource "ds_snapshot_costs" do
+  iterate $ds_google_projects_filtered
   request do
-    auth $auth_google
-    pagination $pagination_google
-    host "cloudbilling.googleapis.com"
-    path "/v1/services"
+    run_script $js_snapshot_costs, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
-    collect jmes_path(response, "services[*]") do
-      field "businessEntityName", jmes_path(col_item, "businessEntityName")
-      field "displayName", jmes_path(col_item, "displayName")
-      field "name", jmes_path(col_item, "name")
-      field "serviceId", jmes_path(col_item, "serviceId")
+    collect jmes_path(response, "rows[*]") do
+      field "resourceID", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
     end
   end
 end
 
-datasource "ds_google_billing_compute_service" do
-  run_script $js_google_billing_compute_service, $ds_google_billing_services
-end
-
-script "js_google_billing_compute_service", type: "javascript" do
-  parameters "ds_google_billing_services"
-  result "result"
+script "js_snapshot_costs", type: "javascript" do
+  parameters "project_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
   code <<-'EOS'
-  compute_service = _.find(ds_google_billing_services, function(service) {
-    return service["displayName"] == "Compute Engine"
-  })
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
 
-  result = [compute_service]
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Compute Engine"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "compute engine"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor",
+            "type": "equal",
+            "value": "GCP"
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": project_id
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
 EOS
 end
 
-datasource "ds_google_billing_compute_service_pricing" do
-  iterate $ds_google_billing_compute_service
-  request do
-    auth $auth_google
-    pagination $pagination_google
-    host "cloudbilling.googleapis.com"
-    path join(["/v1/", val(iter_item, "name"), "/skus"])
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "skus[*]") do
-      field "name", jmes_path(col_item, "name")
-      field "description", jmes_path(col_item, "description")
-      field "skuId", jmes_path(col_item, "skuId")
-      field "regions", jmes_path(col_item, "geoTaxonomy.regions")
-      field "regionType", jmes_path(col_item, "geoTaxonomy.type")
-      field "resourceFamily", jmes_path(col_item, "category.resourceFamily")
-      field "resourceGroup", jmes_path(col_item, "category.resourceGroup")
-      field "usageType", jmes_path(col_item, "category.usageType")
-      field "resourceFamily", jmes_path(col_item, "category.resourceFamily")
-      field "pricingInfo", jmes_path(col_item, "pricingInfo")
-    end
-  end
+datasource "ds_snapshot_costs_grouped" do
+  run_script $js_snapshot_costs_grouped, $ds_snapshot_costs
 end
 
-datasource "ds_google_billing_snapshot_pricing" do
-  run_script $js_google_billing_snapshot_pricing, $ds_google_billing_compute_service_pricing
-end
-
-script "js_google_billing_snapshot_pricing", type: "javascript" do
-  parameters "ds_google_billing_compute_service_pricing"
+script "js_snapshot_costs_grouped", type: "javascript" do
+  parameters "ds_snapshot_costs"
   result "result"
   code <<-'EOS'
-  filtered_pricing = _.filter(ds_google_billing_compute_service_pricing, function(entry) {
-    return entry["description"].indexOf("Storage PD Snapshot") != -1
-  })
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
 
-  sorted_data = _.map(filtered_pricing, function(entry) {
-    rate = _.find(entry["pricingInfo"][0]["pricingExpression"]["tieredRates"], function(item) {
-      return item["unitPrice"]["nanos"] != 0
-    })
-
-    location = entry["description"].split("PD Snapshot in ")[1]
-    if (entry["regionType"] == "REGIONAL") { location = entry["regions"][0] }
-    if (entry["description"] == "Storage PD Snapshot") { location = "default" }
-
-    return {
-      name: entry["name"],
-      description: entry["description"],
-      skuId: entry["skuId"],
-      regions: entry["regions"],
-      regionType: entry["regionType"],
-      location: location,
-      startUsageAmountGiB: rate["startUsageAmount"],
-      pricePerGiB: rate["unitPrice"]["nanos"] / 1000000000
-    }
-  })
-
+  // Group cost data by resourceId for later use
   result = {}
 
-  _.each(sorted_data, function(item) {
-    result[item["location"]] = item
+  _.each(ds_snapshot_costs, function(item) {
+    id = item['resourceID'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
   })
 EOS
 end
 
 datasource "ds_google_old_snapshots_with_savings" do
-  run_script $js_google_old_snapshots_with_savings, $ds_google_old_snapshots_with_region, $ds_google_billing_snapshot_pricing, $ds_currency, $param_min_savings
+  run_script $js_google_old_snapshots_with_savings, $ds_google_old_snapshots_with_region, $ds_snapshot_costs_grouped, $ds_currency, $param_min_savings
 end
 
 script "js_google_old_snapshots_with_savings", type: "javascript" do
-  parameters "ds_google_old_snapshots_with_region", "ds_google_billing_snapshot_pricing", "ds_currency", "param_min_savings"
+  parameters "ds_google_old_snapshots_with_region", "ds_snapshot_costs_grouped", "ds_currency", "param_min_savings"
   result "result"
   code <<-'EOS'
   savings_list = _.map(ds_google_old_snapshots_with_region, function(snapshot) {
-    price_data = ds_google_billing_snapshot_pricing["default"]
-
-    if (typeof(snapshot['region']) == 'string') {
-      if (ds_google_billing_snapshot_pricing[snapshot['region']] != undefined) {
-        price_data = ds_google_billing_snapshot_pricing[snapshot['region']]
-      }
-    }
-
-    savings = 0.00
-
-    if (snapshot['size'] > price_data['startUsageAmountGiB']) {
-      savings = price_data['pricePerGiB'] * snapshot['size'] * ds_currency['exchange_rate']
-    }
+    id = snapshot['resourceID'].toLowerCase()
+    savings = ds_snapshot_costs_grouped[id] ? ds_snapshot_costs_grouped[id] : 0.0
 
     return {
       architecture: snapshot['architecture'],
@@ -1069,8 +1052,8 @@ escalation "esc_email" do
 end
 
 escalation "esc_delete_snapshots" do
-  automatic contains($param_automatic_action, "Delete Snapshots")
-  label "Delete Snapshots"
+  automatic contains($param_automatic_action, "Delete Old Snapshots")
+  label "Delete Old Snapshots"
   description "Approval to delete all selected snapshots"
   run "delete_snapshots", data
 end
