@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.3
+
+- Policy template metadata updated to no longer publish it in the catalog.
+
 ## v4.1.2
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
