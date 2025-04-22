@@ -36,14 +36,13 @@ parameter "param_min_savings" do
   default 0
 end
 
-parameter "param_days_unattached" do
+parameter "param_min_age" do
   type "number"
-  category "Policy Settings"
-  label "Days Unattached"
-  description "The number of days an IP address needs to be detached to be considered unused. This value cannot be set above 42 due to Google only storing 42 days (6 weeks) of log data. If this value is set to 0, all unattached IP addresses will be considered unused."
+  category "Filters"
+  label "Minimum Age (Days)"
+  description "Only report IP addresses that are at least this many days old. Default value of '0' reports all IP addresses regardless of age."
   min_value 0
-  max_value 42
-  default 30
+  default 0
 end
 
 parameter "param_projects_allow_or_deny" do
@@ -468,94 +467,6 @@ script "js_addresses_label_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_addresses_with_logs" do
-  iterate $ds_addresses_label_filtered
-  request do
-    run_script $js_addresses_with_logs, val(iter_item, 'projectId'), val(iter_item, 'address')
-  end
-  result do
-    encoding "json"
-    field "logs", jmes_path(response, "entries")
-    field "id", val(iter_item, "id")
-    field "name", val(iter_item, "name")
-    field "address", val(iter_item, "address")
-    field "description", val(iter_item, "description")
-    field "kind", val(iter_item, "kind")
-    field "creationTimestamp", val(iter_item, "creationTimestamp")
-    field "prefixLength", val(iter_item, "prefixLength")
-    field "status", val(iter_item, "status")
-    field "selfLink", val(iter_item, "selfLink")
-    field "labels", val(iter_item, "labels")
-    field "ipVersion", val(iter_item, "ipVersion")
-    field "addressType", val(iter_item, "addressType")
-    field "purpose", val(iter_item, "purpose")
-    field "network", val(iter_item, "network")
-    field "subnetwork", val(iter_item, "subnetwork")
-    field "ipv6EndpointType", val(iter_item, "ipv6EndpointType")
-    field "region", val(iter_item, "region")
-    field "projectId", val(iter_item, "projectId")
-    field "projectName", val(iter_item, "projectName")
-    field "projectNumber", val(iter_item, "projectNumber")
-  end
-end
-
-script "js_addresses_with_logs", type: "javascript" do
-  parameters "projectId", "address"
-  result "request"
-  code <<-'EOS'
-  filter = [
-    "resource.type=\"gce_instance\"",
-    "protoPayload.serviceName=\"compute.googleapis.com\"",
-    "protoPayload.methodName=\"v1.compute.instances.deleteAccessConfig\"",
-    "protoPayload.request.accessConfig.natIP=\"" + address + "\""
-  ].join(" AND ")
-
-  var request = {
-    auth: "auth_google",
-    pagination: "pagination_google",
-    host: "logging.googleapis.com",
-    verb: "POST",
-    ignore_status: [400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410],
-    path: "v2/entries:list",
-    body_fields: {
-      "resourceNames": [ "projects/" + projectId ],
-      "filter": filter,
-      "orderBy": "timestamp desc",
-      "pageSize": 1
-    }
-  }
-EOS
-end
-
-datasource "ds_unused_ip_addresses" do
-  run_script $js_unused_ip_addresses, $ds_addresses_with_logs, $param_days_unattached
-end
-
-script "js_unused_ip_addresses", type: "javascript" do
-  parameters "ds_addresses_with_logs", "param_days_unattached"
-  result "result"
-  code <<-'EOS'
-  result = []
-
-  _.each(ds_addresses_with_logs, function(address) {
-    new_address = {}
-    _.each(_.keys(address), function(key) { new_address[key] = address[key] })
-
-    new_address['detachDate'] = null
-    new_address['detachDays'] = null
-
-    if (address['logs'] != undefined && address['logs'].length > 0) {
-      new_address['detachDate'] = address['logs'][0]['timestamp']
-      new_address['detachDays'] = Math.floor((new Date() - new Date(new_address['detachDate'])) / (1000 * 60 * 60 * 24))
-    }
-
-    if (new_address['detachDays'] == null || new_address['detachDays'] >= param_days_unattached || param_days_unattached == 0) {
-      result.push(new_address)
-    }
-  })
-EOS
-end
-
 datasource "ds_address_costs" do
   iterate $ds_google_projects_filtered
   request do
@@ -668,11 +579,11 @@ EOS
 end
 
 datasource "ds_incident" do
-  run_script $js_incident, $ds_addresses_label_filtered, $ds_unused_ip_addresses, $ds_address_costs_grouped, $ds_currency, $ds_applied_policy, $param_min_savings, $param_days_unattached
+  run_script $js_incident, $ds_addresses_label_filtered, $ds_address_costs_grouped, $ds_currency, $ds_applied_policy, $param_min_savings, $param_min_age
 end
 
 script "js_incident", type: "javascript" do
-  parameters "ds_addresses_label_filtered", "ds_unused_ip_addresses", "ds_address_costs_grouped", "ds_currency", "ds_applied_policy", "param_min_savings", "param_days_unattached"
+  parameters "ds_addresses_label_filtered", "ds_address_costs_grouped", "ds_currency", "ds_applied_policy", "param_min_savings", "param_min_age"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -706,8 +617,9 @@ script "js_incident", type: "javascript" do
   _.each(ds_unused_ip_addresses, function(address) {
     id = address['id'].toLowerCase()
     savings = ds_address_costs_grouped[id] ? ds_address_costs_grouped[id] : 0.0
+    age = Math.floor((new Date() - new Date(address['creationTimestamp'])) / 1000 / 60 / 60 / 24)
 
-    if (savings >= param_min_savings) {
+    if ((savings >= param_min_savings || param_min_savings == 0) && (age >= param_min_age || param_min_age == 0)) {
       total_savings += savings
 
       tags = []
@@ -744,9 +656,8 @@ script "js_incident", type: "javascript" do
         subnetwork: address['subnetwork'],
         ipv6EndpointType: address['ipv6EndpointType'],
         region: address['region'],
-        detachDate: address['detachDate'],
-        detachDays: address['detachDays'],
         tags: tags.join(', '),
+        age: age,
         recommendationDetails: recommendationDetails,
         service: "Compute Engine",
         savings: Math.round(savings * 1000) / 1000,
@@ -768,22 +679,9 @@ script "js_incident", type: "javascript" do
   findings = [
     "Out of ", total_ips, " IP addresses analyzed, ",
     total_unused_ips, " (", unused_ips_percentage,
-    ") are unused and recommended for deletion. "
+    ") are unused and recommended for deletion. ",
+    "An IP address is considered unused if it is not attached to an instance.\n\n"
   ].join('')
-
-  if (param_days_unattached != 0) {
-    day_message = "day"
-    if (param_days_unattached.length > 1) { day_message += "s" }
-
-    idle_message = [
-      "An unattached IP address is considered unused if it has not been attached to an instance ",
-      "for at least ", param_days_unattached, " ", day_message, ".\n\n"
-    ].join('')
-  } else {
-    idle_message = "An IP address is considered unused if it is not attached to an instance regardless of how long it's been unattached for.\n\n"
-  }
-
-  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
   savings_message = [
     ds_currency['symbol'], ' ',
@@ -825,7 +723,7 @@ script "js_incident", type: "javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + idle_message + disclaimer
+  result[0]['message'] = findings
 EOS
 end
 
@@ -883,11 +781,8 @@ policy "pol_unused_ip_addresses" do
       field "created_at" do
         label "Created At"
       end
-      field "detachDate" do
-        label "Detached At"
-      end
-      field "detachDays" do
-        label "Days Unattached"
+      field "age" do
+        label "Age (Days)"
       end
       field "recommendationDetails" do
         label "Recommendation"

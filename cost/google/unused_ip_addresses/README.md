@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template reports on unused Google IP addresses and, optionally, deletes them. An IP address is considered unused if it is currently detached and has been detached for a user-specified number of days.
+This policy template reports on unused Google IP addresses and, optionally, deletes them. An IP address is considered unused if it is not attached to an instance.
 
 NOTE: If you prefer to receive recommendations produced by the Google Recommender service rather than Flexera, or have not configured Flexera One to ingest detailed billing information from Google, please use the [Google Idle IP Address Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/idle_ip_address_recommendations) policy template instead of this one.
 
@@ -22,7 +22,7 @@ This policy has the following input parameters required when launching the polic
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
-- *Days Unattached* - The number of days an IP address needs to be detached to be considered unused. This value cannot be set above 42 due to Google only storing 42 days (6 weeks) of log data. If this value is set to 0, all unattached IP addresses will be considered unused.
+- *Minimum Age (Days)* - Only report IP addresses that are at least this many days old. Default value of '0' reports all IP addresses regardless of age.
 - *Allow/Deny Projects* - Whether to treat Allow/Deny Projects List parameter as allow or deny list. Has no effect if Allow/Deny Projects List is left empty.
 - *Allow/Deny Projects List* - Filter results by project ID/name, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all projects
 - *Ignore System Projects* - Whether or not to automatically ignore system projects e.g. projects whose id begins with `sys-`
@@ -54,7 +54,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
   - `resourcemanager.projects.get`
-  - `logging.logEntries.list`
   - `compute.regions.list`
   - `compute.addresses.list`
   - `compute.addresses.delete`*
@@ -69,7 +68,6 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 Additionally, this policy template requires that several APIs be enabled in your Google Cloud environment:
 
 - [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
-- [Cloud Logging API](https://console.cloud.google.com/flows/enableapi?apiid=logging.googleapis.com)
 - [Compute Engine API](https://console.cloud.google.com/flows/enableapi?apiid=compute.googleapis.com)
 
 ## Supported Clouds
