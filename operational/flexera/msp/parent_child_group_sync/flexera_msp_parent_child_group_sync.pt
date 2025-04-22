@@ -5,13 +5,12 @@ short_description "This policy synchronizes user groups, membership, and permiss
 long_description ""
 category "Operational"
 severity "low"
-tenancy "single"
 default_frequency "daily"
 info(
   version: "0.1.0",
   provider: "Flexera",
-  service: "IAM",
-  policy_set: "MSP",
+  service: "Identity & Access Management",
+  policy_set: "Managed Service Provider",
   publish: "false",
   deprecated: "false"
 )
@@ -50,7 +49,7 @@ parameter "param_prefix" do
   type "string"
   category "Policy Settings"
   label "Prefix String"
-  description "Prefix to indicate the Group should be synced.  This is the first part of the string that needs to be in the description. **`<PrefixString>`**_`<ChildOrgID>`_`Child Group Name`"
+  description "Prefix to indicate the Group should be synced. This is the first part of the string that needs to be in the description. **`<PrefixString>`**_`<ChildOrgID>`_`Child Group Name`"
   default "GroupSync"
 end
 
@@ -58,7 +57,7 @@ parameter "param_invitation_flow" do
   type "string"
   category "Policy Settings"
   label "Invitation Flow"
-  description "Disable/Enable the invitation flow.  Users that can't be added directly to the Org due to missing required Identity Provider configuration will raise an error."
+  description "Disable/Enable the invitation flow. Users that can't be added directly to the Org due to missing required Identity Provider configuration will raise an error."
   allowed_values "User Invitations Disabled", "User Invitations Enabled"
   default "User Invitations Disabled"
 end
@@ -267,7 +266,6 @@ script "js_organizations_filtered", type: "javascript" do
     orgs = ds_organizations;
   } else {
     _.each(ds_organizations, function(org) {
-
       if (param_child_orgs_allow_or_deny == "Allow") {
         if (_.contains(org_list, parseInt(org.id))) {
           orgs.push(org);
@@ -431,9 +429,6 @@ datasource "ds_children_roles" do
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
       field "capability", jmes_path(col_item, "capability")
-      # field "description", jmes_path(col_item, "description")
-      # field "displayName", jmes_path(col_item, "displayName")
-      # field "category", jmes_path(col_item, "category")
     end
   end
 end
@@ -790,7 +785,6 @@ end
 ###############################################################################
 
 policy "pol_group_sync" do
-
   validate $ds_process_sync do
     summary_template "{{ len data }} groups being synchronized"
     detail_template <<-EOS
@@ -806,7 +800,6 @@ policy "pol_group_sync" do
  {{- end -}}
 {{- end -}}
 {{- if eq $sync_enabled "false" -}} > Note: Automatic Group Sync is currently *disabled*. To enable automatic sync, add "Sync Groups" to the Automatic Actions parameter{{ end }}
-
 EOS
     check eq(size(data), 0)
     escalate $esc_sync_groups
@@ -941,17 +934,6 @@ define remove_roles($data, $rs_org_id) do
         }
       }
 
-      # $child_role = http_request(
-      #   auth: $$auth_flexera,
-      #   verb: "put",
-      #   https: true,
-      #   host: "api.flexera.com",
-      #   href: join(["/iam/v1/orgs/", $task["org_id"], "/access-rules/revoke"]),
-      #   headers: {
-      #     "Content-Type": "application/json"
-      #   },
-      #   body: $role_payload
-      # )
       $request = {
         auth: $$auth_flexera,
         url: join(["https://api.flexera.com/iam/v1/orgs/", $task["org_id"], "/access-rules/revoke"]),
