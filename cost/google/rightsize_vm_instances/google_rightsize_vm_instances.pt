@@ -1340,7 +1340,7 @@ script "js_underutil_vms", type:"javascript" do
       current_cores = types_by_machinetype[vm['machineType']]['specs']['guestCpus']
       current_memory = types_by_machinetype[vm['memoryGb']]['specs']['memoryGb']
 
-      // Calculate the optimal number of cores to get CPU usage below user-specified threshold
+      // Calculate the optimal number of cores to get CPU usage above user-specified threshold
       if (checking_cpu) {
         optimal_cores = current_cores
         temp_stat = cpu_test_stat
@@ -1351,7 +1351,7 @@ script "js_underutil_vms", type:"javascript" do
         }
       }
 
-      // Calculate the optimal GB of memory to get memory usage below user-specified threshold
+      // Calculate the optimal GB of memory to get memory usage above user-specified threshold
       if (checking_mem) {
         optimal_mem = current_mem
         temp_stat = mem_test_stat
@@ -1370,55 +1370,44 @@ script "js_underutil_vms", type:"javascript" do
         new_type = {
           name: type['name'],
           cores: type['specs']['guestCpus'],
-          memory: type['specs']['memoryGb']
+          memory: type['specs']['memoryGb'],
+          price: Number(ds_google_instance_prices[type['name']])
         }
 
-        if (checking_cpu && !checking_mem && type['cores'] >= optimal_cores && type['cores'] < current_type['specs']['guestCpus']) {
+        if (checking_cpu && !checking_mem && new_type['cores'] >= optimal_cores && new_type['cores'] < current_type['specs']['guestCpus']) {
           possible_types.push(new_type)
         }
 
-        if (!checking_cpu && checking_mem && type['memory'] >= optimal_mem && type['memory'] < current_type['specs']['memoryGb']) {
+        if (!checking_cpu && checking_mem && new_type['memory'] >= optimal_mem && new_type['memory'] < current_type['specs']['memoryGb']) {
           possible_types.push(new_type)
         }
 
-        if (checking_cpu && checking_mem && type['cores'] >= optimal_cores && type['memory'] >= optimal_mem && (type['cores'] < current_type['specs']['guestCpus'] || type['memory'] < current_type['specs']['memoryGb'])) {
+        if (checking_cpu && checking_mem && new_type['cores'] >= optimal_cores && new_type['memory'] >= optimal_mem && (new_type['cores'] < current_type['specs']['guestCpus'] || new_type['memory'] < current_type['specs']['memoryGb'])) {
           possible_types.push(new_type)
         }
       })
 
-      // Sort the list to grab the smallest instance size from the list
-      if (possible_types.length > 0) {
-        if (!checking_cpu && checking_mem) {
-          sorted_types = _.sortBy(possible_types, 'cores')
-          sorted_types = _.sortBy(possible_types, 'memory')
-        } else {
-          sorted_types = _.sortBy(possible_types, 'memory')
-          sorted_types = _.sortBy(possible_types, 'cores')
-        }
+      // Filter out any types that don't have a price or would be more expensive than current type
+      currentPrice = ds_google_instance_prices[resourceType]
 
+      possible_types_with_costs = _.filter(possible_types, function(type) {
+        return type['price'] && currentPrice && type['price'] < currentPrice
+      })
+
+      // Sort the list to grab the cheapest resource type from the list
+      if (possible_types_with_costs.length > 0) {
+        sorted_types = _.sortBy(possible_types, 'price')
         newResourceType = sorted_types[0]['name']
       }
+
+      newPrice = ds_google_instance_prices[newResourceType]
 
       // Get current monthly cost of instance and calculate savings
       if (newResourceType != resourceType && ds_vm_costs_grouped[vm['id'].toLowerCase()]) {
         monthly_cost = ds_vm_costs_grouped[vm['id'].toLowerCase()]
 
-        // If we have list price for both sizes, use that to estimate cost.
-        // Otherwise, do a rougher calculation using memory and cores.
-        if (ds_google_instance_prices[resourceType] && ds_google_instance_prices[newResourceType]) {
-          ratio = ds_google_instance_prices[newResourceType] / ds_google_instance_prices[resourceType]
-          new_cost = monthly_cost * ratio
-        } else {
-          cpu_cost_percentage = types_by_machinetype[resourceType]['specs']['guestCpus'] / types_by_machinetype[newResourceType]['specs']['guestCpus']
-          mem_cost_percentage = types_by_machinetype[resourceType]['specs']['memoryGb'] / types_by_machinetype[newResourceType]['specs']['memoryGb']
-
-          // Adjust the memory percentage to be less severe.
-          // This is because CPU cores affect pricing about twice as much as memory does, generally speaking
-          adjusted_mem = mem_cost_percentage + ((1 - mem_cost_percentage) / 2)
-
-          new_cost = monthly_cost * cpu_cost_percentage * adjusted_mem
-        }
-
+        // Estimate change in cost based on percentage difference of list prices
+        new_cost = monthly_cost * (newPrice / currentPrice)
         savings = monthly_cost - new_cost
       }
     }
