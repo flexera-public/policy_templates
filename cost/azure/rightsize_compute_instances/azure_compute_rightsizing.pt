@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "6.0.2",
+  version: "6.1.2",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -663,55 +663,8 @@ script "js_azure_instances_status_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_skus" do
-  iterate $ds_azure_subscriptions_filtered
-  request do
-    auth $auth_azure
-    pagination $pagination_azure
-    host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/skus"])
-    query "api-version", "2017-09-01"
-    header "User-Agent", "RS Policies"
-    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400, 403, 404]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value") do
-      field "resourceType", jmes_path(col_item, "resourceType")
-      field "name", jmes_path(col_item, "name")
-      field "locations", jmes_path(col_item, "locations")
-      field "capabilities", jmes_path(col_item, "capabilities")
-      field "restrictions", jmes_path(col_item, "restrictions")
-    end
-  end
-end
-
-datasource "ds_azure_sku_memory" do
-  run_script $js_azure_sku_memory, $ds_azure_skus
-end
-
-script "js_azure_sku_memory", type: "javascript" do
-  parameters "ds_azure_skus"
-  result "result"
-  code <<-EOS
-  result = {}
-
-  _.each(ds_azure_skus, function(sku) {
-    name = sku['name'].toLowerCase()
-
-    if (result[name] == undefined && sku["resourceType"] == "virtualMachines") {
-      memory = _.find(sku['capabilities'], function(item) {
-        return item["name"] == "MemoryGB"
-      })
-
-      result[name] = memory["value"] * 1024 * 1024 * 1024
-    }
-  })
-EOS
-end
-
 datasource "ds_azure_instances_metrics" do
+  batch true
   iterate $ds_azure_instances_status_filtered
   request do
     run_script $js_azure_instances_metrics, val(iter_item, "resourceID"), $ds_stats_interval, $param_azure_endpoint, $param_stats_lookback
@@ -764,7 +717,7 @@ script "js_azure_instances_metrics", type: "javascript" do
       "api-version": "2018-01-01",
       "timespan": timespan,
       "interval": ds_stats_interval["api"],
-      "metricnames": "Percentage CPU,Available Memory Bytes",
+      "metricnames": "Percentage CPU,Available Memory Percentage",
       "aggregation": "average,maximum,minimum"
     },
     headers: {
@@ -777,11 +730,11 @@ EOS
 end
 
 datasource "ds_azure_instances_metrics_organized" do
-  run_script $js_azure_instances_metrics_organized, $ds_azure_instances_metrics, $ds_azure_sku_memory
+  run_script $js_azure_instances_metrics_organized, $ds_azure_instances_metrics
 end
 
 script "js_azure_instances_metrics_organized", type: "javascript" do
-  parameters "ds_azure_instances_metrics", "ds_azure_sku_memory"
+  parameters "ds_azure_instances_metrics"
   result "result"
   code <<-EOS
   // Function to calculate percentiles from metrics
@@ -798,7 +751,7 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
 
   result = []
 
-  _.each(ds_azure_instances_metrics, function(vm) {
+  getIterator(ds_azure_instances_metrics).Each(function(vm, idx) {
     cpu_stats = null
     mem_stats = null
 
@@ -808,7 +761,7 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
           cpu_stats = stat["timeseries"][0]["data"]
         }
 
-        if (stat['name']['value'] == "Available Memory Bytes") {
+        if (stat['name']['value'] == "Available Memory Percentage") {
           mem_stats = stat["timeseries"][0]["data"]
         }
       }
@@ -865,29 +818,26 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
     mem_avg_count = 0
     mem_all_stats = []
 
-    total_memory = ds_azure_sku_memory[vm['resourceType'].toLowerCase()]
-
     if (mem_stats != null && mem_stats != undefined) {
       _.each(mem_stats, function(item) {
-        // Convert available memory in bytes to used memory in percentage
         // Note: The switch between min and max is intentional because
-        // the maximum available memory is equivalent to the minumum
+        // the maximum available memory is equivalent to the minimum
         // memory used.
         if (item["average"] != undefined && item["average"] != null) {
-          average = (total_memory - item["average"]) / total_memory
+          var average = 100 - item["average"];
           mem_all_stats.push(average)
           mem_avg += average
           mem_avg_count += 1
         }
 
         if (item["minimum"] != undefined && item["minimum"] != null) {
-          maximum = (total_memory - item["minimum"]) / total_memory
+          var maximum = 100 - item["minimum"]
           mem_all_stats.push(maximum)
           if (maximum > mem_max) { mem_max = maximum }
         }
 
         if (item["maximum"] != undefined && item["maximum"] != null) {
-          minimum = (total_memory - item["maximum"]) / total_memory
+          var minimum = 100 - item["maximum"]
           mem_all_stats.push(minimum)
           if (minimum < mem_min || mem_min == null) { mem_min = minimum }
         }
@@ -895,7 +845,7 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
     }
 
     if (mem_min == null) { mem_min = 0 }
-    if (mem_avg_count != 0) { mem_avg = mem_avg / mem_avg_count * 100 }
+    if (mem_avg_count != 0) { mem_avg = mem_avg / mem_avg_count }
 
     if (mem_all_stats.length > 0) {
       mem_p90 = percentile(mem_all_stats, 90)

@@ -52,7 +52,7 @@ changed_readme_files = changed_files.select{ |file| file.end_with?("/README.md")
 # Changed Changelog files.
 changed_changelog_files = changed_files.select{ |file| file.end_with?("/CHANGELOG.md") }
 # Changed MD files other than the above.
-changed_misc_md_files = changed_files.select{ |file| file.end_with?(".md") && !file.end_with?("/CHANGELOG.md") && !file.start_with?("HISTORY.md") && !(file.end_with?("/README.md") && (file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/"))) }
+changed_misc_md_files = changed_files.select{ |file| file.end_with?(".md") && !file.end_with?("/CHANGELOG.md") && !file.end_with?("HEADER.md") && !file.end_with?("FOOTER.md") && !file.start_with?("HISTORY.md") && !(file.end_with?("/README.md") && (file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/"))) }
 # Changed JSON files.
 changed_json_files = changed_files.select{ |file| file.end_with?(".json") }
 # Changed YAML files.
@@ -370,7 +370,7 @@ changed_pt_files.each do |file|
   file_lines = File.readlines(file)
   file_diff = git.diff_for_file(file)
 
-  # Raise error if policy is missing info block
+  # Raise error if policy is missing info() block
   test = policy_missing_info_block?(file, file_parsed); failures << test if test
 
   # Raise error if policy is deprecated but missing deprecated field in info() block
@@ -399,7 +399,7 @@ changed_pt_files.each do |file|
     # Raise error if policy is not in the master permissions file.
     # Raise warning if policy is in this file, but datasources have been added.
     # Only raise the above warning if the more general warning about updating the README doesn't exist.
-    test = policy_missing_master_permissions?(file, permissions_yaml); failures << test if test
+    test = policy_missing_master_permissions?(file, file_parsed, permissions_yaml); failures << test if test
     ds_test = policy_new_datasource?(file, file_diff, permissions_yaml); warnings << ds_test if ds_test && !test && !rd_test
 
     # Raise error if policy filename/path contains any uppercase letters
@@ -426,6 +426,9 @@ changed_pt_files.each do |file|
     # Raise error if policy contains multiple blank lines
     test = policy_consecutive_empty_lines?(file, file_lines); failures << test if test
 
+    # Raise errors or warnings if defunct metadata is found
+    test = policy_defunct_metadata?(file, file_lines); failures << test if test
+
     # Raise errors or warnings if bad metadata is found
     test = policy_bad_metadata?(file, file_parsed, "name"); failures << test if test
     test = policy_bad_metadata?(file, file_parsed, "short_description"); failures << test if test
@@ -443,6 +446,9 @@ changed_pt_files.each do |file|
       info_test = policy_missing_info_field?(file, file_parsed, "provider"); failures << info_test if info_test
       info_test = policy_missing_info_field?(file, file_parsed, "service"); warnings << info_test if info_test
       info_test = policy_missing_info_field?(file, file_parsed, "policy_set"); warnings << info_test if info_test
+
+      # Test for invalidly abbreviated fields
+      info_test = policy_abbreviated_info_field?(file, file_parsed); failures << info_test if info_test
     end
 
     # Raise error if policy version number does not use semantic versioning
@@ -474,6 +480,15 @@ changed_pt_files.each do |file|
     test = policy_missing_section_comments?(file, file_text, "policy"); failures << test if test
     test = policy_missing_section_comments?(file, file_text, "escalation"); failures << test if test
     test = policy_missing_section_comments?(file, file_text, "cwf"); failures << test if test
+
+    # Report on code blocks with their names in single quotes
+    test = policy_block_name_single_quotes?(file, file_lines, "parameter"); failures << test if test
+    test = policy_block_name_single_quotes?(file, file_lines, "credentials"); failures << test if test
+    test = policy_block_name_single_quotes?(file, file_lines, "pagination"); failures << test if test
+    test = policy_block_name_single_quotes?(file, file_lines, "datasource"); failures << test if test
+    test = policy_block_name_single_quotes?(file, file_lines, "script"); failures << test if test
+    test = policy_block_name_single_quotes?(file, file_lines, "policy"); failures << test if test
+    test = policy_block_name_single_quotes?(file, file_lines, "escalation"); failures << test if test
 
     # Report on invalidly named code blocks
     test = policy_bad_block_name?(file, file_lines, "parameter"); failures << test if test

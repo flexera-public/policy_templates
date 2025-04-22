@@ -22,6 +22,8 @@ def policy_deprecated?(file, file_parsed)
   return false
 end
 
+### Missing Info Block test
+# Returns false if an info() block exists in the policy template
 def policy_missing_info_block?(file, file_parsed)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has required info() block..."
 
@@ -35,8 +37,8 @@ def policy_missing_info_block?(file, file_parsed)
   return false
 end
 
-### Deprecated without info flag test
-# Returns true if policy is described as deprecated in short_description
+### Missing Deprecated Info Flag test
+# Returns true if policy template is described as deprecated in short_description
 # but lacks deprecated field in info() block
 def policy_missing_deprecated_field?(file, file_parsed)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file is deprecated but lacks appropriate setting in info() block..."
@@ -64,7 +66,7 @@ def policy_missing_deprecated_field?(file, file_parsed)
   return false
 end
 
-### Nested directory test
+### Nested Directory test
 # Return false if policy is correctly sorted within the directory structure
 def policy_bad_directory?(file)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file is in the correct location..."
@@ -408,6 +410,29 @@ def policy_bad_metadata?(file, file_parsed, field_name)
   return false
 end
 
+### Defunct Metadata test
+# Return false if no defunct policy metadata has been found
+def policy_defunct_metadata?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing Policy Template for defunct metadata fields..."
+
+  fail_message = ""
+
+  tenancy_regex = /^tenancy ["']/
+
+  file_lines.each_with_index do |line, index|
+    line_number = index + 1
+
+    if tenancy_regex.match?(line)
+      fail_message += "Line #{line_number.to_s}: #{line}\n"
+    end
+  end
+
+  fail_message = "Deprecated metadata fields found. Please remove the following deprecated fields as they are no longer useful or needed:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Info block test
 # Return false if policy info block has missing or problematic fields
 def policy_missing_info_field?(file, file_parsed, field_name)
@@ -438,6 +463,35 @@ def policy_missing_info_field?(file, file_parsed, field_name)
   end
 
   fail_message = "Bad #{field_name} info metadata field found:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Abbreviated info field test
+# Return false if no fields in the info block have known invalid abbreviations
+def policy_abbreviated_info_field?(file, file_parsed)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing Policy Template file info() block for abbreviated fields..."
+
+  info = file_parsed.parsed_info
+
+  fail_message = ""
+
+  unless info.nil?
+    unless info[:service].nil?
+      fail_message += "Please change service field in info() block to \"Identity & Access Management\".\n\n" if info[:service] == "IAM"
+      fail_message += "Please change service field in info() block to \"Cloud Cost Optimization\".\n\n" if info[:service] == "CCO"
+      fail_message += "Please change service field in info() block to \"Cloud Cost Optimization\".\n\n" if info[:service] == "Optima"
+    end
+
+    unless info[:policy_set].nil?
+      fail_message += "Please change policy_set field in info() block to \"Identity & Access Management\".\n\n" if info[:policy_set] == "IAM"
+      fail_message += "Please change policy_set field in info() block to \"Managed Service Provider\".\n\n" if info[:policy_set] == "MSP"
+      fail_message += "Please change policy_set field in info() block to \"Hybrid Use Benefit\".\n\n" if info[:policy_set] == "AHUB"
+    end
+  end
+
+  fail_message = "Invalidly abbreviated metadata fields found:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -862,6 +916,45 @@ def policy_missing_section_comments?(file, file_text, section_name)
   return false
 end
 
+### Block name single quotes test
+# Return false if no block names contained in single quotes are found
+def policy_block_name_single_quotes?(file, file_lines, block_name)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has " + block_name + " code blocks whose name is in single quotes..."
+
+  fail_message = ""
+
+  # Set values based on which section we're checking.
+  # block_regex: Test for presence of block with invalid single quotes
+  case block_name
+  when "parameter"
+    block_regex = /^parameter\s+'[^']+'\s+do$/
+  when "credentials"
+    block_regex = /^credentials\s+'[^']+'\s+do$/
+  when "pagination"
+    block_regex = /^pagination\s+'[^']+'\s+do$/
+  when "datasource"
+    block_regex = /^datasource\s+'[^']+'\s+do$/
+  when "script"
+    block_regex = /^script\s+'([^']+)',\s+type:\s+'javascript'\s+do$/
+  when "policy"
+    block_regex = /^policy\s+'[^']+'\s+do$/
+  when "escalation"
+    block_regex = /^escalation\s+'[^']+'\s+do$/
+  else
+    block_regex = /.*/
+  end
+
+  file_lines.each_with_index do |line, index|
+    line_number = index + 1
+    fail_message += "Line #{line_number.to_s}: #{line}\n" if block_regex.match?(line)
+  end
+
+  fail_message = "Invalidly quoted #{block_name} blocks. Please ensure all #{block_name} blocks have names encapsulated in double quotes (\") instead of single quotes ('):\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Bad block name test
 # Return false if no invalidly named code blocks are found.
 def policy_bad_block_name?(file, file_lines, block_name)
@@ -875,25 +968,25 @@ def policy_bad_block_name?(file, file_lines, block_name)
   case block_name
   when "parameter"
     proper_name = "param_"
-    block_regex = /^parameter\s+"(?!param_[^"]+")[^"]*"\s+do$/
+    block_regex = /^parameter\s+(["'])(?!param_[^"']+\1)[^"']*\1\s+do$/
   when "credentials"
     proper_name = "auth_"
-    block_regex = /^credentials\s+"(?!auth_[^"]+")[^"]*"\s+do$/
+    block_regex = /^credentials\s+(["'])(?!auth_[^"']+\1)[^"']*\1\s+do$/
   when "pagination"
     proper_name = "pagination_"
-    block_regex = /^pagination\s+"(?!pagination_[^"]+")[^"]*"\s+do$/
+    block_regex = /^pagination\s+(["'])(?!pagination_[^"']+\1)[^"']*\1\s+do$/
   when "datasource"
     proper_name = "ds_"
-    block_regex = /^datasource\s+"(?!ds_[^"]+")[^"]*"\s+do$/
+    block_regex = /^datasource\s+(["'])(?!ds_[^"']+\1)[^"']*\1\s+do$/
   when "script"
     proper_name = "js_"
-    block_regex = /^script\s+"(?!js_[^"]+)([^"]*)",\s+type:\s+"javascript"\s+do$/
+    block_regex = /^script\s+(["'])(?!js_[^"']+\1)([^"']*)\1,\s+type:\s+(["'])javascript\3\s+do$/
   when "policy"
     proper_name = "pol_"
-    block_regex = /^policy\s+"(?!pol_[^"]+")[^"]*"\s+do$/
+    block_regex = /^policy\s+(["'])(?!pol_[^"']+\1)[^"']*\1\s+do$/
   when "escalation"
     proper_name = "esc_"
-    block_regex = /^escalation\s+"(?!esc_[^"]+")[^"]*"\s+do$/
+    block_regex = /^escalation\s+(["'])(?!esc_[^"']+\1)[^"']*\1\s+do$/
   else
     proper_name = ""
     block_regex = /.*/
@@ -901,7 +994,7 @@ def policy_bad_block_name?(file, file_lines, block_name)
 
   file_lines.each_with_index do |line, index|
     line_number = index + 1
-    fail_message += "Line #{line_number.to_s}\n" if block_regex.match?(line)
+    fail_message += "Line #{line_number.to_s}: #{line}\n" if block_regex.match?(line)
   end
 
   fail_message = "Invalidly named #{block_name} blocks. Please ensure all #{block_name} blocks have names that begin with `#{proper_name}`:\n\n" + fail_message if !fail_message.empty?
@@ -1422,23 +1515,30 @@ end
 
 ### Master permissions test
 # Return false if master permissions have been recorded for the policy
-def policy_missing_master_permissions?(file, permissions_yaml)
+def policy_missing_master_permissions?(file, file_parsed, permissions_yaml)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has been included in the verified permissions file..."
 
   fail_message = ""
 
-  # Use regex to look for blocks that have a "datasource", "request", and "auth" sections of the datasource
-  # Example String:
-  #   "diff --git a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\nindex 14b3236f..bf6a161d 100644\n--- a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n+++ b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n@@ -193,6 +193,16 @@ datasource \"ds_applied_policy\" do\n   end\n end\n \n+datasource \"ds_applied_policy_test_will_be_removed_later\" do\n+  request do\n+    auth $auth_flexera\n+    host rs_governance_host\n+    path join([\"/api/governance/projects/\", rs_project_id, \"/applied_policies/\", policy_id])\n+    header \"Api-Version\", \"1.0\"\n+    header \"Test\", \"True\"\n+  end\n+end\n+\n # Get region-specific Flexera API endpoints\n datasource \"ds_flexera_api_hosts\" do\n   run_script $js_flexera_api_hosts, rs_optima_host"
-  regex = /datasource.*do(\s)+.*request.*do(\s)+.*auth.*([\s\S])+end([\s\+])+end/
+  # Ignore policies with an explicit "skip_permissions" statement in their info block()
+  info = file_parsed.parsed_info
+  skip_permissions = ""
+  skip_permissions = info[:skip_permissions] unless info.nil?
 
-  # First check if the PT file has been manually validated and enabled for permission generation
-  pt_file_enabled = permissions_yaml["validated_policy_templates"].select { |pt| pt.include?(file) }
+  unless skip_permissions == "true"
+    # Use regex to look for blocks that have a "datasource", "request", and "auth" sections of the datasource
+    # Example String:
+    #   "diff --git a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\nindex 14b3236f..bf6a161d 100644\n--- a/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n+++ b/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt\n@@ -193,6 +193,16 @@ datasource \"ds_applied_policy\" do\n   end\n end\n \n+datasource \"ds_applied_policy_test_will_be_removed_later\" do\n+  request do\n+    auth $auth_flexera\n+    host rs_governance_host\n+    path join([\"/api/governance/projects/\", rs_project_id, \"/applied_policies/\", policy_id])\n+    header \"Api-Version\", \"1.0\"\n+    header \"Test\", \"True\"\n+  end\n+end\n+\n # Get region-specific Flexera API endpoints\n datasource \"ds_flexera_api_hosts\" do\n   run_script $js_flexera_api_hosts, rs_optima_host"
+    regex = /datasource.*do(\s)+.*request.*do(\s)+.*auth.*([\s\S])+end([\s\+])+end/
 
-  if pt_file_enabled.empty? && !file.start_with?("saas/fsm/")
-    # If the PT file has not been manually validated, then print an error message which will block the PR from being merged
-    # This will help improve coverage as we touch more PT files
-    fail_message = "Policy Template file has **not** yet been enabled for automated permission generation. Please help us improve coverage by [following the steps documented in `tools/policy_master_permission_generation/`](https://github.com/flexera-public/policy_templates/tree/master/tools/policy_master_permission_generation) to resolve this."
+    # First check if the PT file has been manually validated and enabled for permission generation
+    pt_file_enabled = permissions_yaml["validated_policy_templates"].select { |pt| pt.include?(file) }
+
+    if pt_file_enabled.empty? && !file.start_with?("saas/fsm/")
+      # If the PT file has not been manually validated, then print an error message which will block the PR from being merged
+      # This will help improve coverage as we touch more PT files
+      fail_message = "Policy Template file has **not** yet been enabled for automated permission generation. Please help us improve coverage by [following the steps documented in `tools/policy_master_permission_generation/`](https://github.com/flexera-public/policy_templates/tree/master/tools/policy_master_permission_generation) to resolve this. If there are valid reasons not to enable this for this policy template, please add `skip_permissions: \"true\"` to the policy template's info() block."
+    end
   end
 
   return fail_message.strip if !fail_message.empty?

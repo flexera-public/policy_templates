@@ -46,6 +46,7 @@ default_child_policy_template_files = [
   "../../operational/aws/long_running_instances/long_running_instances.pt",
   "../../operational/aws/scheduled_ec2_events/aws_scheduled_ec2_events.pt",
   "../../operational/aws/tag_cardinality/aws_tag_cardinality.pt",
+  "../../operational/aws/overutilized_ec2_instances/aws_overutilized_ec2.pt",
   "../../security/aws/aws_config_enabled/aws_config_enabled.pt",
   "../../security/aws/ebs_ensure_encryption_default/ebs_ensure_encryption_default.pt",
   "../../security/aws/ebs_unencrypted_volumes/aws_unencrypted_volumes.pt",
@@ -70,7 +71,6 @@ default_child_policy_template_files = [
   "../../compliance/azure/azure_untagged_vms/untagged_vms.pt",
   "../../compliance/azure/azure_untagged_resources/untagged_resources.pt",
   "../../compliance/azure/ahub_manual/azure_ahub_utilization_with_manual_entry.pt",
-  "../../compliance/azure/azure_long_stopped_instances/long_stopped_instances_azure.pt",
   "../../compliance/azure/compliance_score/azure_regulatory_compliance_report.pt",
   "../../compliance/azure/instances_without_fnm_agent/azure_instances_not_running_flexnet_inventory_agent.pt",
   "../../cost/azure/advisor_compute/azure_advisor_compute.pt",
@@ -78,6 +78,7 @@ default_child_policy_template_files = [
   "../../cost/azure/idle_compute_instances/azure_idle_compute_instances.pt",
   "../../cost/azure/blob_storage_optimization/azure_blob_storage_optimization.pt",
   "../../cost/azure/data_lake_optimization/data_lake_optimization.pt",
+  "../../cost/azure/long_stopped_instances/long_stopped_instances_azure.pt",
   "../../cost/azure/old_snapshots/azure_delete_old_snapshots.pt",
   "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
   "../../cost/azure/rightsize_managed_disks/azure_rightsize_managed_disks.pt",
@@ -88,7 +89,6 @@ default_child_policy_template_files = [
   "../../cost/azure/rightsize_netapp/azure_rightsize_netapp.pt",
   "../../cost/azure/rightsize_sql_instances/azure_rightsize_sql_instances.pt",
   "../../cost/azure/rightsize_sql_storage/azure_rightsize_sql_storage.pt",
-  #"../../cost/azure/rightsize_synapse_sql_pools/azure_rightsize_synapse_sql_pools.pt",
   "../../cost/azure/unoptimized_web_app_scaling/azure_unoptimized_web_app_scaling.pt",
   "../../cost/azure/sql_servers_without_elastic_pool/azure_sql_servers_without_elastic_pool.pt",
   "../../cost/azure/unused_app_service_plans/azure_unused_app_service_plans.pt",
@@ -113,6 +113,7 @@ default_child_policy_template_files = [
   "../../operational/azure/compute_poweredoff_report/azure_compute_poweredoff_report.pt",
   "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
   "../../operational/azure/vms_without_managed_disks/azure_vms_without_managed_disks.pt",
+  "../../operational/azure/overutilized_compute_instances/azure_compute_overutilized.pt",
   "../../security/azure/blob_storage_logging/blob_storage_logging.pt",
   "../../security/azure/mysql_ssl/mysql_ssl.pt",
   "../../security/azure/mysql_tls_version/mysql_tls_version.pt",
@@ -160,6 +161,7 @@ default_child_policy_template_files = [
   "../../cost/google/cud_report/google_committed_use_discount_report.pt",
   "../../cost/google/old_snapshots/google_delete_old_snapshots.pt",
   "../../operational/google/label_cardinality/google_label_cardinality.pt",
+  "../../operational/google/overutilized_vms/google_overutilized_vms.pt",
   "../../security/google/public_buckets/google_public_buckets.pt"
 ]
 
@@ -321,7 +323,8 @@ end
   # Get the checks
   # Use regex to extract the validate and validate_each checks from the policy template string s
   # The regex is not perfect, but it works for now
-  checks = pt.scan(/^\s+validate.*?do.*?^  end/m)
+  checks = pt.scan(/^\s+validate.*?do.*?^  end/m).select { |check| check.include?("export ") }
+
   checks.each do |validate_block|
     # Print Raw Validate Block as a String
     # print("Raw Validate Block:\n")
