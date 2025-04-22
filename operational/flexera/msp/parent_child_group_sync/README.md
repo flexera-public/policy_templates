@@ -2,7 +2,11 @@
 
 ## What It Does
 
-This policy template synchronizes groups, roles and users from a parent organization to child MSP organizations based on group description patterns. Groups in the parent org with descriptions matching the pattern `{GroupSync Prefix}_{OrgID}_{Group Name}` will be synchronized to the specified child org.  Using the default Group Sync Prefix, an example configuration string looks like:
+This policy template synchronizes groups, roles and users from a parent organization to child MSP organizations based on group description patterns. 
+
+
+## How It Works
+Groups in the parent org with descriptions matching the pattern `{GroupSync Prefix}_{OrgID}_{Group Name}` will be synchronized to the specified child org. Using the default Group Sync Prefix, an example configuration string looks like:
 
 `{OrgID}` can be a specific Child Org ID (i.e. `12345`) to sync the group with one specific child org, or `ALLORGS` to sync the group with all child orgs.
 
@@ -25,13 +29,13 @@ The policy will:
 - *Email Addresses* - Email addresses of the recipients you wish to notify
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected actions
   - `Sync Groups` - Automatically synchronize groups when differences are detected
-- *Allow/Deny Child Orgs* - Allow or Deny entered Child Orgs to sync groups to
-- *Allow/Deny Child Orgs List* - A list of allowed or denied Child Orgs to sync groups to
+- *Allow/Deny Child Orgs* - Allow or Deny entered child orgs to sync groups to
+- *Allow/Deny Child Orgs List* - A list of allowed or denied child orgs to sync groups to
 
 ## Policy Actions
 
 - Creates and updates groups in child orgs
-- Adds users if Child Org has Identity Provider, otherwise uses invitation flow to affiliate users to child orgs
+- Adds users if child org has Identity Provider; otherwise uses invitation flow to affiliate users to child orgs
 - Syncs user membership to groups in child orgs
 - Syncs roles to groups in child orgs
 - Removes roles and memberships that no longer exist in parent org
@@ -43,9 +47,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `org_owner`*
 
-  \* Must be a **User Refresh Token** credential (not a Service Account Client ID/Secret) which has `org_owner` access in all MSP Child Orgs
+  \* Must be a **User Refresh Token** credential (not a Service Account Client ID/Secret) which has `org_owner` access in all MSP child crgs
 
-- Must be deployed in an Org that has the `msp` capability enabled
+- **Deployed in MSP Parent Org**. Must be deployed in an Org that has the `msp` capability enabled
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
