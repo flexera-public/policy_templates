@@ -528,8 +528,8 @@ script "js_google_vms", type: "javascript" do
           status: vm['status'],
           selfLink: vm['selfLink'],
           cpuPlatform: vm['cpuPlatform'],
-          machineType: vm['machineType'],
-          family: vm['machineType'].split('-')[0],
+          machineType: _.last(vm['machineType'].split('/')),
+          family: _.last(vm['machineType'].split('/')).split('-')[0],
           hostname: vm['hostname'],
           kind: vm['kind'],
           labels: vm['labels'],
@@ -651,46 +651,12 @@ datasource "ds_cpu_stats" do
   request do
     run_script $js_stats, val(iter_item, "id"), $param_stats_lookback, "compute.googleapis.com/instance/cpu/utilization"
   end
-  result do
-    encoding "json"
-    collect jmes_path(response, "timeSeriesData[*]") do
-      field "resourceName", jmes_path(col_item, "labelValues[3].stringValue")
-      field "resourceID", jmes_path(col_item, "labelValues[2].stringValue")
-      field "zone", jmes_path(col_item, "labelValues[1].stringValue")
-      field "cpuAverage", prod(jmes_path(col_item, "pointData[0].values[0].doubleValue"), 100)
-      field "cpuMaximum", prod(jmes_path(col_item, "pointData[0].values[1].doubleValue"), 100)
-      field "cpuMinimum", prod(jmes_path(col_item, "pointData[0].values[2].doubleValue"), 100)
-      field "cpuP99", prod(jmes_path(col_item, "pointData[0].values[3].doubleValue"), 100)
-      field "cpuP95", prod(jmes_path(col_item, "pointData[0].values[4].doubleValue"), 100)
-      field "cpuP90", prod(jmes_path(col_item, "pointData[0].values[5].doubleValue"), 100)
-      field "projectId", val(iter_item, "id")
-      field "projectName", val(iter_item, "name")
-      field "projectNumber", val(iter_item, "number")
-    end
-  end
 end
 
 datasource "ds_mem_stats" do
   iterate $ds_google_projects_filtered
   request do
     run_script $js_stats, val(iter_item, "id"), $param_stats_lookback, "agent.googleapis.com/memory/percent_used"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "timeSeriesData[*]") do
-      field "resourceName", jmes_path(col_item, "labelValues[3].stringValue")
-      field "resourceID", jmes_path(col_item, "labelValues[2].stringValue")
-      field "zone", jmes_path(col_item, "labelValues[1].stringValue")
-      field "memAverage", prod(jmes_path(col_item, "pointData[0].values[0].doubleValue"), 100)
-      field "memMaximum", prod(jmes_path(col_item, "pointData[0].values[1].doubleValue"), 100)
-      field "memMinimum", prod(jmes_path(col_item, "pointData[0].values[2].doubleValue"), 100)
-      field "memP99", prod(jmes_path(col_item, "pointData[0].values[3].doubleValue"), 100)
-      field "memP95", prod(jmes_path(col_item, "pointData[0].values[4].doubleValue"), 100)
-      field "memP90", prod(jmes_path(col_item, "pointData[0].values[5].doubleValue"), 100)
-      field "projectId", val(iter_item, "id")
-      field "projectName", val(iter_item, "name")
-      field "projectNumber", val(iter_item, "number")
-    end
   end
 end
 
@@ -730,64 +696,106 @@ script "js_stats", type: "javascript" do
 EOS
 end
 
+datasource "ds_parsed_stats" do
+  run_script $js_parsed_stats, $ds_cpu_stats, $ds_mem_stats
+end
+
+script "js_parsed_stats", type: "javascript" do
+  parameters "ds_cpu_stats", "ds_mem_stats"
+  result "result"
+  code <<-EOS
+  result = {}
+
+  _.each(ds_cpu_stats, function(entry) {
+    cpu_descriptors = _.pluck(entry['timeSeriesDescriptor']['labelDescriptors'], 'key')
+
+    _.each(entry["timeSeriesData"], function(item) {
+      labels = {}
+
+      for (var i = 0; i < cpu_descriptors.length; i++) {
+        labels[cpu_descriptors[i]] = item['labelValues'][i]['stringValue']
+      }
+
+      instanceId = labels['resource.instance_id']
+
+      if (instanceId) {
+        if (result[instanceId] == undefined) { result[instanceId] = {} }
+
+        result[instanceId]['cpuAverage'] = Number(item['pointData'][0]['values'][0]['doubleValue']) * 100
+        result[instanceId]['cpuMaximum'] = Number(item['pointData'][0]['values'][1]['doubleValue']) * 100
+        result[instanceId]['cpuMinimum'] = Number(item['pointData'][0]['values'][2]['doubleValue']) * 100
+        result[instanceId]['cpuP99'] = Number(item['pointData'][0]['values'][3]['doubleValue']) * 100
+        result[instanceId]['cpuP95'] = Number(item['pointData'][0]['values'][4]['doubleValue']) * 100
+        result[instanceId]['cpuP90'] = Number(item['pointData'][0]['values'][5]['doubleValue']) * 100
+      }
+    })
+  })
+
+  _.each(ds_mem_stats, function(entry) {
+    mem_descriptors = _.pluck(entry['timeSeriesDescriptor']['labelDescriptors'], 'key')
+
+    _.each(entry["timeSeriesData"], function(item) {
+      labels = {}
+
+      for (var i = 0; i < mem_descriptors.length; i++) {
+        labels[mem_descriptors[i]] = item['labelValues'][i]['stringValue']
+      }
+
+      instanceId = labels['resource.instance_id']
+
+      if (instanceId) {
+        if (result[instanceId] == undefined) { result[instanceId] = {} }
+
+        result[instanceId]['memAverage'] = Number(item['pointData'][0]['values'][0]['doubleValue'])
+        result[instanceId]['memMaximum'] = Number(item['pointData'][0]['values'][1]['doubleValue'])
+        result[instanceId]['memMinimum'] = Number(item['pointData'][0]['values'][2]['doubleValue'])
+        result[instanceId]['memP99'] = Number(item['pointData'][0]['values'][3]['doubleValue'])
+        result[instanceId]['memP95'] = Number(item['pointData'][0]['values'][4]['doubleValue'])
+        result[instanceId]['memP90'] = Number(item['pointData'][0]['values'][5]['doubleValue'])
+      }
+    })
+  })
+EOS
+end
+
 datasource "ds_google_vms_with_stats" do
-  run_script $js_google_vms_with_stats, $ds_google_vms_region_filtered, $ds_cpu_stats, $ds_mem_stats
+  run_script $js_google_vms_with_stats, $ds_google_vms_region_filtered, $ds_parsed_stats
 end
 
 script "js_google_vms_with_stats", type: "javascript" do
-  parameters "ds_google_vms_region_filtered", "ds_cpu_stats", "ds_mem_stats"
+  parameters "ds_google_vms_region_filtered", "ds_parsed_stats"
   result "result"
   code <<-EOS
-  cpu_stats_by_resource = {}
-
-  _.each(ds_cpu_stats, function(item) {
-    id = item['resourceID'].toLowerCase()
-    cpu_stats_by_resource[id] = item
-  })
-
-  mem_stats_by_resource = {}
-
-  _.each(ds_mem_stats, function(item) {
-    id = item['resourceID'].toLowerCase()
-    mem_stats_by_resource[id] = item
-  })
-
   result = _.map(ds_google_vms_region_filtered, function(vm) {
-    new_vm = {
-      cpuAverage: null,
-      cpuMaximum: null,
-      cpuMinimum: null,
-      cpuP99: null,
-      cpuP95: null,
-      cpuP90: null,
-      memAverage: null,
-      memMaximum: null,
-      memMinimum: null,
-      memP99: null,
-      memP95: null,
-      memP90: null
-    }
-
+    new_vm = {}
     _.each(_.keys(vm), function(key) { new_vm[key] = vm[key] })
 
-    id = vm['id'].toLowerCase()
+    new_vm['cpuAverage'] = null
+    new_vm['cpuMaximum'] = null
+    new_vm['cpuMinimum'] = null
+    new_vm['cpuP99'] = null
+    new_vm['cpuP95'] = null
+    new_vm['cpuP90'] = null
+    new_vm['memAverage'] = null
+    new_vm['memMaximum'] = null
+    new_vm['memMinimum'] = null
+    new_vm['memP99'] = null
+    new_vm['memP95'] = null
+    new_vm['memP90'] = null
 
-    if (cpu_stats_by_resource[id] != undefined) {
-      new_vm["cpuAverage"] = cpu_stats_by_resource[id]['cpuAverage']
-      new_vm["cpuMaximum"] = cpu_stats_by_resource[id]['cpuMaximum']
-      new_vm["cpuMinimum"] = cpu_stats_by_resource[id]['cpuMinimum']
-      new_vm["cpuP99"] = cpu_stats_by_resource[id]['cpuP99']
-      new_vm["cpuP95"] = cpu_stats_by_resource[id]['cpuP95']
-      new_vm["cpuP90"] = cpu_stats_by_resource[id]['cpuP90']
-    }
-
-    if (mem_stats_by_resource[id] != undefined) {
-      new_vm["memAverage"] = cpu_stats_by_resource[id]['cpuAverage']
-      new_vm["memMaximum"] = cpu_stats_by_resource[id]['cpuMaximum']
-      new_vm["memMinimum"] = cpu_stats_by_resource[id]['cpuMinimum']
-      new_vm["memP99"] = cpu_stats_by_resource[id]['cpuP99']
-      new_vm["memP95"] = cpu_stats_by_resource[id]['cpuP95']
-      new_vm["memP90"] = cpu_stats_by_resource[id]['cpuP90']
+    if (ds_parsed_stats[vm['id']]) {
+      new_vm['cpuAverage'] = ds_parsed_stats[vm['id']]['cpuAverage'] ? ds_parsed_stats[vm['id']]['cpuAverage'] : null
+      new_vm['cpuMaximum'] = ds_parsed_stats[vm['id']]['cpuMaximum'] ? ds_parsed_stats[vm['id']]['cpuMaximum'] : null
+      new_vm['cpuMinimum'] = ds_parsed_stats[vm['id']]['cpuMinimum'] ? ds_parsed_stats[vm['id']]['cpuMinimum'] : null
+      new_vm['cpuP99'] = ds_parsed_stats[vm['id']]['cpuP99'] ? ds_parsed_stats[vm['id']]['cpuP99'] : null
+      new_vm['cpuP95'] = ds_parsed_stats[vm['id']]['cpuP95'] ? ds_parsed_stats[vm['id']]['cpuP95'] : null
+      new_vm['cpuP90'] = ds_parsed_stats[vm['id']]['cpuP90'] ? ds_parsed_stats[vm['id']]['cpuP90'] : null
+      new_vm['memAverage'] = ds_parsed_stats[vm['id']]['memAverage'] ? ds_parsed_stats[vm['id']]['memAverage'] : null
+      new_vm['memMaximum'] = ds_parsed_stats[vm['id']]['memMaximum'] ? ds_parsed_stats[vm['id']]['memMaximum'] : null
+      new_vm['memMinimum'] = ds_parsed_stats[vm['id']]['memMinimum'] ? ds_parsed_stats[vm['id']]['memMinimum'] : null
+      new_vm['memP99'] = ds_parsed_stats[vm['id']]['memP99'] ? ds_parsed_stats[vm['id']]['memP99'] : null
+      new_vm['memP95'] = ds_parsed_stats[vm['id']]['memP95'] ? ds_parsed_stats[vm['id']]['memP95'] : null
+      new_vm['memP90'] = ds_parsed_stats[vm['id']]['memP90'] ? ds_parsed_stats[vm['id']]['memP90'] : null
     }
 
     return new_vm
@@ -1023,6 +1031,7 @@ script "js_idle_vms", type:"javascript" do
   _.each(idle_vms, function(vm) {
     savings = 0.0
     if (ds_vm_costs_grouped[vm['id'].toLowerCase()]) { savings = ds_vm_costs_grouped[vm['id'].toLowerCase()] }
+    if (ds_vm_costs_grouped[vm['name'].toLowerCase()]) { savings = ds_vm_costs_grouped[vm['name'].toLowerCase()] }
 
     if (savings >= param_min_savings) {
       total_savings += savings
@@ -1095,7 +1104,7 @@ script "js_idle_vms", type:"javascript" do
   findings = [
     "Out of ", instances_total, " Google virtual machines analyzed, ",
     idle_total, " (", idle_percentage,
-    ") ", idle_verb, " idle and recommended for stopping. "
+    ") ", verb, " idle and recommended for stopping. "
   ].join('')
 
   message_boolean = param_stats_check_both == "Both CPU and Memory" ? "and" : "or"
@@ -1225,7 +1234,7 @@ script "js_underutil_vms", type:"javascript" do
   types_by_family = {}
 
   _.each(ds_google_instance_sizes, function(size) {
-    types_by_family[size['machineType']] = size
+    types_by_machinetype[size['name']] = size
 
     if (types_by_family[size['family']] == undefined) { types_by_family[size['family']] = [] }
     types_by_family[size['family']].push(size)
@@ -1336,13 +1345,14 @@ script "js_underutil_vms", type:"javascript" do
     }
 
     if (types_by_family[vm['family']] && types_by_machinetype[vm['machineType']]) {
-      current_type = types_by_machinetype[vm['resourceType']]
+      current_type = types_by_machinetype[vm['machineType']]
       current_cores = types_by_machinetype[vm['machineType']]['specs']['guestCpus']
-      current_memory = types_by_machinetype[vm['memoryGb']]['specs']['memoryGb']
+      current_mem = types_by_machinetype[vm['machineType']]['specs']['memoryGb']
+      optimal_cores = current_cores
+      optimal_mem = current_mem
 
       // Calculate the optimal number of cores to get CPU usage above user-specified threshold
       if (checking_cpu) {
-        optimal_cores = current_cores
         temp_stat = cpu_test_stat
 
         while (optimal_cores > 1 && temp_stat <= param_stats_underutil_threshold_cpu_value) {
@@ -1353,7 +1363,6 @@ script "js_underutil_vms", type:"javascript" do
 
       // Calculate the optimal GB of memory to get memory usage above user-specified threshold
       if (checking_mem) {
-        optimal_mem = current_mem
         temp_stat = mem_test_stat
 
         while (optimal_mem > 1 && temp_stat <= param_stats_underutil_threshold_mem_value) {
@@ -1403,8 +1412,12 @@ script "js_underutil_vms", type:"javascript" do
       newPrice = ds_google_instance_prices[newResourceType]
 
       // Get current monthly cost of instance and calculate savings
-      if (newResourceType != resourceType && ds_vm_costs_grouped[vm['id'].toLowerCase()]) {
-        monthly_cost = ds_vm_costs_grouped[vm['id'].toLowerCase()]
+      if (newResourceType != resourceType) {
+        monthly_cost = 0.0
+        if (ds_vm_costs_grouped[vm['id'].toLowerCase()]) { monthly_cost = ds_vm_costs_grouped[vm['id'].toLowerCase()] }
+        if (ds_vm_costs_grouped[vm['name'].toLowerCase()]) { monthly_cost = ds_vm_costs_grouped[vm['name'].toLowerCase()] }
+
+        monthly_cost = ds_vm_costs_grouped[vm['id'].toLowerCase()] ? ds_vm_costs_grouped[vm['id'].toLowerCase()] : 0.0
 
         // Estimate change in cost based on percentage difference of list prices
         new_cost = monthly_cost * (newPrice / currentPrice)
@@ -1480,17 +1493,31 @@ script "js_underutil_vms", type:"javascript" do
   underutil_total = result.length
   underutil_percentage = (underutil_total / instances_total * 100).toFixed(2).toString() + '%'
 
-  verb = instances_total == 1 ? "is" : "are"
+  noun = instances_total == 1 ? "virtual machine" : "virtual machines"
+  verb = underutil_total == 1 ? "is" : "are"
 
   findings = [
-    "Out of ", instances_total, " Google virtual machines analyzed, ",
+    "Out of ", instances_total, " Google ", noun, " analyzed, ",
     underutil_total, " (", underutil_percentage,
-    ") ", idle_verb, " underutilized and recommended for downsizing. "
+    ") ", verb, " underutilized and recommended for downsizing. "
   ].join('')
 
   message_boolean = param_stats_check_both == "Both CPU and Memory" ? "and" : "or"
 
-  if (param_stats_idle_threshold_cpu_value != -1 && param_stats_idle_threshold_mem_value != -1) {
+  testing_idle_cpu = param_stats_idle_threshold_cpu_value != -1
+  testing_idle_mem = param_stats_idle_threshold_mem_value != -1
+  testing_idle_both = testing_idle_cpu && testing_idle_mem
+  testing_idle = testing_idle_cpu || testing_idle_mem
+
+  testing_underutil_cpu = param_stats_underutil_threshold_cpu_value != -1
+  testing_underutil_mem = param_stats_underutil_threshold_mem_value != -1
+  testing_underutil_both = testing_underutil_cpu && testing_underutil_mem
+  testing_underutil = testing_underutil_cpu || testing_underutil_mem
+
+  analysis = "No underutilized virtual machines were reported because neither CPU nor Memory metrics were configured for analysis. "
+  lookback = "\n\n"
+
+  if (testing_idle_both && testing_underutil_both) {
     analysis = [
       "A virtual machine is considered underutilized if its CPU usage (",
       param_stats_threshold.toLowerCase(), ") is below ",
@@ -1507,7 +1534,9 @@ script "js_underutil_vms", type:"javascript" do
       "CPU and memory usage was analyzed over the last ",
       param_stats_lookback.toString(), " days.\n\n"
     ].join('')
-  } else if (param_stats_idle_threshold_cpu_value != -1 && param_stats_idle_threshold_mem_value == -1) {
+  }
+
+  if (testing_idle_cpu && testing_underutil_cpu && !testing_underutil_mem) {
     analysis = [
       "A virtual machine is considered underutilized if its CPU usage (",
       param_stats_threshold.toLowerCase(), ") is below ",
@@ -1520,7 +1549,9 @@ script "js_underutil_vms", type:"javascript" do
       "CPU usage was analyzed over the last ",
       param_stats_lookback.toString(), " days.\n\n"
     ].join('')
-  } else if (param_stats_idle_threshold_cpu_value == -1 && param_stats_idle_threshold_mem_value != -1) {
+  }
+
+  if (testing_idle_mem && testing_underutil_mem && !testing_underutil_cpu) {
     analysis  = [
       "A virtual machine is considered underutilized if its memory usage (",
       param_stats_threshold.toLowerCase(), ") is below ",
@@ -1533,9 +1564,48 @@ script "js_underutil_vms", type:"javascript" do
       "Memory usage was analyzed over the last ",
       param_stats_lookback.toString(), " days.\n\n"
     ].join('')
-  } else {
-    analysis = "No underutilized virtual machines were reported because neither CPU nor Memory metrics were configured for analysis. "
-    lookback = "\n\n"
+  }
+
+  if (!testing_idle && testing_underutil_both) {
+    analysis = [
+      "A virtual machine is considered underutilized if its CPU usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_underutil_threshold_cpu_value, "% ", message_boolean,
+      " its memory usage (", param_stats_threshold.toLowerCase(),
+      ") is below ", param_stats_underutil_threshold_mem_value,
+      "%. "
+    ].join('')
+
+    lookback = [
+      "CPU and memory usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  }
+
+  if (!testing_idle && testing_underutil_cpu && !testing_underutil_mem) {
+    analysis = [
+      "A virtual machine is considered underutilized if its CPU usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_underutil_threshold_cpu_value, "%. "
+    ].join('')
+
+    lookback = [
+      "CPU and memory usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  }
+
+  if (!testing_idle && !testing_underutil_cpu && testing_underutil_mem) {
+    analysis = [
+      "A virtual machine is considered underutilized if its memory usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_underutil_threshold_mem_value, "%. "
+    ].join('')
+
+    lookback = [
+      "CPU and memory usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
   }
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
