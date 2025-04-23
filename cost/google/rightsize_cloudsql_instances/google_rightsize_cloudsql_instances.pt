@@ -520,46 +520,12 @@ datasource "ds_cpu_stats" do
   request do
     run_script $js_stats, val(iter_item, "id"), $param_stats_lookback, "cloudsql.googleapis.com/database/cpu/utilization"
   end
-  result do
-    encoding "json"
-    collect jmes_path(response, "timeSeriesData[*]") do
-      field "resourceName", jmes_path(col_item, "labelValues[3].stringValue")
-      field "resourceID", jmes_path(col_item, "labelValues[2].stringValue")
-      field "zone", jmes_path(col_item, "labelValues[1].stringValue")
-      field "cpuAverage", prod(jmes_path(col_item, "pointData[0].values[0].doubleValue"), 100)
-      field "cpuMaximum", prod(jmes_path(col_item, "pointData[0].values[1].doubleValue"), 100)
-      field "cpuMinimum", prod(jmes_path(col_item, "pointData[0].values[2].doubleValue"), 100)
-      field "cpuP99", prod(jmes_path(col_item, "pointData[0].values[3].doubleValue"), 100)
-      field "cpuP95", prod(jmes_path(col_item, "pointData[0].values[4].doubleValue"), 100)
-      field "cpuP90", prod(jmes_path(col_item, "pointData[0].values[5].doubleValue"), 100)
-      field "projectId", val(iter_item, "id")
-      field "projectName", val(iter_item, "name")
-      field "projectNumber", val(iter_item, "number")
-    end
-  end
 end
 
 datasource "ds_mem_stats" do
   iterate $ds_google_projects_filtered
   request do
     run_script $js_stats, val(iter_item, "id"), $param_stats_lookback, "cloudsql.googleapis.com/database/memory/utilization"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "timeSeriesData[*]") do
-      field "resourceName", jmes_path(col_item, "labelValues[3].stringValue")
-      field "resourceID", jmes_path(col_item, "labelValues[2].stringValue")
-      field "zone", jmes_path(col_item, "labelValues[1].stringValue")
-      field "memAverage", prod(jmes_path(col_item, "pointData[0].values[0].doubleValue"), 100)
-      field "memMaximum", prod(jmes_path(col_item, "pointData[0].values[1].doubleValue"), 100)
-      field "memMinimum", prod(jmes_path(col_item, "pointData[0].values[2].doubleValue"), 100)
-      field "memP99", prod(jmes_path(col_item, "pointData[0].values[3].doubleValue"), 100)
-      field "memP95", prod(jmes_path(col_item, "pointData[0].values[4].doubleValue"), 100)
-      field "memP90", prod(jmes_path(col_item, "pointData[0].values[5].doubleValue"), 100)
-      field "projectId", val(iter_item, "id")
-      field "projectName", val(iter_item, "name")
-      field "projectNumber", val(iter_item, "number")
-    end
   end
 end
 
@@ -599,64 +565,106 @@ script "js_stats", type: "javascript" do
 EOS
 end
 
+datasource "ds_parsed_stats" do
+  run_script $js_parsed_stats, $ds_cpu_stats, $ds_mem_stats
+end
+
+script "js_parsed_stats", type: "javascript" do
+  parameters "ds_cpu_stats", "ds_mem_stats"
+  result "result"
+  code <<-EOS
+  result = {}
+
+  _.each(ds_cpu_stats, function(entry) {
+    cpu_descriptors = _.pluck(entry['timeSeriesDescriptor']['labelDescriptors'], 'key')
+
+    _.each(entry["timeSeriesData"], function(item) {
+      labels = {}
+
+      for (var i = 0; i < cpu_descriptors.length; i++) {
+        labels[cpu_descriptors[i]] = item['labelValues'][i]['stringValue']
+      }
+
+      instanceId = labels['resource.instance_id']
+
+      if (instanceId) {
+        if (result[instanceId] == undefined) { result[instanceId] = {} }
+
+        result[instanceId]['cpuAverage'] = Number(item['pointData'][0]['values'][0]['doubleValue']) * 100
+        result[instanceId]['cpuMaximum'] = Number(item['pointData'][0]['values'][1]['doubleValue']) * 100
+        result[instanceId]['cpuMinimum'] = Number(item['pointData'][0]['values'][2]['doubleValue']) * 100
+        result[instanceId]['cpuP99'] = Number(item['pointData'][0]['values'][3]['doubleValue']) * 100
+        result[instanceId]['cpuP95'] = Number(item['pointData'][0]['values'][4]['doubleValue']) * 100
+        result[instanceId]['cpuP90'] = Number(item['pointData'][0]['values'][5]['doubleValue']) * 100
+      }
+    })
+  })
+
+  _.each(ds_mem_stats, function(entry) {
+    mem_descriptors = _.pluck(entry['timeSeriesDescriptor']['labelDescriptors'], 'key')
+
+    _.each(entry["timeSeriesData"], function(item) {
+      labels = {}
+
+      for (var i = 0; i < mem_descriptors.length; i++) {
+        labels[mem_descriptors[i]] = item['labelValues'][i]['stringValue']
+      }
+
+      instanceId = labels['resource.instance_id']
+
+      if (instanceId) {
+        if (result[instanceId] == undefined) { result[instanceId] = {} }
+
+        result[instanceId]['memAverage'] = Number(item['pointData'][0]['values'][0]['doubleValue'])
+        result[instanceId]['memMaximum'] = Number(item['pointData'][0]['values'][1]['doubleValue'])
+        result[instanceId]['memMinimum'] = Number(item['pointData'][0]['values'][2]['doubleValue'])
+        result[instanceId]['memP99'] = Number(item['pointData'][0]['values'][3]['doubleValue'])
+        result[instanceId]['memP95'] = Number(item['pointData'][0]['values'][4]['doubleValue'])
+        result[instanceId]['memP90'] = Number(item['pointData'][0]['values'][5]['doubleValue'])
+      }
+    })
+  })
+EOS
+end
+
 datasource "ds_cloudsql_instances_with_stats" do
-  run_script $js_cloudsql_instances_with_stats, $ds_cloudsql_instances_region_filtered, $ds_cpu_stats, $ds_mem_stats
+  run_script $js_cloudsql_instances_with_stats, $ds_cloudsql_instances_region_filtered, $ds_parsed_stats
 end
 
 script "js_cloudsql_instances_with_stats", type: "javascript" do
-  parameters "ds_cloudsql_instances_region_filtered", "ds_cpu_stats", "ds_mem_stats"
+  parameters "ds_cloudsql_instances_region_filtered", "ds_parsed_stats"
   result "result"
   code <<-EOS
-  cpu_stats_by_resource = {}
-
-  _.each(ds_cpu_stats, function(item) {
-    id = item['resourceID'].toLowerCase()
-    cpu_stats_by_resource[id] = item
-  })
-
-  mem_stats_by_resource = {}
-
-  _.each(ds_mem_stats, function(item) {
-    id = item['resourceID'].toLowerCase()
-    mem_stats_by_resource[id] = item
-  })
-
   result = _.map(ds_cloudsql_instances_region_filtered, function(instance) {
-    new_instance = {
-      cpuAverage: null,
-      cpuMaximum: null,
-      cpuMinimum: null,
-      cpuP99: null,
-      cpuP95: null,
-      cpuP90: null,
-      memAverage: null,
-      memMaximum: null,
-      memMinimum: null,
-      memP99: null,
-      memP95: null,
-      memP90: null
-    }
-
+    new_instance = {}
     _.each(_.keys(instance), function(key) { new_instance[key] = instance[key] })
 
-    id = instance['resourceID'].toLowerCase()
+    new_instance['cpuAverage'] = null
+    new_instance['cpuMaximum'] = null
+    new_instance['cpuMinimum'] = null
+    new_instance['cpuP99'] = null
+    new_instance['cpuP95'] = null
+    new_instance['cpuP90'] = null
+    new_instance['memAverage'] = null
+    new_instance['memMaximum'] = null
+    new_instance['memMinimum'] = null
+    new_instance['memP99'] = null
+    new_instance['memP95'] = null
+    new_instance['memP90'] = null
 
-    if (cpu_stats_by_resource[id] != undefined) {
-      new_instance["cpuAverage"] = cpu_stats_by_resource[id]['cpuAverage']
-      new_instance["cpuMaximum"] = cpu_stats_by_resource[id]['cpuMaximum']
-      new_instance["cpuMinimum"] = cpu_stats_by_resource[id]['cpuMinimum']
-      new_instance["cpuP99"] = cpu_stats_by_resource[id]['cpuP99']
-      new_instance["cpuP95"] = cpu_stats_by_resource[id]['cpuP95']
-      new_instance["cpuP90"] = cpu_stats_by_resource[id]['cpuP90']
-    }
-
-    if (mem_stats_by_resource[id] != undefined) {
-      new_instance["memAverage"] = cpu_stats_by_resource[id]['cpuAverage']
-      new_instance["memMaximum"] = cpu_stats_by_resource[id]['cpuMaximum']
-      new_instance["memMinimum"] = cpu_stats_by_resource[id]['cpuMinimum']
-      new_instance["memP99"] = cpu_stats_by_resource[id]['cpuP99']
-      new_instance["memP95"] = cpu_stats_by_resource[id]['cpuP95']
-      new_instance["memP90"] = cpu_stats_by_resource[id]['cpuP90']
+    if (ds_parsed_stats[vm['resourceID']]) {
+      new_instance['cpuAverage'] = ds_parsed_stats[vm['resourceID']]['cpuAverage'] ? ds_parsed_stats[vm['resourceID']]['cpuAverage'] : null
+      new_instance['cpuMaximum'] = ds_parsed_stats[vm['resourceID']]['cpuMaximum'] ? ds_parsed_stats[vm['resourceID']]['cpuMaximum'] : null
+      new_instance['cpuMinimum'] = ds_parsed_stats[vm['resourceID']]['cpuMinimum'] ? ds_parsed_stats[vm['resourceID']]['cpuMinimum'] : null
+      new_instance['cpuP99'] = ds_parsed_stats[vm['resourceID']]['cpuP99'] ? ds_parsed_stats[vm['resourceID']]['cpuP99'] : null
+      new_instance['cpuP95'] = ds_parsed_stats[vm['resourceID']]['cpuP95'] ? ds_parsed_stats[vm['resourceID']]['cpuP95'] : null
+      new_instance['cpuP90'] = ds_parsed_stats[vm['resourceID']]['cpuP90'] ? ds_parsed_stats[vm['resourceID']]['cpuP90'] : null
+      new_instance['memAverage'] = ds_parsed_stats[vm['resourceID']]['memAverage'] ? ds_parsed_stats[vm['resourceID']]['memAverage'] : null
+      new_instance['memMaximum'] = ds_parsed_stats[vm['resourceID']]['memMaximum'] ? ds_parsed_stats[vm['resourceID']]['memMaximum'] : null
+      new_instance['memMinimum'] = ds_parsed_stats[vm['resourceID']]['memMinimum'] ? ds_parsed_stats[vm['resourceID']]['memMinimum'] : null
+      new_instance['memP99'] = ds_parsed_stats[vm['resourceID']]['memP99'] ? ds_parsed_stats[vm['resourceID']]['memP99'] : null
+      new_instance['memP95'] = ds_parsed_stats[vm['resourceID']]['memP95'] ? ds_parsed_stats[vm['resourceID']]['memP95'] : null
+      new_instance['memP90'] = ds_parsed_stats[vm['resourceID']]['memP90'] ? ds_parsed_stats[vm['resourceID']]['memP90'] : null
     }
 
     return new_instance
@@ -1101,7 +1109,7 @@ script "js_underutil_cloudsql", type:"javascript" do
   types_by_family = {}
 
   _.each(ds_google_instance_sizes, function(size) {
-    types_by_family[size['machineType']] = size
+    types_by_machinetype[size['name']] = size
 
     if (types_by_family[size['family']] == undefined) { types_by_family[size['family']] = [] }
     types_by_family[size['family']].push(size)
@@ -1110,14 +1118,14 @@ script "js_underutil_cloudsql", type:"javascript" do
   checking_cpu = param_stats_underutil_threshold_cpu_value != -1
   checking_mem = param_stats_underutil_threshold_mem_value != -1
 
-  // Find underutilized Cloud SQL instances. Purposely exclude anything we've already determined is idle
-  idle_cloudsql_ids = _.compact(_.pluck(ds_idle_cloudsql, "resourceID"))
+  // Find underutilized instances. Purposely exclude anything we've already determined is idle
+  idle_instance_ids = _.compact(_.pluck(ds_idle_cloudsql, "resourceID"))
 
-  non_idle_cloudsql = _.reject(ds_cloudsql_instances_with_stats, function(instance) {
-    return _.contains(idle_cloudsql_ids, instance['id'])
+  non_idle_instances = _.reject(ds_cloudsql_instances_with_stats, function(instance) {
+    return _.contains(idle_instance_ids, instance['resourceID'])
   })
 
-  underutil_cloudsql = _.filter(non_idle_cloudsql, function(instance) {
+  underutil_instances = _.filter(non_idle_instances, function(instance) {
     underutil = false
     underutil_cpu = false
     underutil_mem = false
@@ -1178,10 +1186,10 @@ script "js_underutil_cloudsql", type:"javascript" do
   result = []
   total_savings = 0.0
 
-  _.each(underutil_cloudsql, function(instance) {
-    family = instance['resourceType'].split('-')[0]
+  _.each(underutil_instances, function(instance) {
     resourceType = instance['resourceType']
     newResourceType = instance['resourceType']
+    family = resourceType.split('-')[0]
     savings = 0.0
 
     if (checking_cpu) {
@@ -1212,14 +1220,15 @@ script "js_underutil_cloudsql", type:"javascript" do
       }
     }
 
-    if (types_by_family[family] && types_by_machinetype[instance['machineType']]) {
+    if (types_by_family[family] && types_by_machinetype[instance['resourceType']]) {
       current_type = types_by_machinetype[instance['resourceType']]
-      current_cores = types_by_machinetype[instance['machineType']]['specs']['guestCpus']
-      current_memory = types_by_machinetype[instance['memoryGb']]['specs']['memoryGb']
+      current_cores = types_by_machinetype[instance['resourceType']]['specs']['guestCpus']
+      current_mem = types_by_machinetype[instance['resourceType']]['specs']['memoryGb']
+      optimal_cores = current_cores
+      optimal_mem = current_mem
 
       // Calculate the optimal number of cores to get CPU usage above user-specified threshold
       if (checking_cpu) {
-        optimal_cores = current_cores
         temp_stat = cpu_test_stat
 
         while (optimal_cores > 1 && temp_stat <= param_stats_underutil_threshold_cpu_value) {
@@ -1230,7 +1239,6 @@ script "js_underutil_cloudsql", type:"javascript" do
 
       // Calculate the optimal GB of memory to get memory usage above user-specified threshold
       if (checking_mem) {
-        optimal_mem = current_mem
         temp_stat = mem_test_stat
 
         while (optimal_mem > 1 && temp_stat <= param_stats_underutil_threshold_mem_value) {
@@ -1303,7 +1311,7 @@ script "js_underutil_cloudsql", type:"javascript" do
       }
 
       recommendationDetails = [
-        "Resize Cloud SQL instance ", instance["resourceName"], " ",
+        "Resize Google Cloud SQL instance ", instance["resourceName"], " ",
         "in Google Project ", instance["projectName"], " ",
         "(", instance["projectId"], ") ",
         "from ", resourceType, " ",
@@ -1362,17 +1370,31 @@ script "js_underutil_cloudsql", type:"javascript" do
   underutil_total = result.length
   underutil_percentage = (underutil_total / instances_total * 100).toFixed(2).toString() + '%'
 
-  verb = instances_total == 1 ? "is" : "are"
+  noun = instances_total == 1 ? "Cloud SQL instance" : "Cloud SQL instances"
+  verb = underutil_total == 1 ? "is" : "are"
 
   findings = [
-    "Out of ", instances_total, " Google Cloud SQL instances analyzed, ",
+    "Out of ", instances_total, " Google ", noun, " analyzed, ",
     underutil_total, " (", underutil_percentage,
     ") ", verb, " underutilized and recommended for downsizing. "
   ].join('')
 
   message_boolean = param_stats_check_both == "Both CPU and Memory" ? "and" : "or"
 
-  if (param_stats_idle_threshold_cpu_value != -1 && param_stats_idle_threshold_mem_value != -1) {
+  testing_idle_cpu = param_stats_idle_threshold_cpu_value != -1
+  testing_idle_mem = param_stats_idle_threshold_mem_value != -1
+  testing_idle_both = testing_idle_cpu && testing_idle_mem
+  testing_idle = testing_idle_cpu || testing_idle_mem
+
+  testing_underutil_cpu = param_stats_underutil_threshold_cpu_value != -1
+  testing_underutil_mem = param_stats_underutil_threshold_mem_value != -1
+  testing_underutil_both = testing_underutil_cpu && testing_underutil_mem
+  testing_underutil = testing_underutil_cpu || testing_underutil_mem
+
+  analysis = "No underutilized Cloud SQL instances were reported because neither CPU nor Memory metrics were configured for analysis. "
+  lookback = "\n\n"
+
+  if (testing_idle_both && testing_underutil_both) {
     analysis = [
       "A Cloud SQL instance is considered underutilized if its CPU usage (",
       param_stats_threshold.toLowerCase(), ") is below ",
@@ -1389,7 +1411,9 @@ script "js_underutil_cloudsql", type:"javascript" do
       "CPU and memory usage was analyzed over the last ",
       param_stats_lookback.toString(), " days.\n\n"
     ].join('')
-  } else if (param_stats_idle_threshold_cpu_value != -1 && param_stats_idle_threshold_mem_value == -1) {
+  }
+
+  if (testing_idle_cpu && testing_underutil_cpu && !testing_underutil_mem) {
     analysis = [
       "A Cloud SQL instance is considered underutilized if its CPU usage (",
       param_stats_threshold.toLowerCase(), ") is below ",
@@ -1402,7 +1426,9 @@ script "js_underutil_cloudsql", type:"javascript" do
       "CPU usage was analyzed over the last ",
       param_stats_lookback.toString(), " days.\n\n"
     ].join('')
-  } else if (param_stats_idle_threshold_cpu_value == -1 && param_stats_idle_threshold_mem_value != -1) {
+  }
+
+  if (testing_idle_mem && testing_underutil_mem && !testing_underutil_cpu) {
     analysis  = [
       "A Cloud SQL instance is considered underutilized if its memory usage (",
       param_stats_threshold.toLowerCase(), ") is below ",
@@ -1415,9 +1441,48 @@ script "js_underutil_cloudsql", type:"javascript" do
       "Memory usage was analyzed over the last ",
       param_stats_lookback.toString(), " days.\n\n"
     ].join('')
-  } else {
-    analysis = "No underutilized Cloud SQL instances were reported because neither CPU nor Memory metrics were configured for analysis. "
-    lookback = "\n\n"
+  }
+
+  if (!testing_idle && testing_underutil_both) {
+    analysis = [
+      "A Cloud SQL instance is considered underutilized if its CPU usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_underutil_threshold_cpu_value, "% ", message_boolean,
+      " its memory usage (", param_stats_threshold.toLowerCase(),
+      ") is below ", param_stats_underutil_threshold_mem_value,
+      "%. "
+    ].join('')
+
+    lookback = [
+      "CPU and memory usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  }
+
+  if (!testing_idle && testing_underutil_cpu && !testing_underutil_mem) {
+    analysis = [
+      "A Cloud SQL instance is considered underutilized if its CPU usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_underutil_threshold_cpu_value, "%. "
+    ].join('')
+
+    lookback = [
+      "CPU and memory usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  }
+
+  if (!testing_idle && !testing_underutil_cpu && testing_underutil_mem) {
+    analysis = [
+      "A Cloud SQL instance is considered underutilized if its memory usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_underutil_threshold_mem_value, "%. "
+    ].join('')
+
+    lookback = [
+      "CPU and memory usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
   }
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
