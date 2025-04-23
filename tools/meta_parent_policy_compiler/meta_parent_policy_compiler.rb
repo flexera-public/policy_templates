@@ -163,7 +163,6 @@ default_child_policy_template_files = [
   "../../cost/google/cud_report/google_committed_use_discount_report.pt",
   "../../cost/google/old_snapshots/google_delete_old_snapshots.pt",
   "../../cost/google/unused_disks/google_unused_disks.pt",
-  "../../cost/google/unused_ip_addresses/google_unused_ip_addresses.pt",
   "../../operational/google/label_cardinality/google_label_cardinality.pt",
   "../../operational/google/overutilized_vms/google_overutilized_vms.pt",
   "../../security/google/public_buckets/google_public_buckets.pt"

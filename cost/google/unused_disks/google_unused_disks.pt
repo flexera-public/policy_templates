@@ -5,7 +5,7 @@ short_description "Reports on unused Google disks and, optionally, deletes them.
 long_description ""
 category "Cost"
 severity "low"
-default_frequency "daily"
+default_frequency "weekly"
 info(
   version: "0.1.0",
   provider: "Google",
@@ -370,7 +370,6 @@ datasource "ds_disks" do
     pagination $pagination_google
     host "compute.googleapis.com"
     path join(["/compute/v1/projects/", val(iter_item, "projectId"), "/zones/", val(iter_item, "zone"), "/disks"])
-    query "filter", "NOT users:*"
     ignore_status [403, 404]
   end
   result do
@@ -387,6 +386,7 @@ datasource "ds_disks" do
       field "selfLink", jmes_path(col_item, "selfLink")
       field "type", jmes_path(col_item, "type")
       field "labels", jmes_path(col_item, "labels")
+      field "users", jmes_path(col_item, "users")
       field "attachDate", jmes_path(col_item, "lastAttachTimestamp")
       field "detachDate", jmes_path(col_item, "lastDetachTimestamp")
       field "sourceImage", jmes_path(col_item, "sourceImage")
@@ -403,12 +403,26 @@ datasource "ds_disks" do
   end
 end
 
-datasource "ds_disks_label_filtered" do
-  run_script $js_disks_label_filtered, $ds_disks, $param_exclusion_labels, $param_exclusion_labels_boolean
+datasource "ds_unattached_disks" do
+  run_script $js_unattached_disks, $ds_disks
 end
 
-script "js_disks_label_filtered", type: "javascript" do
-  parameters "ds_disks", "param_exclusion_labels", "param_exclusion_labels_boolean"
+script "js_unattached_disks", type: "javascript" do
+  parameters "ds_disks"
+  result "result"
+  code <<-EOS
+  result = _.reject(ds_disks, function(disk) {
+    return disk['users'] && disk['users'].length > 0
+  })
+EOS
+end
+
+datasource "ds_unattached_disks_label_filtered" do
+  run_script $js_unattached_disks_label_filtered, $ds_unattached_disks, $param_exclusion_labels, $param_exclusion_labels_boolean
+end
+
+script "js_unattached_disks_label_filtered", type: "javascript" do
+  parameters "ds_unattached_disks", "param_exclusion_labels", "param_exclusion_labels_boolean"
   result "result"
   code <<-EOS
   comparators = _.map(param_exclusion_labels, function(item) {
@@ -442,7 +456,7 @@ script "js_disks_label_filtered", type: "javascript" do
   })
 
   if (param_exclusion_labels.length > 0) {
-    result = _.reject(ds_disks, function(resource) {
+    result = _.reject(ds_unattached_disks, function(resource) {
       resource_labels = {}
       if (typeof(resource['labels']) == 'object') { resource_labels = resource['labels'] }
 
@@ -475,22 +489,22 @@ script "js_disks_label_filtered", type: "javascript" do
       return all_labels_found || any_labels_found
     })
   } else {
-    result = ds_disks
+    result = ds_unattached_disks
   }
 EOS
 end
 
 datasource "ds_unused_disks" do
-  run_script $js_unused_disks, $ds_disks_label_filtered, $param_days_unattached
+  run_script $js_unused_disks, $ds_unattached_disks_label_filtered, $param_days_unattached
 end
 
 script "js_unused_disks", type: "javascript" do
-  parameters "ds_disks_label_filtered", "param_days_unattached"
+  parameters "ds_unattached_disks_label_filtered", "param_days_unattached"
   result "result"
   code <<-'EOS'
   result = []
 
-  _.each(ds_disks_label_filtered, function(disk) {
+  _.each(ds_unattached_disks_label_filtered, function(disk) {
     new_disk = {}
     _.each(_.keys(disk), function(key) { new_disk[key] = disk[key] })
 
@@ -653,8 +667,10 @@ script "js_incident", type: "javascript" do
   total_savings = 0.0
 
   _.each(ds_unused_disks, function(disk) {
-    id = disk['id'].toLowerCase()
-    savings = ds_disk_costs_grouped[id] ? ds_disk_costs_grouped[id] : 0.0
+    savings = 0.0
+
+    if (ds_disk_costs_grouped[disk['id'].toLowerCase()]) { savings = ds_disk_costs_grouped[disk['id'].toLowerCase()] }
+    if (ds_disk_costs_grouped[disk['name'].toLowerCase()]) { savings = ds_disk_costs_grouped[disk['name'].toLowerCase()] }
 
     if (savings >= param_min_savings) {
       total_savings += savings
@@ -709,10 +725,13 @@ script "js_incident", type: "javascript" do
   total_unused_disks = result.length
   unused_disks_percentage = (total_unused_disks / total_disks * 100).toFixed(2).toString() + '%'
 
+  noun = total_disks == 1 ? "disk" : "disks"
+  verb = total_unused_disks == 1 ? "is" : "are"
+
   findings = [
-    "Out of ", total_disks, " persistent disks analyzed, ",
+    "Out of ", total_disks, " persistent ", noun, " analyzed, ",
     total_unused_disks, " (", unused_disks_percentage,
-    ") are unused and recommended for deletion. "
+    ") ", verb, " unused and recommended for deletion. "
   ].join('')
 
   if (param_days_unattached != 0) {
@@ -809,9 +828,6 @@ policy "pol_unused_disks" do
       end
       field "tags" do
         label "Labels"
-      end
-      field "description" do
-        label "Description"
       end
       field "state" do
         label "Status"
