@@ -194,11 +194,11 @@ end
 
 # A datasource to help persist "context" across policy evaluation runs
 datasource "ds_context" do
-  run_script $js_context, $ds_policy_incident_context_details
+  run_script $js_context, $ds_policy_incident_context_details, $param_batch_count
 end
 
 script "js_context", type: "javascript" do
-  parameters "ds_policy_incident_context_details"
+  parameters "ds_policy_incident_context_details", "param_batch_count"
   result "result"
   code <<-EOS
   var ctx = {};
@@ -215,7 +215,7 @@ script "js_context", type: "javascript" do
     ctx.batch_index = 0;
   } else {
     ctx.batch_index = parseInt(ctx.batch_index) + 1;
-    if (ctx.batch_index >= 4) { // assuming splitting into 4 batches.  Will be param later
+    if (ctx.batch_index >= param_batch_count) {
       ctx.batch_index = 0;
     }
   }
@@ -731,6 +731,46 @@ script "js_process_sync", type: "javascript" do
   EOS
 end
 
+# Filter to only the sync tasks which need changes
+datasource "ds_filtered_sync_tasks" do
+  run_script $js_filter_sync_tasks, $ds_process_sync
+end
+
+script "js_filter_sync_tasks", type: "javascript" do
+  parameters "ds_process_sync"
+  result "filtered_tasks"
+  code <<-EOS
+  var filtered_tasks = [];
+
+  _.each(ds_process_sync, function(task) {
+
+    // Check if group needs to be created
+    var needs_create = false;
+    if (task.target_group_id === null) {
+      needs_create = true;
+    }
+
+    // Check if any members need to be created or invited
+    var members_need_sync = _.filter(task.members, function(member) {
+      return member.action != "skip";
+    });
+
+    // Check if any roles need to be created
+    var roles_need_sync = _.filter(task.roles, function(role) {
+      return role.action != "skip";
+    });
+
+    // console.log("task="+JSON.stringify(task));
+    if (needs_create || (members_need_sync.length > 0) || (roles_need_sync.length > 0)) {
+      console.log("Appending to task list the group " + task.source_group.name + " in org " + task.target_org_id+". needs_create=" + needs_create + ", members_need_sync=" + members_need_sync.length + ", roles_need_sync=" + roles_need_sync.length);
+      filtered_tasks.push(task);
+    } else {
+      console.log("Skipping action for group " + task.source_group.name + " in org " + task.target_org_id+". needs_create=" + needs_create + ", members_need_sync=" + members_need_sync.length + ", roles_need_sync=" + roles_need_sync.length);
+    }
+  });
+  EOS
+end
+
 datasource "ds_process_sync_remove_roles" do
   run_script $js_process_sync_remove_roles, $ds_parent_group_roles, $ds_children_group_roles, $ds_process_sync
 end
@@ -785,7 +825,7 @@ end
 ###############################################################################
 
 policy "pol_group_sync" do
-  validate $ds_process_sync do
+  validate $ds_filtered_sync_tasks do
     summary_template "{{ len data }} groups being synchronized"
     detail_template <<-EOS
 {{ range data }}
@@ -982,14 +1022,13 @@ define sync_groups($data, $param_invitation_flow, $rs_org_id) do
     $rolesTotal = size($task["roles"])
     $membersIndex = 0
     $membersTotal = size($task["members"])
-
     $groupIndex = $groupIndex + 1
     if $groupIndex > 0
       $avg = (($duration / $groupIndex)/60)
       $estimatedDuration = " Estimated "+to_s($avg * $groupTotal)+"m Total"
       $estimatedDuration = $estimatedDuration + " with "+to_s($avg * ($groupTotal - $groupIndex))+"m Remaining"
     end
-    task_label("Group"+to_s($groupIndex)+"/"+to_s($groupTotal)+ " Role"+to_s($rolesIndex)+"/"+to_s($rolesTotal)+ " Member"+to_s($membersIndex)+"/"+to_s($membersTotal)+ $estimatedDuration)
+    task_label(" Group="+to_s($groupIndex)+"/"+to_s($groupTotal)+ " Role="+to_s($rolesIndex)+"/"+to_s($rolesTotal)+ " Member="+to_s($membersIndex)+"/"+to_s($membersTotal)+ $estimatedDuration)
     sub on_error: handle_error() do
       $child_group_id = ""
       $child_group_ref = ""
@@ -1041,7 +1080,7 @@ define sync_groups($data, $param_invitation_flow, $rs_org_id) do
               $$debug << "Group "+$task["target_group_name"]+" already exists in org "+$task["target_org_id"]+" ("+$child_group_ref+")"
             end
           else
-            call append_error("Error creating group "+to_json($child_group)+" on with payload "+to_json($group_payload)) # For debug
+            call append_error("Error creating group. org="+$task["target_org_id"]+" group_name="+$group["name"]+"child_group_ref="+$child_group_ref) # For debug
           end
         else
           if $$debug_enabled
