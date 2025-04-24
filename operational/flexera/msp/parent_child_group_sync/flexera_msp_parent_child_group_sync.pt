@@ -779,17 +779,32 @@ script "js_process_sync_remove_roles", type: "javascript" do
   parameters "ds_parent_group_roles", "ds_children_group_roles", "ds_process_sync"
   result "child_group_roles_to_remove"
   code <<-EOS
+  // Index the groups in child orgs which are managed by this policy
+  var ds_groups_indexed = _.groupBy(ds_process_sync, function(sync_task) {
+    return sync_task.target_group_ref;
+  });
+
   // Identify any role grants that exist in child but not in the parent
   var child_group_roles_to_remove = [];
   _.each(ds_children_group_roles, function(child_role) {
-    var existing_role = _.find(ds_parent_group_roles, function(parent_role) {
-      var child_group = _.find(ds_process_sync, function(sync_task) {
-        return sync_task.target_group_ref == child_role.group_ref;
+    // Get the sync task associated with the child role
+    var sync_task = ds_groups_indexed[child_role.group_ref] ? ds_groups_indexed[child_role.group_ref][0] : null; // There should only be 1 sync task per group_ref so grab the first item in list, or null if not found
+    if (!_.isObject(sync_task)) {
+      // If the sync task is not found, it means the group is not managed by this policy
+      console.log("No changes to role " + child_role.role.name + " in group " + child_role.group_ref + " in org " + child_role.org_id+" because the group is not managed by this policy.");
+    } else {
+      var role_in_parent_group = _.find(ds_parent_group_roles, function(parent_role) {
+        // Role name matches and the group_ref matches the parent group
+        return (parent_role.role.name == child_role.role.name) && (parent_role.group_ref == sync_task.source_group.ref);
       });
-      return child_group && parent_role.role.name == child_role.role.name;
-    });
-    if (!existing_role) {
-      child_group_roles_to_remove.push(child_role);
+      // Check if the role is not in the parent group AND the child group is managed by this policy
+      var role_exists_in_parent_group = _.isObject(role_in_parent_group);
+      if (!role_exists_in_parent_group && ds_groups_indexed[child_role.group_ref]) {
+        console.log("Removing role " + child_role.role.name + " in group " + child_role.group_ref + " in org " + child_role.org_id+" role_exists_in_parent_group="+role_exists_in_parent_group);
+        child_group_roles_to_remove.push(child_role);
+      } else {
+        console.log("No changes to role " + child_role.role.name + " in group " + child_role.group_ref + " in org " + child_role.org_id+" role_exists_in_parent_group="+role_exists_in_parent_group);
+      }
     }
   });
   EOS
@@ -803,18 +818,32 @@ script "js_process_sync_remove_members", type: "javascript" do
   parameters "ds_parent_group_members", "ds_children_group_members", "ds_process_sync"
   result "child_group_members_to_remove"
   code <<-EOS
+  // Index the groups in child orgs which are managed by this policy
+  var ds_groups_indexed = _.groupBy(ds_process_sync, function(sync_task) {
+    return sync_task.target_group_ref;
+  });
+
   // Identify any memberships that exist in child but not in the parent
   var child_group_members_to_remove = [];
-  // Loop through each child group member
   _.each(ds_children_group_members, function(child_member) {
-    var existing_member = _.find(ds_parent_group_members, function(parent_member) {
-      var child_group = _.find(ds_process_sync, function(sync_task) {
-        return sync_task.target_group_ref == child_member.group_ref;
+    // Get the sync task associated with the child member
+    var sync_task = ds_groups_indexed[child_member.group_ref] ? ds_groups_indexed[child_member.group_ref][0] : null; // There should only be 1 sync task per group_ref so grab the first item in list, or null if not found
+    if (!_.isObject(sync_task)) {
+      // If the sync task is not found, it means the group is not managed by this policy
+      console.log("No changes to member " + child_member.user_id + " in group " + child_member.group_ref + " in org " + child_member.org_id + " because the group is not managed by this policy.");
+    } else {
+      var member_in_parent_group = _.find(ds_parent_group_members, function(parent_member) {
+        // User ID matches and the group_ref matches the parent group
+        return (parent_member.user_id == child_member.user_id) && (parent_member.group_ref == sync_task.source_group.ref);
       });
-      return child_group && parent_member.user_id == child_member.user_id;
-    });
-    if (!existing_member) {
-      child_group_members_to_remove.push(child_member);
+      // Check if the member is not in the parent group AND the child group is managed by this policy
+      var member_exists_in_parent_group = _.isObject(member_in_parent_group);
+      if (!member_exists_in_parent_group && ds_groups_indexed[child_member.group_ref]) {
+        console.log("Removing member " + child_member.user_id + " in group " + child_member.group_ref + " in org " + child_member.org_id + " member_exists_in_parent_group=" + member_exists_in_parent_group);
+        child_group_members_to_remove.push(child_member);
+      } else {
+        console.log("No changes to member " + child_member.user_id + " in group " + child_member.group_ref + " in org " + child_member.org_id + " member_exists_in_parent_group=" + member_exists_in_parent_group);
+      }
     }
   });
   EOS
@@ -1178,34 +1207,38 @@ define sync_groups($data, $param_invitation_flow, $rs_org_id) do
               if $$debug_enabled
                 $$debug << $child_member["body"]["message"]
               end
-            elsif $child_member["code"] == 404 && $child_member["body"]["message"] == "no IDPs found in org "+$task["target_org_id"] && $param_invitation_flow == "User Invitations Enabled"
-              # If the error code is 404, and message contains "no IDPs found in org", then the child org is not configured to allow direct user addition
-              if $$debug_enabled
-                $$debug << "No Identity Providers found in org "+$task["target_org_id"]+" to directly add user user "+$member["user_details"]["email"]+". Attempting to use invite flow"
-              end
-              # We can attempt to invite the user to the org, which requires no IdP Configuration
-              $invite_payload = {
-                "groupIds": [
-                  to_n($child_group_id)
-                ],
-                "inviteeEmail": $member["user_details"]["email"]
-              }
-              $child_member = http_request(
-                auth: $$auth_flexera,
-                verb: "post",
-                https: true,
-                host: "api.flexera.com",
-                href: join(["/iam/v1/orgs/", $task["target_org_id"], "/invitations"]),
-                headers: {
-                  "Content-Type": "application/json"
-                },
-                body: $invite_payload
-              )
-              if $child_member["code"] != 201
-                call append_error("Error inviting user. response="+to_json($child_member)+" payload="+to_json($invite_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/invitations"]))
+            elsif $child_member["code"] == 404 && $child_member["body"]["message"] == "no IDPs found in org "+$task["target_org_id"]
+              if $param_invitation_flow == "User Invitations Disabled"
+                call append_error("No Identity Providers found in org "+$task["target_org_id"]+" to directly add user user "+$member["user_details"]["email"]+" and User Invitations Disabled.")
               else
+                # If the error code is 404, and message contains "no IDPs found in org", then the child org is not configured to allow direct user addition
                 if $$debug_enabled
-                  $$debug << "Success inviting user "+$member["user_details"]["email"]+" to org "+$task["target_org_id"]+" to group "+$child_group_id  # For debug
+                  $$debug << "No Identity Providers found in org "+$task["target_org_id"]+" to directly add user user "+$member["user_details"]["email"]+". Attempting to use invite flow"
+                end
+                # We can attempt to invite the user to the org, which requires no IdP Configuration
+                $invite_payload = {
+                  "groupIds": [
+                    to_n($child_group_id)
+                  ],
+                  "inviteeEmail": $member["user_details"]["email"]
+                }
+                $child_member = http_request(
+                  auth: $$auth_flexera,
+                  verb: "post",
+                  https: true,
+                  host: "api.flexera.com",
+                  href: join(["/iam/v1/orgs/", $task["target_org_id"], "/invitations"]),
+                  headers: {
+                    "Content-Type": "application/json"
+                  },
+                  body: $invite_payload
+                )
+                if $child_member["code"] != 201
+                  call append_error("Error inviting user. response="+to_json($child_member)+" payload="+to_json($invite_payload)+" href="+join(["/iam/v1/orgs/", $task["target_org_id"], "/invitations"]))
+                else
+                  if $$debug_enabled
+                    $$debug << "Success inviting user "+$member["user_details"]["email"]+" to org "+$task["target_org_id"]+" to group "+$child_group_id  # For debug
+                  end
                 end
               end
             elsif $child_member["code"] != 200
