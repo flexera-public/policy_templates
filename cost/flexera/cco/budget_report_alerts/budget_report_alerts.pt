@@ -1,4 +1,4 @@
-name "Budget Alerts"
+name "Budget Alerts With Data Alert Webhook"
 rs_pt_ver 20180301
 type "policy"
 short_description "This policy utilizes the Flexera Budget API to detect if budget threshold has been exceeded for a selected budget. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_report_alerts/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -81,6 +81,31 @@ parameter "param_email" do
   default []
 end
 
+parameter "param_alert_id" do
+  type "string"
+  category "Policy Settings"
+  label "Alert ID"
+  description "Provide the Alert ID to be used in the webhook"
+  default ""
+end
+
+parameter "param_subscription_id" do
+  type "string"
+  category "Policy Settings"
+  label "Subscription ID"
+  description "Provide the Subscription ID to be used in the webhook"
+  default ""
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Policy Settings"
+  label "Automatic Actions"
+  description "Specify the automatic actions to be triggered, such as Alert Subscription Webhook."
+  allowed_values "Alert Subscription Webhook"
+  default []
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -95,6 +120,34 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
 
 datasource "ds_currency_reference" do
   request do
@@ -463,6 +516,7 @@ policy "pol_budget_alert" do
 EOS
     check eq(size(val(data, "invalid")), 0)
     escalate $esc_budget_alert
+    escalate $esc_alert_subscription_webhook
   end
 
   validate $ds_only_exceeded do
@@ -490,6 +544,7 @@ Target Groups: \n
 EOS
     check eq(size(data), 0)
     escalate $esc_budget_alert
+    escalate $esc_alert_subscription_webhook
     export do
       field "group" do
         label "Group"
@@ -540,6 +595,7 @@ Target Groups: \n
 EOS
     check eq(size(data), 0)
     escalate $esc_budget_alert
+    escalate $esc_alert_subscription_webhook
     export do
       field "group" do
         label "Group"
@@ -575,4 +631,60 @@ escalation "esc_budget_alert" do
   label "Send Email"
   description "Send incident email"
   email $param_email
+end
+
+escalation "esc_alert_subscription_webhook" do
+  automatic contains($param_automatic_action, "Alert Subscription Webhook")
+  label "Alert Subscription Webhook"
+  run "alert_subscription_webhook"
+end
+
+# CWF function to handle alert subscription webhook
+define alert_subscription_webhook() return $response do
+  task_label("Executing Alert Subscription Webhook")
+  $host = $ds_flexera_api_hosts["flexera"]
+  $alert_id = $param_alert_id
+  $subscription_id = $param_subscription_id
+
+  $response = http_request(
+    auth: $$auth_flexera,
+    https: true,
+    verb: "put",
+    href: "/",
+    host: $host,
+    path: "/" + $alert_id + "/subscriptions/" + $subscription_id + "/webhook",
+    body_fields: {
+      "orgId": $rs_org_id
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    }
+  )
+  call handle_response($response)
+  task_label("Alert Subscription Webhook executed successfully")
+end
+
+# Define the handle_response function
+define handle_response($response) do
+  task_label("Handling HTTP response")
+  $status_code = $response["status"]
+
+  if $status_code >= 200 && $status_code < 300
+    # Success: Do nothing or log success
+    call log_message("HTTP request succeeded with status code: " + to_s($status_code))
+  else
+    # Failure: Raise an error or log failure
+    raise "HTTP request failed with status code: " + to_s($status_code) + ". Response: " + to_s($response["body"])
+  end
+end
+
+define log_message($message) do
+  if !$$log_messages
+    $$log_messages = []
+  end
+  $message_string = to_json($message)
+  task_label($message_string)
+  # Convert response object to JSON string.  Easier to interpret
+  $$log_messages << $message_string
 end
