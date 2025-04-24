@@ -318,11 +318,11 @@ datasource "ds_instance_sets" do
 end
 
 datasource "ds_instances" do
-  run_script $js_instances, $ds_instance_sets, $ds_instance_types, $param_exclusion_tags, $param_exclusion_tags_boolean
+  run_script $js_instances, $ds_instance_sets, $ds_aws_instance_types, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_instances", type: "javascript" do
-  parameters "ds_instance_sets", "ds_instance_types", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  parameters "ds_instance_sets", "ds_aws_instance_types", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -404,7 +404,7 @@ script "js_instances", type: "javascript" do
   })
 
   instance_types = {}
-  _.each(ds_instance_types, function(item) { instance_types[item['name']] = item })
+  _.each(ds_aws_instance_types, function(item) { instance_types[item['name']] = item })
 
   result = _.map(result, function(instance) {
     return {
@@ -652,7 +652,7 @@ script "js_instances_with_stats", type: "javascript" do
 EOS
 end
 
-datasource "ds_instance_types" do
+datasource "ds_aws_instance_types" do
   request do
     host "raw.githubusercontent.com"
     path "/flexera-public/policy_templates/master/data/aws/aws_ec2_instance_types.json"
@@ -660,15 +660,15 @@ datasource "ds_instance_types" do
   end
 end
 
-datasource "ds_instance_types_by_family" do
-  run_script $js_instance_types_by_family, $ds_instance_types
+datasource "ds_aws_instance_types_by_family" do
+  run_script $js_aws_instance_types_by_family, $ds_aws_instance_types
 end
 
-script "js_instance_types_by_family", type: "javascript" do
-  parameters "ds_instance_types"
+script "js_aws_instance_types_by_family", type: "javascript" do
+  parameters "ds_aws_instance_types"
   result "result"
   code <<-'EOS'
-  result = { all: [].concat(ds_instance_types) }
+  result = { all: [].concat(ds_aws_instance_types) }
 
   result["all"] = _.sortBy(result["all"], function(type) {
     return type['memory'] && type['memory']['sizeInMiB'] ? type['memory']['sizeInMiB'] : 99999999
@@ -678,7 +678,7 @@ script "js_instance_types_by_family", type: "javascript" do
     return type['cpu'] && type['cpu']['cores'] ? type['cpu']['cores'] : 9999
   })
 
-  _.each(ds_instance_types, function(type) {
+  _.each(ds_aws_instance_types, function(type) {
     if (result[type['family']] == undefined) { result[type['family']] = [] }
     result[type['family']].push(type)
   })
@@ -692,11 +692,11 @@ EOS
 end
 
 datasource "ds_instance_recommendations" do
-  run_script $js_instance_recommendations, $ds_instance_types_by_family, $ds_instances_with_stats, $ds_aws_account, $ds_applied_policy, $param_cpu_burst_credit_balance, $param_cpu_surplus_credits
+  run_script $js_instance_recommendations, $ds_aws_instance_types_by_family, $ds_instances_with_stats, $ds_aws_account, $ds_applied_policy, $param_cpu_burst_credit_balance, $param_cpu_surplus_credits
 end
 
 script "js_instance_recommendations", type: "javascript" do
-  parameters "ds_instance_types_by_family", "ds_instances_with_stats", "ds_aws_account", "ds_applied_policy", "param_cpu_burst_credit_balance", "param_cpu_surplus_credits"
+  parameters "ds_aws_instance_types_by_family", "ds_instances_with_stats", "ds_aws_account", "ds_applied_policy", "param_cpu_burst_credit_balance", "param_cpu_surplus_credits"
   result "result"
   code <<-'EOS'
   result = []
@@ -719,14 +719,14 @@ script "js_instance_recommendations", type: "javascript" do
     typeIndex = null
     newResourceType = null
 
-    if (ds_instance_types_by_family[family]) { typeIndex = findTypeIndex(ds_instance_types_by_family[family], instance['resourceType']) }
+    if (ds_aws_instance_types_by_family[family]) { typeIndex = findTypeIndex(ds_aws_instance_types_by_family[family], instance['resourceType']) }
 
     if (typeIndex && typeIndex != 0 && instance['resourceTypeInfo']['burst_info'] && param_cpu_burst_credit_balance == "Yes" && instance['cpuCreditBalanceMinimum'] != 'N/A' && instance['cpuCreditBalanceMinimum'] == instance['resourceTypeInfo']['burst_info']['max_earnable_credits']) {
-      newResourceType = ds_instance_types_by_family[family][typeIndex - 1]["name"]
+      newResourceType = ds_aws_instance_types_by_family[family][typeIndex - 1]["name"]
     }
 
-    if (typeIndex && typeIndex != ds_instance_types_by_family[family].length - 1 && param_cpu_surplus_credits != -1 && instance['cpuSurplusCreditBalanceMinimum'] != "N/A" && instance['cpuSurplusCreditBalanceMinimum'] >= param_cpu_surplus_credits) {
-      newResourceType = ds_instance_types_by_family[family][typeIndex + 1]["name"]
+    if (typeIndex && typeIndex != ds_aws_instance_types_by_family[family].length - 1 && param_cpu_surplus_credits != -1 && instance['cpuSurplusCreditBalanceMinimum'] != "N/A" && instance['cpuSurplusCreditBalanceMinimum'] >= param_cpu_surplus_credits) {
+      newResourceType = ds_aws_instance_types_by_family[family][typeIndex + 1]["name"]
     }
 
     if (newResourceType != null) {
