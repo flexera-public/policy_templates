@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "4.3.2",
+  version: "4.4.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Burstable Compute Instances",
@@ -141,14 +141,6 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
-
-datasource "ds_instance_types" do
-  request do
-    host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
-    header "User-Agent", "RS Policies"
-  end
-end
 
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
@@ -411,9 +403,10 @@ script "js_instances", type: "javascript" do
     }
   })
 
-  result = _.map(result, function(instance) {
-    resourceTypeInfo = ds_instance_types[instance['resourceType']]
+  instance_types = {}
+  _.each(ds_instance_types, function(item) { instance_types[item['name']] = item })
 
+  result = _.map(result, function(instance) {
     return {
       region: instance['region'],
       instanceId: instance['instanceId'],
@@ -423,7 +416,7 @@ script "js_instances", type: "javascript" do
       privateDnsName: instance['privateDnsName'],
       launchTime: instance['launchTime'],
       tags: instance['tags'],
-      resourceTypeInfo: resourceTypeInfo
+      resourceTypeInfo: instance_types[instance['resourceType']]
     }
   })
 EOS
@@ -659,27 +652,81 @@ script "js_instances_with_stats", type: "javascript" do
 EOS
 end
 
+datasource "ds_instance_types" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_instance_types_by_family" do
+  run_script $js_instance_types_by_family, $ds_instance_types
+end
+
+script "js_instance_types_by_family", type: "javascript" do
+  parameters "ds_instance_types"
+  result "result"
+  code <<-'EOS'
+  result = { all: [].concat(ds_instance_types) }
+
+  result["all"] = _.sortBy(result["all"], function(type) {
+    return type['memory'] && type['memory']['sizeInMiB'] ? type['memory']['sizeInMiB'] : 99999999
+  })
+
+  result["all"] = _.sortBy(result["all"], function(type) {
+    return type['cpu'] && type['cpu']['cores'] ? type['cpu']['cores'] : 9999
+  })
+
+  _.each(ds_instance_types, function(type) {
+    if (result[type['family']] == undefined) { result[type['family']] = [] }
+    result[type['family']].push(type)
+  })
+
+  _.each(_.keys(result), function(family) {
+    result[family] = _.sortBy(result[family], function(type) {
+      return type['size_rank'] ? type['size_rank'] : 99999999
+    })
+  })
+EOS
+end
+
 datasource "ds_instance_recommendations" do
-  run_script $js_instance_recommendations, $ds_instances_with_stats, $ds_aws_account, $ds_applied_policy, $param_cpu_burst_credit_balance, $param_cpu_surplus_credits
+  run_script $js_instance_recommendations, $ds_instance_types_by_family, $ds_instances_with_stats, $ds_aws_account, $ds_applied_policy, $param_cpu_burst_credit_balance, $param_cpu_surplus_credits
 end
 
 script "js_instance_recommendations", type: "javascript" do
-  parameters "ds_instances_with_stats", "ds_aws_account", "ds_applied_policy", "param_cpu_burst_credit_balance", "param_cpu_surplus_credits"
+  parameters "ds_instance_types_by_family", "ds_instances_with_stats", "ds_aws_account", "ds_applied_policy", "param_cpu_burst_credit_balance", "param_cpu_surplus_credits"
   result "result"
   code <<-'EOS'
   result = []
 
+  // Function to find the index of a resource type in a list
+  // This is so we can easily go up and down.
+  // If a type has an index of 5, we know 4 is the next size down.
+  function findTypeIndex(type_list, name) {
+    type_index = null
+
+    _.each(type_list, function(type, index) {
+      if (type_index == null && type['name'] == name) { type_index = index }
+    })
+
+    return type_index
+  }
+
   _.each(ds_instances_with_stats, function(instance) {
+    family = instance['resourceType'].split('.')[0]
+    typeIndex = null
     newResourceType = null
 
-    if (instance['resourceTypeInfo']['burst_info'] != undefined) {
-      if (param_cpu_burst_credit_balance == "Yes" && instance['cpuCreditBalanceMinimum'] != 'N/A' && instance['cpuCreditBalanceMinimum'] == instance['resourceTypeInfo']['burst_info']['max_earnable_credits'] && instance['resourceTypeInfo']['down'] != undefined) {
-        newResourceType = instance['resourceTypeInfo']['down']
-      }
+    if (ds_instance_types_by_family[family]) { typeIndex = findTypeIndex(ds_instance_types_by_family[family], instance['resourceType']) }
+
+    if (typeIndex && typeIndex != 0 && instance['resourceTypeInfo']['burst_info'] && param_cpu_burst_credit_balance == "Yes" && instance['cpuCreditBalanceMinimum'] != 'N/A' && instance['cpuCreditBalanceMinimum'] == instance['resourceTypeInfo']['burst_info']['max_earnable_credits']) {
+      newResourceType = ds_instance_types_by_family[family][typeIndex - 1]["name"]
     }
 
-    if (param_cpu_surplus_credits != -1 && instance['cpuSurplusCreditBalanceMinimum'] != "N/A" && instance['cpuSurplusCreditBalanceMinimum'] >= param_cpu_surplus_credits && instance['resourceTypeInfo']['up'] != undefined) {
-      newResourceType = instance['resourceTypeInfo']['up']
+    if (typeIndex && typeIndex != ds_instance_types_by_family[family].length - 1 && param_cpu_surplus_credits != -1 && instance['cpuSurplusCreditBalanceMinimum'] != "N/A" && instance['cpuSurplusCreditBalanceMinimum'] >= param_cpu_surplus_credits) {
+      newResourceType = ds_instance_types_by_family[family][typeIndex + 1]["name"]
     }
 
     if (newResourceType != null) {
