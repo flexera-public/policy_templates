@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.4
+
+- Policy template metadata modified so that it is no longer published in the catalog.
+
 ## v3.0.3
 
 - Updated service field in metadata to "Identity & Access Management". Functionality unchanged.

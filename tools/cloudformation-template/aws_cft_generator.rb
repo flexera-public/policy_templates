@@ -5,7 +5,7 @@ require "digest"
 require "fileutils"
 
 # Method for generating permission list
-def create_permissions(perm_json, deprecated, perm_type = "action")
+def create_permissions(perm_json, nondeprecated_names, perm_type = "action")
   permission_list = []
 
   perm_json['values'].each do |item|
@@ -27,7 +27,7 @@ def create_permissions(perm_json, deprecated, perm_type = "action")
     end
 
     # Skip deprecated policies and policies with no permissions needed
-    unless (read.empty? && action.empty?) || deprecated.include?(item["name"])
+    unless (read.empty? && action.empty?) || !nondeprecated_names.include?(item["name"])
       short_name = item["name"].gsub(/[^a-zA-Z0-9]/, '')
 
       permission_list << {
@@ -219,15 +219,15 @@ output_readonly_filepath = "./FlexeraAutomationPoliciesReadOnly.template"
 
 # Get list of deprecated policies
 activepolicy_json = JSON.parse(File.read(activepolicy_json_filepath))
-deprecated_policies = activepolicy_json["policies"].select { |policy| policy["deprecated"] == true }
-deprecated_names = deprecated_policies.map { |policy| policy["name"] }
+nondeprecated_policies = activepolicy_json["policies"].select { |policy| policy["deprecated"] == false}
+nondeprecated_names = nondeprecated_policies.map { |policy| policy["name"] }
 
 # Read AWS permissions data
 permission_json = JSON.parse(File.read(permission_json_filepath))
 
 # Remap data for easy parsing
-permission_list = create_permissions(permission_json, deprecated_names)
-readonly_permission_list = create_permissions(permission_json, deprecated_names, "read")
+permission_list = create_permissions(permission_json, nondeprecated_names)
+readonly_permission_list = create_permissions(permission_json, nondeprecated_names, "read")
 
 # Create template text
 final_template = create_template(permission_list, template_filepath)
