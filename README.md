@@ -31,7 +31,6 @@ These templates can generate savings estimates for your environment.
 
 - Compute
 
-  - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances)
   - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
   - [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
   - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
@@ -49,7 +48,6 @@ These templates can generate savings estimates for your environment.
 - EBS
 
   - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
-  - [AWS Unused Volumes](./cost/aws/unused_volumes)
 
 - Network
 
@@ -61,7 +59,6 @@ These templates can generate savings estimates for your environment.
 - RDS
 
   - [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
-  - [AWS Unused RDS Instances](./cost/aws/unused_rds)
 
 - Storage
 
@@ -79,7 +76,6 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
-  - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances)
   - [Azure Long Stopped Compute Instances](./cost/azure/long_stopped_instances)
   - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
   - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
@@ -122,7 +118,6 @@ These templates can generate savings estimates for your environment.
   - [Azure Rightsize SQL Managed Instance Storage](./cost/azure/rightsize_managed_sql_storage)
   - [Azure Rightsize SQL Managed Instances](./cost/azure/rightsize_managed_sql)
   - [Azure Rightsize Synapse SQL Pools](./cost/azure/rightsize_synapse_sql_pools)
-  - [Azure Unused SQL Databases](./cost/azure/unused_sql_databases)
 
 - Storage
 
@@ -156,15 +151,10 @@ These templates can generate savings estimates for your environment.
 
   - [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
   - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
-  - [Google Idle VM Recommender](./cost/google/idle_vm_recommendations)
   - [Google Rightsize Cloud SQL Recommender](./cost/google/rightsize_cloudsql_recommendations)
   - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
   - [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/google)
   - [Turbonomic Rightsize Virtual Machines Recommendations Google](./cost/turbonomics/scale_virtual_machines_recommendations/google)
-
-- SQL
-
-  - [Google Idle Cloud SQL Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
 
 - Storage
 
@@ -220,7 +210,6 @@ These templates can generate savings estimates for your environment.
 - Identity & Access Management
 
   - [Azure Policy Audit](./compliance/azure/azure_policy_audit)
-  - [Azure Subscription Access](./compliance/azure/subscription_access)
 
 - N/A
 
@@ -282,29 +271,18 @@ These templates can generate savings estimates for your environment.
   - [AWS EKS Clusters Without Spot Instances](./cost/aws/eks_without_spot)
   - [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration)
   - [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
-  - [AWS Inefficient Instance Utilization using CloudWatch](./cost/aws/instance_cloudwatch_utilization)
   - [AWS Reserved Instances Coverage](./cost/aws/reserved_instances/coverage)
   - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
   - [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
   - [AWS Savings Realized From Rate Reduction Purchases](./cost/aws/savings_realized)
   - [AWS Schedule Instance](./cost/aws/schedule_instance)
-  - [Reserved Instance Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
-
-- EBS
-
-  - [AWS GP3 Upgradeable Volumes](./cost/aws/gp3_volume_upgrade)
 
 - Marketplace
 
   - [AWS New Marketplace Products](./operational/aws/marketplace_new_products)
 
-- RDS
-
-  - [AWS RDS Instances](./cost/aws/rds_instance_license_info)
-
 - Storage
 
-  - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization)
   - [AWS Oversized S3 Buckets](./cost/aws/s3_bucket_size)
   - [AWS S3 Buckets Without Intelligent Tiering](./cost/aws/s3_storage_policy)
   - [AWS S3 Buckets Without Lifecycle Configuration](./cost/aws/s3_lifecycle)
@@ -322,7 +300,6 @@ These templates can generate savings estimates for your environment.
   - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
   - [Azure Expiring Savings Plans](./cost/azure/savings_plan/expiration)
   - [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
-  - [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analytics_utilization)
   - [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
   - [Azure Reserved Instances Utilization MCA](./cost/azure/reserved_instances/utilization_mca)
   - [Azure Savings Plan Utilization](./cost/azure/savings_plan/utilization)
@@ -346,10 +323,6 @@ These templates can generate savings estimates for your environment.
   - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   - [Azure SQL Servers Without Elastic Pools](./cost/azure/sql_servers_without_elastic_pool)
 
-- Storage
-
-  - [Azure Blob Storage Optimization](./cost/azure/blob_storage_optimization)
-
 - Storage Accounts
 
   - [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management)
@@ -365,22 +338,17 @@ These templates can generate savings estimates for your environment.
 - Cloud Cost Optimization
 
   - [Budget Alerts](./cost/flexera/cco/budget_report_alerts)
-  - [Budget Alerts by Cloud Account](./cost/flexera/cco/budget_alerts_by_account)
   - [Budget vs Actual Spend Report](./cost/flexera/cco/budget_v_actual_spend_report)
-  - [Cheaper Regions](./cost/flexera/cco/cheaper_regions)
   - [Cloud Cost Anomaly Alerts](./cost/flexera/cco/cloud_cost_anomaly_alerts)
   - [Cloud Spend Forecast - Straight-Line](./cost/flexera/cco/forecasting/straight_line_forecast)
-  - [Cloud Spend Forecast - Straight-Line (Simple Model)](./cost/flexera/cco/forecasting/straight_line_forecast_simple)
   - [Cloud Spend Moving Average Report](./cost/flexera/cco/moving_average)
   - [Currency Conversion](./cost/flexera/cco/currency_conversion)
   - [Email Cost Optimization Recommendations](./cost/flexera/cco/email_recommendations)
   - [Flexera FOCUS Report](./cost/flexera/cco/focus_report)
-  - [Low Service Usage](./cost/flexera/cco/low_service_usage)
   - [Low Usage Report](./cost/flexera/cco/low_usage)
   - [New Usage](./cost/flexera/cco/new_usage)
   - [Scheduled Report](./cost/flexera/cco/scheduled_reports)
   - [Scheduled Report for Unallocated Costs](./cost/flexera/cco/scheduled_report_unallocated)
-  - [Superseded Instances](./cost/flexera/cco/superseded_instance)
   - [Vendor Spend Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
 
 - Common Bill Ingestion
@@ -404,17 +372,11 @@ These templates can generate savings estimates for your environment.
 
   - [Google Committed Use Discount Report](./cost/google/cud_report)
   - [Google Expiring Committed Use Discounts (CUD)](./cost/google/cud_expiration)
-  - [Google Idle Compute Instances](./cost/google/idle_compute_instances)
   - [Google Schedule Instance](./cost/google/schedule_instance)
-
-- SQL
-
-  - [Google Rightsize CloudSQL Instances](./cost/google/cloudsql_rightsizing)
 
 - Storage
 
   - [Google Cloud Storage Without Lifecycle Configuration](./cost/google/cloud_storage_lifecycle)
-  - [Google Object Storage Optimization](./cost/google/object_storage_optimization)
 
 #### Oracle
 
@@ -432,11 +394,7 @@ These templates can generate savings estimates for your environment.
   - [AWS Overutilized EC2 Instances](./operational/aws/overutilized_ec2_instances)
   - [AWS Scheduled EC2 Events](./operational/aws/scheduled_ec2_events)
   - [AWS Usage Forecast - Instance Time Used](./operational/aws/total_instance_usage_forecast)
-  - [AWS Usage Forecast - Number of Instance Hours Used](./operational/aws/total_instance_hours_forecast)
-  - [AWS Usage Forecast - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus_forecast)
   - [AWS Usage Report - Instance Time Used](./operational/aws/total_instance_usage_report)
-  - [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours)
-  - [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus)
 
 - PaaS
 
@@ -459,10 +417,7 @@ These templates can generate savings estimates for your environment.
   - [Azure Bring-Your-Own-License (BYOL) Report](./operational/azure/byol_report)
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
   - [Azure Overutilized Compute Instances](./operational/azure/overutilized_compute_instances)
-  - [Azure Usage Report - Amount of Instance Memory Used](./operational/azure/total_instance_memory)
   - [Azure Usage Report - Instance Time Used](./operational/azure/total_instance_usage_report)
-  - [Azure Usage Report - Number of Instance Hours Used](./operational/azure/total_instance_hours)
-  - [Azure Usage Report - Number of Instance vCPUs Used](./operational/azure/total_instance_vcpus)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
 
 - PaaS
@@ -472,10 +427,6 @@ These templates can generate savings estimates for your environment.
 - Tags
 
   - [Azure Tag Cardinality Report](./operational/azure/tag_cardinality)
-
-- N/A
-
-  - [Azure Sync Tags with Optima](./operational/azure/sync_tags_with_optima)
 
 #### Flexera
 
@@ -584,10 +535,6 @@ These templates can generate savings estimates for your environment.
 
   - [AWS Unencrypted EBS Volumes](./security/aws/ebs_unencrypted_volumes)
 
-- ELB
-
-  - [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted)
-
 - Identity & Access Management
 
   - [AWS IAM Account Missing Support Role](./security/aws/iam_support_role_created)
@@ -638,10 +585,6 @@ These templates can generate savings estimates for your environment.
 - App Service
 
   - [Azure Web Apps Without Secure TLS](./security/azure/webapp_tls_version_support)
-
-- Compute
-
-  - [Azure Resources with public IP address](./security/azure/resources_with_public_ip_address)
 
 - Identity & Access Management
 
@@ -695,10 +638,6 @@ These templates can generate savings estimates for your environment.
   - [Azure Storage Accounts Without Secure Transfer](./security/azure/secure_transfer_required)
   - [Azure Storage Accounts Without Trusted Microsoft Services Access](./security/azure/storage_trusted_services)
   - [Azure Table Storage Accounts Without Logging Enabled](./security/azure/table_storage_logging)
-
-- Storage Accounts
-
-  - [Azure Storage Accounts Without HTTPs Enforced](./security/azure/storage_account_https_enabled)
 
 #### Google
 
