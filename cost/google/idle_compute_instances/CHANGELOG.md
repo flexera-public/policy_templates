@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.11.5
+
+- Updated policy template metadata provider from "GCE" to "Google". Functionality unchanged.
+
 ## v2.11.4
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.

@@ -71,7 +71,6 @@ default_child_policy_template_files = [
   "../../compliance/azure/azure_untagged_vms/untagged_vms.pt",
   "../../compliance/azure/azure_untagged_resources/untagged_resources.pt",
   "../../compliance/azure/ahub_manual/azure_ahub_utilization_with_manual_entry.pt",
-  "../../compliance/azure/azure_long_stopped_instances/long_stopped_instances_azure.pt",
   "../../compliance/azure/compliance_score/azure_regulatory_compliance_report.pt",
   "../../compliance/azure/instances_without_fnm_agent/azure_instances_not_running_flexnet_inventory_agent.pt",
   "../../cost/azure/advisor_compute/azure_advisor_compute.pt",
@@ -79,6 +78,7 @@ default_child_policy_template_files = [
   "../../cost/azure/idle_compute_instances/azure_idle_compute_instances.pt",
   "../../cost/azure/blob_storage_optimization/azure_blob_storage_optimization.pt",
   "../../cost/azure/data_lake_optimization/data_lake_optimization.pt",
+  "../../cost/azure/long_stopped_instances/long_stopped_instances_azure.pt",
   "../../cost/azure/old_snapshots/azure_delete_old_snapshots.pt",
   "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
   "../../cost/azure/rightsize_managed_disks/azure_rightsize_managed_disks.pt",
@@ -161,6 +161,7 @@ default_child_policy_template_files = [
   "../../cost/google/cud_report/google_committed_use_discount_report.pt",
   "../../cost/google/old_snapshots/google_delete_old_snapshots.pt",
   "../../operational/google/label_cardinality/google_label_cardinality.pt",
+  "../../operational/google/overutilized_vms/google_overutilized_vms.pt",
   "../../security/google/public_buckets/google_public_buckets.pt"
 ]
 
