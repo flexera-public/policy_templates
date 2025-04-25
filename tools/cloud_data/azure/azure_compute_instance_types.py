@@ -4,6 +4,16 @@ import os
 from azure.identity import ClientSecretCredential
 from azure.mgmt.compute import ComputeManagementClient
 
+def remove_duplicates(data):
+    seen = set()
+    unique_data = []
+    for entry in data:
+        name = entry.get('name')
+        if name not in seen:
+            unique_data.append(entry)
+            seen.add(name)
+    return unique_data
+
 # File names for reading/writing
 output_filename = 'data/azure/azure_compute_instance_types.json'
 os.makedirs(os.path.dirname(output_filename), exist_ok=True)
@@ -34,7 +44,10 @@ sku_dicts = [sku.as_dict() for sku in skus]
 
 print(f"Retrieved {len(sku_dicts)} instance types.")
 
-data = {}
+with open("./data/azure/instance_types.json", 'r') as f:
+    manual_data = json.load(f)
+
+data = []
 
 for item in sku_dicts:
     if item.get("name", "None") != "None" and item.get("tier", "None") != "None":
@@ -44,26 +57,30 @@ for item in sku_dicts:
             "tier": item.get("tier", "None"),
             "size": item.get("size", "None"),
             "family": item.get("family", "None"),
+            "superseded": "None",
             "specs": {}
         }
 
         for capability in item.get("capabilities", []):
             details["specs"][capability.get("name")] = capability.get("value", "None")
 
-        data[item.get("name")] = details
+        if details["name"] in manual_data and "superseded" in manual_data[details["name"]]:
+            details["superseded"] = manual_data[details["name"]]["superseded"]
+
+        data.append(details)
 
 print("Writing final output to file...")
 
 with open(output_filename, "w") as type_file:
     type_file.write(
-        json.dumps(data, sort_keys=True, indent=2)
-            .replace(': "",', ': null,')
-            .replace(': "none",', ': null,')
-            .replace(': "None",', ': null,')
-            .replace(': "true",', ': true,')
-            .replace(': "True",', ': true,')
-            .replace(': "false",', ': false,')
-            .replace(': "False",', ': false,')
+        json.dumps(remove_duplicates(data), sort_keys=False, indent=2)
+            .replace(': ""', ': null')
+            .replace(': "none"', ': null')
+            .replace(': "None"', ': null')
+            .replace(': "true"', ': true')
+            .replace(': "True"', ': true')
+            .replace(': "false"', ': false')
+            .replace(': "False"', ': false')
     )
 
 print("DONE!")
