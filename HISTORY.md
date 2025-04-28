@@ -6,6 +6,26 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3091](https://github.com/flexera-public/policy_templates/pull/3091): POL-1510 Repository Cleanup
+
+#### Description
+
+> We've started to receive complaints from both internal and external users that the large number of deprecated policy templates in the catalog is causing confusion. Additionally, the repository itself has become a bit cluttered due to old and unused assets.
+>
+> This PR solves this by making the following changes:
+>
+> - All policy templates that were both deprecated and unpublished have been deleted. These are almost all very old policy templates that are defunct and not useful. This will have no impact on the catalog itself (since they were unpublished) but will declutter the repository a bit. The repository history can still be used to obtain these files in the unlikely event that they are needed for something.
+> - All published deprecated policy templates have been unpublished. This should remove them from the catalog and make it less confusing and cluttered. None of these policy templates were recently deprecated, and the files remain in the repository if a user needs them.
+>
+> Unfortunately, due to several factors, we do not have a simple way to proactively reach out to users about these changes. That said, none of these files were newly deprecated or newly unpublished (prior to this PR), so users have had in most cases over a year to make any necessary changes. Existing applied policies will be unaffected.
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3091) for these details.
+- **Merged At**: 2025-04-25 18:33:16 UTC
+
+---
+
 ### PR [#3080](https://github.com/flexera-public/policy_templates/pull/3080): POL-1506 Account RBD Policy Updates
 
 #### Description
@@ -1816,23 +1836,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/recommendations/README.md)
 - **Merged At**: 2024-09-26 19:45:30 UTC
-
----
-
-### PR [#2657](https://github.com/flexera-public/policy_templates/pull/2657): POL-1363 AWS EC2 Compute Optimizer Recommendations: Additional Options
-
-#### Description
-
-> From the `AWS EC2 Compute Optimizer Recommendations` CHANGELOG:
->
-> - Added option to filter out recommendations for EC2 instances based on OS family
-> - Added option to filter out either x86-64 (Intel/AMD) or ARM (Graviton) recommendations
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2657) for details about unpublished policies.
-- **Merged At**: 2024-09-26 19:44:47 UTC
 
 ---
 
