@@ -1,6 +1,7 @@
 import requests
 import json
 import os
+import re
 from azure.identity import ClientSecretCredential
 from azure.mgmt.compute import ComputeManagementClient
 
@@ -13,6 +14,23 @@ def remove_duplicates(data):
             unique_data.append(entry)
             seen.add(name)
     return unique_data
+
+def derive_nfu(vm_name: str, vcpu: int) -> int:
+    """
+    Derive the NFU (normalized function units = physical cores) for a given Azure VM size.
+    """
+    # 1) Dv2-series override: Standard_D<n>_v2
+    m = re.match(r"^Standard_D(\d+)_v2$", vm_name)
+    if m:
+        size_num = int(m.group(1))
+        return vcpu // 2 if size_num >= 11 else vcpu
+
+    # 2) Hyper‐threaded families (v3 & v4)
+    if re.match(r"^Standard_.*_v[34]$", vm_name):
+        return vcpu // 2
+
+    # 3) All other families (1 thread per core)
+    return vcpu
 
 # File names for reading/writing
 output_filename = 'data/azure/azure_compute_instance_types.json'
@@ -58,7 +76,7 @@ for item in sku_dicts:
             "size": item.get("size", "None"),
             "family": item.get("family", "None"),
             "superseded": "None",
-            "specs": {}
+            "specs": { "nfu": "None" }
         }
 
         for capability in item.get("capabilities", []):
@@ -66,6 +84,9 @@ for item in sku_dicts:
 
         if details["name"] in manual_data and "superseded" in manual_data[details["name"]]:
             details["superseded"] = manual_data[details["name"]]["superseded"]
+
+        if details["specs"].get("vCPUs", -1) != -1:
+            details["specs"]["nfu"] = derive_nfu(details["name"], int(details["specs"]["vCPUs"]))
 
         data.append(details)
 
