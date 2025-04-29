@@ -14,17 +14,19 @@ This policy checks all the instances in Azure Subscriptions for the average or m
 
 The policy includes the estimated monthly costs. The estimated monthly costs will be incurred for resources that are upsized.
 
-- The `Estimated Monthly Cost` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
-- The cost of the upsize action is the full cost of the resource. This is because upsizing a virtual machine doubles the cost.
+- The cost of a resource is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
+- The `Estimated Monthly Cost Increase` is estimated based on the difference in list price between the current resource type and the recommended resource type. The ratio of these prices is multiplied by the cost of the resource, described above, to get an estimated new cost for the resource. The existing cost is then subtracted from this to get an estimated cost increase.
+  - Formula: (Monthly Cost * (New List Price / Current List Price)) - Monthly Cost
 - Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
-- If the resource cannot be found in Flexera CCO, the `Estimated Monthly Cost` is 0.
-- The incident message detail includes the sum of each resource `Estimated Monthly Cost` as `Potential Monthly Cost`.
-- Both `Estimated Monthly Cost` and `Potential Monthly Cost` will be reported in the currency of the Flexera organization the policy is applied in.
+- If the resource cannot be found in Flexera CCO, the `Estimated Monthly Cost Increase` is empty.
+- The incident message detail includes the sum of each resource `Estimated Monthly Cost Increase` as `Potential Monthly Cost Increase`.
+- Both `Estimated Monthly Cost Increase` and `Potential Monthly Cost Increase` will be reported in the currency of the Flexera organization the policy is applied in.
 
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
+- *Enable Cross-Family Recommendations* - Whether to recommend upsizing instances to resource types outside of their current family.
 - *Allow/Deny Subscriptions* - Determines whether the Allow/Deny Subscriptions List parameter functions as an allow list (only providing results for the listed subscriptions) or a deny list (providing results for all subscriptions except for the listed subscriptions).
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
