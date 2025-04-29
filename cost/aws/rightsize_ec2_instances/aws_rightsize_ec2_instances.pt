@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.3.2",
+  version: "5.4.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -401,7 +401,7 @@ datasource "ds_describe_regions" do
     query "Filter.1.Value.2", "opted-in"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
-    header "Meta-Flexera", val($ds_is_deleted, "path")
+    # header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "xml"
@@ -599,7 +599,8 @@ script "js_cloudwatch_queries", type: "javascript" do
 
     //We want to collect each of these list of statistics we care about
     stats = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
-    lookback = param_stats_lookback * 86400
+    lookback = param_stats_lookback * 86400 // 86400s == 1d
+    lookback_1d = 86400
 
     // Only query for CPU usage if we're actually checking it
     if (param_avg_cpu != -1) {
@@ -621,6 +622,11 @@ script "js_cloudwatch_queries", type: "javascript" do
         }
 
         result[instance['region']].push(query)
+
+        query_timeseries = _.clone(query)
+        query_timeseries.Id = query.Id + "_timeseries"
+        query_timeseries.MetricStat.Period = lookback_1d
+        result[instance['region']].push(query_timeseries)
       })
     }
 
@@ -668,6 +674,11 @@ script "js_cloudwatch_queries", type: "javascript" do
         }
 
         result[instance['region']].push(query)
+
+        query_timeseries = _.clone(query)
+        query_timeseries.Id = query.Id + "_timeseries"
+        query_timeseries.MetricStat.Period = lookback_1d
+        result[instance['region']].push(query_timeseries)
       })
     }
   })
@@ -728,6 +739,7 @@ datasource "ds_cloudwatch_data" do
       field "id", jmes_path(col_item, "Id")
       field "label", jmes_path(col_item, "Label")
       field "values", jmes_path(col_item, "Values")
+      field "timestamps", jmes_path(col_item, "Timestamps")
     end
   end
 end
@@ -765,11 +777,11 @@ end
 
 #PARSE CLOUDWATCH DATA INTO JAVASCRIPT OBJECT
 datasource "ds_cloudwatch_data_sorted" do
-  run_script $js_cloudwatch_data_sorted, $ds_cloudwatch_data
+  run_script $js_cloudwatch_data_sorted, $ds_cloudwatch_data, $param_stats_threshold
 end
 
 script "js_cloudwatch_data_sorted", type: "javascript" do
-  parameters "ds_cloudwatch_data"
+  parameters "ds_cloudwatch_data", "param_stats_threshold"
   result "result"
   code <<-EOS
   // Sort the CloudWatch data into an object with keys for regions and instance names.
@@ -780,6 +792,14 @@ script "js_cloudwatch_data_sorted", type: "javascript" do
     region = item['region']
     instance_name = item['id'].split('_')[0] + '-' + item['id'].split('_')[1]
     metric = item['id'].split('_')[2]
+    is_timeseries = item['id'].indexOf('timeseries') != -1
+    var metric_type = 'unknown'
+    // Check if metric starts with cpu or mem
+    if (metric.indexOf('cpu') != -1) {
+      metric_type = 'cpu'
+    } else if (metric.indexOf('mem') != -1) {
+      metric_type = 'mem'
+    }
 
     // Grabbing index 0 SHOULD be safe because we should only get one result.
     // Just in case AWS slices the data weirdly and returns 2 results, we make
@@ -789,7 +809,35 @@ script "js_cloudwatch_data_sorted", type: "javascript" do
     if (result[region] == undefined) { result[region] = {} }
     if (result[region][instance_name] == undefined) { result[region][instance_name] = {} }
 
-    result[region][instance_name][metric] = value
+    if (!is_timeseries) {
+      result[region][instance_name][metric] = value
+    } else {
+      // Else this is a timeseries metric
+      // Check if this metric matches the one select in param_stats_threshold
+      if (metric.indexOf(param_stats_threshold) != -1) {
+        // If yes, then lets set the appropriate metric type
+        // Zip values and timestamps into a list of objects
+        // [{timestamp: <timestamp>, [stat_name]: <value>}, ...]
+        var stat_name = param_stats_threshold.toLowerCase()
+        var points = _.zip(item['timestamps'], item['values'])
+        points = _.map(points, function(item) {
+          var r = { timestamp: item[0] }
+          r[stat_name] = item[1]
+          return r
+        })
+        // Sort by timestamp
+        points = _.sortBy(points, function(item) {
+          return item['timestamp']
+        })
+        if (metric_type == 'cpu') {
+          // Set the cpuPoints
+          result[region][instance_name]['cpuPoints'] = points
+        } else if (metric_type == 'mem') {
+          // Set the memPoints
+          result[region][instance_name]['memPoints'] = points
+        }
+      }
+    }
   })
 EOS
 end
@@ -913,6 +961,86 @@ script "js_merged_metrics", type: "javascript" do
   parameters "ds_cloudwatch_data_sorted", "ds_instances", "ds_aws_account", "ds_currency", "param_stats_threshold", "param_stats_lookback"
   result "result"
   code <<-EOS
+  // Function to generate ImageCharts URL for CPU and Memory usage
+  function generateChartUrl(cpu_stats, mem_stats, stat_name, resource_name) {
+    // Check that we have some metrics for either cpu or memory
+    if ((!cpu_stats || cpu_stats.length === 0) && (!mem_stats || mem_stats.length === 0)) {
+      // return null if we don't have any data
+      return null;
+    }
+
+    // Force stat_name to lowercase
+    stat_name = stat_name.toLowerCase()
+
+    // Placeholder for extracted timestamps, CPU and memory values
+    var timestamps = [];
+    var cpuValues = [];
+    var memValues = [];
+
+    // Limit number of data points to avoid URL length issues
+    // Using cpu to determine max points and all the timestamps we have data for
+    var maxPoints = 60;
+    var step = Math.max(1, Math.floor(cpu_stats.length / maxPoints));
+
+    // Gather the data points
+    if (cpu_stats && cpu_stats.length > 0) {
+      for (var i = 0; i < cpu_stats.length; i += step) {
+        if (cpu_stats[i] && cpu_stats[i].timestamp) {
+          var date = new Date(cpu_stats[i].timestamp * 1000); // Timestamp is in seconds
+          timestamps.push(date.toISOString().split('T')[0]);
+
+          // For CPU, check if there's a numeric value, otherwise use "_" for no data
+          cpuValues.push(_.isNumber(cpu_stats[i][stat_name]) ? Math.round(cpu_stats[i][stat_name] * 10) / 10 : "_");
+
+          // For memory, if we have data use it, otherwise "_" for no data
+          if (mem_stats && mem_stats[i] && _.isNumber(mem_stats[i][stat_name])) {
+            memValues.push(Math.round(mem_stats[i][stat_name] * 10) / 10);
+          } else {
+            memValues.push("_");
+          }
+        }
+      }
+    }
+
+    // Check if we have any data points to plot
+    // if (cpuValues.length === 0) {
+    //   return null;
+    // }
+
+    // Encode data for URL
+    var timeLabels = timestamps.join('|');
+    var cpuData = cpuValues.join(',');
+    var memData = memValues.join(',');
+
+    var lineColors = [
+      "206BB6", // Blue
+      "CF8F36"  // Gold
+    ]
+
+    // Proper case stat_name
+    var stat_name_Proper = stat_name.charAt(0).toUpperCase() + stat_name.slice(1).toLowerCase();
+
+    // Build ImageCharts URL - creating a line chart with CPU (blue) and Memory (red)
+    var chartUrl = "https://image-charts.com/chart?";
+    chartUrl += "cht=lc"; // Line chart
+    chartUrl += "&chs=900x450"; // Chart size
+    chartUrl += "&chco=" + lineColors.join(','); // Colors
+    chartUrl += "&chxt=x,y"; // Show both axes
+    chartUrl += "&chxs=0,000000,12,-1,lt,000000,s,min90"; // Rotate labels 90 and add padding
+    chartUrl += "&chdl=CPU%20Usage%|Memory%20Usage%"; // Legend
+    chartUrl += "&chdlp=b"; // Legend position (bottom)
+    chartUrl += "&chtt="+stat_name_Proper+"+Resource+Utilization|" + encodeURIComponent(resource_name); // Title
+    chartUrl += "&chma=10,10,10,10"; // Margins all around
+    chartUrl += "&chxr=1,0,100"; // Y-axis range
+    chartUrl += "&chls=4|4"; // Line thickness
+    chartUrl += "&chf=bg,s,FFFFFF00"; // Transparent background
+    chartUrl += "&chg=20,50,5,5,CECECE" // Dashed, grey gridlines
+    chartUrl += "&chxl=0:|" + timeLabels; // X-axis labels (second to last becuase this is second longest)
+    chartUrl += "&chd=t:" + cpuData + "|" + memData; // Chart data (lets put this last to enable troubleshooting chart config easier)
+
+    return chartUrl;
+  }
+
   result = []
 
   _.each(ds_instances, function(instance) {
@@ -941,6 +1069,18 @@ script "js_merged_metrics", type: "javascript" do
 
         // Create object we're going to return
         merged_instance = {
+          "cpu_minimum": ds_cloudwatch_data_sorted[region][id]['cpuMinimum'] || null,
+          "cpu_average": ds_cloudwatch_data_sorted[region][id]['cpuAverage'] || null,
+          "cpu_maximum": ds_cloudwatch_data_sorted[region][id]['cpuMaximum'] || null,
+          "cpu_p90": ds_cloudwatch_data_sorted[region][id]['cpup90'] || null,
+          "cpu_p95": ds_cloudwatch_data_sorted[region][id]['cpup95'] || null,
+          "cpu_p99": ds_cloudwatch_data_sorted[region][id]['cpup99'] || null,
+          "mem_minimum": ds_cloudwatch_data_sorted[region][id]['memMinimum'] || null,
+          "mem_average": ds_cloudwatch_data_sorted[region][id]['memAverage'] || null,
+          "mem_maximum": ds_cloudwatch_data_sorted[region][id]['memMaximum'] || null,
+          "mem_p90": ds_cloudwatch_data_sorted[region][id]['memp90'] || null,
+          "mem_p95": ds_cloudwatch_data_sorted[region][id]['memp95'] || null,
+          "mem_p99": ds_cloudwatch_data_sorted[region][id]['memp99'] || null,
           "region": region,
           "id": id,
           "resourceARN": resourceARN,
@@ -967,26 +1107,19 @@ script "js_merged_metrics", type: "javascript" do
           "policy_name": ""
         }
 
-        // Grab usage data for the instance if it is present.
-        // Note: We don't simply name them the same as Cloudwatch does because
-        // prior versions of this policy also didn't, and we want to ensure
-        // that exported incident data looks the same as it used to.
+        // Generate chart URL for this resource
+        var resource_identifier = merged_instance["resourceName"] ? merged_instance["resourceName"] + " ("+merged_instance["resourceID"]+")"  : merged_instance["resourceID"]
+        merged_instance["chartUrl"] = generateChartUrl(ds_cloudwatch_data_sorted[region][id]['cpuPoints'], ds_cloudwatch_data_sorted[region][id]['memPoints'], param_stats_threshold, resource_identifier);
+        if (_.isString(merged_instance["chartUrl"])) {
+          // Below, we append &from_pt=true to the chart URL to handle the case where the markdown is not rendered and `)` is appended to the URL when it's rendered by email/browser client.. This moves the `)` value to the "from_pt" value which does nothing, and results in the chart rendering correctly still
 
-        stats_list = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
-        metrics_list = ["cpu", "mem"]
+          // Construct chartUrlField which is in the "link-external" format -- display name||URL
+          merged_instance["chartUrlField"] = resource_identifier+" Utilization Chart||" + merged_instance["chartUrl"] + "&from_pt=true"
 
-        _.each(stats_list, function(stat) {
-          _.each(metrics_list, function(metric) {
-            data_statname = metric + stat
-            incident_statname = metric + "_" + stat.toLowerCase()
-
-            merged_instance[incident_statname] = null
-
-            if (ds_cloudwatch_data_sorted[region][id][data_statname] != undefined && ds_cloudwatch_data_sorted[region][id][data_statname] != null) {
-              merged_instance[incident_statname] = parseFloat(parseFloat(ds_cloudwatch_data_sorted[region][id][data_statname]).toFixed(2))
-            }
-          })
-        })
+          // Append the chart as image markdown to the recommendation details
+          // TODO: disabled for now until UI supports rendering markdown in recommendationDetails field
+          // recommendationDetails.push("\\n\\n![Utilization Chart](" + merged_instance["chartUrl"] + "&from_pt=true)")
+        }
 
         // Send the instance information with the CloudWatch data into the final result.
         // Also adds in the account ID and currency symbol since itll be needed for the incident.
@@ -1480,6 +1613,13 @@ policy "pol_utilization" do
         label "ID"
         path "resourceID"
       end
+      field "chartUrl" do
+        label "Utilization Chart URL"
+      end
+      field "chartUrlField" do
+        label "Utilization Chart External Link"
+        format "link-external"
+      end
     end
   end
   validate_each $ds_idle_instances do
@@ -1608,6 +1748,13 @@ policy "pol_utilization" do
         label "ID"
         path "resourceID"
       end
+      field "chartUrl" do
+        label "Utilization Chart URL"
+      end
+      field "chartUrlField" do
+        label "Utilization Chart External Link"
+        format "link-external"
+      end
     end
   end
 end
@@ -1678,7 +1825,7 @@ define downsize_instances($data) do
         # Check to see if the instance is in a state that we can actual change instance type
         if $initial_state != "terminated" && $initial_state != "pending"
           # Stop the instance if it's not already stopped
-          if $initial_state != "stopped"
+          if ($initial_state != "stopped")
             call stop_instance($instance)
           end
           # Resize the instance
