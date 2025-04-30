@@ -1,4 +1,4 @@
-name "Budget Alerts"
+name "Budget Alerts With Data Alert Webhook"
 rs_pt_ver 20180301
 type "policy"
 short_description "This policy utilizes the Flexera Budget API to detect if budget threshold has been exceeded for a selected budget. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_report_alerts/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -8,10 +8,11 @@ category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "3.3.2",
+  version: "0.0.1",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
+  publish: "false"
   hide_skip_approvals: "true"
 )
 
@@ -81,6 +82,39 @@ parameter "param_email" do
   default []
 end
 
+parameter "param_alert_id" do
+  type "string"
+  category "Policy Settings"
+  label "Alert ID"
+  description "Provide the Alert ID to be used in the webhook"
+  default ""
+end
+
+parameter "param_subscription_id" do
+  type "string"
+  category "Policy Settings"
+  label "Subscription ID"
+  description "Provide the Subscription ID to be used in the webhook"
+  default ""
+end
+
+parameter "param_alert_data" do
+  type "list"
+  category "Policy Settings"
+  label "Alert Data"
+  description "A key/value pairs required to be used in the webhook payload e.g., condition=greater-than,threshold=90"
+  default ["condition=greater-than"]
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Policy Settings"
+  label "Automatic Actions"
+  description "Specify the automatic actions to be triggered, such as Alert Subscription Webhook."
+  allowed_values "Alert Subscription Webhook"
+  default ["Alert Subscription Webhook"]
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -95,6 +129,38 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraengdev.com": {
+       flexera: "api.flexeratest.com",
+       fsm: "api.fsm.flexeraengdev.com"
+    },
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
 
 datasource "ds_currency_reference" do
   request do
@@ -263,6 +329,7 @@ script "js_aggregated", type: "javascript" do
   }
   var ds_dimensions_inverted = _.invert(ds_dimensions);
   var filters = {};
+  var apiHost = 'api.flexeratest.com'
   _.each(param_filter, function (filter_item) {
     filter_item = filter_item.split("=");
     if (filter_item.length > 1) {
@@ -347,6 +414,7 @@ script "js_aggregated", type: "javascript" do
       }
 
       // values for export
+      item.apiHost = apiHost
       item.budget = item.budgetAmount;
       item.spend = item.spendAmount;
       item.overBudget = item.overBudgetAmount;
@@ -463,6 +531,7 @@ policy "pol_budget_alert" do
 EOS
     check eq(size(val(data, "invalid")), 0)
     escalate $esc_budget_alert
+    escalate $esc_alert_subscription_webhook
   end
 
   validate $ds_only_exceeded do
@@ -490,6 +559,7 @@ Target Groups: \n
 EOS
     check eq(size(data), 0)
     escalate $esc_budget_alert
+    escalate $esc_alert_subscription_webhook
     export do
       field "group" do
         label "Group"
@@ -511,6 +581,9 @@ EOS
       end
       field "details" do
         label "Details"
+      end
+      field "apiHost" do
+        label "API Host"
       end
     end
   end
@@ -540,6 +613,7 @@ Target Groups: \n
 EOS
     check eq(size(data), 0)
     escalate $esc_budget_alert
+    escalate $esc_alert_subscription_webhook
     export do
       field "group" do
         label "Group"
@@ -562,6 +636,9 @@ EOS
       field "details" do
         label "Details"
       end
+      field "apiHost" do
+        label "API Host"
+      end
     end
   end
 end
@@ -571,8 +648,71 @@ end
 ###############################################################################
 
 escalation "esc_budget_alert" do
-  automatic true
+  automatic contains($param_automatic_action, "242342342342343242342134121312341241234321412342134213")
   label "Send Email"
   description "Send incident email"
   email $param_email
+end
+
+escalation "esc_alert_subscription_webhook" do
+  automatic contains($param_automatic_action, "Alert Subscription Webhook")
+  label "Alert Subscription Webhook"
+  run "alert_subscription_webhook", data, $param_alert_id, $param_subscription_id, $param_alert_data, rs_org_id
+end
+
+# CWF function to handle alert subscription webhook
+define alert_subscription_webhook($data, $param_alert_id, $param_subscription_id, $param_alert_data, $rs_org_id) return $response do
+  task_label("Executing Alert Subscription Webhook")
+  $host = $data[0]["apiHost"]
+  $alert_id = $param_alert_id
+  $subscription_id = $param_subscription_id
+  call convert_alert_data($param_alert_data) retrieve $alert_data_converted
+
+  $request = {
+          auth: $$auth_flexera,
+          verb: "put",
+          https: true,
+          host: $host,
+          href: join(["/viz/v1/orgs/", $rs_org_id, "/alerts", $alert_id, "/subscriptions/", $subscription_id, "/webhook"]),
+          headers: { "Api-Version": "1.0" },
+          body: {
+            "data": to_json($alert_data_converted)
+          }
+        }
+  $response = http_request($request)
+  call handle_response($response)
+  task_label("Alert Subscription Webhook executed successfully")
+end
+
+define convert_alert_data($param_alert_data) return $alert_data_converted do
+  task_label("Converting alert data")
+  $alert_data_converted = {}
+  foreach $item in $param_alert_data do
+    $key = first(split($item, "=" ))
+    $value = last(split($item, "="))
+    $alert_data_converted[$key] = $value
+  end
+  task_label("Alert data converted successfully")
+end
+
+# CWF function to handle_response function
+define handle_response($response) do
+  task_label("Handling HTTP response")
+  $status_code = $response["code"]
+
+  if $status_code >= 200 && $status_code < 300
+    task_label("Handled HTTP response successfully")
+  else
+    raise 'Unexpected HTTP response: '+to_json($response)
+  end
+end
+
+define log_message($message) do
+  if !$$log_messages
+    $$log_messages = []
+  end
+  $message_string = to_json($message)
+  task_label($message_string)
+  # Convert response object to JSON string.  Easier to interpret
+  $$log_messages << $message_string
 end
