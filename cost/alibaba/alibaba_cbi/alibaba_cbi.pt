@@ -381,7 +381,7 @@ end
 
 datasource "ds_cbi_create_bill_upload" do
   request do
-    run_script $js_cbi_create_bill_upload, val($ds_cbi_endpoint, "id"), val($ds_dates, "period"), rs_org_id, rs_optima_host
+    run_script $js_cbi_create_bill_upload, val($ds_cbi_endpoint, "id"), val($ds_dates, "period"), $ds_abort_pending_bill_uploads, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -395,7 +395,7 @@ datasource "ds_cbi_create_bill_upload" do
 end
 
 script "js_cbi_create_bill_upload", type: "javascript" do
-  parameters "cbi_endpoint", "period", "rs_org_id", "rs_optima_host"
+  parameters "cbi_endpoint", "period", "ds_abort_pending_bill_uploads", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   function sleep(seconds) {
@@ -424,7 +424,7 @@ end
 datasource "ds_cost_reports" do
   iterate $ds_dates_list
   request do
-    run_script $js_cost_reports, val(iter_item, "date"), $ds_abort_pending_bill_uploads, $ds_cbi_create_bill_upload, $param_bucket, $param_path, $param_region, $param_account_id
+    run_script $js_cost_reports, val(iter_item, "date"), $param_bucket, $param_path, $param_region, $param_account_id
   end
   result do
     encoding "text"
@@ -432,7 +432,7 @@ datasource "ds_cost_reports" do
 end
 
 script "js_cost_reports", type: "javascript" do
-  parameters "date", "ds_abort_pending_bill_uploads", "ds_cbi_create_bill_upload", "param_bucket", "param_path", "param_region", "param_account_id"
+  parameters "date", "param_bucket", "param_path", "param_region", "param_account_id"
   result "request"
   code <<-'EOS'
   root_path = param_path.replace(/\/$/, '')
@@ -493,7 +493,7 @@ end
 
 datasource "ds_cbi_commit_bill_upload" do
   request do
-    run_script $js_cbi_commit_bill_upload, $ds_cbi_upload_files, $ds_cbi_create_bill_upload, rs_org_id, rs_optima_host
+    run_script $js_cbi_commit_bill_upload, $ds_cbi_upload_files, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -507,7 +507,7 @@ datasource "ds_cbi_commit_bill_upload" do
 end
 
 script "js_cbi_commit_bill_upload", type: "javascript" do
-  parameters "ds_cbi_upload_files", "ds_cbi_create_bill_upload", "rs_org_id", "rs_optima_host"
+  parameters "ds_cbi_upload_files", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   function sleep(seconds) {
@@ -519,11 +519,13 @@ script "js_cbi_commit_bill_upload", type: "javascript" do
   // Slow down rate of requests to prevent throttling
   sleep(3)
 
+  bill_upload_id = ds_cbi_upload_files.length > 0 ? ds_cbi_upload_files[0]["billUploadId"] : ""
+
   var request = {
     auth: "auth_flexera",
     verb: "POST",
     host: rs_optima_host,
-    path: ["/optima/orgs/", rs_org_id, "/billUploads/", ds_cbi_create_bill_upload["id"], "/operations"].join(''),
+    path: ["/optima/orgs/", rs_org_id, "/billUploads/", bill_upload_id, "/operations"].join(''),
     headers: { "User-Agent": "RS Policies" },
     body_fields: {"operation": "commit" }
   }
@@ -531,11 +533,11 @@ EOS
 end
 
 datasource "ds_incident" do
-  run_script $js_incident, $ds_cbi_commit_bill_upload, $ds_applied_policy, $ds_dates, $param_account_id, $param_region, $param_bucket, $param_path
+  run_script $js_incident, $ds_cbi_commit_bill_upload, $ds_applied_policy, $param_account_id, $param_region, $param_bucket, $param_path
 end
 
 script "js_incident", type: "javascript" do
-  parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_dates", "param_account_id", "param_region", "param_bucket", "param_path"
+  parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "param_account_id", "param_region", "param_bucket", "param_path"
   result "result"
   code <<-EOS
   result = [{
