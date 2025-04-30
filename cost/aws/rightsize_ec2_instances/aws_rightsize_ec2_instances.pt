@@ -401,7 +401,7 @@ datasource "ds_describe_regions" do
     query "Filter.1.Value.2", "opted-in"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
-    # header "Meta-Flexera", val($ds_is_deleted, "path")
+    header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "xml"
@@ -954,11 +954,11 @@ datasource "ds_aws_instance_size_map" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_currency, $param_stats_threshold, $param_stats_lookback
+  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_currency, $param_stats_threshold, $param_stats_lookback, rs_org_id, rs_project_id
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_cloudwatch_data_sorted", "ds_instances", "ds_aws_account", "ds_currency", "param_stats_threshold", "param_stats_lookback"
+  parameters "ds_cloudwatch_data_sorted", "ds_instances", "ds_aws_account", "ds_currency", "param_stats_threshold", "param_stats_lookback", "rs_org_id", "rs_project_id"
   result "result"
   code <<-EOS
   // Function to generate ImageCharts URL for CPU and Memory usage
@@ -1021,22 +1021,22 @@ script "js_merged_metrics", type: "javascript" do
     var stat_name_Proper = stat_name.charAt(0).toUpperCase() + stat_name.slice(1).toLowerCase();
 
     // Build ImageCharts URL - creating a line chart with CPU (blue) and Memory (red)
-    var chartUrl = "https://image-charts.com/chart?";
-    chartUrl += "cht=lc"; // Line chart
+    var chartUrl = "https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id="+rs_org_id+"&rs_project_id="+rs_project_id;
+    chartUrl += "&cht=lc"; // Line chart
     chartUrl += "&chs=900x450"; // Chart size
     chartUrl += "&chco=" + lineColors.join(','); // Colors
     chartUrl += "&chxt=x,y"; // Show both axes
     chartUrl += "&chxs=0,000000,12,-1,lt,000000,s,min90"; // Rotate labels 90 and add padding
-    chartUrl += "&chdl=CPU%20Usage%|Memory%20Usage%"; // Legend
+    chartUrl += "&chdl="+encodeURIComponent("CPU Usage%25%20%20%20%20%20%20%20%20%20%20|Memory Usage%25"); // Legend with spaces to adjust CPU Usage to left
     chartUrl += "&chdlp=b"; // Legend position (bottom)
-    chartUrl += "&chtt="+stat_name_Proper+"+Resource+Utilization|" + encodeURIComponent(resource_name); // Title
+    chartUrl += "&chtt="+encodeURIComponent(stat_name_Proper+"+Resource+Utilization|" + encodeURIComponent(resource_name)); // Title
     chartUrl += "&chma=10,10,10,10"; // Margins all around
     chartUrl += "&chxr=1,0,100"; // Y-axis range
-    chartUrl += "&chls=4|4"; // Line thickness
+    chartUrl += "&chls="+encodeURIComponent("4|4"); // Line thickness
     chartUrl += "&chf=bg,s,FFFFFF00"; // Transparent background
-    chartUrl += "&chg=20,50,5,5,CECECE" // Dashed, grey gridlines
-    chartUrl += "&chxl=0:|" + timeLabels; // X-axis labels (second to last becuase this is second longest)
-    chartUrl += "&chd=t:" + cpuData + "|" + memData; // Chart data (lets put this last to enable troubleshooting chart config easier)
+    chartUrl += "&chg="+encodeURIComponent("20,50,5,5,CECECE"); // Dashed, grey gridlines
+    chartUrl += "&chxl="+encodeURIComponent("0:|" + encodeURIComponent(timeLabels)); // X-axis labels (second to last becuase this is second longest)
+    chartUrl += "&chd="+encodeURIComponent("t:" + cpuData + "|" + memData); // Chart data (lets put this last to enable troubleshooting chart config easier)
 
     return chartUrl;
   }
@@ -1825,7 +1825,7 @@ define downsize_instances($data) do
         # Check to see if the instance is in a state that we can actual change instance type
         if $initial_state != "terminated" && $initial_state != "pending"
           # Stop the instance if it's not already stopped
-          if ($initial_state != "stopped")
+          if $initial_state != "stopped"
             call stop_instance($instance)
           end
           # Resize the instance
