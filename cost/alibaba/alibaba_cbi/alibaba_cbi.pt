@@ -327,8 +327,6 @@ datasource "ds_existing_bill_uploads" do
     host rs_optima_host
     path join(["/optima/orgs/", rs_org_id, "/billUploads"])
     header "User-Agent", "RS Policies"
-    body_field "billConnectId", val($ds_cbi_endpoint, "id")
-    body_field "billingPeriod", val($ds_dates, "period")
   end
   result do
     encoding "json"
@@ -381,8 +379,7 @@ end
 
 datasource "ds_cbi_create_bill_upload" do
   request do
-    # Include $ds_abort_pending_bill_uploads as a parameter to ensure it always executes before this
-    run_script $js_cbi_create_bill_upload, val($ds_cbi_endpoint, "id"), val($ds_dates, "period"), $ds_abort_pending_bill_uploads, rs_org_id, rs_optima_host
+    run_script $js_cbi_create_bill_upload, val($ds_cbi_endpoint, "id"), val($ds_dates, "period"), rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -396,7 +393,7 @@ datasource "ds_cbi_create_bill_upload" do
 end
 
 script "js_cbi_create_bill_upload", type: "javascript" do
-  parameters "cbi_endpoint", "period", "ds_aborted_pending_bill_uploads_done", "rs_org_id", "rs_optima_host"
+  parameters "cbi_endpoint", "period", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   function sleep(seconds) {
@@ -425,7 +422,7 @@ end
 datasource "ds_cost_reports" do
   iterate $ds_dates_list
   request do
-    run_script $js_cost_reports, val(iter_item, "date"), $ds_cbi_create_bill_upload, $param_bucket, $param_path, $param_region, $param_account_id
+    run_script $js_cost_reports, val(iter_item, "date"), $ds_abort_pending_bill_uploads, $ds_cbi_create_bill_upload, $param_bucket, $param_path, $param_region, $param_account_id
   end
   result do
     encoding "text"
@@ -433,7 +430,7 @@ datasource "ds_cost_reports" do
 end
 
 script "js_cost_reports", type: "javascript" do
-  parameters "date", "ds_cbi_create_bill_upload", "param_bucket", "param_path", "param_region", "param_account_id"
+  parameters "date", "ds_abort_pending_bill_uploads", "ds_cbi_create_bill_upload", "param_bucket", "param_path", "param_region", "param_account_id"
   result "request"
   code <<-'EOS'
   root_path = param_path.replace(/\/$/, '')
