@@ -1,7 +1,7 @@
 name "Azure Reserved Instances Breakeven Point Report"
 rs_pt_ver 20180301
 type "policy"
-short_description "Reports the Breakeven Point on purchased Azure Reserved Instances. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/breakeven_point) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports the Breakeven Point on purchased upfront Azure Reserved Instances. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/breakeven_point) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
@@ -240,6 +240,30 @@ script "js_accounts_by_billing_center", type: "javascript" do
 EOS
 end
 
+datasource "ds_account_list" do
+  run_script $js_account_list, $ds_accounts_by_billing_center, $ds_billing_centers
+end
+
+script "js_account_list", type: "javascript" do
+  parameters "ds_accounts_by_billing_center", "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  bc_object = {}
+
+  _.each(ds_billing_centers, function(bc) { bc_object[bc['id']] = bc['name'] })
+
+  result = {}
+
+  _.each(ds_accounts_by_billing_center, function(account) {
+    if (result[account['vendor_account_id']] == undefined) {
+      result[account['vendor_account_id']] = []
+    }
+
+    result[account['vendor_account_id']].push(bc_object[account['billing_center_id']])
+  })
+EOS
+end
+
 datasource "ds_azure_ris" do
   request do
     auth $auth_flexera
@@ -296,27 +320,60 @@ script "js_azure_filtered_ris", type: "javascript" do
   bc_account_ids = _.uniq(_.pluck(ds_accounts_by_billing_center, "vendor_account_id"))
 
   result = _.filter(ds_azure_ris, function(ri) {
-    return _.contains(bc_account_ids, ri['purchasing_subscription_guid'])
+    return _.contains(bc_account_ids, ri['purchasing_subscription_guid']) && ri["billing_frequency"] == "Upfront"
   })
 EOS
 end
 
 datasource "ds_azure_ris_with_breakeven" do
-  run_script $js_azure_ris_with_breakeven, $ds_azure_filtered_ris, $ds_region_table, $ds_azure_vm_pricing
+  run_script $js_azure_ris_with_breakeven, $ds_azure_filtered_ris, $ds_account_list, $ds_region_table, $ds_azure_vm_pricing, $ds_applied_policy
 end
 
 script "js_azure_ris_with_breakeven", type: "javascript" do
-  parameters "ds_azure_filtered_ris", "ds_region_table", "ds_azure_vm_pricing"
+  parameters "ds_azure_filtered_ris", "ds_account_list", "ds_region_table", "ds_azure_vm_pricing", "ds_applied_policy"
   result "result"
   code <<-EOS
-  function calculateBreakEven(reservation, onDemandPricePerHour) {
-    commitmentCost = reservation['amount']
-    utilization = reservation['util_avg_percentage'] / 100
-    termYears = reservation['term'] == "P1Y" ? 1 : 3
-    p_ci_hour = commitmentCost / (termYears * 365 * 24)
-    perHourSavings = (onDemandPricePerHour - p_ci_hour) * utilization
-    return perHourSavings > 0 ? commitmentCost / perHourSavings : null
+  function breakEvenPoint(today, ri, monthly_ondemand_price) {
+    // Determine cost difference between RI and on-demand price
+    monthly_difference = monthly_ondemand_price - ri['monthly_cost']
+
+    // Determine the term length in months and years
+    year_parse = /^P(\d+)Y$/.exec(ri['term'])
+    month_parse = /^P(\d+)M$/.exec(ri['term'])
+
+    if (year_parse) {
+      termMonths = parseInt(year_parse[1], 10) * 12
+      termYears = parseInt(year_parse[1], 10)
+    } else if (month_parse) {
+      termMonths = parseInt(month_parse[1], 10)
+      termYears = parseInt(month_parse[1], 10) / 12
+    } else {
+      // Return null instead of calculating break even point if term cannot be parsed
+      return null
+    }
+
+    // Determine the purchase date
+    expiration_date = new Date(ri['expiration_date'])
+    expiration_year = Number(expiration.toISOString().substring(0, 4))
+    start_year = expiration_year - termYears
+    purchase_date = new Date(expiration_year + expiration_date.toISOString().substring(4, 99))
+
+    // Determine the time remaining and time used
+    hours_passed = (today - purchase_date) / 1000 / 60 / 60
+    hours_remaining = (expiration_date - today) / 1000 / 60 / 60
+
+    // Determine the monthly savings
+    monthly_savings = monthly_difference * (ri['util_avg_percentage'] / 100)
+    if (monthly_savings <= 0) { return null }
+
+    return {
+      hours: (ri['amount'] / monthlySavings) * (365.25 / 12 * 24),
+      months: ri['amount'] / monthlySavings
+    }
   }
+
+  // Get today's date
+  today = new Date()
 
   ris_with_breakeven = _.map(ds_azure_filtered_ris, function(ri) {
     new_ri = {}
@@ -325,16 +382,82 @@ script "js_azure_ris_with_breakeven", type: "javascript" do
     region = ds_region_table[ri['region']]
     sku = ri['arm_sku_name']
     hourly_price = ds_azure_vm_pricing[region][sku] ? ds_azure_vm_pricing[region][sku]["Linux"]["pricePerUnit"] : null
-    new_ri["vm_monthly_list_price"] = hourly_price ? hourly_price * (365.25 / 12 * 24) : null
+    new_ri["monthly_ondemand_price"] = hourly_price ? hourly_price * (365.25 / 12 * 24) : null
 
-    total_months = ri['term'] == "P1Y" ? 12 : 36
-    yearly_ri_cost = ri['monthly_cost'] * total_months
-    yearly_vm_cost = new_ri["vm_monthly_list_price"] * total_months
-    percentage_breakeven = yearly_ri_cost / yearly_vm_cost
+    if (new_ri["monthly_ondemand_price"]) {
+      breakeven = breakEvenPoint(today, ri, new_ri["monthly_ondemand_price"]) ? breakEvenPoint(today, ri, new_ri["monthly_ondemand_price"]) : null
+      new_ri["breakeven_hours"] = breakeven ? breakeven["hours"] : "Never"
+      new_ri["breakeven_months"] = breakeven ? breakeven["months"] : "Never"
+    }
+
+    new_ri["resourceID"] = ri["util_reservation_id"]
+    new_ri["accountID"] = ri["purchasing_subscription_guid"]
+    new_ri["accountName"] = ri["purchasing_subscription_name"]
+    new_ri["billing_centers"] = ds_account_list[new_ri["accountID"]] ? ds_account_list[new_ri["accountID"]].join(', ') : null
+    new_ri["instanceType"] = ri["util_sku_name"]
+    new_ri["instanceCount"] = Math.round(ri["amount"])
+    new_ri["policy_name"] = ds_applied_policy["name"]
+
+    return new_ri
   })
 
-  result = _.filter(ris_with_vm_pricing, function(ri) {
-    return ri['vm_monthly_list_price'] && ri['monthly_cost']
-  })
+  result = _.filter(ris_with_vm_pricing, function(ri) { return ri["monthly_ondemand_price"] })
 EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_azure_ris_with_breakeven" do
+  validate_each $ds_azure_ris_with_breakeven do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Upfront Reservations Found"
+    check eq(val(item, "resourceID"), "")
+    escalate $esc_email
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "billing_centers" do
+        label "Associated Billing Center(s)"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "term" do
+        label "Term"
+      end
+      field "resourceID" do
+        label "Lease ID"
+      end
+      field "instanceType" do
+        label "Instance Type"
+      end
+      field "instanceCount" do
+        label "Instance Count"
+      end
+      field "expiration_date" do
+        label "Expiration Date"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
