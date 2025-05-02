@@ -1,0 +1,340 @@
+name "Azure Reserved Instances Breakeven Point Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports the Breakeven Point on purchased Azure Reserved Instances. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/breakeven_point) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Reserved Instances",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
+end
+
+parameter "param_bc_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Billing Centers"
+  description "Allow or Deny entered Billing Centers."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_billing_centers" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Billing Center List"
+  description "A list of allowed or denied Billing Center names/IDs. Leave blank to report on Reservations in all Billing Centers."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_region_table" do
+  run_script $js_region_table
+end
+
+script "js_region_table", type:"javascript" do
+  result "result"
+  code <<-EOS
+  result = {
+    "ukwest": "UK West",
+    "usgovvirginia": "US Gov Virginia",
+    "eastus2": "US East 2",
+    "uaenorth": "AE North",
+    "southafricawest": "ZA West",
+    "francesouth": "FR South",
+    "westcentralus": "US West Central",
+    "koreacentral": "KR Central",
+    "westeurope": "EU West",
+    "southafricanorth": "ZA North",
+    "southeastasia": "AP Southeast",
+    "centralindia": "IN Central",
+    "switzerlandwest": "CH West",
+    "norwayeast": "NO East",
+    "germanywestcentral": "DE West Central",
+    "westus2": "US West 2",
+    "australiacentral": "AU Central",
+    "italynorth": "IT North",
+    "centralus": "US Central",
+    "germanynorth": "DE North",
+    "brazilsoutheast": "BR Southeast",
+    "southindia": "IN South",
+    "swedencentral": "SE Central",
+    "francecentral": "FR Central",
+    "australiasoutheast": "AU Southeast",
+    "northeurope": "EU North",
+    "koreasouth": "KR South",
+    "usgovtexas": "US Gov TX",
+    "polandcentral": "PL Central",
+    "japaneast": "JA East",
+    "westindia": "IN West",
+    "japanwest": "JA West",
+    "westus": "US West",
+    "jioindiawest": "IN West Jio",
+    "northcentralus": "US North Central",
+    "southcentralus": "US South Central",
+    "eastasia": "AP East",
+    "jioindiacentral": "IN Central Jio",
+    "australiacentral2": "AU Central 2",
+    "canadaeast": "CA East",
+    "eastus": "US East",
+    "uaecentral": "AE Central",
+    "norwaywest": "NO West",
+    "canadacentral": "CA Central",
+    "uksouth": "UK South",
+    "qatarcentral": "QA Central",
+    "swedensouth": "SE South",
+    "brazilsouth": "BR South",
+    "australiaeast": "AU East",
+    "switzerlandnorth": "CH North",
+    "usgovarizona": "US Gov AZ",
+    "westus3": "US West 3"
+  }
+EOS
+end
+
+datasource "ds_azure_vm_pricing" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/azure_vm_pricing.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_billing_centers_filtered" do
+  run_script $js_billing_centers_filtered, $ds_billing_centers, $param_bc_allow_or_deny, $param_billing_centers
+end
+
+script "js_billing_centers_filtered", type: "javascript" do
+  parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_billing_centers"
+  result "result"
+  code <<-EOS
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_billing_centers.length > 0) {
+    billing_centers = _.filter(ds_billing_centers, function(item) {
+      id_found = _.contains(param_billing_centers, item['id']) == allow_deny_test[param_bc_allow_or_deny]
+      name_found = _.contains(param_billing_centers, item['name']) == allow_deny_test[param_bc_allow_or_deny]
+      return id_found || name_found
+    })
+
+    // Check for conflicting parents/children and remove children if present
+    bc_ids = _.compact(_.pluck(billing_centers, 'id'))
+    bad_children = _.filter(ds_billing_centers, function(bc) { return _.contains(bc_ids, bc['parent_id']) })
+    bad_children_ids = _.pluck(bad_children, 'id')
+
+    // Create final result with the bad children removed
+    final_list = _.reject(billing_centers, function(bc) { return _.contains(bad_children_ids, bc['id']) })
+  } else {
+    // If we're not filtering at all, just grab all of the top level billing centers
+    final_list = _.filter(ds_billing_centers, function(bc) {
+      return bc['parent_id'] == null || bc['parent_id'] == undefined
+    })
+  }
+
+  result = _.compact(_.pluck(final_list, 'id'))
+EOS
+end
+
+datasource "ds_accounts_by_billing_center" do
+  request do
+    run_script $js_accounts_by_billing_center, $ds_billing_centers_filtered, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "vendor_account_id", jmes_path(col_item, "dimensions.vendor_account")
+      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "timestamp", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+script "js_accounts_by_billing_center", type: "javascript" do
+  parameters "ds_billing_centers_filtered", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  start_date = new Date().toISOString()
+  start_date = start_date.split('-')[0] + '-' + start_date.split('-')[1]
+
+  end_year = Number(start_date.split('-')[0])
+  end_month = Number(start_date.split('-')[1]) + 1
+  if (end_month == 13) { end_month = 1; end_year++ }
+  if (end_month < 10) { end_month = '0' + end_month.toString() }
+  end_date = end_year.toString() + '-' + end_month.toString()
+
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      "dimensions": [ "billing_center_id", "vendor_account", "vendor_account_name" ],
+      "granularity": "month",
+      "metrics": [ "cost_amortized_unblended_adj" ],
+      "billing_center_ids": ds_billing_centers_filtered,
+      "start_at": start_date,
+      "end_at": end_date
+    }
+  }
+EOS
+end
+
+datasource "ds_azure_ris" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/reserved_instances/orgs/", rs_org_id, "/clouds/azure"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "account_name", jmes_path(col_item, "account_name")
+      field "amount", jmes_path(col_item, "amount")
+      field "arm_sku_name", jmes_path(col_item, "arm_sku_name")
+      field "billing_frequency", jmes_path(col_item, "billing_frequency")
+      field "cost_center", jmes_path(col_item, "cost_center")
+      field "currency", jmes_path(col_item, "currency")
+      field "current_enrollment", jmes_path(col_item, "current_enrollment")
+      field "department_name", jmes_path(col_item, "department_name")
+      field "description", jmes_path(col_item, "description")
+      field "event_date", jmes_path(col_item, "event_date")
+      field "event_type", jmes_path(col_item, "event_type")
+      field "expiration_date", jmes_path(col_item, "expiration_date")
+      field "monthly_cost", jmes_path(col_item, "monthly_cost")
+      field "purchased_quantity", jmes_path(col_item, "purchased_quantity")
+      field "purchasing_enrollment", jmes_path(col_item, "purchasing_enrollment")
+      field "purchasing_subscription_guid", jmes_path(col_item, "purchasing_subscription_guid")
+      field "purchasing_subscription_name", jmes_path(col_item, "purchasing_subscription_name")
+      field "quantity", jmes_path(col_item, "quantity")
+      field "region", jmes_path(col_item, "region")
+      field "remaining_quantity", jmes_path(col_item, "remaining_quantity")
+      field "reservation_order_id", jmes_path(col_item, "reservation_order_id")
+      field "reservation_order_name", jmes_path(col_item, "reservation_order_name")
+      field "term", jmes_path(col_item, "term")
+      field "util_avg_percentage", jmes_path(col_item, "utilization.avg_utilization_percentage")
+      field "util_max_percentage", jmes_path(col_item, "utilization.max_utilization_percentage")
+      field "util_min_percentage", jmes_path(col_item, "utilization.min_utilization_percentage")
+      field "util_reservation_id", jmes_path(col_item, "utilization.reservation_id")
+      field "util_reserved_hours", jmes_path(col_item, "utilization.reserved_hours")
+      field "util_sku_name", jmes_path(col_item, "utilization.sku_name")
+      field "util_usage_date", jmes_path(col_item, "utilization.usage_date")
+      field "util_used_hours", jmes_path(col_item, "utilization.used_hours")
+    end
+  end
+end
+
+datasource "ds_azure_filtered_ris" do
+  run_script $js_azure_filtered_ris, $ds_accounts_by_billing_center, $ds_azure_ris
+end
+
+script "js_azure_filtered_ris", type: "javascript" do
+  parameters "ds_accounts_by_billing_center", "ds_azure_ris"
+  result "result"
+  code <<-EOS
+  bc_account_ids = _.uniq(_.pluck(ds_accounts_by_billing_center, "vendor_account_id"))
+
+  result = _.filter(ds_azure_ris, function(ri) {
+    return _.contains(bc_account_ids, ri['purchasing_subscription_guid'])
+  })
+EOS
+end
+
+datasource "ds_azure_ris_with_breakeven" do
+  run_script $js_azure_ris_with_breakeven, $ds_azure_filtered_ris, $ds_region_table, $ds_azure_vm_pricing
+end
+
+script "js_azure_ris_with_breakeven", type: "javascript" do
+  parameters "ds_azure_filtered_ris", "ds_region_table", "ds_azure_vm_pricing"
+  result "result"
+  code <<-EOS
+  function calculateBreakEven(reservation, onDemandPricePerHour) {
+    commitmentCost = reservation['amount']
+    utilization = reservation['util_avg_percentage'] / 100
+    termYears = reservation['term'] == "P1Y" ? 1 : 3
+    p_ci_hour = commitmentCost / (termYears * 365 * 24)
+    perHourSavings = (onDemandPricePerHour - p_ci_hour) * utilization
+    return perHourSavings > 0 ? commitmentCost / perHourSavings : null
+  }
+
+  ris_with_breakeven = _.map(ds_azure_filtered_ris, function(ri) {
+    new_ri = {}
+    _.each(_.keys(ri), function(key) { new_ri[key] = ri[key] })
+
+    region = ds_region_table[ri['region']]
+    sku = ri['arm_sku_name']
+    hourly_price = ds_azure_vm_pricing[region][sku] ? ds_azure_vm_pricing[region][sku]["Linux"]["pricePerUnit"] : null
+    new_ri["vm_monthly_list_price"] = hourly_price ? hourly_price * (365.25 / 12 * 24) : null
+
+    total_months = ri['term'] == "P1Y" ? 12 : 36
+    yearly_ri_cost = ri['monthly_cost'] * total_months
+    yearly_vm_cost = new_ri["vm_monthly_list_price"] * total_months
+    percentage_breakeven = yearly_ri_cost / yearly_vm_cost
+  })
+
+  result = _.filter(ris_with_vm_pricing, function(ri) {
+    return ri['vm_monthly_list_price'] && ri['monthly_cost']
+  })
+EOS
+end
