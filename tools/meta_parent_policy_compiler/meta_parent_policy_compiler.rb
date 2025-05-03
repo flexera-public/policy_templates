@@ -18,6 +18,23 @@ def bad_file_path(file_path)
   exit(1)
 end
 
+def child_missing_requirements(file_path, file_contents)
+  header_found = file_contents.include?("header \"Meta-Flexera\", val($ds_is_deleted, \"path\")")
+  check_found = file_contents.include?("check logic_or($ds_parent_policy_terminated,")
+  footer_found = file_contents.include?("# Meta Policy [alpha]") && file_contents.include?("datasource \"ds_get_policy\" do") && file_contents.include?("datasource \"ds_parent_policy_terminated\" do") && file_contents.include?("datasource \"ds_terminate_self\" do") && file_contents.include?("datasource \"ds_is_deleted\" do")
+
+  unless header_found && check_found && footer_found
+    print("Unable to generate meta parent for #{file_path}\n\n")
+    print("$ds_is_deleted Header not found in child policy template.\n") unless header_found
+    print("$ds_parent_policy_terminated check statement not found in child policy template.\n") unless check_found
+    print("Required meta policy code malformed or not found at bottom of child policy template.\n") unless footer_found
+    print("\n")
+    print("Please see the Meta Policies README for more information:\n")
+    print("https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md\n\n")
+    exit(1)
+  end
+end
+
 # Check parameters and set things accordingly
 invalid_parameters() if ARGV[0] == nil
 invalid_parameters() if ARGV[0] == "--from-list" && ARGV[1] == nil
@@ -54,8 +71,11 @@ end
 def compile_meta_parent_policy(file_path, specified_parent_pt_path)
   print("Reading child  policy template: "+file_path+"\n") # Intentional extra space after child so the Read/Write output lines up
   file = File.open(file_path, "rb")
-
   pt = file.read
+
+  # Exit with error if child policy template is missing required components
+  child_missing_requirements(file_path, pt)
+
   ###############################################################################
   # Parse the Policy Template as a string using regex to get the parameters and credential blocks
 
