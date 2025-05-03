@@ -313,6 +313,10 @@ end
     print("Could not determine parent policy template to use for #{file_path}\n")
     exit(1)
   end
+
+  # Exit with error if the template does not exist
+  bad_file_path(parent_pt_path) if !File.exist?(parent_pt_path)
+
   parent_pt = File.open(parent_pt_path, "rb").read
   # Copy the parent_pt to output_pt so we can manipulate it safely
   output_pt = parent_pt
