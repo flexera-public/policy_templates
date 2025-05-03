@@ -1,15 +1,51 @@
 require "json"
 
+def usageinfo()
+  print("Parameters not provided or malformed.\n\n")
+  print("- Specify --from-list as the first parameter and the file path of a JSON file as the second parameter to automatically generate meta parents from a list of file paths.\n")
+  print("  Example: ruby meta_parent_policy_compiler.rb --from-list default_template_files.json\n\n")
+  print("- Specify a template file path as the first parameter and a cloud provider (aws azure google) for the second parameter to generate a meta parent from a specific template for a major cloud provider.\n")
+  print("  Example: ruby meta_parent_policy_compiler.rb local/aws/aws_vms.pt aws\n\n")
+  print("- Specify a template file path as the first parameter, 'custom' for the second parameter, and a template file path for the third parameter to generate a meta parent using a custom template.\n")
+  print("  Example: ruby meta_parent_policy_compiler.rb local/oci/oci_vms.pt custom local/oci/oci_vms_meta_parent.pt.template\n\n")
+  exit(1)
+end
+
 # List of child policy template files to compile meta parent policy templates for by default
 # The child policy template must already have the necessary Meta Parent changes made to it
 # and those changes in the version that's published to the Flexera Policy Catalog.
 # More info at https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md
-default_child_policy_template_files = JSON.parse(File.read("default_template_files.json"))
+specified_parent_pt_path = nil
+
+if ARGV[0] == nil || (ARGV[0] == "--from-list" && ARGV[1] == nil)
+  usageinfo()
+elsif ARGV[0] == "--from-list"
+  child_policy_template_files = JSON.parse(File.read(ARGV[1]))
+# Logic to allow a user to manually generate a meta parent policy template
+else
+  child_policy_template_files = [ ARGV[0] ]
+
+  if ARGV[1] == "aws"
+    specified_parent_pt_path = "aws_meta_parent.pt.template"
+  elsif ARGV[1] == "azure"
+    specified_parent_pt_path = "azure_meta_parent.pt.template"
+  elsif ARGV[1] == "google"
+    specified_parent_pt_path = "google_meta_parent.pt.template"
+  elsif ARGV[1] == "custom"
+    if ARGV[2] != nil
+      specified_parent_pt_path = ARGV[2]
+    else
+      usageinfo()
+    end
+  else
+    usageinfo()
+  end
+end
 
 # Compile Meta Parent Policy Definition
 # This function takes a child policy template file path
 # as input and outputs a meta parent policy definition
-def compile_meta_parent_policy(file_path)
+def compile_meta_parent_policy(file_path, specified_parent_pt_path)
   print("Reading child  policy template: "+file_path+"\n") # Intentional extra space after child so the Read/Write output lines up
   file = File.open(file_path, "rb")
 
@@ -256,7 +292,12 @@ end
 
   # Replace Placeholders from Meta Parent Policy Template with values from Child Policy Template
   parent_pt_path = "aws_meta_parent.pt.template"
-  if file_path.include?("aws")
+
+  # Use user-specified cloud provider path if provided
+  # Otherwise, derive it from file name
+  if specified_parent_pt_path != nil
+    parent_pt_path = specified_parent_pt_path
+  elsif file_path.include?("aws")
     parent_pt_path = "aws_meta_parent.pt.template"
   elsif file_path.include?("azure")
     parent_pt_path = "azure_meta_parent.pt.template"
@@ -319,16 +360,7 @@ end
 end
 # End Compile Meta Parent Policy Template Definition
 
-# Start Compile Meta Parent Policy Template Execution
-# If argument is provided, then use those files as the file path to the child policy template
-# Else, use the default list of child policy template files we statically defined at the top
-if ARGV.length == 0
-  child_policy_template_files = default_child_policy_template_files
-else
-  child_policy_template_files = ARGV
-end
-
 # Loop through all Policy Templates specified
 child_policy_template_files.each do |child_policy_template|
-  compile_meta_parent_policy(child_policy_template)
+  compile_meta_parent_policy(child_policy_template, specified_parent_pt_path)
 end
