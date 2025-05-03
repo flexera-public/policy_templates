@@ -25,6 +25,8 @@ policy_templates:
 
 Output meta parent policy template file will be the same directory as the source child policy template but with a `_meta_parent.pt` suffix.
 
+Note: Child policy templates have to be modified in a few small ways in order for meta parent policy templates to be generated. Please see the [Meta Policies README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) for more information.
+
 ## Automated Workflow
 
 There is an automated workflow that runs every time a push to the default branch is made.  Whenever there are changes resulting from running the compile script, a new PR is made and can be approved by the Policy Template Maintainers.
