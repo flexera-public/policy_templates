@@ -1,44 +1,50 @@
 require "json"
+require "yaml"
 
-def usageinfo()
+# Report usage info and exit with error if parameters are malformed
+def invalid_parameters()
   print("Parameters not provided or malformed.\n\n")
-  print("- Specify --from-list as the first parameter and the file path of a JSON file as the second parameter to automatically generate meta parents from a list of file paths.\n")
-  print("  Example: ruby meta_parent_policy_compiler.rb --from-list default_template_files.json\n\n")
-  print("- Specify a template file path as the first parameter and a cloud provider (aws azure google) for the second parameter to generate a meta parent from a specific template for a major cloud provider.\n")
-  print("  Example: ruby meta_parent_policy_compiler.rb local/aws/aws_vms.pt aws\n\n")
-  print("- Specify a template file path as the first parameter, 'custom' for the second parameter, and a template file path for the third parameter to generate a meta parent using a custom template.\n")
-  print("  Example: ruby meta_parent_policy_compiler.rb local/oci/oci_vms.pt custom local/oci/oci_vms_meta_parent.pt.template\n\n")
+  print("- Specify --from-list as the first parameter and the file path of a YAML file as the second parameter to automatically generate meta parents from a list of file paths.\n")
+  print("  Example: ruby meta_parent_policy_compiler.rb --from-list default_template_files.yaml\n\n")
+  print("- Specify --target-policy as the first parameter, a template file path as the second parameter and a cloud provider (aws azure google) for the third parameter to generate a meta parent from a specific template for a major cloud provider.\n")
+  print("  Example: ruby meta_parent_policy_compiler.rb --target-policy local/aws/aws_vms.pt aws\n\n")
+  print("- Specify --target-policy as the first parameter, a template file path as the second parameter, 'custom' for the third parameter, and a template file path for the fourth parameter to generate a meta parent using a custom template.\n")
+  print("  Example: ruby meta_parent_policy_compiler.rb --target-policy local/oci/oci_vms.pt custom local/oci/oci_vms_meta_parent.pt.template\n\n")
   exit(1)
 end
 
-# List of child policy template files to compile meta parent policy templates for by default
-# The child policy template must already have the necessary Meta Parent changes made to it
-# and those changes in the version that's published to the Flexera Policy Catalog.
-# More info at https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md
+def bad_file_path(file_path)
+  print("Provided file path is invalid. File does not exist or is unreadable:\n#{file_path}\n\n")
+  exit(1)
+end
+
+# Check parameters and set things accordingly
+invalid_parameters() if ARGV[0] == nil
+invalid_parameters() if ARGV[0] == "--from-list" && ARGV[1] == nil
+invalid_parameters() if ARGV[0] == "--target-policy" && ARGV[1] == nil
+invalid_parameters() if ARGV[0] == "--target-policy" && ARGV[2] != "aws" && ARGV[2] != "azure" && ARGV[2] != "google" && ARGV[2] != "custom"
+invalid_parameters() if ARGV[0] == "--target-policy" && ARGV[2] == "custom" && ARGV[3] == nil
+
+bad_file_path(ARGV[1]) if ARGV[0] == "--from-list" && !File.exist?(ARGV[1])
+bad_file_path(ARGV[1]) if ARGV[0] == "--target-policy" && !File.exist?(ARGV[1])
+bad_file_path(ARGV[3]) if ARGV[0] == "--target-policy" && ARGV[2] == "custom" && !File.exist?(ARGV[3])
+
 specified_parent_pt_path = nil
 
-if ARGV[0] == nil || (ARGV[0] == "--from-list" && ARGV[1] == nil)
-  usageinfo()
-elsif ARGV[0] == "--from-list"
-  child_policy_template_files = JSON.parse(File.read(ARGV[1]))
-# Logic to allow a user to manually generate a meta parent policy template
-else
-  child_policy_template_files = [ ARGV[0] ]
+if ARGV[0] == "--from-list"
+  child_policy_template_files_yaml = YAML.load_file(ARGV[1])
+  child_policy_template_files = child_policy_template_files_yaml["policy_templates"]
+elsif ARGV[0] == "--target-policy"
+  child_policy_template_files = [ ARGV[1] ]
 
-  if ARGV[1] == "aws"
+  if ARGV[2] == "aws"
     specified_parent_pt_path = "aws_meta_parent.pt.template"
-  elsif ARGV[1] == "azure"
+  elsif ARGV[2] == "azure"
     specified_parent_pt_path = "azure_meta_parent.pt.template"
-  elsif ARGV[1] == "google"
+  elsif ARGV[2] == "google"
     specified_parent_pt_path = "google_meta_parent.pt.template"
-  elsif ARGV[1] == "custom"
-    if ARGV[2] != nil
-      specified_parent_pt_path = ARGV[2]
-    else
-      usageinfo()
-    end
-  else
-    usageinfo()
+  elsif ARGV[2] == "custom"
+    specified_parent_pt_path = ARGV[3]
   end
 end
 
