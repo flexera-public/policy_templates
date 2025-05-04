@@ -39,7 +39,9 @@ Every policy template should be in its own directory that contains the following
 Flexera policy templates use [semantic versioning](https://semver.org/). This means all version numbers should contain three period-separated integers (example: `1.27.3`) that represent the MAJOR, MINOR, and PATCH versions respectively.
 
 - MAJOR version should be changed if someone using automation to apply the updated policy template would run into an error or unexpected outcomes due to changes in parameters or fundamental changes in how the policy template works or what it does.
+
 - MINOR version should be changed if new functionality or features are added in a way that does not fundamentally change what the policy template does and would not cause errors or problems for someone automating application of the policy template. For example, if new functionality were added with a parameter whose default value disables the new functionality.
+
 - PATCH version should be changed for bug fixes or other minor changes that don't actually add new features or functionality, provided that the change does not meet the criteria for a MAJOR version change.
 
 All version changes should be documented in the CHANGELOG.md file for the policy template.
@@ -85,6 +87,8 @@ All version changes should be documented in the CHANGELOG.md file for the policy
   5. Prerequisites
   6. Supported Clouds
   7. Cost
+
+- Additional sections needed for a specific policy template due to unique functionality or circumstances that do _not_ fall into one of the above sections should be added at the bottom and preceded with `##`. Additional sections needed for a specific policy template that _do_ fall into one of the above sections should be added to the bottom of that section and preceded with `###`.
 
 ### What It Does
 
@@ -284,36 +288,36 @@ Each block in the policy template should follow these naming conventions:
 
 The following guidelines should be used when specifying policy template metadata:
 
-- **name** field
+- **name**
   - Should clearly convey the policy template's purpose and, if applicable, include the cloud provider.
   - _Example_: `AWS Rightsize EC2 Instances`
 
-- **short_description** field
+- **short_description**
   - In most cases, should match the first lines of the README description.
   - Should include a link to the README.
   - _Example_: `Check for EC2 instances that have inefficient utilization for a specified number of days and downsizes or terminates them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more.`
 
-- **long_description** field
+- **long_description**
   - Always set to an empty string.
 
-- **category** field
+- **category**
   - Should be set to one of the following categories based on the policy template's intended purpose: Compliance, Cost, Operational, SaaS Management, Security
 
-- **severity** field
+- **severity**
   - Choose sensible default based on how the policy template will typically be used.
 
-- **default_frequency** field
+- **default_frequency**
   - Choose sensible default based on how the policy template will typically be used.
 
-- **info** field
-  - version (required): The version number of the policy template. Semantic versioning should be used. _Example_: 1.0.3
-  - provider (required): The cloud or software provider the policy template is for. _Example_: AWS
-  - hide_skip_approvals (required): Set to "true" for most use cases. This hides the UI option to skip approvals, which causes confusion for some users.
-  - service (recommended): The category of service, product, etc. that the policy template is for. _Example_: Compute
-  - policy_set (recommended): The name of the set/collection that the policy template belongs to. _Example_: Rightsize Compute Instances
-  - recommendation_type: Only required for policy templates intended to be scraped by the Optimization Dashboard. Should be set to either "Usage Reduction" (deleting or downsizing resources) or "Rate Reduction" (buying/adjusting commitments to lower cost without changing resources themselves) based on the type of recommendations the policy template produces.
-  - deprecated: Defaults to "false" if unspecified. Include if you need to set this to "true" to indicate that a policy template is deprecated and no longer recommended for general use.
-  - publish: Defaults to "true" if unspecified. Include if you need to set this to "false" to prevent the policy template from being published in the catalog.
+- **info**
+  - _version (required)_: The version number of the policy template. Semantic versioning should be used. _Example_: 1.0.3
+  - _provider (required)_: The cloud or software provider the policy template is for. _Example_: AWS
+  - _hide_skip_approvals (required): Set to "true" for most use cases. This hides the UI option to skip approvals, which causes confusion for some users.
+  - _service (recommended)_: The category of service, product, etc. that the policy template is for. _Example_: Compute
+  - _policy_set (recommended)_: The name of the set/collection that the policy template belongs to. _Example_: Rightsize Compute Instances
+  - _recommendation_type_: Only required for policy templates intended to be scraped by the Optimization Dashboard. Should be set to either "Usage Reduction" (deleting or downsizing resources) or "Rate Reduction" (buying/adjusting commitments to lower cost without changing resources themselves) based on the type of recommendations the policy template produces.
+  - _deprecated_: Defaults to "false" if unspecified. Include if you need to set this to "true" to indicate that a policy template is deprecated and no longer recommended for general use.
+  - _publish_: Defaults to "true" if unspecified. Include if you need to set this to "false" to prevent the policy template from being published in the catalog.
 
 #### Example
 
