@@ -26,6 +26,15 @@ parameter "param_email" do
   default []
 end
 
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
 parameter "param_bc_allow_or_deny" do
   type "string"
   category "Filters"
@@ -52,6 +61,26 @@ credentials "auth_flexera" do
   label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
+end
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
 end
 
 ###############################################################################
@@ -264,6 +293,64 @@ script "js_account_list", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_ri_orders" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/providers/Microsoft.Capacity/reservationOrders"
+    query "api-version", "2022-11-01"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_ris_from_azure" do
+  iterate $ds_azure_ri_orders
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join([val(iter_item, "id"), "/reservations"])
+    query "api-version", "2022-11-01"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "sku", jmes_path(col_item, "sku.name")
+      field "order_id", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_ri_order_table" do
+  run_script $js_azure_ri_order_table, $ds_azure_ris_from_azure
+end
+
+script "js_azure_ri_order_table", type: "javascript" do
+  parameters "ds_azure_ris_from_azure"
+  result "result"
+  code <<-EOS
+  result = {}
+  ris_by_order = _.groupBy(ds_azure_ris_from_azure, "order_id")
+
+  _.each(_.keys(ris_by_order), function(order_id) {
+    result[order_id] = {
+      region: ris_by_order[order_id][0]["region"],
+      sku: ris_by_order[order_id][0]["sku"]
+    }
+  })
+EOS
+end
+
 datasource "ds_azure_ris_from_flexera" do
   request do
     auth $auth_flexera
@@ -326,11 +413,11 @@ EOS
 end
 
 datasource "ds_azure_ris_with_breakeven" do
-  run_script $js_azure_ris_with_breakeven, $ds_azure_filtered_ris, $ds_account_list, $ds_region_table, $ds_azure_vm_pricing, $ds_applied_policy
+  run_script $js_azure_ris_with_breakeven, $ds_azure_filtered_ris, $ds_azure_ri_order_table, $ds_account_list, $ds_region_table, $ds_azure_vm_pricing, $ds_applied_policy
 end
 
 script "js_azure_ris_with_breakeven", type: "javascript" do
-  parameters "ds_azure_filtered_ris", "ds_account_list", "ds_region_table", "ds_azure_vm_pricing", "ds_applied_policy"
+  parameters "ds_azure_filtered_ris", "ds_azure_ri_order_table", "ds_account_list", "ds_region_table", "ds_azure_vm_pricing", "ds_applied_policy"
   result "result"
   code <<-EOS
   function breakEvenPoint(amount, reserved_hours, purchased_quantity, hourly_ondemand_price) {
@@ -349,9 +436,16 @@ script "js_azure_ris_with_breakeven", type: "javascript" do
     new_ri = {}
     _.each(_.keys(ri), function(key) { new_ri[key] = ri[key] })
 
-    region = ri['region'] != "" && ds_region_table[ri['region']] ? ds_region_table[ri['region']] : "US East"
-    sku = ri['util_sku_name']
-    os = sku && sku.toLowerCase().indexOf("windows") != -1 ? "Windows" : "Linux"
+    if (ds_azure_ri_order_table[ri['reservation_order_id']]) {
+      new_ri["region"] = ds_azure_ri_order_table[ri['reservation_order_id']]["region"]
+      new_ri["instanceType"] = ds_azure_ri_order_table[ri['reservation_order_id']]["sku"]
+    } else {
+      new_ri["instanceType"] = ri["util_sku_name"]
+    }
+
+    region = new_ri['region'] != "" && ds_region_table[new_ri['region']] ? ds_region_table[new_ri['region']] : "US East"
+    sku = new_ri["instanceType"]
+    os = ri['arm_sku_name'] && ri['arm_sku_name'].toLowerCase().indexOf("windows") != -1 ? "Windows" : "Linux"
     hourly_ondemand_price = null
 
     if (ds_azure_vm_pricing[region] && ds_azure_vm_pricing[region][sku] && ds_azure_vm_pricing[region][sku][os]) {
@@ -377,7 +471,7 @@ script "js_azure_ris_with_breakeven", type: "javascript" do
     new_ri["accountID"] = ri["purchasing_subscription_guid"]
     new_ri["accountName"] = ri["purchasing_subscription_name"]
     new_ri["billing_centers"] = ds_account_list[new_ri["accountID"]] ? ds_account_list[new_ri["accountID"]].join(', ') : null
-    new_ri["instanceType"] = ri["util_sku_name"]
+    new_ri["os"] = os
     new_ri["total_reserved_hours"] = new_ri["util_reserved_hours"] * ri["purchased_quantity"]
     new_ri["policy_name"] = ds_applied_policy["name"]
 
@@ -406,6 +500,9 @@ policy "pol_azure_ris_with_breakeven" do
       field "billing_centers" do
         label "Associated Billing Center(s)"
       end
+      field "region" do
+        label "Region"
+      end
       field "term" do
         label "Term"
       end
@@ -414,6 +511,9 @@ policy "pol_azure_ris_with_breakeven" do
       end
       field "instanceType" do
         label "Instance Type"
+      end
+      field "os" do
+        label "Operating System"
       end
       field "purchased_quantity" do
         label "Purchased Quantity"
