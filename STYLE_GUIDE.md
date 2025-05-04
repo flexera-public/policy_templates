@@ -34,9 +34,7 @@ Every policy template should be in its own directory that contains the following
 - CHANGELOG.md
 - README.md
 
-## Policy Template
-
-### Versioning
+## Versioning
 
 Flexera policy templates use [semantic versioning](https://semver.org/). This means all version numbers should contain three period-separated integers (example: `1.27.3`) that represent the MAJOR, MINOR, and PATCH versions respectively.
 
@@ -45,6 +43,172 @@ Flexera policy templates use [semantic versioning](https://semver.org/). This me
 - PATCH version should be changed for bug fixes or other minor changes that don't actually add new features or functionality, provided that the change does not meet the criteria for a MAJOR version change.
 
 All version changes should be documented in the CHANGELOG.md file for the policy template.
+
+## CHANGELOG.md
+
+- The CHANGELOG.md file should be written in [Markdown](https://www.markdownguide.org/).
+
+- The CHANGELOG.md file should always begin with the line `# Changelog` followed by an empty line.
+
+- Each version, beginning with the most recent version, should be presented after `## v` and followed by an empty line.
+  - _Example_: `## v2.3.0`
+
+- Following the version should be a markdown list of all of the changes made in that version followed by an empty line. Changes should be described in terms of how they impact the end user where possible, making as few references to coding jargon or code itself as possible.
+
+### Example
+
+```text
+# Changelog
+
+## v0.2.0
+
+- Removed requirement for AWS credential
+- Internal API is now used to gather AWS account and tag information
+
+## v0.1.0
+
+- Initial release
+```
+
+## README.md
+
+- The README.md file should be written in [Markdown](https://www.markdownguide.org/).
+
+- The first line should begin with `#` followed by the name of the policy template.
+  - _Example_: `# AWS Rule-Based Dimension From Account Tags`
+
+- The following sections should be included in the order presented below. Optional sections are marked as optional. All sections should begin with `##`.
+  1. What It Does
+  2. How It Works (Optional)
+  3. Input Parameters
+  4. Policy Actions
+  5. Prerequisites
+  6. Supported Clouds
+  7. Cost
+
+### What It Does
+
+This section should be a basic description of what the policy template does in 2-5 sentences.
+
+#### Example
+
+```text
+## What It Does
+
+This policy template finds AWS snapshots in the given account which are older than the specified days and deletes them after user approval. Snapshots with an associated AMI can be included or excluded depending on the settings selected when applying the policy; if included, the AMI will be deleted along with the snapshot if the snapshot is deleted.
+```
+
+### How It Works
+
+This section should describes how the policy template produces the result it produces. Should be included when a user might want to know the specific formula used to calculate a value or the means by which specific datapoints are acquired.
+
+Not required for simple policy templates where there is not much to say here.
+
+#### Example
+
+```text
+## How It Works
+
+- The policy leverages the AWS API to retrieve all instances and then uses the AWS CloudWatch API to check the instance CPU and Memory utilization over a specified number of days.
+- The utilization data is provided for the following statistics: Average, Maximum, Minimum, 99th percentile, 95th percentile, 90th percentile.
+- The policy identifies all instances that have CPU utilization and/or Memory utilization below the Idle Instance CPU/Memory Threshold(s) defined by the user. The recommendation provided for Idle Instances is a termination action; termination can be performed in an automated manner or after approval.
+- The policy identifies all instances that have CPU utilization and/or Memory utilization below the Underutilized Instance CPU/Memory Threshold(s) defined by the user. The recommendation provided for Inefficient/Underutilized Instances is a downsize action; downsizing can be performed in an automated manner or after approval.
+```
+
+### Input Parameters
+
+This section should contain a list of all of the policy template's parameters and what they do, including, where applicable, additional context not present in the policy template itself. Each parameter should be presented like the below example, with the name italicized and followed by a `-` character, followed by a description of the parameter.
+
+An additional paragraph should be included at the bottom if destructive actions are possible due to choices made in parameters.
+
+#### Example
+
+```text
+## Input Parameters
+
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
+For example if a user selects the "Terminate Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be terminated.
+```
+
+### Policy Actions
+
+This section should contain a list of all possible actions the policy template can take, including sending an incident email.
+
+#### Example
+
+```text
+## Policy Actions
+
+- Send an email report
+- Delete old snapshots after an approval
+```
+
+### Prerequisites
+
+This section outlines the requirements for using the policy template. This will always begin with information about credentials and should always start with the following paragraph:
+
+```text
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+```
+
+This should be followed by an itemized list of every credential required for the policy template. Each credential should include a link to Flexera documentation about the credential, a description of the expected provider tag for the credential, and a list of specific permissions the credential needs. Optional permissions for specific functionality should be indicated with a `*` character and a footnote.
+
+```text
+- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+  - `ec2:DescribeRegions`
+  - `ec2:DescribeImages`
+  - `ec2:DescribeSnapshots`
+  - `ec2:DeregisterImage`*
+  - `ec2:DeleteSnapshot`*
+  - `rds:DescribeDBInstances`
+  - `rds:DescribeDBSnapshots`
+  - `rds:DescribeDBClusters`
+  - `rds:DescribeDBClusterSnapshots`
+  - `rds:DeleteDBClusterSnapshot`*
+  - `rds:DeleteDBSnapshot`*
+  - `sts:GetCallerIdentity`
+  - `cloudtrail:LookupEvents`
+
+  \* Only required for taking action (deletion); the policy will still function in a read-only capacity without these permissions.
+```
+
+After the list of credentials, the following paragraph should always be included at the end.
+
+```text
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+```
+
+For most policy templates, credentials are the only requirement. Any requirements other than credentials should be specified at the bottom of this section, beneath the above paragraph.
+
+### Supported Clouds
+
+This section contains a simple list of the cloud or SaaS providers supported by the policy template. A single item with "All" can be used for cloud-agnostic policy templates.
+
+#### Example
+
+```text
+## Supported Clouds
+
+- AWS
+```
+
+### Cost
+
+This section just contains a simple statement about whether costs can be incurred from executing the policy template.
+
+#### Example
+
+```text
+## Cost
+
+This policy template does not incur any cloud costs.
+```
+
+## Policy Template
 
 ### Basic Structure
 
@@ -142,7 +306,7 @@ The following guidelines should be used when specifying policy template metadata
   - Choose sensible default based on how the policy template will typically be used.
 
 - **info** field
-  - version (required): The version number of the policy template. [Semantic versioning](https://github.com/flexera-public/policy_templates/blob/master/VERSIONING.md) should be used. _Example_: 1.0.3
+  - version (required): The version number of the policy template. Semantic versioning should be used. _Example_: 1.0.3
   - provider (required): The cloud or software provider the policy template is for. _Example_: AWS
   - hide_skip_approvals (required): Set to "true" for most use cases. This hides the UI option to skip approvals, which causes confusion for some users.
   - service (recommended): The category of service, product, etc. that the policy template is for. _Example_: Compute
@@ -390,94 +554,3 @@ escalation "esc_downsize_instances" do
   run "downsize_instances", data
 end
 ```
-
-## CHANGELOG.md
-
-- The CHANGELOG.md file should be written in [Markdown](https://www.markdownguide.org/).
-
-- The CHANGELOG.md file should always begin with the line `# Changelog` followed by an empty line.
-
-- Each version, beginning with the most recent version, should be presented after `## v` and followed by an empty line.
-  - _Example_: `## v2.3.0`
-
-- Following the version should be a markdown list of all of the changes made in that version followed by an empty line. Changes should be described in terms of how they impact the end user where possible, making as few references to coding jargon or code itself as possible.
-
-### Example
-
-```text
-# Changelog
-
-## v0.2.0
-
-- Removed requirement for AWS credential
-- Internal API is now used to gather AWS account and tag information
-
-## v0.1.0
-
-- Initial release
-```
-
-## README.md
-
-- The README.md file should be written in [Markdown](https://www.markdownguide.org/).
-
-- The first line should begin with `#` followed by the name of the policy template.
-  - _Example_: `# AWS Rule-Based Dimension From Account Tags`
-
-- The following sections should be included in the order presented below. Optional sections are marked as optional. All sections should begin with `##`.
-  1. What It Does
-  2. How It Works (Optional)
-  3. Input Parameters
-  4. Policy Actions
-  5. Prerequisites
-  6. Supported Clouds
-  7. Cost
-
-### What It Does
-
-This section should be a basic description of what the policy template does in 2-5 sentences.
-
-#### Example
-
-```text
-## What It Does
-
-This policy template finds AWS snapshots in the given account which are older than the specified days and deletes them after user approval. Snapshots with an associated AMI can be included or excluded depending on the settings selected when applying the policy; if included, the AMI will be deleted along with the snapshot if the snapshot is deleted.
-```
-
-### How It Works
-
-This section should describes how the policy template produces the result it produces. Should be included when a user might want to know the specific formula used to calculate a value or the means by which specific datapoints are acquired.
-
-Not required for simple policy templates where there is not much to say here.
-
-#### Example
-
-```text
-## How It Works
-
-- The policy leverages the AWS API to retrieve all instances and then uses the AWS CloudWatch API to check the instance CPU and Memory utilization over a specified number of days.
-- The utilization data is provided for the following statistics: Average, Maximum, Minimum, 99th percentile, 95th percentile, 90th percentile.
-- The policy identifies all instances that have CPU utilization and/or Memory utilization below the Idle Instance CPU/Memory Threshold(s) defined by the user. The recommendation provided for Idle Instances is a termination action; termination can be performed in an automated manner or after approval.
-- The policy identifies all instances that have CPU utilization and/or Memory utilization below the Underutilized Instance CPU/Memory Threshold(s) defined by the user. The recommendation provided for Inefficient/Underutilized Instances is a downsize action; downsizing can be performed in an automated manner or after approval.
-```
-
-### Input Parameters
-
-This section should contain a list of all of the policy template's parameters and what they do, including, where applicable, additional context not present in the policy template itself. Each parameter should be presented like the below example, with the name italicized and followed by a `-` character, followed by a description of the parameter.
-
-An additional paragraph should be included at the bottom if destructive actions are possible due to choices made in parameters.
-
-#### Example
-
-```text
-## Input Parameters
-
-- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
-- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
-
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
-For example if a user selects the "Terminate Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be terminated.
-```
-

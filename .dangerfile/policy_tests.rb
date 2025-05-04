@@ -509,7 +509,7 @@ def policy_nonsemantic_version?(file, file_parsed)
   policy_version = file_parsed.parsed_info[:version] if file_parsed.parsed_info
 
   if !policy_version.match?(semantic_regex)
-    fail_message = "Policy template version number is not compliant with [semantic versioning](https://github.com/flexera-public/policy_templates/blob/master/VERSIONING.md). Please update the version number accordingly."
+    fail_message = "Policy template version number is not compliant with [semantic versioning](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#versioning). Please update the version number accordingly."
   end
 
   return fail_message.strip if !fail_message.empty?
