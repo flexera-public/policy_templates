@@ -21,7 +21,7 @@ This repository contains a library of open source [Flexera Policy Templates](htt
 
 ### Policy Templates for Optimization
 
-These templates can generate savings estimates for your environment.
+These templates can generate savings estimates for your environment. The incidents they raise are scraped for recommendations for the [Cost Optimization](https://docs.flexera.com/flexera/EN/Optima/ViewPotentialSavings.htm#usingcco_3910196062_1188061) section of Flexera One.
 
 #### AWS
 

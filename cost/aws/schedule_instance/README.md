@@ -26,6 +26,14 @@ The Schedule Label value is a string consisting of 2 or 3 semicolon-separated (`
 - *Days of the Week* - Comma-separated list of days indicated by their two-letter abbreviation value from the following list: SU,MO,TU,WE,TH,FR,SA. For example, a value of `MO,TU,WE,TH,FR` will start and stop the instances on weekdays but not on weekends.
 - Optional: *Timezone* - Timezone in [tz database format](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). For example, a value of `America/New_York` would specify US Eastern Time. Defaults to UTC if no Timezone field is provided.
 
+### Schedule Action Tag (Optional)
+
+You can optionally use a Schedule Action tag (default key: schedule_action) to specify the behavior during and outside the scheduled window. Supported values are:
+
+- `startstop` (default if not specified) - Start instances during the window, stop them outside the window
+- `start` - Only start instances during the window, never automatically stop them
+- `stop` - Only stop instances during the window, never automatically start them
+
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
@@ -33,6 +41,7 @@ This policy has the following input parameters required when launching the polic
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Schedule Tag Key* - Tag key that schedule information is stored in. Default is recommended for most use cases.
+- *Schedule Action Tag Key (Optional)* - Optional tag key to specify what action to use. Expected values are "startstop", "start", "stop". Default behavior is "startstop" if not specified.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
@@ -43,6 +52,7 @@ This policy has the following input parameters required when launching the polic
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+- *Enforce Schedules* - Whether to enforce schedules on instances that are not in the correct state. If set to 'No', the policy will not action if the instance is not in the expected state when an action is to be taken.
 
 Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
 For example if a user selects the "Schedule Instances" action while applying the policy, the identified resources will be stopped or started as per the schedule.
@@ -58,6 +68,15 @@ The following policy actions are taken on any resources found to be out of compl
 - *Start Instances* - Start the resources if they are not currently running.
 - *Stop Instances* - Stop the resources if they are currently running.
 - *Terminate Instances* - Terminate the resources.
+
+## Error Handling and Retry Logic
+
+This policy includes sophisticated error handling and retry mechanisms:
+
+- Each start/stop operation is attempted up to 3 times if it fails
+- Detailed error messages are collected and reported for troubleshooting
+- The policy verifies that instances reach the expected state after operations
+- If all retry attempts fail, comprehensive error information is provided in the incident
 
 ## Prerequisites
 
