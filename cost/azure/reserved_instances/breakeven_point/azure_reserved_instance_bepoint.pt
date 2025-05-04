@@ -264,7 +264,7 @@ script "js_account_list", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_ris" do
+datasource "ds_azure_ris_from_flexera" do
   request do
     auth $auth_flexera
     host rs_optima_host
@@ -310,16 +310,16 @@ datasource "ds_azure_ris" do
 end
 
 datasource "ds_azure_filtered_ris" do
-  run_script $js_azure_filtered_ris, $ds_accounts_by_billing_center, $ds_azure_ris
+  run_script $js_azure_filtered_ris, $ds_accounts_by_billing_center, $ds_azure_ris_from_flexera
 end
 
 script "js_azure_filtered_ris", type: "javascript" do
-  parameters "ds_accounts_by_billing_center", "ds_azure_ris"
+  parameters "ds_accounts_by_billing_center", "ds_azure_ris_from_flexera"
   result "result"
   code <<-EOS
   bc_account_ids = _.uniq(_.pluck(ds_accounts_by_billing_center, "vendor_account_id"))
 
-  result = _.filter(ds_azure_ris, function(ri) {
+  result = _.filter(ds_azure_ris_from_flexera, function(ri) {
     return _.contains(bc_account_ids, ri['purchasing_subscription_guid']) && ri["billing_frequency"] == "Upfront"
   })
 EOS
@@ -349,9 +349,14 @@ script "js_azure_ris_with_breakeven", type: "javascript" do
     new_ri = {}
     _.each(_.keys(ri), function(key) { new_ri[key] = ri[key] })
 
-    region = ds_region_table[ri['region']]
-    sku = ri['arm_sku_name']
-    hourly_ondemand_price = ds_azure_vm_pricing[region][sku] ? ds_azure_vm_pricing[region][sku]["Linux"]["pricePerUnit"] : null
+    region = ri['region'] != "" && ds_region_table[ri['region']] ? ds_region_table[ri['region']] : "US East"
+    sku = ri['util_sku_name']
+    os = sku && sku.toLowerCase().indexOf("windows") != -1 ? "Windows" : "Linux"
+    hourly_ondemand_price = null
+
+    if (ds_azure_vm_pricing[region] && ds_azure_vm_pricing[region][sku] && ds_azure_vm_pricing[region][sku][os]) {
+      hourly_ondemand_price = ds_azure_vm_pricing[region][sku][os]["pricePerUnit"]
+    }
 
     if (hourly_ondemand_price) {
       new_ri["hourly_ondemand_price"] = hourly_ondemand_price
@@ -400,9 +405,6 @@ policy "pol_azure_ris_with_breakeven" do
       end
       field "billing_centers" do
         label "Associated Billing Center(s)"
-      end
-      field "region" do
-        label "Region"
       end
       field "term" do
         label "Term"
