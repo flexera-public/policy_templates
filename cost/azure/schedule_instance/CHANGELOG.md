@@ -1,5 +1,9 @@
 # Changelog
 
+## v7.0.1
+
+- Fixed bug with start action that was preventing "Enforce Schedules=No" from working correctly
+
 ## v7.0.0
 
 - Added retry mechanism in case of failed actions or timeout waiting for the expected status change

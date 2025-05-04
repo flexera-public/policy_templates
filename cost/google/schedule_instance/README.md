@@ -25,12 +25,21 @@ The Schedule Label value is a string consisting of 2 or 3 underscore-separated (
 - *Days of the Week* - Hyphen-separated (`-`) list of days indicated by their two-letter abbreviation value from the following list: `su`,`mo`,`tu`,`we`,`th`,`fr`,`sa`. For example, a value of `mo-tu-we-th-fr` will start and stop the instances on weekdays (Monday-Friday) but not on weekends (Saturday or Sunday).
 - Optional: *Timezone* - Timezone in [tz database format](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). Due to limitations for Google Labels, the `/` character is replaced with `-` and spaces are replaced with `_`. Additionally, all characters converted to lowercase. For example, a schedule label value of `america-new_york` would translate to `America/New York`. Defaults to UTC if no Timezone value is defined in schedule.
 
+### Schedule Action Label
+
+You can optionally use a second label (default key: `schedule_action`) to specify what action to take during and outside the scheduled window. Supported values are:
+
+- `startstop` (Default) - Start instances during the scheduled window, stop them outside the scheduled window
+- `start` - Only start instances during the scheduled window (never stop them automatically)
+- `stop` - Only stop instances during the scheduled window (never start them automatically)
+
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Schedule Label Key* - Label key that schedule information is stored in. Default is recommended for most use cases.
+- *Schedule Action Label Key (Optional)* - Optional Label key to specify what action to use. By default if not specified the policy assumes the defined schedule is for a scheduled window.
 - *Allow/Deny Projects* - Whether to treat Allow/Deny Projects List parameter as allow or deny list. Has no effect if Allow/Deny Projects List is left empty.
 - *Allow/Deny Projects List* - Filter results by project ID/name, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all projects
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
@@ -43,6 +52,7 @@ This policy has the following input parameters required when launching the polic
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified label key.
 - *Exclusion Labels: Any / All* - Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Labels` field.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+- *Enforce Schedules* - Whether to enforce schedules on instances that are not in the correct state. If set to 'No', the policy will not action if the instance is not in the expected state when an action is to be taken.
 
 ## Policy Actions
 
