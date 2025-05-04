@@ -65,7 +65,7 @@ end
 readme_string += "\n"
 readme_string += "### Policy Templates for Optimization\n"
 readme_string += "\n"
-readme_string += "These templates can generate savings estimates for your environment.\n"
+readme_string += "These templates can generate savings estimates for your environment. The incidents they raise are scraped for recommendations for the [Cost Optimization](https://docs.flexera.com/flexera/EN/Optima/ViewPotentialSavings.htm#usingcco_3910196062_1188061) section of Flexera One.\n"
 readme_string += "\n"
 
 providers.each do |provider|
