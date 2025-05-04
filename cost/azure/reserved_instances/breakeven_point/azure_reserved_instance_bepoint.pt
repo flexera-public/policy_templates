@@ -333,61 +333,39 @@ script "js_azure_ris_with_breakeven", type: "javascript" do
   parameters "ds_azure_filtered_ris", "ds_account_list", "ds_region_table", "ds_azure_vm_pricing", "ds_applied_policy"
   result "result"
   code <<-EOS
-  function breakEvenPoint(today, ri, monthly_ondemand_price) {
-    // Determine cost difference between RI and on-demand price
-    monthly_difference = monthly_ondemand_price - ri['monthly_cost']
+  function breakEvenPoint(amount, reserved_hours, purchased_quantity, hourly_ondemand_price) {
+    // Effective hourly rate under the commitment
+    committed_rate = amount / (reserved_hours * purchased_quantity)
 
-    // Determine the term length in months and years
-    year_parse = /^P(\d+)Y$/.exec(ri['term'])
-    month_parse = /^P(\d+)M$/.exec(ri['term'])
+    // Savings per hour when you actually use the instance
+    savings_per_hour = hourly_ondemand_price - committed_rate
 
-    if (year_parse) {
-      termMonths = parseInt(year_parse[1], 10) * 12
-      termYears = parseInt(year_parse[1], 10)
-    } else if (month_parse) {
-      termMonths = parseInt(month_parse[1], 10)
-      termYears = parseInt(month_parse[1], 10) / 12
-    } else {
-      // Return null instead of calculating break even point if term cannot be parsed
-      return null
-    }
-
-    // Determine the purchase date
-    expiration_date = new Date(ri['expiration_date'])
-    expiration_year = Number(expiration.toISOString().substring(0, 4))
-    start_year = expiration_year - termYears
-    purchase_date = new Date(expiration_year + expiration_date.toISOString().substring(4, 99))
-
-    // Determine the time remaining and time used
-    hours_passed = (today - purchase_date) / 1000 / 60 / 60
-    hours_remaining = (expiration_date - today) / 1000 / 60 / 60
-
-    // Determine the monthly savings
-    monthly_savings = monthly_difference * (ri['util_avg_percentage'] / 100)
-    if (monthly_savings <= 0) { return null }
-
-    return {
-      hours: (ri['amount'] / monthlySavings) * (365.25 / 12 * 24),
-      months: ri['amount'] / monthlySavings
-    }
+    // Hours until your cumulative savings = the commitment cost
+    // Return null if there is no breakeven point
+    return savings_per_hour > 0 ? amount / savings_per_hour : null
   }
 
-  // Get today's date
-  today = new Date()
-
-  ris_with_breakeven = _.map(ds_azure_filtered_ris, function(ri) {
+  result = _.map(ds_azure_filtered_ris, function(ri) {
     new_ri = {}
     _.each(_.keys(ri), function(key) { new_ri[key] = ri[key] })
 
     region = ds_region_table[ri['region']]
     sku = ri['arm_sku_name']
-    hourly_price = ds_azure_vm_pricing[region][sku] ? ds_azure_vm_pricing[region][sku]["Linux"]["pricePerUnit"] : null
-    new_ri["monthly_ondemand_price"] = hourly_price ? hourly_price * (365.25 / 12 * 24) : null
+    hourly_ondemand_price = ds_azure_vm_pricing[region][sku] ? ds_azure_vm_pricing[region][sku]["Linux"]["pricePerUnit"] : null
 
-    if (new_ri["monthly_ondemand_price"]) {
-      breakeven = breakEvenPoint(today, ri, new_ri["monthly_ondemand_price"]) ? breakEvenPoint(today, ri, new_ri["monthly_ondemand_price"]) : null
-      new_ri["breakeven_hours"] = breakeven ? breakeven["hours"] : "Never"
-      new_ri["breakeven_months"] = breakeven ? breakeven["months"] : "Never"
+    if (hourly_ondemand_price) {
+      new_ri["hourly_ondemand_price"] = hourly_ondemand_price
+      new_ri["monthly_ondemand_price"] = hourly_ondemand_price * (365.25 / 12 * 24)
+
+      breakeven = breakEvenPoint(ri["amount"], ri["util_reserved_hours"], ri["purchased_quantity"], hourly_ondemand_price)
+
+      new_ri["breakeven_hours"] = breakeven ? Math.round(breakeven * 100) / 100 : "Never"
+      new_ri["breakeven_months"] = breakeven ? Math.round(breakeven / (365.25 / 12 * 24) * 100) / 100 : "Never"
+    } else {
+      new_ri["hourly_ondemand_price"] = "Not Found"
+      new_ri["monthly_ondemand_price"] = "Not Found"
+      new_ri["breakeven_hours"] = "Unknown"
+      new_ri["breakeven_months"] = "Unknown"
     }
 
     new_ri["resourceID"] = ri["util_reservation_id"]
@@ -395,13 +373,11 @@ script "js_azure_ris_with_breakeven", type: "javascript" do
     new_ri["accountName"] = ri["purchasing_subscription_name"]
     new_ri["billing_centers"] = ds_account_list[new_ri["accountID"]] ? ds_account_list[new_ri["accountID"]].join(', ') : null
     new_ri["instanceType"] = ri["util_sku_name"]
-    new_ri["instanceCount"] = Math.round(ri["amount"])
+    new_ri["total_reserved_hours"] = new_ri["util_reserved_hours"] * ri["purchased_quantity"]
     new_ri["policy_name"] = ds_applied_policy["name"]
 
     return new_ri
   })
-
-  result = _.filter(ris_with_vm_pricing, function(ri) { return ri["monthly_ondemand_price"] })
 EOS
 end
 
@@ -437,11 +413,35 @@ policy "pol_azure_ris_with_breakeven" do
       field "instanceType" do
         label "Instance Type"
       end
-      field "instanceCount" do
-        label "Instance Count"
+      field "purchased_quantity" do
+        label "Purchased Quantity"
+      end
+      field "util_reserved_hours" do
+        label "Reserved Hours per Commitment"
+      end
+      field "total_reserved_hours" do
+        label "Total Reserved Hours"
       end
       field "expiration_date" do
         label "Expiration Date"
+      end
+      field "currency" do
+        label "Currency"
+      end
+      field "amount" do
+        label "Purchase Cost"
+      end
+      field "hourly_ondemand_price" do
+        label "On-Demand Price (Hourly)"
+      end
+      field "monthly_ondemand_price" do
+        label "On-Demand Price (Monthly)"
+      end
+      field "breakeven_hours" do
+        label "Breakeven Point (Hours)"
+      end
+      field "breakeven_months" do
+        label "Breakeven Point (Months)"
       end
       field "id" do
         label "ID"
