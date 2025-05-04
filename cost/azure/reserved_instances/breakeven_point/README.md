@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template produces a report of all upfront Azure reservations along with their breakeven point in both hours and days. Optionally, this report can be emailed.
+This policy template produces a report of all upfront Azure reservations along with their break even point in both hours and days. Optionally, this report can be emailed.
 
 The Commitment Break Even Point is the estimated length of time to pay off the entire cost of a commitment discount (including upfront and ongoing charges) from the savings provided by that commitment. More information is available on the [FinOps Foundation website](https://www.finops.org/assets/terminology/#:~:text=Commitment%20Break%20Even%20Point).
 
