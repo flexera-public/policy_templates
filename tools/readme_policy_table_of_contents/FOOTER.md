@@ -1,31 +1,31 @@
 ## Tools
 
-- [Flexera Automation CloudFormation Template](./tools/cloudformation-template)
+- [Flexera Automation CloudFormation Template](https://github.com/flexera-public/policy_templates/blob/master/tools/cloudformation-template)
 - [`fpt` Command Line Tool](https://github.com/flexera-public/policy_sdk/tree/master/cmd/fpt)
 
 ## Policy Data Sets
 
 Some policies require external data sets to function. These data sets are stored in the [data](./data) directory. The following data sets are available:
 
-- [Flexera IAM Roles](./data/flexera/iam_roles.json)
-- [AWS Regions](./data/aws/regions.json)
-- [AWS EC2 Instance Types](./data/aws/aws_ec2_instance_types.json)
-- [AWS ElastiCache Types](./data/aws/elasticache_types.json)
-- [AWS EC2 Pricing](./data/aws/aws_ec2_pricing.json)
-- [AWS RDS Pricing](./data/aws/aws_rds_pricing.json)
-- [Azure Regions](./data/azure/regions.json)
-- [Azure VM Instance Types](./data/azure/azure_compute_instance_types.json)
-- [Azure SQL Service Tier Types](./data/azure/sql_service_tier_types.json)
-- [Azure SQL Managed Instance Tier Types](./data/azure/sqlmi_tier_types.json)
-- [Azure VM Pricing](./data/azure/azure_vm_pricing.json)
-- [Azure MD Pricing](./data/azure/azure_md_pricing.json)
-- [Azure DB Storage Pricing](./data/azure/azure_db_storage_pricing.json)
-- [Azure SQL Managed Instance Storage Pricing](./data/azure/azure_sqlmi_storage_pricing.json)
-- [Google Regions](./data/google/regions.json)
-- [Google VM Instance Types](./data/google/google_compute_instance_types.json)
-- [Google VM Pricing](./data/google/google_vm_pricing.json)
-- [Currency Reference](./data/currency/currency_reference.json)
-- [TZ Database Timezone List](./data/tz_database/timezones_list.json)
+- [Flexera IAM Roles](https://github.com/flexera-public/policy_templates/blob/master/data/flexera/iam_roles.json)
+- [AWS Regions](https://github.com/flexera-public/policy_templates/blob/master/data/aws/regions.json)
+- [AWS EC2 Instance Types](https://github.com/flexera-public/policy_templates/blob/master/data/aws/aws_ec2_instance_types.json)
+- [AWS ElastiCache Types](https://github.com/flexera-public/policy_templates/blob/master/data/aws/elasticache_types.json)
+- [AWS EC2 Pricing](https://github.com/flexera-public/policy_templates/blob/master/data/aws/aws_ec2_pricing.json)
+- [AWS RDS Pricing](https://github.com/flexera-public/policy_templates/blob/master/data/aws/aws_rds_pricing.json)
+- [Azure Regions](https://github.com/flexera-public/policy_templates/blob/master/data/azure/regions.json)
+- [Azure VM Instance Types](https://github.com/flexera-public/policy_templates/blob/master/data/azure/azure_compute_instance_types.json)
+- [Azure SQL Service Tier Types](https://github.com/flexera-public/policy_templates/blob/master/data/azure/sql_service_tier_types.json)
+- [Azure SQL Managed Instance Tier Types](https://github.com/flexera-public/policy_templates/blob/master/data/azure/sqlmi_tier_types.json)
+- [Azure VM Pricing](https://github.com/flexera-public/policy_templates/blob/master/data/azure/azure_vm_pricing.json)
+- [Azure MD Pricing](https://github.com/flexera-public/policy_templates/blob/master/data/azure/azure_md_pricing.json)
+- [Azure DB Storage Pricing](https://github.com/flexera-public/policy_templates/blob/master/data/azure/azure_db_storage_pricing.json)
+- [Azure SQL Managed Instance Storage Pricing](https://github.com/flexera-public/policy_templates/blob/master/data/azure/azure_sqlmi_storage_pricing.json)
+- [Google Regions](https://github.com/flexera-public/policy_templates/blob/master/data/google/regions.json)
+- [Google VM Instance Types](https://github.com/flexera-public/policy_templates/blob/master/data/google/google_compute_instance_types.json)
+- [Google VM Pricing](https://github.com/flexera-public/policy_templates/blob/master/data/google/google_vm_pricing.json)
+- [Currency Reference](https://github.com/flexera-public/policy_templates/blob/master/data/currency/currency_reference.json)
+- [TZ Database Timezone List](https://github.com/flexera-public/policy_templates/blob/master/data/tz_database/timezones_list.json)
 
 ## How To Upload
 
@@ -43,9 +43,9 @@ Some policies require external data sets to function. These data sets are stored
 
 ## Repository Documentation
 
-- [Contribution Guide](./CONTRIBUTING.md)
-- [Catalog Style Guide](./STYLE_GUIDE.md)
-- [Meta Policies](./README_META_POLICIES.md)
+- [Contribution Guide](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md)
+- [Catalog Style Guide](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md)
+- [Meta Policies](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md)
 
 ## Getting Help
 
