@@ -41,6 +41,7 @@ Some policies require external data sets to function. These data sets are stored
 - [Getting Started](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm)
 - [Reference Documentation](https://docs.flexera.com/flexera/EN/Automation/AutomationRefInfo.htm#automationrefinfo_1419216867_1009635)
 - [Policy Template Language](https://docs.flexera.com/flexera/EN/Automation/PTL.htm#automationrefinfo_1419216867_1122815)
+- [Policy Development Training](https://github.com/flexera-public/policy_engine_training)
 - [Markdown Editor](https://jbt.github.io/markdown-editor/) - Use this to test Markdown Syntax
 
 ## Repository Documentation
