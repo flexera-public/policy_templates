@@ -18,12 +18,12 @@ Note that this is not intended as a guide for general best practices for policy 
 
 ## File Names & Directory Structure
 
-The following directory structure should be used for provider-specific policy templates. Snake case should be used.
+The following directory structure should be used for provider-specific policy templates. [Snake case](https://en.wikipedia.org/wiki/Snake_case) should be used.
 
 - /{category}/{provider}/{policy template name}/
   - _Example_: `/cost/aws/old_snapshots/`
 
-The following directory structure should be used for general Flexera policy templates. Snake case should be used.
+The following directory structure should be used for general Flexera policy templates. [Snake case](https://en.wikipedia.org/wiki/Snake_case) should be used.
 
 - /{category}/flexera/{product}/{policy template name}/
   - _Example_: `/cost/flexera/cco/focus_report/`
@@ -32,8 +32,11 @@ Every policy template should be in its own directory that contains the following
 
 - The policy template itself. File name should be in [snake case](https://en.wikipedia.org/wiki/Snake_case) and be similar to the name of the policy template itself. In most cases, the file name should start with the cloud provider or service the policy template is for.
   - _Example_: aws_rightsize_ec2_instances.pt
+
 - (If applicable) The meta parent for the policy template. This should be generated automatically when needed.
+
 - CHANGELOG.md
+
 - README.md
 
 ## Versioning
@@ -216,9 +219,22 @@ This policy template does not incur any cloud costs.
 
 ## Policy Template
 
+### General Conventions
+
+- Anything contained within a block should be tabbed. Nested tabbing should be used for blocks within blocks.
+  - Tabbing should be done using 2 space characters. It is recommended that you configure your editor to do this automatically whenever you press the tab key.
+
+- Code blocks should always be separated from one another with an empty line.
+
+- Avoid consecutive empty lines. There should only be one empty line between code blocks.
+
+- Comma-separated lists should have a space following each comma. _Example_: apple, banana, pear
+
 ### Basic Structure
 
-Strictly speaking, the Policy Template Language does not require that the various components of your policy template be in any particular order. That said, the following general arrangement is required for catalog policy templates. Sections should be omitted if your policy template contains no blocks for that section.
+Strictly speaking, the Policy Template Language does not require that the various components of your policy template be in any particular order. That said, the following general arrangement is required for catalog policy templates.
+
+Sections should be omitted if your policy template contains no blocks for that section, and blocks that are unused (such as a `pagination` or `credential` block that is never actually used by a `datasource` block) should be removed.
 
 1. Metadata
 1. Parameters
@@ -240,9 +256,16 @@ Each section (except for Metadata) should be preceded with comments resembling t
 
 Datasources should be presented in the order that they are expected to execute, followed by any script blocks that they call.
 
+### Deprecated Code Blocks
+
+The following code block types are deprecated and should not be used.
+
+- Permission
+- Resources
+
 ### Block Naming Conventions
 
-Block names should always be in double-quotes. _Example_: `policy "pol_utilization" do`
+Block names should always be in double-quotes and in [snake case](https://en.wikipedia.org/wiki/Snake_case). _Example_: `policy "pol_utilization" do`
 
 Each block in the policy template should follow these naming conventions:
 
@@ -315,11 +338,14 @@ The following guidelines should be used when specifying policy template metadata
   - _version (required)_: The version number of the policy template. Semantic versioning should be used. _Example_: 1.0.3
   - _provider (required)_: The cloud or software provider the policy template is for. _Example_: AWS
   - _hide_skip_approvals (required): Set to "true" for most use cases. This hides the UI option to skip approvals, which causes confusion for some users.
-  - _service (recommended)_: The category of service, product, etc. that the policy template is for. _Example_: Compute
+  - _service (recommended)_: The category of service, product, etc. that the policy template is for. Avoid using abbreviations like "CCO" or "IAM". _Example_: Compute
   - _policy_set (recommended)_: The name of the set/collection that the policy template belongs to. _Example_: Rightsize Compute Instances
   - _recommendation_type_: Only required for policy templates intended to be scraped by the Optimization Dashboard. Should be set to either "Usage Reduction" (deleting or downsizing resources) or "Rate Reduction" (buying/adjusting commitments to lower cost without changing resources themselves) based on the type of recommendations the policy template produces.
   - _deprecated_: Defaults to "false" if unspecified. Include if you need to set this to "true" to indicate that a policy template is deprecated and no longer recommended for general use.
   - _publish_: Defaults to "true" if unspecified. Include if you need to set this to "false" to prevent the policy template from being published in the catalog.
+
+- **tenancy**
+  - This metadata field is defunct and should not be specified in any policy template.
 
 #### Example
 
@@ -394,6 +420,8 @@ The following guidelines should be used for `datasource` blocks:
 
 - Omit fields where the default covers it. For example, the default of the `verb` field is "GET", so there should never be any reason to specify this value explicitly for GET requests.
 
+- Avoid setting the `scheme` field to "HTTP" unless absolutely necessary. Most REST APIs fully support HTTPS.
+
 - The fields in the `request` block should always be in the following order:
   1. `auth`
   1. `pagination`
@@ -443,15 +471,26 @@ The following guidelines should be used for `script` blocks:
 - **Parameters**
   - Parameters should, where possible, be given the same name as the element being passed into the parameter. For example, if the datasource is passing "param_email" as the first parameter to the script, then the name of this parameter in the script should also be "param_email".
 
+  - Parameters should be in the following order when called by a datasource:
+    1. val(iter_item, _string_). _Example_: `val(iter_item, "id")`
+    2. datasources. _Example_: `$ds_azure_vms`
+    3. parameters. _Example_: `$param_emails`
+    4. variables. _Example_: `rs_org_id`
+    5. raw values. _Example_: `"primary"`
+
 - **Result**
   - For scripts used to generate an API request, the result field should be set to `request`
   - For all other scripts, it should be set to `result`
 
 - **Best Practices**
+  - Don't do too much in a single script. Consider chaining 2 or 3 scripts if doing a complex multi-part operation. This will greatly simplify debugging.
   - Maintain consistent spacing and present code in a readable fashion.
   - Favor performance and readability over reducing the number of lines of code.
     - Make use of empty lines where appropriate to avoid bunching large amounts of code into a single wall of text.
+    - Make use of [Underscore.js](https://underscorejs.org/) for common tasks. Avoid for loops where possible.
+    - Avoid nested loops or other inefficient methods of searching through and processing data. The [Policy Development Training Repository](https://github.com/flexera-public/policy_engine_training/) has information on [optimizing policy templates](https://github.com/flexera-public/policy_engine_training/tree/main/lessons/13_optimization).
   - Favor descriptive variable names over short ones. Avoid, where possible, using single letter variable names like `o` or `p`.
+  - Avoid leaving `console.log()` commands used for debugging in scripts. Debugging code should be removed once development work is complete.
 
 #### Example
 
@@ -501,6 +540,7 @@ The following guidelines should be used for the `policy` block:
   - Avoid putting currency symbols, percentage signs, or other characters in fields that contain numbers. This tends to break sorting, making the column less usable.
     - Either place the symbol in the name of the field itself (_Example_: `CPU Usage (%)`) or include it in a separate column.
   - Sort the data by whichever field(s) make sense. For example, for a recommendations policy template, the largest potential savings should be at the top.
+  - For policy templates that produce recommendations for the Optimization Dashboard, [specific export fields are required](https://docs.flexera.com/flexera/EN/Automation/CreateRecomendationFromPolicyTemp.htm).
 
 #### Example
 
