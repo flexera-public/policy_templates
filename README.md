@@ -8,6 +8,10 @@ This repository contains a library of open source [Flexera Policy Templates](htt
   /tools/readme_policy_table_of_contents/FOOTER.md as needed.
 -->
 
+## Contributions
+
+Those who wish to contribute to this repository should review the [Contribution Guide](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md) and [Catalog Style Guide](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md) to ensure that their contributions follow the expected flow and meet the necessary standards.
+
 ## Released Policy Templates
 
 <!-- Begin Policy Template Table of Contents -->
