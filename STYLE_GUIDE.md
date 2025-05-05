@@ -81,12 +81,12 @@ All version changes should be documented in the CHANGELOG.md file for the policy
 
 - The following sections should be included in the order presented below. Optional sections are marked as optional. All sections should begin with `##`.
   1. What It Does
-  2. How It Works (Optional)
-  3. Input Parameters
-  4. Policy Actions
-  5. Prerequisites
-  6. Supported Clouds
-  7. Cost
+  1. How It Works (Optional)
+  1. Input Parameters
+  1. Policy Actions
+  1. Prerequisites
+  1. Supported Clouds
+  1. Cost
 
 - Additional sections needed for a specific policy template due to unique functionality or circumstances that do _not_ fall into one of the above sections should be added at the bottom and preceded with `##`. Additional sections needed for a specific policy template that _do_ fall into one of the above sections should be added to the bottom of that section and preceded with `###`.
 
@@ -104,7 +104,7 @@ This policy template finds AWS snapshots in the given account which are older th
 
 ### How It Works
 
-This section should describes how the policy template produces the result it produces. Should be included when a user might want to know the specific formula used to calculate a value or the means by which specific datapoints are acquired.
+This section should describes how the policy template produces the result it produces. Should be included when a user might want to know the specific formula used to calculate a value or the means by which specific data points are acquired.
 
 Not required for simple policy templates where there is not much to say here.
 
@@ -219,14 +219,14 @@ This policy template does not incur any cloud costs.
 Strictly speaking, the Policy Template Language does not require that the various components of your policy template be in any particular order. That said, the following general arrangement is required for catalog policy templates. Sections should be omitted if your policy template contains no blocks for that section.
 
 1. Metadata
-2. Parameters
-3. Credentials
-4. Pagination
-5. Datasources & Scripts
-6. Policy
-7. Escalations
-8. Resolutions
-9. Cloud Workflow
+1. Parameters
+1. Credentials
+1. Pagination
+1. Datasources & Scripts
+1. Policy
+1. Escalations
+1. Resolutions
+1. Cloud Workflow
 
 Each section (except for Metadata) should be preceded with comments resembling the below to clearly indicate where they begin:
 
@@ -346,13 +346,13 @@ The following guidelines should be used for `parameters` blocks:
 
 - Fields should be placed in the following order:
   1. `type`
-  2. `category`
-  3. `label`
-  4. `description`
-  5. `allowed_values` / `allowed_pattern`
-  6. `min_value`
-  7. `max_value`
-  8. `default`
+  1. `category`
+  1. `label`
+  1. `description`
+  1. `allowed_values` / `allowed_pattern`
+  1. `min_value`
+  1. `max_value`
+  1. `default`
 
 - **category**
   - Should always be included for every parameter.
@@ -394,15 +394,15 @@ The following guidelines should be used for `datasource` blocks:
 
 - The fields in the `request` block should always be in the following order:
   1. `auth`
-  2. `pagination`
-  3. `verb`
-  4. `scheme`
-  5. `host`
-  6. `path`
-  7. `header`
-  8. `query`
-  9. `body` / `body_field`
-  10. `ignore_status`
+  1. `pagination`
+  1. `verb`
+  1. `scheme`
+  1. `host`
+  1. `path`
+  1. `header`
+  1. `query`
+  1. `body` / `body_field`
+  1. `ignore_status`
 
 #### Example
 
@@ -431,8 +431,8 @@ The following guidelines should be used for `script` blocks:
 
 - The fields in the `script` block should always be in the following order:
   1. `parameters`
-  2. `result`
-  3. `code`
+  1. `result`
+  1. `code`
 
 - **Name**
   - If the script is called by a single datasource, their names should match. _Example_: `ds_filtered_subscriptions`, `js_filtered_subscriptions`
@@ -480,11 +480,11 @@ The following guidelines should be used for the `policy` block:
 
 - Within the `validate` or `validate_each` block, fields should be placed in the following order:
   1. `summary_template`
-  2. `detail_template`
-  3. `check`
-  4. `escalate`
-  5. `hash_include` or `hash_exclude`
-  6. `export`
+  1. `detail_template`
+  1. `check`
+  1. `escalate`
+  1. `hash_include` or `hash_exclude`
+  1. `export`
 
 - For the `summary_template` field:
   - Include the name of the applied policy itself. This is to make it easier to know which policy template the incident is associated with on the Automation -> Incidents page in Flexera One.
@@ -534,10 +534,10 @@ The following guidelines should be used for `escalation` blocks:
 
 - Fields should be placed in the following order:
   1. `automatic`
-  2. `label`
-  3. `description`
-  4. `email`
-  5. `run`
+  1. `label`
+  1. `description`
+  1. `email`
+  1. `run`
 
 - **label**
   - A very short description of the escalation.
