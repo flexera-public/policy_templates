@@ -14,6 +14,8 @@ Note that this is not intended as a guide for general best practices for policy 
 
 - Refer to policy templates as "policy templates" and not as "policies", and refer to applied policy templates as "applied policies". This is to keep terminology in line with our documentation and avoid confusion.
 
+- Avoid references to RightScale, Optima, or other terms that were in use prior to RightScale's acquisition. Refer to "Flexera" and "Cloud Cost Optimization" instead.
+
 ## File Names & Directory Structure
 
 The following directory structure should be used for provider-specific policy templates. Snake case should be used.
