@@ -6,6 +6,29 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3089](https://github.com/flexera-public/policy_templates/pull/3089): POL-1508 - AWS and Google Scheduled Policy Enhancements
+
+#### Description
+
+> - Remove `next_stop`, `next_start` label requirements
+> - Add task labels to improve status updates and debugging for CWF actions
+> - Enhanced start/stop functions with retry logic that attempts each operation up to 3 times
+> - Added robust state verification to ensure instances reach the desired state
+> - Add error capture, graceful timeout handling for triggered actions
+> - Added detailed logging for troubleshooting failed operations
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/POL-1508
+>
+
+#### Metadata
+
+- **Policies**: [AWS Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/schedule_instance/README.md), [Azure Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/schedule_instance/README.md), [Google Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/google/schedule_instance/README.md)
+- **Merged At**: 2025-05-01 17:57:11 UTC
+
+---
+
 ### PR [#3091](https://github.com/flexera-public/policy_templates/pull/3091): POL-1510 Repository Cleanup
 
 #### Description
@@ -1822,20 +1845,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/schedule_instance/README.md), [Azure Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/schedule_instance/README.md), [Google Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/google/schedule_instance/README.md)
 - **Merged At**: 2024-09-26 19:47:20 UTC
-
----
-
-### PR [#2644](https://github.com/flexera-public/policy_templates/pull/2644): POL-1359 AWS Reserved Instances Recommendations: DynamoDB Support
-
-#### Description
-
-> This adds support for DynamoDB and MemoryDB to the `AWS Reserved Instances Recommendations` policy template.
->
-
-#### Metadata
-
-- **Policies**: [AWS Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/recommendations/README.md)
-- **Merged At**: 2024-09-26 19:45:30 UTC
 
 ---
 
