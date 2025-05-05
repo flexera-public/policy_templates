@@ -4,7 +4,7 @@ Policy templates that go into the catalog should follow the conventions outlined
 
 The Dangerfile that runs whenever a pull request is made against the _master_ branch will test for many of these guidelines and report warnings/errors as appropriate. Please correct any warnings/errors that are not false positives before asking for peer review.
 
-Note that this is not intended as a guide for general best practices for policy development. It only covers style and conventions specific to the public catalog.
+Note that this is not intended as a guide for general best practices for policy development. It only covers style and conventions specific to the public catalog. For general training on how to develop policy templates, please take a look at the [Policy Development Training](https://github.com/flexera-public/policy_engine_training) repository.
 
 ## General Style Guidelines
 
@@ -558,5 +558,86 @@ escalation "esc_downsize_instances" do
   label "Downsize Instances"
   description "Approval to downsize all selected instances"
   run "downsize_instances", data
+end
+```
+
+### Cloud Workflow
+
+The following guidelines should be used for Cloud Workflow:
+
+- Cloud Workflow blocks should be named after the task they are performing.
+  - _Example_: `delete_snapshots`
+
+- Plural should be used for the block that runs the action against a set of resources. Singular should be used for a separate block that runs against individual resources.
+  - _Example_: `delete_snapshots` block iterates over a list of snapshots and calls `delete_snapshot` to delete each one.
+
+- The `task_label` function should be used to document things as they happen to assist in debugging and troubleshooting:
+  - _Example_: `task_label("Get AWS EC2 image successful: " + $instance["resourceID"])`
+
+- `sub on_error: handle_error()` should be used to gather errors to be raised all at once. That way, a single failure doesn't prevent the rest of the actions from being performed.
+  - Code that might raise errors should be inside of a `sub on_error: handle_error() do` `end` block.
+  - `handle_error` should be its own dedicated Cloud Workflow block that stores errors in a global `$$errors` variable.
+  - After that block, check if `$$errors` contains anything, and if it does, raise all of the errors at once.
+    - `if inspect($$errors) != "null"` `raise join($$errors, "\n")` `end`
+
+- Maintain consistent spacing and present code in a readable fashion.
+
+- Favor performance and readability over reducing the number of lines of code.
+
+- Make use of empty lines where appropriate to avoid bunching large amounts of code into a single wall of text.
+
+- Favor descriptive variable names over short ones. Avoid, where possible, using single letter variable names like `o` or `p`.
+
+#### Example
+
+```ruby
+define delete_snapshots($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_snapshot($instance, $param_azure_endpoint) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_snapshot($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2019-07-01"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2019-07-01" }
+  )
+
+  task_label("Delete Azure snapshot response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure snapshot: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure snapshot successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
 ```
