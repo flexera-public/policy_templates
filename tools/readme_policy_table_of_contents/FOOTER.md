@@ -1,3 +1,5 @@
+<!-- Begin FOOTER.md -->
+
 ## Tools
 
 - [Flexera Automation CloudFormation Template](https://github.com/flexera-public/policy_templates/blob/master/tools/cloudformation-template)

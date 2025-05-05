@@ -1,3 +1,5 @@
+<!-- Begin HEADER.md -->
+
 # Flexera Policy Templates
 
 This repository contains a library of open source [Flexera Policy Templates](https://docs.flexera.com/flexera/EN/Automation/AboutPolicies.htm). All contributions are shared under the MIT license.
@@ -14,9 +16,9 @@ Those who wish to contribute to this repository should review the [Contribution 
 
 ## Released Policy Templates
 
-<!-- Begin Policy Template Table of Contents -->
-
 ### Categories
+
+<!-- Begin Generated Content from generate_readme_policy_table_of_contents.rb -->
 
 - [Optimization](#policy-templates-for-optimization)
 - [Compliance](#policy-templates-for-compliance)
@@ -650,6 +652,8 @@ These templates can generate savings estimates for your environment. The inciden
 - Storage
 
   - [Google Open Buckets](./security/google/public_buckets)
+
+<!-- Begin FOOTER.md -->
 
 ## Tools
 
