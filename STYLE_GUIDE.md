@@ -473,10 +473,10 @@ The following guidelines should be used for `script` blocks:
 
   - Parameters should be in the following order when called by a datasource:
     1. val(iter_item, _string_). _Example_: `val(iter_item, "id")`
-    2. datasources. _Example_: `$ds_azure_vms`
-    3. parameters. _Example_: `$param_emails`
-    4. variables. _Example_: `rs_org_id`
-    5. raw values. _Example_: `"primary"`
+    1. datasources. _Example_: `$ds_azure_vms`
+    1. parameters. _Example_: `$param_emails`
+    1. variables. _Example_: `rs_org_id`
+    1. raw values. _Example_: `"primary"`
 
 - **Result**
   - For scripts used to generate an API request, the result field should be set to `request`
