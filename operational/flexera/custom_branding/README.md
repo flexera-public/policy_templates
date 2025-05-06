@@ -20,7 +20,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 - Run the Custom Branding policy in the tenant ensuring you select the credentials required
 - For non MSP Customers you can only apply the All Customer Settings Category
 - For MSP Customers you can apply bother All Customer Settings Category and the MSP Specific Settings Category
-- Select the areas that require white labelling by either selecting Yes/No for show/hide features, or, entering a URL to Images or Links
+- Select the areas that require white labeling by either selecting Yes/No for show/hide features, or, entering a URL to Images or Links
 - If there are items that do not need to be changed, leave the default text of No Change and it will be ignored
 - Run the policy and review if there are any errors, an incident will be generated if an item fails and will tell you which Item has failed and why
 - Once run, you should terminate the policy so it does not continue to run
