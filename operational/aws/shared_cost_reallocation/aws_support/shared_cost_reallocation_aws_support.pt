@@ -226,6 +226,22 @@ script "js_dates", type: "javascript" do
 EOS
 end
 
+# We need to get the dimensions to see if there are any adjustments
+datasource "ds_dimensions" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/orgs/", rs_org_id, "costs/dimensions"])
+  end
+  result do
+    collect jq(response, ".dimensions[]") do
+      field "id", jq(col_item, ".id")
+      field "name", jq(col_item, ".name")
+      field "type", jq(col_item, ".type")
+    end
+  end
+end
+
 # We need to get the RBDs to see if there are any rules that use tag dimension in the conditions
 datasource "ds_rule_based_dimensions" do
   request do
@@ -338,7 +354,7 @@ end
 
 datasource "ds_shared_cost" do
   request do
-    run_script $js_shared_cost, $ds_billing_centers, $ds_dates, $param_bill_connect_id, rs_org_id, rs_optima_host
+    run_script $js_shared_cost, $ds_billing_centers, $ds_dates, $ds_dimensions, $param_bill_connect_id, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -355,7 +371,7 @@ datasource "ds_shared_cost" do
 end
 
 script "js_shared_cost", type: "javascript" do
-  parameters "ds_billing_centers", "ds_dates", "param_bill_connect_id", "rs_org_id", "rs_optima_host"
+  parameters "ds_billing_centers", "ds_dates", "ds_dimensions", "param_bill_connect_id", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   // Get all billing center IDs from top-level billing centers
@@ -415,12 +431,6 @@ script "js_shared_cost", type: "javascript" do
           "type": "substring",
           "substring": "aws-"
         },
-        // Only Raw Costs
-        {
-          "dimension": "adjustment_name",
-          "type": "equal",
-          "value": "Raw Cost"
-        },
         // Exclude costs managed by this Policy Template
         {
           "type": "not",
@@ -477,6 +487,20 @@ script "js_shared_cost", type: "javascript" do
   // Helps reduce the number of line items we have to process, and total policy runtime
   if (payload.granularity == "month") {
     payload.summarized = true
+  }
+
+  // If ds_dimensions contains any strings starting with adjustment_ then we should filter out adjustments ()
+  var has_adjustments = _.some(ds_dimensions, function(dimension) {
+    return dimension.id.startsWith("adjustment_")
+  })
+  // Check if we have any adjustments
+  if (has_adjustments) {
+    // If we have adjustments, we should filter out the adjustments and use raw costs
+    payload.filter.expressions.push({
+      "dimension":"adjustment_name",
+      "type":"equal",
+      "value": "Raw Cost"
+    })
   }
 
   var request = {
