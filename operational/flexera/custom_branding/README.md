@@ -4,17 +4,6 @@
 
 This Policy allows a customer to brand the FlexeraOne platform quickly and consistently.
 
-## Prerequisites
-
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
-
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `billing_center_viewer`
-
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
-
-- A sub domain need to be configured to ensure that the Branding of the logon screen takes effect as outlined in the [Partner MSP Customizations](https://docs.flexera.com/flexera/EN/Administration/PartnerMSPCustomizations.htm) documentation. Otherwise the policy will only allow tenant to update the landing page.
-
 ## How It Works
 
 - Run the Custom Branding policy in the tenant ensuring you select the credentials required
@@ -63,6 +52,21 @@ The following policy actions are taken when branding fails.
 
 - Send an email report
 - Create an incident
+
+## Prerequisites
+
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `manage_organization`*
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
+- A sub domain need to be configured to ensure that the Branding of the logon screen takes effect as outlined in the [Partner MSP Customizations](https://docs.flexera.com/flexera/EN/Administration/PartnerMSPCustomizations.htm) documentation. Otherwise the policy will only allow tenant to update the landing page.
+
+## Supported Clouds
+
+Not Applicable
 
 ## Cost
 
