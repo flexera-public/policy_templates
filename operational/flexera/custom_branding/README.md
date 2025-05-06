@@ -60,6 +60,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `manage_organization`*
 
+  \* Required for taking branding actions.
+
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 - A sub domain need to be configured to ensure that the Branding of the logon screen takes effect as outlined in the [Partner MSP Customizations](https://docs.flexera.com/flexera/EN/Administration/PartnerMSPCustomizations.htm) documentation. Otherwise the policy will only allow tenant to update the landing page.
