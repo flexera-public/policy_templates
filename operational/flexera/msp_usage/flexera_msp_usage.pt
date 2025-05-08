@@ -1,4 +1,4 @@
-name "MSP Usage Audit"
+name "MSP Customer Usage Insights Report"
 rs_pt_ver 20180301
 type "policy"
 short_description "This policy report on MSP Customer Organizaation usage and provides operational capabilities related to managing MSP Customer Orgs. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/msp_usage/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -11,7 +11,8 @@ info(
   version: "0.1.0",
   publish: "false",
   service: "Cloud Cost Optimization",
-  policy_set: "Usage Report"
+  policy_set: "Usage Report",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -57,12 +58,38 @@ parameter "param_child_orgs_list" do
   default []
 end
 
-parameter "param_excluded_user_domains" do
+parameter "param_excluded_user_regex" do
   type "list"
   category "Filters"
-  label "Excluded User Domains"
-  description "A list of email domains to exclude from the active/inactive user counts. We generally recommend always including `flexera.com` to exclude Flexera employees from the counts.  Add any other domains for \"internal\" users that should be excluded from the active/inactive user acounts."
-  default ["flexera.com"]
+  label "Excluded User Regex"
+  description "A regex to exclude users from the active/inactive user counts. This is in addition to the excluded user domains. For example, you could use `.*@flexera.com` to exclude all Flexera employees."
+  default [".*@flexera.com"]
+end
+
+parameter "param_included_user_regex" do
+  type "list"
+  category "Filters"
+  label "Included User Regex"
+  description "A regex to include users in the active/inactive user counts. This is in addition to the included user domains. For example, you could use `msp-enduser-.*@flexera.com` to include MSP end users provisioned by SSO."
+  default [".*"]
+end
+
+parameter "param_billing_period" do
+  type "string"
+  category "Policy Settings"
+  label "Billing Period"
+  description "The billing period to report on."
+  allowed_values "Previous Month", "Previous 12 Months", "Specific Month"
+  default "Previous Month"
+end
+
+parameter "param_specific_period" do
+  type "string"
+  category "Policy Settings"
+  label "Billing Period"
+  description "Billing period to process bills for in YYYY-MM format. Only relevant if Specific Month is selected for Billing Period."
+  allowed_pattern /^(19|20)\d\d-(0[1-9]|1[0-2])$|^$/ # Allowed values are YYYY-MM or empty string
+  default ""
 end
 
 parameter "param_active_days_threshold" do
@@ -87,9 +114,9 @@ parameter "param_get_costs_from_parent_org" do
   type "string"
   category "Filters"
   label "Get Customer Org Costs from MSP Parent Org"
-  description "Select whether to get customer org costs from the msp parent org or from customer orgs directly. Default is 'Yes' which gets costs from the parent org."
+  description "Select whether to get customer org costs from the msp parent org or from customer orgs directly. Default is 'No' which gets costs from the parent org and customer orgs."
   allowed_values "Yes", "No"
-  default "Yes"
+  default "No"
 end
 
 ###############################################################################
@@ -152,17 +179,32 @@ EOS
 end
 
 datasource "ds_dates" do
-  run_script $js_dates
+  run_script $js_dates, $param_billing_period, $param_specific_period
 end
 
 script "js_dates", type: "javascript" do
+  parameters "param_billing_period", "param_specific_period"
   result "result"
   code <<-EOS
   var now = new Date();
-  // Ideally we report on the previous full 12 months of spend
-  var start_at = new Date(now.getFullYear(), now.getMonth() - 12, 1);
-  var end_at = new Date(now.getFullYear(), now.getMonth(), 1);
-  result = {
+
+  if (param_billing_period == "Specific Month") {
+    // If the user selected a specific month, we need to parse the date
+    var specific_month = new Date(param_specific_period);
+    // Set the start and end dates to the first day of the month
+    var start_at = new Date(specific_month.getFullYear(), specific_month.getMonth(), 1);
+    var end_at = new Date(specific_month.getFullYear(), specific_month.getMonth() + 1, 1);
+  } else if (param_billing_period == "Previous Month") {
+    // If the user selected previous month, we need to set the start and end dates to the first day of the previous month
+    var start_at = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    var end_at = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else {
+    // Ideally we report on the previous full 12 months of spend
+    var start_at = new Date(now.getFullYear(), now.getMonth() - 12, 1);
+    var end_at = new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+
+  var result = {
     start_at: start_at.toISOString().substring(0, 7),
     end_at: end_at.toISOString().substring(0, 7)
   }
@@ -553,12 +595,34 @@ datasource "ds_children_org_get_users_step6" do
   end
 end
 
+datasource "ds_children_org_get_bill_connects_step7" do
+  iterate $ds_children_org_get_users_step6
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-onboarding/v1/orgs/", val(val(iter_item, "org"), "id"), "/bill-connects"])
+    ignore_status 403 # Ignore status 403 so we can gracefully handle that kind of error
+  end
+  result do
+    encoding "json"
+    field "org", val(iter_item, "org")
+    field "roles", val(iter_item, "roles")
+    field "billing_centers", val(iter_item, "billing_centers")
+    field "top_level_bc_ids", val(iter_item, "top_level_bc_ids")
+    field "costs", val(iter_item, "costs")
+    field "costs_excluded", val(iter_item, "costs_excluded")
+    field "users", val(iter_item, "users")
+    field "bill_connects", jq(response, ".values")
+  end
+end
+
 datasource "ds_report" do
-  run_script $js_report, $ds_flexera_api_hosts, $ds_dates, $ds_request_parent_org_costs_not_allocated, $ds_parent_org_costs_not_allocated, $ds_children_org_get_users_step6, $ds_identify_errors, $param_excluded_user_domains, $param_active_days_threshold, $param_child_orgs_list, $param_child_orgs_allow_or_deny, $param_cost_threshold, $param_get_costs_from_parent_org, rs_org_id, rs_org_name
+  run_script $js_report, $ds_flexera_api_hosts, $ds_dates, $ds_request_parent_org_costs_not_allocated, $ds_parent_org_costs_not_allocated, $ds_children_org_get_bill_connects_step7, $ds_identify_errors, $param_excluded_user_regex, $param_included_user_regex, $param_active_days_threshold, $param_child_orgs_list, $param_child_orgs_allow_or_deny, $param_cost_threshold, $param_get_costs_from_parent_org, $param_billing_period, rs_org_id, rs_org_name
 end
 
 script "js_report", type: "javascript" do
-  parameters "ds_flexera_api_hosts", "ds_dates", "ds_request_parent_org_costs_not_allocated", "ds_parent_org_costs_not_allocated", "ds_children_org", "ds_identify_errors", "param_excluded_user_domains", "param_active_days_threshold", "param_child_orgs_list", "param_child_orgs_allow_or_deny", "param_cost_threshold", "param_get_costs_from_parent_org", "rs_org_id", "rs_org_name"
+  parameters "ds_flexera_api_hosts", "ds_dates", "ds_request_parent_org_costs_not_allocated", "ds_parent_org_costs_not_allocated", "ds_children_org", "ds_identify_errors", "param_excluded_user_regex", "param_included_user_regex", "param_active_days_threshold", "param_child_orgs_list", "param_child_orgs_allow_or_deny", "param_cost_threshold", "param_get_costs_from_parent_org", "param_billing_period", "rs_org_id", "rs_org_name"
   result "result"
   code <<-EOS
     function formatCurrency(value) {
@@ -588,7 +652,7 @@ script "js_report", type: "javascript" do
       azure: {cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
       gcp: {cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
       oracle: {cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
-      optima: {cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
+      cbi: {cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
       focus: {cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
       other: {cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}}
     };
@@ -596,8 +660,13 @@ script "js_report", type: "javascript" do
     // Calculate stats across all orgs
     var months = [];
     var totalUsers = 0;
+    var allUsers = [];
     var activeUsers = 0;
+    var allActiveUsers = [];
+    var includedUsers = 0;
+    var allIncludedUsers = [];
     var excludedUsers = 0;
+    var allExcludedUsers = [];
     var inactiveOrgs = [];
     var inactiveOrgsTotalCost = 0;
     // Inclusive costs are costs:
@@ -620,19 +689,19 @@ script "js_report", type: "javascript" do
           var month = cost.timestamp.substring(0, 7);
           months.push(month);
 
-          var source = cost.dimensions.bill_source;
+          var bill_source = cost.dimensions.bill_source;
           var targetSource;
-          if (/.*aws.*/.test(source)) {
+          if (/.*aws.*/.test(bill_source)) {
             targetSource = costsBySource.aws;
-          } else if (/.*azure.*/.test(source)) {
+          } else if (/.*azure.*/.test(bill_source)) {
             targetSource = costsBySource.azure;
-          } else if (/.*google|gcp.*/.test(source)) {
+          } else if (/.*google|gcp.*/.test(bill_source)) {
             targetSource = costsBySource.gcp;
-          } else if (/.*cbi-oi-oracle.*/.test(source)) {
+          } else if (/.*cbi-oi-oracle.*/.test(bill_source)) {
             targetSource = costsBySource.oracle;
-          } else if (/.*cbi-oi-optima.*/.test(source)) {
-            targetSource = costsBySource.optima;
-          } else if (/.*cbi-oi-focus.*/.test(source)) {
+          } else if (/.*cbi-oi-optima.*/.test(bill_source)) {
+            targetSource = costsBySource.cbi;
+          } else if (/.*cbi-oi-focus.*/.test(bill_source)) {
             targetSource = costsBySource.focus;
           } else {
             targetSource = costsBySource.other;
@@ -670,7 +739,7 @@ script "js_report", type: "javascript" do
           } else if (/.*cbi-oi-oracle.*/.test(source)) {
             targetSource = costsBySource.oracle;
           } else if (/.*cbi-oi-optima.*/.test(source)) {
-            targetSource = costsBySource.optima;
+            targetSource = costsBySource.cbi;
           } else if (/.*cbi-oi-focus.*/.test(source)) {
             targetSource = costsBySource.focus;
           } else {
@@ -686,28 +755,65 @@ script "js_report", type: "javascript" do
           targetSource.monthlyAmounts_excluded[month] += amount;
         });
       }
+      // Calculate user counts
       if (org.users) {
+        // Some starter counts for the org
         org.activeUsers = 0;
         org.totalUsers = 0;
+        org.includedUsers = 0;
         org.excludedUsers = 0;
         _.each(org.users, function(user) {
-          var emailDomain = user.email.split('@')[1];
-          if (_.contains(param_excluded_user_domains, emailDomain)) {
-            excludedUsers++;
-            org.excludedUsers++;
-          } else {
-            totalUsers++;
-            org.totalUsers++;
-            var lastLogin = user.lastUILogin;
-            if (lastLogin) {
-              var loginDate = new Date(lastLogin);
-              var thresholdDaysAgo = new Date();
-              thresholdDaysAgo.setDate(thresholdDaysAgo.getDate() - param_active_days_threshold);
-              if (loginDate > thresholdDaysAgo) {
-                activeUsers++;
-                org.activeUsers++;
+          org.totalUsers++; // Increment total users for the org always
+          allUsers.push(user.email); // Add user to the global list of users
+          // first check if user matches any of the include regexes, stop checking on first match
+          if (param_included_user_regex.length > 0) {
+            var included = false;
+            _.each(param_included_user_regex, function(regex) {
+              // Check if we have already matched an include regex for this user
+              if (!included) {
+                var regex = new RegExp(regex);
+                if (regex.test(user.email)) {
+                  included = true; // We matched an include regex for this user, set flag to skip checking others
+                  // User is included, check if they are excluded
+                  var excluded = false;
+                  _.each(param_excluded_user_regex, function(excludeRegex) {
+                    // Check if we have already matched an exclude regex for this user
+                    if (!excluded) {
+                      // Test if the user email matches the exclude regex
+                      var excludeRegex = new RegExp(excludeRegex);
+                      if (excludeRegex.test(user.email)) {
+                        // We matched an exclude regex for this user
+                        excluded = true; // Set flag to skip checking other exclude regexes
+                        excludedUsers++; // Increment excluded users global count
+                        allExcludedUsers.push(user.email); // Add user to the global list of excluded users
+                        org.excludedUsers++; // Increment excluded users count for the org
+                      }
+                    }
+                  });
+                  // Check if any matching exclusions
+                  if (!excluded) {
+                    includedUsers++; // Increment included users global count
+                    allIncludedUsers.push(user.email); // Add user to the global list of included users
+                    org.includedUsers++; // Increment included users count for the org
+                    // User is included, check if they are active
+                    var lastLogin = user.lastUILogin;
+                    if (lastLogin) {
+                      // Check if the last login date is within the active days threshold
+                      var loginDate = new Date(lastLogin);
+                      var thresholdDaysAgo = new Date();
+                      // Use param to get the threshold date
+                      thresholdDaysAgo.setDate(thresholdDaysAgo.getDate() - param_active_days_threshold);
+                      // Check if the last login date is more recent than the threshold date
+                      if (loginDate > thresholdDaysAgo) {
+                        activeUsers++; // Increment active users global count
+                        allActiveUsers.push(user.email); // Add user to the global list of active users
+                        org.activeUsers++; // Increment active users count for the org
+                      }
+                    }
+                  }
+                }
               }
-            }
+            });
           }
         });
 
@@ -719,6 +825,26 @@ script "js_report", type: "javascript" do
         }
       }
     });
+
+    // Deduplicate all users
+    allUsers = _.uniq(allUsers);
+    // Get the total number of users
+    totalUsers = allUsers.length;
+
+    // Deduplicate all active users
+    allActiveUsers = _.uniq(allActiveUsers);
+    // Get the total number of active users
+    activeUsers = allActiveUsers.length;
+
+    // Deduplicate all included users
+    allIncludedUsers = _.uniq(allIncludedUsers);
+    // Get the total number of included users
+    includedUsers = allIncludedUsers.length;
+
+    // Deduplicate all excluded users
+    allExcludedUsers = _.uniq(allExcludedUsers);
+    // Get the total number of excluded users
+    excludedUsers = allExcludedUsers.length;
 
     // Get months sorted chronologically
     // Deduplicate months just in case
@@ -743,16 +869,26 @@ script "js_report", type: "javascript" do
       markdown += "`"+JSON.stringify(ds_request_parent_org_costs_not_allocated[0].filter_excluded_costs) + "`\\n\\n";
     }
 
-    if (param_excluded_user_domains.length > 0) {
-      markdown += "**Excluded User Domains** are defined as: " + param_excluded_user_domains.join(", ") + "\\n\\n";
+    if (param_included_user_regex.length > 0) {
+      if (param_included_user_regex.length === 1 && param_included_user_regex[0] === ".*") {
+        markdown += "**Included User Regex** configured to include all users (`.*`)\\n\\n";
+      } else {
+        markdown += "**Included User Regex** are defined as: " + param_included_user_regex.join(", ") + "\\n\\n";
+      }
     } else {
-      markdown += "**Excluded User Domains** are not defined.\\n\\n";
+      markdown += "**Included User Regex** are not defined.\\n\\n";
+    }
+
+    if (param_excluded_user_regex.length > 0) {
+      markdown += "**Excluded User Regex** are defined as: " + param_excluded_user_regex.join(", ") + "\\n\\n";
+    } else {
+      markdown += "**Excluded User Regex** are not defined.\\n\\n";
     }
 
     if (param_get_costs_from_parent_org == "Yes") {
       markdown += "**Customer Costs are retrieved from the MSP Parent Org only**\\n\\n";
     } else {
-      markdown += "**Customer Costs are retrieved from the MSP Parent Org for costs not allocated to any Customer Org, and each Customer Orgs directly for Customer Org costs\\n\\n";
+      markdown += "**Customer Costs are retrieved from the MSP Parent Org for costs not allocated to any Customer Org, and each Customer Orgs directly for Customer Org costs**\\n\\n";
     }
 
     if (param_child_orgs_list.length > 0) {
@@ -778,9 +914,10 @@ script "js_report", type: "javascript" do
     markdown += "## Overall Statistics\\n\\n";
 
     markdown += "* Total Orgs: " + inclusiveCosts.length + "\\n";
-    var warning = sortedMonths.length < 12 ? " (Warning: Less than 12 months of data available)" : "";
-    markdown += "* Previous "+sortedMonths.length+"-Month Cost: " + formatCurrency(netTotalCost) + warning + "\\n";
-    markdown += "* Previous "+sortedMonths.length+"-Month Excluded Cost: " + formatCurrency(excludedTotalCost) + "\\n";
+    var warning = sortedMonths.length < 12 && param_billing_period != "Previous Month" ? " (Warning: Less than 12 months of data available)" : "";
+    markdown += "* Previous "+sortedMonths.length+"-Month Total Cost (No Exclusions): " + formatCurrency((netTotalCost || 0) + (excludedTotalCost || 0)) + warning + "\\n";
+    markdown += "* Previous "+sortedMonths.length+"-Month Excluded Cost (Non-Invoicable): " + formatCurrency(excludedTotalCost || 0) + "\\n";
+    markdown += "* Previous "+sortedMonths.length+"-Month Invoicable Cost: " + formatCurrency(netTotalCost || 0) + "\\n";
     if (sortedMonths.length >= 3) {
       var recentMonths = sortedMonths.slice(-3);
       var recentTotalCost = 0;
@@ -790,9 +927,9 @@ script "js_report", type: "javascript" do
         });
       });
       var estimated12MCostFromLast3Months = (recentTotalCost / 3) * 12;
-      markdown += "* Estimated 12-Month Cost using Previous 3-Month: " + formatCurrency(estimated12MCostFromLast3Months) + "\\n";
+      markdown += "* Estimated 12-Month Invoicable Cost using Previous 3-Month Invoicable Cost: " + formatCurrency(estimated12MCostFromLast3Months) + "\\n";
     }
-    if (sortedMonths.length >= 1) {
+    if (sortedMonths.length >= 1 && param_billing_period == "Previous 12 Months") {
       var previousMonth = _.last(sortedMonths);
       var recentTotalCost = 0;
       var recentExcludedTotalCost = 0;
@@ -800,13 +937,15 @@ script "js_report", type: "javascript" do
         recentTotalCost += source.monthlyAmounts[previousMonth] || 0;
         recentExcludedTotalCost += source.monthlyAmounts_excluded[previousMonth] || 0;
       });
-      markdown += "* Previous 1-Month Cost: " + formatCurrency(recentTotalCost) + " ("+previousMonth+")\\n";
-      markdown += "* Previous 1-Month Excluded Cost: " + formatCurrency(recentExcludedTotalCost) + " ("+previousMonth+")\\n";
+      markdown += "* Previous 1-Month Total Cost (No Exclusions): " + formatCurrency(recentTotalCost) + " ("+previousMonth+")\\n";
+      markdown += "* Previous 1-Month Excluded Cost (Non-Invoicable): " + formatCurrency(recentExcludedTotalCost) + " ("+previousMonth+")\\n";
+      markdown += "* Previous 1-Month Invoicable Cost: " + formatCurrency(recentTotalCost) + " ("+previousMonth+")\\n";
     }
-    markdown += "* Total Users: " + totalUsers + "\\n";
-    markdown += "* Active Users: " + activeUsers + " (" + ((activeUsers/totalUsers)*100).toFixed(1) + "%) (Last UI login less than "+param_active_days_threshold+"days)" + "\\n";
-    markdown += "* Inactive Users: " + (totalUsers-activeUsers) + " (" + (((totalUsers-activeUsers)/totalUsers)*100).toFixed(1) + "%)" + "\\n";
-    markdown += "* Excluded Users: " + excludedUsers + "\\n";
+    markdown += "* Total Users (No Exclusions): " + totalUsers + "\\n";
+    markdown += "* Excluded Users: " + excludedUsers + " (" + ((excludedUsers/totalUsers)*100).toFixed(1) + "%)\\n";
+    markdown += "* Included Users: " + includedUsers + " (" + ((includedUsers/totalUsers)*100).toFixed(1) + "%)\\n";
+    markdown += "* Active Users: " + activeUsers + " (" + ((activeUsers/includedUsers)*100).toFixed(1) + "%) (Last UI login less than "+param_active_days_threshold+"days)" + "\\n";
+    markdown += "* Inactive Users: " + (includedUsers-activeUsers) + " (" + (((includedUsers-activeUsers)/includedUsers)*100).toFixed(1) + "%)" + "\\n";
     if (inactiveOrgs.length > 0) {
       markdown += "* Organizations with 100% Inactive Users: " + _.pluck(inactiveOrgs, "id").join(", ") + "\\n";
       markdown += "* Previous "+sortedMonths.length+"-Month Cost for Organizations with 100% Inactive Users: " + formatCurrency(inactiveOrgsTotalCost) + "\\n";
@@ -819,9 +958,9 @@ script "js_report", type: "javascript" do
     // Build header row
     var header = "| Source | Org Count";
     _.each(sortedMonths, function(month) {
-      header += " | " + month;
+      header += " | " + month + " Invoicable Costs";
     });
-    header += " | Total | % of Total | Excluded |\\n";
+    header += "| Excluded Costs (Non-Invoicable) | Total Costs (No Exclusions) | % of Total Invoicable |\\n";
     markdown += header;
 
     // Build separator row
@@ -838,7 +977,7 @@ script "js_report", type: "javascript" do
       {name: "Azure", data: costsBySource.azure},
       {name: "GCP", data: costsBySource.gcp},
       {name: "Oracle", data: costsBySource.oracle},
-      {name: "Optima", data: costsBySource.optima},
+      {name: "Common Bill Ingest", data: costsBySource.cbi},
       {name: "FOCUS", data: costsBySource.focus},
       {name: "Other", data: costsBySource.other}
     ];
@@ -849,9 +988,9 @@ script "js_report", type: "javascript" do
       var amount = source.data.monthlyAmounts[month] || 0;
       row += " | " + formatCurrency(amount);
       });
-      row += " | " + formatCurrency(source.data.cost);
-      row += " | " + ((source.data.cost/netTotalCost)*100).toFixed(1) + "%";
-      row += " | " + formatCurrency(source.data.cost_excluded) + " |\\n";
+      row += " | " + formatCurrency(source.data.cost_excluded);
+      row += " | " + formatCurrency((source.data.cost_excluded || 0) + (source.data.cost || 0));
+      row += " | " + ((source.data.cost/netTotalCost)*100).toFixed(1) + "% |\\n";
       markdown += row;
     });
 
@@ -865,9 +1004,9 @@ script "js_report", type: "javascript" do
     // Build header row
     var childOrgHeader = "| Org Name | Org ID";
     _.each(sortedMonths, function(month) {
-      childOrgHeader += " | " + month;
+      childOrgHeader += " | " + month + " Invoicable Costs";
     });
-    childOrgHeader += " | Total | % of Total | Excluded |\\n";
+    childOrgHeader += "| Excluded Costs (Non-Invoicable) | Total Costs (No Exclusions) | % of Total Invoicable |\\n";
     markdown += childOrgHeader;
 
     // Build separator row
@@ -913,9 +1052,9 @@ script "js_report", type: "javascript" do
           var amount = monthlyTotals[month] || 0;
           row += " | " + formatCurrency(amount);
         });
-        row += " | " + formatCurrency(orgTotal);
-        row += " | " + ((orgTotal/netTotalCost)*100).toFixed(1) + "%";
-        row += " | " + formatCurrency(org.excludedTotalCost) + " |\\n";
+        row += " | " + formatCurrency(org.excludedTotalCost);
+        row += " | " + formatCurrency((org.excludedTotalCost || 0) + (orgTotal || 0));
+        row += " | " + ((orgTotal/netTotalCost)*100).toFixed(1) + "% |\\n";
         markdown += row;
       }
     });
@@ -934,15 +1073,7 @@ script "js_report", type: "javascript" do
         markdown += "\\n\\n### " + org.org.name + " (" + org.org.id + ")\\n\\n";
 
         // Initialize cost tracking for this org
-        var orgCosts = {
-        aws: {cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
-        azure: {cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
-        gcp: {cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
-        oracle: {cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
-        optima: {cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
-        focus: {cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
-        other: {cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}}
-        };
+        var orgCosts = {}
 
         // Calculate costs for this org
         if (org.costs) {
@@ -951,20 +1082,15 @@ script "js_report", type: "javascript" do
             var month = cost.timestamp.substring(0, 7);
             var source = cost.dimensions.bill_source;
 
-            var targetSource;
-            if (/.*aws.*/.test(source)) targetSource = orgCosts.aws;
-            else if (/.*azure.*/.test(source)) targetSource = orgCosts.azure;
-            else if (/.*google|gcp.*/.test(source)) targetSource = orgCosts.gcp;
-            else if (/.*cbi-oi-oracle.*/.test(source)) targetSource = orgCosts.oracle;
-            else if (/.*cbi-oi-optima.*/.test(source)) targetSource = orgCosts.optima;
-            else if (/.*cbi-oi-focus.*/.test(source)) targetSource = orgCosts.focus;
-            else targetSource = orgCosts.other;
-
-            targetSource.cost += amount;
-            if (!targetSource.monthlyAmounts[month]) {
-            targetSource.monthlyAmounts[month] = 0;
+            // Init the cost tracking for this source if it doesn't exist
+            if (!orgCosts[source]) {
+              orgCosts[source] = {cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}};
             }
-            targetSource.monthlyAmounts[month] += amount;
+            orgCosts[source].cost += amount;
+            if (!orgCosts[source].monthlyAmounts[month]) {
+              orgCosts[source].monthlyAmounts[month] = 0;
+            }
+            orgCosts[source].monthlyAmounts[month] += amount;
           });
         }
 
@@ -974,32 +1100,52 @@ script "js_report", type: "javascript" do
             var month = cost.timestamp.substring(0, 7);
             var source = cost.dimensions.bill_source;
 
-            var targetSource;
-            if (/.*aws.*/.test(source)) targetSource = orgCosts.aws;
-            else if (/.*azure.*/.test(source)) targetSource = orgCosts.azure;
-            else if (/.*google|gcp.*/.test(source)) targetSource = orgCosts.gcp;
-            else if (/.*cbi-oi-oracle.*/.test(source)) targetSource = orgCosts.oracle;
-            else if (/.*cbi-oi-optima.*/.test(source)) targetSource = orgCosts.optima;
-            else if (/.*cbi-oi-focus.*/.test(source)) targetSource = orgCosts.focus;
-            else targetSource = orgCosts.other;
-
-            targetSource.cost_excluded += amount;
-            if (!targetSource.monthlyAmounts_excluded[month]) {
-            targetSource.monthlyAmounts_excluded[month] = 0;
+            // Init the cost tracking for this source if it doesn't exist
+            if (!orgCosts[source]) {
+              orgCosts[source] = {cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}};
             }
-            targetSource.monthlyAmounts_excluded[month] += amount;
+            orgCosts[source].cost_excluded += amount;
+
+            if (!orgCosts[source].monthlyAmounts_excluded[month]) {
+              orgCosts[source].monthlyAmounts_excluded[month] = 0;
+            }
+            orgCosts[source].monthlyAmounts_excluded[month] += amount;
           });
         }
 
-        markdown += "* Previous "+sortedMonths.length+"-Month Cost: " + formatCurrency(orgTotal) + "\\n";
-        markdown += "* Excluded Cost: " + formatCurrency(org.excludedTotalCost) + "\\n";
+        markdown += "* Total Cost (No Exclusions): " + formatCurrency((org.excludedTotalCost || 0) + (orgTotal || 0)) + "\\n";
+        markdown += "* Total Excluded Cost (Non-Invoicable): " + formatCurrency(org.excludedTotalCost) + "\\n";
+        markdown += "* Total Invoicable Cost: " + formatCurrency(orgTotal) + "\\n";
         if (org.org.msp_parent == true) {
-          markdown += "* **These are costs not allocated to any child organizations\\n";
+          markdown += "* **These are costs not allocated to any child organizations yet and may need to be reviewed**\\n";
           markdown += "* **This is the MSP Parent Organization, user activity is not reported**\\n";
         } else {
-          markdown += "* Active Users: " + org.activeUsers + " (" + (org.totalUsers > 0 ? ((org.activeUsers/org.totalUsers)*100).toFixed(1) : 0) + "%)\\n";
-          markdown += "* Inactive Users: " + (org.totalUsers-org.activeUsers) + " (" + (org.totalUsers > 0 ? (((org.totalUsers-org.activeUsers)/org.totalUsers)*100).toFixed(1) : 0) + "%)\\n";
-          markdown += "* Excluded Users: " + org.excludedUsers + "\\n";
+          if (org.totalUsers > 0) {
+            markdown += "* Total Users: " + org.totalUsers + "\\n";
+          } else {
+            markdown += "* Total Users: 0\\n";
+          }
+          if (org.excludedUsers > 0) {
+            markdown += "* Excluded Users: " + org.excludedUsers + " (" + (org.totalUsers > 0 ? ((org.excludedUsers/org.totalUsers)*100).toFixed(1) : 0) + "%)\\n";
+          } else {
+            markdown += "* Excluded Users: 0\\n";
+          }
+          if (org.includedUsers > 0) {
+            markdown += "* Included Users: " + org.includedUsers + " (" + (org.totalUsers > 0 ? ((org.includedUsers/org.totalUsers)*100).toFixed(1) : 0) + "%)\\n";
+          } else {
+            markdown += "* Included Users: 0\\n";
+          }
+          if (org.totalUsers > 0 && org.includedUsers > 0) {
+            markdown += "* Active Users: " + org.activeUsers + " (" + (org.includedUsers > 0 ? ((org.activeUsers/org.includedUsers)*100).toFixed(1) : 0) + "%)\\n";
+            var orgInactiveUsers = (org.includedUsers || 0) - (org.activeUsers || 0);
+            if (orgInactiveUsers > 0) {
+              markdown += "* Inactive Users: " + orgInactiveUsers + " (" + (org.includedUsers > 0 ? ((orgInactiveUsers/org.includedUsers)*100).toFixed(1) : 0) + "%)\\n";
+            } else {
+              markdown += "* Inactive Users: 0\\n";
+            }
+          } else {
+            markdown += "* No User Activity Counts due to 0 Included Users\\n";
+          }
           if (org.activeUsers === 0 && org.totalUsers > 0) {
             markdown += "* **This customer organization has 100% inactive users**\\n";
           }
@@ -1010,9 +1156,9 @@ script "js_report", type: "javascript" do
           // Build table header
           var header = "\\n| Source";
           _.each(sortedMonths, function(month) {
-          header += " | " + month;
+          header += " | " + month + " Invoicable Costs";
           });
-          header += " | Total | % of Org Total | Excluded |\\n";
+          header += "| Excluded Costs (Non-Invoicable) | Total Costs (No Exclusions) | % of Org Total |\\n";
           markdown += header;
 
           // Build separator
@@ -1024,42 +1170,44 @@ script "js_report", type: "javascript" do
           markdown += separator;
 
           // Add rows for each source
-          var sources = [
-          {name: "AWS", data: orgCosts.aws},
-          {name: "Azure", data: orgCosts.azure},
-          {name: "GCP", data: orgCosts.gcp},
-          {name: "Oracle", data: orgCosts.oracle},
-          {name: "Optima", data: orgCosts.optima},
-          {name: "FOCUS", data: orgCosts.focus},
-          {name: "Other", data: orgCosts.other}
-          ];
+          var sources = _.keys(orgCosts);
+          sources = _.sortBy(sources, function(source) {
+            return orgCosts[source].cost;
+          }).reverse();
 
-          _.each(sources, function(source) {
-          if (source.data.cost > 0) {
-            var row = "| " + source.name;
-            _.each(sortedMonths, function(month) {
-            var amount = source.data.monthlyAmounts[month] || 0;
-            row += " | " + formatCurrency(amount);
-            });
-            row += " | " + formatCurrency(source.data.cost);
-            row += " | " + ((source.data.cost/orgTotal)*100).toFixed(1) + "%";
-            row += " | " + formatCurrency(source.data.cost_excluded) + " |\\n";
-            markdown += row;
-          }
+          // Get the bill connect IDs for this org, if any
+          var orgBillConnectIds = _.pluck(org.bill_connects, "id");
+
+          _.each(sources, function(bill_source) {
+            var source = orgCosts[bill_source];
+            if (source.cost > 0) {
+              var row = "| " + bill_source;
+              if (org.org.msp_parent != true && orgBillConnectIds.length > 0 && _.contains(orgBillConnectIds, bill_source)) {
+                row += " (Customer Org Bill Connect)"
+              }
+              _.each(sortedMonths, function(month) {
+              var amount = source.monthlyAmounts[month] || 0;
+              row += " | " + formatCurrency(amount);
+              });
+              row += " | " + formatCurrency(source.cost_excluded || 0);
+              row += " | " + formatCurrency((source.cost_excluded || 0) + (source.cost || 0));
+              row += " | " + ((source.cost/orgTotal)*100).toFixed(1) + "% |\\n";
+              markdown += row;
+            }
           });
 
           // Add total row
           markdown += "| **Total**";
           _.each(sortedMonths, function(month) {
           var monthTotal = 0;
-          _.each(sources, function(source) {
-            monthTotal += source.data.monthlyAmounts[month] || 0;
+          _.each(sources, function(bill_source) {
+            monthTotal += orgCosts[bill_source].monthlyAmounts[month] || 0;
           });
           markdown += " | " + formatCurrency(monthTotal);
           });
-          markdown += " | " + formatCurrency(orgTotal);
-          markdown += " | 100%";
-          markdown += " | " + formatCurrency(org.excludedTotalCost) + " |\\n";
+          markdown += " | " + formatCurrency(org.excludedTotalCost);
+          markdown += " | " + formatCurrency((org.excludedTotalCost || 0) + (orgTotal || 0));
+          markdown += " | 100% |\\n";
         }
       }
     });
@@ -1099,7 +1247,7 @@ end
 
 policy "pol_group_sync" do
   validate $ds_report do
-    summary_template "MSP Organizations Usage Report"
+    summary_template "MSP Customer Usage Insights Report"
     detail_template <<-EOS
 {{ data.report }}
 
