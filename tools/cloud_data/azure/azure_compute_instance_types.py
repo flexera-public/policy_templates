@@ -1,6 +1,7 @@
 import requests
 import json
 import os
+import re
 from azure.identity import ClientSecretCredential
 from azure.mgmt.compute import ComputeManagementClient
 
@@ -58,7 +59,7 @@ for item in sku_dicts:
             "size": item.get("size", "None"),
             "family": item.get("family", "None"),
             "superseded": "None",
-            "specs": {}
+            "specs": { "nfu": "None" }
         }
 
         for capability in item.get("capabilities", []):
@@ -66,6 +67,9 @@ for item in sku_dicts:
 
         if details["name"] in manual_data and "superseded" in manual_data[details["name"]]:
             details["superseded"] = manual_data[details["name"]]["superseded"]
+
+        if details["name"] in manual_data and "nfu" in manual_data[details["name"]]:
+            details["specs"]["nfu"] = manual_data[details["name"]]["nfu"]
 
         data.append(details)
 
