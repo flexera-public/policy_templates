@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.7.0
+
+- Policy template now uses dynamically updated list of instance types.
+
 ## v5.6.0
 
 - Added `Connections (Daily)` field to incident table for added context

@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.4.0
+
+- Policy template now uses dynamically updated list of instance types.
+- Fixed issue where incident would not contain pricing information for Linux instances.
+
 ## v2.3.3
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.

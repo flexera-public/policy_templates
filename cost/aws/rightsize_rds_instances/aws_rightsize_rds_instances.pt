@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.6.0",
+  version: "5.7.0",
   provider: "AWS",
   service: "RDS",
   policy_set: "Rightsize Database Instances",
@@ -219,12 +219,56 @@ EOS
 end
 
 # Get AWS RDS instance sizes
-datasource "ds_aws_instance_size_map" do
+datasource "ds_aws_instance_types" do
   request do
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_instance_types.json"
     header "User-Agent", "RS Policies"
   end
+end
+
+datasource "ds_aws_instance_type_map" do
+  run_script $js_aws_instance_type_map, $ds_aws_instance_types
+end
+
+script "js_aws_instance_type_map", type: "javascript" do
+  parameters "ds_aws_instance_types"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  _.each(ds_aws_instance_types, function(entry) { result[entry["name"]] = entry })
+EOS
+end
+
+datasource "ds_aws_instance_types_by_family" do
+  run_script $js_aws_instance_types_by_family, $ds_aws_instance_types
+end
+
+script "js_aws_instance_types_by_family", type: "javascript" do
+  parameters "ds_aws_instance_types"
+  result "result"
+  code <<-'EOS'
+  result = { all: [].concat(ds_aws_instance_types) }
+
+  result["all"] = _.sortBy(result["all"], function(type) {
+    return type['memory'] && type['memory']['sizeInMiB'] ? type['memory']['sizeInMiB'] : 99999999
+  })
+
+  result["all"] = _.sortBy(result["all"], function(type) {
+    return type['cpu'] && type['cpu']['cores'] ? type['cpu']['cores'] : 9999
+  })
+
+  _.each(ds_aws_instance_types, function(type) {
+    if (result[type['family']] == undefined) { result[type['family']] = [] }
+    result[type['family']].push(type)
+  })
+
+  _.each(_.keys(result), function(family) {
+    result[family] = _.sortBy(result[family], function(type) {
+      return type['size_rank'] ? type['size_rank'] : 99999999
+    })
+  })
+EOS
 end
 
 # Get AWS account info
@@ -606,11 +650,11 @@ EOS
 end
 
 datasource "ds_rds_instances" do
-  run_script $js_rds_instances, $ds_rds_instances_set, $ds_resource_tags, $ds_aws_instance_size_map, $param_exclusion_tags, $param_exclusion_tags_boolean
+  run_script $js_rds_instances, $ds_rds_instances_set, $ds_resource_tags, $ds_aws_instance_type_map, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_rds_instances", type: "javascript" do
-  parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_instance_size_map", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_instance_type_map", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -712,8 +756,10 @@ script "js_rds_instances", type: "javascript" do
           }
         }
 
-        if (vcpus == null && ds_aws_instance_size_map[instance["resourceType"]] != undefined) {
-          vcpus = ds_aws_instance_size_map[instance["resourceType"]]["vcpu"]
+        type_metadata = ds_aws_instance_type_map[instance["resourceType"]]
+
+        if (vcpus == null && type_metadata && type_metadata["cpu"] && type_metadata["cpu"]["vcpus"]) {
+          vcpus = type_metadata["cpu"]["vcpus"]
         }
 
         result.push({
@@ -1268,26 +1314,45 @@ EOS
 end
 
 datasource "ds_rds_underutil_instances" do
-  run_script $js_rds_underutil_instances, $ds_rds_nonidle_instances_with_metrics, $ds_aws_instance_size_map, $ds_instance_costs_grouped, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value, $param_downsize_multiple
+  run_script $js_rds_underutil_instances, $ds_rds_nonidle_instances_with_metrics, $ds_aws_instance_type_map, $ds_aws_instance_types_by_family, $ds_instance_costs_grouped, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value, $param_downsize_multiple
 end
 
 script "js_rds_underutil_instances", type: "javascript" do
-  parameters "ds_rds_nonidle_instances_with_metrics", "ds_aws_instance_size_map", "ds_instance_costs_grouped", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value", "param_downsize_multiple"
+  parameters "ds_rds_nonidle_instances_with_metrics", "ds_aws_instance_type_map", "ds_aws_instance_types_by_family", "ds_instance_costs_grouped", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value", "param_downsize_multiple"
   result "result"
   code <<-'EOS'
   result = []
 
+  // Function to find the index of a resource type in a list
+  // This is so we can easily go up and down.
+  // If a type has an index of 5, we know 4 is the next size down.
+  function findTypeIndex(type_list, name) {
+    type_index = null
+
+    _.each(type_list, function(type, index) {
+      if (type_index == null && type['name'] == name) { type_index = index }
+    })
+
+    return type_index
+  }
+
   _.each(ds_rds_nonidle_instances_with_metrics, function(instance) {
+    family = instance["resourceType"].split('.')[0]
+    typeIndex = null
+    if (ds_aws_instance_types_by_family[family]) { typeIndex = findTypeIndex(ds_aws_instance_types_by_family[family], instance['resourceType']) }
+
     cpu_value = instance['cpu_' + param_stats_threshold.toLowerCase()]
     if (typeof(cpu_value) != 'number') { cpu_value = 0 }
 
-    if (cpu_value < param_stats_underutil_threshold_cpu_value && ds_aws_instance_size_map[instance["resourceType"]] && ds_aws_instance_size_map[instance["resourceType"]]["down"]) {
-      newResourceType = ds_aws_instance_size_map[instance["resourceType"]]["down"]
+    if (typeIndex != 0 && cpu_value < param_stats_underutil_threshold_cpu_value && ds_aws_instance_type_map[instance["resourceType"]]) {
+      typeIndex = typeIndex - 1
+      newResourceType = ds_aws_instance_types_by_family[family][typeIndex]["name"]
 
       if (param_downsize_multiple == "Yes") {
-        while (ds_aws_instance_size_map[newResourceType]["down"] && cpu_value * 2 < param_stats_underutil_threshold_cpu_value) {
+        while (typeIndex != 0 && cpu_value * 2 < param_stats_underutil_threshold_cpu_value) {
           cpu_value = cpu_value * 2
-          newResourceType = ds_aws_instance_size_map[newResourceType]['down']
+          typeIndex = typeIndex - 1
+          newResourceType = ds_aws_instance_types_by_family[family][typeIndex]["name"]
         }
       }
 
@@ -1297,9 +1362,9 @@ script "js_rds_underutil_instances", type: "javascript" do
       cost = 0.0
       if (typeof(ds_instance_costs_grouped[cost_name]) == 'number') { cost = ds_instance_costs_grouped[cost_name] }
 
-      cost_per_nfu = cost / ds_aws_instance_size_map[instance["resourceType"]]['nfu']
+      cost_per_nfu = cost / ds_aws_instance_type_map[instance["resourceType"]]['cpu']['nfus']
 
-      new_cost = cost_per_nfu * ds_aws_instance_size_map[newResourceType]['nfu']
+      new_cost = cost_per_nfu * ds_aws_instance_type_map[newResourceType]['cpu']['nfus']
       savings = cost - new_cost
 
       new_instance = { newResourceType: newResourceType, savings: savings }
