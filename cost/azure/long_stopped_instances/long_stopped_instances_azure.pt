@@ -486,10 +486,10 @@ script "js_azure_instances_stopped", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_instances_with_logs" do
+datasource "ds_azure_instances_with_logs_paginated" do
   iterate $ds_azure_instances_stopped
   request do
-    run_script $js_azure_instances_with_logs, iter_item, $param_azure_endpoint
+    run_script $js_azure_instances_with_logs_paginated, iter_item, $param_azure_endpoint
   end
   result do
     encoding "json"
@@ -513,7 +513,7 @@ datasource "ds_azure_instances_with_logs" do
   end
 end
 
-script "js_azure_instances_with_logs", type: "javascript" do
+script "js_azure_instances_with_logs_paginated", type: "javascript" do
   parameters "instance", "param_azure_endpoint"
   result "request"
   code <<-'EOS'
@@ -549,6 +549,39 @@ script "js_azure_instances_with_logs", type: "javascript" do
       "User-Agent": "RS Policies"
     }
   }
+EOS
+end
+
+datasource "ds_azure_instances_with_logs" do
+  run_script $js_azure_instances_with_logs, $ds_azure_instances_with_logs_paginated
+end
+
+script "js_azure_instances_with_logs", type: "javascript" do
+  parameters "ds_azure_instances_with_logs_paginated"
+  result "result"
+  code <<-EOS
+  var instances_map = {};
+
+  // Pagination could result in multiple items for the same instance.
+  // We need to combine multiple items according to 'resourceID'.
+  ds_azure_instances_with_logs_paginated.forEach(function(instance){
+    if (instances_map[instance['resourceID']] == null) {
+      instances_map[instance['resourceID']] = instance
+    }
+    instances_map[instance['resourceID']].logs.concat(instance.logs);
+  });
+
+  var result = _.values(instances_map);
+
+  // Sort the logs by timestamp descending.
+  // The logs for each instance in "instances_map" should already be sorted.
+  // This is just to be safe.
+  result.forEach(function(instance) {
+    instance.logs.sort(function(a, b){
+      return -(a.eventTimestamp - b.eventTimestamp);
+    })
+  })
+
 EOS
 end
 
