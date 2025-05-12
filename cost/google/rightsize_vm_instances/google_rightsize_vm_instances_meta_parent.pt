@@ -1,13 +1,13 @@
-name "Meta Parent: Google Rightsize VM Recommender"
+name "Meta Parent: Google Rightsize VM Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Google Rightsize VM Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_instances) Policies."
 severity "low"
 category "Meta"
 default_frequency "15 minutes"
 info(
   provider: "Google",
-  version: "3.2.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "0.1.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "true",
   deprecated: "false",
   hide_skip_approvals: "true"
@@ -63,7 +63,7 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"Google Rightsize VM Recommender\" Policy Template from Catalog.  Optionally, you can use the \"Google Rightsize VM Recommender\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"Google Rightsize VM Instances\" Policy Template from Catalog.  Optionally, you can use the \"Google Rightsize VM Instances\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
@@ -73,9 +73,18 @@ parameter "param_min_savings" do
   type "number"
   category "Policy Settings"
   label "Minimum Savings Threshold"
-  description "Minimum potential savings required to generate a recommendation."
+  description "Minimum potential savings required to generate a recommendation"
   min_value 0
   default 0
+end
+
+parameter "param_cross_family" do
+  type "string"
+  category "Policy Settings"
+  label "Enable Cross-Family Recommendations"
+  description "Whether to recommend downsizing instances to machine types outside of their current machine type family"
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -112,13 +121,72 @@ parameter "param_exclusion_labels_boolean" do
   default "Any"
 end
 
-parameter "param_idle_or_underutilized" do
+parameter "param_stats_idle_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore CPU utilization"
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_idle_threshold_mem_value" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance Memory Threshold (%)"
+  description "The Memory threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore memory utilization"
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_underutil_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization"
+  min_value -1
+  max_value 100
+  default 40
+end
+
+parameter "param_stats_underutil_threshold_mem_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance Memory Threshold (%)"
+  description "The Memory threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore memory utilization"
+  min_value -1
+  max_value 100
+  default 40
+end
+
+parameter "param_stats_check_both" do
   type "string"
-  category "Filters"
-  label "Report Idle or Underutilized"
-  description "Whether to report on idle VM instances, underutilized VM instances, or both."
-  allowed_values "Idle & Underutilized", "Idle", "Underutilized"
-  default "Idle & Underutilized"
+  category "Statistics"
+  label "Both CPU and Memory or Either"
+  description "Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1"
+  allowed_values "Both CPU and Memory", "Either CPU or Memory"
+  default "Either CPU or Memory"
+end
+
+parameter "param_stats_threshold" do
+  type "string"
+  category "Statistics"
+  label "Threshold Statistic"
+  description "Statistic to use when determining if an instance is idle/underutilized."
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
+  default "Average"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at CPU and/or memory data for instances. This value cannot be set higher than 42 because Google does not retain metrics for longer than 42 days (6 weeks)."
+  min_value 1
+  max_value 42
+  default 30
 end
 
 parameter "param_automatic_action" do
@@ -269,7 +337,7 @@ script "js_published_child_policy_information", type: "javascript" do
   result "result"
   code <<-EOS
   result = _.filter(ds_get_published_child_policy_information, function(item) {
-    return item['name'] == "Google Rightsize VM Recommender" && item['created_by'] == "support@flexera.com"
+    return item['name'] == "Google Rightsize VM Instances" && item['created_by'] == "support@flexera.com"
   })
 EOS
 end
@@ -302,7 +370,7 @@ script "js_project_child_policy_information", type: "javascript" do
   result "result"
   code <<-EOS
   result = _.filter(ds_get_project_child_policy_information, function(item) {
-    return item['name'] == "Google Rightsize VM Recommender"
+    return item['name'] == "Google Rightsize VM Instances"
   })
 EOS
 end
@@ -866,11 +934,11 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_underutil_incident_combined_incidents" do
-  run_script $js_ds_underutil_incident_combined_incidents, $ds_child_incident_details
+datasource "ds_underutil_vms_combined_incidents" do
+  run_script $js_ds_underutil_vms_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_underutil_incident_combined_incidents", type: "javascript" do
+script "js_ds_underutil_vms_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
@@ -888,11 +956,11 @@ script "js_ds_underutil_incident_combined_incidents", type: "javascript" do
 EOS
 end
 
-datasource "ds_idle_incident_combined_incidents" do
-  run_script $js_ds_idle_incident_combined_incidents, $ds_child_incident_details
+datasource "ds_idle_vms_combined_incidents" do
+  run_script $js_ds_idle_vms_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_idle_incident_combined_incidents", type: "javascript" do
+script "js_ds_idle_vms_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
@@ -961,7 +1029,7 @@ end
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
     # Consolidated incident for Google Underutilized VM Instances Found
-  validate $ds_underutil_incident_combined_incidents do
+  validate $ds_underutil_vms_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} Google Underutilized VM Instances Found"
     escalate $esc_email
     escalate $esc_downsize_instances
@@ -1010,8 +1078,44 @@ policy "policy_scheduled_report" do
       field "cpuAverage" do
         label "CPU Average %"
       end
-      field "primaryImpactCategory" do
-        label "Primary Impact Category"
+      field "cpuP90" do
+        label "CPU p90"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+      end
+      field "cpuP99" do
+        label "CPU p99"
+      end
+      field "memMaximum" do
+        label "Memory Maximum %"
+      end
+      field "memMinimum" do
+        label "Memory Minimum %"
+      end
+      field "memAverage" do
+        label "Memory Average %"
+      end
+      field "memP90" do
+        label "Memory p90"
+      end
+      field "memP95" do
+        label "Memory p95"
+      end
+      field "memP99" do
+        label "Memory p99"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "threshold" do
+        label "CPU Threshold"
+      end
+      field "memoryThreshold" do
+        label "Memory Threshold"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
       end
       field "tags" do
         label "Labels"
@@ -1025,19 +1129,10 @@ policy "policy_scheduled_report" do
       field "savingsCurrency" do
         label "Currency"
       end
-      field "priority" do
-        label "Priority"
-      end
       field "recommendationDetails" do
         label "Recommendation"
       end
-      field "recommenderSubtype" do
-        label "Recommendation Sub Type"
-      end
       field "state" do
-        label "State"
-      end
-      field "status" do
         label "Status"
       end
       field "selfLink" do
@@ -1053,7 +1148,7 @@ policy "policy_scheduled_report" do
   end
 
   # Consolidated incident for Google Idle VM Instances Found
-  validate $ds_idle_incident_combined_incidents do
+  validate $ds_idle_vms_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} Google Idle VM Instances Found"
     escalate $esc_email
     escalate $esc_stop_instances
@@ -1103,8 +1198,44 @@ policy "policy_scheduled_report" do
       field "cpuAverage" do
         label "CPU Average %"
       end
-      field "primaryImpactCategory" do
-        label "Primary Impact Category"
+      field "cpuP90" do
+        label "CPU p90"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+      end
+      field "cpuP99" do
+        label "CPU p99"
+      end
+      field "memMaximum" do
+        label "Memory Maximum %"
+      end
+      field "memMinimum" do
+        label "Memory Minimum %"
+      end
+      field "memAverage" do
+        label "Memory Average %"
+      end
+      field "memP90" do
+        label "Memory p90"
+      end
+      field "memP95" do
+        label "Memory p95"
+      end
+      field "memP99" do
+        label "Memory p99"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "threshold" do
+        label "CPU Threshold"
+      end
+      field "memoryThreshold" do
+        label "Memory Threshold"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
       end
       field "tags" do
         label "Labels"
@@ -1118,19 +1249,10 @@ policy "policy_scheduled_report" do
       field "savingsCurrency" do
         label "Currency"
       end
-      field "priority" do
-        label "Priority"
-      end
       field "recommendationDetails" do
         label "Recommendation"
       end
-      field "recommenderSubtype" do
-        label "Recommendation Sub Type"
-      end
       field "state" do
-        label "State"
-      end
-      field "status" do
         label "Status"
       end
       field "selfLink" do
