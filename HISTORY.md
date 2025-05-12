@@ -6,6 +6,24 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3128](https://github.com/flexera-public/policy_templates/pull/3128): SQ-14908 Fix the error with Last 30 days parameter
+
+#### Description
+
+> This change fixes the error that costs/select API returns when the parameter date range is set to 30 days.
+>
+> ### Issues Resolved
+>
+> - https://flexera.atlassian.net/browse/SQ-14908
+>
+
+#### Metadata
+
+- **Policies**: [Scheduled Report for Unallocated Costs](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_report_unallocated/README.md)
+- **Merged At**: 2025-05-08 19:33:15 UTC
+
+---
+
 ### PR [#3089](https://github.com/flexera-public/policy_templates/pull/3089): POL-1508 - AWS and Google Scheduled Policy Enhancements
 
 #### Description
@@ -1824,27 +1842,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/schedule_instance/README.md), [Meta Parent: AWS Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/schedule_instance/README.md), [Meta Parent: Azure Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/schedule_instance/README.md), [Google Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/google/schedule_instance/README.md), [Meta Parent: Google Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/google/schedule_instance/README.md)
 - **Merged At**: 2024-09-30 14:42:51 UTC
-
----
-
-### PR [#2620](https://github.com/flexera-public/policy_templates/pull/2620): POL-1347 - feat: refactor AWS, Azure, and Google Schedule Instance Policy Templates
-
-#### Description
-
->  - remove next_stop, next_start tag requirements
->  - remove static zone to region mapping
->  - add task_labels and debugging for CWF actions
->  - add error capture, graceful timeout handling
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/POL-1347
->
-
-#### Metadata
-
-- **Policies**: [AWS Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/schedule_instance/README.md), [Azure Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/schedule_instance/README.md), [Google Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/google/schedule_instance/README.md)
-- **Merged At**: 2024-09-26 19:47:20 UTC
 
 ---
 
