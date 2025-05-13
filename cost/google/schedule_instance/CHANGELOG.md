@@ -1,5 +1,14 @@
 # Changelog
 
+## v6.0.0
+
+- Remove `next_stop`, `next_start` label requirements
+- Add task labels to improve status updates and debugging for CWF actions
+- Enhanced start/stop functions with retry logic that attempts each operation up to 3 times
+- Added robust state verification to ensure instances reach the desired state
+- Add error capture, graceful timeout handling for triggered actions
+- Added detailed logging for troubleshooting failed operations
+
 ## v5.1.0
 
 - Added email notifications for Start Action, Stop Action, and Errors

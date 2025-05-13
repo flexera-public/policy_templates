@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.0
+
+- Added parameter to normalize dates in report to match Flexera One UI
+- Streamlined code for better readability and faster execution
+
 ## v0.1.7
 
 - Updated names of code blocks to align with current formatting standards. Functionality unchanged.

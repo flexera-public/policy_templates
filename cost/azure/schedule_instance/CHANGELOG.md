@@ -1,5 +1,17 @@
 # Changelog
 
+## v7.0.1
+
+- Fixed bug with start action that was preventing "Enforce Schedules=No" from working correctly
+
+## v7.0.0
+
+- Added retry mechanism in case of failed actions or timeout waiting for the expected status change
+- Fixed issue preventing schedules being enforced when first action attempt fails
+- Added support for "Schedule Action Tag" to control scheduling behavior
+- Added "Last Stop Status", "Last Stop Time", "Last Start Status", "Last Start Time" details to instance list
+- Added "Enforce Schedules" capability to allow machines to be turned on/off outside their scheduled window
+
 ## v6.1.0
 
 - Added email notifications for Start Action, Stop Action, and Errors

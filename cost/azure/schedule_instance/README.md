@@ -16,11 +16,28 @@ This policy uses the schedule tag value (default key: schedule) for scheduling t
 - `schedule` = `08:15-17:30;MO,TU,WE,TH,FR;America/New_York`
   Start at 8:15am and stop at 5:30pm every weekday in US Eastern Time (America/New York)
 
-### Schedule Label Format
+### Schedule Tag Format
 
-`<Schedule Label>` = `<Hours>;<Days of the Week>[;<Optional Timezone>]`
+The policy uses two optional tags to control scheduling:
 
-The Schedule Label value is a string consisting of 2 or 3 semicolon-separated (`;`) substrings (Hours, Days of the Week, and optional Timezone) with the following format:
+1. **Schedule Tag** (Required, Default `schedule`) with format: `HH:mm-HH:mm;DAYS[;Optional TIMEZONE]`
+
+  `<Schedule Tag>` = `<Hours>;<Days of the Week>[;<Optional Timezone>]`
+
+- Example: `08:00-17:30;MO,TU,WE,TH,FR;America/Los_Angeles`
+- Time range in 24hr format (HH:mm-HH:mm)
+- Days using two letter format (SU,MO,TU,WE,TH,FR,SA)
+- Optional timezone (defaults to UTC if not specified)
+
+1. **Schedule Action Tag** (Not Required, Default `schedule_action`) to control scheduling behavior:
+
+  `<Schedule Action Tag>` = `startstop|start|stop`
+
+- `startstop` (default if not specified): Start during window, stop outside window
+- `start`: Only start during window, never stop
+- `stop`: Only stop during window, never start
+
+The Schedule Tag value is a string consisting of 2 or 3 semicolon-separated (`;`) substrings (Hours, Days of the Week, and optional Timezone) with the following format:
 
 - *Hours* - Start and stop hours are 24 hour format. For example, a value of `8:15-17:30` will start instances at 8:15 and stop them at 17:30 (5:30 pm). If the minute field is left blank, the minute value of `00` will be assumed.
 - *Days of the Week* - Comma-separated list of days indicated by their two-letter abbreviation value from the following list: SU,MO,TU,WE,TH,FR,SA. For example, a value of `MO,TU,WE,TH,FR` will start and stop the instances on weekdays but not on weekends.
@@ -33,6 +50,7 @@ This policy has the following input parameters required when launching the polic
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
 - *Schedule Tag Key* - Tag key that schedule information is stored in. Default is recommended for most use cases.
+- *Schedule Action Tag Key* - Optional Tag key to specify what action to use. Default recommended for most use cases. Expected tag values are "startstop", "start", "stop". Default is recommended for most use cases.
 - *Allow/Deny Subscriptions* - Determines whether the Allow/Deny Subscriptions List parameter functions as an allow list (only providing results for the listed subscriptions) or a deny list (providing results for all subscriptions except for the listed subscriptions).
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
