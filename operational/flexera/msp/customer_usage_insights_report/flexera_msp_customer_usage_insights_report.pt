@@ -201,17 +201,21 @@ script "js_dates", type: "javascript" do
   if (param_billing_period == "Specific Month") {
     // If the user selected a specific month, we need to parse the date
     var specific_month = new Date(param_specific_period);
-    // Set the start and end dates to the first day of the month
+    // Set the start date to the first day of the month
     var start_at = new Date(specific_month.getFullYear(), specific_month.getMonth(), 1);
-    var end_at = new Date(specific_month.getFullYear(), specific_month.getMonth() + 1, 1);
+    // Set end date to the first day of the next month
+    var end_at = new Date(specific_month.getFullYear(), specific_month.getMonth(), 1);
+    end_at.setMonth(end_at.getMonth() + 1);
   } else if (param_billing_period == "Previous Month") {
-    // If the user selected previous month, we need to set the start and end dates to the first day of the previous month
-    var start_at = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    // For previous month
     var end_at = new Date(now.getFullYear(), now.getMonth(), 1);
+    var start_at = new Date(end_at);
+    start_at.setMonth(start_at.getMonth() - 1);
   } else {
-    // Ideally we report on the previous full 12 months of spend
-    var start_at = new Date(now.getFullYear(), now.getMonth() - 12, 1);
+    // For previous 12 months
     var end_at = new Date(now.getFullYear(), now.getMonth(), 1);
+    var start_at = new Date(end_at);
+    start_at.setMonth(start_at.getMonth() - 12);
   }
 
   var result = {
@@ -300,33 +304,35 @@ script "js_request_parent_org_costs_not_allocated", type: "javascript" do
   result "result"
   code <<-EOS
   // initial filters for all requests
-  var f = null;
+  var filter_expression = null;
 
   if (param_contractual_exclusion.length > 0) {
     // Setup placeholder for expressions
-    f = {
+    filter_expression = {
       "type": "or",
       "expressions": []
     }
+
     _.each(param_contractual_exclusion, function(exclusion) {
       switch (exclusion) {
         case "Tax":
           // AWS Taxes
-          f.expressions.push({ "type":"equal", "dimension":"line_item_type", "value":"Tax" });
+          filter_expression.expressions.push({ "type":"equal", "dimension":"line_item_type", "value":"Tax" });
           break;
         case "Marketplace":
           // AWS Marketplace
-          f.expressions.push({ "type":"equal", "dimension":"bill_entity", "value":"AWS Marketplace" });
+          filter_expression.expressions.push({ "type":"equal", "dimension":"bill_entity", "value":"AWS Marketplace" });
           // Azure EA + MCA Marketplace
-          f.expressions.push({ "type":"equal", "dimension":"bill_entity", "value":"Marketplace" });
+          filter_expression.expressions.push({ "type":"equal", "dimension":"bill_entity", "value":"Marketplace" });
           break;
       }
     });
+
     // Handle zero or 1 match
-    if (f.expressions.length == 0) {
-      f = null;
-    } else if (f.expressions.length == 1) {
-      f = f.expressions[0];
+    if (filter_expression.expressions.length == 0) {
+      filter_expression = null;
+    } else if (filter_expression.expressions.length == 1) {
+      filter_expression = filter_expression.expressions[0];
     }
   }
 
@@ -341,11 +347,11 @@ script "js_request_parent_org_costs_not_allocated", type: "javascript" do
       msp_parent: true
     },
     // use JSON Stringify+Parse to deep copy the original filter object
-    filter_excluded_costs: f ? JSON.parse(JSON.stringify(f)) : null,
-    filter_net_costs: f ? {
+    filter_excluded_costs: filter_expression ? JSON.parse(JSON.stringify(filter_expression)) : null,
+    filter_net_costs: filter_expression ? {
       "type": "not",
       // use JSON Stringify+Parse to deep copy the original filter object
-      "expression": JSON.parse(JSON.stringify(f))
+      "expression": JSON.parse(JSON.stringify(filter_expression))
     } : null,
   }
 
@@ -353,10 +359,13 @@ script "js_request_parent_org_costs_not_allocated", type: "javascript" do
   var toplevel_bcs = _.filter(ds_parent_org_billing_centers, function(bc) {
     return bc.parent_id == null || bc.parent_id == undefined
   });
+
   // Pluck just the IDs for the top level billing centers to pass as request parameter
   request["top_level_bc_ids"] = _.pluck(toplevel_bcs, "id");
+
   // Append "unallocated" bc to also get unallocated costs
   request["top_level_bc_ids"].push("unallocated");
+
   // Deduplicate top_level_bc_ids just in case we added unallocated
   request["top_level_bc_ids"] = _.uniq(request["top_level_bc_ids"]);
 
@@ -364,10 +373,12 @@ script "js_request_parent_org_costs_not_allocated", type: "javascript" do
   var rbd_partner_child_org = _.find(ds_parent_org_rbds.values, function(rbd) {
     return rbd.id == "rbd_partner_child_org";
   });
+
   // If rbd_partner_child_org exists, the costs for the parent org should only be the costs that are not allocated to child orgs
   // We get the costs allocated to child orgs in another step
   // use JSON Stringify+Parse to deep copy the filter_net_costs object
   request["filter_net_costs_in_parent_org_no_customer_org"] = JSON.parse(JSON.stringify(request["filter_net_costs"]));
+
   // If they are using the rbd_partner_child_org, we need to exclude costs that are allocated to child orgs
   // Do this by adding an "and" clause to condition both the filter for net costs AND the rbd_partner_child_org==None (not allocated to child org)
   if (rbd_partner_child_org) {
@@ -379,6 +390,7 @@ script "js_request_parent_org_costs_not_allocated", type: "javascript" do
       ]
     }
   }
+
   // Compact expressions list in case filter_net_costs is null
   request.filter_net_costs_in_parent_org_no_customer_org.expressions = _.compact(request.filter_net_costs_in_parent_org_no_customer_org.expressions);
   // this result is always 1 item long containing the request object
@@ -390,7 +402,7 @@ datasource "ds_parent_org_costs_not_allocated" do
   iterate $ds_request_parent_org_costs_not_allocated
   request do
     auth $auth_flexera
-    verb  "POST"
+    verb "POST"
     host rs_optima_host
     path join(["/bill-analysis/orgs/", val(val(iter_item, "org"), "id"), "/costs/aggregated"])
     header "Api-Version", "1.0"
@@ -424,6 +436,7 @@ script "js_organizations_filtered", type: "javascript" do
   var org_list = _.map(param_child_orgs_list, function(org_id) {
     return parseInt(org_id);
   });
+
   // Deduplicate org_list just in case user entered the same org multiple times
   org_list = _.uniq(org_list);
 
@@ -431,17 +444,15 @@ script "js_organizations_filtered", type: "javascript" do
     result = ds_organizations;
   } else {
     _.each(ds_organizations, function(org) {
-
       if (param_child_orgs_allow_or_deny == "Allow") {
         if (_.contains(org_list, parseInt(org.id))) {
           result.push(org);
         }
       } else {
         if (!_.contains(org_list, parseInt(org.id))) {
-            result.push(org);
+          result.push(org);
         }
       }
-
     });
   }
   EOS
@@ -553,11 +564,13 @@ script "js_request_children_org_get_costs_step4", type: "javascript" do
     // Default request org ID and filter as if we are getting costs from the child org
     request.request_org = org.org.id;
     request.filter = ds_request_parent_org_costs_not_allocated[0].filter_net_costs;
+
     // Check if we should get costs from the parent org
     if (param_get_costs_from_parent_org == "Yes") {
       // If yes, we need to update the request slightly to get customer org costs from the msp parent org
       // Update the request org id to the parent org id
       request.request_org = rs_org_id;
+
       // Update the filter to filter costs from parent org to the costs allocated to child org
       // Include the original filter that would have been used if we were getting costs directly from the child org (filter_net_costs)
       request.filter = {
@@ -567,11 +580,14 @@ script "js_request_children_org_get_costs_step4", type: "javascript" do
           { "type": "equal", "dimension": "rbd_partner_child_org", "value": org.org.id.toFixed(0) }
         ]
       }
+
       // Compact expressions list in case filter_net_costs is null
       request.filter.expressions = _.compact(request.filter.expressions);
+
       // Update the top_level_bc_ids to be the parent orgs top level billing centers
       request.top_level_bc_ids = ds_request_parent_org_costs_not_allocated[0].top_level_bc_ids;
     }
+
     result.push(request);
   });
 
