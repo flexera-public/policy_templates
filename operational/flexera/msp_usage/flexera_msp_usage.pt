@@ -43,7 +43,7 @@ end
 
 parameter "param_child_orgs_allow_or_deny" do
   type "string"
-  category "Filters"
+  category "Policy Settings"
   label "Allow/Deny Child Orgs"
   description "Allow or Deny entered Child Orgs to sync groups to. See the README for more details"
   allowed_values "Allow", "Deny"
@@ -52,7 +52,7 @@ end
 
 parameter "param_child_orgs_list" do
   type "list"
-  category "Filters"
+  category "Policy Settings"
   label "Allow/Deny Child Orgs List"
   description "A list of allowed or denied Child Orgs to sync groups to. See the README for more details"
   default []
@@ -60,7 +60,7 @@ end
 
 parameter "param_excluded_user_regex" do
   type "list"
-  category "Filters"
+  category "User Activity Settings"
   label "Excluded User Regex"
   description "A regex to exclude users from the active/inactive user counts. This is in addition to the excluded user domains. For example, you could use `.*@flexera.com` to exclude all Flexera employees."
   default [".*@flexera.com"]
@@ -68,10 +68,19 @@ end
 
 parameter "param_included_user_regex" do
   type "list"
-  category "Filters"
+  category "User Activity Settings"
   label "Included User Regex"
   description "A regex to include users in the active/inactive user counts. This is in addition to the included user domains. For example, you could use `msp-enduser-.*@flexera.com` to include MSP end users provisioned by SSO."
   default [".*"]
+end
+
+parameter "param_contractual_exclusion" do
+  type "list"
+  category "Advanced Settings"
+  label "Contractual Exclusions"
+  description "A list of contractual exclusions for the organization.  These are rare and typically only for legacy agreements.  If you are unsure what to select here, please contact your Flexera Partner Business Manager."
+  allowed_values "Tax", "Marketplace"
+  default []
 end
 
 parameter "param_billing_period" do
@@ -103,18 +112,18 @@ end
 
 parameter "param_cost_threshold" do
   type "number"
-  category "Filters"
-  label "Cost Threshold"
-  description "The minimum total cost for an organization to be included in the report. Default is -1 which disables the threshold and shows all Orgs."
+  category "Policy Settings"
+  label "Processed Spend Threshold"
+  description "The minimum total processed spend for an organization to be included in the report. Default is -1 which disables the threshold and shows all Orgs."
   min_value -1
   default -1
 end
 
 parameter "param_get_costs_from_parent_org" do
   type "string"
-  category "Filters"
-  label "Get Customer Org Costs from MSP Parent Org"
-  description "Select whether to get customer org costs from the msp parent org or from customer orgs directly. Default is 'No' which gets costs from the parent org and customer orgs."
+  category "Policy Settings"
+  label "Get Customer Org Processed Spend from MSP Parent Org"
+  description "Select whether to get customer org processed spend from the msp parent org or from customer orgs directly. Default is 'No' which gets costs from the parent org and customer orgs."
   allowed_values "Yes", "No"
   default "No"
 end
@@ -211,6 +220,38 @@ script "js_dates", type: "javascript" do
 EOS
 end
 
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", policy_id])
+  end
+end
+
+# Template
+datasource "ds_applied_policy_template" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    query "view", "source"
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/policy-templates/", jq($ds_applied_policy, ".policyTemplate.id")])
+  end
+end
+
+datasource "ds_applied_policy_template_hash" do
+  run_script $js_applied_policy_template_hash, $ds_applied_policy_template
+end
+
+script "js_applied_policy_template_hash", type: "javascript" do
+  parameters "ds_applied_policy_template"
+  result "result"
+  code <<-EOS
+  // TODO string "secret-key" can be replaced with a longer key, which is retrieved from an env only accessible by policy engine or provided per customer to discourage hardcoding and being able to spoof the resulting hash
+  var result = hashHmac("sha256", JSON.stringify(ds_applied_policy_template), "secret-key")
+  EOS
+end
+
 # Get organizations
 datasource "ds_organizations" do
   request do
@@ -250,30 +291,44 @@ datasource "ds_parent_org_rbds" do
 end
 
 datasource "ds_request_parent_org_costs_not_allocated" do
-  run_script $js_request_parent_org_costs_not_allocated, $ds_parent_org_rbds, $ds_parent_org_billing_centers, rs_org_id, rs_org_name
+  run_script $js_request_parent_org_costs_not_allocated, $ds_parent_org_rbds, $ds_parent_org_billing_centers, $param_contractual_exclusion, rs_org_id, rs_org_name
 end
 
 script "js_request_parent_org_costs_not_allocated", type: "javascript" do
-  parameters "ds_parent_org_rbds", "ds_parent_org_billing_centers", "rs_org_id", "rs_org_name"
+  parameters "ds_parent_org_rbds", "ds_parent_org_billing_centers", "param_contractual_exclusion", "rs_org_id", "rs_org_name"
   result "result"
   code <<-EOS
   // initial filters for all requests
-  var f = {
-    "type": "or",
-    // TODO:
-    //   - Azure EA + MCA Tax
-    //   - GCP Marketplace
-    //   - GCP Tax
-    // Ideally we could rely on Category = Marketplace, and/or Line Item Type = Tax but that's not normalized across all clouds by the backend
-    "expressions": [
-      // AWS Marketplace
-      { "type":"equal", "dimension":"bill_entity", "value":"AWS Marketplace" },
-      // Azure EA + MCA Marketplace
-      { "type":"equal", "dimension":"bill_entity", "value":"Marketplace" },
-      // AWS Taxes
-      { "type":"equal", "dimension":"line_item_type", "value":"Tax" },
-    ]
+  var f = null;
+
+  if (param_contractual_exclusion.length > 0) {
+    // Setup placeholder for expressions
+    f = {
+      "type": "or",
+      "expressions": []
+    }
+    _.each(param_contractual_exclusion, function(exclusion) {
+      switch (exclusion) {
+        case "Tax":
+          // AWS Taxes
+          f.expressions.push({ "type":"equal", "dimension":"line_item_type", "value":"Tax" });
+          break;
+        case "Marketplace":
+          // AWS Marketplace
+          f.expressions.push({ "type":"equal", "dimension":"bill_entity", "value":"AWS Marketplace" });
+          // Azure EA + MCA Marketplace
+          f.expressions.push({ "type":"equal", "dimension":"bill_entity", "value":"Marketplace" });
+          break;
+      }
+    });
+    // Handle zero or 1 match
+    if (f.expressions.length == 0) {
+      f = null;
+    } else if (f.expressions.length == 1) {
+      f = f.expressions[0];
+    }
   }
+
   // init request object
   request = {
     // org object to match the other costs for child orgs
@@ -285,12 +340,12 @@ script "js_request_parent_org_costs_not_allocated", type: "javascript" do
       msp_parent: true
     },
     // use JSON Stringify+Parse to deep copy the original filter object
-    filter_excluded_costs: JSON.parse(JSON.stringify(f)),
-    filter_net_costs: {
+    filter_excluded_costs: f ? JSON.parse(JSON.stringify(f)) : null,
+    filter_net_costs: f ? {
       "type": "not",
       // use JSON Stringify+Parse to deep copy the original filter object
       "expression": JSON.parse(JSON.stringify(f))
-    },
+    } : null,
   }
 
   // Pluck out the top level billing centers for
@@ -323,7 +378,8 @@ script "js_request_parent_org_costs_not_allocated", type: "javascript" do
       ]
     }
   }
-
+  // Compact expressions list in case filter_net_costs is null
+  request.filter_net_costs_in_parent_org_no_customer_org.expressions = _.compact(request.filter_net_costs_in_parent_org_no_customer_org.expressions);
   // this result is always 1 item long containing the request object
   result = [request];
 EOS
@@ -510,6 +566,8 @@ script "js_request_children_org_get_costs_step4", type: "javascript" do
           { "type": "equal", "dimension": "rbd_partner_child_org", "value": org.org.id.toFixed(0) }
         ]
       }
+      // Compact expressions list in case filter_net_costs is null
+      request.filter.expressions = _.compact(request.filter.expressions);
       // Update the top_level_bc_ids to be the parent orgs top level billing centers
       request.top_level_bc_ids = ds_request_parent_org_costs_not_allocated[0].top_level_bc_ids;
     }
@@ -618,11 +676,11 @@ datasource "ds_children_org_get_bill_connects_step7" do
 end
 
 datasource "ds_report" do
-  run_script $js_report, $ds_flexera_api_hosts, $ds_dates, $ds_request_parent_org_costs_not_allocated, $ds_parent_org_costs_not_allocated, $ds_children_org_get_bill_connects_step7, $ds_identify_errors, $param_excluded_user_regex, $param_included_user_regex, $param_active_days_threshold, $param_child_orgs_list, $param_child_orgs_allow_or_deny, $param_cost_threshold, $param_get_costs_from_parent_org, $param_billing_period, rs_org_id, rs_org_name
+  run_script $js_report, $ds_flexera_api_hosts, $ds_dates, $ds_request_parent_org_costs_not_allocated, $ds_parent_org_costs_not_allocated, $ds_children_org_get_bill_connects_step7, $ds_applied_policy, $ds_applied_policy_template_hash, $ds_identify_errors, $param_excluded_user_regex, $param_included_user_regex, $param_active_days_threshold, $param_child_orgs_list, $param_child_orgs_allow_or_deny, $param_cost_threshold, $param_get_costs_from_parent_org, $param_billing_period, rs_org_id, rs_org_name
 end
 
 script "js_report", type: "javascript" do
-  parameters "ds_flexera_api_hosts", "ds_dates", "ds_request_parent_org_costs_not_allocated", "ds_parent_org_costs_not_allocated", "ds_children_org", "ds_identify_errors", "param_excluded_user_regex", "param_included_user_regex", "param_active_days_threshold", "param_child_orgs_list", "param_child_orgs_allow_or_deny", "param_cost_threshold", "param_get_costs_from_parent_org", "param_billing_period", "rs_org_id", "rs_org_name"
+  parameters "ds_flexera_api_hosts", "ds_dates", "ds_request_parent_org_costs_not_allocated", "ds_parent_org_costs_not_allocated", "ds_children_org", "ds_applied_policy", "ds_applied_policy_template_hash", "ds_identify_errors", "param_excluded_user_regex", "param_included_user_regex", "param_active_days_threshold", "param_child_orgs_list", "param_child_orgs_allow_or_deny", "param_cost_threshold", "param_get_costs_from_parent_org", "param_billing_period", "rs_org_id", "rs_org_name"
   result "result"
   code <<-EOS
     function formatCurrency(value) {
@@ -819,7 +877,7 @@ script "js_report", type: "javascript" do
 
         // Check for inactive child org based on activeUsers
         // Inactive if Org's activeUsers count is 0 and there is at least 1 user which we are considering active or inactive and not excluded (totalUsers)
-        if (org.activeUsers === 0 && org.totalUsers > 0) {
+        if (org.activeUsers === 0 && org.totalUsers > 0 && org.includedUsers > 0) {
           inactiveOrgs.push(org.org);
           inactiveOrgsTotalCost += _.reduce(org.costs, function(sum, cost) { return sum + cost.metrics.cost_nonamortized_unblended_adj }, 0);
         }
@@ -851,11 +909,15 @@ script "js_report", type: "javascript" do
     months = _.uniq(months);
     var sortedMonths = _.sortBy(months, "timestamp");
 
+    // Previous Month is used in a few places, select it now
+    var previousMonth = _.last(sortedMonths);
+
     // Generate markdown report
     var markdown = "# MSP Organizations Summary Report\\n\\n";
 
     markdown += "Report for MSP Parent Org: " + rs_org_name + " ("+rs_org_id+")\\n\\n";
     markdown += "Report generated at: " + new Date().toISOString() + "\\n\\n";
+    markdown += "Report template hash: " + ds_applied_policy_template_hash + "\\n\\n";
     markdown += "Report period: " + sortedMonths[0] + " to " + sortedMonths[sortedMonths.length-1] + "\\n\\n";
     if (param_cost_threshold != -1) {
       markdown += "Report does not include organizations with total costs less than " + formatCurrency(param_cost_threshold) + "\\n\\n";
@@ -864,8 +926,8 @@ script "js_report", type: "javascript" do
 
     // Check if we have any filter defined
     // For now using the .type value, but we can more easily check user input parameter string if not empty
-    if (ds_request_parent_org_costs_not_allocated[0].filter_excluded_costs.type) {
-      markdown += "**Excluded Costs** are defined as:\\n\\n";
+    if (ds_request_parent_org_costs_not_allocated.length > 0 && ds_request_parent_org_costs_not_allocated[0].filter_excluded_costs && ds_request_parent_org_costs_not_allocated[0].filter_excluded_costs.type) {
+      markdown += "**Excluded Processed Spend** is configured as:\\n\\n";
       markdown += "`"+JSON.stringify(ds_request_parent_org_costs_not_allocated[0].filter_excluded_costs) + "`\\n\\n";
     }
 
@@ -873,22 +935,22 @@ script "js_report", type: "javascript" do
       if (param_included_user_regex.length === 1 && param_included_user_regex[0] === ".*") {
         markdown += "**Included User Regex** configured to include all users (`.*`)\\n\\n";
       } else {
-        markdown += "**Included User Regex** are defined as: " + param_included_user_regex.join(", ") + "\\n\\n";
+        markdown += "**Included User Regex** are defined as: " + _.map(param_included_user_regex, function(regex) { return "`" + regex + "`"; }).join(", ") + "\\n\\n";
       }
     } else {
       markdown += "**Included User Regex** are not defined.\\n\\n";
     }
 
     if (param_excluded_user_regex.length > 0) {
-      markdown += "**Excluded User Regex** are defined as: " + param_excluded_user_regex.join(", ") + "\\n\\n";
+      markdown += "**Excluded User Regex** are defined as: " + _.map(param_excluded_user_regex, function(regex) { return "`" + regex + "`"; }).join(", ") + "\\n\\n";
     } else {
       markdown += "**Excluded User Regex** are not defined.\\n\\n";
     }
 
     if (param_get_costs_from_parent_org == "Yes") {
-      markdown += "**Customer Costs are retrieved from the MSP Parent Org only**\\n\\n";
+      markdown += "**Customer Processed Spend are retrieved from the MSP Parent Org only**\\n\\n";
     } else {
-      markdown += "**Customer Costs are retrieved from the MSP Parent Org for costs not allocated to any Customer Org, and each Customer Orgs directly for Customer Org costs**\\n\\n";
+      markdown += "**Customer Processed Spend are retrieved from the MSP Parent Org for costs not allocated to any Customer Org, and each Customer Orgs directly for Customer Org costs**\\n\\n";
     }
 
     if (param_child_orgs_list.length > 0) {
@@ -899,7 +961,7 @@ script "js_report", type: "javascript" do
       } else {
         markdown += "**Org Filter Enabled** and this report **excludes** these Orgs: " + orgsUniq.join(", ");
       }
-      markdown += " ("+(orgsUniq.length/inclusiveCosts.length).toFixed(1)+" % Total Orgs)\\n";
+      markdown += " ("+(orgsUniq.length/inclusiveCosts.length).toFixed(1)+" % of Total Customer Orgs)\\n";
     }
 
     if (ds_identify_errors.length > 0) {
@@ -911,13 +973,37 @@ script "js_report", type: "javascript" do
       markdown += "\\n";
     }
 
+    markdown += "## Key Terms\\n\\n";
+    markdown += "- **Processed Spend** is the sum of spend from all bill connections that has been ingested into Flexera for the report period.  Includes spend that is elligible for contractual exclusions.\\n";
+    markdown += "- **Total Processed Spend** is the sum of processed spend that for the report period including spend that is elligible for contractual exclusions.\\n";
+    markdown += "- **Excluded Processed Spend** is the sum of processed spend for the report period that is elligible for contractual exclusions.\\n";
+    markdown += "- **Invoicable Processed Spend** is the sum of processed spend for the report period -- excluding any spend that is elligible for contractual exclusions.\\n";
+    markdown += "- **Total Users** is the total users that are affiliated with the org, including any users that are excluded from active/inactive user counts.\\n";
+    markdown += "- **Excluded Users** are users who match any 'Excluded user regex' or do not match any 'Included user regex' and these users are not considered when counting active/inactive users in each org.\\n";
+    markdown += "- **Included Users** are users who match any 'Included user regex' and do not match any 'Excluded user regex' and these users are elligible for inclusion in the report of active/inactive users.\\n";
+    markdown += "- **Active Users** is the count of Included Users who have logged in to the Flexera One UI or API in the last "+param_active_days_threshold+" days.\\n";
+    markdown += "- **Inactive Users** is the count of Included Users who have not logged in to the Flexera One UI or API in the last "+param_active_days_threshold+" days.\\n";
+
+    markdown += "\\n";
     markdown += "## Overall Statistics\\n\\n";
 
-    markdown += "* Total Orgs: " + inclusiveCosts.length + "\\n";
-    var warning = sortedMonths.length < 12 && param_billing_period != "Previous Month" ? " (Warning: Less than 12 months of data available)" : "";
-    markdown += "* Previous "+sortedMonths.length+"-Month Total Cost (No Exclusions): " + formatCurrency((netTotalCost || 0) + (excludedTotalCost || 0)) + warning + "\\n";
-    markdown += "* Previous "+sortedMonths.length+"-Month Excluded Cost (Non-Invoicable): " + formatCurrency(excludedTotalCost || 0) + "\\n";
-    markdown += "* Previous "+sortedMonths.length+"-Month Invoicable Cost: " + formatCurrency(netTotalCost || 0) + "\\n";
+    markdown += "### Total Customer Orgs: " + inclusiveCosts.length + "\\n";
+
+    // Summary table of total costs for report period
+    markdown += "| **Previous "+sortedMonths.length+"-Month Total Processed Spend** ";
+    markdown += "| **Previous "+sortedMonths.length+"-Month Excluded Processed Spend** ";
+    markdown += "| **Previous "+sortedMonths.length+"-Month Invoicable Processed Spend** |\\n";
+    markdown += "| --- | --- | --- |\\n";
+    markdown += "| " + formatCurrency((netTotalCost || 0) + (excludedTotalCost || 0)) +  + " ";
+    markdown += "| " + formatCurrency(excludedTotalCost || 0) + " ";
+    markdown += "| " + formatCurrency(netTotalCost || 0) + " |\\n\\n";
+    // Print warning if expecting previous 12 months but we have less
+    if (sortedMonths.length < 12 && param_billing_period == "Previous 12 Months") {
+      markdown += "> Warning: Less than 12 months of data available\\n\\n";
+    }
+
+    // Summary table of the estimated 12 month cost using most recent 3 months
+    // This is only shown if we have at least 3 months of data (i.e. not when reporting on the previous month)
     if (sortedMonths.length >= 3) {
       var recentMonths = sortedMonths.slice(-3);
       var recentTotalCost = 0;
@@ -927,40 +1013,54 @@ script "js_report", type: "javascript" do
         });
       });
       var estimated12MCostFromLast3Months = (recentTotalCost / 3) * 12;
-      markdown += "* Estimated 12-Month Invoicable Cost using Previous 3-Month Invoicable Cost: " + formatCurrency(estimated12MCostFromLast3Months) + "\\n";
+      markdown += "| **Estimated 12-Month Invoicable Processed Spend** using Previous 3-Month Invoicable Processed Spend |\\n";
+      markdown += "| --- |\\n";
+      markdown += "| " + formatCurrency(estimated12MCostFromLast3Months) + " |\\n\\n";
     }
+
+    // Summary table of the estimated 12 month cost using most recent 1 month
     if (sortedMonths.length >= 1 && param_billing_period == "Previous 12 Months") {
-      var previousMonth = _.last(sortedMonths);
       var recentTotalCost = 0;
       var recentExcludedTotalCost = 0;
       _.each(costsBySource, function(source) {
         recentTotalCost += source.monthlyAmounts[previousMonth] || 0;
         recentExcludedTotalCost += source.monthlyAmounts_excluded[previousMonth] || 0;
       });
-      markdown += "* Previous 1-Month Total Cost (No Exclusions): " + formatCurrency(recentTotalCost) + " ("+previousMonth+")\\n";
-      markdown += "* Previous 1-Month Excluded Cost (Non-Invoicable): " + formatCurrency(recentExcludedTotalCost) + " ("+previousMonth+")\\n";
-      markdown += "* Previous 1-Month Invoicable Cost: " + formatCurrency(recentTotalCost) + " ("+previousMonth+")\\n";
-    }
-    markdown += "* Total Users (No Exclusions): " + totalUsers + "\\n";
-    markdown += "* Excluded Users: " + excludedUsers + " (" + ((excludedUsers/totalUsers)*100).toFixed(1) + "%)\\n";
-    markdown += "* Included Users: " + includedUsers + " (" + ((includedUsers/totalUsers)*100).toFixed(1) + "%)\\n";
-    markdown += "* Active Users: " + activeUsers + " (" + ((activeUsers/includedUsers)*100).toFixed(1) + "%) (Last UI login less than "+param_active_days_threshold+"days)" + "\\n";
-    markdown += "* Inactive Users: " + (includedUsers-activeUsers) + " (" + (((includedUsers-activeUsers)/includedUsers)*100).toFixed(1) + "%)" + "\\n";
-    if (inactiveOrgs.length > 0) {
-      markdown += "* Organizations with 100% Inactive Users: " + _.pluck(inactiveOrgs, "id").join(", ") + "\\n";
-      markdown += "* Previous "+sortedMonths.length+"-Month Cost for Organizations with 100% Inactive Users: " + formatCurrency(inactiveOrgsTotalCost) + "\\n";
-    } else {
-      markdown += "* All customer Orgs have at least 1 Active User\\n";
+      markdown += "| **"+previousMonth+" Total Processed Spend** | **"+previousMonth+" Excluded Processed Spend** | **"+previousMonth+" Invoicable Processed Spend** |\\n";
+      markdown += "| --- | --- | --- |\\n";
+      markdown += "| " + formatCurrency(recentTotalCost) + " | " + formatCurrency(recentExcludedTotalCost) + " | " + formatCurrency(recentTotalCost) + " |\\n\\n";
     }
 
-    markdown += "\\n## Costs by Source\\n\\n";
+
+    markdown += "| **Total Users** ";
+    markdown += "| **Excluded Users** ";
+    markdown += "| **Included Users** ";
+    markdown += "| **Active Users** ";
+    markdown += "| **Inactive Users** |\\n";
+    markdown += "| --- | --- | --- | --- | --- |\\n";
+    markdown += "| " +totalUsers + " ";
+    markdown += "| " + excludedUsers + " (" + ((excludedUsers/totalUsers)*100).toFixed(1) + "%) ";
+    markdown += "| " + includedUsers + " (" + ((includedUsers/totalUsers)*100).toFixed(1) + "%) ";
+    markdown += "| " + activeUsers + " (" + ((activeUsers/includedUsers)*100).toFixed(1) + "%) ";
+    markdown += "| " + (totalUsers-includedUsers) + " (" + (((includedUsers-activeUsers)/includedUsers)*100).toFixed(1) + "%)" + " |\\n\\n";
+
+
+    if (inactiveOrgs.length > 0) {
+      markdown += "| Organizations with 100% Inactive Users | Previous "+sortedMonths.length+"-Month Processed Spend for Organizations with 100% Inactive Users |\\n";
+      markdown += "| --- | --- |\\n";
+      markdown += "|" +  _.pluck(inactiveOrgs, "id").join(", ") + " | " + formatCurrency(inactiveOrgsTotalCost) + "|\\n\\n";
+    } else {
+      markdown += "All Customer Orgs have at least 1 Active User\\n\\n";
+    }
+
+    markdown += "## Processed Spend by Bill Connection Type\\n\\n";
 
     // Build header row
-    var header = "| Source | Org Count";
+    var header = "| Bill Connection Type | Org Count";
     _.each(sortedMonths, function(month) {
-      header += " | " + month + " Invoicable Costs";
+      header += " | " + month + " Invoicable Processed Spend";
     });
-    header += "| Excluded Costs (Non-Invoicable) | Total Costs (No Exclusions) | % of Total Invoicable |\\n";
+    header += "| Excluded Processed Spend | Total Processed Spend | % of Total Invoicable Processed Spend |\\n";
     markdown += header;
 
     // Build separator row
@@ -997,16 +1097,18 @@ script "js_report", type: "javascript" do
     // Process each child org
     // Sort organizations by total cost first
     var sortedOrgs = _.sortBy(inclusiveCosts, function(org) {
-      return -org.netTotalCost; // Negative for descending order
+      // MSP Parent Org is always at the top (where costs are processed but not allocated to any MSP Customer)
+      // All other orgs are sorted by their invoicable processed cost (total - excluded), descending order highest to lowest
+      return org.org.msp_parent ? -999999999999999999999999999999 : (org.netTotalCost - org.excludedTotalCost) * -1 ; // Negative for descending order
     });
 
-    markdown += "\\n## Costs by Organization\\n\\n";
+    markdown += "\\n## Processed Spend by Organization\\n\\n";
     // Build header row
     var childOrgHeader = "| Org Name | Org ID";
     _.each(sortedMonths, function(month) {
-      childOrgHeader += " | " + month + " Invoicable Costs";
+      childOrgHeader += " | " + month + " Invoicable Processed Spend";
     });
-    childOrgHeader += "| Excluded Costs (Non-Invoicable) | Total Costs (No Exclusions) | % of Total Invoicable |\\n";
+    childOrgHeader += "| Excluded Processed Spend | Total Processed Spend | % of Total Invoicable Processed Spend |\\n";
     markdown += childOrgHeader;
 
     // Build separator row
@@ -1113,52 +1215,58 @@ script "js_report", type: "javascript" do
           });
         }
 
-        markdown += "* Total Cost (No Exclusions): " + formatCurrency((org.excludedTotalCost || 0) + (orgTotal || 0)) + "\\n";
-        markdown += "* Total Excluded Cost (Non-Invoicable): " + formatCurrency(org.excludedTotalCost) + "\\n";
-        markdown += "* Total Invoicable Cost: " + formatCurrency(orgTotal) + "\\n";
         if (org.org.msp_parent == true) {
-          markdown += "* **These are costs not allocated to any child organizations yet and may need to be reviewed**\\n";
-          markdown += "* **This is the MSP Parent Organization, user activity is not reported**\\n";
+          markdown += "- **This is the MSP Parent Organization.**\\n";
+          markdown += "- **This processed spend is currently not allocated to any customer organizations.**\\n";
+          markdown += "- **User activity is not reported for the MSP Parent Org.**\\n\\n";
         } else {
+          // Indicate if this org has zero active users
+          if (org.activeUsers === 0 && org.totalUsers > 0) {
+            markdown += "**This customer organization has zero active users**\\n\\n";
+          }
+        }
+
+        markdown += "| Total Processed Spend | Total Excluded Processed Spend | Total Invoicable Processed Spend |\\n";
+        markdown += "| --- | --- | --- |\\n";
+        markdown += "| " + formatCurrency((org.excludedTotalCost || 0) + (orgTotal || 0)) + " ";
+        markdown += "| " + formatCurrency(org.excludedTotalCost) + " ";
+        markdown += "| " + formatCurrency(orgTotal) + " |\\n\\n";
+
+        // Only report on user activity if this is not the MSP Parent Org
+        if (org.org.msp_parent != true) {
+          markdown += "| Total Users | Excluded Users | Included Users | Active Users | Inactive Users |\\n";
+          markdown += "| --- | --- | --- | --- | --- |\\n";
           if (org.totalUsers > 0) {
-            markdown += "* Total Users: " + org.totalUsers + "\\n";
+            markdown += "| " + org.totalUsers + " ";
           } else {
-            markdown += "* Total Users: 0\\n";
+            markdown += "| 0 ";
           }
           if (org.excludedUsers > 0) {
-            markdown += "* Excluded Users: " + org.excludedUsers + " (" + (org.totalUsers > 0 ? ((org.excludedUsers/org.totalUsers)*100).toFixed(1) : 0) + "%)\\n";
+            markdown += "| " + org.excludedUsers + " (" + (org.totalUsers > 0 ? ((org.excludedUsers/org.totalUsers)*100).toFixed(1) : 0) + "%) ";
           } else {
-            markdown += "* Excluded Users: 0\\n";
+            markdown += "| 0 ";
           }
           if (org.includedUsers > 0) {
-            markdown += "* Included Users: " + org.includedUsers + " (" + (org.totalUsers > 0 ? ((org.includedUsers/org.totalUsers)*100).toFixed(1) : 0) + "%)\\n";
+            markdown += "| " + org.includedUsers + " (" + (org.totalUsers > 0 ? ((org.includedUsers/org.totalUsers)*100).toFixed(1) : 0) + "%) ";
           } else {
-            markdown += "* Included Users: 0\\n";
+            markdown += "| 0 ";
           }
-          if (org.totalUsers > 0 && org.includedUsers > 0) {
-            markdown += "* Active Users: " + org.activeUsers + " (" + (org.includedUsers > 0 ? ((org.activeUsers/org.includedUsers)*100).toFixed(1) : 0) + "%)\\n";
-            var orgInactiveUsers = (org.includedUsers || 0) - (org.activeUsers || 0);
-            if (orgInactiveUsers > 0) {
-              markdown += "* Inactive Users: " + orgInactiveUsers + " (" + (org.includedUsers > 0 ? ((orgInactiveUsers/org.includedUsers)*100).toFixed(1) : 0) + "%)\\n";
-            } else {
-              markdown += "* Inactive Users: 0\\n";
-            }
+          if (org.activeUsers > 0) {
+            markdown += "| " + org.activeUsers + " (" + (org.includedUsers > 0 ? ((org.activeUsers/org.includedUsers)*100).toFixed(1) : 0) + "%) ";
+            markdown += "| " + (org.includedUsers - org.activeUsers) + " (" + (org.includedUsers > 0 ? (((org.includedUsers - org.activeUsers)/org.includedUsers)*100).toFixed(1) : 0) + "%) |\\n\\n";
           } else {
-            markdown += "* No User Activity Counts due to 0 Included Users\\n";
-          }
-          if (org.activeUsers === 0 && org.totalUsers > 0) {
-            markdown += "* **This customer organization has 100% inactive users**\\n";
+            markdown += "| 0 | 0 |\\n";
           }
         }
 
         // Only include table if there are costs or excluded costs
         if (orgTotal != 0 || org.excludedTotalCost != 0) {
           // Build table header
-          var header = "\\n| Source";
+          var header = "\\n| Bill Connection";
           _.each(sortedMonths, function(month) {
-          header += " | " + month + " Invoicable Costs";
+          header += " | " + month + " Invoicable Processed Spend";
           });
-          header += "| Excluded Costs (Non-Invoicable) | Total Costs (No Exclusions) | % of Org Total |\\n";
+          header += "| Excluded Processed Spend | Total Processed Spend | % of Total Invoicable Processed Spend |\\n";
           markdown += header;
 
           // Build separator
@@ -1233,6 +1341,7 @@ script "js_report", type: "javascript" do
     });
 
     result = {
+      subject: rs_org_name + " - " + rs_org_id + " - " + ds_applied_policy.name,
       report: markdown,
       netTotalCost: netTotalCost,
       excludedTotalCost: excludedTotalCost,
@@ -1247,7 +1356,7 @@ end
 
 policy "pol_group_sync" do
   validate $ds_report do
-    summary_template "MSP Customer Usage Insights Report"
+    summary_template "{{ data.subject }}"
     detail_template <<-EOS
 {{ data.report }}
 
@@ -1265,40 +1374,32 @@ EOS
         path "org.name"
       end
       field "costTotal" do
-        label "Cost Total"
+        label "Processed Spend Total"
         path "costs.netTotalCost"
       end
       field "excludedCostTotal" do
-        label "Excluded Cost Total"
+        label "Excluded Processed Spend Total"
         path "costs.excludedTotalCost"
       end
+      field "costTotalCost" do
+        label "Invoicable Processed Spend Total"
+        path "costs.netTotalCost"
+      end
       field "costPercentTotalCost" do
-        label "Percent of Total Cost"
+        label "Percent of Total Processed Spend"
         path "costs.percentTotalCost"
       end
       field "costStartAt" do
-        label "Cost Start Date"
+        label "Processed Spend Start Date"
         path "costs.start_at"
       end
       field "costEndAt" do
-        label "Cost End Date"
+        label "Processed Spend End Date"
         path "costs.end_at"
       end
-      field "usersActive" do
+      field "userActiveCount" do
         label "Active Users"
         path "users.activeUsers"
-      end
-      field "usersInactive" do
-        label "Inactive Users"
-        path "users.inactiveUsers"
-      end
-      field "usersExcluded" do
-        label "Excluded Users"
-        path "users.excludedUsers"
-      end
-      field "usersInactivePercent" do
-        label "Percent of Inactive Users"
-        path "users.inactivePercentUsers"
       end
     end
     escalate $esc_email
