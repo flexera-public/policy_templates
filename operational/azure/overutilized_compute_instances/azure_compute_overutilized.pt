@@ -7,7 +7,7 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.0",
+  version: "0.2.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Overutilized Compute Instances",
@@ -33,6 +33,15 @@ parameter "param_azure_endpoint" do
   description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
+end
+
+parameter "param_cross_family" do
+  type "string"
+  category "Policy Settings"
+  label "Enable Cross-Family Recommendations"
+  description "Whether to recommend upsizing instances to resource types outside of their current family."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_exclusion_tags" do
@@ -213,6 +222,70 @@ datasource "ds_applied_policy" do
     path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
     header "Api-Version", "1.0"
   end
+end
+
+datasource "ds_region_table" do
+  run_script $js_region_table
+end
+
+script "js_region_table", type:"javascript" do
+  result "result"
+  code <<-EOS
+  result = {
+    "ukwest": "UK West",
+    "usgovvirginia": "US Gov Virginia",
+    "eastus2": "US East 2",
+    "uaenorth": "AE North",
+    "southafricawest": "ZA West",
+    "francesouth": "FR South",
+    "westcentralus": "US West Central",
+    "koreacentral": "KR Central",
+    "westeurope": "EU West",
+    "southafricanorth": "ZA North",
+    "southeastasia": "AP Southeast",
+    "centralindia": "IN Central",
+    "switzerlandwest": "CH West",
+    "norwayeast": "NO East",
+    "germanywestcentral": "DE West Central",
+    "westus2": "US West 2",
+    "australiacentral": "AU Central",
+    "italynorth": "IT North",
+    "centralus": "US Central",
+    "germanynorth": "DE North",
+    "brazilsoutheast": "BR Southeast",
+    "southindia": "IN South",
+    "swedencentral": "SE Central",
+    "francecentral": "FR Central",
+    "australiasoutheast": "AU Southeast",
+    "northeurope": "EU North",
+    "koreasouth": "KR South",
+    "usgovtexas": "US Gov TX",
+    "polandcentral": "PL Central",
+    "japaneast": "JA East",
+    "westindia": "IN West",
+    "japanwest": "JA West",
+    "westus": "US West",
+    "jioindiawest": "IN West Jio",
+    "northcentralus": "US North Central",
+    "southcentralus": "US South Central",
+    "eastasia": "AP East",
+    "jioindiacentral": "IN Central Jio",
+    "australiacentral2": "AU Central 2",
+    "canadaeast": "CA East",
+    "eastus": "US East",
+    "uaecentral": "AE Central",
+    "norwaywest": "NO West",
+    "canadacentral": "CA Central",
+    "uksouth": "UK South",
+    "qatarcentral": "QA Central",
+    "swedensouth": "SE South",
+    "brazilsouth": "BR South",
+    "australiaeast": "AU East",
+    "switzerlandnorth": "CH North",
+    "usgovarizona": "US Gov AZ",
+    "westus3": "US West 3"
+  }
+EOS
 end
 
 datasource "ds_billing_centers" do
@@ -958,77 +1031,84 @@ script "js_instance_costs_grouped", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_instance_size_map" do
+datasource "ds_azure_instance_prices" do
   request do
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/azure/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/azure/azure_vm_pricing.json"
     header "User-Agent", "RS Policies"
   end
 end
 
-datasource "ds_azure_regions_for_instance_sizes" do
-  run_script $js_azure_regions_for_instance_sizes, $ds_azure_instances_metrics_organized
+datasource "ds_azure_instance_types" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/azure_compute_instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
 end
 
-script "js_azure_regions_for_instance_sizes", type: "javascript" do
-  parameters "ds_azure_instances_metrics_organized"
+datasource "ds_azure_instance_type_map" do
+  run_script $js_azure_instance_type_map, $ds_azure_instance_types
+end
+
+script "js_azure_instance_type_map", type: "javascript" do
+  parameters "ds_azure_instance_types"
   result "result"
-  code <<-EOS
-  result = []
-
-  if (ds_azure_instances_metrics_organized.length > 0) {
-    regions = _.uniq(_.compact(_.pluck(ds_azure_instances_metrics_organized, "region")))
-
-    result = _.map(regions, function(region) {
-      return {
-        subscriptionId: ds_azure_instances_metrics_organized[0]['accountID'],
-        region: region
-      }
-    })
-  }
+  code <<-'EOS'
+  result = {}
+  _.each(ds_azure_instance_types, function(entry) { result[entry["name"]] = entry })
 EOS
 end
 
-datasource "ds_azure_instance_size_details" do
-  iterate $ds_azure_regions_for_instance_sizes
-  request do
-    auth $auth_azure
-    pagination $pagination_azure
-    host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.Compute/locations/", val(iter_item, "region"), "/vmSizes"])
-    query "api-version", "2024-07-01"
-    header "User-Agent", "RS Policies"
-    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400, 403, 404]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "name", jmes_path(col_item, "name")
-      field "maxDataDiskCount", jmes_path(col_item, "maxDataDiskCount")
-    end
-  end
+datasource "ds_azure_instance_types_by_family" do
+  run_script $js_azure_instance_types_by_family, $ds_azure_instance_types
 end
 
-datasource "ds_azure_disk_count_table" do
-  run_script $js_azure_disk_count_table, $ds_azure_instance_size_details
-end
-
-script "js_azure_disk_count_table", type: "javascript" do
-  parameters "ds_azure_instance_size_details"
+script "js_azure_instance_types_by_family", type: "javascript" do
+  parameters "ds_azure_instance_types"
   result "result"
-  code <<-EOS
-  result = {}
-  _.each(ds_azure_instance_size_details, function(size) { result[size['name']] = size['maxDataDiskCount'] })
+  code <<-'EOS'
+  result = { all: [].concat(ds_azure_instance_types) }
+
+  result["all"] = _.sortBy(result["all"], function(type) {
+    return type['specs'] && type['specs']['UncachedDiskIOPS'] ? type['specs']['UncachedDiskIOPS'] : 99999999
+  })
+
+  result["all"] = _.sortBy(result["all"], function(type) {
+    return type['specs'] && type['specs']['MemoryGB'] ? type['specs']['MemoryGB'] : 99999999
+  })
+
+  result["all"] = _.sortBy(result["all"], function(type) {
+    return type['specs'] && type['specs']['vCPUs'] ? type['specs']['vCPUs'] : 99999999
+  })
+
+  _.each(ds_azure_instance_types, function(type) {
+    if (result[type['family']] == undefined) { result[type['family']] = [] }
+    result[type['family']].push(type)
+  })
+
+  _.each(_.keys(result), function(family) {
+    result[family] = _.sortBy(result[family], function(type) {
+      return type['specs'] && type['specs']['UncachedDiskIOPS'] ? type['specs']['UncachedDiskIOPS'] : 99999999
+    })
+
+    result[family] = _.sortBy(result[family], function(type) {
+      return type['specs'] && type['specs']['MemoryGB'] ? type['specs']['MemoryGB'] : 99999999
+    })
+
+    result[family] = _.sortBy(result[family], function(type) {
+      return type['specs'] && type['specs']['vCPUs'] ? type['specs']['vCPUs'] : 99999999
+    })
+  })
 EOS
 end
 
 datasource "ds_overutil_instances" do
-  run_script $js_overutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_stats_interval, $ds_azure_disk_count_table, $ds_currency, $ds_applied_policy, $param_stats_threshold_cpu_value, $param_stats_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_stats_lookback, $param_exclude_databricks
+  run_script $js_overutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_type_map, $ds_azure_instance_types_by_family, $ds_azure_instance_prices, $ds_region_table, $ds_stats_interval, $ds_currency, $ds_applied_policy, $param_stats_threshold_cpu_value, $param_stats_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_stats_lookback, $param_exclude_databricks, $param_cross_family
 end
 
 script "js_overutil_instances", type:"javascript" do
-  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_stats_interval", "ds_azure_disk_count_table", "ds_currency", "ds_applied_policy", "param_stats_threshold_cpu_value", "param_stats_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_stats_lookback", "param_exclude_databricks"
+  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_type_map", "ds_azure_instance_types_by_family", "ds_azure_instance_prices", "ds_region_table", "ds_stats_interval", "ds_currency", "ds_applied_policy", "param_stats_threshold_cpu_value", "param_stats_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_stats_lookback", "param_exclude_databricks", "param_cross_family"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -1056,6 +1136,19 @@ script "js_overutil_instances", type:"javascript" do
     return formatted_number
   }
 
+  // Function to find the index of a resource type in a list
+  // This is so we can easily go up and down.
+  // If a type has an index of 5, we know 4 is the next size down.
+  function findTypeIndex(type_list, name) {
+    type_index = null
+
+    _.each(type_list, function(type, index) {
+      if (type_index == null && type['name'] == name) { type_index = index }
+    })
+
+    return type_index
+  }
+
   // The key name is lowercase, param value needs to be lowercase.
   threshold_statistic = param_stats_threshold.toLowerCase()
 
@@ -1071,10 +1164,6 @@ script "js_overutil_instances", type:"javascript" do
     // Loop through metrics data, appending cost data
     _.each(ds_azure_instances_metrics_organized, function(instance) {
       id = instance['resourceID'].toLowerCase()
-
-      // Assume cost is 0 unless we have cost data for the instance
-      instance["cost"] = 0.0
-      if (ds_instance_costs_grouped[id] != undefined) { instance["cost"] = ds_instance_costs_grouped[id] }
 
       // Add baked-in values
       instance['currency'] = ds_currency['symbol']
@@ -1113,13 +1202,49 @@ script "js_overutil_instances", type:"javascript" do
 
       // Set appropriate values based on whether instance is overutilized
       // and then add it to the list
-      if (is_overutil) {
+      if (is_overutil && ds_azure_instance_type_map[instance['resourceType']]) {
         instance["recommendationType"] = "Upsize"
         instance["threshold"] = param_stats_threshold_cpu_value
         instance["memoryThreshold"] = param_stats_threshold_mem_value
 
-        if (ds_azure_instance_size_map[instance['resourceType']] && ds_azure_instance_size_map[instance['resourceType']]['up'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['resourceType']]['up']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['resourceType']]['up']] >= instance["dataDiskCount"]) {
-          instance["newResourceType"] = ds_azure_instance_size_map[instance['resourceType']]['up']
+        currentType = ds_azure_instance_type_map[instance['resourceType']]
+        typeIndex = null
+
+        if (param_cross_family == "No") {
+          typeList = ds_azure_instance_types_by_family[currentType['family']]
+        } else {
+          typeList = ds_azure_instance_types_by_family['all']
+        }
+
+        if (typeList) { typeIndex = findTypeIndex(typeList, instance['resourceType']) }
+
+        while (typeIndex && typeIndex != typeList.length && instance["newResourceType"] == null) {
+          typeIndex += 1
+          newType = typeList[typeIndex]
+
+          if (newType && newType['superseded'] == null && Number(newType['specs']['MaxDataDiskCount']) >= instance["dataDiskCount"]) {
+            if (checking_cpu && !checking_mem && newType['specs']['vCPUs'] > currentType['specs']['vCPUs'] && newType['specs']['MemoryGB'] >= currentType['specs']['MemoryGB']) {
+              instance["newResourceType"] = newType['name']
+            }
+
+            if (!checking_cpu && checking_mem && newType['specs']['vCPUs'] >= currentType['specs']['vCPUs'] && newType['specs']['MemoryGB'] > currentType['specs']['MemoryGB']) {
+              instance["newResourceType"] = newType['name']
+            }
+
+            if (checking_cpu && checking_mem) {
+              if (is_overutil_cpu && !is_overutil_mem && newType['specs']['vCPUs'] > currentType['specs']['vCPUs'] && newType['specs']['MemoryGB'] >= currentType['specs']['MemoryGB']) {
+                instance["newResourceType"] = newType['name']
+              }
+
+              if (!is_overutil_cpu && is_overutil_mem && newType['specs']['vCPUs'] >= currentType['specs']['vCPUs'] && newType['specs']['MemoryGB'] > currentType['specs']['MemoryGB']) {
+                instance["newResourceType"] = newType['name']
+              }
+
+              if (is_overutil_cpu && is_overutil_mem && newType['specs']['vCPUs'] > currentType['specs']['vCPUs'] && newType['specs']['MemoryGB'] > currentType['specs']['MemoryGB']) {
+                instance["newResourceType"] = newType['name']
+              }
+            }
+          }
         }
 
         recommendationDetails = [
@@ -1135,7 +1260,28 @@ script "js_overutil_instances", type:"javascript" do
         instance["overutil_total_cost"] = ""
 
         if (instance["newResourceType"]) {
-          overutil_total_cost += instance["cost"]
+          instance["cost"] = null
+          current_price = null
+          new_price = null
+          region = ds_region_table[instance['region']]
+
+          // Assume cost is 0 unless we have cost data for the instance
+          monthly_cost = 0.0
+          if (ds_instance_costs_grouped[id] != undefined) { monthly_cost = ds_instance_costs_grouped[id] }
+
+          if (region && ds_azure_instance_prices[region] && ds_azure_instance_prices[region][currentType['name']] && ds_azure_instance_prices[region][currentType['name']]["Linux"]) {
+            current_price = ds_azure_instance_prices[region][currentType['name']]["Linux"]["pricePerUnit"]
+          }
+
+          if (region && ds_azure_instance_prices[region] && ds_azure_instance_prices[region][newType['name']] && ds_azure_instance_prices[region][newType['name']]["Linux"]) {
+            new_price = ds_azure_instance_prices[region][newType['name']]["Linux"]["pricePerUnit"]
+          }
+
+          if (monthly_cost != 0 && current_price && new_price) {
+            instance["cost"] = (monthly_cost * (new_price / current_price)) - monthly_cost
+          }
+
+          if (instance["cost"]) { overutil_total_cost += instance["cost"] }
           result.push(instance)
         }
       }
@@ -1256,7 +1402,7 @@ policy "pol_utilization" do
   validate_each $ds_overutil_instances do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Overutilized Virtual Machines Found"
     detail_template <<-'EOS'
-    **Potential Monthly Cost:** {{ with index data 0 }}{{ .overutil_total_cost }}{{ end }}
+    **Potential Monthly Cost Increase:** {{ with index data 0 }}{{ .overutil_total_cost }}{{ end }}
 
     {{ with index data 0 }}{{ .overutil_message }}{{ end }}
     EOS
@@ -1319,7 +1465,7 @@ policy "pol_utilization" do
         label "Power State"
       end
       field "cost" do
-        label "Estimated Monthly Cost"
+        label "Estimated Monthly Cost Increase"
       end
       field "currency" do
         label "Currency"
