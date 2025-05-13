@@ -1,4 +1,4 @@
-# MSP Usage Audit
+# MSP Customer Usage Insights Report
 
 ## What It Does
 
@@ -24,9 +24,14 @@ This policy has the following input parameters required when launching the polic
 - *Allow/Deny Child Orgs* - Determines whether the Allow/Deny Child Orgs List parameter functions as an allow list (only providing results for the listed organizations) or a deny list (providing results for all organizations except for the listed organizations).
 - *Allow/Deny Child Orgs List* - A list of allowed or denied Child Organizations to include in the report.
 - *Prefix String* - Prefix to indicate the Group should be synced. This is the first part of the string that needs to be in the description.
-- *Excluded User Domains* - A list of email domains to exclude from the active/inactive user counts. We generally recommend always including `flexera.com` to exclude Flexera employees from the counts. Add any other domains for "internal" users that should be excluded from the active/inactive user counts.
+- *Excluded User Regex* - A list of email regex patterns to exclude from the active/inactive user counts. We generally recommend always including `.*@flexera.com` to exclude Flexera employees from the counts. Add any other regex patterns for "internal" users that should be excluded from the active/inactive user counts.
+- *Included User Regex* - A list of email regex patterns to include in the active/inactive user counts. This is useful for specifically including certain users, especially when using exclusions. Default is `.*` which includes all users not explicitly excluded.
 - *Active Days Threshold* - The number of days to consider a user as active. Default is 30 days.
-- *Cost Threshold* - The minimum total cost for an organization to be included in the report. Default is -1 which disables the threshold and shows all Orgs.
+- *Processed Spend Threshold* - The minimum total processed spend for an organization to be included in the report. Default is -1 which disables the threshold and shows all Orgs.
+- *Billing Period* - The billing period to report on. Options are "Previous Month", "Previous 12 Months", or "Specific Month".
+- *Specific Period* - If "Specific Month" is selected for Billing Period, specify the month in YYYY-MM format.
+- *Contractual Exclusions* - A list of cost types to exclude from invoicable processed spend calculations. Options include "Tax" and "Marketplace". These exclusions are typically only for legacy agreements.
+- *Get Customer Org Processed Spend from MSP Parent Org* - Select whether to get customer org processed spend from the MSP parent org or from customer orgs directly. Default is "No" which gets costs from both the parent org and customer orgs.
 
 ## Policy Actions
 
