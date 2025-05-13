@@ -30,7 +30,7 @@ This policy has the following input parameters required when launching the polic
 - *Processed Spend Threshold* - The minimum total processed spend for an organization to be included in the report. Default is -1 which disables the threshold and shows all Orgs.
 - *Billing Period* - The billing period to report on. Options are "Previous Month", "Previous 12 Months", or "Specific Month".
 - *Specific Period* - If "Specific Month" is selected for Billing Period, specify the month in YYYY-MM format.
-- *Contractual Exclusions* - A list of cost types to exclude from invoicable processed spend calculations. Options include "Tax" and "Marketplace". These exclusions are typically only for legacy agreements.
+- *Contractual Exclusions* - A list of cost types to exclude from invoiceable processed spend calculations. Options include "Tax" and "Marketplace". These exclusions are typically only for legacy agreements.
 - *Get Customer Org Processed Spend from MSP Parent Org* - Select whether to get customer org processed spend from the MSP parent org or from customer orgs directly. Default is "No" which gets costs from both the parent org and customer orgs.
 
 ## Policy Actions
