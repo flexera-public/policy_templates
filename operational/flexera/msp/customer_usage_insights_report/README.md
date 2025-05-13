@@ -6,10 +6,10 @@ This policy generates a comprehensive report on the usage of MSP Customer Organi
 
 ## How It Works
 
-- The policy retrieves a list of MSP Customer Organizations.
+- The applied policy retrieves a list of MSP Customer Organizations.
 - It gathers cost data for each organization, broken down by billing source (e.g., AWS, Azure, GCP, Oracle).
 - It calculates user activity metrics, including the number of active and inactive users.
-- The policy generates a detailed markdown report summarizing the costs and user activity for each organization.
+- The applied policy generates a detailed markdown report summarizing the costs and user activity for each organization.
 - It estimates 12-month costs using the most recent 3 months of costs.
 - It identifies organizations with 100% inactive users and includes their total costs in the report.
 - It allows excluding organizations with total costs below a specified threshold.
@@ -17,10 +17,9 @@ This policy generates a comprehensive report on the usage of MSP Customer Organi
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy has the following input parameters required when applying the policy template:
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
-- *Automatic Actions* - When this value is set, this policy will automatically take the selected actions.
 - *Allow/Deny Child Orgs* - Determines whether the Allow/Deny Child Orgs List parameter functions as an allow list (only providing results for the listed organizations) or a deny list (providing results for all organizations except for the listed organizations).
 - *Allow/Deny Child Orgs List* - A list of allowed or denied Child Organizations to include in the report.
 - *Prefix String* - Prefix to indicate the Group should be synced. This is the first part of the string that needs to be in the description.
@@ -44,7 +43,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `org_owner`*
 
-  \* `org_owner` role in the MSP Parent Org always required.  If parameter `Get Customer Org Costs from MSP Parent Org` is set to `true`, then the `org_owner` must be granted to the identity in all Child Orgs in addition to MSP Parent Org.
+  \* `org_owner` role in the MSP Parent Org always required. If parameter `Get Customer Org Costs from MSP Parent Org` is set to `true`, then the `org_owner` must be granted to the identity in all Child Orgs in addition to MSP Parent Org.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
