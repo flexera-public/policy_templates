@@ -44,7 +44,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `org_owner`*
 
-  \* `org_owner` role in the MSP Parent Org always required.  If parameter `Get Customer Org Costs from MSP Parent Org` is set to `true`, then the `org_owner` must be granted to the identify in all Child Orgs in addition to MSP Parent Org.
+  \* `org_owner` role in the MSP Parent Org always required.  If parameter `Get Customer Org Costs from MSP Parent Org` is set to `true`, then the `org_owner` must be granted to the identity in all Child Orgs in addition to MSP Parent Org.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
