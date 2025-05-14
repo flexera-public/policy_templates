@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1.3
+
+- Performance improvement by migrating to metrics getBatch API.
+
 ## v6.1.2
 
 - Fixed incorrect calculation for memory related fields "Memory Average %", "Memory p90", Memory p95", and "Memory p99".
