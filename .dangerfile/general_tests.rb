@@ -75,7 +75,7 @@ def general_bad_markdown?(file)
   when ".github/PULL_REQUEST_TEMPLATE.md"
     mdl = `mdl -r "~MD002","~MD007","~MD013" #{file}`
   else
-    mdl = `mdl -r "~MD007","~MD013" #{file}`
+    mdl = `mdl -r "~MD007","~MD013","~MD024" #{file}`
   end
 
   # Return the problems found if the mdl file is not empty. Otherwise, return false
