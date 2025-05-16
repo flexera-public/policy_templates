@@ -40,6 +40,12 @@ This repository uses Dangerfile to perform automated testing. A few minutes afte
 
 Dangerfile will occasionally have false positives or fail to account for some nuance in implementation. In these cases, add a comment to the description explaining why the failed test is not a concern.
 
+NOTE: You can actually run Dangerfile tests locally with the following command for convenience. This can be helpful when fixing Dangerfile errors by enabling you to quickly see if errors or warnings have been resolved. Simply replace the URL with the URL of your specific pull request:
+
+```bash
+bundle exec danger pr https://github.com/flexera-public/policy_templates/pull/123456 --pry
+```
+
 ### 7. Fix Peer Review Issues
 
 In order to merge your branch, a Flexera policy template developer will need to approve your pull request. During the review process, they may request changes.
