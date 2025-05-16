@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.0.2
+
+- Fixed issue where policy template execution would fail if the user builds off of the currency conversion adjustment created by this policy template.
+
 ## v5.0.1
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
