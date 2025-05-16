@@ -8,6 +8,8 @@ Note that this is not intended as a guide for general best practices for policy 
 
 ## General Style Guidelines
 
+- __Never store passwords, API keys/tokens, or other private authentication data in this repository.__ This Github repository is publicly accessible. Secrets needed for automation, such as GitHub Workflow, should be stored using [GitHub's native secrets tooling](https://github.com/flexera-public/policy_templates/settings/secrets/actions).
+
 - Policy templates for the catalog are visible to users in the Flexera platform. For that reason, grammar and spelling should be on point, and slang, abbreviations (when not widely-used acronyms), etc. should be avoided, particularly for parts of the policy template that appear in the UI, such as names and descriptions of parameters and anything raised in an incident table.
 
 - README files, CHANGELOG files, and anything user-visible in the policy template itself should be written with a non-technical user in mind. Explain things in clear English and avoid using programming or IT jargon where possible. The CHANGELOG should describe changes in terms of the difference the end user will see, not in terms of the changes made to the policy template code.
