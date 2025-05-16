@@ -4,11 +4,13 @@ Policy templates that go into the catalog should follow the conventions outlined
 
 The Dangerfile that runs whenever a pull request is made against the _master_ branch will test for many of these guidelines and report warnings/errors as appropriate. Please correct any warnings/errors that are not false positives before asking for peer review.
 
-Note that this is not intended as a guide for general best practices for policy development. It only covers style and conventions specific to the public catalog.
+Note that this is not intended as a guide for general best practices for policy development. It only covers style and conventions specific to the public catalog. For general training on how to develop policy templates, please take a look at the [Policy Development Training](https://github.com/flexera-public/policy_engine_training) repository.
 
 ## General Style Guidelines
 
-- Policy templates for the catalog are visible to users in the Flexera platform. For that reason, grammar and spelling should be on point, and slang, abbreviations, etc. should be avoided, particularly for parts of the policy template that appear in the UI, such as names and descriptions of parameters and anything raised in an incident table.
+- __Never store passwords, API keys/tokens, or other private authentication data in this repository.__ This Github repository is publicly accessible. Secrets needed for automation, such as GitHub Workflow, should be stored using [GitHub's native secrets tooling](https://github.com/flexera-public/policy_templates/settings/secrets/actions).
+
+- Policy templates for the catalog are visible to users in the Flexera platform. For that reason, grammar and spelling should be on point, and slang, abbreviations (when not widely-used acronyms), etc. should be avoided, particularly for parts of the policy template that appear in the UI, such as names and descriptions of parameters and anything raised in an incident table.
 
 - README files, CHANGELOG files, and anything user-visible in the policy template itself should be written with a non-technical user in mind. Explain things in clear English and avoid using programming or IT jargon where possible. The CHANGELOG should describe changes in terms of the difference the end user will see, not in terms of the changes made to the policy template code.
 
@@ -18,12 +20,12 @@ Note that this is not intended as a guide for general best practices for policy 
 
 ## File Names & Directory Structure
 
-The following directory structure should be used for provider-specific policy templates. Snake case should be used.
+The following directory structure should be used for provider-specific policy templates. [Snake case](https://en.wikipedia.org/wiki/Snake_case) should be used.
 
 - /{category}/{provider}/{policy template name}/
   - _Example_: `/cost/aws/old_snapshots/`
 
-The following directory structure should be used for general Flexera policy templates. Snake case should be used.
+The following directory structure should be used for general Flexera policy templates. [Snake case](https://en.wikipedia.org/wiki/Snake_case) should be used.
 
 - /{category}/flexera/{product}/{policy template name}/
   - _Example_: `/cost/flexera/cco/focus_report/`
@@ -32,8 +34,11 @@ Every policy template should be in its own directory that contains the following
 
 - The policy template itself. File name should be in [snake case](https://en.wikipedia.org/wiki/Snake_case) and be similar to the name of the policy template itself. In most cases, the file name should start with the cloud provider or service the policy template is for.
   - _Example_: aws_rightsize_ec2_instances.pt
+
 - (If applicable) The meta parent for the policy template. This should be generated automatically when needed.
+
 - CHANGELOG.md
+
 - README.md
 
 ## Versioning
@@ -164,7 +169,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 This should be followed by an itemized list of every credential required for the policy template. Each credential should include a link to Flexera documentation about the credential, a description of the expected provider tag for the credential, and a list of specific permissions the credential needs. Optional permissions for specific functionality should be indicated with a `*` character and a footnote.
 
 ```text
-- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+- [__AWS Credential__](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `ec2:DescribeRegions`
   - `ec2:DescribeImages`
   - `ec2:DescribeSnapshots`
@@ -216,9 +221,22 @@ This policy template does not incur any cloud costs.
 
 ## Policy Template
 
+### General Conventions
+
+- Anything contained within a block should be tabbed. Nested tabbing should be used for blocks within blocks.
+  - Tabbing should be done using 2 space characters. It is recommended that you configure your editor to do this automatically whenever you press the tab key.
+
+- Code blocks should always be separated from one another with an empty line.
+
+- Avoid consecutive empty lines. There should only be one empty line between code blocks.
+
+- Comma-separated lists should have a space following each comma. _Example_: apple, banana, pear
+
 ### Basic Structure
 
-Strictly speaking, the Policy Template Language does not require that the various components of your policy template be in any particular order. That said, the following general arrangement is required for catalog policy templates. Sections should be omitted if your policy template contains no blocks for that section.
+Strictly speaking, the Policy Template Language does not require that the various components of your policy template be in any particular order. That said, the following general arrangement is required for catalog policy templates.
+
+Sections should be omitted if your policy template contains no blocks for that section, and blocks that are unused (such as a `pagination` or `credential` block that is never actually used by a `datasource` block) should be removed.
 
 1. Metadata
 1. Parameters
@@ -240,49 +258,56 @@ Each section (except for Metadata) should be preceded with comments resembling t
 
 Datasources should be presented in the order that they are expected to execute, followed by any script blocks that they call.
 
+### Deprecated Code Blocks
+
+The following code block types are deprecated and should not be used.
+
+- Permission
+- Resources
+
 ### Block Naming Conventions
 
-Block names should always be in double-quotes. _Example_: `policy "pol_utilization" do`
+Block names should always be in double-quotes and in [snake case](https://en.wikipedia.org/wiki/Snake_case). _Example_: `policy "pol_utilization" do`
 
 Each block in the policy template should follow these naming conventions:
 
-- **Parameter**
+- __Parameter__
   - Names begin with `param_`
   - _Example_: `param_email`
 
-- **Credential**
+- __Credential__
   - Names begin with `auth_`, followed by the provider or tool name.
   - _Example_: `auth_azure`
 
-- **Pagination**
+- __Pagination__
   - Names begin with `pagination_`, followed by the provider or tool name.
   - _Example_: `pagination_azure`
 
-- **Datasource**
+- __Datasource__
   - Names begin with `ds_`
   - _Example_: `ds_subscriptions`
 
-- **Script**
+- __Script__
   - Names begin with `js_`
   - _Example_: `js_filtered_subscriptions`
 
-- **Paired Datasource/Script**
+- __Paired Datasource/Script__
   - When a script pairs with a specific datasource, both blocks should share the same base name with their respective prefixes.
   - _Example_: `ds_filtered_subscriptions`, `js_filtered_subscriptions`
 
-- **Policy**
+- __Policy__
   - Names begin with `pol_` and reflect what the policy template checks.
   - _Example_: `pol_rightsize_compute`
 
-- **Escalation**
+- __Escalation__
   - Names begin with `esc_`
   - _Example_: `esc_email`
 
-- **Resolution**
+- __Resolution__
   - Names begin with `res_`
   - _Example_: `res_resize_instances`
 
-- **Cloud Workflow**
+- __Cloud Workflow__
   - Named after the function they perform.
   - _Example_: `define delete_unattached_volumes`
 
@@ -290,36 +315,39 @@ Each block in the policy template should follow these naming conventions:
 
 The following guidelines should be used when specifying policy template metadata:
 
-- **name**
+- __name__
   - Should clearly convey the policy template's purpose and, if applicable, include the cloud provider.
   - _Example_: `AWS Rightsize EC2 Instances`
 
-- **short_description**
+- __short_description__
   - In most cases, should match the first lines of the README description.
   - Should include a link to the README.
   - _Example_: `Check for EC2 instances that have inefficient utilization for a specified number of days and downsizes or terminates them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more.`
 
-- **long_description**
+- __long_description__
   - Always set to an empty string.
 
-- **category**
+- __category__
   - Should be set to one of the following categories based on the policy template's intended purpose: Compliance, Cost, Operational, SaaS Management, Security
 
-- **severity**
+- __severity__
   - Choose sensible default based on how the policy template will typically be used.
 
-- **default_frequency**
+- __default_frequency__
   - Choose sensible default based on how the policy template will typically be used.
 
-- **info**
+- __info__
   - _version (required)_: The version number of the policy template. Semantic versioning should be used. _Example_: 1.0.3
   - _provider (required)_: The cloud or software provider the policy template is for. _Example_: AWS
   - _hide_skip_approvals (required): Set to "true" for most use cases. This hides the UI option to skip approvals, which causes confusion for some users.
-  - _service (recommended)_: The category of service, product, etc. that the policy template is for. _Example_: Compute
+  - _service (recommended)_: The category of service, product, etc. that the policy template is for. Avoid using abbreviations like "CCO" or "IAM". _Example_: Compute
   - _policy_set (recommended)_: The name of the set/collection that the policy template belongs to. _Example_: Rightsize Compute Instances
   - _recommendation_type_: Only required for policy templates intended to be scraped by the Optimization Dashboard. Should be set to either "Usage Reduction" (deleting or downsizing resources) or "Rate Reduction" (buying/adjusting commitments to lower cost without changing resources themselves) based on the type of recommendations the policy template produces.
   - _deprecated_: Defaults to "false" if unspecified. Include if you need to set this to "true" to indicate that a policy template is deprecated and no longer recommended for general use.
   - _publish_: Defaults to "true" if unspecified. Include if you need to set this to "false" to prevent the policy template from being published in the catalog.
+
+- __tenancy__
+  - This metadata field is defunct and should not be specified in any policy template.
 
 #### Example
 
@@ -356,21 +384,21 @@ The following guidelines should be used for `parameters` blocks:
   1. `max_value`
   1. `default`
 
-- **category**
+- __category__
   - Should always be included for every parameter.
   - Should be used to group similar parameters together.
   - _Example_: `Filters`
 
-- **label**
+- __label__
   - A very short description of the parameter.
   - Should be a few words at the most and should be capitalized.
   - _Example_: `Email Addresses`
 
-- **description**
+- __description__
   - A longer description (1-3 sentences) of the parameter written in plain English.
   - _Example_: `Email addresses of the recipients you wish to notify when new incidents are created.`
 
-- **default**
+- __default__
   - A default should always be specified except in those cases where user input is absolutely required.
   - If the user is not required to specify a value, the default should either be an empty string `""` or an empty list `[]` depending on the type of the parameter.
   - If user input is required, put this comment instead of a default field: `# No default value, user input required`
@@ -393,6 +421,8 @@ end
 The following guidelines should be used for `datasource` blocks:
 
 - Omit fields where the default covers it. For example, the default of the `verb` field is "GET", so there should never be any reason to specify this value explicitly for GET requests.
+
+- Avoid setting the `scheme` field to "HTTP" unless absolutely necessary. Most REST APIs fully support HTTPS.
 
 - The fields in the `request` block should always be in the following order:
   1. `auth`
@@ -436,22 +466,33 @@ The following guidelines should be used for `script` blocks:
   1. `result`
   1. `code`
 
-- **Name**
+- __Name__
   - If the script is called by a single datasource, their names should match. _Example_: `ds_filtered_subscriptions`, `js_filtered_subscriptions`
   - If the script is called by a multiple datasources, give it a clear name that indicates it's function. _Example_: `js_cost_request`
 
-- **Parameters**
+- __Parameters__
   - Parameters should, where possible, be given the same name as the element being passed into the parameter. For example, if the datasource is passing "param_email" as the first parameter to the script, then the name of this parameter in the script should also be "param_email".
 
-- **Result**
+  - Parameters should be in the following order when called by a datasource:
+    1. val(iter_item, _string_). _Example_: `val(iter_item, "id")`
+    1. datasources. _Example_: `$ds_azure_vms`
+    1. parameters. _Example_: `$param_emails`
+    1. variables. _Example_: `rs_org_id`
+    1. raw values. _Example_: `"primary"`
+
+- __Result__
   - For scripts used to generate an API request, the result field should be set to `request`
   - For all other scripts, it should be set to `result`
 
-- **Best Practices**
+- __Best Practices__
+  - Don't do too much in a single script. Consider chaining 2 or 3 scripts if doing a complex multi-part operation. This will greatly simplify debugging.
   - Maintain consistent spacing and present code in a readable fashion.
   - Favor performance and readability over reducing the number of lines of code.
     - Make use of empty lines where appropriate to avoid bunching large amounts of code into a single wall of text.
+    - Make use of [Underscore.js](https://underscorejs.org/) for common tasks. Avoid for loops where possible.
+    - Avoid nested loops or other inefficient methods of searching through and processing data. The [Policy Development Training Repository](https://github.com/flexera-public/policy_engine_training/) has information on [optimizing policy templates](https://github.com/flexera-public/policy_engine_training/tree/main/lessons/13_optimization).
   - Favor descriptive variable names over short ones. Avoid, where possible, using single letter variable names like `o` or `p`.
+  - Avoid leaving `console.log()` commands used for debugging in scripts. Debugging code should be removed once development work is complete.
 
 #### Example
 
@@ -493,14 +534,15 @@ The following guidelines should be used for the `policy` block:
 
 - For the `detail_template` field:
   - Use complete English sentences with proper grammar/spelling where it makes sense to do so.
-  - **Currency**: Include currency symbol and appropriate separators. _Example_: `US$ 123,456.78`
-  - **Percentages**: Append `%`. _Example_: `89.45%`
+  - __Currency__: Include currency symbol and appropriate separators. _Example_: `US$ 123,456.78`
+  - __Percentages__: Append `%`. _Example_: `89.45%`
 
 - For the `export` field:
   - Place fields with data the user is more likely to care about near the top of the list.
   - Avoid putting currency symbols, percentage signs, or other characters in fields that contain numbers. This tends to break sorting, making the column less usable.
     - Either place the symbol in the name of the field itself (_Example_: `CPU Usage (%)`) or include it in a separate column.
   - Sort the data by whichever field(s) make sense. For example, for a recommendations policy template, the largest potential savings should be at the top.
+  - For policy templates that produce recommendations for the Optimization Dashboard, [specific export fields are required](https://docs.flexera.com/flexera/EN/Automation/CreateRecomendationFromPolicyTemp.htm).
 
 #### Example
 
@@ -541,12 +583,12 @@ The following guidelines should be used for `escalation` blocks:
   1. `email`
   1. `run`
 
-- **label**
+- __label__
   - A very short description of the escalation.
   - Should be a few words at the most and should be capitalized.
   - _Example_: `Stop Instances`
 
-- **description**
+- __description__
   - A longer description (1-3 sentences) of the escalation written in plain English.
   - _Example_: `Approval to stop all selected instances.`
 
@@ -558,5 +600,86 @@ escalation "esc_downsize_instances" do
   label "Downsize Instances"
   description "Approval to downsize all selected instances"
   run "downsize_instances", data
+end
+```
+
+### Cloud Workflow
+
+The following guidelines should be used for Cloud Workflow:
+
+- Cloud Workflow blocks should be named after the task they are performing.
+  - _Example_: `delete_snapshots`
+
+- Plural should be used for the block that runs the action against a set of resources. Singular should be used for a separate block that runs against individual resources.
+  - _Example_: `delete_snapshots` block iterates over a list of snapshots and calls `delete_snapshot` to delete each one.
+
+- The `task_label` function should be used to document things as they happen to assist in debugging and troubleshooting:
+  - _Example_: `task_label("Get AWS EC2 image successful: " + $instance["resourceID"])`
+
+- `sub on_error: handle_error()` should be used to gather errors to be raised all at once. That way, a single failure doesn't prevent the rest of the actions from being performed.
+  - Code that might raise errors should be inside of a `sub on_error: handle_error() do` `end` block.
+  - `handle_error` should be its own dedicated Cloud Workflow block that stores errors in a global `$$errors` variable.
+  - After that block, check if `$$errors` contains anything, and if it does, raise all of the errors at once.
+    - `if inspect($$errors) != "null"` `raise join($$errors, "\n")` `end`
+
+- Maintain consistent spacing and present code in a readable fashion.
+
+- Favor performance and readability over reducing the number of lines of code.
+
+- Make use of empty lines where appropriate to avoid bunching large amounts of code into a single wall of text.
+
+- Favor descriptive variable names over short ones. Avoid, where possible, using single letter variable names like `o` or `p`.
+
+#### Example
+
+```ruby
+define delete_snapshots($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_snapshot($instance, $param_azure_endpoint) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_snapshot($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2019-07-01"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2019-07-01" }
+  )
+
+  task_label("Delete Azure snapshot response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure snapshot: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure snapshot successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
 ```

@@ -170,7 +170,7 @@ def general_outdated_terminology?(file, file_lines)
     end
   end
 
-  fail_message = "Outdated terminology found. Please remove references to defunct internal names for products or services:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#general-style-guidelines)] Outdated terminology found. Please remove references to defunct internal names for products or services:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
