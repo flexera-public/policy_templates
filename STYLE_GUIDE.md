@@ -169,7 +169,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 This should be followed by an itemized list of every credential required for the policy template. Each credential should include a link to Flexera documentation about the credential, a description of the expected provider tag for the credential, and a list of specific permissions the credential needs. Optional permissions for specific functionality should be indicated with a `*` character and a footnote.
 
 ```text
-- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+- [__AWS Credential__](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `ec2:DescribeRegions`
   - `ec2:DescribeImages`
   - `ec2:DescribeSnapshots`
@@ -271,43 +271,43 @@ Block names should always be in double-quotes and in [snake case](https://en.wik
 
 Each block in the policy template should follow these naming conventions:
 
-- **Parameter**
+- __Parameter__
   - Names begin with `param_`
   - _Example_: `param_email`
 
-- **Credential**
+- __Credential__
   - Names begin with `auth_`, followed by the provider or tool name.
   - _Example_: `auth_azure`
 
-- **Pagination**
+- __Pagination__
   - Names begin with `pagination_`, followed by the provider or tool name.
   - _Example_: `pagination_azure`
 
-- **Datasource**
+- __Datasource__
   - Names begin with `ds_`
   - _Example_: `ds_subscriptions`
 
-- **Script**
+- __Script__
   - Names begin with `js_`
   - _Example_: `js_filtered_subscriptions`
 
-- **Paired Datasource/Script**
+- __Paired Datasource/Script__
   - When a script pairs with a specific datasource, both blocks should share the same base name with their respective prefixes.
   - _Example_: `ds_filtered_subscriptions`, `js_filtered_subscriptions`
 
-- **Policy**
+- __Policy__
   - Names begin with `pol_` and reflect what the policy template checks.
   - _Example_: `pol_rightsize_compute`
 
-- **Escalation**
+- __Escalation__
   - Names begin with `esc_`
   - _Example_: `esc_email`
 
-- **Resolution**
+- __Resolution__
   - Names begin with `res_`
   - _Example_: `res_resize_instances`
 
-- **Cloud Workflow**
+- __Cloud Workflow__
   - Named after the function they perform.
   - _Example_: `define delete_unattached_volumes`
 
@@ -315,28 +315,28 @@ Each block in the policy template should follow these naming conventions:
 
 The following guidelines should be used when specifying policy template metadata:
 
-- **name**
+- __name__
   - Should clearly convey the policy template's purpose and, if applicable, include the cloud provider.
   - _Example_: `AWS Rightsize EC2 Instances`
 
-- **short_description**
+- __short_description__
   - In most cases, should match the first lines of the README description.
   - Should include a link to the README.
   - _Example_: `Check for EC2 instances that have inefficient utilization for a specified number of days and downsizes or terminates them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more.`
 
-- **long_description**
+- __long_description__
   - Always set to an empty string.
 
-- **category**
+- __category__
   - Should be set to one of the following categories based on the policy template's intended purpose: Compliance, Cost, Operational, SaaS Management, Security
 
-- **severity**
+- __severity__
   - Choose sensible default based on how the policy template will typically be used.
 
-- **default_frequency**
+- __default_frequency__
   - Choose sensible default based on how the policy template will typically be used.
 
-- **info**
+- __info__
   - _version (required)_: The version number of the policy template. Semantic versioning should be used. _Example_: 1.0.3
   - _provider (required)_: The cloud or software provider the policy template is for. _Example_: AWS
   - _hide_skip_approvals (required): Set to "true" for most use cases. This hides the UI option to skip approvals, which causes confusion for some users.
@@ -346,7 +346,7 @@ The following guidelines should be used when specifying policy template metadata
   - _deprecated_: Defaults to "false" if unspecified. Include if you need to set this to "true" to indicate that a policy template is deprecated and no longer recommended for general use.
   - _publish_: Defaults to "true" if unspecified. Include if you need to set this to "false" to prevent the policy template from being published in the catalog.
 
-- **tenancy**
+- __tenancy__
   - This metadata field is defunct and should not be specified in any policy template.
 
 #### Example
@@ -384,21 +384,21 @@ The following guidelines should be used for `parameters` blocks:
   1. `max_value`
   1. `default`
 
-- **category**
+- __category__
   - Should always be included for every parameter.
   - Should be used to group similar parameters together.
   - _Example_: `Filters`
 
-- **label**
+- __label__
   - A very short description of the parameter.
   - Should be a few words at the most and should be capitalized.
   - _Example_: `Email Addresses`
 
-- **description**
+- __description__
   - A longer description (1-3 sentences) of the parameter written in plain English.
   - _Example_: `Email addresses of the recipients you wish to notify when new incidents are created.`
 
-- **default**
+- __default__
   - A default should always be specified except in those cases where user input is absolutely required.
   - If the user is not required to specify a value, the default should either be an empty string `""` or an empty list `[]` depending on the type of the parameter.
   - If user input is required, put this comment instead of a default field: `# No default value, user input required`
@@ -466,11 +466,11 @@ The following guidelines should be used for `script` blocks:
   1. `result`
   1. `code`
 
-- **Name**
+- __Name__
   - If the script is called by a single datasource, their names should match. _Example_: `ds_filtered_subscriptions`, `js_filtered_subscriptions`
   - If the script is called by a multiple datasources, give it a clear name that indicates it's function. _Example_: `js_cost_request`
 
-- **Parameters**
+- __Parameters__
   - Parameters should, where possible, be given the same name as the element being passed into the parameter. For example, if the datasource is passing "param_email" as the first parameter to the script, then the name of this parameter in the script should also be "param_email".
 
   - Parameters should be in the following order when called by a datasource:
@@ -480,11 +480,11 @@ The following guidelines should be used for `script` blocks:
     1. variables. _Example_: `rs_org_id`
     1. raw values. _Example_: `"primary"`
 
-- **Result**
+- __Result__
   - For scripts used to generate an API request, the result field should be set to `request`
   - For all other scripts, it should be set to `result`
 
-- **Best Practices**
+- __Best Practices__
   - Don't do too much in a single script. Consider chaining 2 or 3 scripts if doing a complex multi-part operation. This will greatly simplify debugging.
   - Maintain consistent spacing and present code in a readable fashion.
   - Favor performance and readability over reducing the number of lines of code.
@@ -534,8 +534,8 @@ The following guidelines should be used for the `policy` block:
 
 - For the `detail_template` field:
   - Use complete English sentences with proper grammar/spelling where it makes sense to do so.
-  - **Currency**: Include currency symbol and appropriate separators. _Example_: `US$ 123,456.78`
-  - **Percentages**: Append `%`. _Example_: `89.45%`
+  - __Currency__: Include currency symbol and appropriate separators. _Example_: `US$ 123,456.78`
+  - __Percentages__: Append `%`. _Example_: `89.45%`
 
 - For the `export` field:
   - Place fields with data the user is more likely to care about near the top of the list.
@@ -583,12 +583,12 @@ The following guidelines should be used for `escalation` blocks:
   1. `email`
   1. `run`
 
-- **label**
+- __label__
   - A very short description of the escalation.
   - Should be a few words at the most and should be capitalized.
   - _Example_: `Stop Instances`
 
-- **description**
+- __description__
   - A longer description (1-3 sentences) of the escalation written in plain English.
   - _Example_: `Approval to stop all selected instances.`
 
