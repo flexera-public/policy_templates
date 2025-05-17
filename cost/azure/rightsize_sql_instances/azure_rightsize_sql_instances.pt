@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.5.3",
+  version: "6.0.0",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Database Instances",
@@ -118,7 +118,17 @@ parameter "param_stats_underutil_threshold_cpu_value" do
   type "number"
   category "Statistics"
   label "Underutilized Instance CPU Threshold (%)"
-  description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing."
+  description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Only applies to vCore-model SQL databases (GeneralPurpose, BusinessCritical, Hyperscale)"
+  min_value 0
+  max_value 100
+  default 60
+end
+
+parameter "param_stats_underutil_threshold_dtu_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance DTU Threshold (%)"
+  description "The DTU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Only applies to DTU-model SQL databases (Basic, Standard, Premium)"
   min_value 0
   max_value 100
   default 60
@@ -429,6 +439,7 @@ datasource "ds_azure_sql_databases" do
       field "type", jmes_path(col_item, "type")
       field "kind", jmes_path(col_item, "kind")
       field "sku", jmes_path(col_item, "sku")
+      field "tier", jmes_path(col_item, "sku.tier")
       field "tags", jmes_path(col_item, "tags")
       field "createdTime", jmes_path(col_item, "properties.creationDate")
       field "status", jmes_path(col_item, "properties.status")
@@ -592,7 +603,7 @@ datasource "ds_azure_sql_database_metrics" do
   batch true
   iterate $ds_azure_sql_databases_region_filtered
   request do
-    run_script $js_azure_sql_database_metrics, val(iter_item, "id"), $ds_stats_interval, $param_azure_endpoint, $param_stats_lookback
+    run_script $js_azure_sql_database_metrics, val(iter_item, "id"), val(iter_item, "tier"), $ds_stats_interval, $param_azure_endpoint, $param_stats_lookback
   end
   result do
     encoding "json"
@@ -621,7 +632,7 @@ end
 
 # https://learn.microsoft.com/en-us/azure/azure-monitor/reference/supported-metrics/microsoft-sql-servers-databases-metrics
 script "js_azure_sql_database_metrics", type: "javascript" do
-  parameters "resource_id", "ds_stats_interval", "param_azure_endpoint", "param_stats_lookback"
+  parameters "resource_id", "resource_tier", "ds_stats_interval", "param_azure_endpoint", "param_stats_lookback"
   result "request"
   code <<-EOS
   end_date = new Date()
@@ -638,6 +649,12 @@ script "js_azure_sql_database_metrics", type: "javascript" do
 
   timespan = start_date.toISOString() + "/" + end_date.toISOString()
 
+  metricnames = "cpu_percent,connection_successful"
+
+  if (resource_tier == "Basic" || resource_tier == "Standard" || resource_tier == "Premium") {
+    metricnames = "dtu_consumption_percent,connection_successful"
+  }
+
   var request = {
     auth: "auth_azure",
     pagination: "pagination_azure",
@@ -646,7 +663,7 @@ script "js_azure_sql_database_metrics", type: "javascript" do
     query_params: {
       "api-version": "2018-01-01",
       "timespan": timespan,
-      "metricnames": "cpu_percent,connection_successful",
+      "metricnames": metricnames,
       "aggregation": "Average,Minimum,Maximum,count",
       "interval": ds_stats_interval["api"]
     },
@@ -668,11 +685,11 @@ datasource "ds_azure_sql_resize_map" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $ds_azure_sql_resize_map, $ds_applied_policy, $param_stats_underutil_threshold_cpu_value, $param_stats_lookback, $param_unused_or_underutilized, $param_stats_threshold, $param_downsize_multiple
+  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $ds_azure_sql_resize_map, $ds_applied_policy, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_dtu_value, $param_stats_lookback, $param_unused_or_underutilized, $param_stats_threshold, $param_downsize_multiple
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_azure_sql_database_metrics", "ds_azure_sql_resize_map", "ds_applied_policy", "param_stats_underutil_threshold_cpu_value", "param_stats_lookback", "param_unused_or_underutilized", "param_stats_threshold", "param_downsize_multiple"
+  parameters "ds_azure_sql_database_metrics", "ds_azure_sql_resize_map", "ds_applied_policy", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_dtu_value", "param_stats_lookback", "param_unused_or_underutilized", "param_stats_threshold", "param_downsize_multiple"
   result "result"
   code <<-EOS
   // Function to calculate percentiles from metrics
@@ -705,6 +722,7 @@ script "js_merged_metrics", type: "javascript" do
       kind: db['kind'],
       type: db['type'],
       sku: db['sku'],
+      tier: db['tier'],
       tags: tags.join(', '),
       createdTime: new Date(db['createdTime']).toISOString(),
       lastAccessed: "> " + param_stats_lookback + " Days Ago",
@@ -719,6 +737,7 @@ script "js_merged_metrics", type: "javascript" do
 
     connection_metrics = null
     cpu_metrics = null
+    dtu_metrics = null
 
     _.each(db['value'], function(metric) {
       if (metric['name']['value'] == 'connection_successful') {
@@ -727,6 +746,12 @@ script "js_merged_metrics", type: "javascript" do
 
       if (metric['name']['value'] == 'cpu_percent') {
         cpu_metrics = metric['timeseries'][0]['data']
+        instance['purchase_model'] = "vCore"
+      }
+
+      if (metric['name']['value'] == 'dtu_consumption_percent') {
+        dtu_metrics = metric['timeseries'][0]['data']
+        instance['purchase_model'] = "DTU"
       }
     })
 
@@ -756,57 +781,72 @@ script "js_merged_metrics", type: "javascript" do
       }
     }
 
-    if (cpu_metrics != null && instance['recommendationType'] != 'Delete' && param_unused_or_underutilized != "Unused") {
-      if (cpu_metrics.length > 0) {
-        minimums = _.pluck(cpu_metrics, 'minimum')
-        maximums = _.pluck(cpu_metrics, 'maximum')
-        averages = _.pluck(cpu_metrics, 'average')
+    if ((cpu_metrics != null || dtu_metrics != null) && instance['recommendationType'] != 'Delete' && param_unused_or_underutilized != "Unused") {
+      metrics = cpu_metrics ? cpu_metrics : dtu_metrics
 
-        cpu_minimum = null
-        cpu_maximum = 0
-        cpu_average = 0
-        cpu_p90 = 0
-        cpu_p95 = 0
-        cpu_p99 = 0
+      if (metrics.length > 0) {
+        minimums = _.pluck(metrics, 'minimum')
+        maximums = _.pluck(metrics, 'maximum')
+        averages = _.pluck(metrics, 'average')
+
+        metric_minimum = null
+        metric_maximum = 0
+        metric_average = 0
+        metric_p90 = 0
+        metric_p95 = 0
+        metric_p99 = 0
 
         _.each(minimums, function(item) {
-          if (cpu_minimum == null || item < cpu_minimum) { cpu_minimum = item }
+          if (metric_minimum == null || item < metric_minimum) { metric_minimum = item }
         })
 
         _.each(maximums, function(item) {
-          if (item > cpu_maximum) { cpu_maximum = item }
+          if (item > metric_maximum) { metric_maximum = item }
         })
 
-        if (cpu_minimum == null) { cpu_minimum = 0 }
+        if (metric_minimum == null) { metric_minimum = 0 }
 
         if (averages.length > 0) {
-          cpu_average = _.reduce(averages, function(memo, num) { return memo + num }, 0) / averages.length
+          metric_average = _.reduce(averages, function(memo, num) { return memo + num }, 0) / averages.length
         }
 
         if (minimums.length + maximums.length + averages.length > 0) {
           // combine all points from minimums, maximums, averages
           // use percentile() function to get the percentile values from all measured utilization points
-          cpu_p90 = percentile(minimums.concat(maximums, averages), 90)
-          cpu_p95 = percentile(minimums.concat(maximums, averages), 95)
-          cpu_p99 = percentile(minimums.concat(maximums, averages), 99)
+          metric_p90 = percentile(minimums.concat(maximums, averages), 90)
+          metric_p95 = percentile(minimums.concat(maximums, averages), 95)
+          metric_p99 = percentile(minimums.concat(maximums, averages), 99)
         }
 
-        if (param_stats_threshold == "Average") { cpu_test_value = cpu_average }
-        if (param_stats_threshold == "Maximum") { cpu_test_value = cpu_maximum }
-        if (param_stats_threshold == "p90") { cpu_test_value = cpu_p90 }
-        if (param_stats_threshold == "p95") { cpu_test_value = cpu_p95 }
-        if (param_stats_threshold == "p99") { cpu_test_value = cpu_p99 }
+        if (param_stats_threshold == "Average") { metric_test_value = metric_average }
+        if (param_stats_threshold == "Maximum") { metric_test_value = metric_maximum }
+        if (param_stats_threshold == "p90") { metric_test_value = metric_p90 }
+        if (param_stats_threshold == "p95") { metric_test_value = metric_p95 }
+        if (param_stats_threshold == "p99") { metric_test_value = metric_p99 }
 
-        if (cpu_test_value <= param_stats_underutil_threshold_cpu_value) {
-          instance['cpu_minimum'] = cpu_minimum
-          instance['cpu_maximum'] = cpu_maximum
-          instance['cpu_average'] = cpu_average
-          instance['cpu_p90'] = cpu_p90
-          instance['cpu_p95'] = cpu_p95
-          instance['cpu_p99'] = cpu_p99
+        if (cpu_metrics && metric_test_value <= param_stats_underutil_threshold_cpu_value) {
+          instance['cpu_minimum'] = metric_minimum
+          instance['cpu_maximum'] = metric_maximum
+          instance['cpu_average'] = metric_average
+          instance['cpu_p90'] = metric_p90
+          instance['cpu_p95'] = metric_p95
+          instance['cpu_p99'] = metric_p99
           instance['thresholdType'] = param_stats_threshold
           instance['recommendationType'] = 'Downsize'
+        }
 
+        if (dtu_metrics && metric_test_value <= param_stats_underutil_threshold_dtu_value) {
+          instance['dtu_minimum'] = metric_minimum
+          instance['dtu_maximum'] = metric_maximum
+          instance['dtu_average'] = metric_average
+          instance['dtu_p90'] = metric_p90
+          instance['dtu_p95'] = metric_p95
+          instance['dtu_p99'] = metric_p99
+          instance['thresholdType'] = param_stats_threshold
+          instance['recommendationType'] = 'Downsize'
+        }
+
+        if (instance['recommendationType'] == 'Downsize') {
           tier = instance['sku']['tier']
           type = instance['sku']['name'] + '_' + instance['sku']['capacity']
 
@@ -818,8 +858,8 @@ script "js_merged_metrics", type: "javascript" do
                 if (param_downsize_multiple == "Yes") {
                   type = instance['sku']['name'] + '_' + instance['newResourceType']
 
-                  while (typeof(ds_azure_sql_resize_map[tier][type]['down']) == 'string' && cpu_test_value * 2 <= param_stats_underutil_threshold_cpu_value) {
-                    cpu_test_value = cpu_test_value * 2
+                  while (typeof(ds_azure_sql_resize_map[tier][type]['down']) == 'string' && metric_test_value * 2 <= param_stats_underutil_threshold_cpu_value) {
+                    metric_test_value = metric_test_value * 2
                     instance['newResourceType'] = ds_azure_sql_resize_map[tier][type]['down']
                     type = instance['sku']['name'] + '_' + instance['newResourceType']
                   }
@@ -1024,6 +1064,8 @@ script "js_downsize_sql_incident", type: "javascript" do
         resourceKind: db['kind'],
         type: db['type'],
         sku: db['sku'],
+        tier: db['tier'],
+        purchase_model: db['purchase_model'],
         resourceType: db['sku']['capacity'],
         tags: db['tags'],
         createdTime: db['createdTime'],
@@ -1035,12 +1077,18 @@ script "js_downsize_sql_incident", type: "javascript" do
         recommendationType: db['recommendationType'],
         recommendationDetails: db['recommendationDetails'],
         newResourceType: db['newResourceType'],
-        cpuAverage: Math.round(db['cpu_average'] * 100) / 100,
-        cpuMinimum: Math.round(db['cpu_minimum'] * 100) / 100,
-        cpuMaximum: Math.round(db['cpu_maximum'] * 100) / 100,
-        cpuP90: Math.round(db['cpu_p90'] * 100) / 100,
-        cpuP95: Math.round(db['cpu_p95'] * 100) / 100,
-        cpuP99: Math.round(db['cpu_p99'] * 100) / 100,
+        cpuAverage: db['cpu_average'] ? Math.round(db['cpu_average'] * 100) / 100 : "",
+        cpuMinimum: db['cpu_minimum'] ? Math.round(db['cpu_minimum'] * 100) / 100 : "",
+        cpuMaximum: db['cpu_maximum'] ? Math.round(db['cpu_maximum'] * 100) / 100 : "",
+        cpuP90: db['cpu_p90'] ? Math.round(db['cpu_p90'] * 100) / 100 : "",
+        cpuP95: db['cpu_p95'] ? Math.round(db['cpu_p95'] * 100) / 100 : "",
+        cpuP99: db['cpu_p99'] ? Math.round(db['cpu_p99'] * 100) / 100 : "",
+        dtuAverage: db['dtu_average'] ? Math.round(db['dtu_average'] * 100) / 100 : "",
+        dtuMinimum: db['dtu_minimum'] ? Math.round(db['dtu_minimum'] * 100) / 100 : "",
+        dtuMaximum: db['dtu_maximum'] ? Math.round(db['dtu_maximum'] * 100) / 100 : "",
+        dtuP90: db['dtu_p90'] ? Math.round(db['dtu_p90'] * 100) / 100 : "",
+        dtuP95: db['dtu_p95'] ? Math.round(db['dtu_p95'] * 100) / 100 : "",
+        dtuP99: db['dtu_p99'] ? Math.round(db['dtu_p99'] * 100) / 100 : "",
         thresholdType: db['thresholdType'],
         lookbackPeriod: db['lookbackPeriod'],
         threshold: db['threshold'],
@@ -1079,16 +1127,24 @@ script "js_downsize_sql_incident", type: "javascript" do
 
   if (param_unused_or_underutilized == 'Underutilized') {
     context_message = [
-      "An Azure SQL Database is considered underutilized if it has a CPU usage " + param_stats_threshold.toLowerCase() + " below ",
+      "A vCore-based Azure SQL Database is considered underutilized if it has a CPU usage " + param_stats_threshold.toLowerCase() + " below ",
       param_stats_underutil_threshold_cpu_value, "% for the last ", param_stats_lookback, " ", day_message,
+      ", regardless of whether it has had any connections to it in that same time period. ",
+      "CPU metrics were gathered at a granularity of '", ds_stats_interval['pretty'], "'.\n\n",
+      "A DTU-based Azure SQL Database is considered underutilized if it has a DTU usage " + param_stats_threshold.toLowerCase() + " below ",
+      param_stats_underutil_threshold_dtu_value, "% for the last ", param_stats_lookback, " ", day_message,
       ", regardless of whether it has had any connections to it in that same time period. ",
       "CPU metrics were gathered at a granularity of '", ds_stats_interval['pretty'], "'.\n\n"
     ].join('')
   } else {
     context_message = [
-      "An Azure SQL Database is considered underutilized if it has had at least one connection to it ",
+      "A vCore-based Azure SQL Database is considered underutilized if it has had at least one connection to it ",
       "in the last ", param_stats_lookback, " ", day_message, " but has an average CPU usage below ",
       param_stats_underutil_threshold_cpu_value, "% for that same time period. ",
+      "These metrics were gathered at a granularity of '", ds_stats_interval['pretty'], "'.\n\n",
+      "A DTU-based Azure SQL Database is considered underutilized if it has had at least one connection to it ",
+      "in the last ", param_stats_lookback, " ", day_message, " but has an average DTU usage below ",
+      param_stats_underutil_threshold_dtu_value, "% for that same time period. ",
       "These metrics were gathered at a granularity of '", ds_stats_interval['pretty'], "'.\n\n"
     ].join('')
   }
@@ -1103,7 +1159,7 @@ script "js_downsize_sql_incident", type: "javascript" do
     min_age_message = "Only Azure SQL Databases created more than " + param_minimum_age + " days ago were included in the results.\n\n"
   }
 
-  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n__NOTE__: CPU metrics are only reported for vCore-based databases and DTU metrics for DTU-based databases.\n\n"
 
   savings_message = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
 
@@ -1116,6 +1172,8 @@ script "js_downsize_sql_incident", type: "javascript" do
     type: "",
     resourceType: "",
     sku: "",
+    tier: "",
+    purchase_model: "",
     tags: "",
     resourceGroup: "",
     accountID: "",
@@ -1124,6 +1182,17 @@ script "js_downsize_sql_incident", type: "javascript" do
     recommendationDetails: "",
     newResourceType: "",
     cpuAverage: "",
+    cpuMinimum: "",
+    cpuMaximum: "",
+    cpuP90: "",
+    cpuP95: "",
+    cpuP99: "",
+    dtuAverage: "",
+    dtuMinimum: "",
+    dtuMaximum: "",
+    dtuP90: "",
+    dtuP95: "",
+    dtuP99: "",
     lookbackPeriod: "",
     threshold: "",
     policy_name: "",
@@ -1202,6 +1271,8 @@ script "js_unused_sql_incident", type: "javascript" do
         resourceKind: db['kind'],
         type: db['type'],
         sku: db['sku'],
+        tier: db['tier'],
+        purchase_model: db['purchase_model'],
         resourceType: db['sku']['capacity'],
         tags: db['tags'],
         createdTime: db['createdTime'],
@@ -1276,6 +1347,8 @@ script "js_unused_sql_incident", type: "javascript" do
     type: "",
     resourceType: "",
     sku: "",
+    tier: "",
+    purchase_model: "",
     tags: "",
     resourceGroup: "",
     accountID: "",
@@ -1317,7 +1390,7 @@ policy "pol_azure_sql_utilization" do
     check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Downsize"))
     escalate $esc_email
     escalate $esc_downsize_instances
-    hash_exclude "savings", "savingsCurrency", "tags", "cpuAverage", "policy_name", "total_savings", "message"
+    hash_exclude "policy_name", "total_savings", "message", "savings", "savingsCurrency", "tags", "cpuAverage", "cpuMinimum", "cpuMaximum", "cpuP90", "cpuP95", "cpuP99", "dtuAverage", "dtuMinimum", "dtuMaximum", "dtuP90", "dtuP95", "dtuP99"
     export do
       resource_level true
       field "accountID" do
@@ -1362,6 +1435,9 @@ policy "pol_azure_sql_utilization" do
         label "SKU - Tier"
         path "sku.tier"
       end
+      field "purchase_model" do
+        label "Purchase Model"
+      end
       field "type" do
         label "Type"
       end
@@ -1397,6 +1473,24 @@ policy "pol_azure_sql_utilization" do
       end
       field "cpuP99" do
         label "CPU p99"
+      end
+      field "dtuMaximum" do
+        label "DTU Maximum %"
+      end
+      field "dtuMinimum" do
+        label "DTU Minimum %"
+      end
+      field "dtuAverage" do
+        label "DTU Average %"
+      end
+      field "dtuP90" do
+        label "DTU p90"
+      end
+      field "dtuP95" do
+        label "DTU p95"
+      end
+      field "dtuP99" do
+        label "DTU p99"
       end
       field "service" do
         label "Service"
@@ -1472,6 +1566,12 @@ policy "pol_azure_sql_utilization" do
       field "status" do
         label "Status"
       end
+      field "resourceType" do
+        label "Current Capacity"
+      end
+      field "newResourceType" do
+        label "Recommended Capacity"
+      end
       field "skuName" do
         label "SKU - Name"
         path "sku.name"
@@ -1480,11 +1580,8 @@ policy "pol_azure_sql_utilization" do
         label "SKU - Tier"
         path "sku.tier"
       end
-      field "resourceType" do
-        label "SKU - Capacity"
-      end
-      field "newResourceType" do
-        label "Recommended Capacity"
+      field "purchase_model" do
+        label "Purchase Model"
       end
       field "savings" do
         label "Estimated Monthly Savings"

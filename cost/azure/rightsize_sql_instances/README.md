@@ -2,14 +2,16 @@
 
 ## What It Does
 
-This policy checks all the Azure SQL single database instances in Azure Subscriptions for the average CPU usage and number of connections over a user-specified number of days. If there were no connections to the instance, the instance is recommended for deletion. If there were connections but the average CPU usage was below a user-specified threshold, the instance is recommended for downsizing. Both sets of instances returned from this policy are emailed to the user.
+This policy checks usage for all Azure SQL single database instances in Azure Subscriptions over a user-specified number of days. If there were no connections to the instance, the instance is recommended for deletion. If there were connections but the average CPU/DTU usage was below a user-specified threshold, the instance is recommended for downsizing. Both sets of instances returned from this policy are emailed to the user.
 
 ## How It Works
 
-- The policy leverages the Azure API to check all Azure SQL single database instances and then checks the number of connections and average CPU utilization over a user-specified number of days.
+- The policy leverages the Azure API to check all Azure SQL single database instances and then checks the number of connections and utilization over a user-specified number of days.
+  - Utilization is based on CPU usage for vCore-model databases.
+  - Utilization is based on DTU usage for DTU-model databases.
 - The policy identifies all instances that either have had no connections over a user-specified number of days and provides the relevant recommendation.
 - The recommendation provided for unused instances is a deletion action. These instances can be deleted in an automated manner or after approval.
-- The policy identifies all instances that have had connections but have average CPU usage below the user-specified threshold over a user-specified number of days and provides the relevant recommendation.
+- The policy identifies all instances that have had connections but have average usage below the user-specified threshold over a user-specified number of days and provides the relevant recommendation.
 - The recommendation provided for underutilized instances is a downsize action. These instances can be downsized in an automated manner or after approval.
 
 ### Policy Savings Details
@@ -43,9 +45,10 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Threshold Statistic* - Statistic to use when determining if a SQL instance is underutilized.
 - *Statistic Interval* - The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets.
-- *Statistic Lookback Period* - How many days back to look at connection and CPU utilization data for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
+- *Statistic Lookback Period* - How many days back to look at connection and CPU/DTU utilization data for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
 - *Report Unused or Underutilized* - Whether to report on unused instances, underutilized instances, or both. If both are selected, unused instances will not appear in the list of underutilized instances regardless of CPU usage.
-- *Underutilized Instance CPU Threshold (%)* - The CPU threshold at which to consider an instance to be underutilized and therefore be flagged for downsizing.
+- *Underutilized Instance CPU Threshold (%)* - The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Only applies to vCore-model SQL databases (GeneralPurpose, BusinessCritical, Hyperscale)
+- *Underutilized Instance DTU Threshold (%)* - The DTU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Only applies to DTU-model SQL databases (Basic, Standard, Premium)
 - *Skip Instance Sizes* - Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
