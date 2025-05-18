@@ -159,7 +159,7 @@ def extract_permissions_from_readme(readme_content)
               permission = permission.chomp(symbol_if_exists[:symbol])
 
               # Failsafe to ensure that write permissions are not marked as read-only due to README errors
-              if permission.downcase().include?("write") || permission.downcase().include?("create") || permission.downcase().include?("delete") || permission.downcase().include?("start") || permission.downcase().include?("stop") || permission.downcase().include?("modify") || permission.downcase().include?("update")
+              if permission.downcase().include?("write") || permission.downcase().include?("create") || permission.downcase().include?("delete") || permission.downcase().include?("start") || permission.downcase().include?("stop") || permission.downcase().include?("modify") || permission.downcase().include?("update") || permission.downcase().include?("change")
                 read_only_permission = false
               end
 
