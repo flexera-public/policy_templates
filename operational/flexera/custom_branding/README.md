@@ -1,4 +1,4 @@
-# Custom Branding
+# Configure Custom Branding
 
 ## What It Does
 
@@ -10,7 +10,7 @@ This policy template allows a customer to apply their own branding to the Flexer
 - For non MSP Customers you can only apply the All Customer Settings Category.
 - For MSP Customers you can apply the All Customer Settings Category and the MSP Specific Settings Category.
 - Select the areas that require branding changes by either selecting Yes/No for show/hide features, or, entering a URL to Images or Links or text to replace existing text.
-- If there are items that do not need to be changed, leave the default text of No Change and it will be ignored
+- If there are items that do not need to be changed, leave the defaults of either No or blank and it will be ignored.
 - Apply the policy template and review if there are any errors, an incident will be generated if an item fails.
 - After the policy template has been applied and changes are in effect, it is recommended to terminate the applied policy.
 
@@ -20,7 +20,7 @@ This policy template has the following input parameters required when being appl
 
 ### Applies to whole policy (Optional)
 
-- *Email addresses* - A list of email addresses to notify
+- *Email Addresses* - A list of email addresses to notify
 
 ### Category : All Customer Settings
 
