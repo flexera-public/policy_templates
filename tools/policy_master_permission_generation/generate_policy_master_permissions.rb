@@ -147,7 +147,7 @@ def extract_permissions_from_readme(readme_content)
 
             if symbol_if_exists != nil && !symbol_if_exists[:detail].strip.empty?
               required = false
-              if symbol_if_exists[:detail].include?("Only required for taking action") || symbol_if_exists[:detail].include?("These permissions enable taking actions against cloud resources")
+              if symbol_if_exists[:detail].include?("taking action")
                 read_only_permission = false
               end
 
