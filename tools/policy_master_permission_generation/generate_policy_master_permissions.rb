@@ -158,6 +158,11 @@ def extract_permissions_from_readme(readme_content)
 
               permission = permission.chomp(symbol_if_exists[:symbol])
 
+              # Failsafe to ensure that write permissions are not marked as read-only due to README errors
+              if permission.downcase().include?("write") || permission.downcase().include?("create") || permission.downcase().include?("delete") || permission.downcase().include?("start") || permission.downcase().include?("stop") || permission.downcase().include?("modify") || permission.downcase().include?("update")
+                read_only_permission = false
+              end
+
               if credentials_section == "roles"
                 policy_credentials << { role: permission, provider: provider, read_only: read_only_permission, required: required, description: symbol_if_exists[:detail] }
               elsif credentials_section == "permissions"
