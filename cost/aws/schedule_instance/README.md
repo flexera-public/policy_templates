@@ -86,20 +86,22 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `ec2:DescribeInstances`
-  - `ec2:StartInstances`
-  - `ec2:StopInstances`
-  - `ec2:DeleteTags`
+  - `ec2:StartInstances`*
+  - `ec2:StopInstances`*
+  - `ec2:DeleteTags`*
   - `ec2:DescribeRegions`
-  - `kms:CreateGrant`‡
-  - `kms:Decrypt`‡
-  - `ec2:CreateTags`*
-  - `ec2:TerminateInstances`†
+  - `kms:CreateGrant`*§
+  - `kms:Decrypt`*§
+  - `ec2:CreateTags`*†
+  - `ec2:TerminateInstances`*‡
 
-  \* Only required for `Update Schedule` Action; the policy will still start/stop instance without this permission.
+  \* These permissions enable taking actions against cloud resources.
 
-  † Only required for `Terminate Instance` Action; the policy will still start/stop instance without this permission.
+  † Only required for `Update Schedule` Action; the policy will still start/stop instance without this permission.
 
-  ‡ Only required if using Customer Managed KMS Key on Volumes mounted by EC2 Instance(s)
+  ‡ Only required for `Terminate Instance` Action; the policy will still start/stop instance without this permission.
+
+  § Only required if using Customer Managed KMS Key on Volumes mounted by EC2 Instance(s)
 
   Example IAM Permission Policy:
 
