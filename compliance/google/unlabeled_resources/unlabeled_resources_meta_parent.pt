@@ -17,6 +17,33 @@ info(
 # Parameters
 ##############################################################################
 
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 ## Meta Parent Parameters
 ## These are params specific to the meta parent policy.
 parameter "param_combined_incident_email" do
@@ -769,6 +796,86 @@ script "js_take_in_parameters", type: "javascript" do
   EOS
 end
 
+datasource "ds_children_in_error" do
+  run_script $js_children_in_error, $ds_take_in_parameters
+end
+
+script "js_children_in_error", type: "javascript" do
+  parameters "ds_take_in_parameters"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_take_in_parameters["grid"], function(item) {
+    return item["policy_status"] == "error"
+  })
+EOS
+end
+
+datasource "ds_children_with_error_details" do
+  iterate $ds_children_in_error
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", val(iter_item, 'id')])
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    field "error", jmes_path(response, "error")
+    field "errored_at", jmes_path(response, "erroredAt")
+    field "id", val(iter_item, "id")
+    field "policy_name", val(iter_item, "policy_name")
+    field "meta_policy_status", val(iter_item, "meta_policy_status")
+    field "policy_status", val(iter_item, "policy_status")
+    field "policy_last_update", val(iter_item, "policy_last_update")
+  end
+end
+
+datasource "ds_children_with_error_details_cleaned" do
+  run_script $js_children_with_error_details_cleaned, $ds_children_with_error_details, $ds_children_in_error, $ds_take_in_parameters
+end
+
+script "js_children_with_error_details_cleaned", type: "javascript" do
+  parameters "ds_children_with_error_details", "ds_children_in_error", "ds_take_in_parameters"
+  result "result"
+  code <<-'EOS'
+  reported_errors = _.map(ds_children_with_error_details, function(item) {
+    error = typeof(item["error"]) == 'string' ? item["error"].replace(/:\\n/g, ': ').replace(/:\n/g, ': ').replace(/\\n/g, '; ').replace(/\n/g, '; ').replace(/{/g, '').replace(/}/g, '') : "Unknown"
+    errored_at = typeof(item["errored_at"]) == 'string' ? item["errored_at"] : "Unknown"
+
+    return {
+      id: item["id"],
+      policy_name: item["policy_name"],
+      meta_policy_status: item["meta_policy_status"],
+      policy_status: item["policy_status"],
+      policy_last_update: item["policy_last_update"],
+      error: error,
+      errored_at: errored_at
+    }
+  })
+
+  unreported_error_list = _.reject(ds_children_in_error, function(item) {
+    return _.contains(_.pluck(reported_errors, 'id'), item['id'])
+  })
+
+  unreported_errors = _.map(unreported_error_list, function(item) {
+    return {
+      id: item["id"],
+      policy_name: item["policy_name"],
+      meta_policy_status: item["meta_policy_status"],
+      policy_status: item["policy_status"],
+      policy_last_update: item["policy_last_update"],
+      error: "Unknown",
+      errored_at: "Unknown"
+    }
+  })
+
+  result = {
+    grid: _.sortBy(reported_errors.concat(unreported_errors), 'id'),
+    parent_policy: ds_take_in_parameters["parent_policy"]
+  }
+EOS
+end
+
 datasource "ds_only_grid" do
   run_script $js_only_grid, $ds_take_in_parameters
 end
@@ -1041,6 +1148,43 @@ EOS
     escalate $delete_policies
     check eq(size(data),0)
   end
+
+  # Children in Error State
+  validate $ds_children_with_error_details_cleaned do
+    summary_template "Policies in error"
+    detail_template <<-EOS
+Child policies with errors for **{{ data.parent_policy.name }}**
+
+Child policies can be terminated from the incident page by selecting them and clicking the 'Delete Child Policies' option. New child policies will be created the next time the meta parent policy executes.
+EOS
+    check eq(size(val(data, "grid")), 0)
+    escalate $delete_policies_from_ui
+    export "grid" do
+      resource_level true
+      field "id" do
+        label "Applied Policy ID"
+      end
+      field "policy_name" do
+        label "Applied Policy Name"
+        format "link-external"
+      end
+      field "meta_policy_status" do
+        label "Meta Child Policy Status"
+      end
+      field "policy_status" do
+        label "Policy Status"
+      end
+      field "policy_last_update" do
+        label "Policy Last Update"
+      end
+      field "errored_at" do
+        label "Error Time"
+      end
+      field "error" do
+        label "Error Message"
+      end
+    end
+  end
 end
 
 # Begin Shared Functions for Child Actions from Consolidated Incident
@@ -1272,6 +1416,13 @@ define update_applied_policies($data, $governance_host, $rs_project_id) return $
 end
 
 escalation "delete_policies" do
+  run "delete_applied_policies", data, rs_governance_host, rs_project_id
+end
+
+escalation "delete_policies_from_ui" do
+  automatic false
+  label "Delete Child Policies"
+  description "Approval to delete selected child policies. New child policies will be created the next time the meta parent executes."
   run "delete_applied_policies", data, rs_governance_host, rs_project_id
 end
 
