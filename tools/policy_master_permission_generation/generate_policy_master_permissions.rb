@@ -147,11 +147,21 @@ def extract_permissions_from_readme(readme_content)
 
             if symbol_if_exists != nil && !symbol_if_exists[:detail].strip.empty?
               required = false
-              if symbol_if_exists[:detail].include?("Only required for taking action")
+
+              if symbol_if_exists[:detail].include?("taking action")
                 read_only_permission = false
               end
 
+              if symbol_if_exists[:detail].include?("These permissions enable taking actions against cloud resources.")
+                required = true
+              end
+
               permission = permission.chomp(symbol_if_exists[:symbol])
+
+              # Failsafe to ensure that write permissions are not marked as read-only due to README errors
+              if permission.downcase().include?("write") || permission.downcase().include?("create") || permission.downcase().include?("delete") || permission.downcase().include?("start") || permission.downcase().include?("stop") || permission.downcase().include?("modify") || permission.downcase().include?("update") || permission.downcase().include?("change")
+                read_only_permission = false
+              end
 
               if credentials_section == "roles"
                 policy_credentials << { role: permission, provider: provider, read_only: read_only_permission, required: required, description: symbol_if_exists[:detail] }

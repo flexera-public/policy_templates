@@ -1,5 +1,10 @@
 # Changelog
 
+## v6.0.1
+
+- Fixed an error where multiple violations would be generated from the same instance.
+- Fixed an error where the policy fails due to not finding "PowerState" of an instance.
+
 ## v6.0.0
 
 - Corrected issue where policy template incorrectly calculated length of time an instance had been stopped for.

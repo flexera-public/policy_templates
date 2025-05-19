@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.5
+
+- Minor change to policy template `short_description`. Functionality unchanged.
+
 ## v2.0.4
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
