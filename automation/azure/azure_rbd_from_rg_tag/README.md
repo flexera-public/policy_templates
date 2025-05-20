@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy creates and updates custom Rule-Based Dimensions that surface the specified Azure Resource Group tag keys in the Flexera One platform. This allows costs to be sliced by the values of the tag keys in question. Rules added to these rule-based dimensions manually, or by other policy templates, will not be deleted.
+This policy template creates and updates custom Rule-Based Dimensions that surface the specified Azure Resource Group tag keys in the Flexera One platform. This allows costs to be sliced by the values of the tag keys in question. Rules added to these rule-based dimensions manually, or by other policy templates, will not be deleted.
 
 NOTE: If applying this policy template multiple times for multiple Azure tenants, please give each applied policy a distinct name. This is to ensure the policy templates do not overwrite each other's work.
 
