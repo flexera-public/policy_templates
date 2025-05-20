@@ -1,5 +1,6 @@
 require 'json'
-
+require 'net/http'
+require 'uri'
 class Changelog
   attr_accessor :path, :version, :changes
 
@@ -91,11 +92,40 @@ changelogs.each do |changelog|
   end
 end
 
-# Output Notification Content as a JSON string to be used directly in YAML workflow file
-all_notification_content = JSON.dump(all_notification_content_array)
-puts "::set-output name=notification_content::#{all_notification_content}"
+# Retrieve Teams webhook URL from environment variable
+webhook = URI.parse(ENV['TEAMS_WEBHOOK_URL'])
 
-# Output GitHub Commit URL to be used directly in YAML workflow file
+# Store Notification Content
+notification_content = JSON.dump(all_notification_content_array)
+
+# Store GitHub Commit URL
 commit_id = `git rev-parse origin/master`
-commit_path = "https://github.com/flexera-public/policy_templates/commit/" + commit_id
-puts "::set-output name=commit_url::#{commit_path}"
+commit_url = "https://github.com/flexera-public/policy_templates/commit/" + commit_id
+
+# Create the final JSON payload
+payload = JSON.dump({
+  "@type": "MessageCard",
+  "@content": "http://schema.org/extensions",
+  "themeColor": "0076D7",
+  "summary": "New Policy Updates",
+  "sections": notification_content,
+  "potentialAction": [{
+    "@type": "OpenUri",
+    "name": "See Change Details in GitHub",
+    "targets": [{
+      "os": "default",
+      "uri": commit_url
+    }]
+  }]
+})
+
+# Make request to Teams webhook to produce notification and output response
+http = Net::HTTP.new(webhook.host, webhook.port)
+http.use_ssl = webhook.scheme == 'https'
+
+request = Net::HTTP::Post.new(webhook.path, { 'Content-Type' => 'application/json' })
+request.body = payload
+
+response = http.request(request)
+puts "Response: #{response.code} #{response.message}"
+puts response.body
