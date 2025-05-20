@@ -120,7 +120,7 @@ if all_notification_content_array.length > 0
     "@content": "http://schema.org/extensions",
     "themeColor": "0076D7",
     "summary": "New Policy Updates",
-    "sections": JSON.dump(all_notification_content_array),
+    "sections": all_notification_content_array,
     "potentialAction": [{
       "@type": "OpenUri",
       "name": "See Change Details in GitHub",
