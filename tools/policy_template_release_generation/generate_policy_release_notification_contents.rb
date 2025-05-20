@@ -92,40 +92,39 @@ changelogs.each do |changelog|
   end
 end
 
-# Retrieve Teams webhook URL from environment variable
-webhook = URI.parse(ENV['TEAMS_WEBHOOK_URL'])
+# Only send notification if there is something worth notifying about
+if all_notification_content_array.length > 0
+  # Generate GitHub Commit URL
+  commit_url = "https://github.com/flexera-public/policy_templates/commit/" + `git rev-parse origin/master`
 
-# Store Notification Content
-notification_content = JSON.dump(all_notification_content_array)
-
-# Store GitHub Commit URL
-commit_id = `git rev-parse origin/master`
-commit_url = "https://github.com/flexera-public/policy_templates/commit/" + commit_id
-
-# Create the final JSON payload
-payload = JSON.dump({
-  "@type": "MessageCard",
-  "@content": "http://schema.org/extensions",
-  "themeColor": "0076D7",
-  "summary": "New Policy Updates",
-  "sections": notification_content,
-  "potentialAction": [{
-    "@type": "OpenUri",
-    "name": "See Change Details in GitHub",
-    "targets": [{
-      "os": "default",
-      "uri": commit_url
+  # Create the final JSON payload
+  payload = JSON.dump({
+    "@type": "MessageCard",
+    "@content": "http://schema.org/extensions",
+    "themeColor": "0076D7",
+    "summary": "New Policy Updates",
+    "sections": JSON.dump(all_notification_content_array),
+    "potentialAction": [{
+      "@type": "OpenUri",
+      "name": "See Change Details in GitHub",
+      "targets": [{
+        "os": "default",
+        "uri": commit_url
+      }]
     }]
-  }]
-})
+  })
 
-# Make request to Teams webhook to produce notification and output response
-http = Net::HTTP.new(webhook.host, webhook.port)
-http.use_ssl = webhook.scheme == 'https'
+  # Retrieve Teams webhook URL from environment variable
+  webhook = URI.parse(ENV['TEAMS_WEBHOOK_URL'])
 
-request = Net::HTTP::Post.new(webhook.path, { 'Content-Type' => 'application/json' })
-request.body = payload
+  # Make request to Teams webhook to produce notification and output response
+  http = Net::HTTP.new(webhook.host, webhook.port)
+  http.use_ssl = webhook.scheme == 'https'
 
-response = http.request(request)
-puts "Response: #{response.code} #{response.message}"
-puts response.body
+  request = Net::HTTP::Post.new(webhook.path, { 'Content-Type' => 'application/json' })
+  request.body = payload
+
+  response = http.request(request)
+  puts "Response: #{response.code} #{response.message}"
+  puts response.body
+end
