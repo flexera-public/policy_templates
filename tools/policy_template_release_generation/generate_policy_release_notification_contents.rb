@@ -92,6 +92,23 @@ changelogs.each do |changelog|
   end
 end
 
+# TEST CODE. DELETE LATER
+all_notification_content_array = [
+  {
+    activityTitle: "<h2 style='font-size: 18px;'><a href='https://fakereadme'>Test</h2>",
+    facts: [{
+      name: "Template Version",
+      value: "0.0"
+    },
+    {
+      name: "Policy Updates",
+      value: "<ul>This is a test notification. Ignore.</ul>"
+    }]
+  }
+]
+# TEST CODE. DELETE LATER
+
+
 # Only send notification if there is something worth notifying about
 if all_notification_content_array.length > 0
   # Generate GitHub Commit URL
