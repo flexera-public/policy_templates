@@ -77,7 +77,7 @@ changelogs.each do |changelog|
     formatted_changes_html = formatted_changes.map { |change| "<li>#{change}</li>"}.join('')
 
     notification_content_json = {
-      activityTitle: "<h2 style='font-size: 18px;'><a href='#{readme_path}'>#{matching_template.name}</h2>",
+      activityTitle: "<h2 style='font-size: 18px;'><a href='#{readme_path}'>#{matching_template.name}</a></h2>",
       facts: [{
         name: "Template Version",
         value: changelog.version
@@ -95,7 +95,7 @@ end
 # TEST CODE. DELETE LATER
 all_notification_content_array = [
   {
-    activityTitle: "<h2 style='font-size: 18px;'><a href='https://fakereadme'>Test</h2>",
+    activityTitle: "<h2 style='font-size: 18px;'>Test</h2>",
     facts: [{
       name: "Template Version",
       value: "0.0"
@@ -117,7 +117,7 @@ if all_notification_content_array.length > 0
   # Create the final JSON payload
   payload = JSON.dump({
     "@type": "MessageCard",
-    "@content": "http://schema.org/extensions",
+    "@context": "http://schema.org/extensions",
     "themeColor": "0076D7",
     "summary": "New Policy Updates",
     "sections": all_notification_content_array,
