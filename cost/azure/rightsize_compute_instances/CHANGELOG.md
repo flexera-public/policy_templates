@@ -2,7 +2,7 @@
 
 ## v6.1.3
 
-- Performance improvement by migrating to metrics getBatch API.
+- Code refactored to improve performance by gathering metrics in batched requests.
 
 ## v6.1.2
 
