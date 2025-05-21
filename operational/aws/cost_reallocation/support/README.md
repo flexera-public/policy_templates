@@ -1,4 +1,4 @@
-# Shared Cost Reallocation - AWS Support
+# Cost Reallocation - AWS Support
 
 ## What It Does
 

@@ -1,4 +1,4 @@
-# Shared Cost Reallocation - Google Cloud Logging
+# Cost Reallocation - Google Cloud Logging
 
 ## What It Does
 
