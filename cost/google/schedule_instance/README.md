@@ -84,14 +84,16 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `compute.zones.list`
   - `compute.instances.list`
   - `compute.instances.get`
-  - `compute.instances.start`
-  - `compute.instances.stop`
-  - `compute.instances.delete`†
-  - `compute.instances.setLabels`*
+  - `compute.instances.start`*
+  - `compute.instances.stop`*
+  - `compute.instances.delete`*‡
+  - `compute.instances.setLabels`*†
 
-  \* Only required for `Update Schedule` Action; the policy will still start/stop instance without this permission.
+  \* These permissions enable taking actions against cloud resources.
 
-  † Only required for `Terminate Instance` Action; the policy will still start/stop instance without this permission.
+  † Only required for `Update Schedule` Action; the policy will still start/stop instance without this permission.
+
+  ‡ Only required for `Terminate Instance` Action; the policy will still start/stop instance without this permission.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
