@@ -804,64 +804,109 @@ script "js_calculated_proportions", type: "javascript" do
     })
   })
 
+  var cloud_vendor_account_names_mapping = _.groupBy()
+
   // Calculate proportion of origin cost to other costs
-  _.each(_.keys(ds_cleaned_costs['destination_costs']), function(destination_cost_day) {
-    _.each(ds_cleaned_costs['destination_costs'][destination_cost_day], function(destination_cost) {
-      if (param_destination_method == "Equal Portions") {
-        var allocation_percentage = 1 / (ds_cleaned_costs['destination_costs'][destination_cost_day]).length
-      } else {
+  if (param_destination_method == "Percent of Total Spend") {
+    _.each(_.keys(ds_cleaned_costs['destination_costs']), function(destination_cost_day) {
+      _.each(ds_cleaned_costs['destination_costs'][destination_cost_day], function(destination_cost) {
         var allocation_percentage = destination_cost['costs'] / ds_cleaned_costs['destination_costs_total']
-      }
-      if (allocation_percentage > 1) {
-        console.log("Warning: allocation_percentage greater than 1.  This is not expected.") // Excluded from console.log test
-        console.log("vendor_account=" + destination_cost['vendor_account'] + " costs=" + destination_cost['costs'] + " allocation_percentage=" + allocation_percentage) // Excluded from console.log test
-        console.log("destination_cost=" + JSON.stringify(destination_cost)) // Excluded from console.log test
-      }
-      if (allocation_percentage != 0) {
-        // Handle tags for the new cost line
-        // Initialize tags object as an empty object
-        destination_cost['tags'] = {}
-        // Get all tag keys from destination_cost
-        var destination_cost_keys = _.keys(destination_cost)
-        // Loop through all keys to see if they are tag dimensions
-        _.each(destination_cost_keys, function(key) {
-          // Regex to match if tag dimension
-          if (/^tag_.*/.test(key)) {
-            // Don't bother adding tags if value is "None"
-            // This value is used to indicate that the tag key(s) were not used in that slice of the cost data
-            if (destination_cost[key] != "None") {
-              // Find the tag dimension that matches the key we are iterating over
-              var tag_dimension = _.find(ds_tag_dimensions_used_in_rbd_rules_tag_key, function(tag) {
-                return tag.id == key
-              })
-              // We should always find a match, but just in case check if the tag dimension was not found
-              if (tag_dimension != undefined) {
-                // If it was, use the tag key value that was retrieved from the tag dimension configuration, and the value from the costs
-                //   i.e. if tag_env dimension had tag keys ["env", "Env", "environment", "Environment"]
-                //   This would result in destination_costs["tags"]["env"] = destination_costs["tag_env"]
-                destination_cost['tags'][tag_dimension.tag_key] = destination_cost[key]
+        if (allocation_percentage > 1) {
+          console.log("Warning: allocation_percentage greater than 1.  This is not expected.") // Excluded from console.log test
+          console.log("vendor_account=" + destination_cost['vendor_account'] + " costs=" + destination_cost['costs'] + " allocation_percentage=" + allocation_percentage) // Excluded from console.log test
+          console.log("destination_cost=" + JSON.stringify(destination_cost)) // Excluded from console.log test
+        }
+        if (allocation_percentage != 0) {
+          // Handle tags for the new cost line
+          // Initialize tags object as an empty object
+          destination_cost['tags'] = {}
+          // Get all tag keys from destination_cost
+          var destination_cost_keys = _.keys(destination_cost)
+          // Loop through all keys to see if they are tag dimensions
+          _.each(destination_cost_keys, function(key) {
+            // Regex to match if tag dimension
+            if (/^tag_.*/.test(key)) {
+              // Don't bother adding tags if value is "None"
+              // This value is used to indicate that the tag key(s) were not used in that slice of the cost data
+              if (destination_cost[key] != "None") {
+                // Find the tag dimension that matches the key we are iterating over
+                var tag_dimension = _.find(ds_tag_dimensions_used_in_rbd_rules_tag_key, function(tag) {
+                  return tag.id == key
+                })
+                // We should always find a match, but just in case check if the tag dimension was not found
+                if (tag_dimension != undefined) {
+                  // If it was, use the tag key value that was retrieved from the tag dimension configuration, and the value from the costs
+                  //   i.e. if tag_env dimension had tag keys ["env", "Env", "environment", "Environment"]
+                  //   This would result in destination_costs["tags"]["env"] = destination_costs["tag_env"]
+                  destination_cost['tags'][tag_dimension.tag_key] = destination_cost[key]
+                }
               }
             }
-          }
+          })
+          _.each(_.keys(ds_cleaned_costs['origin_costs']), function(origin_cost_day) {
+            _.each(ds_cleaned_costs['origin_costs'][origin_cost_day], function(origin_cost) {
+              var new_cost = _.clone(origin_cost)
+              new_cost['allocated_cost'] = origin_cost['costs'] * allocation_percentage
+              new_cost['allocated_usage_amount'] = origin_cost['usage_amount'] * allocation_percentage
+              _.each(param_destination_group, function(dimension) {
+                new_cost[dimension] = destination_cost[dimension]
+                if (dimension == "vendor_account") {
+                  new_cost['vendor_account_name'] = destination_cost['vendor_account_name']
+                }
+              })
+              new_cost['tags'] = origin_cost['tags']
+              result.push(new_cost)
+            })
+          })
+        }
+      })
+    })
+  } else if (param_destination_method == "Equal Portions") {
+    // Calculate equal portions of destination costs
+    // Get the number of destination costs
+    var destination_values = {}
+    _.each(_.keys(ds_cleaned_costs['destination_costs']), function(destination_cost_day) {
+      _.each(ds_cleaned_costs['destination_costs'][destination_cost_day], function(destination_cost) {
+        var destination_key_values = []
+        _.each(param_destination_group, function(key) {
+          destination_key_values.push(destination_cost[key])
         })
+        var destination_key = destination_key_values.join('_')
+        if (destination_values[destination_key] == undefined) {
+          destination_values[destination_key] = []
+        }
+        destination_values[destination_key].push(destination_cost)
+      })
+    })
+    var total_portions = _.keys(destination_values).length
+    if (total_portions > 0) {
+      var allocation_percentage = 1 / total_portions
+      // Calculate the equal portion of each destination cost
+      _.each(_.keys(destination_values), function(destination_key) {
         _.each(_.keys(ds_cleaned_costs['origin_costs']), function(origin_cost_day) {
           _.each(ds_cleaned_costs['origin_costs'][origin_cost_day], function(origin_cost) {
             var new_cost = _.clone(origin_cost)
             new_cost['allocated_cost'] = origin_cost['costs'] * allocation_percentage
             new_cost['allocated_usage_amount'] = origin_cost['usage_amount'] * allocation_percentage
             _.each(param_destination_group, function(dimension) {
-              new_cost[dimension] = destination_cost[dimension]
+              new_cost[dimension] = destination_values[destination_key][0][dimension]
               if (dimension == "vendor_account") {
-                new_cost['vendor_account_name'] = destination_cost['vendor_account_name']
+                new_cost['vendor_account_name'] = destination_values[destination_key][0]['vendor_account_name']
               }
             })
-            new_cost['tags'] = destination_cost['tags']
+            new_cost['tags'] = origin_cost['tags']
             result.push(new_cost)
           })
         })
-      }
-    })
-  })
+      })
+    } else {
+      // If we have no destination costs, log an error
+      console.log("No destination costs found for equal portions calculation")
+    }
+  } else {
+    // If we have an unknown destination method, log an error
+    console.log("Unknown destination method: " + param_destination_method)
+  }
 EOS
 end
 
