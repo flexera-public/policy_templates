@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "2.3.3",
+  version: "2.4.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Superseded Compute Instances",
@@ -130,12 +130,25 @@ end
 ###############################################################################
 
 # Various data tables needed for later in the policy
-datasource "ds_aws_instance_size_map" do
+datasource "ds_aws_instance_types" do
   request do
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_instance_types.json"
     header "User-Agent", "RS Policies"
   end
+end
+
+datasource "ds_aws_instance_type_map" do
+  run_script $js_aws_instance_type_map, $ds_aws_instance_types
+end
+
+script "js_aws_instance_type_map", type: "javascript" do
+  parameters "ds_aws_instance_types"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  _.each(ds_aws_instance_types, function(entry) { result[entry["name"]] = entry })
+EOS
 end
 
 datasource "ds_aws_instance_cost_map" do
@@ -670,11 +683,11 @@ EOS
 end
 
 datasource "ds_superseded_instances" do
-  run_script $js_superseded_instances, $ds_instances, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_aws_instance_cost_map, $ds_currency_conversion, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_instance_type, $param_fallback_instance_type, $param_min_savings
+  run_script $js_superseded_instances, $ds_instances, $ds_instance_costs_grouped, $ds_aws_instance_type_map, $ds_aws_instance_cost_map, $ds_currency_conversion, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_instance_type, $param_fallback_instance_type, $param_min_savings
 end
 
 script "js_superseded_instances", type: "javascript" do
-  parameters "ds_instances", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_aws_instance_cost_map", "ds_currency_conversion", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_instance_type", "param_fallback_instance_type", "param_min_savings"
+  parameters "ds_instances", "ds_instance_costs_grouped", "ds_aws_instance_type_map", "ds_aws_instance_cost_map", "ds_currency_conversion", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_instance_type", "param_fallback_instance_type", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -726,6 +739,8 @@ script "js_superseded_instances", type: "javascript" do
       purchase_option = ds_instance_costs_grouped[id]['purchase_option']
     }
 
+    if (!operating_system && instance['platform'] == "Linux/UNIX") { operating_system = "Linux" }
+
     type_table = {
       "Regular": "regular",
       "Next Gen": "next_gen",
@@ -735,8 +750,8 @@ script "js_superseded_instances", type: "javascript" do
 
     superseded_parameter = type_table[param_instance_type]
 
-    if (ds_aws_instance_size_map[instance_type] != undefined) {
-      superseded_table = ds_aws_instance_size_map[instance_type]['superseded']
+    if (ds_aws_instance_type_map[instance_type]) {
+      superseded_table = ds_aws_instance_type_map[instance_type]['superseded']
 
       if (typeof(superseded_table) == 'object') {
         superseded_type = superseded_table[superseded_parameter]
@@ -747,8 +762,8 @@ script "js_superseded_instances", type: "javascript" do
     if ((typeof(superseded_type) != 'string' || superseded_type != '') && param_fallback_instance_type != "None") {
       superseded_parameter = type_table[param_fallback_instance_type]
 
-      if (ds_aws_instance_size_map[instance_type] != undefined) {
-        superseded_table = ds_aws_instance_size_map[instance_type]['superseded']
+      if (ds_aws_instance_type_map[instance_type]) {
+        superseded_table = ds_aws_instance_type_map[instance_type]['superseded']
 
         if (typeof(superseded_table) == 'object') {
           superseded_type = superseded_table[superseded_parameter]

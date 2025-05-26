@@ -30,7 +30,7 @@ def policy_missing_info_block?(file, file_parsed)
   fail_message = ""
 
   if file_parsed.parsed_info.nil?
-    fail_message = "Policy Template file is missing the required info() block. Please add this block to the policy template and include `version` metadata at minimum."
+    fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Policy Template file is missing the required info() block. Please add this block to the policy template and include `version` metadata at minimum."
   end
 
   return fail_message.strip if !fail_message.empty?
@@ -50,14 +50,14 @@ def policy_missing_deprecated_field?(file, file_parsed)
 
   if short_description.downcase.include?("deprecated")
     if info[:deprecated].nil?
-      fail_message = "Policy is deprecated but has no `deprecated` field in the info() block. Please add the following line to the info() block: deprecated: \"true\""
+      fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Policy is deprecated but has no `deprecated` field in the info() block. Please add the following line to the info() block: deprecated: \"true\""
     elsif info[:deprecated].downcase != "true"
-      fail_message = "Policy is deprecated but `deprecated` field in the info() block is not set to `true`. Please set this field to `true`."
+      fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Policy is deprecated but `deprecated` field in the info() block is not set to `true`. Please set this field to `true`."
     end
   else
     if !info[:deprecated].nil?
       if info[:deprecated].downcase == "true"
-        fail_message = "Policy is deprecated does not mention this in the `short_description`. Please add the following to the `short_description`:\n\n`**Deprecated: This policy is no longer being updated.**`"
+        fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Policy is deprecated does not mention this in the `short_description`. Please add the following to the `short_description`:\n\n`**Deprecated: This policy is no longer being updated.**`"
       end
     end
   end
@@ -77,15 +77,15 @@ def policy_bad_directory?(file)
   valid_base_dirs = ["automation", "compliance", "cost", "operational", "saas", "security", "tools"]
 
   if !valid_base_dirs.include?(parts[0])
-    fail_message += "Policy is not located in a valid base directory. All policies should be in one of the following directories: " + valid_base_dirs.join(', ') + "\n\n"
+    fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#file-names--directory-structure)] Policy is not located in a valid base directory. All policies should be in one of the following directories: " + valid_base_dirs.join(', ') + "\n\n"
   end
 
   if (parts[1].include?('.pt') || parts[2].include?('.pt')) && parts[0] != "tools"
-    fail_message += "Policy is not located within a subdirectory specific to the cloud provider or service it is applicable for. For example, AWS cost policies should be in the `/cost/aws` subdirectory, Azure operational policies in the `/operational/azure` subdirectory, etc.\n\n"
+    fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#file-names--directory-structure)] Policy is not located within a subdirectory specific to the cloud provider or service it is applicable for. For example, AWS cost policies should be in the `/cost/aws` subdirectory, Azure operational policies in the `/operational/azure` subdirectory, etc.\n\n"
   end
 
   if (parts[1] == 'flexera' && parts[3].include?('.pt')) && parts[0] != "tools" && parts[0] != "automation"
-    fail_message += "Flexera policy is not contained in a subdirectory specific to the Flexera service it is for. For example, Flexera CCO cost policies should be in the `/cost/flexera/cco` subdirectory.\n\n"
+    fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#file-names--directory-structure)] Flexera policy is not contained in a subdirectory specific to the Flexera service it is for. For example, Flexera CCO cost policies should be in the `/cost/flexera/cco` subdirectory.\n\n"
   end
 
   return fail_message.strip if !fail_message.empty?
@@ -111,7 +111,7 @@ def policy_readme_correct_name?(file, file_parsed)
   readme_name = File.read(readme_file_path).split("\n")[0].split("# ")[1].strip()
 
   if (template_name != readme_name)
-    fail_message = "Policy Template name `" + template_name + "` does not match the first line of the README.md file. Please ensure that README.md has the correct policy template name on the first line."
+    fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#readmemd)] Policy Template name `" + template_name + "` does not match the first line of the README.md file. Please ensure that README.md has the correct policy template name on the first line."
   end
 
   return fail_message.strip if !fail_message.empty?
@@ -131,7 +131,7 @@ def policy_unmodified_readme?(file, changed_readme_files)
   readme_file_path = file_sections.join('/') + "/README.md"
 
   if !File.exist?(readme_file_path)
-    fail_message = "Policy template has no README.md file. Please create this file and document the policy's functionality within."
+    fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#file-names--directory-structure)] Policy template has no README.md file. Please create this file and document the policy's functionality within."
   elsif !changed_readme_files.include?(readme_file_path)
     fail_message = "Policy template updated but associated README.md file has not been. Please verify that any necessary changes have been made to the README."
   end
@@ -153,9 +153,9 @@ def policy_unmodified_changelog?(file, changed_changelog_files)
   changelog_file_path = file_sections.join('/') + "/CHANGELOG.md"
 
   if !File.exist?(changelog_file_path)
-    fail_message = "Policy template has no CHANGELOG.md file. Please create this file and document the policy's version changes within."
+    fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#file-names--directory-structure)] Policy template has no CHANGELOG.md file. Please create this file and document the policy's version changes within."
   elsif !changed_changelog_files.include?(changelog_file_path)
-    fail_message = "Policy template updated but associated CHANGELOG.md file has not been. Please increment version number and update CHANGELOG.md accordingly."
+    fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#changelogmd)] Policy template updated but associated CHANGELOG.md file has not been. Please increment version number and update CHANGELOG.md accordingly."
   end
 
   return fail_message.strip if !fail_message.empty?
@@ -190,7 +190,7 @@ def policy_bad_filename_casing?(file)
   fail_message = ""
 
   if file.match?(/[A-Z]/)
-    fail_message = "Policy template name and file path should be in lowercase. Please remove any uppercase [A-Z] characters."
+    fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#file-names--directory-structure)] Policy template name and file path should be in lowercase. Please remove any uppercase [A-Z] characters."
   end
 
   return fail_message.strip if !fail_message.empty?
@@ -224,7 +224,7 @@ def policy_bad_readme_link?(file, file_parsed)
   end
 
   if bad_urls > 0 || good_urls == 0
-    fail_message = "Policy `short_description` is missing a valid link to the policy README. Please ensure that the following link is present in the `short_description`:\n\n#{file_url}/"
+    fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Policy template `short_description` is missing a valid link to the README. Please ensure that the following link is present in the `short_description`:\n\n#{file_url}/"
   end
 
   return fail_message.strip if !fail_message.empty?
@@ -259,7 +259,7 @@ def policy_name_changed?(file, file_diff)
 
   file_diff.patch.each_line do |line|
     if line.start_with?('-name "')
-      fail_message = "Policy's name has been changed. Please ensure that this is intentional and that the README has been updated accordingly."
+      fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#readmemd)] The Policy Template's name has changed. Please ensure that this is intentional and that the README has been updated accordingly."
       break
     end
   end
@@ -313,7 +313,7 @@ def policy_bad_indentation?(file, file_lines)
     end
   end
 
-  fail_message = "Policy Template has indentation issues. Code should be indented with 2 spaces inside each do/end block, info() block, and EOS block, with additional spacing for nested blocks as appropriate:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#general-conventions)] Policy Template has indentation issues. Code should be indented with 2 spaces inside each do/end block, info() block, and EOS block, with additional spacing for nested blocks as appropriate:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -342,7 +342,7 @@ def policy_consecutive_empty_lines?(file, file_lines)
     blank_line_number = nil if !line.strip.empty?
   end
 
-  fail_message = "Policy Template has consecutive empty lines. Code blocks and other code constructs should never be separated by more than one empty line:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#general-conventions)] Policy Template has consecutive empty lines. Code blocks and other code constructs should never be separated by more than one empty line:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -396,7 +396,7 @@ def policy_bad_metadata?(file, file_parsed, field_name)
   end
 
   if field_name == "severity"
-    fail_message += "Please add a severity field.\n\n" if !severity
+    fail_message += ".md#metadata)] Please add a severity field.\n\n" if !severity
     fail_message += "The severity is not valid: #{severity}. Valid severities include #{severities.join(', ')}\n\n" if severity && !severities.include?(severity)
   end
 
@@ -404,7 +404,7 @@ def policy_bad_metadata?(file, file_parsed, field_name)
     fail_message += "Please add an info field.\n\n" if info.nil?
   end
 
-  fail_message = "Bad #{field_name} metadata found:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Bad #{field_name} metadata found:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -427,7 +427,7 @@ def policy_defunct_metadata?(file, file_lines)
     end
   end
 
-  fail_message = "Deprecated metadata fields found. Please remove the following deprecated fields as they are no longer useful or needed:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Deprecated metadata fields found. Please remove the following deprecated fields as they are no longer useful or needed:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -462,7 +462,7 @@ def policy_missing_info_field?(file, file_parsed, field_name)
     end
   end
 
-  fail_message = "Bad #{field_name} info metadata field found:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Bad #{field_name} info metadata field found:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -491,7 +491,7 @@ def policy_abbreviated_info_field?(file, file_parsed)
     end
   end
 
-  fail_message = "Invalidly abbreviated metadata fields found:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Invalidly abbreviated metadata fields found:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -509,7 +509,7 @@ def policy_nonsemantic_version?(file, file_parsed)
   policy_version = file_parsed.parsed_info[:version] if file_parsed.parsed_info
 
   if !policy_version.match?(semantic_regex)
-    fail_message = "Policy template version number is not compliant with [semantic versioning](https://github.com/flexera-public/policy_templates/blob/master/VERSIONING.md). Please update the version number accordingly."
+    fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#versioning)] Policy template version number is not compliant with semantic versioning. Please update the version number accordingly."
   end
 
   return fail_message.strip if !fail_message.empty?
@@ -545,7 +545,7 @@ def policy_changelog_mismatch?(file, file_parsed)
   # We ignore situations where one of the values is missing.
   # Other tests will catch that.
   if policy_version && changelog_version && policy_version != changelog_version
-    fail_message = "Version number in policy template does not match latest version number in `CHANGELOG.md`. Please review both files to make sure they are correct and aligned with each other."
+    fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#changelogmd)] Version number in policy template does not match latest version number in `CHANGELOG.md`. Please review both files to make sure they are correct and aligned with each other."
   end
 
   return fail_message.strip if !fail_message.empty?
@@ -651,7 +651,7 @@ def policy_readme_missing_credentials?(file, file_lines)
     fail_message += "Policy's `README.md` file contains documentation for an Oracle credential that does not exist or is incorrectly named in the policy.\n\n"
   end
 
-  fail_message = "Policy Template's credentials and `README.md` documentation do not match:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#prerequisites)] Policy Template's credentials and `README.md` documentation do not match:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -756,7 +756,7 @@ def policy_sections_out_of_order?(file, file_lines)
     end
   end
 
-  fail_message = "Policy Template does not have code blocks in the correct order.\nCode blocks should be in the following order: Metadata, Parameters, Credentials, Pagination, Datasources & Scripts, Policy, Escalations, Cloud Workflow, Meta Policy\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#basic-structure)] Policy Template does not have code blocks in the correct order.\nCode blocks should be in the following order: Metadata, Parameters, Credentials, Pagination, Datasources & Scripts, Policy, Escalations, Cloud Workflow, Meta Policy\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -793,7 +793,7 @@ def policy_orphaned_blocks?(file, file_lines, block_name)
     fail_message += "#{block}\n" if !reference_found
   end
 
-  fail_message = "Orphaned `#{block_name}` code blocks found. Blocks that are not used anywhere in the policy should be removed:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#basic-structure)] Orphaned `#{block_name}` code blocks found. Blocks that are not used anywhere in the policy should be removed:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -848,7 +848,7 @@ def policy_blocks_ungrouped?(file, file_lines)
     end
   end
 
-  fail_message = "Ungrouped code blocks found. Code blocks should be grouped together in sections by type e.g. all parameter blocks should be next to each other, all credentials blocks should be next to each other, etc. with the exception of Meta Policy code:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#basic-structure)] Ungrouped code blocks found. Code blocks should be grouped together in sections by type e.g. all parameter blocks should be next to each other, all credentials blocks should be next to each other, etc. with the exception of Meta Policy code:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -906,7 +906,7 @@ def policy_missing_section_comments?(file, file_text, section_name)
     fail_message += "Policy Template does **not** have a comment indicating where the #{pretty_name} section begins. Please add a comment like the below before the parameters blocks:\n\n#{hash_string}<br>\# #{pretty_name}<br>#{hash_string}\n\n"
   end
 
-  fail_message = "Missing policy section comments:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#basic-structure)] Missing policy section comments:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -945,7 +945,7 @@ def policy_block_name_single_quotes?(file, file_lines, block_name)
     fail_message += "Line #{line_number.to_s}: #{line}\n" if block_regex.match?(line)
   end
 
-  fail_message = "Invalidly quoted #{block_name} blocks. Please ensure all #{block_name} blocks have names encapsulated in double quotes (\") instead of single quotes ('):\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#block-naming-conventions)] Invalidly quoted #{block_name} blocks. Please ensure all #{block_name} blocks have names encapsulated in double quotes (\") instead of single quotes ('):\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -993,7 +993,7 @@ def policy_bad_block_name?(file, file_lines, block_name)
     fail_message += "Line #{line_number.to_s}: #{line}\n" if block_regex.match?(line)
   end
 
-  fail_message = "Invalidly named #{block_name} blocks. Please ensure all #{block_name} blocks have names that begin with `#{proper_name}`:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#block-naming-conventions)] Invalidly named #{block_name} blocks. Please ensure all #{block_name} blocks have names that begin with `#{proper_name}`:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -1015,7 +1015,7 @@ def policy_deprecated_code_blocks?(file, file_lines, block_name)
     fail_message += "Line #{line_number.to_s}: Resources block found\n" if resources_regex.match?(line)
   end
 
-  fail_message = "Deprecated #{block_name} blocks found. It is recommended that the policy be refactored to no longer use these code blocks:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#deprecated-code-blocks)] Deprecated #{block_name} blocks found. It is recommended that the policy be refactored to no longer use these code blocks:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -1055,7 +1055,7 @@ def policy_block_missing_field?(file, file_lines, block_name, field_name)
   # After looping through all lines, check if we found any missing fields
   if !fail_message.empty?
     # Construct resulting fail message with block name and line numbers
-    fail_message = "#{block_name} code blocks with missing `#{field_name}` field found. Please add the `#{field_name}` field to these blocks:\n\n" + fail_message + "\n"
+    fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#parameters)] #{block_name} code blocks with missing `#{field_name}` field found. Please add the `#{field_name}` field to these blocks:\n\n" + fail_message + "\n"
     # If we're checking for default field, add a note about comment `# No default value, user input required`
     if field_name == "default" && !fail_message.empty?
       fail_message += "Optionally, you can add a comment within the #{block_name} code blocks to indicate that the parameter requires user input and avoid this message.\n\n - `# No default value, user input required`"
@@ -1125,7 +1125,7 @@ def policy_ds_js_name_mismatch?(file, file_lines)
     fail_message += "Line #{mismatch[:line_number]}: ds_#{mismatch[:ds_name]} / js_#{mismatch[:js_name]}\n"
   end
 
-  fail_message = "Datasources and scripts with mismatched names found. These names should match; for example, a datasource named ds_currency should be paired with a script named js_currency. This convention should only be ignored when the same script is called by multiple datasources. The following datasource/script pairs have mismatched names:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#datasources)] Datasources and scripts with mismatched names found. These names should match; for example, a datasource named ds_currency should be paired with a script named js_currency. This convention should only be ignored when the same script is called by multiple datasources. The following datasource/script pairs have mismatched names:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -1192,7 +1192,7 @@ def policy_run_script_incorrect_order?(file, file_lines)
     fail_message += "Line #{line_number.to_s}: #{ds_name} / run_script #{script_name}\n" if disordered
   end
 
-  fail_message = "run_script statements found whose parameters are not in the correct order. run_script parameters should be in the following order: script, val(iter_item, *string*), datasources, parameters, variables, raw values:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#scripts)] run_script statements found whose parameters are not in the correct order. run_script parameters should be in the following order: script, val(iter_item, *string*), datasources, parameters, variables, raw values:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -1284,7 +1284,7 @@ def policy_block_fields_incorrect_order?(file, file_lines, block_type)
     end
   end
 
-  fail_message = "#{block_type} code blocks found with out of order fields.\nFields should be in the following order: " + correct_order.join(", ") + "\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#parameters)] #{block_type} code blocks found with out of order fields.\nFields should be in the following order: " + correct_order.join(", ") + "\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -1364,7 +1364,7 @@ def policy_missing_recommendation_fields?(file, file_lines, file_parsed, field_t
     end
   end
 
-  fail_message = "Recommendation policy has export that is missing #{field_type} fields. These fields are scraped by the Flexera platform for dashboards:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#policy)] Recommendation policy has export that is missing #{field_type} fields. These fields are scraped by the Flexera platform for dashboards:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -1403,7 +1403,7 @@ def policy_bad_comma_spacing?(file, file_lines)
     end
   end
 
-  fail_message = "Possible invalid spacing between comma-separated items found:\n\n" + fail_message + "\n\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear" if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#general-conventions)] Possible invalid spacing between comma-separated items found:\n\n" + fail_message + "\n\nComma separated items should be organized as follows, with a single space following each comma: apple, banana, pear" if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -1503,7 +1503,7 @@ def policy_http_connections?(file, file_lines)
     end
   end
 
-  fail_message = "Insecure `http` connections found:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#datasources)] Insecure `http` connections found:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -1580,7 +1580,7 @@ def policy_console_log?(file, file_lines)
     fail_message += "Line #{line_number.to_s}\n" if line.include?("console.log")
   end
 
-  fail_message = "Policy Template has console.log() statements. These are used for debugging and should not be present in catalog policy templates:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#scripts)] Policy Template has console.log() statements. These are used for debugging and should not be present in catalog policy templates:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
@@ -1601,7 +1601,7 @@ def policy_verb_get?(file, file_lines)
     fail_message += "Line #{line_number.to_s}\n" if line.strip.start_with?("verb \"GET\"") || line.strip.start_with?("verb: \"GET\"") || line.strip.start_with?("verb 'GET'") || line.strip.start_with?("verb: 'GET'")
   end
 
-  fail_message = "Policy Template has verb \"GET\" statements. The verb field defaults to this value and should only be specified for other values, such as PATCH or POST:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#datasources)] Policy Template has verb \"GET\" statements. The verb field defaults to this value and should only be specified for other values, such as PATCH or POST:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false

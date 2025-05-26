@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.2.2
+
+- Fixed issue where prompt for adding tags incorrectly said to use "key:value" instead of "key=value" format.
+- Fixed issue where tags would fail to apply to Azure subscriptions.
+
 ## v3.2.1
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
