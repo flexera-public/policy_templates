@@ -1,5 +1,10 @@
 # Changelog
 
+## v8.4.5
+
+- Implemented the ds_verified_tags datasource to process Optima cost dimensions and validate the existence of required tags.
+
+
 ## v8.4.4
 
 - Corrected incorrect filtering of RDS DB snapshots. The policy was previously only considering the most recent snapshot for each DB instance, leading to missed older snapshots. The logic has been updated to include all snapshots.

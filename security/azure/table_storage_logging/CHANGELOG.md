@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.2
+
+- Implemented the ds_verified_tags datasource to process Optima cost dimensions and validate the existence of required tags.
+
 ## v3.0.1
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
