@@ -1,4 +1,4 @@
-name "AWS Old Snapshots"
+name "AWS Old Snapshots MSP Indigo Team"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks for snapshots older than a specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/old_snapshots) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "8.4.4",
+  version: "8.4.5",
   provider: "AWS",
   service: "Storage",
   policy_set: "Old Snapshots",
@@ -896,6 +896,42 @@ datasource "ds_snapshot_costs_grouped" do
   run_script $js_snapshot_costs_grouped, $ds_snapshot_costs
 end
 
+datasource "ds_verified_tags" do
+  run_script $js_verified_tags, $ds_get_optima_cost_dimensions
+end
+
+datasource "ds_get_optima_cost_dimensions" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "Flexera Policy Template"
+  end
+
+  result do
+    encoding "json"
+    collect jmes_path(response, "dimensions") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+    end
+  end
+end
+
+script "js_verified_tags", type: "javascript" do
+  parameters "ds_get_optima_cost_dimensions"
+  result "result"
+  code <<-EOS
+  result = {'tag_azure_databricks_clusterid':0}
+  _.each(ds_get_optima_cost_dimensions, function(item){
+    if (item.name == "tag_azure_databricks_clusterid" ){
+      result.tag_azure_databricks_clusterid = 1
+    }
+  })
+EOS
+end
+
 script "js_snapshot_costs_grouped", type: "javascript" do
   parameters "ds_snapshot_costs"
   result "result"
@@ -1057,6 +1093,13 @@ end
 ###############################################################################
 
 policy "pol_utilization" do
+  validate $ds_verified_tags do
+    summary_template "The 'tag_azure_databricks_clusterid' dimension is not configured in Optima."
+    detail_template "The 'tag_azure_databricks_clusterid' dimension is required for proper cost allocation. Please review your Optima configuration."
+
+    check eq(val(data, "tag_azure_databricks_clusterid"),1)
+  end
+
   validate_each $ds_snapshots_cost_mapping do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Old Snapshots Found"
     detail_template <<-'EOS'
