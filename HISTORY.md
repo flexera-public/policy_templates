@@ -6,6 +6,24 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3127](https://github.com/flexera-public/policy_templates/pull/3127): Initial revision of custom branding
+
+#### Description
+
+> This Policy allows a customer to brand the FlexeraOne platform quickly and consistently.
+>
+> ### Issues Resolved
+>
+> No Jira for now
+>
+
+#### Metadata
+
+- **Policies**: [Configure Custom Branding](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/custom_branding/README.md)
+- **Merged At**: 2025-05-30 12:14:27 UTC
+
+---
+
 ### PR [#3180](https://github.com/flexera-public/policy_templates/pull/3180): POL-1528 DTU support for Azure Rightsize SQL Databases
 
 #### Description
@@ -1889,19 +1907,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2616) for details about unpublished policies.
 - **Merged At**: 2024-10-11 19:31:30 UTC
-
----
-
-### PR [#2728](https://github.com/flexera-public/policy_templates/pull/2728): POL-1379 Azure SQL MI Storage Pricing Automation
-
-#### Description
-
-> This adds automation to gather Azure SQL MI Storage Pricing and updates the Azure SQL MI Storage policy template to use this pricing data. In most cases, this will not matter (the generic SQL DB storage pricing is the same in most cases), but this ensures that any deviations in storage pricing specific to SQL MI are accounted for.
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize SQL Managed Instance Storage](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_sql_storage/README.md), [Meta Parent: Azure Rightsize SQL Managed Instance Storage](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_sql_storage/README.md)
-- **Merged At**: 2024-10-11 17:53:41 UTC
 
 ---
 
