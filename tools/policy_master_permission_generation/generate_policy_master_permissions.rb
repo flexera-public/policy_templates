@@ -311,8 +311,35 @@ CSV.open("#{permissions_list_dir}/master_policy_permissions_list.csv", "w") do |
 
     # Iterate through each provider and permission to create rows
     value[:providers].each do |provider|
+      provider_name = ""
+
+      case provider[:name]
+      when "aws"
+        provider_name = "AWS"
+      when "azure_rm"
+        provider_name = "Azure Resource Manager"
+      when "azure_storage"
+        provider_name = "Azure Storage"
+      when "azure_ea_china"
+        provider_name = "Azure China Enterprise Agreement"
+      when "azure_graph"
+        provider_name = "Microsoft Graph"
+      when "gce"
+        provider_name = "Google Cloud"
+      when "flexera"
+        provider_name = "Flexera"
+      when "turbonomic"
+        provider_name = "Turbonomic"
+      when "github"
+        provider_name = "GitHub"
+      when "servicenow"
+        provider_name = "ServiceNow"
+      when "okta"
+        provider_name = "Okta"
+      end
+
       provider[:permissions].each do |permission|
-        f << [value["name"], value["version"], provider[:name], permission["name"], permission["required"], permission["read_only"]]
+        f << [value["name"], value["version"], provider_name, permission["name"], permission["required"], permission["read_only"]]
       end
     end
   end
