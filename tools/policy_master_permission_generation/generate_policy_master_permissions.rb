@@ -349,6 +349,18 @@ values.sort_by! { |value| value["id"] }
 master_policy_permissions_doc[:values] = values
 puts values
 
+# Read existing JSON file to determine if we need to update the file
+existing_json_path = "./data/policy_permissions_list/master_policy_permissions_list.json"
+
+if File.exist?(existing_json_path)
+  existing_json = JSON.parse(File.read(existing_json_path))
+
+  if existing_json["values"] == values
+    puts "No changes detected in policy permissions. Files not generated."
+    exit
+  end
+end
+
 # Create '.data/policy_permissions_list' directory
 # permissions_list_dir = "./dist"
 permissions_list_dir = "./data/policy_permissions_list"
