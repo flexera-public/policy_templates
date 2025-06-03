@@ -16,7 +16,7 @@ Those who wish to contribute to this repository should review the [Contribution 
 
 ## Permissions
 
-Policy templates require the correct permissions in order to function as expected. Consult the README for each policy template for detailed permission information. We also offer compilations of required permissions in the following formats:
+Policy templates require the correct permissions configured for your [Flexera Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) in order to function as expected. Consult the README for each policy template for detailed permissions information. We also offer compilations of required permissions in the following formats:
 
 * [CSV (All Policy Templates)](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list.csv)
 * [PDF (All Policy Templates)](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list.pdf)
