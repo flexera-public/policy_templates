@@ -5,6 +5,71 @@ require 'yaml'
 require 'csv'
 require 'pdfkit'
 
+# Code for generating HTML for a PDF
+def generate_pdf_html?(values)
+  html_content = ""
+
+  values.sort_by { |v| v["name"] }.each do |value|
+    next unless value[:providers]
+
+    html_content += "<h3>#{value["name"]} <span style=\"font-size:70%;font-weight:normal;\">#{value["version"]}</span></h3>"
+
+    value[:providers].sort_by { |v| v[:name] }.each do |provider|
+      provider_name = ""
+
+      case provider[:name]
+      when "aws"
+        provider_name = "AWS"
+      when "azure_rm"
+        provider_name = "Azure Resource Manager"
+      when "azure_storage"
+        provider_name = "Azure Storage"
+      when "azure_ea_china"
+        provider_name = "Azure China Enterprise Agreement"
+      when "azure_graph"
+        provider_name = "Microsoft Graph"
+      when "gce"
+        provider_name = "Google Cloud"
+      when "flexera"
+        provider_name = "Flexera"
+      when "turbonomic"
+        provider_name = "Turbonomic"
+      when "github"
+        provider_name = "GitHub"
+      when "servicenow"
+        provider_name = "ServiceNow"
+      when "okta"
+        provider_name = "Okta"
+      end
+
+      required = provider[:permissions].select { |p| p["required"] }
+      not_required = provider[:permissions].select { |p| !p["required"] }
+
+      if required.length > 0
+        html_content += "<p><b>#{provider_name} Required Permissions:</b><br>"
+
+        required.sort_by { |v| v["name"] }.each do |permission|
+          read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:75%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:75%;\">Write</span></i>"
+          html_content += "#{permission["name"]}  #{read_only}<br>"
+        end
+      end
+
+      if not_required.length > 0
+        html_content += "<p><b>#{provider_name} Optional Permissions:</b><br>"
+
+        not_required.sort_by { |v| v["name"] }.each do |permission|
+          read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:75%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:75%;\">Write</span></i>"
+          html_content += "#{permission["name"]}  #{read_only}<br>"
+        end
+      end
+    end
+
+    html_content += "<hr>"
+  end
+
+  return html_content
+end
+
 # List of Policy Templates
 # Open YAML and parse validated_policy_templates[] array
 pt_files_yaml = YAML.load_file("./tools/policy_master_permission_generation/validated_policy_templates.yaml")
@@ -353,71 +418,13 @@ html_content += "<li>Required permissions may change as policy templates in the 
 html_content += "<li><i>Required</i> permissions are required for the policy template in question to work correctly; <i>optional</i> permissions enable additional functionality.</li>"
 html_content += "<li>Permissions with a green <i><span style=\"color:green;font-size:75%;\">Read Only</span></i> label are read-only, while those with a red <i><span style=\"color:red;font-size:75%;\">Write</span></i> label can potentially make changes to your cloud environment.</li>"
 html_content += "</ul><hr>"
-
-values.sort_by { |v| v["name"] }.each do |value|
-  next unless value[:providers]
-
-  html_content += "<h3>#{value["name"]} <span style=\"font-size:70%;font-weight:normal;\">#{value["version"]}</span></h3>"
-
-  value[:providers].sort_by { |v| v[:name] }.each do |provider|
-    provider_name = ""
-
-    case provider[:name]
-    when "aws"
-      provider_name = "AWS"
-    when "azure_rm"
-      provider_name = "Azure Resource Manager"
-    when "azure_storage"
-      provider_name = "Azure Storage"
-    when "azure_ea_china"
-      provider_name = "Azure China Enterprise Agreement"
-    when "azure_graph"
-      provider_name = "Microsoft Graph"
-    when "gce"
-      provider_name = "Google Cloud"
-    when "flexera"
-      provider_name = "Flexera"
-    when "turbonomic"
-      provider_name = "Turbonomic"
-    when "github"
-      provider_name = "GitHub"
-    when "servicenow"
-      provider_name = "ServiceNow"
-    when "okta"
-      provider_name = "Okta"
-    end
-
-    required = provider[:permissions].select { |p| p["required"] }
-    not_required = provider[:permissions].select { |p| !p["required"] }
-
-    if required.length > 0
-      html_content += "<p><b>#{provider_name} Required Permissions:</b><br>"
-
-      required.sort_by { |v| v["name"] }.each do |permission|
-        read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:75%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:75%;\">Write</span></i>"
-        html_content += "#{permission["name"]}  #{read_only}<br>"
-      end
-    end
-
-    if not_required.length > 0
-      html_content += "<p><b>#{provider_name} Optional Permissions:</b><br>"
-
-      not_required.sort_by { |v| v["name"] }.each do |permission|
-        read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:75%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:75%;\">Write</span></i>"
-        html_content += "#{permission["name"]}  #{read_only}<br>"
-      end
-    end
-  end
-
-  html_content += "<hr>"
-end
-
+html_content += generate_pdf_html?(values)
 html_content += "</table></body></html>"
 
 pdf = PDFKit.new(html_content)
 pdf.to_file("#{permissions_list_dir}/master_policy_permissions_list.pdf")
 
-# AWS Specific Version
+# AWS Specific PDF
 aws_values = values.select { |v| v["name"].include?("AWS") || v["name"].include?("Amazon") }
 
 html_content = "<html><head><meta charset='utf-8'><title>Flexera Cloud Cost Optimization - AWS Policy Permissions List</title></head><body>"
@@ -427,71 +434,13 @@ html_content += "<li>Required permissions may change as policy templates in the 
 html_content += "<li><i>Required</i> permissions are required for the policy template in question to work correctly; <i>optional</i> permissions enable additional functionality.</li>"
 html_content += "<li>Permissions with a green <i><span style=\"color:green;font-size:75%;\">Read Only</span></i> label are read-only, while those with a red <i><span style=\"color:red;font-size:75%;\">Write</span></i> label can potentially make changes to your cloud environment.</li>"
 html_content += "</ul><hr>"
-
-aws_values.sort_by { |v| v["name"] }.each do |value|
-  next unless value[:providers]
-
-  html_content += "<h3>#{value["name"]} <span style=\"font-size:70%;font-weight:normal;\">#{value["version"]}</span></h3>"
-
-  value[:providers].sort_by { |v| v[:name] }.each do |provider|
-    provider_name = ""
-
-    case provider[:name]
-    when "aws"
-      provider_name = "AWS"
-    when "azure_rm"
-      provider_name = "Azure Resource Manager"
-    when "azure_storage"
-      provider_name = "Azure Storage"
-    when "azure_ea_china"
-      provider_name = "Azure China Enterprise Agreement"
-    when "azure_graph"
-      provider_name = "Microsoft Graph"
-    when "gce"
-      provider_name = "Google Cloud"
-    when "flexera"
-      provider_name = "Flexera"
-    when "turbonomic"
-      provider_name = "Turbonomic"
-    when "github"
-      provider_name = "GitHub"
-    when "servicenow"
-      provider_name = "ServiceNow"
-    when "okta"
-      provider_name = "Okta"
-    end
-
-    required = provider[:permissions].select { |p| p["required"] }
-    not_required = provider[:permissions].select { |p| !p["required"] }
-
-    if required.length > 0
-      html_content += "<p><b>#{provider_name} Required Permissions:</b><br>"
-
-      required.sort_by { |v| v["name"] }.each do |permission|
-        read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:75%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:75%;\">Write</span></i>"
-        html_content += "#{permission["name"]}  #{read_only}<br>"
-      end
-    end
-
-    if not_required.length > 0
-      html_content += "<p><b>#{provider_name} Optional Permissions:</b><br>"
-
-      not_required.sort_by { |v| v["name"] }.each do |permission|
-        read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:75%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:75%;\">Write</span></i>"
-        html_content += "#{permission["name"]}  #{read_only}<br>"
-      end
-    end
-  end
-
-  html_content += "<hr>"
-end
-
+html_content += generate_pdf_html?(aws_values)
 html_content += "</table></body></html>"
 
 pdf = PDFKit.new(html_content)
 pdf.to_file("#{permissions_list_dir}/master_policy_permissions_list_aws.pdf")
 
-# Azure Specific Version
+# Azure Specific PDF
 azure_values = values.select { |v| v["name"].include?("Azure") || v["name"].include?("Microsoft") }
 
 html_content = "<html><head><meta charset='utf-8'><title>Flexera Cloud Cost Optimization - Azure Policy Permissions List</title></head><body>"
@@ -501,71 +450,13 @@ html_content += "<li>Required permissions may change as policy templates in the 
 html_content += "<li><i>Required</i> permissions are required for the policy template in question to work correctly; <i>optional</i> permissions enable additional functionality.</li>"
 html_content += "<li>Permissions with a green <i><span style=\"color:green;font-size:75%;\">Read Only</span></i> label are read-only, while those with a red <i><span style=\"color:red;font-size:75%;\">Write</span></i> label can potentially make changes to your cloud environment.</li>"
 html_content += "</ul><hr>"
-
-azure_values.sort_by { |v| v["name"] }.each do |value|
-  next unless value[:providers]
-
-  html_content += "<h3>#{value["name"]} <span style=\"font-size:70%;font-weight:normal;\">#{value["version"]}</span></h3>"
-
-  value[:providers].sort_by { |v| v[:name] }.each do |provider|
-    provider_name = ""
-
-    case provider[:name]
-    when "aws"
-      provider_name = "AWS"
-    when "azure_rm"
-      provider_name = "Azure Resource Manager"
-    when "azure_storage"
-      provider_name = "Azure Storage"
-    when "azure_ea_china"
-      provider_name = "Azure China Enterprise Agreement"
-    when "azure_graph"
-      provider_name = "Microsoft Graph"
-    when "gce"
-      provider_name = "Google Cloud"
-    when "flexera"
-      provider_name = "Flexera"
-    when "turbonomic"
-      provider_name = "Turbonomic"
-    when "github"
-      provider_name = "GitHub"
-    when "servicenow"
-      provider_name = "ServiceNow"
-    when "okta"
-      provider_name = "Okta"
-    end
-
-    required = provider[:permissions].select { |p| p["required"] }
-    not_required = provider[:permissions].select { |p| !p["required"] }
-
-    if required.length > 0
-      html_content += "<p><b>#{provider_name} Required Permissions:</b><br>"
-
-      required.sort_by { |v| v["name"] }.each do |permission|
-        read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:75%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:75%;\">Write</span></i>"
-        html_content += "#{permission["name"]}  #{read_only}<br>"
-      end
-    end
-
-    if not_required.length > 0
-      html_content += "<p><b>#{provider_name} Optional Permissions:</b><br>"
-
-      not_required.sort_by { |v| v["name"] }.each do |permission|
-        read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:75%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:75%;\">Write</span></i>"
-        html_content += "#{permission["name"]}  #{read_only}<br>"
-      end
-    end
-  end
-
-  html_content += "<hr>"
-end
-
+html_content += generate_pdf_html?(azure_values)
 html_content += "</table></body></html>"
 
 pdf = PDFKit.new(html_content)
 pdf.to_file("#{permissions_list_dir}/master_policy_permissions_list_azure.pdf")
 
-# Google Specific Version
+# Google Specific PDF
 google_values = values.select { |v| v["name"].include?("Google") || v["name"].include?("GCP") || v["name"].include?("GCE") }
 
 html_content = "<html><head><meta charset='utf-8'><title>Flexera Cloud Cost Optimization - Google Policy Permissions List</title></head><body>"
@@ -575,65 +466,7 @@ html_content += "<li>Required permissions may change as policy templates in the 
 html_content += "<li><i>Required</i> permissions are required for the policy template in question to work correctly; <i>optional</i> permissions enable additional functionality.</li>"
 html_content += "<li>Permissions with a green <i><span style=\"color:green;font-size:75%;\">Read Only</span></i> label are read-only, while those with a red <i><span style=\"color:red;font-size:75%;\">Write</span></i> label can potentially make changes to your cloud environment.</li>"
 html_content += "</ul><hr>"
-
-google_values.sort_by { |v| v["name"] }.each do |value|
-  next unless value[:providers]
-
-  html_content += "<h3>#{value["name"]} <span style=\"font-size:70%;font-weight:normal;\">#{value["version"]}</span></h3>"
-
-  value[:providers].sort_by { |v| v[:name] }.each do |provider|
-    provider_name = ""
-
-    case provider[:name]
-    when "aws"
-      provider_name = "AWS"
-    when "azure_rm"
-      provider_name = "Azure Resource Manager"
-    when "azure_storage"
-      provider_name = "Azure Storage"
-    when "azure_ea_china"
-      provider_name = "Azure China Enterprise Agreement"
-    when "azure_graph"
-      provider_name = "Microsoft Graph"
-    when "gce"
-      provider_name = "Google Cloud"
-    when "flexera"
-      provider_name = "Flexera"
-    when "turbonomic"
-      provider_name = "Turbonomic"
-    when "github"
-      provider_name = "GitHub"
-    when "servicenow"
-      provider_name = "ServiceNow"
-    when "okta"
-      provider_name = "Okta"
-    end
-
-    required = provider[:permissions].select { |p| p["required"] }
-    not_required = provider[:permissions].select { |p| !p["required"] }
-
-    if required.length > 0
-      html_content += "<p><b>#{provider_name} Required Permissions:</b><br>"
-
-      required.sort_by { |v| v["name"] }.each do |permission|
-        read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:75%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:75%;\">Write</span></i>"
-        html_content += "#{permission["name"]}  #{read_only}<br>"
-      end
-    end
-
-    if not_required.length > 0
-      html_content += "<p><b>#{provider_name} Optional Permissions:</b><br>"
-
-      not_required.sort_by { |v| v["name"] }.each do |permission|
-        read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:75%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:75%;\">Write</span></i>"
-        html_content += "#{permission["name"]}  #{read_only}<br>"
-      end
-    end
-  end
-
-  html_content += "<hr>"
-end
-
+html_content += generate_pdf_html?(google_values)
 html_content += "</table></body></html>"
 
 pdf = PDFKit.new(html_content)
