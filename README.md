@@ -30,12 +30,12 @@ Policy templates require the correct permissions configured for your [Flexera Cr
 
 <!-- Begin Generated Content from generate_readme_policy_table_of_contents.rb -->
 
-- [Optimization](#policy-templates-for-optimization)
-- [Compliance](#policy-templates-for-compliance)
-- [Cost](#policy-templates-for-cost)
-- [Operational](#policy-templates-for-operational)
-- [SaaS Management](#policy-templates-for-saas-management)
-- [Security](#policy-templates-for-security)
+* [Optimization](#policy-templates-for-optimization)
+* [Compliance](#policy-templates-for-compliance)
+* [Cost](#policy-templates-for-cost)
+* [Operational](#policy-templates-for-operational)
+* [SaaS Management](#policy-templates-for-saas-management)
+* [Security](#policy-templates-for-security)
 
 ### Policy Templates for Optimization
 
@@ -43,626 +43,626 @@ These templates can generate savings estimates for your environment. The inciden
 
 #### AWS
 
-- All
+* All
 
-  - [AWS Resources Under Extended Support](./cost/aws/extended_support)
+  * [AWS Resources Under Extended Support](./cost/aws/extended_support)
 
-- Compute
+* Compute
 
-  - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
-  - [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
-  - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
-  - [AWS Superseded EBS Volumes](./cost/aws/superseded_ebs_volumes)
-  - [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
-  - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
-  - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
-  - [Turbonomic Rightsize Virtual Machines Recommendations AWS](./cost/turbonomics/scale_virtual_machines_recommendations/aws)
+  * [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
+  * [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
+  * [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
+  * [AWS Superseded EBS Volumes](./cost/aws/superseded_ebs_volumes)
+  * [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
+  * [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
+  * [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
+  * [Turbonomic Rightsize Virtual Machines Recommendations AWS](./cost/turbonomics/scale_virtual_machines_recommendations/aws)
 
-- Database
+* Database
 
-  - [AWS Rightsize ElastiCache](./cost/aws/rightsize_elasticache)
-  - [AWS Rightsize Redshift](./cost/aws/rightsize_redshift)
+  * [AWS Rightsize ElastiCache](./cost/aws/rightsize_elasticache)
+  * [AWS Rightsize Redshift](./cost/aws/rightsize_redshift)
 
-- EBS
+* EBS
 
-  - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
+  * [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
 
-- Network
+* Network
 
-  - [AWS Idle NAT Gateways](./cost/aws/idle_nat_gateways)
-  - [AWS Unused Application Load Balancers](./cost/aws/unused_albs)
-  - [AWS Unused Classic Load Balancers](./cost/aws/unused_clbs)
-  - [AWS Unused Network Load Balancers](./cost/aws/unused_nlbs)
+  * [AWS Idle NAT Gateways](./cost/aws/idle_nat_gateways)
+  * [AWS Unused Application Load Balancers](./cost/aws/unused_albs)
+  * [AWS Unused Classic Load Balancers](./cost/aws/unused_clbs)
+  * [AWS Unused Network Load Balancers](./cost/aws/unused_nlbs)
 
-- RDS
+* RDS
 
-  - [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
+  * [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
 
-- Storage
+* Storage
 
-  - [AWS Old Snapshots](./cost/aws/old_snapshots)
-  - [Turbonomic Delete Unattached Volumes Recommendations AWS](./cost/turbonomics/delete_unattached_volumes/aws)
+  * [AWS Old Snapshots](./cost/aws/old_snapshots)
+  * [Turbonomic Delete Unattached Volumes Recommendations AWS](./cost/turbonomics/delete_unattached_volumes/aws)
 
-- Usage Discount
+* Usage Discount
 
-  - [Turbonomic Buy Reserved Instances Recommendations AWS](./cost/turbonomics/buy_reserved_instances_recommendations/aws)
-  - [Turbonomic Rightsize Databases Recommendations AWS](./cost/turbonomics/rightsize_databases_recommendations/aws)
-  - [Turbonomic Rightsize Virtual Volumes Recommendations AWS](./cost/turbonomics/rightsize_virtual_volumes_recommendations/aws)
+  * [Turbonomic Buy Reserved Instances Recommendations AWS](./cost/turbonomics/buy_reserved_instances_recommendations/aws)
+  * [Turbonomic Rightsize Databases Recommendations AWS](./cost/turbonomics/rightsize_databases_recommendations/aws)
+  * [Turbonomic Rightsize Virtual Volumes Recommendations AWS](./cost/turbonomics/rightsize_virtual_volumes_recommendations/aws)
 
 #### Azure
 
-- Compute
+* Compute
 
-  - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
-  - [Azure Long Stopped Compute Instances](./cost/azure/long_stopped_instances)
-  - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
-  - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
-  - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
-  - [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
-  - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
-  - [Turbonomic Allocate Virtual Machine Recommendations Azure](./cost/turbonomics/allocate_virtual_machines_recommendations/azure)
-  - [Turbonomic Rightsize Virtual Machines Recommendations Azure](./cost/turbonomics/scale_virtual_machines_recommendations/azure)
+  * [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
+  * [Azure Long Stopped Compute Instances](./cost/azure/long_stopped_instances)
+  * [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
+  * [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
+  * [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
+  * [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
+  * [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
+  * [Turbonomic Allocate Virtual Machine Recommendations Azure](./cost/turbonomics/allocate_virtual_machines_recommendations/azure)
+  * [Turbonomic Rightsize Virtual Machines Recommendations Azure](./cost/turbonomics/scale_virtual_machines_recommendations/azure)
 
-- Databricks
+* Databricks
 
-  - [Azure Databricks Rightsize Compute Instances](./cost/azure/databricks/rightsize_compute)
+  * [Azure Databricks Rightsize Compute Instances](./cost/azure/databricks/rightsize_compute)
 
-- Managed Disks
+* Managed Disks
 
-  - [Azure Rightsize Managed Disks](./cost/azure/rightsize_managed_disks)
+  * [Azure Rightsize Managed Disks](./cost/azure/rightsize_managed_disks)
 
-- MySQL
+* MySQL
 
-  - [Azure Rightsize MySQL Flexible Servers](./cost/azure/rightsize_mysql_flexible)
-  - [Azure Rightsize MySQL Single Servers](./cost/azure/rightsize_mysql_single)
+  * [Azure Rightsize MySQL Flexible Servers](./cost/azure/rightsize_mysql_flexible)
+  * [Azure Rightsize MySQL Single Servers](./cost/azure/rightsize_mysql_single)
 
-- NetApp Files
+* NetApp Files
 
-  - [Azure Rightsize NetApp Resources](./cost/azure/rightsize_netapp)
+  * [Azure Rightsize NetApp Resources](./cost/azure/rightsize_netapp)
 
-- Network
+* Network
 
-  - [Azure Unused Firewalls](./cost/azure/unused_firewalls)
-  - [Azure Unused Load Balancers](./cost/azure/unused_load_balancers)
+  * [Azure Unused Firewalls](./cost/azure/unused_firewalls)
+  * [Azure Unused Load Balancers](./cost/azure/unused_load_balancers)
 
-- PaaS
+* PaaS
 
-  - [Azure Unused App Service Plans](./cost/azure/unused_app_service_plans)
+  * [Azure Unused App Service Plans](./cost/azure/unused_app_service_plans)
 
-- SQL
+* SQL
 
-  - [Azure Rightsize SQL Database Storage](./cost/azure/rightsize_sql_storage)
-  - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
-  - [Azure Rightsize SQL Managed Instance Storage](./cost/azure/rightsize_managed_sql_storage)
-  - [Azure Rightsize SQL Managed Instances](./cost/azure/rightsize_managed_sql)
-  - [Azure Rightsize Synapse SQL Pools](./cost/azure/rightsize_synapse_sql_pools)
+  * [Azure Rightsize SQL Database Storage](./cost/azure/rightsize_sql_storage)
+  * [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
+  * [Azure Rightsize SQL Managed Instance Storage](./cost/azure/rightsize_managed_sql_storage)
+  * [Azure Rightsize SQL Managed Instances](./cost/azure/rightsize_managed_sql)
+  * [Azure Rightsize Synapse SQL Pools](./cost/azure/rightsize_synapse_sql_pools)
 
-- Storage
+* Storage
 
-  - [Azure Old Snapshots](./cost/azure/old_snapshots)
-  - [Azure Unused Volumes](./cost/azure/unused_volumes)
-  - [Turbonomic Delete Unattached Volumes Recommendations Azure](./cost/turbonomics/delete_unattached_volumes/azure)
+  * [Azure Old Snapshots](./cost/azure/old_snapshots)
+  * [Azure Unused Volumes](./cost/azure/unused_volumes)
+  * [Turbonomic Delete Unattached Volumes Recommendations Azure](./cost/turbonomics/delete_unattached_volumes/azure)
 
-- Storage Accounts
+* Storage Accounts
 
-  - [Azure Data Lake Optimization](./cost/azure/data_lake_optimization)
+  * [Azure Data Lake Optimization](./cost/azure/data_lake_optimization)
 
-- Usage Discount
+* Usage Discount
 
-  - [Turbonomic Buy Reserved Instances Recommendations Azure](./cost/turbonomics/buy_reserved_instances_recommendations/azure)
-  - [Turbonomic Rightsize Databases Recommendations Azure](./cost/turbonomics/rightsize_databases_recommendations/azure)
-  - [Turbonomic Rightsize Virtual Volumes Recommendations Azure](./cost/turbonomics/rightsize_virtual_volumes_recommendations/azure)
+  * [Turbonomic Buy Reserved Instances Recommendations Azure](./cost/turbonomics/buy_reserved_instances_recommendations/azure)
+  * [Turbonomic Rightsize Databases Recommendations Azure](./cost/turbonomics/rightsize_databases_recommendations/azure)
+  * [Turbonomic Rightsize Virtual Volumes Recommendations Azure](./cost/turbonomics/rightsize_virtual_volumes_recommendations/azure)
 
 #### Flexera
 
-- Kubernetes
+* Kubernetes
 
-  - [Kubernetes - Rightsizing Recommendations](./cost/flexera/spot/ocean_recommendations)
+  * [Kubernetes - Rightsizing Recommendations](./cost/flexera/spot/ocean_recommendations)
 
-- Spot Security
+* Spot Security
 
-  - [Spot Security - Compliance Report](./compliance/flexera/spot/security_report)
+  * [Spot Security - Compliance Report](./compliance/flexera/spot/security_report)
 
 #### Google
 
-- Compute
+* Compute
 
-  - [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
-  - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
-  - [Google Rightsize Cloud SQL Recommender](./cost/google/rightsize_cloudsql_recommendations)
-  - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
-  - [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/google)
-  - [Turbonomic Rightsize Virtual Machines Recommendations Google](./cost/turbonomics/scale_virtual_machines_recommendations/google)
+  * [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
+  * [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
+  * [Google Rightsize Cloud SQL Recommender](./cost/google/rightsize_cloudsql_recommendations)
+  * [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
+  * [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/google)
+  * [Turbonomic Rightsize Virtual Machines Recommendations Google](./cost/turbonomics/scale_virtual_machines_recommendations/google)
 
-- Storage
+* Storage
 
-  - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
-  - [Google Old Snapshots](./cost/google/old_snapshots)
-  - [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/google)
+  * [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
+  * [Google Old Snapshots](./cost/google/old_snapshots)
+  * [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/google)
 
 #### Kubecost
 
-- Kubernetes
+* Kubernetes
 
-  - [Kubecost Cluster Rightsizing Recommendation](./cost/kubecost/cluster)
-  - [Kubecost Container Request Rightsizing Recommendations](./cost/kubecost/sizing)
+  * [Kubecost Cluster Rightsizing Recommendation](./cost/kubecost/cluster)
+  * [Kubecost Container Request Rightsizing Recommendations](./cost/kubecost/sizing)
 
 ### Policy Templates for Compliance
 
 #### AWS
 
-- Compute
+* Compute
 
-  - [AWS Disallowed Regions](./compliance/aws/disallowed_regions)
-  - [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent)
-  - [AWS Long Stopped EC2 Instances](./compliance/aws/long_stopped_instances)
-  - [AWS Untagged Resources](./compliance/aws/untagged_resources)
-  - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused)
+  * [AWS Disallowed Regions](./compliance/aws/disallowed_regions)
+  * [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent)
+  * [AWS Long Stopped EC2 Instances](./compliance/aws/long_stopped_instances)
+  * [AWS Untagged Resources](./compliance/aws/untagged_resources)
+  * [AWS Unused ECS Clusters](./compliance/aws/ecs_unused)
 
-- Identity & Access Management
+* Identity & Access Management
 
-  - [AWS IAM Role Audit](./compliance/aws/iam_role_audit)
+  * [AWS IAM Role Audit](./compliance/aws/iam_role_audit)
 
-- Organization
+* Organization
 
-  - [AWS Accounts Missing Service Control Policies](./compliance/aws/missing_scps)
+  * [AWS Accounts Missing Service Control Policies](./compliance/aws/missing_scps)
 
-- RDS
+* RDS
 
-  - [AWS RDS Instances With Unapproved Backup Settings](./compliance/aws/rds_backup)
+  * [AWS RDS Instances With Unapproved Backup Settings](./compliance/aws/rds_backup)
 
 #### Azure
 
-- All
+* All
 
-  - [Azure Advisor Carbon Reduction Recommendations](./compliance/azure/advisor_carbon)
+  * [Azure Advisor Carbon Reduction Recommendations](./compliance/azure/advisor_carbon)
 
-- Compute
+* Compute
 
-  - [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual)
-  - [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
-  - [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent)
-  - [Azure Untagged Resources](./compliance/azure/azure_untagged_resources)
-  - [Azure Untagged Virtual Machines](./compliance/azure/azure_untagged_vms)
+  * [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual)
+  * [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
+  * [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent)
+  * [Azure Untagged Resources](./compliance/azure/azure_untagged_resources)
+  * [Azure Untagged Virtual Machines](./compliance/azure/azure_untagged_vms)
 
-- Identity & Access Management
+* Identity & Access Management
 
-  - [Azure Policy Audit](./compliance/azure/azure_policy_audit)
+  * [Azure Policy Audit](./compliance/azure/azure_policy_audit)
 
-- N/A
+* N/A
 
-  - [Azure Regulatory Compliance](./compliance/azure/compliance_score)
+  * [Azure Regulatory Compliance](./compliance/azure/compliance_score)
 
 #### Flexera
 
-- Cloud Cost Optimization
+* Cloud Cost Optimization
 
-  - [Billing Center Access Report](./compliance/flexera/cco/billing_center_access_report)
+  * [Billing Center Access Report](./compliance/flexera/cco/billing_center_access_report)
 
-- IT Asset Management
+* IT Asset Management
 
-  - [ITAM Expiring Licenses](./compliance/flexera/fnms/fnms_licenses_expiring)
-  - [ITAM Ignored Recent Inventory Dates](./compliance/flexera/fnms/ignored_recent_inventory_dates)
-  - [ITAM Missing Active Machines](./compliance/flexera/fnms/missing_active_machines)
-  - [ITAM Overused Licenses](./compliance/flexera/fnms/overused_licenses)
-  - [ITAM VMs Missing Host ID](./compliance/flexera/fnms/vms_missing_hostid)
+  * [ITAM Expiring Licenses](./compliance/flexera/fnms/fnms_licenses_expiring)
+  * [ITAM Ignored Recent Inventory Dates](./compliance/flexera/fnms/ignored_recent_inventory_dates)
+  * [ITAM Missing Active Machines](./compliance/flexera/fnms/missing_active_machines)
+  * [ITAM Overused Licenses](./compliance/flexera/fnms/overused_licenses)
+  * [ITAM VMs Missing Host ID](./compliance/flexera/fnms/vms_missing_hostid)
 
-- Identity & Access Management
+* Identity & Access Management
 
-  - [Flexera Users With Explicit Roles](./compliance/flexera/iam/iam_explicit_user_roles)
+  * [Flexera Users With Explicit Roles](./compliance/flexera/iam/iam_explicit_user_roles)
 
 #### GitHub
 
-- Git
+* Git
 
-  - [GitHub Available Seats](./compliance/github/available_seats)
-  - [GitHub Repositories Without Admin Team](./compliance/github/repository_admin_team)
-  - [GitHub Repository Branches Without Protection](./compliance/github/repository_branch_protection)
-  - [GitHub Undersized Repositories](./compliance/github/repository_size)
-  - [GitHub Unpermitted Outside Collaborators](./compliance/github/outside_collaborators)
-  - [GitHub Unpermitted Repository Names](./compliance/github/repository_naming)
-  - [GitHub Unpermitted Top-Level Teams](./compliance/github/toplevel_teams)
+  * [GitHub Available Seats](./compliance/github/available_seats)
+  * [GitHub Repositories Without Admin Team](./compliance/github/repository_admin_team)
+  * [GitHub Repository Branches Without Protection](./compliance/github/repository_branch_protection)
+  * [GitHub Undersized Repositories](./compliance/github/repository_size)
+  * [GitHub Unpermitted Outside Collaborators](./compliance/github/outside_collaborators)
+  * [GitHub Unpermitted Repository Names](./compliance/github/repository_naming)
+  * [GitHub Unpermitted Top-Level Teams](./compliance/github/toplevel_teams)
 
 #### Google
 
-- Compute
+* Compute
 
-  - [Google Long Stopped VM Instances](./compliance/google/long_stopped_instances)
-  - [Google Unlabeled Resources](./compliance/google/unlabeled_resources)
+  * [Google Long Stopped VM Instances](./compliance/google/long_stopped_instances)
+  * [Google Unlabeled Resources](./compliance/google/unlabeled_resources)
 
 ### Policy Templates for Cost
 
 #### AWS
 
-- All
+* All
 
-  - [AWS Cheaper Regions](./cost/aws/cheaper_regions)
+  * [AWS Cheaper Regions](./cost/aws/cheaper_regions)
 
-- CloudTrail
+* CloudTrail
 
-  - [AWS CloudTrails With Read Logging Enabled](./cost/aws/cloudtrail_read_logging)
+  * [AWS CloudTrails With Read Logging Enabled](./cost/aws/cloudtrail_read_logging)
 
-- Compute
+* Compute
 
-  - [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
-  - [AWS EC2 Instances Time Stopped Report](./operational/aws/ec2_stopped_report)
-  - [AWS EKS Clusters Without Spot Instances](./cost/aws/eks_without_spot)
-  - [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration)
-  - [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
-  - [AWS Reserved Instances Coverage](./cost/aws/reserved_instances/coverage)
-  - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
-  - [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
-  - [AWS Savings Realized From Rate Reduction Purchases](./cost/aws/savings_realized)
-  - [AWS Schedule Instance](./cost/aws/schedule_instance)
+  * [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
+  * [AWS EC2 Instances Time Stopped Report](./operational/aws/ec2_stopped_report)
+  * [AWS EKS Clusters Without Spot Instances](./cost/aws/eks_without_spot)
+  * [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration)
+  * [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
+  * [AWS Reserved Instances Coverage](./cost/aws/reserved_instances/coverage)
+  * [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
+  * [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
+  * [AWS Savings Realized From Rate Reduction Purchases](./cost/aws/savings_realized)
+  * [AWS Schedule Instance](./cost/aws/schedule_instance)
 
-- Marketplace
+* Marketplace
 
-  - [AWS New Marketplace Products](./operational/aws/marketplace_new_products)
+  * [AWS New Marketplace Products](./operational/aws/marketplace_new_products)
 
-- Storage
+* Storage
 
-  - [AWS Oversized S3 Buckets](./cost/aws/s3_bucket_size)
-  - [AWS S3 Buckets Without Intelligent Tiering](./cost/aws/s3_storage_policy)
-  - [AWS S3 Buckets Without Lifecycle Configuration](./cost/aws/s3_lifecycle)
-  - [AWS S3 Incomplete Multi-Part Uploads](./cost/aws/s3_multipart_uploads)
+  * [AWS Oversized S3 Buckets](./cost/aws/s3_bucket_size)
+  * [AWS S3 Buckets Without Intelligent Tiering](./cost/aws/s3_storage_policy)
+  * [AWS S3 Buckets Without Lifecycle Configuration](./cost/aws/s3_lifecycle)
+  * [AWS S3 Incomplete Multi-Part Uploads](./cost/aws/s3_multipart_uploads)
 
 #### Azure
 
-- All
+* All
 
-  - [Azure Cheaper Regions](./cost/azure/cheaper_regions)
+  * [Azure Cheaper Regions](./cost/azure/cheaper_regions)
 
-- Compute
+* Compute
 
-  - [Azure Compute Instances Time Powered Off Report](./operational/azure/compute_poweredoff_report)
-  - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
-  - [Azure Expiring Savings Plans](./cost/azure/savings_plan/expiration)
-  - [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
-  - [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
-  - [Azure Reserved Instances Utilization MCA](./cost/azure/reserved_instances/utilization_mca)
-  - [Azure Savings Plan Utilization](./cost/azure/savings_plan/utilization)
-  - [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
-  - [Azure Schedule Instance](./cost/azure/schedule_instance)
+  * [Azure Compute Instances Time Powered Off Report](./operational/azure/compute_poweredoff_report)
+  * [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
+  * [Azure Expiring Savings Plans](./cost/azure/savings_plan/expiration)
+  * [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
+  * [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
+  * [Azure Reserved Instances Utilization MCA](./cost/azure/reserved_instances/utilization_mca)
+  * [Azure Savings Plan Utilization](./cost/azure/savings_plan/utilization)
+  * [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
+  * [Azure Schedule Instance](./cost/azure/schedule_instance)
 
-- Marketplace
+* Marketplace
 
-  - [Azure New Marketplace Products](./operational/azure/marketplace_new_products)
+  * [Azure New Marketplace Products](./operational/azure/marketplace_new_products)
 
-- Network
+* Network
 
-  - [Azure Unused Virtual Network Gateways](./cost/azure/unused_vngs)
+  * [Azure Unused Virtual Network Gateways](./cost/azure/unused_vngs)
 
-- PaaS
+* PaaS
 
-  - [Azure Web Apps With Unoptimized Scaling](./cost/azure/unoptimized_web_app_scaling)
+  * [Azure Web Apps With Unoptimized Scaling](./cost/azure/unoptimized_web_app_scaling)
 
-- SQL
+* SQL
 
-  - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
-  - [Azure SQL Servers Without Elastic Pools](./cost/azure/sql_servers_without_elastic_pool)
+  * [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
+  * [Azure SQL Servers Without Elastic Pools](./cost/azure/sql_servers_without_elastic_pool)
 
-- Storage Accounts
+* Storage Accounts
 
-  - [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management)
+  * [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management)
 
 #### Azure China
 
-- Common Bill Ingestion
+* Common Bill Ingestion
 
-  - [Azure China Common Bill Ingestion](./cost/azure/azure_china_cbi)
+  * [Azure China Common Bill Ingestion](./cost/azure/azure_china_cbi)
 
 #### Flexera
 
-- Cloud Cost Optimization
+* Cloud Cost Optimization
 
-  - [Budget Alerts](./cost/flexera/cco/budget_report_alerts)
-  - [Budget vs Actual Spend Report](./cost/flexera/cco/budget_v_actual_spend_report)
-  - [Cloud Cost Anomaly Alerts](./cost/flexera/cco/cloud_cost_anomaly_alerts)
-  - [Cloud Spend Forecast - Straight-Line](./cost/flexera/cco/forecasting/straight_line_forecast)
-  - [Cloud Spend Moving Average Report](./cost/flexera/cco/moving_average)
-  - [Currency Conversion](./cost/flexera/cco/currency_conversion)
-  - [Email Cost Optimization Recommendations](./cost/flexera/cco/email_recommendations)
-  - [Flexera FOCUS Report](./cost/flexera/cco/focus_report)
-  - [Low Usage Report](./cost/flexera/cco/low_usage)
-  - [New Usage](./cost/flexera/cco/new_usage)
-  - [Scheduled Report](./cost/flexera/cco/scheduled_reports)
-  - [Scheduled Report for Unallocated Costs](./cost/flexera/cco/scheduled_report_unallocated)
-  - [Vendor Spend Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
+  * [Budget Alerts](./cost/flexera/cco/budget_report_alerts)
+  * [Budget vs Actual Spend Report](./cost/flexera/cco/budget_v_actual_spend_report)
+  * [Cloud Cost Anomaly Alerts](./cost/flexera/cco/cloud_cost_anomaly_alerts)
+  * [Cloud Spend Forecast - Straight-Line](./cost/flexera/cco/forecasting/straight_line_forecast)
+  * [Cloud Spend Moving Average Report](./cost/flexera/cco/moving_average)
+  * [Currency Conversion](./cost/flexera/cco/currency_conversion)
+  * [Email Cost Optimization Recommendations](./cost/flexera/cco/email_recommendations)
+  * [Flexera FOCUS Report](./cost/flexera/cco/focus_report)
+  * [Low Usage Report](./cost/flexera/cco/low_usage)
+  * [New Usage](./cost/flexera/cco/new_usage)
+  * [Scheduled Report](./cost/flexera/cco/scheduled_reports)
+  * [Scheduled Report for Unallocated Costs](./cost/flexera/cco/scheduled_report_unallocated)
+  * [Vendor Spend Commitment Forecast](./cost/flexera/cco/forecasting/commitment_forecast)
 
-- Common Bill Ingestion
+* Common Bill Ingestion
 
-  - [Common Bill Ingestion from AWS S3 Object Storage](./cost/flexera/cco/cbi_ingestion_aws_s3)
-  - [Common Bill Ingestion from Azure Blob Storage](./cost/flexera/cco/cbi_ingestion_azure_blob)
-  - [Fixed Cost Common Bill Ingestion](./cost/flexera/cco/fixed_cost_cbi)
+  * [Common Bill Ingestion from AWS S3 Object Storage](./cost/flexera/cco/cbi_ingestion_aws_s3)
+  * [Common Bill Ingestion from Azure Blob Storage](./cost/flexera/cco/cbi_ingestion_azure_blob)
+  * [Fixed Cost Common Bill Ingestion](./cost/flexera/cco/fixed_cost_cbi)
 
-- Spot Eco
+* Spot Eco
 
-  - [Spot Eco - Commitment Source Dimension](./automation/flexera/spot/commitment_source_rbd)
+  * [Spot Eco - Commitment Source Dimension](./automation/flexera/spot/commitment_source_rbd)
 
 #### Google
 
-- All
+* All
 
-  - [Google Cheaper Regions](./cost/google/cheaper_regions)
-  - [Google Recommenders](./cost/google/recommender)
+  * [Google Cheaper Regions](./cost/google/cheaper_regions)
+  * [Google Recommenders](./cost/google/recommender)
 
-- Compute
+* Compute
 
-  - [Google Committed Use Discount Report](./cost/google/cud_report)
-  - [Google Expiring Committed Use Discounts (CUD)](./cost/google/cud_expiration)
-  - [Google Schedule Instance](./cost/google/schedule_instance)
+  * [Google Committed Use Discount Report](./cost/google/cud_report)
+  * [Google Expiring Committed Use Discounts (CUD)](./cost/google/cud_expiration)
+  * [Google Schedule Instance](./cost/google/schedule_instance)
 
-- Storage
+* Storage
 
-  - [Google Cloud Storage Without Lifecycle Configuration](./cost/google/cloud_storage_lifecycle)
+  * [Google Cloud Storage Without Lifecycle Configuration](./cost/google/cloud_storage_lifecycle)
 
 #### Oracle
 
-- Common Bill Ingestion
+* Common Bill Ingestion
 
-  - [Oracle Cloud Common Bill Ingestion](./cost/oracle/oracle_cbi)
+  * [Oracle Cloud Common Bill Ingestion](./cost/oracle/oracle_cbi)
 
 ### Policy Templates for Operational
 
 #### AWS
 
-- Compute
+* Compute
 
-  - [AWS Long Running Instances](./operational/aws/long_running_instances)
-  - [AWS Overutilized EC2 Instances](./operational/aws/overutilized_ec2_instances)
-  - [AWS Scheduled EC2 Events](./operational/aws/scheduled_ec2_events)
-  - [AWS Usage Forecast - Instance Time Used](./operational/aws/total_instance_usage_forecast)
-  - [AWS Usage Report - Instance Time Used](./operational/aws/total_instance_usage_report)
+  * [AWS Long Running Instances](./operational/aws/long_running_instances)
+  * [AWS Overutilized EC2 Instances](./operational/aws/overutilized_ec2_instances)
+  * [AWS Scheduled EC2 Events](./operational/aws/scheduled_ec2_events)
+  * [AWS Usage Forecast - Instance Time Used](./operational/aws/total_instance_usage_forecast)
+  * [AWS Usage Report - Instance Time Used](./operational/aws/total_instance_usage_report)
 
-- PaaS
+* PaaS
 
-  - [AWS Lambda Functions With High Error Rate](./operational/aws/lambda_functions_with_high_error_rate)
-  - [AWS Lambda Functions Without Provisioned Concurrency](./operational/aws/lambda_provisioned_concurrency)
+  * [AWS Lambda Functions With High Error Rate](./operational/aws/lambda_functions_with_high_error_rate)
+  * [AWS Lambda Functions Without Provisioned Concurrency](./operational/aws/lambda_provisioned_concurrency)
 
-- Tags
+* Tags
 
-  - [AWS Tag Cardinality Report](./operational/aws/tag_cardinality)
+  * [AWS Tag Cardinality Report](./operational/aws/tag_cardinality)
 
 #### Azure
 
-- AKS
+* AKS
 
-  - [AKS Node Pools Without Autoscaling](./operational/azure/aks_nodepools_without_autoscaling)
-  - [AKS Node Pools Without Zero Autoscaling](./operational/azure/aks_nodepools_without_zero_autoscaling)
+  * [AKS Node Pools Without Autoscaling](./operational/azure/aks_nodepools_without_autoscaling)
+  * [AKS Node Pools Without Zero Autoscaling](./operational/azure/aks_nodepools_without_zero_autoscaling)
 
-- Compute
+* Compute
 
-  - [Azure Bring-Your-Own-License (BYOL) Report](./operational/azure/byol_report)
-  - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
-  - [Azure Overutilized Compute Instances](./operational/azure/overutilized_compute_instances)
-  - [Azure Usage Report - Instance Time Used](./operational/azure/total_instance_usage_report)
-  - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
+  * [Azure Bring-Your-Own-License (BYOL) Report](./operational/azure/byol_report)
+  * [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
+  * [Azure Overutilized Compute Instances](./operational/azure/overutilized_compute_instances)
+  * [Azure Usage Report - Instance Time Used](./operational/azure/total_instance_usage_report)
+  * [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
 
-- PaaS
+* PaaS
 
-  - [Azure Expiring Certificates](./operational/azure/azure_certificates)
+  * [Azure Expiring Certificates](./operational/azure/azure_certificates)
 
-- Tags
+* Tags
 
-  - [Azure Tag Cardinality Report](./operational/azure/tag_cardinality)
+  * [Azure Tag Cardinality Report](./operational/azure/tag_cardinality)
 
 #### Flexera
 
-- Automation
+* Automation
 
-  - [Applied Policy Template Errors](./operational/flexera/automation/applied_policy_error_notification)
-  - [Flexera Automation Disallowed Credentials](./automation/flexera/disallowed_credentials)
-  - [Flexera Automation Expiring Credentials](./automation/flexera/expiring_credentials)
-  - [Flexera Automation Outdated Applied Policies](./automation/flexera/outdated_applied_policies)
+  * [Applied Policy Template Errors](./operational/flexera/automation/applied_policy_error_notification)
+  * [Flexera Automation Disallowed Credentials](./automation/flexera/disallowed_credentials)
+  * [Flexera Automation Expiring Credentials](./automation/flexera/expiring_credentials)
+  * [Flexera Automation Outdated Applied Policies](./automation/flexera/outdated_applied_policies)
 
-- Cloud Cost Optimization
+* Cloud Cost Optimization
 
-  - [Cloud Bill Processing Error Notification](./operational/flexera/cco/bill_processing_errors_notification)
-  - [FinOps Dashboards](./operational/flexera/cco/finops_dashboards)
+  * [Cloud Bill Processing Error Notification](./operational/flexera/cco/bill_processing_errors_notification)
+  * [FinOps Dashboards](./operational/flexera/cco/finops_dashboards)
 
-- FlexNet Manager
+* FlexNet Manager
 
-  - [Schedule FlexNet Manager Report](./operational/flexera/fnms/schedule_fnms_reports)
+  * [Schedule FlexNet Manager Report](./operational/flexera/fnms/schedule_fnms_reports)
 
-- IT Asset Management
+* IT Asset Management
 
-  - [ITAM Asset Report](./operational/flexera/itam/asset_report)
-  - [ITAM Installed Application Report](./operational/flexera/itam/installed_app_report)
-  - [ITAM License Report](./operational/flexera/itam/license_report)
-  - [Schedule ITAM Report](./operational/flexera/itam/schedule_itam_report)
+  * [ITAM Asset Report](./operational/flexera/itam/asset_report)
+  * [ITAM Installed Application Report](./operational/flexera/itam/installed_app_report)
+  * [ITAM License Report](./operational/flexera/itam/license_report)
+  * [Schedule ITAM Report](./operational/flexera/itam/schedule_itam_report)
 
-- Identity & Access Management
+* Identity & Access Management
 
-  - [Configure Custom Branding](./operational/flexera/custom_branding)
-  - [Flexera One API Event Report](./operational/flexera/iam/api_event_report)
-  - [Flexera One User Access Report](./operational/flexera/iam/iam_user_report)
+  * [Configure Custom Branding](./operational/flexera/custom_branding)
+  * [Flexera One API Event Report](./operational/flexera/iam/api_event_report)
+  * [Flexera One User Access Report](./operational/flexera/iam/iam_user_report)
 
-- Kubernetes
+* Kubernetes
 
-  - [Spot Ocean - Common Bill Ingest](./cost/flexera/spot/ocean_cbi)
+  * [Spot Ocean - Common Bill Ingest](./cost/flexera/spot/ocean_cbi)
 
-- N/A
+* N/A
 
-  - [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
+  * [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
 
 #### Google
 
-- Compute
+* Compute
 
-  - [Google Overutilized VM Instances](./operational/google/overutilized_vms)
+  * [Google Overutilized VM Instances](./operational/google/overutilized_vms)
 
-- Tags
+* Tags
 
-  - [Google Label Cardinality Report](./operational/google/label_cardinality)
+  * [Google Label Cardinality Report](./operational/google/label_cardinality)
 
 ### Policy Templates for SaaS Management
 
 #### Flexera
 
-- SaaS Manager
+* SaaS Manager
 
-  - [SaaS Manager - Deactivated Users](./saas/fsm/deactivated_users)
-  - [SaaS Manager - Deactivated Users for Integrated Applications](./saas/fsm/deactivated_users_for_integrated_apps)
-  - [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
-  - [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
-  - [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
-  - [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
-  - [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
-  - [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
+  * [SaaS Manager - Deactivated Users](./saas/fsm/deactivated_users)
+  * [SaaS Manager - Deactivated Users for Integrated Applications](./saas/fsm/deactivated_users_for_integrated_apps)
+  * [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
+  * [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
+  * [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
+  * [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
+  * [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
+  * [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
 
 #### Microsoft
 
-- Office 365
+* Office 365
 
-  - [Office 365 Security Alerts](./saas/office365/security_alerts)
+  * [Office 365 Security Alerts](./saas/office365/security_alerts)
 
 #### Okta
 
-- N/A
+* N/A
 
-  - [Okta Inactive Users](./saas/okta/inactive_users)
+  * [Okta Inactive Users](./saas/okta/inactive_users)
 
 #### ServiceNow
 
-- N/A
+* N/A
 
-  - [ServiceNow Inactive Approvers](./saas/servicenow/inactive_approvers)
+  * [ServiceNow Inactive Approvers](./saas/servicenow/inactive_approvers)
 
 ### Policy Templates for Security
 
 #### AWS
 
-- CloudTrail
+* CloudTrail
 
-  - [AWS CloudTrail Not Enabled In All Regions](./security/aws/log_ensure_cloudtrail_multiregion)
-  - [AWS CloudTrail S3 Buckets Without Access Logging](./security/aws/log_ensure_cloudtrail_bucket_access_logging)
-  - [AWS CloudTrails Not Integrated With CloudWatch](./security/aws/log_cloudtrail_cloudwatch_integrated)
-  - [AWS CloudTrails Without Encrypted Logs](./security/aws/log_ensure_cloudtrail_encrypted)
-  - [AWS CloudTrails Without Log File Validation Enabled](./security/aws/log_file_validation_enabled)
-  - [AWS CloudTrails Without Object-level Events Logging Enabled](./security/aws/log_ensure_cloudtrail_bucket_object_logging)
-  - [AWS Publicly Accessible CloudTrail S3 Buckets](./security/aws/log_ensure_cloudtrail_bucket_not_public)
+  * [AWS CloudTrail Not Enabled In All Regions](./security/aws/log_ensure_cloudtrail_multiregion)
+  * [AWS CloudTrail S3 Buckets Without Access Logging](./security/aws/log_ensure_cloudtrail_bucket_access_logging)
+  * [AWS CloudTrails Not Integrated With CloudWatch](./security/aws/log_cloudtrail_cloudwatch_integrated)
+  * [AWS CloudTrails Without Encrypted Logs](./security/aws/log_ensure_cloudtrail_encrypted)
+  * [AWS CloudTrails Without Log File Validation Enabled](./security/aws/log_file_validation_enabled)
+  * [AWS CloudTrails Without Object-level Events Logging Enabled](./security/aws/log_ensure_cloudtrail_bucket_object_logging)
+  * [AWS Publicly Accessible CloudTrail S3 Buckets](./security/aws/log_ensure_cloudtrail_bucket_not_public)
 
-- Config
+* Config
 
-  - [AWS Regions Without Config Fully Enabled](./security/aws/aws_config_enabled)
+  * [AWS Regions Without Config Fully Enabled](./security/aws/aws_config_enabled)
 
-- DBS
+* DBS
 
-  - [AWS Regions Without Default EBS Encryption](./security/aws/ebs_ensure_encryption_default)
+  * [AWS Regions Without Default EBS Encryption](./security/aws/ebs_ensure_encryption_default)
 
-- EBS
+* EBS
 
-  - [AWS Unencrypted EBS Volumes](./security/aws/ebs_unencrypted_volumes)
+  * [AWS Unencrypted EBS Volumes](./security/aws/ebs_unencrypted_volumes)
 
-- Identity & Access Management
+* Identity & Access Management
 
-  - [AWS IAM Account Missing Support Role](./security/aws/iam_support_role_created)
-  - [AWS IAM Attached Admin Policies](./security/aws/iam_no_admin_iam_policies_attached)
-  - [AWS IAM Expired SSL/TLS Certificates](./security/aws/iam_expired_ssl_certs)
-  - [AWS IAM Insufficient Required Password Length](./security/aws/iam_min_password_length)
-  - [AWS IAM Password Policy Not Restricting Password Reuse](./security/aws/iam_prevent_password_reuse)
-  - [AWS IAM Root Account Access Keys](./security/aws/iam_no_root_access_keys)
-  - [AWS IAM Root User Account Without Hardware MFA](./security/aws/iam_hwmfa_enabled_for_root)
-  - [AWS IAM Root User Account Without MFA](./security/aws/iam_mfa_enabled_for_root)
-  - [AWS IAM Root User Doing Everyday Tasks](./security/aws/iam_no_root_for_tasks)
-  - [AWS IAM User Accounts Without MFA](./security/aws/iam_mfa_enabled_for_iam_users)
-  - [AWS IAM Users With Directly-Attached Policies](./security/aws/iam_users_perms_via_groups_only)
-  - [AWS IAM Users With Multiple Active Access Keys](./security/aws/iam_one_active_key_per_user)
-  - [AWS IAM Users With Old Access Keys](./security/aws/iam_rotate_access_keys)
-  - [AWS Regions Without Access Analyzer Enabled](./security/aws/iam_access_analyzer_enabled)
-  - [AWS Unused IAM Credentials](./security/aws/iam_unused_creds)
+  * [AWS IAM Account Missing Support Role](./security/aws/iam_support_role_created)
+  * [AWS IAM Attached Admin Policies](./security/aws/iam_no_admin_iam_policies_attached)
+  * [AWS IAM Expired SSL/TLS Certificates](./security/aws/iam_expired_ssl_certs)
+  * [AWS IAM Insufficient Required Password Length](./security/aws/iam_min_password_length)
+  * [AWS IAM Password Policy Not Restricting Password Reuse](./security/aws/iam_prevent_password_reuse)
+  * [AWS IAM Root Account Access Keys](./security/aws/iam_no_root_access_keys)
+  * [AWS IAM Root User Account Without Hardware MFA](./security/aws/iam_hwmfa_enabled_for_root)
+  * [AWS IAM Root User Account Without MFA](./security/aws/iam_mfa_enabled_for_root)
+  * [AWS IAM Root User Doing Everyday Tasks](./security/aws/iam_no_root_for_tasks)
+  * [AWS IAM User Accounts Without MFA](./security/aws/iam_mfa_enabled_for_iam_users)
+  * [AWS IAM Users With Directly-Attached Policies](./security/aws/iam_users_perms_via_groups_only)
+  * [AWS IAM Users With Multiple Active Access Keys](./security/aws/iam_one_active_key_per_user)
+  * [AWS IAM Users With Old Access Keys](./security/aws/iam_rotate_access_keys)
+  * [AWS Regions Without Access Analyzer Enabled](./security/aws/iam_access_analyzer_enabled)
+  * [AWS Unused IAM Credentials](./security/aws/iam_unused_creds)
 
-- KMS
+* KMS
 
-  - [AWS Customer Managed Keys (CMKs) Without Rotation Enabled](./security/aws/kms_rotation)
+  * [AWS Customer Managed Keys (CMKs) Without Rotation Enabled](./security/aws/kms_rotation)
 
-- Network
+* Network
 
-  - [AWS Elastic Load Balancers With Unencrypted Listeners](./security/aws/elb_unencrypted)
-  - [AWS Internet-Accessible Elastic Load Balancers](./security/aws/loadbalancer_internet_facing)
-  - [AWS VPCs Without FlowLogs Enabled](./security/aws/vpcs_without_flow_logs_enabled)
+  * [AWS Elastic Load Balancers With Unencrypted Listeners](./security/aws/elb_unencrypted)
+  * [AWS Internet-Accessible Elastic Load Balancers](./security/aws/loadbalancer_internet_facing)
+  * [AWS VPCs Without FlowLogs Enabled](./security/aws/vpcs_without_flow_logs_enabled)
 
-- RDS
+* RDS
 
-  - [AWS Publicly Accessible RDS Instances](./security/aws/rds_publicly_accessible)
-  - [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted)
+  * [AWS Publicly Accessible RDS Instances](./security/aws/rds_publicly_accessible)
+  * [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted)
 
-- S3
+* S3
 
-  - [AWS Open S3 Buckets](./security/aws/public_buckets)
+  * [AWS Open S3 Buckets](./security/aws/public_buckets)
 
-- Storage
+* Storage
 
-  - [AWS S3 Buckets Accepting HTTP Requests](./security/aws/s3_buckets_deny_http)
-  - [AWS S3 Buckets Without Default Encryption Configuration](./security/aws/unencrypted_s3_buckets)
-  - [AWS S3 Buckets Without MFA Delete Enabled](./security/aws/s3_ensure_mfa_delete_enabled)
-  - [AWS S3 Buckets Without Public Access Blocked](./security/aws/s3_ensure_buckets_block_public_access)
-  - [AWS S3 Buckets Without Server Access Logging](./security/aws/s3_buckets_without_server_access_logging)
+  * [AWS S3 Buckets Accepting HTTP Requests](./security/aws/s3_buckets_deny_http)
+  * [AWS S3 Buckets Without Default Encryption Configuration](./security/aws/unencrypted_s3_buckets)
+  * [AWS S3 Buckets Without MFA Delete Enabled](./security/aws/s3_ensure_mfa_delete_enabled)
+  * [AWS S3 Buckets Without Public Access Blocked](./security/aws/s3_ensure_buckets_block_public_access)
+  * [AWS S3 Buckets Without Server Access Logging](./security/aws/s3_buckets_without_server_access_logging)
 
 #### Azure
 
-- App Service
+* App Service
 
-  - [Azure Web Apps Without Secure TLS](./security/azure/webapp_tls_version_support)
+  * [Azure Web Apps Without Secure TLS](./security/azure/webapp_tls_version_support)
 
-- Identity & Access Management
+* Identity & Access Management
 
-  - [Azure Guest Users](./security/azure/guest_users)
-  - [Azure Subscriptions Without Log Analytics Auto-Provisioning](./security/azure/log_analytics_autoprovision)
+  * [Azure Guest Users](./security/azure/guest_users)
+  * [Azure Subscriptions Without Log Analytics Auto-Provisioning](./security/azure/log_analytics_autoprovision)
 
-- MySQL
+* MySQL
 
-  - [Azure MySQL Flexible Servers Without Secure TLS](./security/azure/mysql_tls_version)
-  - [Azure MySQL Servers Without Enforced SSL](./security/azure/mysql_ssl)
+  * [Azure MySQL Flexible Servers Without Secure TLS](./security/azure/mysql_tls_version)
+  * [Azure MySQL Servers Without Enforced SSL](./security/azure/mysql_ssl)
 
-- Network Security Group
+* Network Security Group
 
-  - [Azure Network Security Groups With Inbound RDP Open](./security/azure/restrict_rdp_internet)
-  - [Azure Network Security Groups With Inbound SSH Open](./security/azure/restrict_ssh_internet)
+  * [Azure Network Security Groups With Inbound RDP Open](./security/azure/restrict_rdp_internet)
+  * [Azure Network Security Groups With Inbound SSH Open](./security/azure/restrict_ssh_internet)
 
-- PostgreSQL
+* PostgreSQL
 
-  - [Azure PostgreSQL Servers With Bad Log Settings](./security/azure/pg_log_settings)
-  - [Azure PostgreSQL Servers With Insufficient Log Retention](./security/azure/pg_log_retention)
-  - [Azure PostgreSQL Servers Without Connection Throttling](./security/azure/pg_conn_throttling)
-  - [Azure PostgreSQL Servers Without Infrastructure Encryption](./security/azure/pg_infra_encryption)
+  * [Azure PostgreSQL Servers With Bad Log Settings](./security/azure/pg_log_settings)
+  * [Azure PostgreSQL Servers With Insufficient Log Retention](./security/azure/pg_log_retention)
+  * [Azure PostgreSQL Servers Without Connection Throttling](./security/azure/pg_conn_throttling)
+  * [Azure PostgreSQL Servers Without Infrastructure Encryption](./security/azure/pg_infra_encryption)
 
-- SQL
+* SQL
 
-  - [Azure Publicly-Accessible SQL Managed Instances](./security/azure/sql_publicly_accessible_managed_instance)
-  - [Azure SQL Databases Without Encryption](./security/azure/sql_db_encryption)
-  - [Azure SQL Servers Vulnerability Assessment Does Not Notify Admins](./security/azure/sql_server_va_admins)
-  - [Azure SQL Servers Vulnerability Assessment Without Email Notifications](./security/azure/sql_server_va_emails)
-  - [Azure SQL Servers Vulnerability Assessment Without Periodic Scans](./security/azure/sql_server_va_scans)
-  - [Azure SQL Servers With Insufficient Auditing Retention](./security/azure/sql_auditing_retention)
-  - [Azure SQL Servers Without Active Directory Admin](./security/azure/sql_ad_admin)
-  - [Azure SQL Servers Without Advanced Threat Protection (ATP)](./security/azure/sql_server_atp)
-  - [Azure SQL Servers Without Auditing Enabled](./security/azure/sql_server_auditing)
-  - [Azure SQL Servers Without Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va)
+  * [Azure Publicly-Accessible SQL Managed Instances](./security/azure/sql_publicly_accessible_managed_instance)
+  * [Azure SQL Databases Without Encryption](./security/azure/sql_db_encryption)
+  * [Azure SQL Servers Vulnerability Assessment Does Not Notify Admins](./security/azure/sql_server_va_admins)
+  * [Azure SQL Servers Vulnerability Assessment Without Email Notifications](./security/azure/sql_server_va_emails)
+  * [Azure SQL Servers Vulnerability Assessment Without Periodic Scans](./security/azure/sql_server_va_scans)
+  * [Azure SQL Servers With Insufficient Auditing Retention](./security/azure/sql_auditing_retention)
+  * [Azure SQL Servers Without Active Directory Admin](./security/azure/sql_ad_admin)
+  * [Azure SQL Servers Without Advanced Threat Protection (ATP)](./security/azure/sql_server_atp)
+  * [Azure SQL Servers Without Auditing Enabled](./security/azure/sql_server_auditing)
+  * [Azure SQL Servers Without Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va)
 
-- Security
+* Security
 
-  - [Azure Subscriptions Without High Severity Alerts](./security/azure/high_severity_alerts)
-  - [Azure Subscriptions Without Owner Security Alerts](./security/azure/security_alert_owners)
-  - [Azure Subscriptions Without Security Contact Email](./security/azure/security_contact_email)
+  * [Azure Subscriptions Without High Severity Alerts](./security/azure/high_severity_alerts)
+  * [Azure Subscriptions Without Owner Security Alerts](./security/azure/security_alert_owners)
+  * [Azure Subscriptions Without Security Contact Email](./security/azure/security_contact_email)
 
-- Storage
+* Storage
 
-  - [Azure Blob Storage Accounts Without Logging Enabled](./security/azure/blob_storage_logging)
-  - [Azure Blob Storage Accounts Without Soft Delete Enabled](./security/azure/storage_soft_delete)
-  - [Azure Publicly-Accessible Blob Containers](./security/azure/private_blob_containers)
-  - [Azure Queue Storage Accounts Without Logging Enabled](./security/azure/queue_storage_logging)
-  - [Azure Storage Accounts Allowing Default Network Access](./security/azure/storage_network_deny)
-  - [Azure Storage Accounts Without Secure TLS](./security/azure/storage_tls_version)
-  - [Azure Storage Accounts Without Secure Transfer](./security/azure/secure_transfer_required)
-  - [Azure Storage Accounts Without Trusted Microsoft Services Access](./security/azure/storage_trusted_services)
-  - [Azure Table Storage Accounts Without Logging Enabled](./security/azure/table_storage_logging)
+  * [Azure Blob Storage Accounts Without Logging Enabled](./security/azure/blob_storage_logging)
+  * [Azure Blob Storage Accounts Without Soft Delete Enabled](./security/azure/storage_soft_delete)
+  * [Azure Publicly-Accessible Blob Containers](./security/azure/private_blob_containers)
+  * [Azure Queue Storage Accounts Without Logging Enabled](./security/azure/queue_storage_logging)
+  * [Azure Storage Accounts Allowing Default Network Access](./security/azure/storage_network_deny)
+  * [Azure Storage Accounts Without Secure TLS](./security/azure/storage_tls_version)
+  * [Azure Storage Accounts Without Secure Transfer](./security/azure/secure_transfer_required)
+  * [Azure Storage Accounts Without Trusted Microsoft Services Access](./security/azure/storage_trusted_services)
+  * [Azure Table Storage Accounts Without Logging Enabled](./security/azure/table_storage_logging)
 
 #### Google
 
-- Storage
+* Storage
 
-  - [Google Open Buckets](./security/google/public_buckets)
+  * [Google Open Buckets](./security/google/public_buckets)
 
 <!-- Begin FOOTER.md -->
 

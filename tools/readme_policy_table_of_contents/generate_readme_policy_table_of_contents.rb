@@ -56,10 +56,10 @@ end
 # Construct the output
 readme_string = File.read("tools/readme_policy_table_of_contents/HEADER.txt")
 readme_string += "\n"
-readme_string += "- [Optimization](#policy-templates-for-optimization)\n"
+readme_string += "* [Optimization](#policy-templates-for-optimization)\n"
 
 categories.each do |category|
-  readme_string += "- [#{category}](#policy-templates-for-#{category.downcase.gsub(" ","-")})\n"
+  readme_string += "* [#{category}](#policy-templates-for-#{category.downcase.gsub(" ","-")})\n"
 end
 
 readme_string += "\n"
@@ -83,11 +83,11 @@ providers.each do |provider|
   services.each do |service|
     next unless rec_pt_table[provider][service].length > 0
 
-    readme_string += "- #{service}\n"
+    readme_string += "* #{service}\n"
     readme_string += "\n"
 
     rec_pt_table[provider][service].each do |pt|
-      readme_string += "  - [#{pt["name"]}](./#{pt["readme"].delete_suffix("/README.md")})\n"
+      readme_string += "  * [#{pt["name"]}](./#{pt["readme"].delete_suffix("/README.md")})\n"
     end
 
     readme_string += "\n"
@@ -113,11 +113,11 @@ categories.each do |category|
     services.each do |service|
       next unless other_pt_table[category][provider][service].length > 0
 
-      readme_string += "- #{service}\n"
+      readme_string += "* #{service}\n"
       readme_string += "\n"
 
       other_pt_table[category][provider][service].each do |pt|
-        readme_string += "  - [#{pt["name"]}](./#{pt["readme"].delete_suffix("/README.md")})\n"
+        readme_string += "  * [#{pt["name"]}](./#{pt["readme"].delete_suffix("/README.md")})\n"
       end
 
       readme_string += "\n"
