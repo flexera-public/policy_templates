@@ -349,6 +349,20 @@ values.sort_by! { |value| value["id"] }
 master_policy_permissions_doc[:values] = values
 puts values
 
+# Read existing JSON file to determine if we need to update assets.
+# Exit the script if we do not need to generate new assets.
+# Needed because the PDFs will always be "different" even if permissions have not changed.
+existing_json_path = "./data/policy_permissions_list/master_policy_permissions_list.json"
+
+if File.exist?(existing_json_path)
+  existing_json = File.read(existing_json_path)
+
+  if existing_json == JSON.pretty_generate(master_policy_permissions_doc)
+    puts "\nNo changes detected in policy permissions. Files not generated."
+    exit
+  end
+end
+
 # Create '.data/policy_permissions_list' directory
 # permissions_list_dir = "./dist"
 permissions_list_dir = "./data/policy_permissions_list"
