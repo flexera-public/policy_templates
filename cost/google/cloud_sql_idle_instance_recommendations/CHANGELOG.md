@@ -2,11 +2,7 @@
 
 ## v4.1.3
 
-<<<<<<< HEAD
-- Policy template metadata updated to no longer publish it in the catalog.
-=======
 - Policy template metadata modified so that it is no longer published in the catalog.
->>>>>>> master
 
 ## v4.1.2
 
