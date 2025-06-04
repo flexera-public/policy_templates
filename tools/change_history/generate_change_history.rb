@@ -71,6 +71,7 @@ File.open('HISTORY.md', 'w') do |file|
     labels = []
 
     if pr[:labels] && pr[:labels].any?
+      labels << "Unpublished" if pr[:labels].include?("UNPUBLISHED")
       labels << "New Policy Template" if pr[:labels].include?("NEW POLICY TEMPLATE")
       labels << "Major Update" if pr[:labels].include?("MAJOR UPDATE")
       labels << "Minor Update" if pr[:labels].include?("MINOR UPDATE")
