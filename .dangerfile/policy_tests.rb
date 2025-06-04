@@ -37,7 +37,7 @@ def policy_missing_github_labels?(github, file, file_parsed, file_metadata)
 end
 
 ### Deprecated test
-# Utility method. Returns true if policy is deprecated and false if it isn't
+# Utility method. Returns true if policy template is deprecated and false if it isn't
 def policy_deprecated?(file, file_parsed)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file is deprecated..."
 
