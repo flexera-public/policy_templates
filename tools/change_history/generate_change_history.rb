@@ -67,6 +67,13 @@ File.open('HISTORY.md', 'w') do |file|
 
   # Build entries for each change
   policy_pr_list.each do |pr|
+    # Find labels that indicate the type of change
+    labels = []
+    labels << "New Policy Template" if pr[:labels].contains?("NEW POLICY TEMPLATE")
+    labels << "Major Update" if pr[:labels].contains?("MAJOR UPDATE")
+    labels << "Minor Update" if pr[:labels].contains?("MINOR UPDATE")
+    labels << "Bug Fix" if pr[:labels].contains?("BUG FIX")
+
     # We only display the names if <= 5 published policies were modified
     policy_name = "Not displayed due to PR with > 5 policies. Please see [Github Pull Request](#{pr[:href]}) for these details."
 
@@ -112,6 +119,7 @@ File.open('HISTORY.md', 'w') do |file|
 
     # Write entry to file
     file.puts "### PR [##{pr[:number]}](#{pr[:href]}): #{pr[:title]}\n\n"
+    file.puts "*#{labels.join(", ")}*\n\n" if labels.any?
     file.puts "#### Description\n\n"
     file.puts "#{description.strip}\n\n"
     file.puts "#### Metadata\n\n"
