@@ -1,5 +1,10 @@
 # Changelog
 
+## v6.0.0
+
+- Policy template now distinguishes between vCore-model and DTU-model databases and checks CPU and DTU metrics to determine usage for each purchase model respectively.
+- Fixed issue where policy template would report new recommendations if a metric other than cpuAverage had changed for an existing recommendation.
+
 ## v5.5.3
 
 - Added batch processing for large datasources as a performance enhancement (reduces memory usage) with no changes to logic or functionality.

@@ -75,7 +75,7 @@ def general_bad_markdown?(file)
   when ".github/PULL_REQUEST_TEMPLATE.md"
     mdl = `mdl -r "~MD002","~MD007","~MD013" #{file}`
   else
-    mdl = `mdl -r "~MD007","~MD013" #{file}`
+    mdl = `mdl -r "~MD007","~MD013","~MD024" #{file}`
   end
 
   # Return the problems found if the mdl file is not empty. Otherwise, return false
@@ -170,7 +170,7 @@ def general_outdated_terminology?(file, file_lines)
     end
   end
 
-  fail_message = "Outdated terminology found. Please remove references to defunct internal names for products or services:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#general-style-guidelines)] Outdated terminology found. Please remove references to defunct internal names for products or services:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false

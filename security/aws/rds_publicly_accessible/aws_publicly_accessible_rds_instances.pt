@@ -7,7 +7,7 @@ category "Security"
 severity "high"
 default_frequency "hourly"
 info(
-  version: "5.0.2",
+  version: "5.1.0",
   provider: "AWS",
   service: "RDS",
   policy_set: "",
@@ -112,12 +112,25 @@ datasource "ds_applied_policy" do
 end
 
 # Get AWS RDS instance sizes
-datasource "ds_aws_instance_size_map" do
+datasource "ds_aws_instance_types" do
   request do
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_instance_types.json"
     header "User-Agent", "RS Policies"
   end
+end
+
+datasource "ds_aws_instance_type_map" do
+  run_script $js_aws_instance_type_map, $ds_aws_instance_types
+end
+
+script "js_aws_instance_type_map", type: "javascript" do
+  parameters "ds_aws_instance_types"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  _.each(ds_aws_instance_types, function(entry) { result[entry["name"]] = entry })
+EOS
 end
 
 # Get region-specific Flexera API endpoints
@@ -353,11 +366,11 @@ EOS
 end
 
 datasource "ds_rds_instances" do
-  run_script $js_rds_instances, $ds_rds_instances_set, $ds_resource_tags, $ds_aws_instance_size_map, $ds_aws_account, $ds_applied_policy, $param_exclusion_tags, $param_exclusion_tags_boolean
+  run_script $js_rds_instances, $ds_rds_instances_set, $ds_resource_tags, $ds_aws_instance_type_map, $ds_aws_account, $ds_applied_policy, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_rds_instances", type: "javascript" do
-  parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_instance_size_map", "ds_aws_account", "ds_applied_policy", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_instance_type_map", "ds_aws_account", "ds_applied_policy", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -452,8 +465,10 @@ script "js_rds_instances", type: "javascript" do
         }
       }
 
-      if (vcpus == null && ds_aws_instance_size_map[instance["resourceType"]] != undefined) {
-        vcpus = ds_aws_instance_size_map[instance["resourceType"]]["vcpu"]
+      type_metadata = ds_aws_instance_type_map[instance["resourceType"]]
+
+      if (vcpus == null && type_metadata && type_metadata["cpu"] && type_metadata["cpu"]["vcpus"]) {
+        vcpus = type_metadata["cpu"]["vcpus"]
       }
 
       result.push({
