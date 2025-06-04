@@ -7,7 +7,7 @@ severity "low"
 category "Operational"
 default_frequency "monthly"
 info(
-  version: "1.0.4",
+  version: "1.1.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Usage Report",
@@ -251,20 +251,33 @@ script "js_usage_data", type: "javascript" do
 EOS
 end
 
-datasource "ds_aws_instance_size_map" do
+datasource "ds_aws_instance_types" do
   request do
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_instance_types.json"
     header "User-Agent", "RS Policies"
   end
 end
 
+datasource "ds_aws_instance_type_map" do
+  run_script $js_aws_instance_type_map, $ds_aws_instance_types
+end
+
+script "js_aws_instance_type_map", type: "javascript" do
+  parameters "ds_aws_instance_types"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  _.each(ds_aws_instance_types, function(entry) { result[entry["name"]] = entry })
+EOS
+end
+
 datasource "ds_instance_units_per_family" do
-  run_script $js_instance_units_per_family, $ds_aws_instance_size_map, $ds_usage_data, $param_unit_time, $param_unit_instance
+  run_script $js_instance_units_per_family, $ds_aws_instance_type_map, $ds_usage_data, $param_unit_time, $param_unit_instance
 end
 
 script "js_instance_units_per_family", type: "javascript" do
-  parameters "ds_aws_instance_size_map", "ds_usage_data", "param_unit_time", "param_unit_instance"
+  parameters "ds_aws_instance_type_map", "ds_usage_data", "param_unit_time", "param_unit_instance"
   result "result"
   code <<-'EOS'
   // Tables to convert parameters to unites
@@ -275,9 +288,22 @@ script "js_instance_units_per_family", type: "javascript" do
   // Get Normalization Factor units from Instance Data json
   cpu_ratios = {}
 
-  _.each(_.keys(ds_aws_instance_size_map), function(instance_type) {
-    cpu = ds_aws_instance_size_map[instance_type][instance_unit[param_unit_instance]]
-    if (typeof(cpu) != 'number' && typeof(cpu) != 'string') { cpu = 1 }
+  _.each(_.keys(ds_aws_instance_type_map), function(instance_type) {
+    cpu = 1
+    type_metadata = ds_aws_instance_type_map[instance_type]
+
+    if (type_metadata["cpu"] && type_metadata["cpu"]["nfus"] && param_unit_instance == "Normalized Units (NFUs)") {
+      cpu = Number(type_metadata["cpu"]["nfus"])
+    }
+
+    if (type_metadata["cpu"] && type_metadata["cpu"]["vcpus"] && param_unit_instance == "vCPUs") {
+      cpu = Number(type_metadata["cpu"]["vcpus"])
+    }
+
+    if (type_metadata["memory"] && type_metadata["memory"]["sizeInMiB"] && param_unit_instance == "Memory (GiB)") {
+      cpu = Math.round(Number(type_metadata["memory"]["sizeInMiB"]) / 1024)
+    }
+
     cpu_ratios[instance_type] = Number(cpu)
   })
 

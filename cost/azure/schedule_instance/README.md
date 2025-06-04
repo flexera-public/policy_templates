@@ -88,10 +88,12 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Compute/virtualMachines/read`
-  - `Microsoft.Compute/virtualMachines/write`
-  - `Microsoft.Compute/virtualMachines/delete`
-  - `Microsoft.Compute/virtualMachines/start/action`
-  - `Microsoft.Compute/virtualMachines/deallocate/action`
+  - `Microsoft.Compute/virtualMachines/write`*
+  - `Microsoft.Compute/virtualMachines/delete`*
+  - `Microsoft.Compute/virtualMachines/start/action`*
+  - `Microsoft.Compute/virtualMachines/deallocate/action`*
+
+  \* These permissions enable taking actions against cloud resources.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`

@@ -9,3 +9,9 @@ The below command can be used for manual generation of the README.md file:
 ```bash
 ruby tools/readme_policy_table_of_contents/generate_readme_policy_table_of_contents.rb
 ```
+
+The README.md file will be assembled as follows:
+
+- tools/readme_policy_table_of_contents/HEADER.txt
+- Script-generated list of policy templates
+- tools/readme_policy_table_of_contents/FOOTER.txt
