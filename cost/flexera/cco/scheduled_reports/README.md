@@ -17,7 +17,8 @@ This policy can be used for automated "reporting" use-cases, as well as "alertin
 - *Graph Dimension Value Count* - The number of values to display on the graph for the selected dimension. The top N values will be displayed based on the cost metric selected. Enter 0 to display all values. Warning: Displaying all values may result in a graph that is difficult to interpret.
 - *Filter Dimensions* - Specify the names of the dimensions you wish to filter the costs by along with their values in dimension=value format. These can be built-in dimensions, Custom Tags or Custom Rule-Based Dimensions. Spelling and capitalization must match what is shown in the Flexera CCO platform. Examples: Environment=Production, Cost Owner=John Doe
 - *Filter Functionality* - Whether to filter for costs that meet all of the criteria specified in `Filter Dimensions` or costs that meet any of the criteria. Only applicable if at least two values are entered for `Filter Dimensions`.
-- *Date Range* - Select the Date Range options you'd like to display on the graph in the report.
+- *Date Range (Months)* - Select how many months back you'd like to display on the graph in the report.
+- *Ignore Current Month* - Whether or not to ignore the current month and begin reporting from the previous month instead.
 - *Billing Term* - Select the unit of time you'd like to display on the graph in the report. The report will split costs along the option selected. For example, if `Week` is selected, the costs will be split out by week along the graph's X axis and in the incident report.
 - *Billing Center List* - List of Billing Center Name(s) or ID(s) you want to report on. Leave blank to select all top level Billing Centers.
 - *Percent Change Threshold Value* - The threshold (in percent) for the percent change in cost between time period(s) that will trigger the report. Default of 0 will send the report every time based on the applied policy schedule.

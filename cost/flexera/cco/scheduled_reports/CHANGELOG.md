@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.0.0
+
+- Added option to ignore current month when reporting.
+- Added ability to select an arbitrary number of months (up to 12) instead of preselected options.
+
 ## v3.5.2
 
 - Fixed a bug that prevented the policy incident from being created when `Billing Term` parameter was set to `Week`.
