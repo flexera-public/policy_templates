@@ -69,10 +69,10 @@ File.open('HISTORY.md', 'w') do |file|
   policy_pr_list.each do |pr|
     # Find labels that indicate the type of change
     labels = []
-    labels << "New Policy Template" if pr[:labels].contains?("NEW POLICY TEMPLATE")
-    labels << "Major Update" if pr[:labels].contains?("MAJOR UPDATE")
-    labels << "Minor Update" if pr[:labels].contains?("MINOR UPDATE")
-    labels << "Bug Fix" if pr[:labels].contains?("BUG FIX")
+    labels << "New Policy Template" if pr[:labels].include?("NEW POLICY TEMPLATE")
+    labels << "Major Update" if pr[:labels].include?("MAJOR UPDATE")
+    labels << "Minor Update" if pr[:labels].include?("MINOR UPDATE")
+    labels << "Bug Fix" if pr[:labels].include?("BUG FIX")
 
     # We only display the names if <= 5 published policies were modified
     policy_name = "Not displayed due to PR with > 5 policies. Please see [Github Pull Request](#{pr[:href]}) for these details."
