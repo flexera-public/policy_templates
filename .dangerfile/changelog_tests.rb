@@ -52,7 +52,7 @@ def changelog_bad_formatting?(file, file_lines)
     end
   end
 
-  fail_message = "CHANGELOG.md has formatting problems. Please correct the below:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#changelogmd)] CHANGELOG.md has formatting problems. Please correct the below:\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false

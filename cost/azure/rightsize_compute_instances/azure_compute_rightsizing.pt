@@ -176,7 +176,7 @@ parameter "param_stats_interval" do
   type "string"
   category "Statistics"
   label "Statistic Interval"
-  description "The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets."
+  description "The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets. Does not affect the accuracy for 'Average' 'Maximum' 'Minimum'."
   allowed_values "1 Minute", "5 Minutes", "15 Minutes", "30 Minutes", "1 Hour", "6 Hours", "12 Hours", "1 Day"
   default "15 Minutes"
 end
@@ -663,35 +663,66 @@ script "js_azure_instances_status_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_instances_metrics" do
+datasource "ds_azure_instances_batch" do
+  run_script $js_azure_instances_batch, $ds_azure_instances_status_filtered
+end
+
+script "js_azure_instances_batch", type: "javascript" do
+  parameters "ds_azure_instances_status_filtered"
+  result "result"
+  code <<-EOS
+
+  // group by subscription
+  var instances_by_subscription = _.values(_.groupBy(ds_azure_instances_status_filtered, function(instance) {
+    return instance.subscriptionId;
+  }));
+
+  // group by region
+  var instances_by_subscription_region = _.map(instances_by_subscription, function(instances) {
+    return _.values(_.groupBy(instances, function(instance) {
+      return instance.region;
+    }));
+  });
+
+  // group into batches of same region
+  result = [];
+  var batch_size = 50; // Maximum batch size for Azure Metrics getBatch API is 50
+  _.each(instances_by_subscription_region, function(instances_same_subscription) {
+    _.each(instances_same_subscription, function(instances_same_subscription_region) {
+      for (var i = 0; i < instances_same_subscription_region.length; i += batch_size) {
+        result.push(instances_same_subscription_region.slice(i, i + batch_size));
+      }
+    });
+  });
+
+  // 'result' looks like this:
+  /*
+  [
+    [max of 50 instances of same subscription and same region...],
+    [max of 50 instances of same subscription and same region...],
+    ...
+  ]
+  */
+EOS
+end
+
+datasource "ds_azure_metrics_batch" do
   batch true
-  iterate $ds_azure_instances_status_filtered
+  iterate $ds_azure_instances_batch
   request do
-    run_script $js_azure_instances_metrics, val(iter_item, "resourceID"), $ds_stats_interval, $param_azure_endpoint, $param_stats_lookback
+    run_script $js_azure_metrics_batch, iter_item, $ds_stats_interval, $param_azure_endpoint, $param_stats_lookback
   end
   result do
     encoding "json"
-    field "value", val(response, "value")
-    field "resourceName", val(iter_item, "name")
-    field "resourceGroup", val(iter_item, "resourceGroup")
-    field "resourceID", val(iter_item, "resourceID")
-    field "resourceKind", val(iter_item, "resourceKind")
-    field "region", val(iter_item, "region")
-    field "tags", val(iter_item, "tags")
-    field "statuses", val(iter_item, "statuses")
-    field "imagePublisher", val(iter_item, "imagePublisher")
-    field "imageOffer", val(iter_item, "imageOffer")
-    field "imageSKU", val(iter_item, "imageSKU")
-    field "osType", val(iter_item, "osType")
-    field "dataDiskCount", val(iter_item, "dataDiskCount")
-    field "resourceType", val(iter_item, "resourceType")
-    field "subscriptionId", val(iter_item, "subscriptionId")
-    field "subscriptionName", val(iter_item, "subscriptionName")
+    collect jmes_path(response, "values[*]") do
+      field "value", jmes_path(col_item, "value")
+      field "resourceID", jmes_path(col_item, "resourceid")
+    end
   end
 end
 
-script "js_azure_instances_metrics", type: "javascript" do
-  parameters "resourceID", "ds_stats_interval", "param_azure_endpoint", "param_stats_lookback"
+script "js_azure_metrics_batch", type: "javascript" do
+  parameters "ds_azure_instances_batch", "ds_stats_interval", "param_azure_endpoint", "param_stats_lookback"
   result "request"
   code <<-EOS
   end_date = new Date()
@@ -706,26 +737,79 @@ script "js_azure_instances_metrics", type: "javascript" do
   start_date.setSeconds(0)
   start_date.setMinutes(0)
 
-  timespan = start_date.toISOString() + "/" + end_date.toISOString()
+  function get_host_by_region(region) {
+    if (param_azure_endpoint === "management.chinacloudapi.cn") {
+      // China region has different endpoint for Metric getBatch API
+      return region + ".metrics.monitor.azure.cn";
+    }
+    else
+      return region + ".metrics.monitor.azure.com";
+  }
+
+  var resourceIDs = _.map(ds_azure_instances_batch, function(instance) {
+    return instance.resourceID;
+  });
 
   var request = {
     auth: "auth_azure",
     pagination: "pagination_azure",
-    host: param_azure_endpoint,
-    path: resourceID + "/providers/microsoft.insights/metrics",
+    host: get_host_by_region(ds_azure_instances_batch[0].region),
+    verb: "POST",
+    path: "subscriptions/" + ds_azure_instances_batch[0].subscriptionId + "/metrics:getBatch",
     query_params: {
-      "api-version": "2018-01-01",
-      "timespan": timespan,
+      "api-version": "2023-10-01",
+      "starttime": start_date.toISOString(),
+      "endtime": end_date.toISOString(),
       "interval": ds_stats_interval["api"],
       "metricnames": "Percentage CPU,Available Memory Percentage",
+      "metricnamespace": "Microsoft.Compute/VirtualMachines",
       "aggregation": "average,maximum,minimum"
     },
     headers: {
-      "User-Agent": "RS Policies"
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json"
     },
-    // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status: [400, 403, 404]
+    body: JSON.stringify({"resourceids": resourceIDs})
   }
+EOS
+end
+
+datasource "ds_azure_instances_metrics" do
+  batch true
+  run_script $js_azure_instances_metrics, $ds_azure_metrics_batch, $ds_azure_instances_status_filtered
+end
+
+script "js_azure_instances_metrics", type: "javascript" do
+  parameters "ds_azure_metrics_batch", "ds_azure_instances_status_filtered"
+  result "result"
+  code <<-EOS
+
+  var instances_map = {};
+  _.each(ds_azure_instances_status_filtered, function(instance) {
+    instances_map[instance.resourceID] = instance
+  })
+
+  getIterator(ds_azure_metrics_batch).Each(function(metric) {
+    var instance = instances_map[metric.resourceID];
+    appendToResult({
+      resourceName: instance.name,
+      resourceGroup: instance.resourceGroup,
+      resourceID: instance.resourceID,
+      resourceKind: instance.resourceKind,
+      region: instance.region,
+      tags: instance.tags,
+      statuses: instance.statuses,
+      imagePublisher: instance.imagePublisher,
+      imageOffer: instance.imageOffer,
+      imageSKU: instance.imageSKU,
+      osType: instance.osType,
+      dataDiskCount: instance.dataDiskCount,
+      resourceType: instance.resourceType,
+      subscriptionId: instance.subscriptionId,
+      subscriptionName: instance.subscriptionName,
+      value: metric.value,
+    });
+  });
 EOS
 end
 
@@ -952,7 +1036,7 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
       })
     }
 
-    status_codes = _.pluck(vm['statuses'], 'code')
+    status_codes = _.pluck(vm['statuses'], 'code');
     powerstate = _.find(status_codes, function(code) { return code.indexOf('PowerState') == 0 })
     state = powerstate.split('/')[1]
 

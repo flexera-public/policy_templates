@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.1
+
+- Fixed issue that would cause policy template to fail when "Last 30 Days" was selected for the "Date Range" parameter.
+
 ## v0.3.0
 
 - Fixed issue that would cause policy template to fail when "Last 7 Days" was selected for the "Date Range" parameter.

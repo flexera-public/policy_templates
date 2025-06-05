@@ -54,18 +54,18 @@ filtered_pt_list.each do |pt|
 end
 
 # Construct the output
-readme_string = File.read("tools/readme_policy_table_of_contents/HEADER.md")
+readme_string = File.read("tools/readme_policy_table_of_contents/HEADER.txt")
 readme_string += "\n"
-readme_string += "- [Optimization](#policy-templates-for-optimization)\n"
+readme_string += "* [Optimization](#policy-templates-for-optimization)\n"
 
 categories.each do |category|
-  readme_string += "- [#{category}](#policy-templates-for-#{category.downcase.gsub(" ","-")})\n"
+  readme_string += "* [#{category}](#policy-templates-for-#{category.downcase.gsub(" ","-")})\n"
 end
 
 readme_string += "\n"
 readme_string += "### Policy Templates for Optimization\n"
 readme_string += "\n"
-readme_string += "These templates can generate savings estimates for your environment.\n"
+readme_string += "These templates can generate savings estimates for your environment. The incidents they raise are scraped for recommendations for the [Cost Optimization](https://docs.flexera.com/flexera/EN/Optima/ViewPotentialSavings.htm#usingcco_3910196062_1188061) section of Flexera One.\n"
 readme_string += "\n"
 
 providers.each do |provider|
@@ -83,11 +83,11 @@ providers.each do |provider|
   services.each do |service|
     next unless rec_pt_table[provider][service].length > 0
 
-    readme_string += "- #{service}\n"
+    readme_string += "* #{service}\n"
     readme_string += "\n"
 
     rec_pt_table[provider][service].each do |pt|
-      readme_string += "  - [#{pt["name"]}](./#{pt["readme"].delete_suffix("/README.md")})\n"
+      readme_string += "  * [#{pt["name"]}](./#{pt["readme"].delete_suffix("/README.md")})\n"
     end
 
     readme_string += "\n"
@@ -113,11 +113,11 @@ categories.each do |category|
     services.each do |service|
       next unless other_pt_table[category][provider][service].length > 0
 
-      readme_string += "- #{service}\n"
+      readme_string += "* #{service}\n"
       readme_string += "\n"
 
       other_pt_table[category][provider][service].each do |pt|
-        readme_string += "  - [#{pt["name"]}](./#{pt["readme"].delete_suffix("/README.md")})\n"
+        readme_string += "  * [#{pt["name"]}](./#{pt["readme"].delete_suffix("/README.md")})\n"
       end
 
       readme_string += "\n"
@@ -125,7 +125,7 @@ categories.each do |category|
   end
 end
 
-readme_string += File.read("tools/readme_policy_table_of_contents/FOOTER.md")
+readme_string += File.read("tools/readme_policy_table_of_contents/FOOTER.txt")
 
 # Store output as local README.md file
 File.write("README.md", readme_string)

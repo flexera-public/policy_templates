@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.0
+
+- Policy template now uses dynamically updated list of instance types.
+
 ## v0.2.3
 
 - Fixed issue with a variable causing the policy to fail.

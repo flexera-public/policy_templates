@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.3",
+  version: "0.3.0",
   provider: "AWS",
   service: "Database",
   policy_set: "Rightsize Database Instances",
@@ -438,36 +438,98 @@ datasource "ds_elasticache_size_list" do
   end
 end
 
-datasource "ds_aws_instance_size_map" do
+datasource "ds_aws_instance_types" do
   request do
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_instance_types.json"
     header "User-Agent", "RS Policies"
   end
 end
 
+datasource "ds_aws_instance_type_map" do
+  run_script $js_aws_instance_type_map, $ds_aws_instance_types, $ds_elasticache_size_list
+end
+
+script "js_aws_instance_type_map", type: "javascript" do
+  parameters "ds_aws_instance_types", "ds_elasticache_size_list"
+  result "result"
+  code <<-'EOS'
+  result = {}
+
+  _.each(ds_aws_instance_types, function(entry) {
+    if (_.contains(ds_elasticache_size_list, entry["name"])) { result[entry["name"]] = entry }
+  })
+EOS
+end
+
+datasource "ds_aws_instance_types_by_family" do
+  run_script $js_aws_instance_types_by_family, $ds_aws_instance_types, $ds_elasticache_size_list
+end
+
+script "js_aws_instance_types_by_family", type: "javascript" do
+  parameters "ds_aws_instance_types", "ds_elasticache_size_list"
+  result "result"
+  code <<-'EOS'
+  result = {
+    all: _.filter(ds_aws_instance_types, function(entry) {
+      return _.contains(ds_elasticache_size_list, entry["name"])
+    })
+  }
+
+  result["all"] = _.sortBy(result["all"], function(type) {
+    return type['memory'] && type['memory']['sizeInMiB'] ? type['memory']['sizeInMiB'] : 99999999
+  })
+
+  result["all"] = _.sortBy(result["all"], function(type) {
+    return type['cpu'] && type['cpu']['cores'] ? type['cpu']['cores'] : 9999
+  })
+
+  _.each(ds_aws_instance_types, function(type) {
+    if (_.contains(ds_elasticache_size_list, type["name"])) {
+      if (result[type['family']] == undefined) { result[type['family']] = [] }
+      result[type['family']].push(type)
+    }
+  })
+
+  _.each(_.keys(result), function(family) {
+    result[family] = _.sortBy(result[family], function(type) {
+      return type['size_rank'] ? type['size_rank'] : 99999999
+    })
+  })
+EOS
+end
+
 # Filter out any clusters where a smaller size isn't available since we can't downsize them anyway
 datasource "ds_elasticache_clusters_resize_filtered" do
-  run_script $js_elasticache_clusters_resize_filtered, $ds_elasticache_clusters, $ds_elasticache_size_list, $ds_aws_instance_size_map, $ds_aws_account
+  run_script $js_elasticache_clusters_resize_filtered, $ds_elasticache_clusters, $ds_aws_instance_type_map, $ds_aws_instance_type_map, $ds_aws_account
 end
 
 script "js_elasticache_clusters_resize_filtered", type: "javascript" do
-  parameters "ds_elasticache_clusters", "ds_elasticache_size_list", "ds_aws_instance_size_map", "ds_aws_account"
+  parameters "ds_elasticache_clusters", "ds_aws_instance_type_map", "ds_aws_instance_types_by_family", "ds_aws_account"
   result "result"
   code <<-EOS
   result = []
 
+  // Function to find the index of a resource type in a list
+  // This is so we can easily go up and down.
+  // If a type has an index of 5, we know 4 is the next size down.
+  function findTypeIndex(type_list, name) {
+    type_index = null
+
+    _.each(type_list, function(type, index) {
+      if (type_index == null && type['name'] == name) { type_index = index }
+    })
+
+    return type_index
+  }
+
   _.each(ds_elasticache_clusters, function(cluster) {
     normalizedType = cluster["nodeType"].split("cache.")[1]
-    downsizeable = false
+    family = normalizedType.split('.')[0]
+    typeIndex = null
+    if (ds_aws_instance_types_by_family[family]) { typeIndex = findTypeIndex(ds_aws_instance_types_by_family[family], instance['resourceType']) }
 
-    if (ds_aws_instance_size_map[normalizedType] && ds_aws_instance_size_map[normalizedType]["down"]) {
-      if (_.contains(ds_elasticache_size_list, ds_aws_instance_size_map[normalizedType]["down"])) {
-        downsizeable = true
-      }
-    }
-
-    if (downsizeable) {
+    if (typeIndex && typeIndex > 0) {
       resourceARN = [
         "arn:aws:elasticache:", cluster["region"], ":",
         ds_aws_account["id"], ":cluster:", cluster["id"]
@@ -479,6 +541,7 @@ script "js_elasticache_clusters_resize_filtered", type: "javascript" do
         resourceID: cluster["id"],
         resourceName: cluster["id"],
         resourceARN: resourceARN,
+        family: family,
         status: cluster["status"],
         numberOfNodes: cluster["numberOfNodes"],
         autoMinorVersionUpgrade: cluster["autoMinorVersionUpgrade"],
@@ -489,8 +552,8 @@ script "js_elasticache_clusters_resize_filtered", type: "javascript" do
         region: cluster["region"],
         resourceType: cluster["nodeType"],
         normalizedType: normalizedType,
-        vcpu: ds_aws_instance_size_map[normalizedType]["vcpu"],
-        memory: ds_aws_instance_size_map[normalizedType]["memory"]
+        vcpu: ds_aws_instance_type_map[normalizedType]["cpu"]["vcpus"],
+        memory: Math.round(ds_aws_instance_type_map[normalizedType]["memory"]["sizeInMiB"] / 1024)
       })
     }
   })
@@ -518,6 +581,7 @@ datasource "ds_elasticache_clusters_with_tags" do
     field "resourceID", val(iter_item, "resourceID")
     field "resourceName", val(iter_item, "resourceName")
     field "resourceARN", val(iter_item, "resourceARN")
+    field "family", val(iter_item, "family")
     field "status", val(iter_item, "status")
     field "numberOfNodes", val(iter_item, "numberOfNodes")
     field "autoMinorVersionUpgrade", val(iter_item, "autoMinorVersionUpgrade")
@@ -845,6 +909,7 @@ script "js_elasticache_clusters_with_metrics", type: "javascript" do
       resourceID: cluster["resourceID"],
       resourceName: cluster["resourceName"],
       resourceARN: cluster["resourceARN"],
+      family: cluster["family"],
       tags: cluster["tags"],
       status: cluster["status"],
       numberOfNodes: cluster["numberOfNodes"],
@@ -976,11 +1041,11 @@ EOS
 end
 
 datasource "ds_underutilized_elasticache_clusters" do
-  run_script $js_underutilized_elasticache_clusters, $ds_elasticache_clusters_with_metrics, $ds_cluster_costs_grouped, $ds_aws_instance_size_map, $ds_elasticache_size_list, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_stats_threshold, $param_stats_threshold_cpu_value, $param_stats_threshold_mem_value, $param_min_savings, $param_downsize_multiple
+  run_script $js_underutilized_elasticache_clusters, $ds_elasticache_clusters_with_metrics, $ds_cluster_costs_grouped, $ds_aws_instance_types_by_family, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_stats_threshold, $param_stats_threshold_cpu_value, $param_stats_threshold_mem_value, $param_min_savings, $param_downsize_multiple
 end
 
 script "js_underutilized_elasticache_clusters", type: "javascript" do
-  parameters "ds_elasticache_clusters_with_metrics", "ds_cluster_costs_grouped", "ds_aws_instance_size_map", "ds_elasticache_size_list", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_stats_threshold", "param_stats_threshold_cpu_value", "param_stats_threshold_mem_value", "param_min_savings", "param_downsize_multiple"
+  parameters "ds_elasticache_clusters_with_metrics", "ds_cluster_costs_grouped", "ds_aws_instance_types_by_family", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_stats_threshold", "param_stats_threshold_cpu_value", "param_stats_threshold_mem_value", "param_min_savings", "param_downsize_multiple"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -1006,6 +1071,19 @@ script "js_underutilized_elasticache_clusters", type: "javascript" do
     }
 
     return formatted_number
+  }
+
+  // Function to find the index of a resource type in a list
+  // This is so we can easily go up and down.
+  // If a type has an index of 5, we know 4 is the next size down.
+  function findTypeIndex(type_list, name) {
+    type_index = null
+
+    _.each(type_list, function(type, index) {
+      if (type_index == null && type['name'] == name) { type_index = index }
+    })
+
+    return type_index
   }
 
   result = []
@@ -1045,39 +1123,45 @@ script "js_underutilized_elasticache_clusters", type: "javascript" do
     cpu_underutilized = cpu_stat < param_stats_threshold_cpu_value || param_stats_threshold_cpu_value == -1
     mem_underutilized = mem_stat > param_stats_threshold_mem_value || param_stats_threshold_mem_value == -1
 
+    type_index = findTypeIndex(ds_aws_instance_types_by_family[cluster['family']], cluster['normalizedType'])
+
     // Check if cluster is underutilized and if savings is above threshold
-    if (cpu_underutilized && mem_underutilized) {
-      normalizedNewType = ds_aws_instance_size_map[cluster['normalizedType']]['down']
+    if (cpu_underutilized && mem_underutilized && type_index > 0) {
+      type_index = type_index - 1
+      normalizedNewType = ds_aws_instance_types_by_family[cluster['family']][type_index]['name']
       savingsMultiplier = 1
 
       if (param_downsize_multiple == "Yes") {
         if (param_stats_threshold_cpu_value != -1 && param_stats_threshold_mem_value != -1) {
-          while (ds_aws_instance_size_map[normalizedNewType]['down'] && _.contains(ds_elasticache_size_list, ds_aws_instance_size_map[normalizedType]["down"]) && cpu_stat * 2 < param_stats_threshold_cpu_value && mem_stat / 2 > param_stats_threshold_mem_value) {
+          while (type_index >= 0 && cpu_stat * 2 < param_stats_threshold_cpu_value && mem_stat / 2 > param_stats_threshold_mem_value) {
             cpu_stat = cpu_stat * 2
             mem_stat = mem_stat / 2
-            normalizedNewType = ds_aws_instance_size_map[cluster['normalizedType']]['down']
+            type_index = type_index - 1
+            normalizedNewType = ds_aws_instance_types_by_family[cluster['family']][type_index]['name']
             savingsMultiplier += 1
           }
         }
 
         if (param_stats_threshold_mem_value == -1) {
-          while (ds_aws_instance_size_map[normalizedNewType]['down'] && _.contains(ds_elasticache_size_list, ds_aws_instance_size_map[normalizedType]["down"]) && cpu_stat * 2 < param_stats_threshold_cpu_value) {
+          while (type_index >= 0 && cpu_stat * 2 < param_stats_threshold_cpu_value) {
             cpu_stat = cpu_stat * 2
-            normalizedNewType = ds_aws_instance_size_map[cluster['normalizedType']]['down']
+            type_index = type_index - 1
+            normalizedNewType = ds_aws_instance_types_by_family[cluster['family']][type_index]['name']
             savingsMultiplier += 1
           }
         }
 
         if (param_stats_threshold_cpu_value == -1) {
-          while (ds_aws_instance_size_map[normalizedNewType]['down'] && _.contains(ds_elasticache_size_list, ds_aws_instance_size_map[normalizedType]["down"]) && mem_stat / 2 > param_stats_threshold_mem_value) {
+          while (type_index >= 0 && mem_stat / 2 > param_stats_threshold_mem_value) {
             mem_stat = mem_stat / 2
-            normalizedNewType = ds_aws_instance_size_map[cluster['normalizedType']]['down']
+            type_index = type_index - 1
+            normalizedNewType = ds_aws_instance_types_by_family[cluster['family']][type_index]['name']
             savingsMultiplier += 1
           }
         }
       }
 
-      cluster['newResourceType'] = "cache." + ds_aws_instance_size_map[cluster['normalizedType']]['down']
+      cluster['newResourceType'] = "cache." + normalizedNewType
 
       savings = 0.0
 
