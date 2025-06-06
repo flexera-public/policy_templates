@@ -448,6 +448,10 @@ These templates can generate savings estimates for your environment. The inciden
 
 #### Flexera
 
+* All
+
+  * [Flexera Onboarding](./operational/flexera/onboarding)
+
 * Automation
 
   * [Applied Policy Template Errors](./operational/flexera/automation/applied_policy_error_notification)
