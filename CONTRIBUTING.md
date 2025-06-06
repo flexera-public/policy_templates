@@ -28,7 +28,13 @@ The title of your pull request should include a general description of the chang
 
 The description should contain a detailed description of the pull request, including any testing you did to verify that the changes work as intended.
 
-The `READY-FOR-REVIEW` tag should be added to any pull request that you believe is complete and ready to be merged into the `master` branch.
+The `READY-FOR-REVIEW` label should be added to any pull request that you believe is complete and ready to be merged into the `master` branch. The following labels should also be applied when appropriate:
+
+* `NEW POLICY TEMPLATE` - Should be applied to any PR that adds a new policy template.
+* `UNPUBLISHED` - Should be applied to any PR that creates or changes an unpublished policy template. Should be in addition to any other relevant labels.
+* `MAJOR UPDATE` - Should be applied to any PR that updates the [major version](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#versioning) of an existing policy template.
+* `MINOR UPDATE` - Should be applied to any PR that updates the [minor version](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#versioning) of an existing policy template.
+* `BUG FIX` - Should be applied to any PR that fixes a bug in an existing policy template.
 
 ### 5. Fix Merge Conflicts
 
