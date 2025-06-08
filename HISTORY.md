@@ -6,6 +6,41 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3219](https://github.com/flexera-public/policy_templates/pull/3219): POL-1537 Scheduled Report: Ignore Current Month
+
+#### Description
+
+> Scheduled Report policy template:
+>
+> - Added option to ignore current month when reporting.
+> - Added ability to select an arbitrary number of months (up to 12) instead of preselected options.
+>
+
+#### Metadata
+
+- **Policies**: [Scheduled Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_reports/README.md)
+- **Merged At**: 2025-06-06 13:59:43 UTC
+
+---
+
+### PR [#2450](https://github.com/flexera-public/policy_templates/pull/2450): POL-1298 - Flexera Onboarding v0.1.0
+
+#### Description
+
+> This policy checks various configurations in your Organization to ensure that it is set up correctly.  The checks and recommendations are opinionated, and align with recommended best practices for onboarding and productionizing your Organization.
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/POL-1298
+>
+
+#### Metadata
+
+- **Policies**: [Flexera Onboarding](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/onboarding/README.md)
+- **Merged At**: 2025-06-05 16:48:07 UTC
+
+---
+
 ### PR [#3127](https://github.com/flexera-public/policy_templates/pull/3127): Initial revision of custom branding
 
 #### Description
@@ -1876,37 +1911,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2730) for these details.
 - **Merged At**: 2024-10-14 17:01:21 UTC
-
----
-
-### PR [#2729](https://github.com/flexera-public/policy_templates/pull/2729): POL-1378 Linting Updates: Automation Policies
-
-#### Description
-
-> Various small updates to policy templates in the `automation` directory to bring them in conformance to current lint tests.
->
-> Small tweak to Dangerfile test to avoid false positives for policies that legitimately have no parameters
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2729) for these details.
-- **Merged At**: 2024-10-14 14:32:34 UTC
-
----
-
-### PR [#2616](https://github.com/flexera-public/policy_templates/pull/2616): POL-1330 New Policy: AWS Account Credentials
-
-#### Description
-
-> This adds a new, unpublished policy template along with a custom meta parent. The purpose of this policy template is to test all of the various cross-account roles implied by an AWS credential to see if they were working as expected or not. Please see the README for more details.
->
-> (A custom meta parent is used because the policy engine does not allow you to ignore_status on a signing error, so the meta parent will compare the aggregated incident results to the status of the child policies to determine if the API request succeeded or failed.)
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2616) for details about unpublished policies.
-- **Merged At**: 2024-10-11 19:31:30 UTC
 
 ---
 
