@@ -5,8 +5,39 @@
 # Methods: Policy
 ###############################################################################
 
+### Missing Policy-specific Github PR labels
+# Verify that the pull request has appropriate labels for the policy template
+def policy_missing_github_labels?(github, file, file_parsed, file_metadata)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether PR is labelled appropriately for Policy Template..."
+
+  fail_message = ""
+
+  if !github.pr_labels.include?("NEW POLICY TEMPLATE") && !file_metadata
+    fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md#4-make-a-pull-request)] Policy Template is new but Pull Request is missing `NEW POLICY TEMPLATE` label. Please add this label to the Pull Request.\n\n"
+  elsif file_parsed.parsed_info && file_parsed.parsed_info[:version] && file_metadata && file_metadata["version"]
+    major_version = file_parsed.parsed_info[:version].split('.')[0]
+    minor_version = file_parsed.parsed_info[:version].split('.')[0] + "." + file_parsed.parsed_info[:version].split('.')[1]
+
+    current_major_version = file_metadata["version"].split('.')[0]
+    current_minor_version = file_metadata["version"].split('.')[0] + "." + file_metadata["version"].split('.')[1]
+
+    if major_version != current_major_version && !github.pr_labels.include?("MAJOR UPDATE")
+      fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md#4-make-a-pull-request)] Policy Template has changed major versions but Pull Request is missing `MAJOR UPDATE` label. Please add this label to the Pull Request.\n\n"
+    elsif minor_version != current_minor_version && !github.pr_labels.include?("MINOR UPDATE")
+      fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md#4-make-a-pull-request)] Policy Template has changed minor versions but Pull Request is missing `MINOR UPDATE` label. Please add this label to the Pull Request.\n\n"
+    end
+  end
+
+  if file_parsed.parsed_info && file_parsed.parsed_info[:publish] && file_parsed.parsed_info[:publish].downcase == "false" && !github.pr_labels.include?("UNPUBLISHED")
+    fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md#4-make-a-pull-request)] Policy Template is unpublished but Pull Request is missing `UNPUBLISHED` label. Please add this label to the Pull Request.\n\n"
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### Deprecated test
-# Utility method. Returns true if policy is deprecated and false if it isn't
+# Utility method. Returns true if policy template is deprecated and false if it isn't
 def policy_deprecated?(file, file_parsed)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file is deprecated..."
 
