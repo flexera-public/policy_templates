@@ -8,6 +8,8 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ### PR [#3219](https://github.com/flexera-public/policy_templates/pull/3219): POL-1537 Scheduled Report: Ignore Current Month
 
+*Major Update*
+
 #### Description
 
 > Scheduled Report policy template:
@@ -24,6 +26,8 @@ This document contains the last 100 policy template merges for the `flexera-publ
 ---
 
 ### PR [#2450](https://github.com/flexera-public/policy_templates/pull/2450): POL-1298 - Flexera Onboarding v0.1.0
+
+*New Policy Template*
 
 #### Description
 
@@ -42,6 +46,8 @@ This document contains the last 100 policy template merges for the `flexera-publ
 ---
 
 ### PR [#3127](https://github.com/flexera-public/policy_templates/pull/3127): Initial revision of custom branding
+
+*New Policy Template*
 
 #### Description
 
@@ -297,6 +303,8 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ### PR [#2954](https://github.com/flexera-public/policy_templates/pull/2954): POL-1446 - New Policy - MSP Usage Audit
 
+*New Policy Template*
+
 #### Description
 
 > This policy generates a comprehensive report on the usage of MSP Customer Organizations. It provides operational capabilities related to managing MSP Customer Organizations, including cost analysis and user activity metrics.
@@ -314,6 +322,8 @@ This document contains the last 100 policy template merges for the `flexera-publ
 ---
 
 ### PR [#3081](https://github.com/flexera-public/policy_templates/pull/3081): POL-1507 New Policy Template: Rule-Based Dimension From Custom Tags
+
+*New Policy Template*
 
 #### Description
 
@@ -354,6 +364,8 @@ This document contains the last 100 policy template merges for the `flexera-publ
 ---
 
 ### PR [#1807](https://github.com/flexera-public/policy_templates/pull/1807): POL-877 New Policy: Alibaba Cloud CBI
+
+*New Policy Template*
 
 #### Description
 
@@ -479,6 +491,8 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ### PR [#2956](https://github.com/flexera-public/policy_templates/pull/2956): POL-1452 - New PT - RBDs from CSV
 
+*New Policy Template*
+
 #### Description
 
 > This policy creates and updates custom Rule-Based Dimensions based on data provided in CSV format. It allows you to create multiple Rule-Based Dimensions at once using data from a CSV file that maps dimension values to other values that should be used as rules.
@@ -511,6 +525,8 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ### PR [#3055](https://github.com/flexera-public/policy_templates/pull/3055): POL-1478 New Policy Template: Spot Eco - Commitment Source Dimension
 
+*New Policy Template*
+
 #### Description
 
 > This policy template creates a rule-based dimension in Flexera Cloud Cost Optimization that reports on whether commitments were purchased by Spot Eco or not. Costs will have one of three values for this dimension:
@@ -530,6 +546,8 @@ This document contains the last 100 policy template merges for the `flexera-publ
 ---
 
 ### PR [#2941](https://github.com/flexera-public/policy_templates/pull/2941): POL-1449 - Initial Spot Policy Templates
+
+*New Policy Template*
 
 #### Description
 
@@ -609,6 +627,8 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ### PR [#2994](https://github.com/flexera-public/policy_templates/pull/2994): POL-1461 New Policy: Google Overutilized VM Instances
 
+*New Policy Template*
+
 #### Description
 
 > This adds a new policy template to report on overutilized Google VM instances.
@@ -622,6 +642,8 @@ This document contains the last 100 policy template merges for the `flexera-publ
 ---
 
 ### PR [#2991](https://github.com/flexera-public/policy_templates/pull/2991): POL-1459 New Policy: AWS Overutilized EC2 Instances
+
+*New Policy Template*
 
 #### Description
 
@@ -668,6 +690,8 @@ This document contains the last 100 policy template merges for the `flexera-publ
 ---
 
 ### PR [#2966](https://github.com/flexera-public/policy_templates/pull/2966): POL-1456 Azure/Google Credential Testing Policy Templates
+
+*New Policy Template*
 
 #### Description
 
@@ -788,6 +812,8 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ### PR [#2990](https://github.com/flexera-public/policy_templates/pull/2990): POL-1460 New Policy: Azure Overutilized Compute Instances
 
+*New Policy Template*
+
 #### Description
 
 > This adds a new policy template to the catalog, Azure Overutilized Compute Instances, that reports instances above a certain threshold of CPU and/or memory usage.
@@ -801,6 +827,8 @@ This document contains the last 100 policy template merges for the `flexera-publ
 ---
 
 ### PR [#2950](https://github.com/flexera-public/policy_templates/pull/2950): POL-1448 New Policy: FinOps Dashboards
+
+*New Policy Template*
 
 #### Description
 
@@ -1138,6 +1166,8 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ### PR [#2887](https://github.com/flexera-public/policy_templates/pull/2887): FLEX-5165 Add datalake optimization policy template
 
+*New Policy Template*
+
 #### Description
 
 > Initial implementation of a Policy (Azure Data Lake Optimization) which enables customers to run efficiently for Azure Data Lake. The policy type is Usage Reduction and provide the recommendations with Potential savings.
@@ -1361,6 +1391,8 @@ This document contains the last 100 policy template merges for the `flexera-publ
 ---
 
 ### PR [#2841](https://github.com/flexera-public/policy_templates/pull/2841): POL-1416 New Policy: AWS S3 Incomplete Multi-Part Uploads
+
+*New Policy Template*
 
 #### Description
 
@@ -1643,6 +1675,8 @@ This document contains the last 100 policy template merges for the `flexera-publ
 ---
 
 ### PR [#2747](https://github.com/flexera-public/policy_templates/pull/2747): POL-1385 - New Template: Billing Centers from Dimensions
+
+*New Policy Template*
 
 #### Description
 
