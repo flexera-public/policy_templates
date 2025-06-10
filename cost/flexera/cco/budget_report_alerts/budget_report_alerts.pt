@@ -1,14 +1,14 @@
 name "Budget Alerts"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy utilizes the Flexera Budget API to detect if budget threshold has been exceeded for a selected budget. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_report_alerts/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report if budget threshold has been exceeded for a selected Flexera budget. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_report_alerts/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "medium"
 category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "3.3.3",
+  version: "3.4.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -111,12 +111,46 @@ datasource "ds_currency_code" do
     path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
+    ignore_status [403]
   end
   result do
     encoding "json"
     field "id", jmes_path(response, "id")
     field "value", jmes_path(response, "value")
   end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  code = "USD"
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      code = ds_currency_reference[ds_currency_code['value']]['code']
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    code: code,
+    symbol: symbol,
+    separator: separator
+  }
+EOS
 end
 
 datasource "ds_get_dimensions" do
@@ -150,6 +184,31 @@ script "js_dimensions", type: "javascript" do
 EOS
 end
 
+datasource "ds_filters" do
+  run_script $js_filters, $ds_dimensions, $param_filter
+end
+
+script "js_filters", type: "javascript" do
+  parameters "ds_dimensions", "param_filter"
+  result "result"
+  code <<-EOS
+  result = {}
+  dimensions = _.invert(ds_dimensions)
+
+  _.each(param_filter, function(filter) {
+    key = filter.split('=')[0] ? filter.split('=')[0].trim() : null
+    if (dimensions[key]) { key = dimensions[key] }
+
+    value = filter.split('=')[1] ? filter.split('=')[1].trim() : null
+
+    if (key && value) {
+      values = _.map(value.split(","), function(item) { return item.trim() })
+      result[key] = values
+    }
+  })
+EOS
+end
+
 datasource "ds_budgets" do
   request do
     auth $auth_flexera
@@ -178,21 +237,11 @@ script "js_filtered_budgets", type: "javascript" do
   parameters "ds_budgets", "param_budget_name_id"
   result "result"
   code <<-EOS
-  currDate = new Date()
+  current_month = new Date().toISOString().substring(0, 7)
 
   result = _.filter(ds_budgets, function(budget) {
-    budget['start_date'] = Date.now()
-    budget['end_date'] = 0
-    has_curr_month = false
-
-    _.each(budget['yearMonths'], function(yearMonth) {
-      curr = currDate.getFullYear() + '-' + ('0' + (currDate.getMonth() + 1)).slice(-2)
-      budget['start_date'] = Math.min(budget['start_date'], Date.parse(yearMonth))
-      budget['end_date'] = Math.max(budget['end_date'], Date.parse(yearMonth))
-      if (yearMonth == curr) { has_curr_month = true }
-    })
-
-    return (budget['name'] == param_budget_name_id.trim() || budget['id'] == param_budget_name_id.trim()) && has_curr_month
+    budget_found = budget['id'] == param_budget_name_id.trim() || budget['name'] == param_budget_name_id.trim()
+    return budget_found && _.contains(budget['yearMonths'], current_month)
   })
 EOS
 end
@@ -245,39 +294,36 @@ script "js_reports", type: "javascript" do
 EOS
 end
 
+datasource "ds_filtered_reports" do
+  run_script $js_filtered_reports, $ds_reports, $ds_filters, $param_use_groups
+end
+
+script "js_filtered_reports", type: "javascript" do
+  parameters "ds_reports", "ds_filters", "param_use_groups"
+  result "result"
+  code <<-EOS
+  if (param_use_groups == "Summarized" || _.isEmpty(ds_filters)) {
+    result = ds_reports
+  } else {
+    result = _.filter(ds_reports, function(report) {
+      matched_filters = _.filter(_.keys(ds_filters), function(key) {
+        return report['dimensions'][key] && _.contains(ds_filters[key], report['dimensions'][key])
+      })
+
+      return matched_filters.length == _.keys(ds_filters).length
+    })
+  }
+EOS
+end
+
 datasource "ds_aggregated" do
-  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $ds_dimensions, $param_threshold_percentage, $param_type, $param_budget_name_id, $param_filter, f1_app_host
+  run_script $js_aggregated, $ds_filtered_reports, $ds_currency, $ds_dimensions, $param_threshold_percentage, $param_type, $param_budget_name_id, $param_filter, f1_app_host
 end
 
 script "js_aggregated", type: "javascript" do
-  parameters "ds_reports", "ds_currency_code", "ds_currency_reference", "ds_dimensions", "param_threshold_percentage", "param_type", "param_budget_name_id", "param_filter", "f1_app_host"
+  parameters "ds_filtered_reports", "ds_currency", "ds_dimensions", "param_threshold_percentage", "param_type", "param_budget_name_id", "param_filter", "f1_app_host"
   result "result"
   code <<-EOS
-  result = {
-    invalid: [],
-    exceeded: [],
-    forecasted: [],
-  }
-
-  ds_dimensions_inverted = _.invert(ds_dimensions)
-
-  filters = {}
-
-  _.each(param_filter, function(filter) {
-    key = filter.split("=")[0] ? filter.split("=")[0].trim() : null
-    value = filter.split("=")[1] ? filter.split("=")[1].trim() : null
-
-    if (key && value) {
-      filters[ds_dimensions_inverted[key] || key] = _.map(value.split(","), function(val) { return val.trim()})
-    }
-  })
-
-  if (ds_reports || ds_reports.length) { result['invalid'].push(param_budget_name_id) }
-
-  currency = ds_currency_code['value'] || ''
-  ref = currency ? ds_currency_reference[currency] : undefined
-  if (ref) { currency = ref.symbol || "" }
-
   function forecasted(curr) {
     now = new Date()
     day = now.getUTCDate() - 1
@@ -306,6 +352,14 @@ script "js_aggregated", type: "javascript" do
     return vals.join(", ")
   }
 
+  result = {
+    invalid: [],
+    exceeded: [],
+    forecasted: [],
+  }
+
+  if (!ds_filtered_reports || !ds_filtered_reports.length) { result['invalid'].push(param_budget_name_id) }
+
   current = new Date()
   monthYear = current.getFullYear() + '-' + ('0' + (current.getMonth() + 1)).slice(-2)
 
@@ -316,13 +370,13 @@ script "js_aggregated", type: "javascript" do
     "cost_amortized_blended_adj": "Amortized"
   }
 
-  _.each(ds_reports, function(item) {
+  _.each(ds_filtered_reports, function(item) {
     item['budgetAmount'] = item['budgetAmount'] || 0
 
     if (item['spendAmount']) {
       item['monthYear'] = monthYear
       item['forecasted'] = ""
-      item['currency'] = ds_currency_code['value']
+      item['currency'] = ds_currency['code']
       item['forecastedAmount'] = item['spendAmount']
       date = new Date(item['timestamp'])
       item['date'] = date.toLocaleDateString()
@@ -353,24 +407,17 @@ script "js_aggregated", type: "javascript" do
       item['is_budgeted'] = true
 
       if (item['dimensions']) {
-        // filter
-        to_filter = _.some(_.keys(item['dimensions']), function (dimId) {
-          return filters[dimId] && !_.contains(filters[dimId], item['dimensions'][dimId])
-        })
-
-        if (to_filter) { return }
-
         item['group'] = get_group(item['dimensions'], item['dimensions_ids'])
         item['is_budgeted'] = !item['dimensions']['is_budgeted'] || item['dimensions']['is_budgeted'] === "Budgeted"
       }
 
       item['metric'] = cost_metric[item['metric'] || ''] || item['metric']
 
-      if (item['budget'] > 0) { item['budget'] = currency + item['budget'] }
-      if (item['spend'] > 0) { item['spend'] = currency + item['spend'] }
-      if (item['overBudget'] > 0) { item['overBudget'] = currency + item['overBudget'] }
-      if (item['overBudgetForec'] > 0) { item['overBudgetForec'] = currency + item['overBudgetForec'] }
-      if (item['forecasted']) { item['forecasted'] = currency + item['forecasted'] }
+      if (item['budget'] > 0) { item['budget'] = ds_currency['code'] + ' ' + item['budget'] }
+      if (item['spend'] > 0) { item['spend'] = ds_currency['code'] + ' ' + item['spend'] }
+      if (item['overBudget'] > 0) { item['overBudget'] = ds_currency['code'] + ' ' + item['overBudget'] }
+      if (item['overBudgetForec'] > 0) { item['overBudgetForec'] = ds_currency['code'] + ' ' + item['overBudgetForec'] }
+      if (item['forecasted']) { item['forecasted'] = ds_currency['code'] + ' ' + item['forecasted'] }
 
       if (item['spentPercent'] !== undefined) {
         budget_percent = item['spentPercent']

@@ -1,9 +1,9 @@
 # Changelog
 
-## v3.3.3
+## v3.4.0
 
 - Updated parameter descriptions to state clearly that a summarized report cannot be filtered.
-- Minor code refactoring to improve readability.
+- Code refactoring to improve readability.
 
 ## v3.3.2
 
