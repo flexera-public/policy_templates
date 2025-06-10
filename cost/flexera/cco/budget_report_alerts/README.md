@@ -2,32 +2,28 @@
 
 ## What It Does
 
-This policy utilizes the Flexera Budget API to detect if budget expense has exceeded its allocated value. The policy can be run daily to determine if actual or projected spend exceeded the specified threshold.
+This policy template utilizes Flexera Budgets to detect if budget expense has exceeded its allocated value. The policy template can be run daily to determine if actual or projected spend exceeded the specified threshold.
 
 ## How It Works
 
-- This policy supports a single target (1 specific Budget). In order to apply a budget alert for multiple budgets, you will need to apply this policy multiple times.
+- This policy template supports a single target (1 specific Budget). In order to apply a budget alert for multiple budgets, you will need to apply this policy template multiple times.
 - Actual expense budget alerts will trigger an incident if the actual budget's spend exceeds the budget threshold
 - Forecasted Spend budget alerts will raise an incident when the target's run-rate is on track to exceed the budget threshold
 - Data can be grouped by Dimensions.
-- The policy allows the customer to include or exclude unbudgeted spend
+- The policy template allows the customer to include or exclude unbudgeted spend
 - Added a parameter to enable budget tracking for specific dimensions and values.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
-
+- *Email Addresses* - A list of email addresses to notify
 - *Budget Name or ID* - The name or Id of the target Budget.
-- *Filter Group By Dimensions* - Filter by dimension=value pairs. Dimensions are the visible dimensions in the Flexera One platform, such as Cloud Vendor, Resource Type, Service, etc. Values can be comma separated to filter by multiple values for the same dimension. Examples: 'Cloud Vendor=AWS' 'Cloud Vendor Account=001234567890,004321876509' 'Category=Compute'
-- *Budget Alert Type* - can be "Actual" or "Forecasted". Actual Spend alerts are based off incurred costs. Forecasted Spend alerts are based off monthly runrates.
-- *Degree of Summarization* - Determines if budget should be tracked as a whole or per dimension groups, with possible values of Summarized or By dimensions.
-- *Unbudgeted spend* - parameter that allows including or excluding unbudgeted funds in the calculation
+- *Budget Alert Type* - can be "Actual" or "Forecasted". Actual Spend alerts are based off incurred costs. Forecasted Spend alerts are based off monthly run rates.
+- *Degree of Summarization* - Determines if budget should be tracked as a whole or per dimension groups, with possible values of Summarized or By dimensions. The "Summarized" option does not support filtering; if selected, the `Filter Group By Dimension(s)` parameter will have no effect.
+- *Filter Group By Dimensions* - Filter by dimension=value pairs. Dimensions are the visible dimensions in the Flexera One platform, such as Cloud Vendor, Resource Type, Service, etc. Values can be comma separated to filter by multiple values for the same dimension. Has no effect if the "Summarized" option is selected for the `Degree of Summarization` parameter. Examples: 'Cloud Vendor=AWS' 'Cloud Vendor Account=001234567890,004321876509' 'Category=Compute'
+- *Unbudgeted Spend* - parameter that allows including or excluding unbudgeted funds in the calculation
 - *Threshold Percentage* - Threshold to raise the alert if reached
-- *Email addresses* - A list of email addresses to notify
 
 ## Policy Actions
-
-The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report
 
