@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "3.5.2",
+  version: "4.0.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -80,12 +80,22 @@ parameter "param_dimension_filter_boolean" do
 end
 
 parameter "param_date_range" do
+  type "number"
+  category "Date/Time Settings"
+  label "Date Range (Months)"
+  description "Select how many months back you'd like to display on the graph in the report."
+  min_value 1
+  max_value 12
+  default 6
+end
+
+parameter "param_ignore_current_month" do
   type "string"
   category "Date/Time Settings"
-  label "Date Range"
-  description "Select the Date Range options you'd like to display on the graph in the report."
-  allowed_values "1 month", "3 month", "6 month", "12 month"
-  default "6 month"
+  label "Ignore Current Month"
+  description "Whether or not to ignore the current month and begin reporting from the previous month instead."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_billing_term" do
@@ -410,11 +420,11 @@ EOS
 end
 
 datasource "ds_cost_request_list" do
-  run_script $js_cost_request_list, $ds_filtered_bcs, $ds_graph_dimension, $ds_cost_dimension_table, $ds_data_tables, $param_cost_metric, $param_date_range, $param_billing_term, $param_dimension_filter, $param_dimension_filter_boolean
+  run_script $js_cost_request_list, $ds_filtered_bcs, $ds_graph_dimension, $ds_cost_dimension_table, $ds_data_tables, $param_cost_metric, $param_date_range, $param_ignore_current_month, $param_billing_term, $param_dimension_filter, $param_dimension_filter_boolean
 end
 
 script "js_cost_request_list", type: "javascript" do
-  parameters "ds_filtered_bcs", "ds_graph_dimension", "ds_cost_dimension_table", "ds_data_tables", "param_cost_metric", "param_date_range", "param_billing_term", "param_dimension_filter", "param_dimension_filter_boolean"
+  parameters "ds_filtered_bcs", "ds_graph_dimension", "ds_cost_dimension_table", "ds_data_tables", "param_cost_metric", "param_date_range", "param_ignore_current_month", "param_billing_term", "param_dimension_filter", "param_dimension_filter_boolean"
   result "result"
   code <<-EOS
   // Function to take date object or YYYY-MM formatted string and move it backwards or forwards by month
@@ -477,15 +487,16 @@ script "js_cost_request_list", type: "javascript" do
 
   // Generate requests to send to API to pull costs
   result = []
-  totalMonth = parseInt(param_date_range)
   dimensions = [ ds_graph_dimension['id'] ]
   metrics = [ ds_data_tables['cost_metrics'][param_cost_metric] ]
   billing_center_ids = _.pluck(ds_filtered_bcs, 'id')
 
   if (param_billing_term == "Day" || param_billing_term == "Week") {
-    for (var i = 0; i < totalMonth; i++) {
+    for (var i = 0; i < param_date_range; i++) {
+      index = param_ignore_current_month == "Yes" ? i + 1 : i
+
       start_at = new Date().toISOString()
-      start_at = move_month(start_at, -i) + '-01'
+      start_at = move_month(start_at, -index) + '-01'
       end_at = move_month(start_at, 1) + '-01'
 
       request = {
@@ -503,9 +514,17 @@ script "js_cost_request_list", type: "javascript" do
       result.push(request)
     }
   } else {
+    index = param_ignore_current_month == "Yes" ? 0 : 1
+
     end_at = new Date().toISOString()
-    end_at = move_month(end_at, 1)
-    start_at = move_month(end_at, -totalMonth)
+
+    if (param_ignore_current_month == "Yes") {
+      end_at = end_at.substring(0, 7)
+      start_at = move_month(end_at, -param_date_range - 1)
+    } else {
+      end_at = move_month(end_at, 1)
+      start_at = move_month(end_at, -param_date_range)
+    }
 
     request = {
       "billing_center_ids": billing_center_ids,
@@ -584,7 +603,7 @@ script "js_collated_data", type: "javascript" do
       }
     })
   }
-  
+
   // Sort pulled_costs by timestamp
   // This ensures that the Percent Change calculations are accurate
   pulled_costs = _.sortBy(pulled_costs, 'timestamp')
@@ -771,7 +790,7 @@ script "js_collated_data", type: "javascript" do
         if (previousTimePeriod[category]["sum"] != undefined) {
           var previousSum = previousTimePeriod[category]["sum"]
           var previousDailyAverageCost = previousTimePeriod[category]["dailyAverageCost"]
- 
+
           if (previousSum > 0) {
             percentChange = Number( (((sum - previousSum) / previousSum) * 100).toFixed(3)  )
           }
@@ -872,8 +891,6 @@ script "js_generated_report", type: "javascript" do
   now = new Date()
   currentMonth = now.toISOString().split('-')[0] + '-' + now.toISOString().split('-')[1]
   currentMonthName = ds_data_tables['months_long'][Number(now.toISOString().split('-')[1])]
-
-  totalMonth = parseInt(param_date_range)
 
   // Top 10 categories
   top_categories = _.filter(ds_collated_data, function(item) { return item['category'] != "" })
@@ -1087,7 +1104,7 @@ policy "pol_scheduled_report" do
     detail_template <<-EOS
 # {{ data.policyName }}: {{ rs_org_name }} (Organization ID: {{ rs_org_id }})
 **Date Created:** {{ data.today }}\\
-**Date Range:** {{ parameters.param_date_range }}\\
+**Date Range (Months):** {{ parameters.param_date_range }}\\
 **Billing Term:** {{ parameters.param_billing_term }}\\
 **Cost Metric:** {{ parameters.param_cost_metric }}\\
 **Graph Dimension:** {{ data.graphDimension }}\\
@@ -1132,7 +1149,7 @@ For more information on this report, please view the [README](https://github.com
     detail_template <<-EOS
 # Cost Alert for {{ data.policyName }}: {{ rs_org_name }} (Organization ID: {{ rs_org_id }})
 **Date Created:** {{ data.today }}\\
-**Date Range:** {{ parameters.param_date_range }}\\
+**Date Range (Months):** {{ parameters.param_date_range }}\\
 **Billing Term:** {{ parameters.param_billing_term }}\\
 **Cost Metric:** {{ parameters.param_cost_metric }}\\
 **Graph Dimension:** {{ data.graphDimension }}\\
