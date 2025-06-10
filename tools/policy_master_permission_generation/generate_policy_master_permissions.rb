@@ -72,7 +72,7 @@ def generate_pdf_html(values)
 end
 
 # Code for generating a PDF
-def generate_pdf(data, cloud_provider, filename, permissions_list_dir, logo_svg)
+def generate_pdf(data, cloud_provider, filename, permissions_list_dir, logo_svg, font)
   template_type = ""
   template_type = cloud_provider + " " if cloud_provider != "Master"
 
@@ -81,13 +81,10 @@ def generate_pdf(data, cloud_provider, filename, permissions_list_dir, logo_svg)
   <head>
     <meta charset='utf-8'>
     <title>Flexera Cloud Cost Optimization - #{cloud_provider} Policy Permissions List</title>
-    <link
-      href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@400;700&display=swap"
-      rel="stylesheet"
-    >
     <style>
       body {
-        font-family: 'Source Sans Pro', sans-serif;
+        font-family: 'Source Sans Pro';
+        src: url("data:font/truetype;charset=utf-8;base64,#{font}") format('truetype');
         font-size: 20px;
       }
     </style>
@@ -469,12 +466,13 @@ end
 
 # Create PDF documents in '.data/policy_permissions_list' directory
 logo_svg = Base64.strict_encode64(File.read('tools/policy_master_permission_generation/flexera_logo.svg'))
+font = Base64.strict_encode64(File.binread('tools/policy_master_permission_generation/source-sans-pro-regular.ttf'))
 
 aws_values = values.select { |v| v["name"].include?("AWS") || v["name"].include?("Amazon") }
 azure_values = values.select { |v| v["name"].include?("Azure") || v["name"].include?("AKS") || v["name"].include?("Microsoft") }
 google_values = values.select { |v| v["name"].include?("Google") || v["name"].include?("GCP") || v["name"].include?("GCE") }
 
-generate_pdf(values, "Master", "master_policy_permissions_list", permissions_list_dir, logo_svg)
-generate_pdf(aws_values, "AWS", "master_policy_permissions_list_aws", permissions_list_dir, logo_svg)
-generate_pdf(azure_values, "Azure", "master_policy_permissions_list_azure", permissions_list_dir, logo_svg)
-generate_pdf(google_values, "Google", "master_policy_permissions_list_google", permissions_list_dir, logo_svg)
+generate_pdf(values, "Master", "master_policy_permissions_list", permissions_list_dir, logo_svg, font)
+generate_pdf(aws_values, "AWS", "master_policy_permissions_list_aws", permissions_list_dir, logo_svg, font)
+generate_pdf(azure_values, "Azure", "master_policy_permissions_list_azure", permissions_list_dir, logo_svg, font)
+generate_pdf(google_values, "Google", "master_policy_permissions_list_google", permissions_list_dir, logo_svg, font)
