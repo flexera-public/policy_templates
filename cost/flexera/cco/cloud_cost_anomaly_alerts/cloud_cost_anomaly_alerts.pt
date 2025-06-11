@@ -7,7 +7,7 @@ category "Cost"
 severity "high"
 default_frequency "daily"
 info(
-  version: "3.7.2",
+  version: "4.0.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -74,10 +74,18 @@ end
 
 parameter "param_dimensions" do
   type "list"
-  category "Policy Settings"
+  category "Filters"
   label "Cost Anomaly Dimensions"
   description "Dimension names/IDs to report anomalies for. Use Dimension=Value to filter by a dimension. See the README for more details"
   default ["Cloud Vendor Account Name", "Cloud Vendor", "Service"]
+end
+
+parameter "param_dimensions_excluded" do
+  type "list"
+  category "Filters"
+  label "Excluded Cost Anomalies"
+  description "Dimension values to not report cost anomalies for in Dimension=Value format. Example: Service=AmazonEC2"
+  default []
 end
 
 parameter "param_anomaly_limit" do
@@ -256,21 +264,21 @@ EOS
 end
 
 datasource "ds_filter_dimensions" do
-  run_script $js_filter_dimensions, $ds_dimensions, $ds_billing_centers, $param_dimensions
+  run_script $js_filter_dimensions, $ds_dimensions, $ds_billing_centers, $param_dimensions, $param_dimensions_excluded
 end
 
 script "js_filter_dimensions", type: "javascript" do
-  parameters "ds_dimensions", "ds_billing_centers", "param_dimensions"
+  parameters "ds_dimensions", "ds_billing_centers", "param_dimensions", "param_dimensions_excluded"
   result "result"
   code <<-EOS
   result = { ids: [], names: [], filters: [], bc_filters: [], invalid_ids: [] }
 
   _.each(param_dimensions, function(user_input_dimension, index) {
-    dimension_filter_name = user_input_dimension.split('=')[0]
-    dimension_filter_value = user_input_dimension.split('=')[1]
+    filter_name = user_input_dimension.split('=')[0]
+    filter_value = user_input_dimension.split('=')[1]
 
     dimensions = _.filter(ds_dimensions, function(dimension) {
-      return dimension_filter_name == dimension['name'] || dimension_filter_name == dimension['id']
+      return filter_name == dimension['name'] || filter_name == dimension['id']
     })
 
     if (dimensions.length == 0) { result['invalid_ids'].push(user_input_dimension) }
@@ -279,12 +287,12 @@ script "js_filter_dimensions", type: "javascript" do
       result['ids'].push(dimension['id'])
       result['names'].push(dimension['name'])
 
-      if (dimension_filter_value != undefined) {
+      if (filter_value != undefined) {
         filter = {
           id: dimension['id'],
           name: dimension['name'],
-          type: "equal",
-          value: dimension_filter_value
+          type: "=",
+          value: filter_value
         }
 
         if (dimension['id'] == "billing_center_id") {
@@ -303,6 +311,30 @@ script "js_filter_dimensions", type: "javascript" do
       }
     })
   })
+
+  _.each(param_dimensions_excluded, function(filter) {
+    filter_name = filter.split('=')[0]
+    filter_value = filter.split('=')[1]
+
+    dimension = _.find(ds_dimensions, function(dimension) {
+      return filter_name == dimension['name'] || filter_name == dimension['id']
+    })
+
+    if (dimension) {
+      if (filter_value) {
+        result['filters'].push({
+          id: dimension['id'],
+          name: dimension['name'],
+          type: "!=",
+          value: filter_value
+        })
+      }
+    } else {
+      result['invalid_ids'].push(filter_name)
+    }
+  })
+
+  result['invalid_ids'] = _.compact(_.uniq(result['invalid_ids']))
 EOS
 end
 
@@ -339,7 +371,7 @@ end
 
 datasource "ds_get_anomalies" do
   request do
-    run_script $js_get_anomalies, $ds_filter_dimensions, $ds_top_level_bcs, $ds_request_variables, $param_dimensions, $param_window_size, $param_standard_deviations, $param_anomaly_limit, rs_org_id, rs_optima_host
+    run_script $js_get_anomalies, $ds_filter_dimensions, $ds_top_level_bcs, $ds_request_variables, $param_window_size, $param_standard_deviations, $param_anomaly_limit, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -350,14 +382,28 @@ datasource "ds_get_anomalies" do
 end
 
 script "js_get_anomalies", type: "javascript" do
-  parameters "ds_filter_dimensions", "ds_top_level_bcs", "ds_request_variables", "param_dimensions", "param_window_size", "param_standard_deviations", "param_anomaly_limit", "rs_org_id", "rs_optima_host"
+  parameters "ds_filter_dimensions", "ds_top_level_bcs", "ds_request_variables", "param_window_size", "param_standard_deviations", "param_anomaly_limit", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   bc_filters = ds_filter_dimensions['bc_filters']
-  other_filters = ds_filter_dimensions['filters']
 
   billingCenterIds = ds_top_level_bcs
   if (bc_filters.length > 0) { billingCenterIds = _.pluck(bc_filters, 'value') }
+
+  other_filters = _.map(ds_filter_dimensions['filters'], function(filter) {
+    if (filter['type'] == "=") {
+      return { type: "equal", dimension: filter['id'], value: filter['value'] }
+    }
+
+    if (filter['type'] == "!=") {
+      return {
+        type: "not",
+        expression: { type: "equal", dimension: filter['id'], value: filter['value'] }
+      }
+    }
+
+    return null
+  })
 
   body_fields = {
     startAt: ds_request_variables['startAt'],
@@ -371,20 +417,12 @@ script "js_get_anomalies", type: "javascript" do
     granularity: "day"
   }
 
-  if (other_filters.length == 1) {
-    body_fields['filter'] = {
-      type: other_filters[0]['type'],
-      dimension: other_filters[0]['id'],
-      value: other_filters[0]['value']
-    }
+  if (_.compact(other_filters).length == 1) {
+    body_fields['filter'] = _.compact(other_filters)[0]
   }
 
-  if (other_filters.length > 1) {
-    expressions = _.map(other_filters, function(filter) {
-      return { type: filter['type'], dimension: filter['id'], value: filter['value'] }
-    })
-
-    body_fields['filter'] = { type: "and", expressions: expressions }
+  if (_.compact(other_filters).length > 1) {
+    body_fields['filter'] = { type: "and", expressions: _.compact(other_filters) }
   }
 
   var request = {
@@ -530,7 +568,7 @@ policy "pol_anomaly_alert" do
       {{ if data.used_filters }}
         #### Filter(s):
         {{ range data.used_filters }}
-        \n   + {{ .name }} = {{ .value }}
+        \n   + {{ .name }} {{ .type }} {{ .value }}
         {{ end }}
       {{ end }}
     EOS
