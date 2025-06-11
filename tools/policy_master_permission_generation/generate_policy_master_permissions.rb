@@ -394,8 +394,7 @@ puts values
 # Needed because the PDFs will always be "different" even if permissions have not changed.
 existing_json_path = "./data/policy_permissions_list/master_policy_permissions_list.json"
 
-if false
-#if File.exist?(existing_json_path)
+if File.exist?(existing_json_path)
   existing_json = File.read(existing_json_path)
 
   if existing_json == JSON.pretty_generate(master_policy_permissions_doc)
