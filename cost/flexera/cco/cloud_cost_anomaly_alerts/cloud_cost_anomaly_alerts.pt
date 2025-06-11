@@ -7,7 +7,7 @@ category "Cost"
 severity "high"
 default_frequency "daily"
 info(
-  version: "4.0.0",
+  version: "3.8.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -448,7 +448,8 @@ script "js_filter_anomalies", type: "javascript" do
   result "result"
   code <<-EOS
   dimensions = ds_filter_dimensions['ids']
-  filters = ds_filter_dimensions['filters'].concat(ds_filter_dimensions['bc_filters'])
+  inclusion_filters = _.filter(ds_filter_dimensions['filters'], function(filter) { return filter['type'] == "=" })
+  filters = inclusion_filters.concat(ds_filter_dimensions['bc_filters'])
 
   dimensions_groupby_string = _.map(dimensions, function(id) {
     value = "&groupBy=" + id
@@ -537,6 +538,12 @@ script "js_filter_anomalies", type: "javascript" do
 
   anomalies = _.sortBy(anomalies, 'cost').reverse().slice(0, param_anomaly_limit)
 
+  exclusion_disclaimer = ""
+
+  if (_.some(ds_filter_dimensions['filters'], function(filter) { return filter["type"] == "!=" })) {
+    exclusion_disclaimer = "Note: Exclusion filters not included in above link."
+  }
+
   result = {
     anomalies: anomalies,
     link: link,
@@ -545,7 +552,8 @@ script "js_filter_anomalies", type: "javascript" do
     used_filters: used_filters,
     used_dimensions: ds_filter_dimensions['names'],
     currency: ds_currency['symbol'],
-    policy_name: ds_applied_policy['name']
+    policy_name: ds_applied_policy['name'],
+    exclusion_disclaimer: exclusion_disclaimer
   }
 EOS
 end
@@ -559,6 +567,7 @@ policy "pol_anomaly_alert" do
     summary_template "{{ data.policy_name }}: {{ len data.anomalies}} Cloud Cost Anomalies Detected"
     detail_template <<-EOS
       ### [View Detailed Report]({{ data.link }})
+      {{ data.exclusion_disclaimer }}
       \n
       #### Dimension(s):
       {{ range data.used_dimensions }}
