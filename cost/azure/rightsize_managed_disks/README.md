@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template checks managed disks in Azure subscriptions and identifies underutilized disks based on disk performance metrics over a lookback period and a threshold specified by the user; if underutilized disks are found, then disk type downgrade is recommended. An email will be sent to the user-specified email addresses.
+This policy template checks managed disks in Azure subscriptions and identifies underutilized disks based on disk performance metrics over a look back period and a threshold specified by the user; if underutilized disks are found, then disk type downgrade is recommended. An email will be sent to the user-specified email addresses.
 
 Note: It is preferred to keep the disk LUN number constant when detaching and re-attaching a data disk to a virtual machine. LUN number is used to retrieve disk performance metrics (IOPS and throughput).
 
