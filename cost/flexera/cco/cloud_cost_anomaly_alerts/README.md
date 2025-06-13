@@ -29,6 +29,7 @@ For more details on Flexera Cloud Cost Anomaly Detection, please see the [docume
   - Both dimension names, such as `Cloud Vendor Account`, and dimension IDs, such as `vendor_account`, can be used.
   - Dimension=Value formatting can be used to filter the results. For example, a value of `Cloud Vendor=AWS` will filter results to just AWS spend.
   - Filters are also automatically included as dimensions. For example, there is no need to specify both `Cloud Vendor` and `Cloud Vendor=AWS` in this parameter because the latter will automatically include the functionality of the former.
+- *Excluded Cost Anomalies* - Dimension values to not report cost anomalies for in Dimension=Value format. The link in the incident to Flexera One will not include these filters. Example: `Service=AmazonEC2`
 - *Cost Anomaly Limit* - Number of anomalies to include in the incident
 - *Window Size* - Window size to use for [Bollinger Bands](https://en.wikipedia.org/wiki/Bollinger_Bands)
 - *Standard Deviations* - Number of [standard deviations](https://en.wikipedia.org/wiki/Standard_deviation) for the [Bollinger Band](https://en.wikipedia.org/wiki/Bollinger_Bands)
