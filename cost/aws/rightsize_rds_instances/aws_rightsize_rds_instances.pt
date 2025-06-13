@@ -218,6 +218,36 @@ script "js_flexera_api_hosts", type: "javascript" do
 EOS
 end
 
+# RDS Engine Table
+# For converting response from AWS to what's in the price list
+datasource "ds_aws_rds_engine_table" do
+  run_script $js_aws_rds_engine_table
+end
+
+script "js_aws_rds_engine_table", type: "javascript" do
+  result "result"
+  code <<-'EOS'
+  result = {
+    "sqlserver-se": "SQL Server",
+    "mysql": "MySQL",
+    "aurora-mysql": "Aurora MySQL",
+    "aurora-postgresql": "Aurora PostgreSQL",
+    "postgres": "PostgreSQL",
+    "oracle-ee": "Oracle",
+    "mariadb": "MariaDB"
+  }
+EOS
+end
+
+# Get AWS RDS instance prices
+datasource "ds_aws_rds_cost_map" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/aws_rds_pricing.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 # Get AWS RDS instance sizes
 datasource "ds_aws_instance_types" do
   request do
@@ -566,6 +596,7 @@ datasource "ds_rds_instances_set" do
       field "privateDnsName", xpath(col_item, "Endpoint/Address")
       field "databaseEngine", xpath(col_item, "Engine")
       field "engineVersion", xpath(col_item, "EngineVersion")
+      field "multiAZ", xpath(col_item, "MultiAZ")
       field "availabilityZone", xpath(col_item, "AvailabilityZone")
       field "licenseModel", xpath(col_item, "LicenseModel")
       field "processorFeatures" do
@@ -772,6 +803,7 @@ script "js_rds_instances", type: "javascript" do
           engineVersion: instance['engineVersion'],
           privateDnsName: instance['privateDnsName'],
           region: instance['region'],
+          multiAZ: instance['multiAZ'].toString() == "true" ? true : false,
           availabilityZone: instance['availabilityZone'],
           licenseModel: instance['licenseModel'],
           processorFeatures: instance['processorFeatures'],
@@ -1314,11 +1346,11 @@ EOS
 end
 
 datasource "ds_rds_underutil_instances" do
-  run_script $js_rds_underutil_instances, $ds_rds_nonidle_instances_with_metrics, $ds_aws_instance_type_map, $ds_aws_instance_types_by_family, $ds_instance_costs_grouped, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value, $param_downsize_multiple
+  run_script $js_rds_underutil_instances, $ds_rds_nonidle_instances_with_metrics, $ds_aws_instance_type_map, $ds_aws_instance_types_by_family, $ds_instance_costs_grouped, $ds_aws_rds_engine_table, $ds_aws_rds_cost_map, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value, $param_downsize_multiple
 end
 
 script "js_rds_underutil_instances", type: "javascript" do
-  parameters "ds_rds_nonidle_instances_with_metrics", "ds_aws_instance_type_map", "ds_aws_instance_types_by_family", "ds_instance_costs_grouped", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value", "param_downsize_multiple"
+  parameters "ds_rds_nonidle_instances_with_metrics", "ds_aws_instance_type_map", "ds_aws_instance_types_by_family", "ds_instance_costs_grouped", "ds_aws_rds_engine_table", "ds_aws_rds_cost_map", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value", "param_downsize_multiple"
   result "result"
   code <<-'EOS'
   result = []
@@ -1362,10 +1394,34 @@ script "js_rds_underutil_instances", type: "javascript" do
       cost = 0.0
       if (typeof(ds_instance_costs_grouped[cost_name]) == 'number') { cost = ds_instance_costs_grouped[cost_name] }
 
-      cost_per_nfu = cost / ds_aws_instance_type_map[instance["resourceType"]]['cpu']['nfus']
+      // See if we have list prices for the old and new types based on metadata from the instance
+      cost_region = instance['region']
+      cost_type = instance['resourceType']
+      cost_engine = ds_aws_rds_engine_table[instance['databaseEngine']]
+      cost_multiaz = instance['multiAZ'] ? "Multi-AZ" : "Single-AZ"
+      old_price = null
+      new_price = null
 
-      new_cost = cost_per_nfu * ds_aws_instance_type_map[newResourceType]['cpu']['nfus']
-      savings = cost - new_cost
+      if (cost_region && cost_type && cost_newtype && cost_engine && cost_multiaz) {
+        if (ds_aws_rds_cost_map[cost_region] && ds_aws_rds_cost_map[cost_region][cost_type] && ds_aws_rds_cost_map[cost_region][cost_type][cost_engine] && ds_aws_rds_cost_map[cost_region][cost_type][cost_engine][cost_multiaz]) {
+          old_price = ds_aws_rds_cost_map[cost_region][cost_type][cost_engine][cost_multiaz]["pricePerUnit"]
+        }
+
+        if (ds_aws_rds_cost_map[cost_region] && ds_aws_rds_cost_map[cost_region][newResourceType] && ds_aws_rds_cost_map[cost_region][newResourceType][cost_engine] && ds_aws_rds_cost_map[cost_region][newResourceType][cost_engine][cost_multiaz]) {
+          new_price = ds_aws_rds_cost_map[cost_region][newResourceType][cost_engine][cost_multiaz]["pricePerUnit"]
+        }
+      }
+
+      // If we have list prices, use those to calculate savings
+      if (old_price && new_price) {
+        new_cost = cost * (new_price / old_price)
+        savings = cost - new_cost
+      // If we don't have list prices, fall back on cruder NFU-based calculation
+      } else {
+        cost_per_nfu = cost / ds_aws_instance_type_map[instance["resourceType"]]['cpu']['nfus']
+        new_cost = cost_per_nfu * ds_aws_instance_type_map[newResourceType]['cpu']['nfus']
+        savings = cost - new_cost
+      }
 
       new_instance = { newResourceType: newResourceType, savings: savings }
       _.each(_.keys(instance), function(key) { new_instance[key] = instance[key] })
