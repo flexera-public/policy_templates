@@ -4,9 +4,10 @@ require 'fileutils'
 require 'yaml'
 require 'csv'
 require 'pdfkit'
+require 'base64'
 
 # Code for generating HTML for a PDF
-def generate_pdf_html?(values)
+def generate_pdf_html(values)
   html_content = ""
 
   values.sort_by { |v| v["name"] }.each do |value|
@@ -49,7 +50,7 @@ def generate_pdf_html?(values)
         html_content += "<p><b>#{provider_name} Required Permissions:</b><br>"
 
         required.sort_by { |v| v["name"] }.each do |permission|
-          read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:75%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:75%;\">Write</span></i>"
+          read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:65%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:65%;\">Write</span></i>"
           html_content += "#{permission["name"]}  #{read_only}<br>"
         end
       end
@@ -58,7 +59,7 @@ def generate_pdf_html?(values)
         html_content += "<p><b>#{provider_name} Optional Permissions:</b><br>"
 
         not_required.sort_by { |v| v["name"] }.each do |permission|
-          read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:75%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:75%;\">Write</span></i>"
+          read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:65%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:65%;\">Write</span></i>"
           html_content += "#{permission["name"]}  #{read_only}<br>"
         end
       end
@@ -68,6 +69,45 @@ def generate_pdf_html?(values)
   end
 
   return html_content
+end
+
+# Code for generating a PDF
+def generate_pdf(data, cloud_provider, filename, permissions_list_dir, logo_svg, font)
+  template_type = ""
+  template_type = cloud_provider + " " if cloud_provider != "Master"
+
+  html_header = <<~EOS
+<html>
+  <head>
+    <meta charset='utf-8'>
+    <title>Flexera Cloud Cost Optimization - #{cloud_provider} Policy Permissions List</title>
+    <style>
+      body {
+        font-family: 'Source Sans Pro';
+        src: url("data:font/truetype;charset=utf-8;base64,#{font}") format('truetype');
+        font-size: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <center><img src="data:image/svg+xml;base64,#{logo_svg}" width="50%"></center>
+    <h1><center>Policy Catalog #{cloud_provider} Permissions List</center></h1>
+    <p>This document contains a list of cloud provider permissions required by each #{template_type}policy template in the Flexera Cloud Cost Optimization Policy Catalog.<br>
+    <ul>
+      <li>Required permissions may change as policy templates in the catalog are updated. An up-to-date version of this PDF file is <a href="https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/#{filename}.pdf">available in the Flexera Policy Template Github Repository</a>.</li>
+      <li><i>Required</i> permissions are required for the policy template in question to work correctly; <i>optional</i> permissions enable additional functionality.</li>
+      <li>Permissions with a green <i><span style="color:green;font-size:65%;">Read Only</span></i> label are read-only, while those with a red <i><span style="color:red;font-size:65%;">Write</span></i> label can potentially make changes to your cloud environment.</li>
+    </ul>
+    <hr>
+EOS
+
+  html_footer = <<~EOS
+  </body>
+</html>
+EOS
+
+  pdf = PDFKit.new(html_header + generate_pdf_html(data) + html_footer)
+  pdf.to_file("#{permissions_list_dir}/#{filename}.pdf")
 end
 
 # List of Policy Templates
@@ -424,64 +464,15 @@ CSV.open("#{permissions_list_dir}/master_policy_permissions_list.csv", "w") do |
   end
 end
 
-# Create PDF document in '.data/policy_permissions_list' directory
-html_content = "<html><head><meta charset='utf-8'><title>Flexera Cloud Cost Optimization - Master Policy Permissions List</title></head><body>"
-html_content += "<h1>Flexera Policy Catalog Permissions List</h1>"
-html_content += "<p>This document contains a list of cloud provider permissions required by each policy template in the Flexera Cloud Cost Optimization Policy Catalog.<br><ul>"
-html_content += "<li>Required permissions may change as policy templates in the catalog are updated. An up-to-date version of this PDF file is <a href=\"https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list.pdf\">available in the Flexera Policy Template Github Repository</a>.</li>"
-html_content += "<li><i>Required</i> permissions are required for the policy template in question to work correctly; <i>optional</i> permissions enable additional functionality.</li>"
-html_content += "<li>Permissions with a green <i><span style=\"color:green;font-size:75%;\">Read Only</span></i> label are read-only, while those with a red <i><span style=\"color:red;font-size:75%;\">Write</span></i> label can potentially make changes to your cloud environment.</li>"
-html_content += "</ul><hr>"
-html_content += generate_pdf_html?(values)
-html_content += "</table></body></html>"
+# Create PDF documents in '.data/policy_permissions_list' directory
+logo_svg = Base64.strict_encode64(File.read('tools/policy_master_permission_generation/flexera_logo.svg'))
+font = Base64.strict_encode64(File.binread('tools/policy_master_permission_generation/source-sans-pro-regular.ttf'))
 
-pdf = PDFKit.new(html_content)
-pdf.to_file("#{permissions_list_dir}/master_policy_permissions_list.pdf")
-
-# AWS Specific PDF
 aws_values = values.select { |v| v["name"].include?("AWS") || v["name"].include?("Amazon") }
-
-html_content = "<html><head><meta charset='utf-8'><title>Flexera Cloud Cost Optimization - AWS Policy Permissions List</title></head><body>"
-html_content += "<h1>Flexera Policy Catalog AWS Permissions List</h1>"
-html_content += "<p>This document contains a list of cloud provider permissions required by each AWS policy template in the Flexera Cloud Cost Optimization Policy Catalog.<br><ul>"
-html_content += "<li>Required permissions may change as policy templates in the catalog are updated. An up-to-date version of this PDF file is <a href=\"https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list_aws.pdf\">available in the Flexera Policy Template Github Repository</a>.</li>"
-html_content += "<li><i>Required</i> permissions are required for the policy template in question to work correctly; <i>optional</i> permissions enable additional functionality.</li>"
-html_content += "<li>Permissions with a green <i><span style=\"color:green;font-size:75%;\">Read Only</span></i> label are read-only, while those with a red <i><span style=\"color:red;font-size:75%;\">Write</span></i> label can potentially make changes to your cloud environment.</li>"
-html_content += "</ul><hr>"
-html_content += generate_pdf_html?(aws_values)
-html_content += "</table></body></html>"
-
-pdf = PDFKit.new(html_content)
-pdf.to_file("#{permissions_list_dir}/master_policy_permissions_list_aws.pdf")
-
-# Azure Specific PDF
-azure_values = values.select { |v| v["name"].include?("Azure") || v["name"].include?("Microsoft") }
-
-html_content = "<html><head><meta charset='utf-8'><title>Flexera Cloud Cost Optimization - Azure Policy Permissions List</title></head><body>"
-html_content += "<h1>Flexera Policy Catalog Azure Permissions List</h1>"
-html_content += "<p>This document contains a list of cloud provider permissions required by each Azure policy template in the Flexera Cloud Cost Optimization Policy Catalog.<br><ul>"
-html_content += "<li>Required permissions may change as policy templates in the catalog are updated. An up-to-date version of this PDF file is <a href=\"https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list_azure.pdf\">available in the Flexera Policy Template Github Repository</a>.</li>"
-html_content += "<li><i>Required</i> permissions are required for the policy template in question to work correctly; <i>optional</i> permissions enable additional functionality.</li>"
-html_content += "<li>Permissions with a green <i><span style=\"color:green;font-size:75%;\">Read Only</span></i> label are read-only, while those with a red <i><span style=\"color:red;font-size:75%;\">Write</span></i> label can potentially make changes to your cloud environment.</li>"
-html_content += "</ul><hr>"
-html_content += generate_pdf_html?(azure_values)
-html_content += "</table></body></html>"
-
-pdf = PDFKit.new(html_content)
-pdf.to_file("#{permissions_list_dir}/master_policy_permissions_list_azure.pdf")
-
-# Google Specific PDF
+azure_values = values.select { |v| v["name"].include?("Azure") || v["name"].include?("AKS") || v["name"].include?("Microsoft") }
 google_values = values.select { |v| v["name"].include?("Google") || v["name"].include?("GCP") || v["name"].include?("GCE") }
 
-html_content = "<html><head><meta charset='utf-8'><title>Flexera Cloud Cost Optimization - Google Policy Permissions List</title></head><body>"
-html_content += "<h1>Flexera Policy Catalog Google Permissions List</h1>"
-html_content += "<p>This document contains a list of cloud provider permissions required by each Google policy template in the Flexera Cloud Cost Optimization Policy Catalog.<br><ul>"
-html_content += "<li>Required permissions may change as policy templates in the catalog are updated. An up-to-date version of this PDF file is <a href=\"https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list_google.pdf\">available in the Flexera Policy Template Github Repository</a>.</li>"
-html_content += "<li><i>Required</i> permissions are required for the policy template in question to work correctly; <i>optional</i> permissions enable additional functionality.</li>"
-html_content += "<li>Permissions with a green <i><span style=\"color:green;font-size:75%;\">Read Only</span></i> label are read-only, while those with a red <i><span style=\"color:red;font-size:75%;\">Write</span></i> label can potentially make changes to your cloud environment.</li>"
-html_content += "</ul><hr>"
-html_content += generate_pdf_html?(google_values)
-html_content += "</table></body></html>"
-
-pdf = PDFKit.new(html_content)
-pdf.to_file("#{permissions_list_dir}/master_policy_permissions_list_google.pdf")
+generate_pdf(values, "Master", "master_policy_permissions_list", permissions_list_dir, logo_svg, font)
+generate_pdf(aws_values, "AWS", "master_policy_permissions_list_aws", permissions_list_dir, logo_svg, font)
+generate_pdf(azure_values, "Azure", "master_policy_permissions_list_azure", permissions_list_dir, logo_svg, font)
+generate_pdf(google_values, "Google", "master_policy_permissions_list_google", permissions_list_dir, logo_svg, font)
