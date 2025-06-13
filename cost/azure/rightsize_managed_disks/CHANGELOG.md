@@ -1,6 +1,6 @@
 # Changelog
 
-## v2.5.2
+## v2.6.0
 
 - Policy template no longer raises an incident if user does not set any thresholds for determining underutilization.
 - Defaults changed for `IOPS Threshold (%)` and `Throughput Threshold (%)` parameters to something a typical user would expect.
