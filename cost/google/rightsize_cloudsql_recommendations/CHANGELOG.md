@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.0
+
+- Fixed escalation that erroneously referred to 'VM' instead of 'Cloud SQL'
+- Updated escalation descriptions/parameters to be more specific
+
 ## v0.2.0
 
 - Added support for filtering system and Google Apps Script projects from the results.
