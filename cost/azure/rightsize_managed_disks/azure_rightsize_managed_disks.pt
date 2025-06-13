@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "2.5.1",
+  version: "2.5.2",
   provider: "Azure",
   service: "Managed Disks",
   policy_set: "Rightsize Storage",
@@ -108,10 +108,10 @@ parameter "param_min_used_disk_iops_pct" do
   type "number"
   category "Filters"
   label "IOPS Threshold (%)"
-  description "The IOPs threshold at which to consider a managed disk to be underutilized. Set to -1 to turn off this filter."
+  description "The IOPS threshold at which to consider a managed disk to be underutilized. Set to -1 to turn off this filter."
   min_value -1
   max_value 100
-  default -1
+  default 30
 end
 
 parameter "param_stats_aggregation_for_disk_iops" do
@@ -130,7 +130,7 @@ parameter "param_min_used_disk_throughput_pct" do
   description "The throughput threshold at which to consider a managed disk to be underutilized. Set to -1 to turn off this filter."
   min_value -1
   max_value 100
-  default -1
+  default 30
 end
 
 parameter "param_stats_aggregation_for_disk_throughput" do
@@ -372,20 +372,37 @@ datasource "ds_azure_disks" do
   end
 end
 
+# Make sure the policy template produces no results if the user doesn't set an IOPS or throughput threshold
+datasource "ds_azure_disks_stat_filtered" do
+  run_script $js_azure_disks_stat_filtered, $ds_azure_disks, $param_min_used_disk_iops_pct, $param_min_used_disk_throughput_pct
+end
+
+script "js_azure_disks_stat_filtered", type: "javascript" do
+  parameters "ds_azure_disks", "param_min_used_disk_iops_pct", "param_min_used_disk_throughput_pct"
+  result "result"
+  code <<-EOS
+  result = []
+
+  if (param_min_used_disk_iops_pct != -1 || param_min_used_disk_throughput_pct != -1) {
+    result = ds_azure_disks
+  }
+EOS
+end
+
 datasource "ds_azure_disks_sku_filtered" do
-  run_script $js_azure_disks_sku_filtered, $ds_azure_disks, $param_sku_ignore_list
+  run_script $js_azure_disks_sku_filtered, $ds_azure_disks_stat_filtered, $param_sku_ignore_list
 end
 
 script "js_azure_disks_sku_filtered", type: "javascript" do
-  parameters "ds_azure_disks", "param_sku_ignore_list"
+  parameters "ds_azure_disks_stat_filtered", "param_sku_ignore_list"
   result "result"
   code <<-EOS
   if (param_sku_ignore_list.length > 0) {
-    result = _.reject(ds_azure_disks, function(disk) {
+    result = _.reject(ds_azure_disks_stat_filtered, function(disk) {
       return _.contains(param_sku_ignore_list, disk['tier'])
     })
   } else {
-    result = ds_azure_disks
+    result = ds_azure_disks_stat_filtered
   }
 EOS
 end
@@ -724,7 +741,7 @@ script "js_azure_disks_with_metrics", type: "javascript" do
         return true
       }
     })
-      
+
     if (correspondingVmWithMetrics === undefined) continue;
     // OS disk
     for (var j in correspondingVmWithMetrics.metrics) {
