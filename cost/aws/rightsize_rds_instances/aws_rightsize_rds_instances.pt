@@ -228,13 +228,23 @@ script "js_aws_rds_engine_table", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = {
-    "sqlserver-se": "SQL Server",
     "mysql": "MySQL",
     "aurora-mysql": "Aurora MySQL",
     "aurora-postgresql": "Aurora PostgreSQL",
     "postgres": "PostgreSQL",
+    "mariadb": "MariaDB",
     "oracle-ee": "Oracle",
-    "mariadb": "MariaDB"
+    "oracle-ee-cdb": "Oracle",
+    "oracle-se2": "Oracle",
+    "oracle-se2-cdb": "Oracle",
+    "custom-oracle-ee": "Oracle",
+    "custom-oracle-ee-cdb": "Oracle",
+    "custom-oracle-se2": "Oracle",
+    "custom-oracle-se2-cdb": "Oracle",
+    "sqlserver-ee": "SQL Server",
+    "sqlserver-se": "SQL Server",
+    "sqlserver-ex": "SQL Server",
+    "sqlserver-web": "SQL Server"
   }
 EOS
 end
@@ -1373,14 +1383,17 @@ script "js_rds_underutil_instances", type: "javascript" do
   }
 
   _.each(ds_rds_nonidle_instances_with_metrics, function(instance) {
-    family = instance["resourceType"].split('.')[0]
+    resourceType = instance['resourceType']
+    if (resourceType.substring(0, 3) == "db.") { resourceType = resourceType.substring(3) }
+
+    family = resourceType.split('.')[0]
     typeIndex = null
-    if (ds_aws_instance_types_by_family[family]) { typeIndex = findTypeIndex(ds_aws_instance_types_by_family[family], instance['resourceType']) }
+    if (ds_aws_instance_types_by_family[family]) { typeIndex = findTypeIndex(ds_aws_instance_types_by_family[family], resourceType) }
 
     cpu_value = instance['cpu_' + param_stats_threshold.toLowerCase()]
     if (typeof(cpu_value) != 'number') { cpu_value = 0 }
 
-    if (typeIndex != 0 && cpu_value < param_stats_underutil_threshold_cpu_value && ds_aws_instance_type_map[instance["resourceType"]]) {
+    if (typeIndex != 0 && cpu_value < param_stats_underutil_threshold_cpu_value && ds_aws_instance_type_map[resourceType]) {
       typeIndex = typeIndex - 1
       newResourceType = ds_aws_instance_types_by_family[family][typeIndex]["name"]
 
@@ -1400,7 +1413,8 @@ script "js_rds_underutil_instances", type: "javascript" do
 
       // See if we have list prices for the old and new types based on metadata from the instance
       cost_region = instance['region']
-      cost_type = instance['resourceType']
+      cost_type = "db." + resourceType
+      cost_newtype = "db." + newResourceType
       cost_engine = ds_aws_rds_engine_table[instance['databaseEngine']]
       cost_multiaz = instance['multiAZ'] ? "Multi-AZ" : "Single-AZ"
       old_price = null
@@ -1411,8 +1425,8 @@ script "js_rds_underutil_instances", type: "javascript" do
           old_price = ds_aws_rds_cost_map[cost_region][cost_type][cost_engine][cost_multiaz]["pricePerUnit"]
         }
 
-        if (ds_aws_rds_cost_map[cost_region] && ds_aws_rds_cost_map[cost_region][newResourceType] && ds_aws_rds_cost_map[cost_region][newResourceType][cost_engine] && ds_aws_rds_cost_map[cost_region][newResourceType][cost_engine][cost_multiaz]) {
-          new_price = ds_aws_rds_cost_map[cost_region][newResourceType][cost_engine][cost_multiaz]["pricePerUnit"]
+        if (ds_aws_rds_cost_map[cost_region] && ds_aws_rds_cost_map[cost_region][cost_newtype] && ds_aws_rds_cost_map[cost_region][cost_newtype][cost_engine] && ds_aws_rds_cost_map[cost_region][cost_newtype][cost_engine][cost_multiaz]) {
+          new_price = ds_aws_rds_cost_map[cost_region][cost_newtype][cost_engine][cost_multiaz]["pricePerUnit"]
         }
       }
 
@@ -1422,12 +1436,12 @@ script "js_rds_underutil_instances", type: "javascript" do
         savings = cost - new_cost
       // If we don't have list prices, fall back on cruder NFU-based calculation
       } else {
-        cost_per_nfu = cost / ds_aws_instance_type_map[cost_type]['cpu']['nfus']
+        cost_per_nfu = cost / ds_aws_instance_type_map[resourceType]['cpu']['nfus']
         new_cost = cost_per_nfu * ds_aws_instance_type_map[newResourceType]['cpu']['nfus']
         savings = cost - new_cost
       }
 
-      new_instance = { newResourceType: newResourceType, savings: savings }
+      new_instance = { newResourceType: cost_newtype, savings: savings }
       _.each(_.keys(instance), function(key) { new_instance[key] = instance[key] })
       result.push(new_instance)
     }
