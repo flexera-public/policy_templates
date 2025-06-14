@@ -1509,32 +1509,42 @@ script "js_rds_underutil_instance_options", type: "javascript" do
 EOS
 end
 
-datasource "ds_rds_underutil_instances_cleaned" do
-  run_script $js_rds_underutil_instances_cleaned, $ds_rds_underutil_instances, $ds_rds_underutil_instance_options
+datasource "ds_rds_underutil_instance_options_table" do
+  run_script $js_rds_underutil_instance_options_table, $ds_rds_underutil_instance_options
 end
 
-script "js_rds_underutil_instances_cleaned", type: "javascript" do
-  parameters "ds_rds_underutil_instances", "ds_rds_underutil_instance_options"
+script "js_rds_underutil_instance_options_table", type: "javascript" do
+  parameters "ds_rds_underutil_instance_options"
   result "result"
   code <<-'EOS'
-  resourceTypeTable = {}
+  result = {}
 
   _.each(ds_rds_underutil_instance_options, function(option) {
     databaseEngine = option['databaseEngine']
     region = option['region']
     resourceType = option['resourceType']
 
-    if (resourceTypeTable[region] == undefined) {
-      resourceTypeTable[region] = {}
+    if (result[region] == undefined) {
+      result[region] = {}
     }
 
-    if (resourceTypeTable[region][databaseEngine] == undefined) {
-      resourceTypeTable[region][databaseEngine] = []
+    if (result[region][databaseEngine] == undefined) {
+      result[region][databaseEngine] = []
     }
 
-    resourceTypeTable[region][databaseEngine].push(resourceType)
+    result[region][databaseEngine].push(resourceType)
   })
+EOS
+end
 
+datasource "ds_rds_underutil_instances_cleaned" do
+  run_script $js_rds_underutil_instances_cleaned, $ds_rds_underutil_instances, $ds_rds_underutil_instance_options_table
+end
+
+script "js_rds_underutil_instances_cleaned", type: "javascript" do
+  parameters "ds_rds_underutil_instances", "ds_rds_underutil_instance_options_table"
+  result "result"
+  code <<-'EOS'
   result = _.filter(ds_rds_underutil_instances, function(instance) {
     region = instance['region']
     databaseEngine = instance['databaseEngine']
@@ -1542,8 +1552,8 @@ script "js_rds_underutil_instances_cleaned", type: "javascript" do
 
     valid_recommendation = false
 
-    if (region && databaseEngine && newResourceType && resourceTypeTable[region] && resourceTypeTable[region][databaseEngine]) {
-      valid_recommendation = _.contains(resourceTypeTable[region][databaseEngine], newResourceType)
+    if (region && databaseEngine && newResourceType && ds_rds_underutil_instance_options_table[region] && ds_rds_underutil_instance_options_table[region][databaseEngine]) {
+      valid_recommendation = _.contains(ds_rds_underutil_instance_options_table[region][databaseEngine], newResourceType)
     }
 
     return valid_recommendation
