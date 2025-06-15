@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.3.0
+
+- Added `Version` and `Database Format` fields to the incident table.
+
 ## v4.2.1
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
