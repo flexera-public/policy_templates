@@ -1,5 +1,10 @@
 # Changelog
 
+## v5.8.0
+
+- Savings calculation now incorporates list prices to improve accuracy of savings estimates.
+- Fixed issue where policy template would sometimes fail to produce results for underutilized instances.
+
 ## v5.7.0
 
 - Policy template now uses dynamically updated list of instance types.
