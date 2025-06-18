@@ -2,7 +2,7 @@
 
 ## v0.4.0
 
-- Implemented the ds_verified_tags datasource to process Optima cost dimensions and validate the existence of required tags.
+- Improved tag validation logic to ensure required tags exist before proceeding, helping prevent errors.
 
 ## v0.3.0
 
