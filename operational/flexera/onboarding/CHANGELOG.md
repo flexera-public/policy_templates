@@ -2,7 +2,7 @@
 
 ## v0.1.1
 
-- Fix bug when no Tag Dimensions, or Rule-Based Dimensions exist
+- Fix error `Cannot access member 'length' of undefined` when no Tag Dimensions, or Rule-Based Dimensions exist
 
 ## v0.1.0
 
