@@ -2,7 +2,7 @@
 
 ## v0.1.1
 
-- Fix bug when no Tag Dimensions, or Rule-Based Dimensions exists
+- Fix bug when no Tag Dimensions, or Rule-Based Dimensions exist
 
 ## v0.1.0
 
