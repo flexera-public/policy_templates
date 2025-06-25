@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2.0
+
+- Policy template now uses dynamically updated list of instance types.
+
 ## v2.1.3
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
