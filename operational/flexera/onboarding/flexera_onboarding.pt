@@ -8,7 +8,7 @@ default_frequency "15 minutes"
 category "Operational"
 info(
   publish: "true",
-  version: "0.1.0",
+  version: "0.1.1",
   provider: "Flexera",
   service: "All",
   policy_set: "N/A"
@@ -567,7 +567,6 @@ script "js_result_fail_generally_recommended_templates", type: "javascript" do
   publiccloudBillConnects = _.filter(ds_bill_connects, function (bill_connect) {
     return bill_connect.kind.indexOf("aws") > -1 || bill_connect.kind.indexOf("azure") > -1 || bill_connect.kind.indexOf("google") > -1 || bill_connect.kind.indexOf("gcp") > -1 || bill_connect.kind.indexOf("gce") > -1;
   });
-  // console.log("publiccloudBillConnects="+JSON.stringify(publiccloudBillConnects)); // Helpful for debugging
 
   // Add "Flexera Onboarding" to ds_generally_recommended_templates
   // We have some checks that we want to run for this policy template
@@ -606,15 +605,12 @@ script "js_result_fail_generally_recommended_templates", type: "javascript" do
           // We need to handle this differently because the provider tag value is not an exact match (can be google or gcp)
           if (vendor == "google") {
             var regex = /gcp|gce|google/;
-            // console.log("vendor="+vendor+" provider_tag="+provider_tag.value+" match="+regex.test(provider_tag.value)); // Helpful for debugging
             return regex.test(provider_tag.value);
           } else {
             // for all other vendors, we can do a simple indexOf check
-            // console.log("vendor="+vendor+" provider_tag="+provider_tag.value+" match="+provider_tag.value.indexOf()); // Helpful for debugging
             return provider_tag.value.indexOf(vendor) > -1;
           }
         });
-        // console.log("vendor="+vendor+" pt="+pt+" bill_connects="+JSON.stringify(bill_connects)+" credentials="+JSON.stringify(credentials)); // Helpful for debugging
 
         // Only check the recommended policy if:
         //   - There is at least 1 bill connect for the vendor AND 1 credential for the vendor
@@ -623,7 +619,6 @@ script "js_result_fail_generally_recommended_templates", type: "javascript" do
         //     We can safely assume "flexera" provider exists b/c it is required to run this policy,
         //     But only proceed with those Flexera Policy recommendations there is at least 1 "public cloud" (aws, azure, google) bill connect first
         if ((bill_connects.length >= 1 && credentials.length >= 1) || (vendor == "flexera" && publiccloudBillConnects.length >= 1)) {
-          // console.log("bill_connects.length="+bill_connects.length+" publiccloudBillConnects.length="+publiccloudBillConnects.length+" credentials.length="+credentials.length+" vendor="+vendor); // Helpful for debugging
           // filter the applied policies to see if the policyTemplate.name contains the recommended policy template
           var policy = _.filter(ds_applied_policies, function (applied_policy) {
             // Check to see if it's a policyTemplate or publishedTemplate
@@ -1008,7 +1003,7 @@ EOS
 end
 
 datasource "ds_result_cost_dimensions" do
-  run_script $js_result_cost_dimensions, val($ds_rule_based_dimensions, "values"), val($ds_tag_dimensions, "values"), $ds_bill_connects, $ds_cost_dimensions_costs
+  run_script $js_result_cost_dimensions, $ds_rule_based_dimensions, $ds_tag_dimensions, $ds_bill_connects, $ds_cost_dimensions_costs
 end
 
 script "js_result_cost_dimensions", type: "javascript" do
@@ -1048,7 +1043,7 @@ script "js_result_cost_dimensions", type: "javascript" do
   // Only check cost dimensions for cost allocation if there is at least 1 bill connect
   if (ds_bill_connects_filtered.length > 0) {
     // Check to see if there is at least one Tag Dimension
-    if (ds_tag_dimensions.length == 0) {
+    if (!_.isArray(ds_tag_dimensions.values) || ds_tag_dimensions.values.length == 0) {
       check_results.push({
         "name": "First Tag Dimension",
         "severity": "high",
@@ -1060,10 +1055,10 @@ script "js_result_cost_dimensions", type: "javascript" do
         "name": "First Tag Dimension",
         "severity": "high",
         "result": "pass",
-        "details": ds_tag_dimensions.length+" Tag Dimension(s) found."
+        "details": ds_tag_dimensions.values.length+" Tag Dimension(s) found."
       });
       // Check the costs for each Tag Dimension
-      _.each(ds_tag_dimensions, function (dimension) {
+      _.each(ds_tag_dimensions.values, function (dimension) {
         var costs = checkCosts(/tag_.*/, ds_cost_dimensions_costs);
         // Check that the cost.dimension_cost_percentages where dimension_value=None is less than 5%
         var none_cost = _.find(costs.dimension_cost_percentages, function (cost) {
@@ -1097,7 +1092,7 @@ script "js_result_cost_dimensions", type: "javascript" do
     }
 
     // Check to see if there is at least one Rule-Based Dimension
-    if (ds_rule_based_dimensions.length == 0) {
+    if (!_.isArray(ds_rule_based_dimensions.values) || ds_rule_based_dimensions.values.length == 0) {
       check_results.push({
         "name": "First Rule-Based Dimension",
         "severity": "high",
@@ -1109,10 +1104,10 @@ script "js_result_cost_dimensions", type: "javascript" do
         "name": "First Rule-Based Dimension",
         "severity": "high",
         "result": "pass",
-        "details": ds_rule_based_dimensions.length+" Rule-Based Dimension(s) found."
+        "details": ds_rule_based_dimensions.values.length+" Rule-Based Dimension(s) found."
       });
-      // Check the costs for each Tag Dimension
-      _.each(ds_rule_based_dimensions, function (dimension) {
+      // Check the costs for each Rule Based Dimension
+      _.each(ds_rule_based_dimensions.values, function (dimension) {
         var costs = checkCosts(/rbd_.*/, ds_cost_dimensions_costs);
         // Check that the cost.dimension_cost_percentages where dimension_value=None is less than 5%
         var none_cost = _.find(costs.dimension_cost_percentages, function (cost) {
@@ -1267,7 +1262,6 @@ script "js_result_iam", type: "javascript" do
         });
         // Check for Just in Time Provisioning
         var jit_provisioning = _.filter(ds_idps, function (idp) {
-          // console.log("idp="+JSON.stringify(idp)); // Helpful for debugging
           return idp.jitProvisioningEnabled == "true" || idp.jitProvisioningEnabled == true;
         });
         if (jit_provisioning.length == 0) {
