@@ -58,7 +58,6 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `Microsoft.Resources/subscriptions/resources/read`
   - `Microsoft.Resources/subscriptions/resourceGroups/read`
   - `Microsoft.Resources/tags/read`
-  - `Microsoft.Resources/subscriptions/resourceGroups/write`*
   - `Microsoft.Resources/tags/write`*
 
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
