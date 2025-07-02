@@ -222,18 +222,22 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-EOS
   host_table = {
     "api.optima.flexeraeng.com": {
-      flexera: "api.flexera.com",
-      fsm: "api.fsm.flexeraeng.com"
+      api: "api.flexera.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-      flexera: "api.flexera.eu",
-      fsm: "api.fsm-eu.flexeraeng.com"
+      api: "api.flexera.eu",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-      flexera: "api.flexera.au",
-      fsm: "api.fsm-apac.flexeraeng.com"
+      api: "api.flexera.au",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
     }
   }
+  result = host_table[rs_optima_host]
 
   result = host_table[rs_optima_host]
 EOS
@@ -243,7 +247,7 @@ end
 datasource "ds_cloud_vendor_accounts" do
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
+    host val($ds_flexera_api_hosts, 'api')
     path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
     header "Api-Version", "1.0"
   end
@@ -1110,10 +1114,6 @@ script "js_merged_metrics", type: "javascript" do
 
           // Construct chartUrlField which is in the "link-external" format -- display name||URL
           merged_instance["chartUrlField"] = resource_identifier+" Utilization Chart||" + merged_instance["chartUrl"] + "&from_pt=true"
-
-          // Append the chart as image markdown to the recommendation details
-          // &from_pt=true appended to end of string (as last query param) is recommended to prevent issues with the URL being misinterpretted
-          recommendationDetails.push("\\n\\n![Utilization Chart](" + merged_instance["chartUrl"] + "&from_pt=true)")
         }
 
         // Send the instance information with the CloudWatch data into the final result.
@@ -1126,11 +1126,11 @@ EOS
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_downsize_multiple
+  run_script $js_idle_and_underutil_instances, $ds_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_downsize_multiple, rs_org_id, rs_project_id
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_instances", "ds_merged_metrics", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_downsize_multiple"
+  parameters "ds_instances", "ds_merged_metrics", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_downsize_multiple", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -1231,6 +1231,15 @@ script "js_idle_and_underutil_instances", type:"javascript" do
           "in AWS Account ", instance["accountName"], " ",
           "(", instance["accountID"], ")"
         ]
+        // Append utilization chart to recommendationDetails if we have one
+        if (_.isString(instance["chartUrl"])) {
+          // Construct chartUrlField which is in the "link-external" format -- display name||URL
+          instance["chartUrlField"] = instance["resourceID"]+" Utilization Chart||" + instance["chartUrl"]
+
+          // Append the chart as image markdown to the recommendation details
+          // &from_pt=true appended to end of string (as last query param) is recommended to prevent issues with the URL being misinterpretted
+          recommendationDetails.push("\n\n![Utilization Chart](" + instance["chartUrl"] + "&from_pt=true)")
+        }
 
         instance["recommendationDetails"] = recommendationDetails.join('')
         instance["newResourceType"] = "Terminate EC2 Instance"
@@ -1296,6 +1305,15 @@ script "js_idle_and_underutil_instances", type:"javascript" do
           "from ", instance["resourceType"], " ",
           "to ", instance["newResourceType"]
         ]
+        // Append utilization chart to recommendationDetails if we have one
+        if (_.isString(instance["chartUrl"])) {
+          // Construct chartUrlField which is in the "link-external" format -- display name||URL
+          instance["chartUrlField"] = instance["resourceID"]+" Utilization Chart||" + instance["chartUrl"]
+
+          // Append the chart as image markdown to the recommendation details
+          // &from_pt=true appended to end of string (as last query param) is recommended to prevent issues with the URL being misinterpretted
+          recommendationDetails.push("\n\n![Utilization Chart](" + instance["chartUrl"] + "&from_pt=true)")
+        }
 
         instance["recommendationDetails"] = recommendationDetails.join('')
 
@@ -1407,7 +1425,17 @@ script "js_idle_and_underutil_instances", type:"javascript" do
       ].join('')
     }
 
-    disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+    // first get host from ds_flexera_api_hosts
+    var applied_policy_url = "https://" + ds_flexera_api_hosts["ui"]
+    // determine if policyAggregate or regular applied policy
+    if (_.isString(ds_applied_policy['policyAggregateId'])) {
+      applied_policy_url = applied_policy_url + "/orgs/" + rs_org_id + "/automation/applied-policies?policyId=" + ds_applied_policy['policyAggregateId'];
+    } else {
+      applied_policy_url = applied_policy_url + "/orgs/" + rs_org_id + "/automation/applied-policies/projects/" + rs_project_id + "?policyId=" + ds_applied_policy['id'];
+    }
+    
+
+    disclaimer = "The above settings can be modified by editing the [" + ds_applied_policy['name'] + "](" + applied_policy_url + ") applied policy and changing the appropriate parameters."
 
     underutil_message = underutil_findings + underutil_analysis_message + lookback_message + disclaimer
     idle_message = idle_findings + idle_analysis_message + lookback_message + disclaimer
@@ -1449,13 +1477,29 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
   // Add these to both lists to ensure the first item that fails validation for each
   // contains the necessary data for the summary and detail templates
-  idle_list[0]['idle_message'] = idle_message
-  idle_list[0]['idle_total_savings'] = idle_total_savings
-  idle_list[0]['policy_name'] = ds_applied_policy['name']
-
-  underutil_list[0]['underutil_message'] = underutil_message
-  underutil_list[0]['underutil_total_savings'] = underutil_total_savings
-  underutil_list[0]['policy_name'] = ds_applied_policy['name']
+  if (idle_list.length > 0) {
+    // Append the policy metadata to the recommendationDetails which is surfaced in UI and referenced by the Engineering/App Owner personas
+    // This helps them understand what thresholds, metrics, and statistics were used to determine if the resource is "idle" or "underutilized"
+    idle_list = _.map(idle_list, function(row) {
+      row.recommendationDetails = row.recommendationDetails + "\n\n" + idle_analysis_message + lookback_message + disclaimer || '';
+      return row;
+    });
+    idle_list[0]['idle_message'] = idle_message
+    idle_list[0]['idle_total_savings'] = idle_total_savings
+    idle_list[0]['policy_name'] = ds_applied_policy['name']
+  }
+  
+  if (underutil_list.length > 0) {
+    // Append the policy metadata to the recommendationDetails which is surfaced in UI and referenced by the Engineering/App Owner personas
+    // This helps them understand what thresholds, metrics, and statistics were used to determine if the resource is "idle" or "underutilized"
+    underutil_list = _.map(underutil_list, function(row) {
+      row.recommendationDetails = row.recommendationDetails + "\n\n" + underutil_analysis_message + lookback_message + disclaimer || '';
+      return row;
+    });
+    underutil_list[0]['underutil_message'] = underutil_message
+    underutil_list[0]['underutil_total_savings'] = underutil_total_savings
+    underutil_list[0]['policy_name'] = ds_applied_policy['name']
+  }
 
   result =  {
     idle_list: idle_list,
