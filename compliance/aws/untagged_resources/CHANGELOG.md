@@ -1,5 +1,10 @@
 # Changelog
 
+## v5.4.0
+
+- New `Resource Types` parameter allows policy template to only report on specific services or resource types.
+- Small code changes made to improve the speed of policy template execution.
+
 ## v5.3.2
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.

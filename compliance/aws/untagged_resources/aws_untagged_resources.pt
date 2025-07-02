@@ -7,7 +7,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.3.2",
+  version: "5.4.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Untagged Resources",
@@ -75,6 +75,14 @@ parameter "param_regions_list" do
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. See the README for more details."
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
+end
+
+parameter "param_resource_types" do
+  type "list"
+  category "Filters"
+  label "Resource Types"
+  description "A list of resource types to report on. Leave empty to report all taggable resources that aren't compliant. Entries must be in \"service\" or \"service:type\" format. See the README for more details."
   default []
 end
 
@@ -454,15 +462,7 @@ end
 datasource "ds_aws_resources" do
   iterate $ds_regions
   request do
-    auth $auth_aws
-    pagination $pagination_aws_tagging
-    verb "POST"
-    host join(["tagging.", val(iter_item, "region"), ".amazonaws.com"])
-    path "/"
-    header "X-Amz-Target", "ResourceGroupsTaggingAPI_20170126.GetResources"
-    header "Content-Type", "application/x-amz-json-1.1"
-    body_field "ExcludeCompliantResources", "false"
-    body_field "IncludeComplianceDetails", "true"
+    run_script $js_aws_resources, val(iter_item, "region"), $param_resource_types
   end
   result do
     encoding "json"
@@ -478,6 +478,32 @@ datasource "ds_aws_resources" do
       field "type", "Resource"
     end
   end
+end
+
+script "js_aws_resources", type:"javascript" do
+  parameters "region", "param_resource_types"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_aws",
+    pagination: "pagination_aws_tagging",
+    verb: "POST",
+    host: [ "tagging.", region, ".amazonaws.com" ].join(''),
+    path: "/",
+    headers: {
+      "X-Amz-Target": "ResourceGroupsTaggingAPI_20170126.GetResources",
+      "Content-Type": "application/x-amz-json-1.1"
+    },
+    body_fields: {
+      "ExcludeCompliantResources": "false",
+      "IncludeComplianceDetails": "false"
+    }
+  }
+
+  if (param_resource_types.length > 0) {
+    request["body_fields"]["ResourceTypeFilters"] = param_resource_types
+  }
+EOS
 end
 
 datasource "ds_aws_resources_missing_tags" do
@@ -562,6 +588,7 @@ script "js_aws_resources_missing_tags", type:"javascript" do
       })
 
       missing_tags_result = missing_tags
+
       if (param_consider_tag_dimensions == "Consider Tag Dimension") {
         // Exclude resources that have a tag value for one of the tag dimensions
         // For each tag on the resource
@@ -591,7 +618,7 @@ script "js_aws_resources_missing_tags", type:"javascript" do
               }
             }
           }
-        });
+        })
       }
 
       if (missing_tags.length == comparators.length || (missing_tags.length > 0 && param_tags_boolean == 'Any')) {
