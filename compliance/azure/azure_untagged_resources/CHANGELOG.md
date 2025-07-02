@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.0
+
+- Update tag resource action to use Azure Tags API, which enables `Tag Contributor` role to be used for enabling action capabilities with minimum scope.
+
 ## v3.2.2
 
 - Fixed issue where prompt for adding tags incorrectly said to use "key:value" instead of "key=value" format.
