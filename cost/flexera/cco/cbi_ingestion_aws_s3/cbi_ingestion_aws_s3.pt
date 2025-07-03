@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "0.1.1",
+  version: "0.2.0",
   provider: "Flexera",
   service: "Common Bill Ingestion",
   policy_set: "Common Bill Ingestion",
@@ -85,6 +85,15 @@ parameter "param_s3_prefix" do
   label "AWS S3 Object Storage Path/Prefix"
   description "The path and prefix for the name of the object in the S3 bucket. See README for more information on how file names should be structured. Ex: bills/labor-costs-"
   # No default value, user input required
+end
+
+parameter "param_granularity" do
+  type "string"
+  category "Policy Settings"
+  label "Granularity"
+  description "Whether there will be one file per month of billing data, or one file per day of billing data. See README for more details."
+  allowed_values "Monthly", "Daily"
+  default "Monthly"
 end
 
 ###############################################################################
@@ -316,15 +325,15 @@ datasource "ds_existing_bill_uploads" do
 end
 
 datasource "ds_pending_bill_uploads" do
-  run_script $js_pending_bill_uploads, $ds_existing_bill_uploads
+  run_script $js_pending_bill_uploads, $ds_existing_bill_uploads, $ds_cbi_endpoint
 end
 
 script "js_pending_bill_uploads", type: "javascript" do
-  parameters "ds_existing_bill_uploads"
+  parameters "ds_existing_bill_uploads", "ds_cbi_endpoint"
   result "result"
   code <<-EOS
   result = _.filter(ds_existing_bill_uploads, function(item) {
-    return item["status"] != "complete" && item["status"] != "aborted"
+    return item["status"] != "complete" && item["status"] != "aborted" && item["billConnectId"] == ds_cbi_endpoint["id"]
   })
 EOS
 end
@@ -388,42 +397,73 @@ datasource "ds_cbi_create_bill_upload" do
   end
 end
 
-datasource "ds_cost_file" do
+datasource "ds_cost_object_names" do
+  run_script $js_cost_object_names, $ds_dates, $param_s3_prefix, $param_granularity
+end
+
+script "js_cost_object_names", type: "javascript" do
+  parameters "ds_dates", "param_s3_prefix", "param_granularity"
+  result "result"
+  code <<-EOS
+  result = []
+
+  if (param_granularity == "Monthly") {
+    result.push({
+      object: [ param_s3_prefix, ds_dates["period"], ".csv" ].join('')
+    })
+  } else {
+    for (var i = 1; i <= 31; i++) {
+      day = i.toString()
+      if (i < 10) { day = "0" + day }
+
+      result.push({
+        object: [ param_s3_prefix, ds_dates["period"], "-", day, ".csv" ].join('')
+      })
+    }
+  }
+EOS
+end
+
+datasource "ds_cost_objects" do
+  iterate $ds_cost_object_names
   request do
     auth $auth_aws
     host $param_s3_hostname
-    path join([$param_s3_prefix, val($ds_dates, "period"), ".csv"])
+    path val(iter_item, "object")
     header "User-Agent", "RS Policies"
+    ignore_status [404] # Ignore dates that have no associated file instead of failing completely
   end
   result do
     encoding "text"
   end
 end
 
-datasource "ds_cost_file_data" do
-  run_script $js_cost_file_data, $ds_cost_file
+datasource "ds_cost_objects_data" do
+  run_script $js_cost_objects_data, $ds_cost_objects
 end
 
-script "js_cost_file_data", type: "javascript" do
-  parameters "ds_cost_file"
+script "js_cost_objects_data", type: "javascript" do
+  parameters "ds_cost_objects"
   result "result"
   code <<-EOS
-  if (typeof(ds_cost_file) == 'string') {
-    result = { data: ds_cost_file }
-  } else {
-    result = { data: ds_cost_file[0] }
-  }
+  result = _.map(ds_cost_objects, function(object, index) {
+    return {
+      index: index.toString(),
+      data: object
+    }
+  })
 EOS
 end
 
-datasource "ds_cbi_upload_file" do
+datasource "ds_cbi_upload_files" do
+  iterate $ds_cost_objects_data
   request do
     auth $auth_flexera
     verb "POST"
     host rs_optima_host
-    path join(["/optima/orgs/", rs_org_id, "/billUploads/", val($ds_cbi_create_bill_upload, "id"), "/files/cost-", val($ds_dates, "period"), ".csv"])
+    path join(["/optima/orgs/", rs_org_id, "/billUploads/", val($ds_cbi_create_bill_upload, "id"), "/files/cost-", val(iter_item, "index"), ".csv"])
     header "User-Agent", "RS Policies"
-    body val($ds_cost_file_data, "data")
+    body val(iter_item, "data")
   end
   result do
     encoding "json"
@@ -439,7 +479,7 @@ end
 
 datasource "ds_cbi_commit_bill_upload" do
   request do
-    run_script $js_cbi_commit_bill_upload, $ds_cbi_upload_file, $ds_cbi_create_bill_upload, rs_org_id, rs_optima_host
+    run_script $js_cbi_commit_bill_upload, $ds_cbi_upload_files, $ds_cbi_create_bill_upload, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -453,7 +493,7 @@ datasource "ds_cbi_commit_bill_upload" do
 end
 
 script "js_cbi_commit_bill_upload", type: "javascript" do
-  parameters "ds_cbi_upload_file", "ds_cbi_create_bill_upload", "rs_org_id", "rs_optima_host"
+  parameters "ds_cbi_upload_files", "ds_cbi_create_bill_upload", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   var request = {
@@ -468,24 +508,26 @@ EOS
 end
 
 datasource "ds_incident" do
-  run_script $js_incident, $ds_cbi_commit_bill_upload, $ds_applied_policy, $ds_dates, $param_s3_hostname, $param_s3_prefix
+  run_script $js_incident, $ds_cbi_commit_bill_upload, $ds_applied_policy, $ds_dates, $ds_cost_object_names, $param_s3_hostname, $param_s3_prefix
 end
 
 script "js_incident", type: "javascript" do
-  parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_dates", "param_s3_hostname", "param_s3_prefix"
+  parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_dates", "ds_cost_object_names", "param_s3_hostname", "param_s3_prefix"
   result "result"
   code <<-EOS
-  result = [{
-    policy_name: ds_applied_policy['name'],
-    id: ds_cbi_commit_bill_upload['id'],
-    status: ds_cbi_commit_bill_upload['status'],
-    createdAt: ds_cbi_commit_bill_upload['createdAt'],
-    updatedAt: ds_cbi_commit_bill_upload['updatedAt'],
-    billConnectId: ds_cbi_commit_bill_upload['billConnectId'],
-    billingPeriod: ds_cbi_commit_bill_upload['billingPeriod'],
-    s3_hostname: param_s3_hostname,
-    filename: param_s3_prefix + ds_dates["period"] + ".csv"
-  }]
+  result = _.map(ds_cost_object_names, function(object) {
+    return {
+      policy_name: ds_applied_policy['name'],
+      id: ds_cbi_commit_bill_upload['id'],
+      status: ds_cbi_commit_bill_upload['status'],
+      createdAt: ds_cbi_commit_bill_upload['createdAt'],
+      updatedAt: ds_cbi_commit_bill_upload['updatedAt'],
+      billConnectId: ds_cbi_commit_bill_upload['billConnectId'],
+      billingPeriod: ds_cbi_commit_bill_upload['billingPeriod'],
+      s3_hostname: param_s3_hostname,
+      filename: object
+    }
+  })
 EOS
 end
 
