@@ -6,6 +6,56 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3276](https://github.com/flexera-public/policy_templates/pull/3276): SQ-15559 Azure Superseded Compute Instances Reference Error
+
+*Minor Update, Bug Fix*
+
+#### Description
+
+> A ReferenceError is being caused:
+>
+> ```
+> ReferenceError: 'instance_type_price_map' is not defined\nLocation:\n datasource \"ds_superseded_instances\"\n script \"js_superseded_instances\
+> ```
+>
+> This is caused because the variable instance_type_price_map is not always declared, so instead of being undefined it's causing a reference error.
+>
+> ![image](https://github.com/user-attachments/assets/0de1be8b-9889-4042-b7e4-04f4b8b871e1)
+>
+> To fix this we declare the variable before accessing it.
+>
+> ### Issues Resolved
+>
+> There's a support question related to this PR: https://flexera.atlassian.net/browse/SQ-15559
+>
+
+#### Metadata
+
+- **Policies**: [Azure Superseded Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/superseded_instances/README.md), [Meta Parent: Azure Superseded Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/superseded_instances/README.md)
+- **Merged At**: 2025-07-04 19:41:59 UTC
+
+---
+
+### PR [#3260](https://github.com/flexera-public/policy_templates/pull/3260): POL-1550 - fix: Flexera Onboarding - handle when no tag dimensions or rbds exist yet
+
+*Bug Fix*
+
+#### Description
+
+> Quick fix on Flexera Onboarding PT
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/POL-1550
+>
+
+#### Metadata
+
+- **Policies**: [Flexera Onboarding](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/onboarding/README.md)
+- **Merged At**: 2025-06-30 18:34:50 UTC
+
+---
+
 ### PR [#3255](https://github.com/flexera-public/policy_templates/pull/3255): POL-1544 Azure Hybrid Use Benefit for SQL: Additional Incident Fields
 
 *Minor Update*
@@ -1941,32 +1991,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Applied Policy Template Errors](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/automation/applied_policy_error_notification/README.md)
 - **Merged At**: 2024-10-16 17:04:31 UTC
-
----
-
-### PR [#2734](https://github.com/flexera-public/policy_templates/pull/2734): POL-1378 Linting Updates: Cost Policies: AWS
-
-#### Description
-
-> Various small changes to Security policies to bring them up to current linting standards. Also removes known bad coding patterns to avoid their reuse.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2734) for these details.
-- **Merged At**: 2024-10-16 12:03:43 UTC
-
----
-
-### PR [#2736](https://github.com/flexera-public/policy_templates/pull/2736): POL-1378 Linting Updates: Cost Policies: Google
-
-#### Description
-
-> Various small changes to Google Cost policies to bring them up to current linting standards. Also removes known bad coding patterns to avoid their reuse.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2736) for these details.
-- **Merged At**: 2024-10-16 12:03:35 UTC
 
 ---
 
