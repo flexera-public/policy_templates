@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.0
+
+- Improved tag validation logic to ensure required tags exist before proceeding, helping prevent errors.
+
 ## v0.3.0
 
 - Added batch processing for large datasources.
