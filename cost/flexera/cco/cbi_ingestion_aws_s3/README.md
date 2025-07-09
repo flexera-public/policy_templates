@@ -12,6 +12,9 @@ This policy template uploads a file containing cloud costs from AWS S3 Object St
 - *CBI (Common Bill Ingestion) Endpoint Type* - Whether costs are being sent to an endpoint for [Common Bill Ingestion Format](https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBIDefaultFormat.htm) or [FOCUS Format](https://docs.flexera.com/flexera/EN/Optima/FOCUS.htm).
 - *CBI (Common Bill Ingestion) Endpoint ID* - The ID of CBI endpoint to create/use for ingested costs. Leave blank to have this generated and managed automatically. Ex: cbi-oi-optima-laborcosts
 - *Cloud Vendor* - The value the fixed cost should have for the `Cloud Vendor` dimension in Flexera CBI. Only has an effect when the CBI endpoint is first created. This is because the `Cloud Vendor` dimension isn't based on billing data but is configured for the CBI endpoint itself.
+- *Granularity* - Whether there will be one file per month of billing data, or one file per day of billing data.
+  - If set to "Daily", file names will be expected to end with a full date like "2024-10-03.csv". The policy template will grab all of the files for a given month to upload to Flexera.
+  - If set to "Monthly", file names will be expected to end with a year and month like "2024-10.csv". The policy template will grab one file for the month to upload to Flexera.
 - *AWS S3 Object Storage Bucket Hostname* - The hostname for the S3 bucket that stores the costs. Ex: billing-files.s3.amazonaws.com
 - *AWS S3 Object Storage Path/Prefix* - The path and prefix for the name of the object in the S3 bucket. The actual objects should always have the year and month in YYYY-MM format at the end of the object name along with the ".csv" file extension.
   - For example, if you set this parameter to `bills/labor-costs-`, the object with the costs for October 2024 should be named `bills/labor-costs-2024-10.csv`
