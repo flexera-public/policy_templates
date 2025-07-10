@@ -2,7 +2,7 @@
 
 ## v5.8.1
 
-- Improved accuracy of savings calculation for underutilized RDS instances recommending to be resized.  We now consider only the "InstanceUsage" usage type costs when estimating potential savings from resize.
+- Improved accuracy of savings calculation for underutilized RDS instances recommending to be resized. We now consider only the "InstanceUsage" usage type costs when estimating potential savings from resize.
 
 ## v5.8.0
 
