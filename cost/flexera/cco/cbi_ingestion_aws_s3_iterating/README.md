@@ -4,6 +4,8 @@
 
 This policy template uploads a file containing cloud costs from AWS S3 Object Storage into the Flexera Cloud Cost Optimization (CCO) platform via [Common Bill Ingestion](https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBI.htm). Both [Common Bill Ingestion Format](https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBIDefaultFormat.htm) and [FOCUS Format](https://docs.flexera.com/flexera/EN/Optima/FOCUS.htm) are supported. An incident is raised on every execution of the policy to provide status information to the user.
 
+NOTE: Because of the complexities involved in this policy template, it is recommended for use only in situations where the standard [Common Bill Ingestion from AWS S3 Object Storage](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cbi_ingestion_aws_s3) policy template is unable to handle the amount of data being processed for CBI.
+
 ## How It Works
 
 - The policy uses the AWS API to connect to the bucket containing the CSV files with cost data and obtain the relevant files for the specified month (or current month if none is specified.)
@@ -64,6 +66,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ### Additional Requirements
+
+The objects containing costs must have the `.csv` file extension and must contain the year and month in YYYY-MM format. Example: cost_data_2025-04-08.csv
 
 This policy template also requires a valid CBI endpoint created using the [Flexera Bill Connect API](https://reference.rightscale.com/optima-bill/#/CBIBillConnects/CBIBillConnects_create).
 

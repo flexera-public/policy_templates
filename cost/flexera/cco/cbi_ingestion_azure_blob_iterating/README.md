@@ -4,6 +4,8 @@
 
 This policy template uploads a file containing cloud costs from Azure Blob Storage into the Flexera Cloud Cost Optimization (CCO) platform via [Common Bill Ingestion](https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBI.htm). Both [Common Bill Ingestion Format](https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBIDefaultFormat.htm) and [FOCUS Format](https://docs.flexera.com/flexera/EN/Optima/FOCUS.htm) are supported. An incident is raised on every execution of the policy to provide status information to the user.
 
+NOTE: Because of the complexities involved in this policy template, it is recommended for use only in situations where the standard [Common Bill Ingestion from Azure Blob Storage](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cbi_ingestion_azure_blob) policy template is unable to handle the amount of data being processed for CBI.
+
 ## How It Works
 
 - The policy uses the Azure Storage API to connect to the storage container containing the CSV files with cost data and obtain the relevant files for the specified month (or current month if none is specified.)
