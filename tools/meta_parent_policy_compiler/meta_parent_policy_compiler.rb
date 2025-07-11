@@ -163,9 +163,9 @@ end
     esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETERS__", esc_parameters)
     esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_VALUES__", esc_parameter_values_string)
     if esc_parameter_values_options_list.length > 0
-      esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_ACTION_OPTIONS__", "$actions_options = [" + esc_parameter_values_options_list.join(", ")+"]")
+      esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_ACTION_OPTIONS__", "$action_options = [" + esc_parameter_values_options_list.join(", ")+"]")
     else
-      esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_ACTION_OPTIONS__", "$actions_options = []")
+      esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_ACTION_OPTIONS__", "$action_options = []")
     end
     escalation_blocks_parent.push(esc)
     # Print the compiled escalation and parameters strings if exist
