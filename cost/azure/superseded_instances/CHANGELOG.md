@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1.4
+
+- Fixed error where policy would fail completely when finding the superseded instances prices.
+
 ## v2.1.3
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.

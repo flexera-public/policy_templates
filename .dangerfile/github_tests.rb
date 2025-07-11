@@ -14,11 +14,13 @@ def github_pr_bad_title?(github)
 
   pol_matcher = /^POL-\d{1,4} .+$/
   fopts_matcher = /^FOPTS-\d{1,4} .+$/
+  foaa_matcher = /^FOAA-\d{1,4} .+$/
 
-  if !github.pr_title.match?(pol_matcher) && !github.pr_title.match?(fopts_matcher)
+  if !github.pr_title.match?(pol_matcher) && !github.pr_title.match?(fopts_matcher) && !github.pr_title.match?(foaa_matcher)
     fail_message = "### **Github Pull Request**\n[[Info](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md#4-make-a-pull-request)] Pull Request has improper title. Title should always begin with the JIRA ticket id, followed by a description, like in the following examples:\n\n"
     fail_message += "POL-123 Add New Feature\n"
     fail_message += "FOPTS-1000 Fixed Bug\n\n"
+    fail_message += "FOAA-710 New Policy Template\n\n"
   end
 
   return fail_message.strip if !fail_message.empty?

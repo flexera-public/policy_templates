@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.2.0
+
+- Adds utilization chart for each resource to the result if metrics are available
+
 ## v6.1.3
 
 - Code refactored to improve performance by gathering metrics in batched requests.
