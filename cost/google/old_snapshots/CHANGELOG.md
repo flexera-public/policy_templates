@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.3.0
+
+- Estimated savings are now derived directly from Flexera Cloud Cost Optimization billing data.
+
 ## v5.2.0
 
 - Added support for filtering system and Google Apps Script projects from the results.
