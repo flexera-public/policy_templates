@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.3.0",
+  version: "0.4.0",
   provider: "Azure",
   service: "Databricks",
   policy_set: "Databricks",
@@ -261,6 +261,40 @@ script "js_top_level_bcs", type: "javascript" do
   })
 
   result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_get_optima_cost_dimensions" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "Flexera Policy Template"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "dimensions") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+    end
+  end
+end
+
+datasource "ds_verified_tags" do
+  run_script $js_verified_tags, $ds_get_optima_cost_dimensions
+end
+
+script "js_verified_tags", type: "javascript" do
+  parameters "ds_get_optima_cost_dimensions"
+  result "result"
+  code <<-EOS
+  result = {'tag_azure_databricks_clusterid':0}
+  tag_bool = _.some(ds_get_optima_cost_dimensions, function(item) {
+    return item["id"] == "tag_azure_databricks_clusterid"
+  })
+  result = { tag_azure_databricks_clusterid: tag_bool ? 1 : 0 }
 EOS
 end
 
@@ -1239,6 +1273,15 @@ end
 ###############################################################################
 
 policy "pol_databricks_optimizations" do
+  validate $ds_verified_tags do
+    summary_template "Azure Databricks ClusterId Tag Dimension Not Configured in Flexera."
+    detail_template <<-EOS
+The **Azure Databricks ClusterId** tag dimension is required to properly allocate costs by mapping each Azure Virtual Machine to its associated Databricks Cluster. This tag dimension is currently missing in your Flexera configuration.
+
+To resolve this, create the required custom tag dimension in Flexera by following the documentation: [**Create a Custom Tag Dimension in Flexera**](https://docs.flexera.com/flexera/EN/Optima/CreatingCustomTags.htm)
+EOS
+    check eq(val(data, "tag_azure_databricks_clusterid"), 1)
+  end
   validate $ds_idle_instances do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Databricks Idle Virtual Machines Found"
     detail_template <<-'EOS'

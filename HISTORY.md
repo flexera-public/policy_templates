@@ -6,6 +6,152 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3276](https://github.com/flexera-public/policy_templates/pull/3276): SQ-15559 Azure Superseded Compute Instances Reference Error
+
+*Minor Update, Bug Fix*
+
+#### Description
+
+> A ReferenceError is being caused:
+>
+> ```
+> ReferenceError: 'instance_type_price_map' is not defined\nLocation:\n datasource \"ds_superseded_instances\"\n script \"js_superseded_instances\
+> ```
+>
+> This is caused because the variable instance_type_price_map is not always declared, so instead of being undefined it's causing a reference error.
+>
+> ![image](https://github.com/user-attachments/assets/0de1be8b-9889-4042-b7e4-04f4b8b871e1)
+>
+> To fix this we declare the variable before accessing it.
+>
+> ### Issues Resolved
+>
+> There's a support question related to this PR: https://flexera.atlassian.net/browse/SQ-15559
+>
+
+#### Metadata
+
+- **Policies**: [Azure Superseded Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/superseded_instances/README.md), [Meta Parent: Azure Superseded Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/superseded_instances/README.md)
+- **Merged At**: 2025-07-04 19:41:59 UTC
+
+---
+
+### PR [#3260](https://github.com/flexera-public/policy_templates/pull/3260): POL-1550 - fix: Flexera Onboarding - handle when no tag dimensions or rbds exist yet
+
+*Bug Fix*
+
+#### Description
+
+> Quick fix on Flexera Onboarding PT
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/POL-1550
+>
+
+#### Metadata
+
+- **Policies**: [Flexera Onboarding](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/onboarding/README.md)
+- **Merged At**: 2025-06-30 18:34:50 UTC
+
+---
+
+### PR [#3255](https://github.com/flexera-public/policy_templates/pull/3255): POL-1544 Azure Hybrid Use Benefit for SQL: Additional Incident Fields
+
+*Minor Update*
+
+#### Description
+
+> Azure Hybrid Use Benefit for SQL:
+> - Added `Version` and `Database Format` fields to the incident table.
+> - Updated version for various API calls from preview versions to the current stable ones.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Hybrid Use Benefit for SQL](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/hybrid_use_benefit_sql/README.md), [Meta Parent: Azure Hybrid Use Benefit for SQL](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/hybrid_use_benefit_sql/README.md)
+- **Merged At**: 2025-06-17 17:47:41 UTC
+
+---
+
+### PR [#3251](https://github.com/flexera-public/policy_templates/pull/3251): POL-1546 AWS Rightsize RDS Instances Better Savings Calculation
+
+*Minor Update*
+
+#### Description
+
+> The `AWS Rightsize RDS Instances` policy template has been updated to make use of the RDS price list to calculate savings. From the updated README:
+>
+> - For underutilized resources, the `Estimated Monthly Savings` is calculated based on whether or not the [RDS price sheet](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/aws/aws_rds_pricing.json) contains list prices for the instance types.
+>   - If it does, the percentage difference between the list prices of the current instance type and the recommended instance type is multiplied by the full actual cost of the resource. This is then subtracted from the current cost of the resource to calculate the savings.
+>   - If it does not, the full cost of the resource divided by the number of [NFUs (Normal Form Units)](https://docs.aws.amazon.com/whitepapers/latest/cost-optimization-reservation-models/normalization-factor-for-dedicated-ec2-instances.html) for the current resource size, multiplied by the number of NFUs for the recommended resource size, and then subtracted from the current cost of the resource.
+>
+> The update also corrects some issues that would prevent underutilized resources from appearing in the incident.
+>
+> ### Issues Resolved
+>
+> We had reports that the estimated savings being reported by this policy template were not accurate enough. This should help with that.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md), [Meta Parent: AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md)
+- **Merged At**: 2025-06-16 20:12:22 UTC
+
+---
+
+### PR [#3241](https://github.com/flexera-public/policy_templates/pull/3241): POL-1545 Azure Rightsize Managed Disks Fixes
+
+*Minor Update*
+
+#### Description
+
+> Azure Rightsize Managed Disks
+> - Policy template no longer raises an incident if user does not set any thresholds for determining underutilization.
+> - Defaults changed for `IOPS Threshold (%)` and `Throughput Threshold (%)` parameters to something a typical user would expect.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md), [Meta Parent: Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md)
+- **Merged At**: 2025-06-16 12:19:25 UTC
+
+---
+
+### PR [#3238](https://github.com/flexera-public/policy_templates/pull/3238): POL-1543 Cloud Cost Anomaly Alerts: Filter Improvements
+
+*Minor Update*
+
+#### Description
+
+> This modifies the `Cloud Cost Anomaly Alerts` policy template to add the ability to add negative filters (NOT x=y).
+>
+> Note: I have verified that the URL for the Cloud Cost Anomaly page in Flexera One has no way to add a NOT filter even though the API supports it. A disclaimer is added to the incident if the customer uses any such filters to let them know this won't be reflected on the link. This disclaimer only appears if the parameter to exclude alerts is actually used.
+>
+
+#### Metadata
+
+- **Policies**: [Cloud Cost Anomaly Alerts](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cloud_cost_anomaly_alerts/README.md)
+- **Merged At**: 2025-06-13 14:08:32 UTC
+
+---
+
+### PR [#3232](https://github.com/flexera-public/policy_templates/pull/3232): POL-1538 Budget Alerts Revamp
+
+*Minor Update*
+
+#### Description
+
+> This revamps the code for the Budget Alerts policy template to conform with current standards. It also modifies the filtering parameters to make it clear that the user cannot filter a Summarized report.
+>
+
+#### Metadata
+
+- **Policies**: [Budget Alerts](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_report_alerts/README.md)
+- **Merged At**: 2025-06-10 18:32:45 UTC
+
+---
+
 ### PR [#3219](https://github.com/flexera-public/policy_templates/pull/3219): POL-1537 Scheduled Report: Ignore Current Month
 
 *Major Update*
@@ -1845,106 +1991,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Applied Policy Template Errors](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/automation/applied_policy_error_notification/README.md)
 - **Merged At**: 2024-10-16 17:04:31 UTC
-
----
-
-### PR [#2734](https://github.com/flexera-public/policy_templates/pull/2734): POL-1378 Linting Updates: Cost Policies: AWS
-
-#### Description
-
-> Various small changes to Security policies to bring them up to current linting standards. Also removes known bad coding patterns to avoid their reuse.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2734) for these details.
-- **Merged At**: 2024-10-16 12:03:43 UTC
-
----
-
-### PR [#2736](https://github.com/flexera-public/policy_templates/pull/2736): POL-1378 Linting Updates: Cost Policies: Google
-
-#### Description
-
-> Various small changes to Google Cost policies to bring them up to current linting standards. Also removes known bad coding patterns to avoid their reuse.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2736) for these details.
-- **Merged At**: 2024-10-16 12:03:35 UTC
-
----
-
-### PR [#2735](https://github.com/flexera-public/policy_templates/pull/2735): POL-1378 Linting Updates: Cost Policies: Azure
-
-#### Description
-
-> Various small changes to Azure Cost policies to bring them up to current linting standards. Also removes known bad coding patterns to avoid their reuse.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2735) for these details.
-- **Merged At**: 2024-10-14 18:04:01 UTC
-
----
-
-### PR [#2733](https://github.com/flexera-public/policy_templates/pull/2733): POL-1378 Linting Updates: SaaS Policies
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2733) for these details.
-- **Merged At**: 2024-10-14 17:01:46 UTC
-
----
-
-### PR [#2732](https://github.com/flexera-public/policy_templates/pull/2732): POL-1378 Linting Updates: Operational Policies
-
-#### Description
-
-> Various small changes to Security policies to bring them up to current linting standards. Also removes known bad coding patterns to avoid their reuse.
->
-> Dangerfile error is a false positive and can be ignored. The coding pattern causing it is sufficiently niche to not be worth the effort of coding the Dangerfile test around it.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2732) for these details.
-- **Merged At**: 2024-10-14 17:01:39 UTC
-
----
-
-### PR [#2731](https://github.com/flexera-public/policy_templates/pull/2731): POL-1378 Linting Updates: Compliance Policies
-
-#### Description
-
-> Various small changes to Compliance policies to bring them up to current linting standards. Also removes known bad coding patterns to avoid their reuse.
->
-> Small tweak to Dangerfile to avoid a false positive for one of the tests.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2731) for these details.
-- **Merged At**: 2024-10-14 17:01:30 UTC
-
----
-
-### PR [#2730](https://github.com/flexera-public/policy_templates/pull/2730): POL-1378 Linting Updates: Security Policies
-
-#### Description
-
-> Various small changes to Security policies to bring them up to current linting standards. Also removes known bad coding patterns to avoid their reuse.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2730) for these details.
-- **Merged At**: 2024-10-14 17:01:21 UTC
 
 ---
 
