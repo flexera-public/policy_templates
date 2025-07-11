@@ -12,7 +12,10 @@ def policy_missing_github_labels?(github, file, file_parsed, file_metadata)
 
   fail_message = ""
 
-  if !github.pr_labels.include?("NEW POLICY TEMPLATE") && !file_metadata
+  published = true
+  published = false if file_parsed.parsed_info && file_parsed.parsed_info[:publish] && file_parsed.parsed_info[:publish].downcase == "false"
+
+  if !github.pr_labels.include?("NEW POLICY TEMPLATE") && !file_metadata && published
     fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md#4-make-a-pull-request)] Policy Template is new but Pull Request is missing `NEW POLICY TEMPLATE` label. Please add this label to the Pull Request.\n\n"
   elsif file_parsed.parsed_info && file_parsed.parsed_info[:version] && file_metadata && file_metadata["version"]
     major_version = file_parsed.parsed_info[:version].split('.')[0]
@@ -28,7 +31,7 @@ def policy_missing_github_labels?(github, file, file_parsed, file_metadata)
     end
   end
 
-  if file_parsed.parsed_info && file_parsed.parsed_info[:publish] && file_parsed.parsed_info[:publish].downcase == "false" && !github.pr_labels.include?("UNPUBLISHED")
+  if !published && !github.pr_labels.include?("UNPUBLISHED")
     fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md#4-make-a-pull-request)] Policy Template is unpublished but Pull Request is missing `UNPUBLISHED` label. Please add this label to the Pull Request.\n\n"
   end
 
