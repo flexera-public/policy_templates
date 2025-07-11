@@ -1,5 +1,14 @@
 # Changelog
 
+## v5.8.1
+
+- Improved accuracy of savings calculation for underutilized RDS instances recommending to be resized. We now consider only the "InstanceUsage" usage type costs when estimating potential savings from resize.
+
+## v5.8.0
+
+- Savings calculation now incorporates list prices to improve accuracy of savings estimates.
+- Fixed issue where policy template would sometimes fail to produce results for underutilized instances.
+
 ## v5.7.0
 
 - Policy template now uses dynamically updated list of instance types.

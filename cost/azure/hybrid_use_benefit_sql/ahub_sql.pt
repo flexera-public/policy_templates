@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "4.2.1",
+  version: "4.3.0",
   provider: "Azure",
   service: "SQL",
   policy_set: "Hybrid Use Benefit",
@@ -218,7 +218,7 @@ datasource "ds_azure_subscriptions" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version", "2020-01-01"
+    query "api-version", "2022-12-01"
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
@@ -267,7 +267,7 @@ datasource "ds_sql_virtualmachines" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.SqlVirtualMachine/sqlVirtualMachines"])
-    query "api-version", "2017-03-01-preview"
+    query "api-version", "2023-10-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
   end
@@ -312,7 +312,7 @@ datasource "ds_sql_dbserver" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Sql/servers"])
-    query "api-version", "2019-06-01-preview"
+    query "api-version", "2023-08-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
   end
@@ -323,6 +323,7 @@ datasource "ds_sql_dbserver" do
       field "dbserverName", jmes_path(col_item, "name")
       field "type", jmes_path(col_item, "type")
       field "tags", jmes_path(col_item, "tags")
+      field "version", jmes_path(col_item, "properties.version")
       field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
       field "subscriptionName", val(iter_item, "name")
       field "subscriptionId", val(iter_item, "id")
@@ -337,7 +338,7 @@ datasource "ds_sql_elastic_pools" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join([val(iter_item, "dbserverId"), "/elasticPools"])
-    query "api-version", "2021-11-01"
+    query "api-version", "2023-08-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
   end
@@ -354,6 +355,7 @@ datasource "ds_sql_elastic_pools" do
       field "skuTier", jmes_path(col_item, "sku.tier")
       field "skuCapacity", jmes_path(col_item, "sku.capacity")
       field "licenseType", jmes_path(col_item, "properties.licenseType")
+      field "version", val(iter_item, "version")
       field "resourceGroup", val(iter_item, "resourceGroup")
       field "subscriptionName", val(iter_item, "subscriptionName")
       field "subscriptionId", val(iter_item, "subscriptionId")
@@ -382,7 +384,7 @@ datasource "ds_sql_databases" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join([val(iter_item, "dbserverId"), "/databases"])
-    query "api-version", "2020-08-01-preview"
+    query "api-version", "2023-08-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
   end
@@ -400,6 +402,7 @@ datasource "ds_sql_databases" do
       field "skuCapacity", jmes_path(col_item, "properties.currentSku.capacity")
       field "elasticPoolId", jmes_path(col_item, "properties.elasticPoolId")
       field "licenseType", jmes_path(col_item, "properties.licenseType")
+      field "version", val(iter_item, "version")
       field "resourceGroup", val(iter_item, "resourceGroup")
       field "subscriptionName", val(iter_item, "subscriptionName")
       field "subscriptionId", val(iter_item, "subscriptionId")
@@ -430,7 +433,7 @@ datasource "ds_sql_managed_instances" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Sql/managedInstances"])
-    query "api-version", "2020-11-01-preview"
+    query "api-version", "2023-08-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
   end
@@ -446,6 +449,7 @@ datasource "ds_sql_managed_instances" do
       field "skuTier", jmes_path(col_item, "sku.tier")
       field "skuCapacity", jmes_path(col_item, "sku.capacity")
       field "skuFamily", jmes_path(col_item, "sku.family")
+      field "databaseFormat", jmes_path(col_item, "properties.databaseFormat")
       field "licenseType", jmes_path(col_item, "properties.licenseType")
       field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
       field "subscriptionName", val(iter_item, "name")
@@ -763,7 +767,7 @@ end
 script "js_ahub_recommendations", type: "javascript" do
   parameters "ds_instance_costs_grouped", "ds_resources_region_filtered", "ds_currency", "ds_applied_policy", "param_resource_types"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   function incident_map(resource_list) {
     return _.map(resource_list, function(resource) {
       tags = []
@@ -781,7 +785,8 @@ script "js_ahub_recommendations", type: "javascript" do
         " (", resource["subscriptionId"], ")"
       ].join('')
 
-      message = "Note: This policy does not track licenses or license availability. Please verify that you have a valid license for each resource AHUB is enabled for."
+      message = "Note: This policy does not track licenses or license availability. Please verify that you have a valid license for each resource AHUB is enabled for.\n\n"
+      message += "Some fields may be empty, such as \"Version\" and \"Database Format\", if they are not applicable to the type of SQL resource being reported. For resources without a \"Version\" field, the version can usually be inferred from either the \"Image Offer\" or \"Database Format\" fields; more detailed version information can be obtained with the following SQL query: SELECT @@VERSION;"
 
       hourly_cost = null
       savingsCurrency = null
@@ -819,6 +824,8 @@ script "js_ahub_recommendations", type: "javascript" do
         skuTier: resource["skuTier"],
         skuCapacity: resource["skuCapacity"],
         skuFamily: resource["skuFamily"],
+        databaseFormat: resource["databaseFormat"],
+        version: resource["version"],
         resourceGroup: resource["resourceGroup"],
         accountID: resource["subscriptionId"],
         accountName: resource["subscriptionName"],
@@ -853,6 +860,8 @@ script "js_ahub_recommendations", type: "javascript" do
     skuTier: "",
     skuCapacity: "",
     skuFamily: "",
+    databaseFormat: "",
+    version: "",
     resourceGroup: "",
     accountID: "",
     accountName: "",
@@ -907,6 +916,12 @@ policy "pol_azure_sql_ahub_recommendations" do
       end
       field "recommendationDetails" do
         label "Recommendation"
+      end
+      field "version" do
+        label "Version"
+      end
+      field "databaseFormat" do
+        label "Database Format"
       end
       field "imageOffer" do
         label "Image Offer"
@@ -996,7 +1011,7 @@ end
 define license_vm($instance, $param_azure_endpoint) return $response do
   $host = $param_azure_endpoint
   $href = $instance["id"]
-  $params = "?api-version=2017-03-01-preview"
+  $params = "?api-version=2023-10-01"
   $url = $host + $href + $params
   task_label("PUT " + $url)
 
@@ -1007,7 +1022,7 @@ define license_vm($instance, $param_azure_endpoint) return $response do
     https: true,
     href: $href,
     query_strings: {
-      "api-version": "2017-03-01-preview"
+      "api-version": "2023-10-01"
     },
     headers: {
       "cache-control": "no-cache",
@@ -1035,7 +1050,7 @@ end
 define license_elastic_pool($instance, $param_azure_endpoint) return $response do
   $host = $param_azure_endpoint
   $href = $instance["id"]
-  $params = "?api-version=2021-11-01"
+  $params = "?api-version=2023-08-01"
   $url = $host + $href + $params
   task_label("PATCH " + $url)
 
@@ -1046,7 +1061,7 @@ define license_elastic_pool($instance, $param_azure_endpoint) return $response d
     https: true,
     href: $href,
     query_strings: {
-      "api-version": "2021-11-01"
+      "api-version": "2023-08-01"
     },
     headers: {
       "cache-control": "no-cache",
@@ -1072,7 +1087,7 @@ end
 define license_db($instance, $param_azure_endpoint) return $response do
   $host = $param_azure_endpoint
   $href = $instance["id"]
-  $params = "?api-version=2020-11-01-preview"
+  $params = "?api-version=2023-08-01"
   $url = $host + $href + $params
   task_label("PATCH " + $url)
 
@@ -1083,7 +1098,7 @@ define license_db($instance, $param_azure_endpoint) return $response do
     https: true,
     href: $href,
     query_strings: {
-      "api-version": "2020-11-01-preview"
+      "api-version": "2023-08-01"
     },
     headers: {
       "cache-control": "no-cache",
@@ -1109,7 +1124,7 @@ end
 define license_managed_instance($instance, $param_azure_endpoint) return $response do
   $host = $param_azure_endpoint
   $href = $instance["id"]
-  $params = "?api-version=2020-11-01-preview"
+  $params = "?api-version=2023-08-01"
   $url = $host + $href + $params
   task_label("PATCH " + $url)
 
@@ -1120,7 +1135,7 @@ define license_managed_instance($instance, $param_azure_endpoint) return $respon
     https: true,
     href: $href,
     query_strings: {
-      "api-version": "2020-11-01-preview"
+      "api-version": "2023-08-01"
     },
     headers: {
       "cache-control": "no-cache",

@@ -7,7 +7,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.2.2",
+  version: "3.3.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Untagged Resources",
@@ -641,17 +641,7 @@ define tag_resources($data, $param_azure_endpoint, $param_tags_to_add) return $a
 
   foreach $resource in $data do
     sub on_error: handle_error() do
-      if $resource["type"] == "Resource"
-        call tag_instance($resource, $param_azure_endpoint, $param_tags_to_add) retrieve $tag_response
-      end
-
-      if $resource["type"] == "Resource Group"
-        call tag_resource_group($resource, $param_azure_endpoint, $param_tags_to_add) retrieve $tag_response
-      end
-
-      if $resource["type"] == "Subscription"
-        call tag_subscription($resource, $param_azure_endpoint, $param_tags_to_add) retrieve $tag_response
-      end
+      call tag_resource($resource, $param_azure_endpoint, $param_tags_to_add)
     end
   end
 
@@ -660,85 +650,8 @@ define tag_resources($data, $param_azure_endpoint, $param_tags_to_add) return $a
   end
 end
 
-define tag_instance($resource, $param_azure_endpoint, $param_tags_to_add) return $response do
-  $tags = $resource["tags_object"]
-
-  if $tags == null
-    $tags = {}
-  end
-
-  foreach $tag in $param_tags_to_add do
-    $key = first(split($tag, "="))
-    $value = last(split($tag, "="))
-    $tags[$key] = $value
-  end
-
-  $host = $param_azure_endpoint
-  $href = $resource["id"]
-  $params = "?api-version=" + $resource["api_version"]
-  $url = $host + $href + $params
-  task_label("PATCH " + $url)
-
-  $response = http_request(
-    auth: $$auth_azure,
-    https: true,
-    verb: "patch",
-    host: $host,
-    href: $href,
-    query_strings: { "api-version": $resource["api_version"] },
-    body: { "tags": $tags }
-  )
-
-  task_label("Patch Azure Resource response: " + $resource["id"] + " " + to_json($response))
-  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
-
-  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response patching Azure Resource: "+ $resource["id"] + " " + to_json($response)
-  else
-    task_label("Patch Azure Resource successful: " + $resource["id"])
-  end
-end
-
-define tag_resource_group($resource, $param_azure_endpoint, $param_tags_to_add) return $response do
-  $tags = $resource["tags_object"]
-
-  if $tags == null
-    $tags = {}
-  end
-
-  foreach $tag in $param_tags_to_add do
-    $key = first(split($tag, "="))
-    $value = last(split($tag, "="))
-    $tags[$key] = $value
-  end
-
-  $host = $param_azure_endpoint
-  $href = $resource["id"]
-  $params = "?api-version=" + $resource["api_version"]
-  $url = $host + $href + $params
-  task_label("PATCH " + $url)
-
-  $response = http_request(
-    auth: $$auth_azure,
-    https: true,
-    verb: "patch",
-    host: $host,
-    href: $href,
-    query_strings: { "api-version": $resource["api_version"] },
-    body: { "tags": $tags }
-  )
-
-  task_label("Patch Azure Resource Group response: " + $resource["id"] + " " + to_json($response))
-  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
-
-  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response patching Azure Resource Group: "+ $resource["id"] + " " + to_json($response)
-  else
-    task_label("Patch Azure Resource Group successful: " + $resource["id"])
-  end
-end
-
-define tag_subscription($resource, $param_azure_endpoint, $param_tags_to_add) return $response do
+# https://learn.microsoft.com/en-us/rest/api/resources/tags/create-or-update-at-scope?view=rest-resources-2025-04-01
+define tag_resource($resource, $param_azure_endpoint, $param_tags_to_add) do
   $tags = $resource["tags_object"]
 
   if $tags == null
@@ -753,8 +666,7 @@ define tag_subscription($resource, $param_azure_endpoint, $param_tags_to_add) re
 
   $host = $param_azure_endpoint
   $href = $resource["id"] + "/providers/Microsoft.Resources/tags/default"
-  $params = "?api-version=2021-04-01"
-  $url = $host + $href + $params
+  $url = $host + $href
   task_label("PUT " + $url)
 
   $response = http_request(
@@ -763,17 +675,21 @@ define tag_subscription($resource, $param_azure_endpoint, $param_tags_to_add) re
     verb: "put",
     host: $host,
     href: $href,
-    query_strings: { "api-version": "2021-04-01" },
-    body: { "properties": { "tags": $tags } }
+    query_strings: { "api-version": "2025-04-01" },
+    body: {
+        "properties": {
+          "tags": $tags
+        }
+      }
   )
 
-  task_label("Put Azure Subscription response: " + $resource["id"] + " " + to_json($response))
+  task_label("Tag Azure Resource response: " + $resource["id"] + " " + to_json($response))
   $$all_responses << to_json({"req": "PUT " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response putting Azure Subscription: "+ $resource["id"] + " " + to_json($response)
+    raise "Unexpected response from Tag Azure Resource: "+ $resource["id"] + " " + to_json($response)
   else
-    task_label("Put Azure Subscription successful: " + $resource["id"])
+    task_label("Tag Azure Resource successful: " + $resource["id"])
   end
 end
 

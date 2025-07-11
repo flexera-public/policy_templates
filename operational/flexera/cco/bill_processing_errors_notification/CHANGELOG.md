@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6.0
+
+- Added support for Azure CSP and Azure MCA Enterprise account types.
+
 ## v2.5.3
 
 - Fixed error that caused some incident fields to show invalid negative values for memory statistics for recently rightsized instances. Functionality unchanged.
