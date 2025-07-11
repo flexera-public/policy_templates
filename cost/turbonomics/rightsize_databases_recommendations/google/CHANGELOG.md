@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.2
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v0.5.1
 
 - Switched from cookie-based authentication to token-based authentication

@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.3.7
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v6.3.6
 
 - Fixed issue where Currency Conversion messaging in policy incident would stop policy execution because of an error. Functionality unchanged.

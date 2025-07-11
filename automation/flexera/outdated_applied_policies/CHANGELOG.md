@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.4
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v0.2.3
 
 - Fixed minor error in action logging where a DELETE request was logged as a POST request. Functionality unchanged.

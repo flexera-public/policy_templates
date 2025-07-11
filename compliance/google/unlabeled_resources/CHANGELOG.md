@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v3.2.0
 
 - Added support for filtering system and Google Apps Script projects from the results.

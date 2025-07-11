@@ -1,5 +1,9 @@
 # Changelog
 
+## v7.0.2
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v7.0.1
 
 - Fixed bug with start action that was preventing "Enforce Schedules=No" from working correctly

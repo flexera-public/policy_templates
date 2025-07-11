@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0.2
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v6.0.1
 
 - Fixed an error where multiple violations would be generated from the same instance.

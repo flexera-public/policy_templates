@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v0.5.0
 
 - Added support for organizations with Microsoft MCA accounts.

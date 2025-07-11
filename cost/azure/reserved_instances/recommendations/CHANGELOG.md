@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v4.2.0
 
 - Added batch processing for large datasources.

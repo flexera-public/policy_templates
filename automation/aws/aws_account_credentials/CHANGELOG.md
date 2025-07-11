@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.5
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v0.1.4
 
 - Updated service field in metadata to "Identity & Access Management". Functionality unchanged.

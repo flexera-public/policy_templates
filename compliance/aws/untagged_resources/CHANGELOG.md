@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.4.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v5.4.0
 
 - New `Resource Types` parameter allows policy template to only report on specific services or resource types.

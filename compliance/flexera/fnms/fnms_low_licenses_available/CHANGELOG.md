@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6.2
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v2.6.1
 
 - Added `deprecated` field to policy metadata. Functionality is unchanged.

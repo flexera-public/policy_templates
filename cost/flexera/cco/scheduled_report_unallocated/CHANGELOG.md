@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.2
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v0.3.1
 
 - Fixed issue that would cause policy template to fail when "Last 30 Days" was selected for the "Date Range" parameter.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v2.6.0
 
 - Policy template no longer raises an incident if user does not set any thresholds for determining underutilization.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v0.2.0
 
 - Added parameter to normalize dates in report to match Flexera One UI

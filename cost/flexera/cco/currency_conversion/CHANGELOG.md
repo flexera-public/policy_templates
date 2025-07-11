@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.0.3
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v5.0.2
 
 - Fixed issue where policy template execution would fail if the user builds off of the currency conversion adjustment created by this policy template.

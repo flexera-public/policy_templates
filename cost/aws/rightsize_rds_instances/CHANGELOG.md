@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.8.2
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v5.8.1
 
 - Improved accuracy of savings calculation for underutilized RDS instances recommending to be resized. We now consider only the "InstanceUsage" usage type costs when estimating potential savings from resize.

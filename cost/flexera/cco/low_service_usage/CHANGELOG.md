@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2.4
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v2.2.3
 
 - Policy template metadata modified so that it is no longer published in the catalog.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.0.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v8.0.0
 
 - Remove `next_stop`, `next_start` label requirements
