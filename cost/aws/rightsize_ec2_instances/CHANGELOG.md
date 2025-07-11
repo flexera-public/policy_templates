@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.4.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v5.4.0
 
 - Adds utilization chart for each resource to the result if metrics are available

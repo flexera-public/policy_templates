@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.3
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v0.3.2
 
 - Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
