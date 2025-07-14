@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.0
+
+- Fixed escalation that erroneously referred to 'VM' instead of 'Cloud SQL'
+- Updated escalation descriptions/parameters to be more specific
+
 ## v0.2.1
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.

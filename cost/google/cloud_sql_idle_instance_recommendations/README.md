@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. The [Google Rightsize Cloud SQL Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_recommendations/) policy produces recommendations for both idle and underutilized Cloud SQL instances and should be used instead.
+This policy template is no longer being updated. The [Google Rightsize Cloud SQL Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_instances/) policy template should be used instead.
 
 ## What It Does
 

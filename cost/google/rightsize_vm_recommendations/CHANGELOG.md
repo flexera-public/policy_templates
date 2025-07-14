@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.2
+
+- Updated policy template description to clarify that it reports native Google recommendations.
+
 ## v3.2.1
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.

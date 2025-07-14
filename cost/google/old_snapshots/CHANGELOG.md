@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.3.0
+
+- Estimated savings are now derived directly from Flexera Cloud Cost Optimization billing data.
+
 ## v5.2.1
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
