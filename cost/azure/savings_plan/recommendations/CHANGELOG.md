@@ -1,5 +1,26 @@
 # Changelog
 
+## v3.1.3
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v3.1.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.1.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v3.1.0
+
+- Updated Azure API versions to provide more up to date and accurate results
+
+## v3.0.0
+
+- Recommendations can now be generated at the "Resource Group" scope
+- Removed redundant API requests to speed up execution for "Shared" scope
+
 ## v2.2
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.

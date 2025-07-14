@@ -1,5 +1,21 @@
 # Changelog
 
+## v5.2.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v5.2.0
+
+- Added support for filtering system and Google Apps Script projects from the results.
+
+## v5.1.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v5.1.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v5.1.0
 
 - Modified internal names for incident fields for more accurate scraping into Optimization dashboard

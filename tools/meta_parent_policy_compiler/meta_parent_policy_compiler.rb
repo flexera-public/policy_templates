@@ -1,109 +1,81 @@
 require "json"
+require "yaml"
 
-# List of child policy template files to compile meta parent policy templates for by default
-# The child policy template must already have the necessary Meta Parent changes made to it
-# and those changes in the version that's published to the Flexera Policy Catalog.
-# More info at https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md
-default_child_policy_template_files = [
-  # AWS Policy Templates
-  "../../automation/aws/aws_missing_regions/aws_missing_regions.pt",
-  "../../compliance/aws/disallowed_regions/aws_disallowed_regions.pt",
-  "../../compliance/aws/ecs_unused/aws_unused_ecs_clusters.pt",
-  "../../compliance/aws/iam_role_audit/aws_iam_role_audit.pt",
-  "../../compliance/aws/instances_without_fnm_agent/aws_instances_not_running_flexnet_inventory_agent.pt",
-  "../../compliance/aws/long_stopped_instances/aws_long_stopped_instances.pt",
-  "../../compliance/aws/untagged_resources/aws_untagged_resources.pt",
-  "../../cost/aws/burstable_ec2_instances/aws_burstable_ec2_instances.pt",
-  "../../cost/aws/eks_without_spot/aws_eks_without_spot.pt",
-  "../../cost/aws/gp3_volume_upgrade/aws_upgrade_to_gp3_volume.pt",
-  "../../cost/aws/idle_compute_instances/idle_compute_instances.pt",
-  "../../cost/aws/idle_nat_gateways/aws_idle_nat_gateways.pt",
-  "../../cost/aws/object_storage_optimization/aws_object_storage_optimization.pt",
-  "../../cost/aws/old_snapshots/aws_delete_old_snapshots.pt",
-  "../../cost/aws/rightsize_rds_instances/aws_rightsize_rds_instances.pt",
-  "../../cost/aws/rds_instance_license_info/rds_instance_license_info.pt",
-  "../../cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt",
-  "../../cost/aws/s3_bucket_size/aws_bucket_size.pt",
-  "../../cost/aws/s3_storage_policy/aws_s3_bucket_policy_check.pt",
-  "../../cost/aws/schedule_instance/aws_schedule_instance.pt",
-  "../../cost/aws/superseded_instances/aws_superseded_instances.pt",
-  "../../cost/aws/unused_clbs/aws_unused_clbs.pt",
-  "../../cost/aws/unused_ip_addresses/aws_unused_ip_addresses.pt",
-  "../../cost/aws/unused_rds/unused_rds.pt",
-  "../../cost/aws/unused_volumes/aws_delete_unused_volumes.pt",
-  "../../operational/aws/ec2_stopped_report/aws_ec2_stopped_report.pt",
-  "../../operational/aws/lambda_functions_with_high_error_rate/lambda_functions_with_high_error_rate.pt",
-  "../../operational/aws/long_running_instances/long_running_instances.pt",
-  "../../operational/aws/scheduled_ec2_events/aws_scheduled_ec2_events.pt",
-  "../../operational/aws/tag_cardinality/aws_tag_cardinality.pt",
-  "../../security/aws/ebs_unencrypted_volumes/aws_unencrypted_volumes.pt",
-  "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
-  "../../security/aws/public_buckets/aws_public_buckets.pt",
-  "../../cost/aws/superseded_ebs_volumes/aws_superseded_ebs_volumes.pt",
-  "../../cost/aws/rightsize_ebs_volumes/aws_rightsize_ebs_volumes.pt",
-  # Azure Policy Templates
-  "../../compliance/azure/azure_disallowed_regions/azure_disallowed_regions.pt",
-  "../../compliance/azure/azure_policy_audit/azure_policy_audit.pt",
-  "../../compliance/azure/azure_untagged_vms/untagged_vms.pt",
-  "../../compliance/azure/azure_untagged_resources/untagged_resources.pt",
-  "../../compliance/azure/ahub_manual/azure_ahub_utilization_with_manual_entry.pt",
-  "../../compliance/azure/azure_long_stopped_instances/long_stopped_instances_azure.pt",
-  "../../compliance/azure/compliance_score/azure_regulatory_compliance_report.pt",
-  "../../compliance/azure/instances_without_fnm_agent/azure_instances_not_running_flexnet_inventory_agent.pt",
-  "../../cost/azure/reserved_instances/recommendations/azure_reserved_instance_recommendations.pt",
-  "../../cost/azure/idle_compute_instances/azure_idle_compute_instances.pt",
-  "../../cost/azure/blob_storage_optimization/azure_blob_storage_optimization.pt",
-  "../../cost/azure/old_snapshots/azure_delete_old_snapshots.pt",
-  "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
-  "../../cost/azure/rightsize_managed_disks/azure_rightsize_managed_disks.pt",
-  "../../cost/azure/rightsize_netapp_files/azure_rightsize_netapp_files.pt",
-  "../../cost/azure/rightsize_sql_instances/azure_rightsize_sql_instances.pt",
-  "../../cost/azure/rightsize_sql_storage/azure_rightsize_sql_storage.pt",
-  "../../cost/azure/unoptimized_web_app_scaling/azure_unoptimized_web_app_scaling.pt",
-  "../../cost/azure/sql_servers_without_elastic_pool/azure_sql_servers_without_elastic_pool.pt",
-  "../../cost/azure/unused_firewalls/azure_unused_firewalls.pt",
-  "../../cost/azure/unused_ip_addresses/azure_unused_ip_addresses.pt",
-  "../../cost/azure/unused_sql_databases/azure_unused_sql_databases.pt",
-  "../../cost/azure/unused_volumes/azure_unused_volumes.pt",
-  "../../cost/azure/hybrid_use_benefit/azure_hybrid_use_benefit.pt",
-  "../../cost/azure/hybrid_use_benefit_linux/ahub_linux.pt",
-  "../../cost/azure/hybrid_use_benefit_sql/ahub_sql.pt",
-  "../../cost/azure/schedule_instance/azure_schedule_instance.pt",
-  "../../cost/azure/superseded_instances/azure_superseded_instances.pt",
-  "../../cost/azure/storage_account_lifecycle_management/storage_account_lifecycle_management.pt",
-  "../../cost/azure/databricks/rightsize_compute/azure_databricks_rightsize_compute.pt",
-  "../../operational/azure/aks_nodepools_without_autoscaling/aks_nodepools_without_autoscaling.pt",
-  "../../operational/azure/aks_nodepools_without_zero_autoscaling/aks_nodepools_without_zero_autoscaling.pt",
-  "../../operational/azure/azure_certificates/azure_certificates.pt",
-  "../../operational/azure/azure_long_running_instances/azure_long_running_instances.pt",
-  "../../operational/azure/compute_poweredoff_report/azure_compute_poweredoff_report.pt",
-  "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
-  "../../operational/azure/vms_without_managed_disks/azure_vms_without_managed_disks.pt",
-  # Google Policy Templates
-  "../../compliance/google/long_stopped_instances/google_long_stopped_instances.pt",
-  "../../compliance/google/unlabeled_resources/unlabeled_resources.pt",
-  "../../cost/google/cloud_sql_idle_instance_recommendations/google_sql_idle_instance_recommendations.pt",
-  "../../cost/google/idle_ip_address_recommendations/google_idle_ip_address_recommendations.pt",
-  "../../cost/google/idle_persistent_disk_recommendations/google_idle_persistent_disk_recommendations.pt",
-  "../../cost/google/object_storage_optimization/google_object_storage_optimization.pt",
-  "../../cost/google/recommender/recommender.pt",
-  "../../cost/google/rightsize_vm_recommendations/google_rightsize_vm_recommendations.pt",
-  "../../cost/google/schedule_instance/google_schedule_instance.pt",
-  "../../cost/google/cud_expiration/google_cud_expiration_report.pt",
-  "../../cost/google/cud_recommendations/google_committed_use_discount_recommendations.pt",
-  "../../cost/google/cud_report/google_committed_use_discount_report.pt",
-  "../../cost/google/old_snapshots/google_delete_old_snapshots.pt",
-  "../../security/google/public_buckets/google_public_buckets.pt"
-]
+# Report usage info and exit with error if parameters are malformed
+def invalid_parameters()
+  print("Parameters not provided or malformed.\n\n")
+  print("- Specify --from-list as the first parameter and the file path of a YAML file as the second parameter to automatically generate meta parents from a list of file paths.\n")
+  print("  Example: ruby meta_parent_policy_compiler.rb --from-list default_template_files.yaml\n\n")
+  print("- Specify --target-policy as the first parameter, a policy template file path as the second parameter and a cloud provider (aws azure google) for the third parameter to generate a meta parent policy template from one of the provided meta parent templates for major cloud providers.\n")
+  print("  Example: ruby meta_parent_policy_compiler.rb --target-policy local/aws/aws_vms.pt aws\n\n")
+  print("- Specify --target-policy as the first parameter, a policy template file path as the second parameter, 'custom' for the third parameter, and a meta parent template file path for the fourth parameter to generate a meta parent policy template using a custom meta parent template file.\n")
+  print("  Example: ruby meta_parent_policy_compiler.rb --target-policy local/oci/oci_vms.pt custom local/oci/oci_vms_meta_parent.pt.template\n\n")
+  exit(1)
+end
+
+def bad_file_path(file_path)
+  print("Provided file path is invalid. File does not exist or is unreadable:\n#{file_path}\n\n")
+  exit(1)
+end
+
+def child_missing_requirements(file_path, file_contents)
+  header_found = file_contents.include?("header \"Meta-Flexera\", val($ds_is_deleted, \"path\")")
+  check_found = file_contents.include?("check logic_or($ds_parent_policy_terminated,")
+  footer_found = file_contents.include?("# Meta Policy [alpha]") && file_contents.include?("datasource \"ds_get_policy\" do") && file_contents.include?("datasource \"ds_parent_policy_terminated\" do") && file_contents.include?("datasource \"ds_terminate_self\" do") && file_contents.include?("datasource \"ds_is_deleted\" do")
+
+  unless header_found && check_found && footer_found
+    print("Unable to generate meta parent for #{file_path}\n\n")
+    print("$ds_is_deleted Header not found in child policy template.\n") unless header_found
+    print("$ds_parent_policy_terminated check statement not found in child policy template.\n") unless check_found
+    print("Required meta policy code malformed or not found at bottom of child policy template.\n") unless footer_found
+    print("\n")
+    print("Please see the Meta Policies README for more information:\n")
+    print("https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md\n\n")
+    exit(1)
+  end
+end
+
+# Check parameters and set things accordingly
+invalid_parameters() if ARGV[0] == nil
+invalid_parameters() if ARGV[0] == "--from-list" && ARGV[1] == nil
+invalid_parameters() if ARGV[0] == "--target-policy" && ARGV[1] == nil
+invalid_parameters() if ARGV[0] == "--target-policy" && ARGV[2] != "aws" && ARGV[2] != "azure" && ARGV[2] != "google" && ARGV[2] != "custom"
+invalid_parameters() if ARGV[0] == "--target-policy" && ARGV[2] == "custom" && ARGV[3] == nil
+
+bad_file_path(ARGV[1]) if ARGV[0] == "--from-list" && !File.exist?(ARGV[1])
+bad_file_path(ARGV[1]) if ARGV[0] == "--target-policy" && !File.exist?(ARGV[1])
+bad_file_path(ARGV[3]) if ARGV[0] == "--target-policy" && ARGV[2] == "custom" && !File.exist?(ARGV[3])
+
+specified_parent_pt_path = nil
+
+if ARGV[0] == "--from-list"
+  child_policy_template_files_yaml = YAML.load_file(ARGV[1])
+  child_policy_template_files = child_policy_template_files_yaml["policy_templates"]
+elsif ARGV[0] == "--target-policy"
+  child_policy_template_files = [ ARGV[1] ]
+
+  if ARGV[2] == "aws"
+    specified_parent_pt_path = "aws_meta_parent.pt.template"
+  elsif ARGV[2] == "azure"
+    specified_parent_pt_path = "azure_meta_parent.pt.template"
+  elsif ARGV[2] == "google"
+    specified_parent_pt_path = "google_meta_parent.pt.template"
+  elsif ARGV[2] == "custom"
+    specified_parent_pt_path = ARGV[3]
+  end
+end
 
 # Compile Meta Parent Policy Definition
 # This function takes a child policy template file path
 # as input and outputs a meta parent policy definition
-def compile_meta_parent_policy(file_path)
+def compile_meta_parent_policy(file_path, specified_parent_pt_path)
   print("Reading child  policy template: "+file_path+"\n") # Intentional extra space after child so the Read/Write output lines up
   file = File.open(file_path, "rb")
-
   pt = file.read
+
+  # Exit with error if child policy template is missing required components
+  child_missing_requirements(file_path, pt)
+
   ###############################################################################
   # Parse the Policy Template as a string using regex to get the parameters and credential blocks
 
@@ -113,6 +85,18 @@ def compile_meta_parent_policy(file_path)
   description = pt.scan(/^(?:short_description ")(.*?)(?:")/)[0][0]
   # Get the version string
   version = pt.scan(/version: "(.*?)"/)[0][0]
+  # get the publish string if it exists, defaulting to true if not present
+  publish_scan = pt.scan(/publish: "(.*?)"/)
+  publish = "true"
+  publish = publish_scan[0][0] if !publish_scan.empty?
+  # get the deprecated string if it exists, defaulting to false if not present
+  deprecated_scan = pt.scan(/deprecated: "(.*?)"/)
+  deprecated = "false"
+  deprecated = deprecated_scan[0][0] if !deprecated_scan.empty?
+  # get the hide_skip_approvals string if it exists, defaulting to false if not present
+  hide_skip_approvals_scan = pt.scan(/hide_skip_approvals: "(.*?)"/)
+  hide_skip_approvals = ""
+  hide_skip_approvals = hide_skip_approvals_scan[0][0] if !hide_skip_approvals_scan.empty?
   # print("Name: #{name}\n")
   # print("Description: #{description}\n")
   # print("\n###########################\n")
@@ -179,9 +163,9 @@ end
     esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETERS__", esc_parameters)
     esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_VALUES__", esc_parameter_values_string)
     if esc_parameter_values_options_list.length > 0
-      esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_ACTION_OPTIONS__", "$actions_options = [" + esc_parameter_values_options_list.join(", ")+"]")
+      esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_ACTION_OPTIONS__", "$action_options = [" + esc_parameter_values_options_list.join(", ")+"]")
     else
-      esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_ACTION_OPTIONS__", "$actions_options = []")
+      esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_ACTION_OPTIONS__", "$action_options = []")
     end
     escalation_blocks_parent.push(esc)
     # Print the compiled escalation and parameters strings if exist
@@ -242,7 +226,8 @@ end
   # Get the checks
   # Use regex to extract the validate and validate_each checks from the policy template string s
   # The regex is not perfect, but it works for now
-  checks = pt.scan(/^\s+validate.*?do.*?^  end/m)
+  checks = pt.scan(/^\s+validate.*?do.*?^  end/m).select { |check| check.include?("export ") }
+
   checks.each do |validate_block|
     # Print Raw Validate Block as a String
     # print("Raw Validate Block:\n")
@@ -263,7 +248,11 @@ end
     # print(export_block)
     # print("\n---\n")
     # From the export block, capture the field blocks
-    fields = export_block[0].scan(/(^.*field\s+\".*?\".*?end)/m).flatten
+    fields = [] # Provide a default value, which is no fields declared
+    # Check if export_block is length > 0
+    if export_block.length > 0
+      fields = export_block[0].scan(/(^.*field\s+\".*?\".*?end)/m).flatten
+    end
     fields.each do |field|
       # Remove path from the field output in the meta parent
       field.gsub!(/\n.*?path.*?\n/, "\n")
@@ -329,7 +318,12 @@ end
 
   # Replace Placeholders from Meta Parent Policy Template with values from Child Policy Template
   parent_pt_path = "aws_meta_parent.pt.template"
-  if file_path.include?("aws")
+
+  # Use user-specified cloud provider path if provided
+  # Otherwise, derive it from file name
+  if specified_parent_pt_path != nil
+    parent_pt_path = specified_parent_pt_path
+  elsif file_path.include?("aws")
     parent_pt_path = "aws_meta_parent.pt.template"
   elsif file_path.include?("azure")
     parent_pt_path = "azure_meta_parent.pt.template"
@@ -339,6 +333,10 @@ end
     print("Could not determine parent policy template to use for #{file_path}\n")
     exit(1)
   end
+
+  # Exit with error if the template does not exist
+  bad_file_path(parent_pt_path) if !File.exist?(parent_pt_path)
+
   parent_pt = File.open(parent_pt_path, "rb").read
   # Copy the parent_pt to output_pt so we can manipulate it safely
   output_pt = parent_pt
@@ -346,6 +344,15 @@ end
   # Replace __PLACEHOLDER_FOR_CHILD_POLICY_NAME__ with the name of the child policy
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_NAME__", name)
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_VERSION__", version)
+  output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PUBLISH__", publish)
+  output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_DEPRECATED__", deprecated)
+  if !hide_skip_approvals.empty?
+    output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_HIDE_SKIP_APPROVALS__", hide_skip_approvals)
+  else
+    # Remove the entire line containing hide_skip_approvals
+    output_pt = output_pt.gsub(/^\s*,?\s*hide_skip_approvals: "__PLACEHOLDER_FOR_CHILD_POLICY_HIDE_SKIP_APPROVALS__",?\s*\n/, "")
+    output_pt = output_pt.gsub(/,\s*\)/, "\n)")
+  end
   # Attempt to identify the URL to the child policy template file on github using the file_path provided
   # This would only work if the pt file is located under the `policy_templates` repo directory
   # If it is not, then the URL will be incorrect
@@ -383,16 +390,7 @@ end
 end
 # End Compile Meta Parent Policy Template Definition
 
-# Start Compile Meta Parent Policy Template Execution
-# If argument is provided, then use those files as the file path to the child policy template
-# Else, use the default list of child policy template files we statically defined at the top
-if ARGV.length == 0
-  child_policy_template_files = default_child_policy_template_files
-else
-  child_policy_template_files = ARGV
-end
-
 # Loop through all Policy Templates specified
 child_policy_template_files.each do |child_policy_template|
-  compile_meta_parent_policy(child_policy_template)
+  compile_meta_parent_policy(child_policy_template, specified_parent_pt_path)
 end

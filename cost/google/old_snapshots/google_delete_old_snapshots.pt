@@ -3,15 +3,17 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Checks for snapshots older than specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/old_snapshots) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/google/old_snapshots"
 category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.1.0",
+  version: "5.2.1",
   provider:"Google",
   service: "Storage",
   policy_set: "Old Snapshots",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -59,6 +61,24 @@ parameter "param_projects_list" do
   label "Allow/Deny Projects List"
   description "A list of allowed or denied Subscription IDs/names. See the README for more details."
   default []
+end
+
+parameter "param_projects_ignore_sys" do
+  type "string"
+  category "Filters"
+  label "Ignore System Projects"
+  description "Whether or not to automatically ignore system projects e.g. projects whose id begins with 'sys-'"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_projects_ignore_app" do
+  type "string"
+  category "Filters"
+  label "Ignore Google Apps Script Projects"
+  description "Whether or not to automatically ignore Google Apps Script projects e.g. projects whose id begins with 'app-'"
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_exclusion_labels" do
@@ -372,15 +392,15 @@ datasource "ds_google_projects" do
 end
 
 datasource "ds_google_projects_filtered" do
-  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list, $param_projects_ignore_sys, $param_projects_ignore_app
 end
 
 script "js_google_projects_filtered", type: "javascript" do
-  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
   result "result"
-  code <<-'EOS'
+  code <<-EOS
   if (param_projects_list.length > 0) {
-    result = _.filter(ds_google_projects, function(project) {
+    filtered = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
 
       if (param_projects_allow_or_deny == "Deny") {
@@ -390,8 +410,12 @@ script "js_google_projects_filtered", type: "javascript" do
       return include_project
     })
   } else {
-    result = ds_google_projects
+    filtered = ds_google_projects
   }
+
+  result = _.reject(filtered, function(project) {
+    return (project['id'].substring(0, 4) == "sys-" && param_projects_ignore_sys == "Yes") || (project['id'].substring(0, 4) == "app-" && param_projects_ignore_app == "Yes")
+  })
 EOS
 end
 
@@ -885,21 +909,27 @@ script "js_google_old_snapshots_incident", type: "javascript" do
   code <<-'EOS'
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
-    var numString = number.toString()
-    var values = numString.split(".")
-    var formatted_number = ''
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   // [].concat is to make sure we genuinely create a new list

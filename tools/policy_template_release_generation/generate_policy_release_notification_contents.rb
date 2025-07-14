@@ -1,5 +1,6 @@
 require 'json'
-
+require 'net/http'
+require 'uri'
 class Changelog
   attr_accessor :path, :version, :changes
 
@@ -32,7 +33,7 @@ policy_templates = []
 changed_files.each do |file|
   next unless file.match?(/CHANGELOG\.md$/) || file.match?(/\.pt$/) #Consider pulling README as well
 
-  if file.match?(/CHANGELOG\.md$/) 
+  if file.match?(/CHANGELOG\.md$/)
     changelog_content = File.read(file)
     version = changelog_content.match(/^##\s*v([\d.]+)/)&.captures&.first
     changes = []
@@ -76,7 +77,7 @@ changelogs.each do |changelog|
     formatted_changes_html = formatted_changes.map { |change| "<li>#{change}</li>"}.join('')
 
     notification_content_json = {
-      activityTitle: "<h2 style='font-size: 18px;'><a href='#{readme_path}'>#{matching_template.name}</h2>",
+      activityTitle: "<h2 style='font-size: 18px;'><a href='#{readme_path}'>#{matching_template.name}</a></h2>",
       facts: [{
         name: "Template Version",
         value: changelog.version
@@ -91,11 +92,39 @@ changelogs.each do |changelog|
   end
 end
 
-# Output Notification Content as a JSON string to be used directly in YAML workflow file
-all_notification_content = JSON.generate(all_notification_content_array).gsub('"', '\\"').gsub('\\\"', '\\\\\\\\\\"')
-puts "::set-output name=notification_content::#{all_notification_content}"
+# Only send notification if there is something worth notifying about
+if all_notification_content_array.length > 0
+  # Generate GitHub Commit URL
+  commit_url = "https://github.com/flexera-public/policy_templates/commit/" + `git rev-parse origin/master`
 
-# Output GitHub Commit URL to be used directly in YAML workflow file
-commit_id = `git rev-parse origin/master`
-commit_path = "https://github.com/flexera-public/policy_templates/commit/" + commit_id
-puts "::set-output name=commit_url::#{commit_path}"
+  # Create the final JSON payload
+  payload = JSON.dump({
+    "@type": "MessageCard",
+    "@context": "http://schema.org/extensions",
+    "themeColor": "0076D7",
+    "summary": "New Policy Updates",
+    "sections": all_notification_content_array,
+    "potentialAction": [{
+      "@type": "OpenUri",
+      "name": "See Change Details in GitHub",
+      "targets": [{
+        "os": "default",
+        "uri": commit_url
+      }]
+    }]
+  })
+
+  # Retrieve Teams webhook URL from environment variable
+  webhook = URI.parse(ENV['TEAMS_WEBHOOK_URL'])
+
+  # Make request to Teams webhook to produce notification and output response
+  http = Net::HTTP.new(webhook.host, webhook.port)
+  http.use_ssl = webhook.scheme == 'https'
+
+  request = Net::HTTP::Post.new(webhook.path, { 'Content-Type' => 'application/json' })
+  request.body = payload
+
+  response = http.request(request)
+  puts "Response: #{response.code} #{response.message}"
+  puts response.body
+end

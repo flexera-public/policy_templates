@@ -3,18 +3,20 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Schedules Google VM instances to start and stop at specific times based on a configuration stored in the instance's labels. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/schedule_instance/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/google/schedule_instance/"
 category "Cost"
 severity "low"
-default_frequency "daily"
+default_frequency "15 minutes"
 info(
-  version: "4.0",
+  version: "6.0.1",
   provider: "Google",
   service: "Compute",
-  policy_set: "Schedule Instance"
+  policy_set: "Schedule Instance",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
@@ -33,20 +35,12 @@ parameter "param_label_schedule" do
   default "schedule"
 end
 
-parameter "param_label_next_start" do
+parameter "param_label_schedule_action" do
   type "string"
   category "Label Keys"
-  label "Next Start Label Key"
-  description "Label key to use for scheduling instance to start. Default is recommended for most use cases."
-  default "next_start"
-end
-
-parameter "param_label_next_stop" do
-  type "string"
-  category "Label Keys"
-  label "Next Stop Label Key"
-  description "Label key to use for scheduling instance to stop. Default is recommended for most use cases."
-  default "next_stop"
+  label "Schedule Action Label Key (Optional)"
+  description "Optional Label key to specify what action to use. By default if not specified the policy assumes the defined schedule is for a scheduled window. Expected label values are \"startstop\", \"start\", \"stop\"."
+  default "schedule_action"
 end
 
 parameter "param_projects_allow_or_deny" do
@@ -105,8 +99,17 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Execute Schedules"]
-  default []
+  allowed_values ["Execute Schedules", "Start Notification", "Stop Notification", "Error Notification", "Success Notification"]
+  default ["Execute Schedules", "Start Notification", "Stop Notification", "Error Notification", "Success Notification"] # Schedules enabled by default because resource label required to action.  Can be disabled by removing from list which is helpful for debugging / manual triggers.
+end
+
+parameter "param_enforce_schedules" do
+  type "string"
+  category "Actions"
+  label "Enforce Schedules"
+  description "Whether to enforce schedules on instances that are not in the correct state. If set to 'No', the policy will not action if the instance is not in the expected state when an action is to be taken."
+  allowed_values "Yes", "No"
+  default "Yes"
 end
 
 ###############################################################################
@@ -144,113 +147,71 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-# Table to derive region from zone
-datasource "ds_zone_to_region" do
-  run_script $js_zone_to_region
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
 end
 
-script "js_zone_to_region", type:"javascript" do
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
   result "result"
   code <<-EOS
-  result = {
-    "us-east1-b": "us-east1",
-    "us-east1-c": "us-east1",
-    "us-east1-d": "us-east1",
-    "us-east4-c": "us-east4",
-    "us-east4-b": "us-east4",
-    "us-east4-a": "us-east4",
-    "us-central1-c": "us-central1",
-    "us-central1-a": "us-central1",
-    "us-central1-f": "us-central1",
-    "us-central1-b": "us-central1",
-    "us-west1-b": "us-west1",
-    "us-west1-c": "us-west1",
-    "us-west1-a": "us-west1",
-    "europe-west4-a": "europe-west4",
-    "europe-west4-b": "europe-west4",
-    "europe-west4-c": "europe-west4",
-    "europe-west1-b": "europe-west1",
-    "europe-west1-d": "europe-west1",
-    "europe-west1-c": "europe-west1",
-    "europe-west3-c": "europe-west3",
-    "europe-west3-a": "europe-west3",
-    "europe-west3-b": "europe-west3",
-    "europe-west2-c": "europe-west2",
-    "europe-west2-b": "europe-west2",
-    "europe-west2-a": "europe-west2",
-    "asia-east1-b": "asia-east1",
-    "asia-east1-a": "asia-east1",
-    "asia-east1-c": "asia-east1",
-    "asia-southeast1-b": "asia-southeast1",
-    "asia-southeast1-a": "asia-southeast1",
-    "asia-southeast1-c": "asia-southeast1",
-    "asia-northeast1-b": "asia-northeast1",
-    "asia-northeast1-c": "asia-northeast1",
-    "asia-northeast1-a": "asia-northeast1",
-    "asia-south1-c": "asia-south1",
-    "asia-south1-b": "asia-south1",
-    "asia-south1-a": "asia-south1",
-    "australia-southeast1-b": "australia-southeast1",
-    "australia-southeast1-c": "australia-southeast1",
-    "australia-southeast1-a": "australia-southeast1",
-    "southamerica-east1-b": "southamerica-east1",
-    "southamerica-east1-c": "southamerica-east1",
-    "southamerica-east1-a": "southamerica-east1",
-    "asia-east2-a": "asia-east2",
-    "asia-east2-b": "asia-east2",
-    "asia-east2-c": "asia-east2",
-    "asia-northeast2-a": "asia-northeast2",
-    "asia-northeast2-b": "asia-northeast2",
-    "asia-northeast2-c": "asia-northeast2",
-    "asia-northeast3-a": "asia-northeast3",
-    "asia-northeast3-b": "asia-northeast3",
-    "asia-northeast3-c": "asia-northeast3",
-    "asia-south2-a": "asia-south2",
-    "asia-south2-b": "asia-south2",
-    "asia-south2-c": "asia-south2",
-    "asia-southeast2-a": "asia-southeast2",
-    "asia-southeast2-b": "asia-southeast2",
-    "asia-southeast2-c": "asia-southeast2",
-    "australia-southeast2-a": "australia-southeast2",
-    "australia-southeast2-b": "australia-southeast2",
-    "australia-southeast2-c": "australia-southeast2",
-    "europe-central2-a": "europe-central2",
-    "europe-central2-b": "europe-central2",
-    "europe-central2-c": "europe-central2",
-    "europe-north1-a": "europe-north1",
-    "europe-north1-b": "europe-north1",
-    "europe-north1-c": "europe-north1",
-    "europe-southwest1-a": "europe-southwest1",
-    "europe-southwest1-b": "europe-southwest1",
-    "europe-southwest1-c": "europe-southwest1",
-    "europe-west6-a": "europe-west6",
-    "europe-west6-b": "europe-west6",
-    "europe-west6-c": "europe-west6",
-    "northamerica-northeast1-a": "northamerica-northeast1",
-    "northamerica-northeast1-b": "northamerica-northeast1",
-    "northamerica-northeast1-c": "northamerica-northeast1",
-    "northamerica-northeast2-a": "northamerica-northeast2",
-    "northamerica-northeast2-b": "northamerica-northeast2",
-    "northamerica-northeast2-c": "northamerica-northeast2",
-    "us-west2-a": "us-west2",
-    "us-west2-b": "us-west2",
-    "us-west2-c": "us-west2",
-    "us-west3-a": "us-west3",
-    "us-west3-b": "us-west3",
-    "us-west3-c": "us-west3",
-    "us-west4-a": "us-west4",
-    "us-west4-b": "us-west4",
-    "us-west4-c": "us-west4",
-    "us-west5-a": "us-west5",
-    "us-west5-b": "us-west5",
-    "us-west5-c": "us-west5",
-    "us-west6-a": "us-west6",
-    "us-west6-b": "us-west6",
-    "us-west6-c": "us-west6",
-    "us-west7-a": "us-west7",
-    "us-west7-b": "us-west7",
-    "us-west7-c": "us-west7"
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
   }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get Incident data for use later
+datasource "ds_policy_incident" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/incidents"])
+    query "applied_policy_id", policy_id
+    query "state", "triggered"
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".items[]?") do
+      field "incident_id", jq(col_item, ".id")
+      field "applied_policy_id", jq(col_item, ".applied_policy.id")
+      field "summary", jq(col_item, ".summary")
+      field "state", jq(col_item, ".state")
+      field "violation_data_count", jq(col_item, ".violation_data_count")
+      field "action_failed", jq(col_item, ".action_failed")
+      field "updated_at", jq(col_item, ".updated_at")
+    end
+  end
+end
+
+datasource "ds_policy_incident_action_failed" do
+  run_script $js_policy_incident_action_failed, $ds_policy_incident
+end
+
+script "js_policy_incident_action_failed", type: "javascript" do
+  parameters "ds_policy_incident"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_policy_incident, function(incident) {
+    return incident['action_failed'] == true
+  })
 EOS
 end
 
@@ -329,11 +290,11 @@ datasource "ds_get_instances" do
 end
 
 datasource "ds_instances" do
-  run_script $js_instances, $ds_get_instances, $ds_zone_to_region
+  run_script $js_instances, $ds_get_instances
 end
 
 script "js_instances", type: "javascript" do
-  parameters "ds_get_instances", "ds_zone_to_region"
+  parameters "ds_get_instances"
   result "result"
   code <<-EOS
   result = []
@@ -341,7 +302,8 @@ script "js_instances", type: "javascript" do
   _.each(ds_get_instances, function(response) {
     _.each(response['instances'], function(instance) {
       zone = instance['zone'].split('/')[8]
-      region = ds_zone_to_region[zone]
+      // Region is the first two parts of the zone
+      region = zone.split('-')[0] + '-' + zone.split('-')[1]
 
       result.push({
         id: instance['id'],
@@ -466,12 +428,12 @@ script "js_instances_region_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_instances_to_schedule" do
-  run_script $js_instances_to_schedule, $ds_instances_region_filtered, $ds_applied_policy, $param_label_schedule, $param_label_next_start, $param_label_next_stop
+datasource "ds_instances_with_schedule" do
+  run_script $js_instances_with_schedule, $ds_instances_region_filtered, $ds_applied_policy, $ds_timezones_list, $param_label_schedule
 end
 
-script "js_instances_to_schedule", type: "javascript" do
-  parameters "ds_instances_region_filtered", "ds_applied_policy", "param_label_schedule", "param_label_next_start", "param_label_next_stop"
+script "js_instances_with_schedule", type: "javascript" do
+  parameters "ds_instances_region_filtered", "ds_applied_policy", "ds_timezones_list", "param_label_schedule"
   result "result"
   code <<-EOS
   result = []
@@ -479,31 +441,69 @@ script "js_instances_to_schedule", type: "javascript" do
 
   _.each(ds_instances_region_filtered, function(instance) {
     schedule = null
-    next_start = null
-    next_stop = null
 
     labels = []
 
+    var tags_object = {}
     if (typeof(instance['labels']) == 'object') {
       _.each(_.keys(instance['labels']), function(key) {
         value = instance['labels'][key]
-
+        tags_object[key] = value
         labels.push(key + '=' + value)
-
-        if (key == param_label_schedule)   { schedule = value   }
-        if (key == param_label_next_start) { next_start = value }
-        if (key == param_label_next_stop)  { next_stop = value  }
+        if (key == param_label_schedule)   { schedule = value }
       })
     }
 
-    if (next_start != null) { next_start = new Date(next_start) }
-    if (next_stop != null)  { next_stop = new Date(next_stop)   }
+    // Check that we have a schedule and it is not explicitely disabled before attempting to parse the schedule tag value
+    // Test the regex pattern for a valid schedule as well, in case the tag value is not a valid schedule
+    // schedule="0900-0930_mo-tu-we-th-fr"
+    // schedule="0900-0930_mo-tu-we-th-fr_america-los_angeles"
+    var schedule_is_valid = /([0-9]{1,2}.*)-([0-9]{1,2}.*)_([a-z\-]*).*/.test(schedule)
+    if ((_.isString(schedule)) && (schedule_is_valid == false)) {
+      console.log("Skipping instance " + instance['instanceId'] + " with invalid schedule '" + schedule +"'"); // Excluded from console.log test
+    } else if ((_.isString(schedule)) && (schedule_is_valid)) {
+      var schedule_split = schedule.split('_')
 
-    if (now > next_start || now > next_stop || next_start == null || next_stop == null) {
-      if (next_start != null) { next_start = next_start.toISOString() }
-      if (next_stop != null)  { next_stop = next_stop.toISOString()   }
+      // Parse Time - first part of schedule
+      var time = schedule_split[0]
+      // start time is first part of time string split by '-'
+      var start_time = time.split('-')[0]
+      var start_hour = start_time.slice(0, 2) // first 2 characters is HH
+      var start_minute = start_time.slice(2, 4) // last 2 characters is MM
+      if (start_minute == null) { start_minute = '00' }
+
+      // stop time is second part of time string split by '-'
+      var stop_time = time.split('-')[1]
+      var stop_hour = stop_time.slice(0, 2) // first 2 characters is HH
+      var stop_minute = stop_time.slice(2, 4) // last 2 characters is MM
+      if (stop_minute == null) { stop_minute = '00' }
+
+      // Parse Days - second part of schedule
+      var days = schedule_split[1]
+      days = days.replace(/-/g, ',') // replace all '-' with ','
+
+      var start_rule = 'FREQ=WEEKLY;BYDAY=' + days.toUpperCase()
+      var stop_rule = 'FREQ=WEEKLY;BYDAY=' + days.toUpperCase()
+
+      // Parse Timezone (if defined)
+      // Default to UTC
+      var timezone = "utc"
+      if (schedule_split.length >= 3) {
+        // concat rest of the schedule string after second `_`
+        timezone = schedule_split.slice(2, schedule_split.length).join('_')
+        timezone = ds_timezones_list[timezone]
+      }
 
       result.push({
+        // Request Fields
+        start_hour: start_hour,
+        start_minute: start_minute,
+        start_rule: start_rule,
+        stop_hour: stop_hour,
+        stop_minute: stop_minute,
+        stop_rule: stop_rule,
+        tz: timezone,
+        // Resource Fields
         resourceID: instance['id'],
         resourceName: instance['name'],
         description: instance['description'],
@@ -519,9 +519,8 @@ script "js_instances_to_schedule", type: "javascript" do
         zone: instance['zone'],
         region: instance['region'],
         tags: labels.join(', '),
+        tags_object: tags_object,
         policy_name: ds_applied_policy['name'],
-        next_start: next_start,
-        next_stop: next_stop,
         schedule: schedule,
         service: "Compute Engine"
       })
@@ -535,17 +534,751 @@ script "js_instances_to_schedule", type: "javascript" do
 EOS
 end
 
+datasource "ds_timezones_list" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/tz_database/timezones_list.json"
+    header "Content-Type", "application/json"
+  end
+end
+
+datasource "ds_instances_schedule_result" do
+  iterate $ds_instances_with_schedule
+  request do
+    verb "POST"
+    host "bjlaftw4kh.execute-api.us-east-1.amazonaws.com"
+    path "/production"
+    header "Content-Type", "application/json"
+    body_field "start_hour", val(iter_item, "start_hour")
+    body_field "start_minute", val(iter_item, "start_minute")
+    body_field "start_rule", val(iter_item, "start_rule")
+    body_field "stop_hour", val(iter_item, "stop_hour")
+    body_field "stop_minute", val(iter_item, "stop_minute")
+    body_field "stop_rule", val(iter_item, "stop_rule")
+    body_field "tz", val(iter_item, "tz")
+  end
+  result do
+    encoding "json"
+    # Request Fields
+    field "start_hour", val(iter_item, "start_hour")
+    field "start_minute", val(iter_item, "start_minute")
+    field "start_rule", val(iter_item, "start_rule")
+    field "stop_hour", val(iter_item, "stop_hour")
+    field "stop_minute", val(iter_item, "stop_minute")
+    field "stop_rule", val(iter_item, "stop_rule")
+    field "tz", val(iter_item, "tz")
+    # Resource Fields
+    field "resourceID", val(iter_item, "resourceID")
+    field "resourceName", val(iter_item, "resourceName")
+    field "description", val(iter_item, "description")
+    field "status", val(iter_item, "status")
+    field "selfLink", val(iter_item, "selfLink")
+    field "platform", val(iter_item, "platform")
+    field "resourceType", val(iter_item, "resourceType")
+    field "hostname", val(iter_item, "hostname")
+    field "kind", val(iter_item, "kind")
+    field "accountID", val(iter_item, "accountID")
+    field "accountName", val(iter_item, "accountName")
+    field "projectNumber", val(iter_item, "projectNumber")
+    field "zone", val(iter_item, "zone")
+    field "region", val(iter_item, "region")
+    field "tags", val(iter_item, "tags")
+    field "tags_object", val(iter_item, "tags_object")
+    field "policy_name", val(iter_item, "policy_name")
+    field "schedule", val(iter_item, "schedule")
+    field "service", val(iter_item, "service")
+    # Resource Response Fields
+    field "next_stop", val(response, "next_stop")
+    field "next_start", val(response, "next_start")
+    field "event_active", val(response, "event_active")
+  end
+end
+
+# Classify the results from ds_instances_schedule_result
+# This allows us to produce email notifications when actions are being taken
+datasource "ds_instances_schedule_result_action_start" do
+  run_script $js_instances_schedule_result_action_start, $ds_instances_schedule_result_with_last_action_status, $param_enforce_schedules, $param_label_schedule_action
+end
+
+script "js_instances_schedule_result_action_start", type: "javascript" do
+  parameters "ds_instances_schedule_result_with_last_action_status", "param_enforce_schedules", "param_label_schedule_action"
+  result "result"
+  code <<-EOS
+  var result = []
+  var enforce_schedule_enabled = param_enforce_schedules == "Yes"
+  // Force Action is a static string unless force action is enabled
+  var enforce_schedule = ""
+  // If enabled setting the string to current timestamp will ensure the resulting hash of the result updates each evaluation
+  // This will force the action to be taken on the instance each run if param_enforce_schedules is set to "Yes"
+  var now = new Date()
+  if (enforce_schedule_enabled) {
+    enforce_schedule = now.toISOString()
+  }
+
+  // Loop through each instance and check if we should start it
+  _.each(ds_instances_schedule_result_with_last_action_status, function(instance) {
+    // Get schedule action type, default to startstop if not specified
+    var schedule_action = "startstop"
+    if (instance.tags_object) {
+      var labels = _.keys(instance.tags_object)
+      if (_.contains(labels, param_label_schedule_action)) {
+        schedule_action = instance.tags_object[param_label_schedule_action].toLowerCase()
+      }
+    }
+
+    // Handle stop behavior based on schedule_action:
+    // - For 'start': Start when window is active
+    // - For 'startstop': Stop when window is not active
+    // - For 'stop': Never stop
+    var should_start = false
+    if (schedule_action == "start") {
+      // Stop action stops during active window
+      should_start = (instance['event_active'] == "true")
+    } else if (schedule_action == "startstop") {
+      // Startstop action stops outside active window
+      should_start = (instance['event_active'] == "true")
+    }
+
+    // Check if enforce schedule is disabled
+    if (!enforce_schedule_enabled) {
+      // Check if the last_stop_finished time is defined
+      // Check if the last stop attempt was successful
+      if (instance['last_start_finished'] && instance['last_start_finished'] != "Unknown" && instance['last_start_status'] == "completed") {
+        // We successfully stopped the instance and have a time recorded
+        // Convert timedate strings to Date objects
+        var last_action_date = new Date(instance['last_start_finished'])
+        var next_action_date = new Date(instance['next_start'])
+        // Check that the last START was in the past (we have not attempted to START it yet)
+        if ((last_action_date <= now) && (now <= next_action_date)) {
+          console.log("Skipping starting VM " + instance['resourceID'] + " because Enforce Schedules is disabled and the VM was started succesfully once at the last scheduled start time.  Next start time is "+instance['next_start']); // Excluded from console.log test
+          should_start = false
+          return // Skip this instance
+        }
+      }
+    }
+
+    // Only start instances if:
+    // 1. schedule_action is 'start' or 'startstop'
+    // 2. window is active
+    // 3. instance is not already running
+    if (should_start && (schedule_action == "start" || schedule_action == "startstop") &&
+        instance['event_active'] == "true" &&
+        /(running|provisioning)/.test(instance['status'].toLowerCase()) == false) {
+      instance['action'] = "start"
+      instance['enforce_schedule'] = enforce_schedule
+      result.push(instance)
+    }
+  })
+  EOS
+end
+
+datasource "ds_instances_schedule_result_action_stop" do
+  run_script $js_instances_schedule_result_action_stop, $ds_instances_schedule_result_with_last_action_status, $param_enforce_schedules, $param_label_schedule_action
+end
+
+script "js_instances_schedule_result_action_stop", type: "javascript" do
+  parameters "ds_instances_schedule_result_with_last_action_status", "param_enforce_schedules", "param_label_schedule_action"
+  result "result"
+  code <<-EOS
+  var result = []
+  var enforce_schedule_enabled = param_enforce_schedules == "Yes"
+  // Force Action is a static string unless force action is enabled
+  var enforce_schedule = ""
+  // If enabled setting the string to current timestamp will ensure the resulting hash of the result updates each evaluation
+  // This will force the action to be taken on the instance each run if param_enforce_schedules is set to "Yes"
+  var now = new Date()
+  if (enforce_schedule_enabled) {
+    enforce_schedule = now.toISOString()
+  }
+
+  // Loop through each instance and check if we should stop it
+  _.each(ds_instances_schedule_result_with_last_action_status, function(instance) {
+    // Get schedule action type, default to startstop if not specified
+    var schedule_action = "startstop"
+    if (instance.tags_object) {
+      var labels = _.keys(instance.tags_object)
+      if (_.contains(labels, param_label_schedule_action)) {
+        schedule_action = instance.tags_object[param_label_schedule_action].toLowerCase()
+      }
+    }
+
+    // Handle stop behavior based on schedule_action:
+    // - For 'stop': Stop when window is active
+    // - For 'startstop': Stop when window is not active
+    // - For 'start': Never stop
+    var should_stop = false
+    if (schedule_action == "stop") {
+      // Stop action stops during active window
+      should_stop = (instance['event_active'] == "true")
+    } else if (schedule_action == "startstop") {
+      // Startstop action stops outside active window
+      should_stop = (instance['event_active'] == "false")
+    }
+
+    // Check if enforce schedule is disabled
+    if (!enforce_schedule_enabled) {
+      // Check if the last_stop_finished time is defined
+      // Check if the last stop attempt was successful
+      if (instance['last_stop_finished'] && instance['last_stop_finished'] != "Unknown" && instance['last_stop_status'] == "completed") {
+        // We successfully stopped the instance and have a time recorded
+        // Convert timedate strings to Date objects
+        var last_action_date = new Date(instance['last_stop_finished'])
+        var next_action_date = new Date(instance['next_stop'])
+        // Check that the last stop was in the past (we have not attempted to stop it yet)
+        if ((last_action_date <= now) && (now <= next_action_date)) {
+          console.log("Skipping stopping VM " + instance['resourceID'] + " because Enforce Schedules is disabled and the VM was stopped succesfully once at the last scheduled stop time. Next stop time is "+instance["next_stop"]); // Excluded from console.log test
+          should_stop = false
+        }
+      }
+    }
+
+    if (should_stop && /(stopped|terminated|stopping)/.test(instance['status'].toLowerCase()) == false) {
+      instance['action'] = "stop"
+      instance['enforce_schedule'] = enforce_schedule
+      result.push(instance)
+    }
+  })
+  EOS
+end
+
+datasource "ds_policy_incident_details" do
+  iterate $ds_policy_incident
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/incidents/", val(iter_item, 'incident_id')])
+    query "view", "extended"
+    header "User-Agent", "RS Policies"
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "applied_policy_id", jq(iter_item, ".applied_policy_id")
+    field "incident_id", jq(iter_item, ".incident_id")
+    field "incident_summary", jq(iter_item, ".summary")
+    field "violation_data_count", jq(iter_item, ".violation_data_count")
+    field "violation_data", jq(response, ".violation_data")
+  end
+end
+
+datasource "ds_policy_incident_action_status" do
+  iterate $ds_policy_incident_details
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/action_status"])
+    query "incident_id", val(iter_item, 'incident_id')
+    query "view", "extended"
+    header "User-Agent", "RS Policies"
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".items[]?") do
+      field "applied_policy_id", jq(iter_item, ".applied_policy_id")
+      field "incident_id", jq(iter_item, ".incident_id")
+      field "incident_summary", jq(iter_item, ".incident_summary")
+      field "violation_data_count", jq(iter_item, ".violation_data_count")
+      field "violation_data", jq(iter_item, ".violation_data")
+      field "action_status", jq(col_item, ".status")
+      field "action_items", jq(col_item, ".action_items")
+      field "action_label", jq(col_item, ".label")
+      field "action_started_at", jq(col_item, ".started_at")
+      field "action_finished_at", jq(col_item, ".finished_at")
+    end
+  end
+end
+
+datasource "ds_policy_incident_action_most_recent" do
+  run_script $js_policy_incident_action_most_recent, $ds_policy_incident_action_status, $ds_applied_policy, $ds_flexera_api_hosts
+end
+
+script "js_policy_incident_action_most_recent", type: "javascript" do
+  parameters "ds_policy_incident_action_status", "ds_applied_policy", "ds_flexera_api_hosts"
+  result "result"
+  code <<-EOS
+  result = []
+
+  // Define the action labels we are interested in and placeholder to store matches
+  var action_labels = [
+    "Execute Scheduled Start",
+    "Execute Scheduled Stop"
+  ]
+
+  // Sort the action status details by action_finished_at
+  var sorted = _.sortBy(ds_policy_incident_action_status, 'action_finished_at')
+  // Ensure that most recent date i.e. 2024-12-31T23:59:59Z is at the top
+  sorted.reverse();
+
+  // Loop through each incident label we want to check
+  // compile list of most recent actions for each
+  _.each(action_labels, function(label) {
+    // _.find will return the first match
+    // sorted is already sorted by action_finished_at (most recent first)
+    var most_recent_action = _.find(sorted, function(action) {
+      // Return result if the action_label matches
+      return action['action_label'] == label
+    })
+    // If we found a match, add it to the list
+    if (most_recent_action) {
+      most_recent_action['policy_name'] = ds_applied_policy['name']
+      most_recent_action['ui_host'] = ds_flexera_api_hosts['ui']
+      result.push(most_recent_action)
+    }
+  })
+EOS
+end
+
+datasource "ds_policy_incident_action_completed_details" do
+  run_script $js_policy_incident_action_completed_details, $ds_policy_incident_action_most_recent
+end
+
+script "js_policy_incident_action_completed_details", type: "javascript" do
+  parameters "ds_policy_incident_action_most_recent"
+  result "result"
+  code <<-EOS
+  // Filter only the completed actions
+  var actions = _.filter(ds_policy_incident_action_most_recent, function(action) {
+    return action.action_status == 'completed'
+  })
+  // Compile instance list from action_items
+  var instances = [];
+  _.each(actions, function(action) {
+    _.each(action['violation_data'], function(item) {
+      item.action_label = action.action_label
+      instances.push(item)
+    })
+  })
+  var result = {
+    "actions": actions,
+    "instances": instances
+  }
+EOS
+end
+
+datasource "ds_instances_schedule_result_with_last_action_status" do
+  run_script $js_instances_schedule_result_with_last_action_status, $ds_instances_schedule_result, $ds_policy_incident_details, $ds_policy_incident_action_most_recent
+end
+
+script "js_instances_schedule_result_with_last_action_status", type: "javascript" do
+  parameters "ds_instances_schedule_result", "ds_policy_incident_details", "ds_policy_incident_action_most_recent"
+  result "result"
+  code <<-EOS
+  // Set result to ds_instances_schedule_result which is most recent list of instances with schedules
+  var result = ds_instances_schedule_result
+
+  // Get the "Scheduled Instances" incident
+  // This has some state details from previous run which we need
+  var incident = _.find(ds_policy_incident_details, function(incident) {
+    return incident['incident_summary'].indexOf("Scheduled Instances") != -1
+  })
+  // Check if we found a previous incident
+  if (incident) {
+    // Instance Map by Resource ID for quicker lookups
+    var instance_map = _.groupBy(incident.violation_data, 'resourceID')
+
+    // For each instance in ds_instances_schedule_result, check if there is details from previous runs
+    _.each(result, function(instance) {
+      if (instance_map && instance_map[instance['resourceID']]) {
+        var instance_details = instance_map[instance['resourceID']]
+        instance['last_start_status'] = instance_details[0]['last_start_status']? instance_details[0]['last_start_status'] : "Unknown"
+        instance['last_start_finished'] = instance_details[0]['last_start_finished']? instance_details[0]['last_start_finished'] : "Unknown"
+        instance['last_stop_status'] = instance_details[0]['last_stop_status']? instance_details[0]['last_stop_status'] : "Unknown"
+        instance['last_stop_finished'] = instance_details[0]['last_stop_finished']? instance_details[0]['last_stop_finished'] : "Unknown"
+      }
+    })
+  }
+
+  // Get the "Starting Instances" incident
+  // This has some state details from previous run which we need
+  var starting_incident = _.find(ds_policy_incident_action_most_recent, function(incident) {
+    return incident['action_label'] == "Execute Scheduled Start"
+  })
+  if (starting_incident) {
+    // Instance Map by Resource ID
+    var starting_instance_map = _.groupBy(starting_incident.violation_data, 'resourceID')
+
+    // For each instance in ds_instances_schedule_result, check if there is details from previous run
+    _.each(result, function(instance) {
+      // If the instance is in the incident
+      if (starting_instance_map[instance['resourceID']]) {
+        // Update the instance with the last start status from previous state
+        instance['last_start_status'] = starting_incident.action_status
+        instance['last_start_finished'] = starting_incident.action_finished_at
+      }
+    })
+  }
+
+  // Get the "Stopping Instances" incident
+  // This has some state details from previous run which we need
+  var stopping_incident = _.find(ds_policy_incident_action_most_recent, function(incident) {
+    return incident['action_label'] == "Execute Scheduled Stop"
+  })
+  if (stopping_incident) {
+    // Instance Map by Resource ID
+    var stopping_instance_map = _.groupBy(stopping_incident.violation_data, 'resourceID')
+
+    // For each instance in ds_instances_schedule_result, check if there is details from previous run
+    _.each(result, function(instance) {
+      // If the instance is in the incident
+      if (stopping_instance_map[instance['resourceID']]) {
+        // Update the instance with the last start status from previous state
+        instance['last_stop_status'] = stopping_incident.action_status
+        instance['last_stop_finished'] = stopping_incident.action_finished_at
+      }
+    })
+  }
+EOS
+end
+
+datasource "ds_policy_incident_action_failed_details" do
+  run_script $js_policy_incident_action_failed_details, $ds_policy_incident_action_most_recent, $ds_instances_schedule_result_with_last_action_status
+end
+
+script "js_policy_incident_action_failed_details", type: "javascript" do
+  parameters "ds_policy_incident_action_most_recent", "ds_instances_schedule_result_with_last_action_status"
+  result "result"
+  code <<-EOS
+  // Filter only the failed actions
+  var actions = _.filter(ds_policy_incident_action_most_recent, function(action) {
+    return action.action_status == 'failed'
+  })
+  // Loop through `ds_instances_schedule_result_with_last_action_status` and add any instances where the resource_id is in any of the failed actions
+  var instances = [];
+  _.each(ds_instances_schedule_result_with_last_action_status, function(instance) {
+    _.each(actions, function(action) {
+      _.each(action['action_items'], function(item) {
+        if (_.isString(item.error)) {
+          // Look specifically for the third attempt error message
+          // This is a cheap way to only include the resources that failed on all 3 attempts (and not the ones that failed on the first or second attempt but succeeded eventually)
+          // Must match the hard-coded attempt limit in CWF below to work
+          var regex = new RegExp("Attempt 3.*" + instance['resourceID'], "gi")
+          if (regex.test(item.error)) {
+            instances.push(instance)
+          }
+        }
+        if (item['resource_id'] == instance['resourceID']) {
+          instances.push(instance)
+        }
+      })
+    })
+  })
+  var result = {
+    "actions": actions,
+    "instances": instances
+  }
+EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_schedule_instance" do
-  validate_each $ds_instances_to_schedule do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Scheduled VM Instances"
+  validate $ds_policy_incident_action_completed_details do
+    summary_template "{{ with index data.actions 0 }}{{ .policy_name }}{{ end }}: Completed Actions"
+    detail_template <<-EOS
+**Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})**
+
+The following actions completed successfully:
+
+{{ range data.actions -}}
+**[{{ .incident_summary }}](https://{{ .ui_host }}/orgs/{{ rs_org_id }}/automation/incidents/projects/{{ rs_project_id }}?incidentId={{ .incident_id }})**
+
+{{- range .action_items }}
+{{ if eq .status "completed" -}}
+ - {{ .finished_at }}: {{ .status }} {{ .type }}
+
+{{ else -}}
+ - {{ .started_at }}: *{{ .status }} {{ .type }}*
+
+{{ end }}
+
+{{ end -}}
+{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(size(val(data, "actions")), 0))
+    escalate $esc_email_success
+    export "instances" do
+      resource_level true
+      field "event_active" do
+        label "Event Active"
+      end
+      field "action_label" do
+        label "Action Label"
+      end
+      field "accountID" do
+        label "Project ID"
+      end
+      field "accountName" do
+        label "Project Name"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Labels"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "zone" do
+        label "Zone"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "schedule" do
+        label "Schedule"
+      end
+      field "next_start" do
+        label "Next Start"
+      end
+      field "next_stop" do
+        label "Next Stop"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+      field "selfLink" do
+        label "Resource Link"
+      end
+    end
+  end
+
+  validate $ds_policy_incident_action_failed_details do
+    summary_template "{{ with index data.actions 0 }}{{ .policy_name }}{{ end }}: Failed Actions"
+    detail_template <<-EOS
+**Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})**
+
+The following actions failed:
+{{ range data.actions }}
+
+**[{{ .incident_summary }}](https://{{ .ui_host }}/orgs/{{ rs_org_id }}/automation/incidents/projects/{{ rs_project_id }}?incidentId={{ .incident_id }})**
+Failed:
+{{ range .action_items }}
+{{ if .error -}}
+```
+{{ .error }}
+```
+{{ end -}}
+{{ end }}
+
+{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(size(val(data, "actions")), 0))
+    escalate $esc_email_error
+    export "instances" do
+      resource_level true
+      field "accountID" do
+        label "Project ID"
+      end
+      field "accountName" do
+        label "Project Name"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Labels"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "zone" do
+        label "Zone"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "schedule" do
+        label "Schedule"
+      end
+      field "next_start" do
+        label "Next Start"
+      end
+      field "next_stop" do
+        label "Next Stop"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+      field "selfLink" do
+        label "Resource Link"
+      end
+      field "event_active" do
+        label "Event Active"
+      end
+    end
+  end
+
+  validate_each $ds_instances_schedule_result_action_start do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Starting {{ len data }} Google Scheduled VM Instances"
+    detail_template <<-EOS
+**Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})**
+
+The following Google VM Instances are scheduled to start now:
+{{ range data }}
+- [{{ .resourceName }}](https://console.cloud.google.com/compute/instancesDetail/zones/{{ .zone }}/instances/{{ .resourceName }}?project={{ .accountID }}) in project `{{ .accountName }} ({{ .projectNumber }})` is scheduled to start at {{ .next_start }}.
+{{ end }}
+EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
-    escalate $esc_email
-    escalate $esc_execute_schedules
+    escalate $esc_email_start
+    escalate $esc_execute_scheduled_start
+    hash_exclude "tags"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Project ID"
+      end
+      field "accountName" do
+        label "Project Name"
+      end
+      field "projectNumber" do
+        label "Project Number"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Labels"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "zone" do
+        label "Zone"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "schedule" do
+        label "Schedule"
+      end
+      field "next_start" do
+        label "Next Start"
+      end
+      field "next_stop" do
+        label "Next Stop"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+      field "selfLink" do
+        label "Resource Link"
+      end
+      field "event_active" do
+        label "Event Active"
+      end
+      field "enforce_schedule" do
+        label "Enforce Schedule"
+      end
+    end
+  end
+
+  validate_each $ds_instances_schedule_result_action_stop do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Stopping {{ len data }} Google Scheduled VM Instances"
+    detail_template <<-EOS
+**Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})**
+
+The following Google VM Instances are scheduled to stop now:
+{{ range data }}
+- [{{ .resourceName }}](https://console.cloud.google.com/compute/instancesDetail/zones/{{ .zone }}/instances/{{ .resourceName }}?project={{ .accountID }}) in project `{{ .accountName }} ({{ .projectNumber }})` is scheduled to stop at {{ .next_stop }}.
+{{ end }}
+EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email_stop
+    escalate $esc_execute_scheduled_stop
+    hash_exclude "tags"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Project ID"
+      end
+      field "accountName" do
+        label "Project Name"
+      end
+      field "projectNumber" do
+        label "Project Number"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Labels"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "zone" do
+        label "Zone"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "schedule" do
+        label "Schedule"
+      end
+      field "next_start" do
+        label "Next Start"
+      end
+      field "next_stop" do
+        label "Next Stop"
+      end
+      field "last_start_status" do
+        label "Last Start Status"
+      end
+      field "last_start_finished" do
+        label "Last Start Finished"
+      end
+      field "last_stop_status" do
+        label "Last Stop Status"
+      end
+      field "last_stop_finished" do
+        label "Last Stop Finished"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+      field "selfLink" do
+        label "Resource Link"
+      end
+      field "event_active" do
+        label "Event Active"
+      end
+      field "enforce_schedule" do
+        label "Enforce Schedule"
+      end
+    end
+  end
+
+  validate_each $ds_instances_schedule_result_with_last_action_status do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Scheduled Instances"
+    detail_template <<-EOS
+**Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})**
+
+The following Google VM Instances have label `{{ parameters.param_label_schedule }}` and will be automatically started and stopped on a schedule.
+    EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_update_schedules
     escalate $esc_delete_schedules
     escalate $esc_start_instances
@@ -609,6 +1342,21 @@ policy "pol_schedule_instance" do
         label "ID"
         path "resourceID"
       end
+      field "event_active" do
+        label "Event Active"
+      end
+      field "last_start_status" do
+        label "Last Start Status"
+      end
+      field "last_start_finished" do
+        label "Last Start Finished"
+      end
+      field "last_stop_status" do
+        label "Last Stop Status"
+      end
+      field "last_stop_finished" do
+        label "Last Stop Finished"
+      end
     end
   end
 end
@@ -617,18 +1365,46 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_email" do
-  automatic true
+escalation "esc_email_start" do
+  automatic contains($param_automatic_action, "Start Notification")
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
 
-escalation "esc_execute_schedules" do
+escalation "esc_email_stop" do
+  automatic contains($param_automatic_action, "Stop Notification")
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_email_error" do
+  automatic contains($param_automatic_action, "Error Notification")
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_email_success" do
+  automatic contains($param_automatic_action, "Success Notification")
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_execute_scheduled_start" do
   automatic contains($param_automatic_action, "Execute Schedules")
-  label "Execute Schedules"
-  description "Approval to start or stop all selected instances based on schedule"
-  run "execute_schedules", data, $param_label_schedule, $param_label_next_start, $param_label_next_stop
+  label "Execute Scheduled Start"
+  description "Approval to start or stop all selected instances respecting the defined schedule"
+  run "execute_schedules", data, $param_label_schedule, $param_label_schedule_action
+end
+
+escalation "esc_execute_scheduled_stop" do
+  automatic contains($param_automatic_action, "Execute Schedules")
+  label "Execute Scheduled Stop"
+  description "Approval to stop all selected instances respecting the defined schedule"
+  run "execute_schedules", data, $param_label_schedule, $param_label_schedule_action
 end
 
 escalation "esc_update_schedules" do
@@ -640,15 +1416,16 @@ escalation "esc_update_schedules" do
     category "Policy Actions"
     label "New Schedule"
     description "Enter a new value for the schedule label. See README for more details"
+    # No default value, user input required
   end
-  run "update_schedules", data, $param_schedule, $param_label_schedule, $param_label_next_start, $param_label_next_stop
+  run "update_schedules", data, $param_schedule, $param_label_schedule
 end
 
 escalation "esc_delete_schedules" do
   automatic false
   label "Delete Schedules"
   description "Approval to delete the schedule labels on all selected instances"
-  run "delete_schedules", data, $param_label_schedule, $param_label_next_start, $param_label_next_stop
+  run "delete_schedules", data, $param_label_schedule
 end
 
 escalation "esc_start_instances" do
@@ -677,45 +1454,45 @@ end
 ###############################################################################
 
 # Core CWF functions for iterating through items
-define execute_schedules($data, $param_label_schedule, $param_label_next_start, $param_label_next_stop) return $all_responses do
+define execute_schedules($data, $param_label_schedule, $param_label_schedule_action) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      call execute_schedule($instance, $param_label_schedule, $param_label_next_start, $param_label_next_stop)
+      call execute_schedule($instance, $param_label_schedule, $param_label_schedule_action)
     end
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
-define update_schedules($data, $param_schedule, $param_label_schedule, $param_label_next_start, $param_label_next_stop) return $all_responses do
+define update_schedules($data, $param_schedule, $param_label_schedule_action) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      call update_schedule($instance, $param_schedule, $param_label_schedule, $param_label_next_start, $param_label_next_stop) retrieve $update_response, $window_active
+      call update_schedule($instance, $param_schedule, $param_label_schedule_action) retrieve $update_response, $window_active
     end
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
-define delete_schedules($data, $param_label_schedule, $param_label_next_start, $param_label_next_stop) return $all_responses do
+define delete_schedules($data, $param_label_schedule) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      call delete_schedule($instance, $param_label_schedule, $param_label_next_start, $param_label_next_stop)
+      call delete_schedule($instance, $param_label_schedule)
     end
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -729,7 +1506,7 @@ define start_instances($data) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -743,7 +1520,7 @@ define stop_instances($data) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -757,22 +1534,59 @@ define delete_instances($data) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
 # Secondary CWF functions for taking action on individual instances
-define execute_schedule($instance, $param_label_schedule, $param_label_next_start, $param_label_next_stop) return $response do
-  call update_schedule($instance, $instance['schedule'], $param_label_schedule, $param_label_next_start, $param_label_next_stop) retrieve $update_response, $window_active
-
-  if $window_active
-    call start_instance($instance) retrieve $start_response
+define execute_schedule($instance, $param_label_schedule, $param_label_schedule_action) return $response do
+  if $instance['schedule'] == null
+    call task_label("Skipping instance without schedule: " + $instance["resourceName"])
   else
-    call stop_instance($instance) retrieve $stop_response
+    call task_label("Start executing schedule for instance: " + $instance["resourceName"])
+    call parse_schedule($instance['schedule']) retrieve $start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone
+
+    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active
+
+    # Get schedule action type, default to startstop if not specified
+    $schedule_action = "startstop"
+    if $instance["labels"] && $instance["labels"][$param_label_schedule_action]
+      $schedule_action = downcase($instance["labels"][$param_label_schedule_action])
+    end
+
+    if $window_active
+      # Window is active - determine if we should start or stop
+      if $schedule_action =~ /^(start|startstop)$/
+        # For start-only or startstop, start instance during window
+        if $instance['status'] == "RUNNING" || $instance['status'] == "PROVISIONING"
+          call task_label("Skipping starting a running instance: " + $instance["resourceName"] + " " + $instance['status'])
+        else
+          call start_instance($instance) retrieve $start_response
+        end
+      elsif $schedule_action == "stop"
+        # For stop-only, stop instance during window
+        if $instance['status'] == "STOPPED" || $instance['status'] == "TERMINATED"
+          call task_label("Skipping stopping a stopped instance: " + $instance["resourceName"] + " " + $instance['status'])
+        else
+          call stop_instance($instance) retrieve $stop_response
+        end
+      end
+    else
+      # Window is not active - determine if we should stop
+      if $schedule_action == "startstop"
+        # Only startstop needs to handle stopping outside window
+        if $instance['status'] == "STOPPED" || $instance['status'] == "TERMINATED"
+          call task_label("Skipping stopping a stopped instance: " + $instance["resourceName"] + " " + $instance['status'])
+        else
+          call stop_instance($instance) retrieve $stop_response
+        end
+      end
+    end
+    call task_label("Finished executing schedule for instance: " + $instance["resourceName"])
   end
 end
 
-define update_schedule($instance, $schedule, $param_label_schedule, $param_label_next_start, $param_label_next_stop) return $response, $window_active do
+define parse_schedule($schedule) return $start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone do
   # Time
   $schedule_time = split($schedule, '_')[0]
 
@@ -802,51 +1616,33 @@ define update_schedule($instance, $schedule, $param_label_schedule, $param_label
   $stop_rule = join(["FREQ=WEEKLY;BYDAY=", $days])
 
   # Timezone
-  $schedule_timezone = split($schedule, '_')[2]
-
-  if split($schedule, '_')[3]
-    $schedule_timezone = $schedule_timezone + split($schedule, '_')[3]
-  end
-
-  if split($schedule, '_')[4]
-    $schedule_timezone = $schedule_timezone + split($schedule, '_')[4]
+  $schedule_timezone = split($schedule, '_')
+  # check to see if there's more than 3 parts to the schedule
+  # this can happy if the timezone has a `_` in it (e.g. `america_los_angeles`)
+  if size($schedule_timezone) >= 3
+    $tz = []
+    $i = 2
+    while $i < size($schedule_timezone) do
+      $tz << $schedule_timezone[$i]
+      $i = $i + 1
+    end
+    $schedule_timezone = join($tz, "_")
   end
 
   $timezone = "UTC"
-
   if $schedule_timezone
     call get_tzlist() retrieve $get_tzlist_response, $timezones
     $timezone = $timezones[$schedule_timezone]
   end
+end
 
-  call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active, $next_start, $next_stop
-
-  $next_start = split($next_start, "T")
-  $next_start[1] = split($next_start[1], "-")
-  $next_start[1] = join($next_start[1], "m")
-  $next_start[1] = split($next_start[1], ":")
-  $next_start[1] = join($next_start[1], "-")
-  $next_start[1] = split($next_start[1], "+")
-  $next_start[1] = join($next_start[1], "p")
-  $next_start = join($next_start, "t")
-
-  $next_stop = split($next_stop, "T")
-  $next_stop[1] = split($next_stop[1], "-")
-  $next_stop[1] = join($next_stop[1], "m")
-  $next_stop[1] = split($next_stop[1], ":")
-  $next_stop[1] = join($next_stop[1], "-")
-  $next_stop[1] = split($next_stop[1], "+")
-  $next_stop[1] = join($next_stop[1], "p")
-  $next_stop = join($next_stop, "t")
-
+define update_schedule($instance, $schedule, $param_label_schedule) return $response, $window_active do
   call get_instance_info($instance) retrieve $get_instance_info_response, $instance_state, $new_labels, $fingerprint
 
   $new_labels[$param_label_schedule] = $schedule
-  $new_labels[$param_label_next_start] = $next_start
-  $new_labels[$param_label_next_stop] = $next_stop
 
   $url = $instance['selfLink'] + "/setLabels"
-  task_label("POST " + $url)
+  call task_label("POST " + $url)
 
   $response = http_post(
     auth: $$auth_google,
@@ -861,29 +1657,29 @@ define update_schedule($instance, $schedule, $param_label_schedule, $param_label
     }
   )
 
-  task_label("Update Google VM instance labels response: " + $instance["resourceName"] + " " + to_json($response))
+  call task_label("Update Google VM instance labels response: " + to_s($response["code"]))
   $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response updating Google VM instance labels: " + $instance["resourceName"] + " " + to_json($response)
   else
-    task_label("Updating Google VM instance labels successful: " + $instance["resourceName"])
+    call task_label("Updating Google VM instance labels successful: " + $instance["resourceName"])
   end
 end
 
-define delete_schedule($instance, $param_label_schedule, $param_label_next_start, $param_label_next_stop) return $response do
+define delete_schedule($instance, $param_label_schedule) return $response do
   call get_instance_info($instance) retrieve $get_instance_info_response, $instance_state, $labels, $fingerprint
 
   $new_labels = {}
 
   foreach $label_key in keys($labels) do
-    if $label_key != $param_label_next_start && $label_key != $param_label_next_stop && $label_key != $param_label_schedule
+    if $label_key != $param_label_schedule
       $new_labels[$label_key] = $labels[$label_key]
     end
   end
 
   $url = $instance['selfLink'] + "/setLabels"
-  task_label("POST " + $url)
+  call task_label("POST " + $url)
 
   $response = http_post(
     auth: $$auth_google,
@@ -898,19 +1694,19 @@ define delete_schedule($instance, $param_label_schedule, $param_label_next_start
     }
   )
 
-  task_label("Delete Google VM instance labels response: " + $instance["resourceName"] + " " + to_json($response))
+  call task_label("Delete Google VM instance labels response: " + $instance["resourceName"])
   $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response deleting Google VM instance labels: " + $instance["resourceName"] + " " + to_json($response)
   else
-    task_label("Deleting Google VM instance labels successful: " + $instance["resourceName"])
+    call task_label("Deleting Google VM instance labels successful: " + $instance["resourceName"])
   end
 end
 
 define delete_instance($instance) return $response do
   $url = $instance['selfLink']
-  task_label("DELETE " + $url)
+  call task_label("DELETE " + $url)
 
   $response = http_delete(
     auth: $$auth_google,
@@ -921,22 +1717,22 @@ define delete_instance($instance) return $response do
     }
   )
 
-  task_label("Delete Google VM instance response: " + $instance["resourceName"] + " " + to_json($response))
+  call task_label("Delete Google VM instance response: " + $instance["resourceName"])
   $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response deleting Google VM instance: "+ $instance["resourceName"] + " " + to_json($response)
   else
-    task_label("Delete Google VM instance successful: " + $instance["resourceName"])
+    call task_label("Delete Google VM instance successful: " + $instance["resourceName"])
   end
 end
 
 # Tertiary CWF functions for specific tasks
-define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active, $next_start, $next_stop do
+define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active do
   $host = "bjlaftw4kh.execute-api.us-east-1.amazonaws.com"
   $href = "/production"
   $url = $host + $href
-  task_label("POST " + $url)
+  call task_label("POST " + $url)
 
   $response = http_request(
     https: true,
@@ -955,22 +1751,20 @@ define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_
     }
   )
 
-  task_label("Post AWS API Gateway response: " + $host + " " + to_json($response))
+  call task_label("Post AWS API Gateway response: " + to_s($response["code"]))
   $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response posting AWS API Gateway: " + $host + " " + to_json($response)
   else
-    task_label("Post AWS API Gateway successful: " + $host)
+    call task_label("Post AWS API Gateway successful: window_active=" + $response['body']['event_active'])
     $window_active = to_b($response['body']['event_active'])
-    $next_start = $response['body']['next_start']
-    $next_stop = $response['body']['next_stop']
   end
 end
 
 define start_instance($instance) return $response do
   $url = $instance['selfLink'] + '/start'
-  task_label("POST " + $url)
+  call task_label("POST " + $url)
 
   $response = http_post(
     auth: $$auth_google,
@@ -981,19 +1775,39 @@ define start_instance($instance) return $response do
     }
   )
 
-  task_label("Start Google VM instance response: " + $instance["resourceName"] + " " + to_json($response))
+  call task_label("Start Google VM instance request response: " + $instance["resourceName"])
   $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response starting Google VM instance: "+ $instance["resourceName"] + " " + to_json($response)
   else
-    task_label("Start Google VM instance successful: " + $instance["resourceName"])
+    call task_label("Start Google VM instance request started: " + $instance["resourceName"])
+  end
+
+  call task_label("Validate Google VM instance started succesfully: " + $instance["resourceName"])
+
+  sleep(5)
+  call get_instance_info($instance) retrieve $state_response, $current_state, $labels, $fingerprint
+  sleep(5)
+
+  sub timeout: 5m, on_timeout: handle_timeout() do
+    while $current_state != "RUNNING" do
+      call get_instance_info($instance) retrieve $state_response, $current_state, $labels, $fingerprint
+      sleep(5)
+    end
+  end
+
+  if $current_state == "RUNNING"
+    call task_label("Validated Google VM instance started succesfully: " + $instance["resourceName"])
+  else
+  call task_label("Unexpected status after Google VM instance start: " + $instance["resourceName"] + " " + $instance["status"])
+    raise "Unexpected status after Google VM instance start: " + $instance["resourceName"]
   end
 end
 
 define stop_instance($instance) return $response do
   $url = $instance['selfLink'] + '/stop'
-  task_label("POST " + $url)
+  call task_label("POST " + $url)
 
   $response = http_post(
     auth: $$auth_google,
@@ -1004,28 +1818,39 @@ define stop_instance($instance) return $response do
     }
   )
 
-  task_label("Stop Google VM instance response: " + $instance["resourceName"] + " " + to_json($response))
+  call task_label("Stop Google VM instance request response: " + to_s($response["code"]))
   $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response stopping Google VM instance: "+ $instance["resourceName"] + " " + to_json($response)
   else
-    task_label("Stop Google VM instance successful: " + $instance["resourceName"])
+    call task_label("Stop Google VM instance request started: " + $instance["resourceName"])
   end
+
+  call task_label("Validate Google VM instance stopped succesfully: " + $instance["resourceName"])
 
   sleep(5)
   call get_instance_info($instance) retrieve $state_response, $current_state, $labels, $fingerprint
   sleep(5)
 
-  while $current_state != "STOPPED" && $current_state != "TERMINATED" do
-    call get_instance_info($instance) retrieve $state_response, $current_state, $labels, $fingerprint
-    sleep(5)
+  sub timeout: 5m, on_timeout: handle_timeout() do
+    while $current_state != "STOPPED" && $current_state != "TERMINATED" do
+      call get_instance_info($instance) retrieve $state_response, $current_state, $labels, $fingerprint
+      sleep(5)
+    end
+  end
+
+  if $current_state == "STOPPED" || $current_state == "TERMINATED"
+    call task_label("Validated Google VM instance stopped succesfully: " + $instance["resourceName"])
+  else
+    call task_label("Unexpected status after Google VM instance stop: " + $instance["resourceName"] + " " + $instance["status"])
+    raise "Unexpected status after Google VM instance stop: " + $instance["resourceName"]
   end
 end
 
 define get_instance_info($instance) return $response, $instance_state, $labels, $fingerprint do
   $url = $instance['selfLink']
-  task_label("GET " + $url)
+  call task_label("GET " + $url)
 
   $response = http_get(
     auth: $$auth_google,
@@ -1036,24 +1861,24 @@ define get_instance_info($instance) return $response, $instance_state, $labels, 
     }
   )
 
-  task_label("Get Google VM instance response: " + $instance["resourceName"] + " " + to_json($response))
+  call task_label("Get Google VM instance response: " + to_s($response["code"]))
   $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response getting Google VM instance: "+ $instance["resourceName"] + " " + to_json($response)
   else
-    task_label("Get Google VM instance successful: " + $instance["resourceName"])
     $instance_state = $response["body"]["status"]
     $labels = $response["body"]["labels"]
     $fingerprint = $response["body"]["labelFingerprint"]
+    call task_label("Get Google VM instance successful: " + $instance["resourceName"] + " " + $instance_state)
   end
 end
 
 define get_tzlist() return $response, $tzlist do
   $host = "raw.githubusercontent.com"
-  $href = "/rightscale/policy_templates/master/data/tz_database/timezones_list.json"
+  $href = "/flexera-public/policy_templates/master/data/tz_database/timezones_list.json"
   $url = $host + $href
-  task_label("GET " + $url)
+  call task_label("GET " + $url)
 
   $response = http_request(
     https: true,
@@ -1065,13 +1890,13 @@ define get_tzlist() return $response, $tzlist do
     }
   )
 
-  task_label("Get Github Timezone List response: " + $url + " " + to_json($response))
-  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+  call task_label("Get Github Timezone List response: " + to_s($response["code"]))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
     raise "Unexpected response getting Github Timezone List: "+ $url + " " + to_json($response)
   else
-    task_label("Get Github Timezone List successful: " + $url)
+    call task_label("Get Github Timezone List successful")
     $tzlist = from_json($response['body'])
   end
 end
@@ -1086,6 +1911,23 @@ define handle_error() do
   $_error_behavior = "skip"
 end
 
+define handle_timeout() do
+  $err = "Timeout reached. Skipping item and continuing."
+  call task_label($err)
+  raise $err
+  $_timeout_behavior = "skip"
+end
+
+define task_label($label) do
+  $now = strftime(now(), "%Y/%m/%d %H:%M:%S")
+  if !$$label_log
+    $$label_log = "[" + $now + "] "+ $label
+  else
+    $$label_log = $$label_log + "\n" + "[" + $now + "] "+ $label
+  end
+  task_label($label)
+end
+
 ###############################################################################
 # Meta Policy [alpha]
 # Not intended to be modified or used by policy developers
@@ -1098,7 +1940,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do

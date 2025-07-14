@@ -1,5 +1,40 @@
 # Changelog
 
+## v7.0.2
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v7.0.1
+
+- Fixed bug with start action that was preventing "Enforce Schedules=No" from working correctly
+
+## v7.0.0
+
+- Added retry mechanism in case of failed actions or timeout waiting for the expected status change
+- Fixed issue preventing schedules being enforced when first action attempt fails
+- Added support for "Schedule Action Tag" to control scheduling behavior
+- Added "Last Stop Status", "Last Stop Time", "Last Start Status", "Last Start Time" details to instance list
+- Added "Enforce Schedules" capability to allow machines to be turned on/off outside their scheduled window
+
+## v6.1.0
+
+- Added email notifications for Start Action, Stop Action, and Errors
+
+## v6.0.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v6.0.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v6.0.0
+
+- Remove `next_stop`, `next_start` tag requirements
+- Add check after stop/start request to validate expected status change
+- Add task labels to improve status updates and debugging for CWF actions
+- Add error capture, graceful timeout handling for CWF actions
+
 ## v5.0
 
 - Added support for regex when filtering resources by tag

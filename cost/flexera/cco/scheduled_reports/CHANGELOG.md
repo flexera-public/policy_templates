@@ -1,5 +1,28 @@
 # Changelog
 
+## v4.0.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v4.0.0
+
+- Added option to ignore current month when reporting.
+- Added ability to select an arbitrary number of months (up to 12) instead of preselected options.
+
+## v3.5.2
+
+- Fixed a bug that prevented the policy incident from being created when `Billing Term` parameter was set to `Week`.
+
+## v3.5.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.5.0
+
+- Added parameter `Graph Dimension Value Count` to enable configuration of number of dimensions included in the report graph
+- Added `Percent Change from Previous Time Period`, `Daily Average Cost for Time Period`, and `Percent Change from Previous Time Period Daily Average` fields to the report
+- Added optional threshold parameters `Percent Change Threshold Value`, `Percent Change Consecutive Threshold`, `Percent Change Alert Metric`, and `Percent Change Alert Direction` to enable using this policy template for alerting use-cases and send the report only when the percent change in cost exceeds the configurable thresholds
+
 ## v3.4.1
 
 - Updated policy to use internal Flexera API for generating charts. Policy functionality is unchanged.

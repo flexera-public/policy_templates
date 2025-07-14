@@ -1,5 +1,25 @@
 # Changelog
 
+## v4.0.5
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v4.0.4
+
+- Policy template metadata modified so that it is no longer published in the catalog.
+
+## v4.0.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v4.0.2
+
+- Deprecated: This policy is no longer being updated. See README for more details.
+
+## v4.0.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v4.0
 
 - Added support for regex when filtering resources by tag

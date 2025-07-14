@@ -1,0 +1,220 @@
+name "ITAM License Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Produces a report of licenses stored in Flexera ITAM. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/itam/license_report) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/itam/license_report"
+category "Operational"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.1",
+  provider: "Flexera",
+  service: "IT Asset Management",
+  policy_set: "ITAM Report",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_itam_licenses" do
+  request do
+    run_script $js_itam_licenses, val($ds_flexera_api_hosts, "flexera"), rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "edition", jmes_path(col_item, "edition")
+      field "company", jmes_path(col_item, "company.name")
+      field "status", jmes_path(col_item, "status")
+      field "type", jmes_path(col_item, "type")
+      field "version", jmes_path(col_item, "version")
+      field "rules", jmes_path(col_item, "rules")
+      field "complianceStatus", jmes_path(col_item, "compliance.Status")
+      field "complianceAvailable", jmes_path(col_item, "compliance.availableEntitlementCount")
+      field "complianceConsumed", jmes_path(col_item, "compliance.consumedEntitlementCount")
+      field "compliancePurchased", jmes_path(col_item, "compliance.purchasedEntitlementCount")
+      field "restrictionsMaxCoreCount", jmes_path(col_item, "restrictions.maxCoreCount")
+      field "restrictionsMaxProcessorCount", jmes_path(col_item, "restrictions.maxProcessorCount")
+      field "restrictionsMaxSocketCount", jmes_path(col_item, "restrictions.maxSocketCount")
+      field "restrictionsMinProcessorCount", jmes_path(col_item, "restrictions.minProcessorCount")
+      field "applications" do
+        collect jmes_path(col_item, "applications[*]") do
+          field "category", jmes_path(col_item, "category")
+          field "classification", jmes_path(col_item, "classification")
+          field "company", jmes_path(col_item, "company.name")
+          field "edition", jmes_path(col_item, "edition")
+          field "product", jmes_path(col_item, "product")
+          field "version", jmes_path(col_item, "version")
+        end
+      end
+    end
+  end
+end
+
+script "js_itam_licenses", type: "javascript" do
+  parameters "flexera_api_host", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    host: flexera_api_host,
+    path: ["/fnms/v1/orgs/", rs_org_id, "/licenses"].join(''),
+    headers: { "User-Agent": "RS Policies" }
+  }
+EOS
+end
+
+datasource "ds_itam_licenses_report" do
+  run_script $js_itam_licenses_report, $ds_itam_licenses, $ds_applied_policy
+end
+
+script "js_itam_licenses_report", type: "javascript" do
+  parameters "ds_itam_licenses", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_itam_licenses, function(item) {
+    applications = _.map(item["applications"], function(app) {
+      return [ app["company"], app["product"], app["version"], app["edition"] ].join(' ')
+    })
+
+    return {
+      id: item["id"],
+      name: item["name"],
+      edition: item["edition"],
+      company: item["company"],
+      status: item["status"],
+      type: item["type"],
+      version: item["version"],
+      rules: JSON.stringify(item["rules"]),
+      applications: _.uniq(applications).join(', '),
+      policy_name: ds_applied_policy["name"],
+      message: ""
+    }
+  })
+
+  if (result.length > 0) {
+    result[0]["message"] = [ "Licenses Found: ", result.length.toString() ].join('')
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_itam_licenses_report" do
+  validate_each $ds_itam_licenses_report do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} ITAM Licenses Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    hash_exclude "message"
+    export do
+      resource_level true
+      field "id" do
+        label "ID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "company" do
+        label "Company"
+      end
+      field "edition" do
+        label "Edition"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "type" do
+        label "Type"
+      end
+      field "version" do
+        label "Version"
+      end
+      field "applications" do
+        label "Applications"
+      end
+      field "rules" do
+        label "Rules"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

@@ -1,5 +1,22 @@
 # Changelog
 
+## v3.1.3
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v3.1.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.1.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v3.1.0
+
+- Improved policy execution speed by batching CloudWatch requests.
+- Fixed issue where policy execution would fail when trying to retrieve bucket regions.
+
 ## v3.0
 
 - Several parameters altered to be more descriptive and human-readable

@@ -3,38 +3,55 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Looks for machines that are active but haven't checked in and sends the result as an email.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/fnms/missing_active_machines/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/fnms/missing_active_machines/"
 severity "medium"
 category "Compliance"
 default_frequency "weekly"
 
 info(
-  version: "2.4",
+  version: "2.4.3",
   provider: "Flexera",
   service: "IT Asset Management",
-  policy_set: "IT Asset Management"
+  policy_set: "IT Asset Management",
+  hide_skip_approvals: "true"
 )
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
 
 parameter "param_days_missing" do
   type "number"
+  category "Policy Settings"
   label "Days missing while active"
   description "Number of missing for a machine to be reported"
   default 30
 end
 
-parameter "param_email" do
-  type "list"
-  label "Email addresses of the recipients you wish to notify"
-  description "A list of email addresse(s) to notify"
-end
+###############################################################################
+# Authentication
+###############################################################################
 
 credentials "auth_flexeraone" do
   schemes "oauth2"
   label "flexera"
-  description "Select FlexeraOne OAuth2 credentials"
+  description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
 
-pagination "itam_pagination" do
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_itam" do
   get_page_marker do
     body_path jq(response, "if .total == 0 then null else .offset + 10000 end")
   end
@@ -43,16 +60,20 @@ pagination "itam_pagination" do
   end
 end
 
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
 datasource "ds_inventories" do
   request do
     auth $auth_flexeraone
+    pagination $pagination_itam
     host join(["api.", get(1, split(f1_app_host, "app."))])
     path join(["/fnms/v1/orgs/", rs_org_id, "/inventories"])
-    header "Api-Version", "0.1"
-    header "User-Agent", "RS Policies"
     query "status", "Active"
     query "limit", "10000"
-    pagination $itam_pagination
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
   end
 end
 
@@ -79,11 +100,15 @@ script "js_check_date", type: "javascript" do
 EOF
 end
 
-policy 'itam_policy' do
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_itam" do
   validate_each $ds_check_date do
-    summary_template 'ITAM - Missing active machines'
-    escalate $send_report
-    check eq(to_n(val(item,"missing")),0)
+    summary_template "ITAM - Missing active machines"
+    check eq(to_n(val(item, "missing")), 0)
+    escalate $esc_send_report
     export do
       field "name"
       field "serialNumber"
@@ -111,7 +136,11 @@ policy 'itam_policy' do
   end
 end
 
-escalation "send_report" do
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_send_report" do
   automatic true
   label "Send Email"
   description "Send incident email"

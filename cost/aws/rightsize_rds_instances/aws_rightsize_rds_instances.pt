@@ -3,15 +3,17 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Checks for RDS instances that have inefficient utilization for a user-specified number of days and downsizes or deletes them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances"
 severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.3.1",
+  version: "5.8.2",
   provider: "AWS",
   service: "RDS",
   policy_set: "Rightsize Database Instances",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -41,6 +43,15 @@ parameter "param_min_savings" do
   description "Minimum potential savings required to generate a recommendation."
   min_value 0
   default 0
+end
+
+parameter "param_downsize_multiple" do
+  type "string"
+  category "Policy Settings"
+  label "Skip Instance Sizes"
+  description "Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -175,7 +186,7 @@ datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
     host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies", switch(policy_id, join(["/", policy_id]), "")])
     header "Api-Version", "1.0"
   end
 end
@@ -208,14 +219,97 @@ script "js_flexera_api_hosts", type: "javascript" do
 EOS
 end
 
-# Get AWS RDS instance sizes
-datasource "ds_aws_instance_size_map" do
+# RDS Engine Table
+# For converting response from AWS to what's in the price list
+datasource "ds_aws_rds_engine_table" do
+  run_script $js_aws_rds_engine_table
+end
+
+script "js_aws_rds_engine_table", type: "javascript" do
+  result "result"
+  code <<-'EOS'
+  result = {
+    "mysql": "MySQL",
+    "aurora-mysql": "Aurora MySQL",
+    "aurora-postgresql": "Aurora PostgreSQL",
+    "postgres": "PostgreSQL",
+    "mariadb": "MariaDB",
+    "oracle-ee": "Oracle",
+    "oracle-ee-cdb": "Oracle",
+    "oracle-se2": "Oracle",
+    "oracle-se2-cdb": "Oracle",
+    "custom-oracle-ee": "Oracle",
+    "custom-oracle-ee-cdb": "Oracle",
+    "custom-oracle-se2": "Oracle",
+    "custom-oracle-se2-cdb": "Oracle",
+    "sqlserver-ee": "SQL Server",
+    "sqlserver-se": "SQL Server",
+    "sqlserver-ex": "SQL Server",
+    "sqlserver-web": "SQL Server"
+  }
+EOS
+end
+
+# Get AWS RDS instance prices
+datasource "ds_aws_rds_cost_map" do
   request do
-    verb "GET"
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/aws/aws_rds_pricing.json"
     header "User-Agent", "RS Policies"
   end
+end
+
+# Get AWS RDS instance sizes
+datasource "ds_aws_instance_types" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_aws_instance_type_map" do
+  run_script $js_aws_instance_type_map, $ds_aws_instance_types
+end
+
+script "js_aws_instance_type_map", type: "javascript" do
+  parameters "ds_aws_instance_types"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  _.each(ds_aws_instance_types, function(entry) { result[entry["name"]] = entry })
+EOS
+end
+
+datasource "ds_aws_instance_types_by_family" do
+  run_script $js_aws_instance_types_by_family, $ds_aws_instance_types
+end
+
+script "js_aws_instance_types_by_family", type: "javascript" do
+  parameters "ds_aws_instance_types"
+  result "result"
+  code <<-'EOS'
+  result = { all: [].concat(ds_aws_instance_types) }
+
+  result["all"] = _.sortBy(result["all"], function(type) {
+    return type['memory'] && type['memory']['sizeInMiB'] ? type['memory']['sizeInMiB'] : 99999999
+  })
+
+  result["all"] = _.sortBy(result["all"], function(type) {
+    return type['cpu'] && type['cpu']['cores'] ? type['cpu']['cores'] : 9999
+  })
+
+  _.each(ds_aws_instance_types, function(type) {
+    if (result[type['family']] == undefined) { result[type['family']] = [] }
+    result[type['family']].push(type)
+  })
+
+  _.each(_.keys(result), function(family) {
+    result[family] = _.sortBy(result[family], function(type) {
+      return type['size_rank'] ? type['size_rank'] : 99999999
+    })
+  })
+EOS
 end
 
 # Get AWS account info
@@ -239,7 +333,6 @@ end
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
-    verb "GET"
     host "sts.amazonaws.com"
     path "/"
     query "Action", "GetCallerIdentity"
@@ -371,7 +464,20 @@ end
 
 datasource "ds_instance_costs" do
   request do
-    run_script $js_instance_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+    run_script $js_instance_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host, "all"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "id", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_blended_adj")
+    end
+  end
+end
+
+datasource "ds_instance_costs_instanceusage" do
+  request do
+    run_script $js_instance_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host, "instanceusage"
   end
   result do
     encoding "json"
@@ -383,7 +489,7 @@ datasource "ds_instance_costs" do
 end
 
 script "js_instance_costs", type:"javascript" do
-  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host", "instanceusage_filter"
   result "request"
   code <<-EOS
   start_date = new Date()
@@ -420,6 +526,9 @@ script "js_instance_costs", type:"javascript" do
             "type": "equal",
             "value": ds_aws_account['id']
           }
+          // Do not filter on usage types
+          // For idle resources that are terminates -- all usage types can be considered savings
+          // For underutilized resources that are downsized -- only "InstanceUsage" can be considered for savings calculation (not DataTransfer, PIOPS, etc..)
         ]
       }
     },
@@ -429,15 +538,24 @@ script "js_instance_costs", type:"javascript" do
     },
     ignore_status: [400]
   }
+  // If instanceusage_filter is set to "instanceusage", filter the request to only include RDS:InstanceUsage usage type
+  if (instanceusage_filter == "instanceusage") {
+    request.body_fields.filter.expressions.push({
+      "dimension": "usage_type",
+      "type": "substring",
+      "substring": "InstanceUsage",
+      "caseInsensitive": true
+    })
+  }
 EOS
 end
 
 datasource "ds_instance_costs_grouped" do
-  run_script $js_instance_costs_grouped, $ds_instance_costs
+  run_script $js_instance_costs_grouped, $ds_instance_costs, $ds_instance_costs_instanceusage
 end
 
 script "js_instance_costs_grouped", type: "javascript" do
-  parameters "ds_instance_costs"
+  parameters "ds_instance_costs", "ds_instance_costs_instanceusage"
   result "result"
   code <<-EOS
   // Multiple a single day's cost by the average number of days in a month.
@@ -445,21 +563,38 @@ script "js_instance_costs_grouped", type: "javascript" do
   cost_multiplier = 365.25 / 12
 
   // Group cost data by resourceId for later use
-  result = {}
+  allusage = {}
+  instanceusage = {}
 
+  // Loop through and generate total costs for each instance
   _.each(ds_instance_costs, function(item) {
     id = item['id'].toLowerCase()
 
-    if (result[id] == undefined) { result[id] = 0.0 }
-    result[id] += item['cost'] * cost_multiplier
+    if (allusage[id] == undefined) {
+      allusage[id] = 0.0
+      instanceusage[id] = 0.0
+    }
+    allusage[id] += item['cost'] * cost_multiplier
   })
+  // Now loop through the InstanceUsage costs to get just InstanceUsage costs for each instance
+  _.each(ds_instance_costs_instanceusage, function(item) {
+    id = item['id'].toLowerCase()
+
+    if (instanceusage[id] == undefined) {
+      instanceusage[id] = 0.0
+    }
+    instanceusage[id] += item['cost'] * cost_multiplier
+  })
+  var result = {
+    "allusage": allusage,
+    "instanceusage": instanceusage
+  }
 EOS
 end
 
 datasource "ds_describe_regions" do
   request do
     auth $auth_aws
-    verb "GET"
     host "ec2.amazonaws.com"
     path "/"
     query "Action", "DescribeRegions"
@@ -515,6 +650,7 @@ datasource "ds_rds_instances_set" do
       field "privateDnsName", xpath(col_item, "Endpoint/Address")
       field "databaseEngine", xpath(col_item, "Engine")
       field "engineVersion", xpath(col_item, "EngineVersion")
+      field "multiAZ", xpath(col_item, "MultiAZ")
       field "availabilityZone", xpath(col_item, "AvailabilityZone")
       field "licenseModel", xpath(col_item, "LicenseModel")
       field "processorFeatures" do
@@ -542,7 +678,6 @@ script "js_rds_instances_set", type: "javascript" do
   var request = {
     auth: "auth_aws",
     host: "rds." + region + ".amazonaws.com",
-    verb: "GET",
     path: "/",
     headers: {
       "User-Agent": "RS Policies",
@@ -585,7 +720,6 @@ script "js_resource_tags", type: "javascript" do
   var request = {
     auth: "auth_aws",
     host: "rds." + region + ".amazonaws.com",
-    verb: "GET",
     path: "/",
     headers: {
       "User-Agent": "RS Policies",
@@ -601,11 +735,11 @@ EOS
 end
 
 datasource "ds_rds_instances" do
-  run_script $js_rds_instances, $ds_rds_instances_set, $ds_resource_tags, $ds_aws_instance_size_map, $param_exclusion_tags, $param_exclusion_tags_boolean
+  run_script $js_rds_instances, $ds_rds_instances_set, $ds_resource_tags, $ds_aws_instance_type_map, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_rds_instances", type: "javascript" do
-  parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_instance_size_map", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_instance_type_map", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-EOS
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -655,77 +789,82 @@ script "js_rds_instances", type: "javascript" do
   result = []
 
   _.each(ds_rds_instances_set, function(instance) {
-    id = instance['instanceId'].toLowerCase()
+    if (instance['resourceType'] != 'db.serverless') {
+      id = instance['instanceId'].toLowerCase()
 
-    resource_tags = {}
-    if (tag_object[id] != undefined) { resource_tags = tag_object[id] }
+      resource_tags = {}
+      if (tag_object[id] != undefined) { resource_tags = tag_object[id] }
 
-    // Store a list of found tags
-    found_tags = []
+      // Store a list of found tags
+      found_tags = []
 
-    _.each(comparators, function(comparator) {
-      comparison = comparator['comparison']
-      value = comparator['value']
-      string = comparator['string']
-      resource_tag = resource_tags[comparator['key']]
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
 
-      if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
-      if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
-      if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
 
-      if (comparison == '=~') {
-        if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
-      }
-
-      if (comparison == '!~') {
-        if (resource_tag == undefined) { found_tags.push(string) }
-        if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
-      }
-    })
-
-    all_tags_found = found_tags.length == comparators.length
-    any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
-
-    if ((!any_tags_found && !all_tags_found) || param_exclusion_tags.length == 0) {
-      tag_string = []
-
-      _.each(Object.keys(resource_tags), function(key) {
-        tag_string.push(key + '=' + resource_tags[key])
-      })
-
-      tag_string = tag_string.join(', ')
-
-      vcpus = null
-
-      if (instance["processorFeatures"] != null && instance["processorFeatures"] != undefined) {
-        cores = _.findWhere(instance["processorFeatures"], { "name": "coreCount" })
-        threads = _.findWhere(instance["processorFeatures"], { "name": "threadsPerCore" })
-
-        if (cores != undefined && threads != undefined) {
-          vcpus = cores["value"] * threads["value"]
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
         }
-      }
 
-      if (vcpus == null && ds_aws_instance_size_map[instance["resourceType"]] != undefined) {
-        vcpus = ds_aws_instance_size_map[instance["resourceType"]]["vcpu"]
-      }
-
-      result.push({
-        instanceId: instance['instanceId'],
-        instanceArn: instance['instanceArn'],
-        resourceType: instance['resourceType'],
-        name: instance['name'],
-        status: instance['status'],
-        databaseEngine: instance['databaseEngine'],
-        engineVersion: instance['engineVersion'],
-        privateDnsName: instance['privateDnsName'],
-        region: instance['region'],
-        availabilityZone: instance['availabilityZone'],
-        licenseModel: instance['licenseModel'],
-        processorFeatures: instance['processorFeatures'],
-        vcpus: vcpus,
-        tags: tag_string
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
       })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      if ((!any_tags_found && !all_tags_found) || param_exclusion_tags.length == 0) {
+        tag_string = []
+
+        _.each(_.keys(resource_tags), function(key) {
+          tag_string.push(key + '=' + resource_tags[key])
+        })
+
+        tag_string = tag_string.join(', ')
+
+        vcpus = null
+
+        if (instance["processorFeatures"] != null && instance["processorFeatures"] != undefined) {
+          cores = _.findWhere(instance["processorFeatures"], { "name": "coreCount" })
+          threads = _.findWhere(instance["processorFeatures"], { "name": "threadsPerCore" })
+
+          if (cores != undefined && threads != undefined) {
+            vcpus = cores["value"] * threads["value"]
+          }
+        }
+
+        type_metadata = ds_aws_instance_type_map[instance["resourceType"]]
+
+        if (vcpus == null && type_metadata && type_metadata["cpu"] && type_metadata["cpu"]["vcpus"]) {
+          vcpus = type_metadata["cpu"]["vcpus"]
+        }
+
+        result.push({
+          instanceId: instance['instanceId'],
+          instanceArn: instance['instanceArn'],
+          resourceType: instance['resourceType'],
+          name: instance['name'],
+          status: instance['status'],
+          databaseEngine: instance['databaseEngine'],
+          engineVersion: instance['engineVersion'],
+          privateDnsName: instance['privateDnsName'],
+          region: instance['region'],
+          multiAZ: instance['multiAZ'].toString() == "true" ? true : false,
+          availabilityZone: instance['availabilityZone'],
+          licenseModel: instance['licenseModel'],
+          processorFeatures: instance['processorFeatures'],
+          vcpus: vcpus,
+          tags: tag_string
+        })
+      }
     }
   })
 EOS
@@ -755,7 +894,7 @@ script "js_cloudwatch_idle_queries", type: "javascript" do
   code <<-EOS
   queries = {}
   metric = "DatabaseConnections"
-  statistic = "Average"
+  statistic = "Sum"
   lookback = param_stats_lookback * 86400
 
   _.each(ds_rds_instances_to_check, function(resource) {
@@ -795,7 +934,7 @@ script "js_cloudwatch_idle_queries", type: "javascript" do
 
   chunk_size = 500
 
-  _.each(Object.keys(queries), function(region) {
+  _.each(_.keys(queries), function(region) {
     for (i = 0; i < queries[region].length; i += chunk_size) {
       chunk = queries[region].slice(i, i + chunk_size)
 
@@ -862,97 +1001,199 @@ script "js_cloudwatch_idle_data", type: "javascript" do
 EOS
 end
 
-datasource "ds_rds_idle_instances" do
-  run_script $js_rds_idle_instances, $ds_rds_instances_to_check, $ds_cloudwatch_idle_data, $ds_instance_costs_grouped
+datasource "ds_rds_instances_with_connections" do
+  run_script $js_rds_instances_with_connections, $ds_rds_instances_to_check, $ds_cloudwatch_idle_data, $param_stats_lookback
 end
 
-script "js_rds_idle_instances", type: "javascript" do
-  parameters "ds_rds_instances_to_check", "ds_cloudwatch_idle_data", "ds_instance_costs_grouped"
+script "js_rds_instances_with_connections", type: "javascript" do
+  parameters "ds_rds_instances_to_check", "ds_cloudwatch_idle_data", "param_stats_lookback"
   result "result"
   code <<-EOS
-  result = []
   cloudwatch_activity = {}
 
   _.each(ds_cloudwatch_idle_data, function(item) {
     instance_name = item['label'].split(' ')[0].toLowerCase()
 
-    if (cloudwatch_activity[instance_name] == undefined) {
-      cloudwatch_activity[instance_name] = 0
-    }
+    if (cloudwatch_activity[instance_name] == undefined) { cloudwatch_activity[instance_name] = 0 }
 
     if (typeof(item['values']) == 'object') {
-      _.each(item['values'], function(value) {
-        cloudwatch_activity[instance_name] += value
-      })
+      _.each(item['values'], function(value) { cloudwatch_activity[instance_name] += value })
     }
   })
 
-  _.each(ds_rds_instances_to_check, function(instance) {
+  result = _.map(ds_rds_instances_to_check, function(instance) {
     cloudwatch_name = instance['name'].toLowerCase()
     instance_activity = cloudwatch_activity[cloudwatch_name]
+    if (instance_activity == undefined) { instance_activity = 0 }
+
+    new_instance = {}
+    _.each(_.keys(instance), function(key) { new_instance[key] = instance[key] })
+
+    new_instance['connectionsTotal'] = instance_activity
+    new_instance['connectionsAverage'] = instance_activity / param_stats_lookback
+
+    return new_instance
+  })
+EOS
+end
+
+datasource "ds_rds_idle_instances" do
+  run_script $js_rds_idle_instances, $ds_rds_instances_with_connections, $ds_instance_costs_grouped
+end
+
+script "js_rds_idle_instances", type: "javascript" do
+  parameters "ds_rds_instances_with_connections", "ds_instance_costs_grouped"
+  result "result"
+  code <<-EOS
+  idle_instances = _.filter(ds_rds_instances_with_connections, function(instance) {
+    return instance['connectionsTotal'] == 0
+  })
+
+  result = _.map(idle_instances, function(instance) {
+    new_instance = {}
+    _.each(_.keys(instance), function(key) { new_instance[key] = instance[key] })
+
     savings_name = "db:" + instance['name'].toLowerCase()
-    savings = 0.0
+    new_instance['savings'] = 0.0
 
-    if (typeof(ds_instance_costs_grouped[savings_name]) == 'number') {
-      savings = ds_instance_costs_grouped[savings_name]
+    if (ds_instance_costs_grouped.allusage && typeof(ds_instance_costs_grouped.allusage[savings_name]) == 'number') {
+      new_instance['savings'] = ds_instance_costs_grouped.allusage[savings_name]
     }
 
-    if (instance_activity == undefined || instance_activity == 0) {
-      result.push({
-        instanceId: instance['instanceId'],
-        instanceArn: instance['instanceArn'],
-        resourceType: instance['resourceType'],
-        name: instance['name'],
-        status: instance['status'],
-        databaseEngine: instance['databaseEngine'],
-        engineVersion: instance['engineVersion'],
-        privateDnsName: instance['privateDnsName'],
-        region: instance['region'],
-        tags: instance['tags'],
-        availabilityZone: instance['availabilityZone'],
-        licenseModel: instance['licenseModel'],
-        processorFeatures: instance['processorFeatures'],
-        vcpus: instance['vcpus'],
-        savings: savings,
-        instance_activity: instance_activity
-      })
-    }
+    return new_instance
   })
 EOS
 end
 
 # Filter for instances already determined to be idle to avoid unnecessary CloudWatch queries
 datasource "ds_rds_nonidle_instances" do
-  run_script $js_rds_nonidle_instances, $ds_rds_instances, $ds_rds_idle_instances, $param_unused_or_underutilized
+  run_script $js_rds_nonidle_instances, $ds_rds_instances, $ds_rds_instances_with_connections, $ds_rds_idle_instances, $param_unused_or_underutilized
 end
 
 script "js_rds_nonidle_instances", type: "javascript" do
-  parameters "ds_rds_instances", "ds_rds_idle_instances", "param_unused_or_underutilized"
+  parameters "ds_rds_instances", "ds_rds_instances_with_connections", "ds_rds_idle_instances", "param_unused_or_underutilized"
   result "result"
   code <<-EOS
   result = []
 
-  if (param_unused_or_underutilized != "Unused") {
+  if (param_unused_or_underutilized == "Underutilized") {
+    result = ds_rds_instances
+  }
+
+  if (param_unused_or_underutilized == "Unused & Underutilized") {
     idle_resources = _.pluck(ds_rds_idle_instances, 'instanceId')
 
-    result = _.reject(ds_rds_instances, function(instance) {
+    result = _.reject(ds_rds_instances_with_connections, function(instance) {
       return _.contains(idle_resources, instance['instanceId'])
     })
   }
 EOS
 end
 
-datasource "ds_cloudwatch_underutil_queries" do
-  run_script $js_cloudwatch_underutil_queries, $ds_rds_nonidle_instances, $param_stats_lookback
+datasource "ds_cloudwatch_underutil_cpu_queries" do
+  run_script $js_create_cloudwatch_underutil_queries, $ds_rds_nonidle_instances, $param_stats_lookback, "CPUUtilization", "extended"
 end
 
-script "js_cloudwatch_underutil_queries", type: "javascript" do
-  parameters "ds_rds_nonidle_instances", "param_stats_lookback"
+datasource "ds_cloudwatch_underutil_cpu_data" do
+  iterate $ds_cloudwatch_underutil_cpu_queries
+  request do
+    run_script $js_get_cloudwatch_underutil_data, val(iter_item, "region"), val(iter_item, "MetricDataQueries")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_underutil_cpu_sorted" do
+  run_script $js_sort_cloudwatch_underutil_data, $ds_cloudwatch_underutil_cpu_data
+end
+
+datasource "ds_cloudwatch_underutil_mem_queries" do
+  run_script $js_create_cloudwatch_underutil_queries, $ds_rds_nonidle_instances, $param_stats_lookback, "FreeableMemory", "simple"
+end
+
+datasource "ds_cloudwatch_underutil_mem_data" do
+  iterate $ds_cloudwatch_underutil_mem_queries
+  request do
+    run_script $js_get_cloudwatch_underutil_data, val(iter_item, "region"), val(iter_item, "MetricDataQueries")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_underutil_mem_sorted" do
+  run_script $js_sort_cloudwatch_underutil_data, $ds_cloudwatch_underutil_mem_data
+end
+
+datasource "ds_cloudwatch_underutil_netin_queries" do
+  run_script $js_create_cloudwatch_underutil_queries, $ds_rds_nonidle_instances, $param_stats_lookback, "NetworkReceiveThroughput", "simple"
+end
+
+datasource "ds_cloudwatch_underutil_netin_data" do
+  iterate $ds_cloudwatch_underutil_netin_queries
+  request do
+    run_script $js_get_cloudwatch_underutil_data, val(iter_item, "region"), val(iter_item, "MetricDataQueries")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_underutil_netin_sorted" do
+  run_script $js_sort_cloudwatch_underutil_data, $ds_cloudwatch_underutil_netin_data
+end
+
+datasource "ds_cloudwatch_underutil_netout_queries" do
+  run_script $js_create_cloudwatch_underutil_queries, $ds_rds_nonidle_instances, $param_stats_lookback, "NetworkTransmitThroughput", "simple"
+end
+
+datasource "ds_cloudwatch_underutil_netout_data" do
+  iterate $ds_cloudwatch_underutil_netout_queries
+  request do
+    run_script $js_get_cloudwatch_underutil_data, val(iter_item, "region"), val(iter_item, "MetricDataQueries")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_underutil_netout_sorted" do
+  run_script $js_sort_cloudwatch_underutil_data, $ds_cloudwatch_underutil_netout_data
+end
+
+script "js_create_cloudwatch_underutil_queries", type: "javascript" do
+  parameters "ds_rds_nonidle_instances", "param_stats_lookback", "metric", "stat_set"
   result "result"
   code <<-EOS
   queries = {}
-  metric = "CPUUtilization"
-  statistics = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
+  statistics = [ "Average", "Minimum", "Maximum" ]
+  if (stat_set == "extended") { statistics = [ "Average", "Minimum", "Maximum", "p99", "p95", "p90" ] }
+
   lookback = param_stats_lookback * 86400
 
   _.each(ds_rds_nonidle_instances, function(resource) {
@@ -994,7 +1235,7 @@ script "js_cloudwatch_underutil_queries", type: "javascript" do
 
   chunk_size = 500
 
-  _.each(Object.keys(queries), function(region) {
+  _.each(_.keys(queries), function(region) {
     for (i = 0; i < queries[region].length; i += chunk_size) {
       chunk = queries[region].slice(i, i + chunk_size)
 
@@ -1007,23 +1248,7 @@ script "js_cloudwatch_underutil_queries", type: "javascript" do
 EOS
 end
 
-datasource "ds_cloudwatch_underutil_data" do
-  iterate $ds_cloudwatch_underutil_queries
-  request do
-    run_script $js_cloudwatch_underutil_data, val(iter_item, "region"), val(iter_item, "MetricDataQueries")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "MetricDataResults[*]") do
-      field "region", val(iter_item, "region")
-      field "id", jmes_path(col_item, "Id")
-      field "label", jmes_path(col_item, "Label")
-      field "values", jmes_path(col_item, "Values")
-    end
-  end
-end
-
-script "js_cloudwatch_underutil_data", type: "javascript" do
+script "js_get_cloudwatch_underutil_data", type: "javascript" do
   parameters "region", "MetricDataQueries"
   result "request"
   code <<-EOS
@@ -1061,19 +1286,15 @@ script "js_cloudwatch_underutil_data", type: "javascript" do
 EOS
 end
 
-datasource "ds_cloudwatch_underutil_sorted" do
-  run_script $js_cloudwatch_underutil_sorted, $ds_cloudwatch_underutil_data
-end
-
-script "js_cloudwatch_underutil_sorted", type: "javascript" do
-  parameters "ds_cloudwatch_underutil_data"
+script "js_sort_cloudwatch_underutil_data", type: "javascript" do
+  parameters "gathered_data"
   result "result"
   code <<-EOS
   // Sort the CloudWatch data into an object with keys for regions and instance names.
   // This eliminates the need to "double loop" later on to match it with our instances list.
   result = {}
 
-  _.each(ds_cloudwatch_underutil_data, function(item) {
+  _.each(gathered_data, function(item) {
     region = item['region']
 
     // Metric name is always the last item in the id
@@ -1096,11 +1317,11 @@ EOS
 end
 
 datasource "ds_rds_nonidle_instances_with_metrics" do
-  run_script $js_rds_nonidle_instances_with_metrics, $ds_rds_nonidle_instances, $ds_cloudwatch_underutil_sorted, $ds_instance_costs_grouped, $ds_aws_instance_size_map
+  run_script $js_rds_nonidle_instances_with_metrics, $ds_rds_nonidle_instances, $ds_cloudwatch_underutil_cpu_sorted, $ds_cloudwatch_underutil_mem_sorted, $ds_cloudwatch_underutil_netin_sorted, $ds_cloudwatch_underutil_netout_sorted
 end
 
 script "js_rds_nonidle_instances_with_metrics", type: "javascript" do
-  parameters "ds_rds_nonidle_instances", "ds_cloudwatch_underutil_sorted", "ds_instance_costs_grouped", "ds_aws_instance_size_map"
+  parameters "ds_rds_nonidle_instances", "ds_cloudwatch_underutil_cpu_sorted", "ds_cloudwatch_underutil_mem_sorted", "ds_cloudwatch_underutil_netin_sorted", "ds_cloudwatch_underutil_netout_sorted"
   result "result"
   code <<-EOS
   // Merge original instance list with cloudwatch data into a single list
@@ -1108,95 +1329,166 @@ script "js_rds_nonidle_instances_with_metrics", type: "javascript" do
 
   _.each(ds_rds_nonidle_instances, function(instance) {
     region = instance['region']
-    id = instance['instanceId']
     cloudwatch_name = instance['name'].toLowerCase()
-    resourceType = instance['resourceType']
-    newResourceType = null
-
-    if (typeof(ds_aws_instance_size_map[resourceType]) == 'object') {
-      newResourceType = ds_aws_instance_size_map[resourceType]["down"]
-    }
 
     // Only proceed if the CloudWatch data actually has the region and instance id.
-    // Otherwise, we have no usage data on the instance and thus dont include it in the results.
-    if (ds_cloudwatch_underutil_sorted[region] != undefined) {
-      if (ds_cloudwatch_underutil_sorted[region][cloudwatch_name] != undefined) {
-        instance_metrics = ds_cloudwatch_underutil_sorted[region][cloudwatch_name]
+    // Otherwise, we have no usage data on the instance and don't include it in the results.
+    if (ds_cloudwatch_underutil_cpu_sorted[region] && ds_cloudwatch_underutil_cpu_sorted[region][cloudwatch_name]) {
+      instance_cpu_metrics = ds_cloudwatch_underutil_cpu_sorted[region][cloudwatch_name]
+      instance_mem_metrics = ds_cloudwatch_underutil_mem_sorted[region][cloudwatch_name]
+      instance_netin_metrics = ds_cloudwatch_underutil_netin_sorted[region][cloudwatch_name]
+      instance_netout_metrics = ds_cloudwatch_underutil_netout_sorted[region][cloudwatch_name]
 
-        savings = 0.0
+      // Create object we're going to return
+      merged_instance = {}
+      _.each(_.keys(instance), function(key) { merged_instance[key] = instance[key] })
 
-        if (typeof(newResourceType) == 'string') {
-          cost_name = "db:" + instance['name'].toLowerCase()
-          cost = 0.0
+      // Grab usage data for the instance if it is present.
+      // Note: We don't simply name them the same as Cloudwatch does because
+      // prior versions of this policy also didn't, and we want to ensure
+      // that exported incident data looks the same as it used to.
+      cpu_stats_list = [ "Average", "Minimum", "Maximum", "p99", "p95", "p90" ]
 
-          if (typeof(ds_instance_costs_grouped[cost_name]) == 'number') {
-            cost = ds_instance_costs_grouped[cost_name]
-          }
+      _.each(cpu_stats_list, function(stat) {
+        incident_statname = "cpu" + "_" + stat.toLowerCase()
 
-          cost_per_nfu = cost / ds_aws_instance_size_map[resourceType]['nfu']
+        merged_instance[incident_statname] = null
 
-          new_cost = cost_per_nfu * ds_aws_instance_size_map[newResourceType]['nfu']
-          savings = cost - new_cost
+        if (typeof(instance_cpu_metrics[stat]) == 'number') {
+          merged_instance[incident_statname] = Math.round(instance_cpu_metrics[stat] * 100) / 100
         }
+      })
 
-        // Create object we're going to return
-        merged_instance = {
-          instanceId: instance['instanceId'],
-          instanceArn: instance['instanceArn'],
-          resourceType: instance['resourceType'],
-          name: instance['name'],
-          status: instance['status'],
-          databaseEngine: instance['databaseEngine'],
-          engineVersion: instance['engineVersion'],
-          privateDnsName: instance['privateDnsName'],
-          region: instance['region'],
-          tags: instance['tags'],
-          availabilityZone: instance['availabilityZone'],
-          licenseModel: instance['licenseModel'],
-          processorFeatures: instance['processorFeatures'],
-          vcpus: instance['vcpus'],
-          savings: savings,
-          newResourceType: newResourceType
+      mem_stats_list = [ "Average", "Minimum", "Maximum" ]
+
+      _.each(mem_stats_list, function(stat) {
+        incident_statname = "mem" + "_" + stat.toLowerCase()
+
+        merged_instance[incident_statname] = null
+
+        if (typeof(instance_mem_metrics[stat]) == 'number') {
+          merged_instance[incident_statname] = Math.round(instance_mem_metrics[stat] / 1024 / 1024 * 100) / 100
         }
+      })
 
-        // Grab usage data for the instance if it is present.
-        // Note: We don't simply name them the same as Cloudwatch does because
-        // prior versions of this policy also didn't, and we want to ensure
-        // that exported incident data looks the same as it used to.
-        stats_list = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
+      netin_stats_list = [ "Average", "Minimum", "Maximum" ]
 
-        _.each(stats_list, function(stat) {
-          incident_statname = "cpu" + "_" + stat.toLowerCase()
+      _.each(netin_stats_list, function(stat) {
+        incident_statname = "netin" + "_" + stat.toLowerCase()
 
-          merged_instance[incident_statname] = null
+        merged_instance[incident_statname] = null
 
-          if (typeof(instance_metrics[stat]) == 'number') {
-            merged_instance[incident_statname] = Number(instance_metrics[stat].toFixed(2))
-          }
-        })
+        if (typeof(instance_netin_metrics[stat]) == 'number') {
+          merged_instance[incident_statname] = Math.round(instance_netin_metrics[stat] * 100) / 100
+        }
+      })
 
-        // Send the instance information with the CloudWatch data into the final result.
-        // Also adds in the account ID and currency symbol since itll be needed for the incident.
-        result.push(merged_instance)
-      }
+      netout_stats_list = [ "Average", "Minimum", "Maximum" ]
+
+      _.each(netout_stats_list, function(stat) {
+        incident_statname = "netout" + "_" + stat.toLowerCase()
+
+        merged_instance[incident_statname] = null
+
+        if (typeof(instance_netout_metrics[stat]) == 'number') {
+          merged_instance[incident_statname] = Math.round(instance_netout_metrics[stat] * 100) / 100
+        }
+      })
+
+      // Send the instance information with the CloudWatch data into the final result.
+      // Also adds in the account ID and currency symbol since itll be needed for the incident.
+      result.push(merged_instance)
     }
   })
 EOS
 end
 
 datasource "ds_rds_underutil_instances" do
-  run_script $js_rds_underutil_instances, $ds_rds_nonidle_instances_with_metrics, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value
+  run_script $js_rds_underutil_instances, $ds_rds_nonidle_instances_with_metrics, $ds_aws_instance_type_map, $ds_aws_instance_types_by_family, $ds_instance_costs_grouped, $ds_aws_rds_engine_table, $ds_aws_rds_cost_map, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value, $param_downsize_multiple
 end
 
 script "js_rds_underutil_instances", type: "javascript" do
-  parameters "ds_rds_nonidle_instances_with_metrics", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value"
+  parameters "ds_rds_nonidle_instances_with_metrics", "ds_aws_instance_type_map", "ds_aws_instance_types_by_family", "ds_instance_costs_grouped", "ds_aws_rds_engine_table", "ds_aws_rds_cost_map", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value", "param_downsize_multiple"
   result "result"
   code <<-'EOS'
-  // Filter above list to just underutilized instances
-  result = _.filter(ds_rds_nonidle_instances_with_metrics, function(instance) {
+  result = []
+
+  // Function to find the index of a resource type in a list
+  // This is so we can easily go up and down.
+  // If a type has an index of 5, we know 4 is the next size down.
+  function findTypeIndex(type_list, name) {
+    type_index = null
+
+    _.each(type_list, function(type, index) {
+      if (type_index == null && type['name'] == name) { type_index = index }
+    })
+
+    return type_index
+  }
+
+  _.each(ds_rds_nonidle_instances_with_metrics, function(instance) {
+    resourceType = instance['resourceType']
+    if (resourceType.substring(0, 3) == "db.") { resourceType = resourceType.substring(3) }
+
+    family = resourceType.split('.')[0]
+    typeIndex = null
+    if (ds_aws_instance_types_by_family[family]) { typeIndex = findTypeIndex(ds_aws_instance_types_by_family[family], resourceType) }
+
     cpu_value = instance['cpu_' + param_stats_threshold.toLowerCase()]
-    cpu_undertilized = cpu_value < param_stats_underutil_threshold_cpu_value || cpu_value == null
-    return cpu_undertilized && typeof(instance['newResourceType']) == 'string'
+    if (typeof(cpu_value) != 'number') { cpu_value = 0 }
+
+    if (typeIndex != 0 && cpu_value < param_stats_underutil_threshold_cpu_value && ds_aws_instance_type_map[resourceType]) {
+      typeIndex = typeIndex - 1
+      newResourceType = ds_aws_instance_types_by_family[family][typeIndex]["name"]
+
+      if (param_downsize_multiple == "Yes") {
+        while (typeIndex != 0 && cpu_value * 2 < param_stats_underutil_threshold_cpu_value) {
+          cpu_value = cpu_value * 2
+          typeIndex = typeIndex - 1
+          newResourceType = ds_aws_instance_types_by_family[family][typeIndex]["name"]
+        }
+      }
+
+      cost_name = "db:" + instance['name'].toLowerCase()
+      savings = 0.0
+
+      cost = 0.0
+      if (ds_instance_costs_grouped.instanceusage && typeof(ds_instance_costs_grouped.instanceusage[cost_name]) == 'number') { cost = ds_instance_costs_grouped.instanceusage[cost_name] }
+
+      // See if we have list prices for the old and new types based on metadata from the instance
+      cost_region = instance['region']
+      cost_type = "db." + resourceType
+      cost_newtype = "db." + newResourceType
+      cost_engine = ds_aws_rds_engine_table[instance['databaseEngine']]
+      cost_multiaz = instance['multiAZ'] ? "Multi-AZ" : "Single-AZ"
+      old_price = null
+      new_price = null
+
+      if (cost_region && cost_type && cost_newtype && cost_engine && cost_multiaz) {
+        if (ds_aws_rds_cost_map[cost_region] && ds_aws_rds_cost_map[cost_region][cost_type] && ds_aws_rds_cost_map[cost_region][cost_type][cost_engine] && ds_aws_rds_cost_map[cost_region][cost_type][cost_engine][cost_multiaz]) {
+          old_price = ds_aws_rds_cost_map[cost_region][cost_type][cost_engine][cost_multiaz]["pricePerUnit"]
+        }
+
+        if (ds_aws_rds_cost_map[cost_region] && ds_aws_rds_cost_map[cost_region][cost_newtype] && ds_aws_rds_cost_map[cost_region][cost_newtype][cost_engine] && ds_aws_rds_cost_map[cost_region][cost_newtype][cost_engine][cost_multiaz]) {
+          new_price = ds_aws_rds_cost_map[cost_region][cost_newtype][cost_engine][cost_multiaz]["pricePerUnit"]
+        }
+      }
+
+      // If we have list prices, use those to calculate savings
+      if (old_price && new_price) {
+        new_cost = cost * (new_price / old_price)
+        savings = cost - new_cost
+      // If we don't have list prices, fall back on cruder NFU-based calculation
+      } else {
+        cost_per_nfu = cost / ds_aws_instance_type_map[resourceType]['cpu']['nfus']
+        new_cost = cost_per_nfu * ds_aws_instance_type_map[newResourceType]['cpu']['nfus']
+        savings = cost - new_cost
+      }
+
+      new_instance = { newResourceType: cost_newtype, savings: savings }
+      _.each(_.keys(instance), function(key) { new_instance[key] = instance[key] })
+      result.push(new_instance)
+    }
   })
 EOS
 end
@@ -1247,7 +1539,6 @@ script "js_rds_underutil_instance_options", type: "javascript" do
   var request = {
     auth: "auth_aws",
     host: "rds." + region + ".amazonaws.com",
-    verb: "GET",
     path: "/",
     headers: {
       "User-Agent": "RS Policies",
@@ -1262,32 +1553,42 @@ script "js_rds_underutil_instance_options", type: "javascript" do
 EOS
 end
 
-datasource "ds_rds_underutil_instances_cleaned" do
-  run_script $js_rds_underutil_instances_cleaned, $ds_rds_underutil_instances, $ds_rds_underutil_instance_options
+datasource "ds_rds_underutil_instance_options_table" do
+  run_script $js_rds_underutil_instance_options_table, $ds_rds_underutil_instance_options
 end
 
-script "js_rds_underutil_instances_cleaned", type: "javascript" do
-  parameters "ds_rds_underutil_instances", "ds_rds_underutil_instance_options"
+script "js_rds_underutil_instance_options_table", type: "javascript" do
+  parameters "ds_rds_underutil_instance_options"
   result "result"
   code <<-'EOS'
-  resourceTypeTable = {}
+  result = {}
 
   _.each(ds_rds_underutil_instance_options, function(option) {
     databaseEngine = option['databaseEngine']
     region = option['region']
     resourceType = option['resourceType']
 
-    if (resourceTypeTable[region] == undefined) {
-      resourceTypeTable[region] = {}
+    if (result[region] == undefined) {
+      result[region] = {}
     }
 
-    if (resourceTypeTable[region][databaseEngine] == undefined) {
-      resourceTypeTable[region][databaseEngine] = []
+    if (result[region][databaseEngine] == undefined) {
+      result[region][databaseEngine] = []
     }
 
-    resourceTypeTable[region][databaseEngine].push(resourceType)
+    result[region][databaseEngine].push(resourceType)
   })
+EOS
+end
 
+datasource "ds_rds_underutil_instances_cleaned" do
+  run_script $js_rds_underutil_instances_cleaned, $ds_rds_underutil_instances, $ds_rds_underutil_instance_options_table
+end
+
+script "js_rds_underutil_instances_cleaned", type: "javascript" do
+  parameters "ds_rds_underutil_instances", "ds_rds_underutil_instance_options_table"
+  result "result"
+  code <<-'EOS'
   result = _.filter(ds_rds_underutil_instances, function(instance) {
     region = instance['region']
     databaseEngine = instance['databaseEngine']
@@ -1295,12 +1596,8 @@ script "js_rds_underutil_instances_cleaned", type: "javascript" do
 
     valid_recommendation = false
 
-    if (typeof(region) == 'string' && typeof(databaseEngine) == 'string' && typeof(newResourceType) == 'string') {
-      if (typeof(resourceTypeTable[region]) == 'object') {
-        if (typeof(resourceTypeTable[region][databaseEngine]) == 'object') {
-          valid_recommendation = _.contains(resourceTypeTable[region][databaseEngine], newResourceType)
-        }
-      }
+    if (region && databaseEngine && newResourceType && ds_rds_underutil_instance_options_table[region] && ds_rds_underutil_instance_options_table[region][databaseEngine]) {
+      valid_recommendation = _.contains(ds_rds_underutil_instance_options_table[region][databaseEngine], newResourceType)
     }
 
     return valid_recommendation
@@ -1317,21 +1614,28 @@ script "js_rds_idle_incident", type: "javascript" do
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
-  function formatNumber(number, separator){
-    numString = number.toString()
-    values = numString.split(".")
-    formatted_number = ''
+  function formatNumber(number, separator) {
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   result = []
@@ -1358,7 +1662,7 @@ script "js_rds_idle_incident", type: "javascript" do
         tags: instance['tags'],
         resourceType: instance['resourceType'],
         region: instance['region'],
-        arn: instance['instanceArn'],
+        resourceARN: instance['instanceArn'],
         privateDnsName: instance['privateDnsName'],
         state: instance['status'],
         databaseEngine: instance['databaseEngine'],
@@ -1367,13 +1671,15 @@ script "js_rds_idle_incident", type: "javascript" do
         availabilityZone: instance['availabilityZone'],
         licenseModel: instance['licenseModel'],
         processorFeatures: instance['processorFeatures'],
+        connectionsTotal: instance['connectionsTotal'],
+        connectionsAverage: instance['connectionsAverage'],
         vcpus: instance['vcpus'],
-        savings: parseFloat(savings.toFixed(3)),
+        savings: Math.round(savings * 1000) / 1000,
         savingsCurrency: ds_currency['symbol'],
         lookbackPeriod: param_stats_lookback,
         newResourceType: "Terminate RDS Instance",
         service: "AmazonRDS",
-        policy_name: ds_applied_policy['name'],
+        policy_name: ds_applied_policy['name'] || "AWS Rightsize RDS Instances",
         // Dummy values to ensure hash_exclude works properly
         total_savings: "",
         message: ""
@@ -1409,7 +1715,7 @@ script "js_rds_idle_incident", type: "javascript" do
 
   savings_message = [
     ds_currency['symbol'], ' ',
-    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+    formatNumber(Math.round(total_savings * 100) / 100, ds_currency['separator'])
   ].join('')
 
   // Sort by descending order of savings value
@@ -1439,21 +1745,28 @@ script "js_rds_underutil_incident", type: "javascript" do
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
-  function formatNumber(number, separator){
-    numString = number.toString()
-    values = numString.split(".")
-    formatted_number = ''
+  function formatNumber(number, separator) {
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   result = []
@@ -1484,23 +1797,35 @@ script "js_rds_underutil_incident", type: "javascript" do
         resourceType: instance['resourceType'],
         newResourceType: instance['newResourceType'],
         region: instance['region'],
-        arn: instance['instanceArn'],
+        resourceARN: instance['instanceArn'],
         privateDnsName: instance['privateDnsName'],
         state: instance['status'],
         databaseEngine: instance['databaseEngine'],
         platform: instance['databaseEngine'],
+        multiAZ: instance['multiAZ'],
         engineVersion: instance['engineVersion'],
+        connectionsTotal: instance['connectionsTotal'],
+        connectionsAverage: instance['connectionsAverage'],
         cpuMaximum: instance['cpu_maximum'],
         cpuMinimum: instance['cpu_minimum'],
         cpuAverage: instance['cpu_average'],
         cpuP99: instance['cpu_p99'],
         cpuP95: instance['cpu_p95'],
         cpuP90: instance['cpu_p90'],
+        memMaximum: instance['mem_maximum'],
+        memMinimum: instance['mem_minimum'],
+        memAverage: instance['mem_average'],
+        netinMaximum: instance['netin_maximum'],
+        netinMinimum: instance['netin_minimum'],
+        netinAverage: instance['netin_average'],
+        netoutMaximum: instance['netout_maximum'],
+        netoutMinimum: instance['netout_minimum'],
+        netoutAverage: instance['netout_average'],
         availabilityZone: instance['availabilityZone'],
         licenseModel: instance['licenseModel'],
         processorFeatures: instance['processorFeatures'],
         vcpus: instance['vcpus'],
-        savings: parseFloat(savings.toFixed(3)),
+        savings: Math.round(savings * 1000) / 1000,
         savingsCurrency: ds_currency['symbol'],
         lookbackPeriod: param_stats_lookback,
         service: "AmazonRDS",
@@ -1546,7 +1871,7 @@ script "js_rds_underutil_incident", type: "javascript" do
 
   savings_message = [
     ds_currency['symbol'], ' ',
-    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+    formatNumber(Math.round(total_savings * 100) / 100, ds_currency['separator'])
   ].join('')
 
   // Sort by descending order of savings value
@@ -1628,6 +1953,9 @@ policy "pol_rightsize_rds" do
       field "newResourceType" do
         label "Recommended Resource Type"
       end
+      field "connectionsAverage" do
+        label "Connections (Daily)"
+      end
       field "cpuMaximum" do
         label "CPU Maximum %"
       end
@@ -1646,11 +1974,41 @@ policy "pol_rightsize_rds" do
       field "cpuP90" do
         label "CPU p90"
       end
+      field "memMaximum" do
+        label "Available Memory Maximum (GiB)"
+      end
+      field "memMinimum" do
+        label "Available Memory Minimum (GiB)"
+      end
+      field "memAverage" do
+        label "Available Memory Average (GiB)"
+      end
+      field "netinMaximum" do
+        label "Network Inbound Throughput Maximum (Bytes/second)"
+      end
+      field "netinMinimum" do
+        label "Network Inbound Throughput Minimum (Bytes/second)"
+      end
+      field "netinAverage" do
+        label "Network Inbound Throughput Average (Bytes/second)"
+      end
+      field "netoutMaximum" do
+        label "Network Outbound Throughput Maximum (Bytes/second)"
+      end
+      field "netoutMinimum" do
+        label "Network Outbound Throughput Minimum (Bytes/second)"
+      end
+      field "netoutAverage" do
+        label "Network Outbound Throughput Average (Bytes/second)"
+      end
       field "databaseEngine" do
         label "Database Engine"
       end
       field "engineVersion" do
         label "Engine Version"
+      end
+      field "multiAZ" do
+        label "Multi-AZ"
       end
       field "vcpus" do
         label "vCPUs"
@@ -1658,7 +2016,7 @@ policy "pol_rightsize_rds" do
       field "licenseModel" do
         label "License Model"
       end
-      field "arn" do
+      field "resourceARN" do
         label "ARN"
       end
       field "platform" do
@@ -1732,6 +2090,9 @@ policy "pol_rightsize_rds" do
       field "newResourceType" do
         label "Recommended Resource Type"
       end
+      field "connectionsAverage" do
+        label "Connections (Daily)"
+      end
       field "databaseEngine" do
         label "Database Engine"
       end
@@ -1744,7 +2105,7 @@ policy "pol_rightsize_rds" do
       field "licenseModel" do
         label "License Model"
       end
-      field "arn" do
+      field "resourceARN" do
         label "ARN"
       end
       field "platform" do

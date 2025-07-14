@@ -3,16 +3,18 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Turbonomics policy for scaling virtual machines [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/scale_virtual_machines_recommendations/google) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/scale_virtual_machines_recommendations/google"
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.7.1",
+  version: "0.7.3",
   provider: "Google",
   source: "Turbonomic",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -95,7 +97,7 @@ end
 #get turbonomic recommendation data
 datasource "ds_get_turbonomic_recommendations" do
   request do
-    run_script $js_get_turbonomic_recommendations, $param_turbonomic_endpoint, val($ds_get_turbonomic_token, "access_token")
+    run_script $js_get_turbonomic_recommendations, val($ds_get_turbonomic_token, "access_token"), $param_turbonomic_endpoint
   end
   result do
     encoding "json"
@@ -123,7 +125,7 @@ end
 ##this will potentially be a lot of calls. how to make this more performant
 datasource "ds_get_business_units" do
   request do
-    run_script $js_get_business_units, $param_turbonomic_endpoint, $param_provider, val($ds_get_turbonomic_token, "access_token")
+    run_script $js_get_business_units, val($ds_get_turbonomic_token, "access_token"), $param_turbonomic_endpoint, $param_provider
   end
   result do
     encoding "json"
@@ -138,7 +140,7 @@ end
 ##this will potentially be a lot of calls. how to make this more performant
 datasource "ds_get_action_details" do
   request do
-    run_script $js_get_action_details, $ds_get_turbonomic_recommendations, $param_turbonomic_endpoint, val($ds_get_turbonomic_token, "access_token")
+    run_script $js_get_action_details, val($ds_get_turbonomic_token, "access_token"), $ds_get_turbonomic_recommendations, $param_turbonomic_endpoint
   end
   result do
     encoding "json"
@@ -190,7 +192,7 @@ end
 
 ##script using acquired turbonomic token and pulls hard coded scalable vm data
 script "js_get_turbonomic_recommendations", type: "javascript" do
-  parameters "turbonomic_endpoint", "access_token"
+  parameters "access_token", "turbonomic_endpoint"
   result "request"
   code <<-EOS
   //up this limit value to 1000 etc when done with POC testing
@@ -220,7 +222,7 @@ end
 
 ## verified that discovered is the only one we need. pagination is not available for this call
 script "js_get_business_units", type: "javascript" do
-  parameters "turbonomic_endpoint", "param_provider", "access_token"
+  parameters "access_token", "turbonomic_endpoint", "param_provider"
   result "request"
   code <<-EOS
     var providers = {
@@ -229,7 +231,6 @@ script "js_get_business_units", type: "javascript" do
       "GCP Project": "GCP",
     }
     var request = {
-      verb: "GET",
       host: turbonomic_endpoint,
       path: "/api/v3/businessunits",
       query_params: {
@@ -246,7 +247,7 @@ end
 
 ## pagination is not available for this call
 script "js_get_action_details", type: "javascript" do
-  parameters "ds_get_turbonomic_recommendations", "turbonomic_endpoint", "access_token"
+  parameters "access_token", "ds_get_turbonomic_recommendations", "turbonomic_endpoint"
   result "request"
   code <<-EOS
     var uuids = []

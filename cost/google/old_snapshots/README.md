@@ -27,6 +27,8 @@ This policy has the following input parameters required when launching the polic
 - *Snapshot Age Threshold* - The number of days since the snapshot was created to consider a snapshot old.
 - *Allow/Deny Projects* - Whether to treat Allow/Deny Projects List parameter as allow or deny list. Has no effect if Allow/Deny Projects List is left empty.
 - *Allow/Deny Projects List* - Filter results by project ID/name, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all projects.
+- *Ignore System Projects* - Whether or not to automatically ignore system projects e.g. projects whose id begins with `sys-`
+- *Ignore Google Apps Script Projects* - Whether or not to automatically ignore Google Apps Script projects e.g. projects whose id begins with `app-`
 - *Exclusion Labels* - The policy will filter resources containing the specified labels from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified label key.
   - `Key==Value` - Filter all resources with the specified label key:value pair.
@@ -80,4 +82,4 @@ Additionally, this Policy Template requires that several APIs be enabled in your
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This policy template does not incur any cloud costs.

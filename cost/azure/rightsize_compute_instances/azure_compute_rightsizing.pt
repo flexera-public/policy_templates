@@ -3,15 +3,17 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Checks for instances that have inefficient utilization for the last 30 days and downsizes or deletes them after approval. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/"
 category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.2.0",
+  version: "6.2.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -167,8 +169,17 @@ parameter "param_stats_threshold" do
   category "Statistics"
   label "Threshold Statistic"
   description "Statistic to use when determining if an instance is idle/underutilized."
-  allowed_values "Average", "Maximum"
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
   default "Average"
+end
+
+parameter "param_stats_interval" do
+  type "string"
+  category "Statistics"
+  label "Statistic Interval"
+  description "The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets. Does not affect the accuracy for 'Average' 'Maximum' 'Minimum'."
+  allowed_values "1 Minute", "5 Minutes", "15 Minutes", "30 Minutes", "1 Hour", "6 Hours", "12 Hours", "1 Day"
+  default "15 Minutes"
 end
 
 parameter "param_stats_lookback" do
@@ -179,6 +190,15 @@ parameter "param_stats_lookback" do
   min_value 1
   max_value 90
   default 30
+end
+
+parameter "param_downsize_multiple" do
+  type "string"
+  category "Policy Settings"
+  label "Skip Instance Sizes"
+  description "Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_automatic_action" do
@@ -335,6 +355,33 @@ script "js_currency", type:"javascript" do
 EOS
 end
 
+datasource "ds_stats_interval" do
+  run_script $js_stats_interval, $param_stats_interval
+end
+
+script "js_stats_interval", type: "javascript" do
+  parameters "param_stats_interval"
+  result "result"
+  code <<-EOS
+  // Tables to convert human-readable parameter values to their API equivalents
+  interval_table = {
+    "1 Minute": "PT1M",
+    "5 Minutes": "PT5M",
+    "15 Minutes": "PT15M",
+    "30 Minutes": "PT30M",
+    "1 Hour": "PT1H",
+    "6 Hours": "PT6H",
+    "12 Hours": "PT12H",
+    "1 Day": "P1D"
+  }
+
+  result = {
+    pretty: param_stats_interval,
+    api: interval_table[param_stats_interval]
+  }
+EOS
+end
+
 datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
@@ -390,7 +437,7 @@ datasource "ds_azure_instances" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
-    query "api-version", "2024-03-01"
+    query "api-version", "2024-07-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
@@ -407,6 +454,7 @@ datasource "ds_azure_instances" do
       field "imageOffer", jmes_path(col_item, "properties.storageProfile.imageReference.offer")
       field "imageSKU", jmes_path(col_item, "properties.storageProfile.imageReference.sku")
       field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "dataDisks", jmes_path(col_item, "properties.storageProfile.dataDisks")
       field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "tags", jmes_path(col_item, "tags")
       field "subscriptionId", val(iter_item, "id")
@@ -452,6 +500,9 @@ script "js_azure_instances_with_status", type: "javascript" do
   })
 
   result = _.map(ds_azure_instances, function(vm) {
+    dataDiskCount = 0
+    if (vm['dataDisks']) { dataDiskCount = vm['dataDisks'].length }
+
     return {
       resourceID: vm["resourceID"],
       resourceGroup: vm["resourceGroup"],
@@ -462,6 +513,7 @@ script "js_azure_instances_with_status", type: "javascript" do
       imageOffer: vm["imageOffer"],
       imageSKU: vm["imageSKU"],
       osType: vm["osType"],
+      dataDiskCount: dataDiskCount,
       resourceType: vm["resourceType"],
       tags: vm["tags"],
       subscriptionId: vm["subscriptionId"],
@@ -560,11 +612,7 @@ script "js_azure_instances_region_filtered", type: "javascript" do
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_instances_tag_filtered, function(vm) {
       include_vm = _.contains(param_regions_list, vm['region'])
-
-      if (param_regions_allow_or_deny == "Deny") {
-        include_vm = !include_vm
-      }
-
+      if (param_regions_allow_or_deny == "Deny") { include_vm = !include_vm }
       return include_vm
     })
   } else {
@@ -616,81 +664,66 @@ script "js_azure_instances_status_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_skus" do
-  iterate $ds_azure_subscriptions_filtered
+datasource "ds_azure_instances_batch" do
+  run_script $js_azure_instances_batch, $ds_azure_instances_status_filtered
+end
+
+script "js_azure_instances_batch", type: "javascript" do
+  parameters "ds_azure_instances_status_filtered"
+  result "result"
+  code <<-EOS
+
+  // group by subscription
+  var instances_by_subscription = _.values(_.groupBy(ds_azure_instances_status_filtered, function(instance) {
+    return instance.subscriptionId;
+  }));
+
+  // group by region
+  var instances_by_subscription_region = _.map(instances_by_subscription, function(instances) {
+    return _.values(_.groupBy(instances, function(instance) {
+      return instance.region;
+    }));
+  });
+
+  // group into batches of same region
+  result = [];
+  var batch_size = 50; // Maximum batch size for Azure Metrics getBatch API is 50
+  _.each(instances_by_subscription_region, function(instances_same_subscription) {
+    _.each(instances_same_subscription, function(instances_same_subscription_region) {
+      for (var i = 0; i < instances_same_subscription_region.length; i += batch_size) {
+        result.push(instances_same_subscription_region.slice(i, i + batch_size));
+      }
+    });
+  });
+
+  // 'result' looks like this:
+  /*
+  [
+    [max of 50 instances of same subscription and same region...],
+    [max of 50 instances of same subscription and same region...],
+    ...
+  ]
+  */
+EOS
+end
+
+datasource "ds_azure_metrics_batch" do
+  batch true
+  iterate $ds_azure_instances_batch
   request do
-    auth $auth_azure
-    pagination $pagination_azure
-    host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/skus"])
-    query "api-version", "2017-09-01"
-    header "User-Agent", "RS Policies"
-    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400, 403, 404]
+    run_script $js_azure_metrics_batch, iter_item, $ds_stats_interval, $param_azure_endpoint, $param_stats_lookback
   end
   result do
     encoding "json"
-    collect jmes_path(response, "value") do
-      field "resourceType", jmes_path(col_item, "resourceType")
-      field "name", jmes_path(col_item, "name")
-      field "locations", jmes_path(col_item, "locations")
-      field "capabilities", jmes_path(col_item, "capabilities")
-      field "restrictions", jmes_path(col_item, "restrictions")
+    collect jmes_path(response, "values[*]") do
+      field "value", jmes_path(col_item, "value")
+      field "resourceID", jmes_path(col_item, "resourceid")
     end
   end
 end
 
-datasource "ds_azure_sku_memory" do
-  run_script $js_azure_sku_memory, $ds_azure_skus
-end
-
-script "js_azure_sku_memory", type: "javascript" do
-  parameters "ds_azure_skus"
-  result "result"
-  code <<-EOS
-  result = {}
-
-  _.each(ds_azure_skus, function(sku) {
-    name = sku['name'].toLowerCase()
-
-    if (result[name] == undefined && sku["resourceType"] == "virtualMachines") {
-      memory = _.find(sku['capabilities'], function(item) {
-        return item["name"] == "MemoryGB"
-      })
-
-      result[name] = memory["value"] * 1024 * 1024 * 1024
-    }
-  })
-EOS
-end
-
-datasource "ds_azure_instances_metrics" do
-  iterate $ds_azure_instances_status_filtered
-  request do
-    run_script $js_azure_instances_metrics, val(iter_item, "resourceID"), $param_azure_endpoint, $param_stats_lookback
-  end
-  result do
-    encoding "json"
-    field "value", val(response, "value")
-    field "resourceName", val(iter_item, "name")
-    field "resourceGroup", val(iter_item, "resourceGroup")
-    field "resourceID", val(iter_item, "resourceID")
-    field "resourceKind", val(iter_item, "resourceKind")
-    field "region", val(iter_item, "region")
-    field "tags", val(iter_item, "tags")
-    field "statuses", val(iter_item, "statuses")
-    field "imagePublisher", val(iter_item, "imagePublisher")
-    field "imageOffer", val(iter_item, "imageOffer")
-    field "imageSKU", val(iter_item, "imageSKU")
-    field "osType", val(iter_item, "osType")
-    field "resourceType", val(iter_item, "resourceType")
-    field "subscriptionId", val(iter_item, "subscriptionId")
-    field "subscriptionName", val(iter_item, "subscriptionName")
-  end
-end
-
-script "js_azure_instances_metrics", type: "javascript" do
-  parameters "resourceID", "param_azure_endpoint", "param_stats_lookback"
+script "js_azure_metrics_batch", type: "javascript" do
+  parameters "ds_azure_instances_batch", "ds_stats_interval", "param_azure_endpoint", "param_stats_lookback"
   result "request"
   code <<-EOS
   end_date = new Date()
@@ -705,41 +738,186 @@ script "js_azure_instances_metrics", type: "javascript" do
   start_date.setSeconds(0)
   start_date.setMinutes(0)
 
-  timespan = start_date.toISOString() + "/" + end_date.toISOString()
+  function get_host_by_region(region) {
+    if (param_azure_endpoint === "management.chinacloudapi.cn") {
+      // China region has different endpoint for Metric getBatch API
+      return region + ".metrics.monitor.azure.cn";
+    }
+    else
+      return region + ".metrics.monitor.azure.com";
+  }
+
+  var resourceIDs = _.map(ds_azure_instances_batch, function(instance) {
+    return instance.resourceID;
+  });
 
   var request = {
     auth: "auth_azure",
     pagination: "pagination_azure",
-    host: param_azure_endpoint,
-    verb: "GET",
-    path: resourceID + "/providers/microsoft.insights/metrics",
+    host: get_host_by_region(ds_azure_instances_batch[0].region),
+    verb: "POST",
+    path: "subscriptions/" + ds_azure_instances_batch[0].subscriptionId + "/metrics:getBatch",
     query_params: {
-      "api-version": "2018-01-01",
-      "timespan": timespan,
-      "interval": "P1D",
-      "metricnames": "Percentage CPU,Available Memory Bytes",
+      "api-version": "2023-10-01",
+      "starttime": start_date.toISOString(),
+      "endtime": end_date.toISOString(),
+      "interval": ds_stats_interval["api"],
+      "metricnames": "Percentage CPU,Available Memory Percentage",
+      "metricnamespace": "Microsoft.Compute/VirtualMachines",
       "aggregation": "average,maximum,minimum"
     },
     headers: {
-      "User-Agent": "RS Policies"
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json"
     },
-    // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status: [400, 403, 404]
+    body: JSON.stringify({"resourceids": resourceIDs})
   }
 EOS
 end
 
+datasource "ds_azure_instances_metrics" do
+  batch true
+  run_script $js_azure_instances_metrics, $ds_azure_metrics_batch, $ds_azure_instances_status_filtered
+end
+
+script "js_azure_instances_metrics", type: "javascript" do
+  parameters "ds_azure_metrics_batch", "ds_azure_instances_status_filtered"
+  result "result"
+  code <<-EOS
+
+  var instances_map = {};
+  _.each(ds_azure_instances_status_filtered, function(instance) {
+    instances_map[instance.resourceID] = instance
+  })
+
+  getIterator(ds_azure_metrics_batch).Each(function(metric) {
+    var instance = instances_map[metric.resourceID];
+    appendToResult({
+      resourceName: instance.name,
+      resourceGroup: instance.resourceGroup,
+      resourceID: instance.resourceID,
+      resourceKind: instance.resourceKind,
+      region: instance.region,
+      tags: instance.tags,
+      statuses: instance.statuses,
+      imagePublisher: instance.imagePublisher,
+      imageOffer: instance.imageOffer,
+      imageSKU: instance.imageSKU,
+      osType: instance.osType,
+      dataDiskCount: instance.dataDiskCount,
+      resourceType: instance.resourceType,
+      subscriptionId: instance.subscriptionId,
+      subscriptionName: instance.subscriptionName,
+      value: metric.value,
+    });
+  });
+EOS
+end
+
 datasource "ds_azure_instances_metrics_organized" do
-  run_script $js_azure_instances_metrics_organized, $ds_azure_instances_metrics, $ds_azure_sku_memory
+  run_script $js_azure_instances_metrics_organized, $ds_azure_instances_metrics, $param_stats_lookback, $param_stats_threshold, rs_org_id, rs_project_id
 end
 
 script "js_azure_instances_metrics_organized", type: "javascript" do
-  parameters "ds_azure_instances_metrics", "ds_azure_sku_memory"
+  parameters "ds_azure_instances_metrics", "param_stats_lookback", "param_stats_threshold", "rs_org_id", "rs_project_id"
   result "result"
   code <<-EOS
+  // Function to calculate percentiles from metrics
+  function percentile(arr, p) {
+    // array needs to be sorted to select based on percentile
+    arr.sort(function(a, b) { return a - b })
+
+    // Get the index using desired percentile and array length
+    index = (p / 100) * arr.length
+
+    // Round index value to nearest integer and return the value of that element in sorted array arr
+    return arr[Math.ceil(index) - 1]
+  }
+
+  // Function to generate ImageCharts URL for CPU and Memory usage
+  function generateChartUrl(cpu_stats, mem_stats, stat_name, resource_name) {
+
+    // Check that we have some metrics for either cpu or memory
+    if ((!cpu_stats || cpu_stats.length === 0) && (!mem_stats || mem_stats.length === 0)) {
+      // return null if we don't have any data
+      // this can eventually be replaced with a standard image that says "No usage for resource during this time period" or similar
+      return null;
+    }
+
+    // Force stat_name to lowercase
+    stat_name = stat_name.toLowerCase()
+
+    // Placeholder for extracted timestamps, CPU and memory values
+    var timestamps = [];
+    var cpuValues = [];
+    var memValues = [];
+
+    // Limit number of data points to avoid URL length issues
+    // Using cpu to determine max points and all the timestamps we have data for
+    // Assumption for this is that there should always be CPU stats, but on some instances/vendors there may not be memory stats
+    var maxPoints = 90;
+    var step = Math.max(1, Math.floor(cpu_stats.length / maxPoints));
+    for (var i = 0; i < cpu_stats.length; i += step) {
+      if ((cpu_stats[i] && cpu_stats[i][stat_name] !== undefined) || (mem_stats[i] && mem_stats[i][stat_name] !== undefined)) {
+        var date = new Date(cpu_stats[i].timeStamp);
+        timestamps.push(date.toISOString().split('T')[0]);
+        // for both CPU and memory, check if there is a number value, if so use that as a percentage.  Otherwise "_" is no data
+        cpuValues.push(_.isNumber(cpu_stats[i][stat_name]) ? Math.round(cpu_stats[i][stat_name] * 10) / 10 : "_");
+        // Convert memory available to memory used with 100 - mem_available
+        memValues.push(_.isNumber(mem_stats[i][stat_name]) ? Math.round((100 - mem_stats[i][stat_name]) * 10) / 10 : "_");
+      }
+    }
+    // Check if we have any data points to plot
+    if (cpuValues.length === 0) {
+      return null;
+    }
+
+    // Encode data for URL
+    var timeLabels = timestamps.join('|');
+    var cpuData = cpuValues.join(',');
+    var memData = memValues.join(',');
+
+    var lineColors = [
+      // https://design.flexera.info/8833af71e/p/232667-color/b/73add2/t/page-232667-56689565-23
+      "206BB6", // Blue 55
+      "CF8F36", // Gold 70
+      "338464", // Green 60
+      "D8BBE7", // Purple 30
+      "C62F52", // Red 70
+      "6EC0C0" // Teal 30
+    ]
+    // Slice just the 2 colors we need for cpu and memory
+    var lineColors = lineColors.slice(0, 2);
+
+    // Proper case stat_name
+    var first_char = stat_name.charAt(0);
+    var rest = stat_name.substring(1);
+    var stat_name_Proper = first_char.toUpperCase() + rest.toLowerCase();
+
+    // Build ImageCharts URL - creating a line chart with CPU (blue) and Memory (red)
+    var chartUrl = "https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id="+rs_org_id+"&rs_project_id="+rs_project_id;
+    chartUrl += "&cht=lc"; // Line chart
+    chartUrl += "&chs=900x450"; // Chart size
+    chartUrl += "&chco=" + lineColors.join(','); // Colors
+    chartUrl += "&chxt=x,y"; // Show both axes
+    chartUrl += "&chxs=0,000000,12,-1,lt,000000,s,min90"; // Rotate labels 90 and add padding, skip label if overlap
+    chartUrl += "&chdl="+encodeURIComponent("CPU Usage%25%20%20%20%20%20%20%20%20%20%20|Memory Usage%25"); // Legend with spaces to adjust CPU Usage to left
+    chartUrl += "&chdlp=b"; // Legend position (bottom)
+    chartUrl += "&chtt="+encodeURIComponent(stat_name_Proper+"+Resource+Utilization|" + encodeURIComponent(resource_name)); // Title
+    chartUrl += "&chma=10,10,10,10"; // Margins all around
+    chartUrl += "&chxr=1,0,100"; // Y-axis range
+    chartUrl += "&chls="+encodeURIComponent("4|4"); // Line thickness
+    chartUrl += "&chf=bg,s,FFFFFF00"; // Transparent background
+    chartUrl += "&chg="+encodeURIComponent("20,50,5,5,CECECE"); // Dashed, grey gridlines
+    chartUrl += "&chxl="+encodeURIComponent("0:|" + encodeURIComponent(timeLabels)); // X-axis labels (second to last because this is second longest)
+    chartUrl += "&chd="+encodeURIComponent("t:" + cpuData + "|" + memData); // Chart data (lets put this last to enable troubleshooting chart config easier)
+
+    return chartUrl;
+  }
+
   result = []
 
-  _.each(ds_azure_instances_metrics, function(vm) {
+  getIterator(ds_azure_instances_metrics).Each(function(vm, idx) {
     cpu_stats = null
     mem_stats = null
 
@@ -749,79 +927,107 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
           cpu_stats = stat["timeseries"][0]["data"]
         }
 
-        if (stat['name']['value'] == "Available Memory Bytes") {
+        if (stat['name']['value'] == "Available Memory Percentage") {
           mem_stats = stat["timeseries"][0]["data"]
         }
       }
     })
 
+    // Generate chart URL for this resource
+    var stat_name = param_stats_threshold.toLowerCase()
+    // Handle p90, p95, and p99 which are not available from Azure
+    if ((stat_name == "p90") || (stat_name == "p95") || (stat_name == "p99")) {
+      // Azure does not provide these aggregations and we can't calculate them due to policy limitations
+      // Use maximum instead when policy configured for p90, p95, and p99
+      stat_name = "maximum"
+    }
+    var chartUrl = generateChartUrl(cpu_stats, mem_stats, stat_name, vm['resourceName']);
+
     // Default to 0 in case there are no stats because instance is not powered on
-    cpu_min = 0
+    // Minimum defaults to "null" to ensure comparisons work. It's adjusted to 0 later if needed.
+    cpu_min = null
     cpu_max = 0
     cpu_avg = 0
-    cpu_min_count = 0
-    cpu_max_count = 0
+    cpu_p90 = 0
+    cpu_p95 = 0
+    cpu_p99 = 0
     cpu_avg_count = 0
+    cpu_all_stats = []
 
     if (cpu_stats != null && cpu_stats != undefined) {
       _.each(cpu_stats, function(item) {
         if (item["average"] != undefined && item["average"] != null) {
+          cpu_all_stats.push(item["average"])
           cpu_avg += item["average"]
           cpu_avg_count += 1
         }
 
         if (item["minimum"] != undefined && item["minimum"] != null) {
-          cpu_min += item["minimum"]
-          cpu_min_count += 1
+          cpu_all_stats.push(item["minimum"])
+          if (item["minimum"] < cpu_min || cpu_min == null) { cpu_min = item["minimum"] }
         }
 
         if (item["maximum"] != undefined && item["maximum"] != null) {
-          cpu_max += item["maximum"]
-          cpu_max_count += 1
+          cpu_all_stats.push(item["maximum"])
+          if (item["maximum"] > cpu_max) { cpu_max = item["maximum"] }
         }
       })
     }
 
-    if (cpu_min_count != 0) { cpu_min = cpu_min / cpu_min_count }
-    if (cpu_max_count != 0) { cpu_max = cpu_max / cpu_max_count }
+    if (cpu_min == null) { cpu_min = 0 }
     if (cpu_avg_count != 0) { cpu_avg = cpu_avg / cpu_avg_count }
 
+    if (cpu_all_stats.length > 0) {
+      cpu_p90 = percentile(cpu_all_stats, 90)
+      cpu_p95 = percentile(cpu_all_stats, 95)
+      cpu_p99 = percentile(cpu_all_stats, 99)
+    }
+
     // Default to 0 in case there are no stats because instance is not powered on
-    mem_min = 0
+    // Minimum defaults to "null" to ensure comparisons work. It's adjusted to 0 later if needed.
+    mem_min = null
     mem_max = 0
     mem_avg = 0
-    mem_min_count = 0
-    mem_max_count = 0
+    mem_p90 = 0
+    mem_p95 = 0
+    mem_p99 = 0
     mem_avg_count = 0
-
-    total_memory = ds_azure_sku_memory[vm['resourceType'].toLowerCase()]
+    mem_all_stats = []
 
     if (mem_stats != null && mem_stats != undefined) {
       _.each(mem_stats, function(item) {
-        // Convert available memory in bytes to used memory in percentage
         // Note: The switch between min and max is intentional because
-        // the maximum available memory is equivalent to the minumum
+        // the maximum available memory is equivalent to the minimum
         // memory used.
         if (item["average"] != undefined && item["average"] != null) {
-          mem_avg += (total_memory - item["average"]) / total_memory
+          var average = 100 - item["average"];
+          mem_all_stats.push(average)
+          mem_avg += average
           mem_avg_count += 1
         }
 
         if (item["minimum"] != undefined && item["minimum"] != null) {
-          mem_max += (total_memory - item["minimum"]) / total_memory
-          mem_max_count += 1
+          var maximum = 100 - item["minimum"]
+          mem_all_stats.push(maximum)
+          if (maximum > mem_max) { mem_max = maximum }
         }
 
         if (item["maximum"] != undefined && item["maximum"] != null) {
-          mem_min += (total_memory - item["maximum"]) / total_memory
-          mem_min_count += 1
+          var minimum = 100 - item["maximum"]
+          mem_all_stats.push(minimum)
+          if (minimum < mem_min || mem_min == null) { mem_min = minimum }
         }
       })
     }
 
-    if (mem_min_count != 0) { mem_min = mem_min / mem_min_count * 100 }
-    if (mem_max_count != 0) { mem_max = mem_max / mem_max_count * 100 }
-    if (mem_avg_count != 0) { mem_avg = mem_avg / mem_avg_count * 100 }
+    if (mem_min == null) { mem_min = 0 }
+    if (mem_avg_count != 0) { mem_avg = mem_avg / mem_avg_count }
+
+    if (mem_all_stats.length > 0) {
+      mem_p90 = percentile(mem_all_stats, 90)
+      mem_p95 = percentile(mem_all_stats, 95)
+      mem_p99 = percentile(mem_all_stats, 99)
+    }
 
     vm_tags = []
 
@@ -831,7 +1037,7 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
       })
     }
 
-    status_codes = _.pluck(vm['statuses'], 'code')
+    status_codes = _.pluck(vm['statuses'], 'code');
     powerstate = _.find(status_codes, function(code) { return code.indexOf('PowerState') == 0 })
     state = powerstate.split('/')[1]
 
@@ -845,22 +1051,30 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
       imageOffer: vm['imageOffer'],
       imageSKU: vm['imageSKU'],
       osType: vm['osType'],
+      dataDiskCount: vm['dataDiskCount'],
       resourceType: vm['resourceType'],
       accountID: vm['subscriptionId'],
       accountName: vm['subscriptionName'],
       tags: vm_tags.join(', '),
       state: state,
-      cpu_minimum: parseFloat(cpu_min.toFixed(2)),
-      cpu_maximum: parseFloat(cpu_max.toFixed(2)),
-      cpu_average: parseFloat(cpu_avg.toFixed(2)),
-      mem_minimum: parseFloat(mem_min.toFixed(2)),
-      mem_maximum: parseFloat(mem_max.toFixed(2)),
-      mem_average: parseFloat(mem_avg.toFixed(2)),
+      cpu_minimum: Math.round(cpu_min * 100) / 100,
+      cpu_maximum: Math.round(cpu_max * 100) / 100,
+      cpu_average: Math.round(cpu_avg * 100) / 100,
+      cpu_p90: Math.round(cpu_p90 * 100) / 100,
+      cpu_p95: Math.round(cpu_p95 * 100) / 100,
+      cpu_p99: Math.round(cpu_p99 * 100) / 100,
+      mem_minimum: Math.round(mem_min * 100) / 100,
+      mem_maximum: Math.round(mem_max * 100) / 100,
+      mem_average: Math.round(mem_avg * 100) / 100,
+      mem_p90: Math.round(mem_p90 * 100) / 100,
+      mem_p95: Math.round(mem_p95 * 100) / 100,
+      mem_p99: Math.round(mem_p99 * 100) / 100,
       service: "Microsoft.Compute",
       underutil_message: "",
       idle_message: "",
       underutil_total_savings: "",
-      idle_total_savings: ""
+      idle_total_savings: "",
+      chartUrl: chartUrl
     })
   })
 EOS
@@ -974,37 +1188,129 @@ end
 
 datasource "ds_azure_instance_size_map" do
   request do
-    verb "GET"
     host "raw.githubusercontent.com"
     path "/flexera-public/policy_templates/master/data/azure/instance_types.json"
     header "User-Agent", "RS Policies"
   end
 end
 
+datasource "ds_azure_regions_for_instance_sizes" do
+  run_script $js_azure_regions_for_instance_sizes, $ds_azure_instances_metrics_organized
+end
+
+script "js_azure_regions_for_instance_sizes", type: "javascript" do
+  parameters "ds_azure_instances_metrics_organized"
+  result "result"
+  code <<-EOS
+  result = []
+
+  if (ds_azure_instances_metrics_organized.length > 0) {
+    regions = _.uniq(_.compact(_.pluck(ds_azure_instances_metrics_organized, "region")))
+
+    result = _.map(regions, function(region) {
+      return {
+        subscriptionId: ds_azure_instances_metrics_organized[0]['accountID'],
+        region: region
+      }
+    })
+  }
+EOS
+end
+
+datasource "ds_azure_instance_size_details" do
+  iterate $ds_azure_regions_for_instance_sizes
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.Compute/locations/", val(iter_item, "region"), "/vmSizes"])
+    query "api-version", "2024-07-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "maxDataDiskCount", jmes_path(col_item, "maxDataDiskCount")
+    end
+  end
+end
+
+datasource "ds_azure_disk_count_table" do
+  run_script $js_azure_disk_count_table, $ds_azure_instance_size_details
+end
+
+script "js_azure_disk_count_table", type: "javascript" do
+  parameters "ds_azure_instance_size_details"
+  result "result"
+  code <<-EOS
+  result = {}
+  _.each(ds_azure_instance_size_details, function(size) { result[size['name']] = size['maxDataDiskCount'] })
+EOS
+end
+
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+  result = host_table[rs_optima_host]
+EOS
+end
+
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_exclude_databricks
+  run_script $js_idle_and_underutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_stats_interval, $ds_azure_disk_count_table, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_exclude_databricks, $param_downsize_multiple, rs_org_id, rs_project_id
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_exclude_databricks"
+  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_stats_interval", "ds_azure_disk_count_table", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_exclude_databricks", "param_downsize_multiple", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
-  function formatNumber(number, separator){
-    numString = number.toString()
-    values = numString.split(".")
-    formatted_number = ''
+  function formatNumber(number, separator) {
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   // The key name is lowercase, param value needs to be lowercase.
@@ -1086,6 +1392,15 @@ script "js_idle_and_underutil_instances", type:"javascript" do
           "in Azure Subscription ", instance["accountName"], " ",
           "(", instance["accountID"], ")"
         ]
+        // Append utilization chart to recommendationDetails if we have one  
+        if (_.isString(instance["chartUrl"])) {
+          // Construct chartUrlField which is in the "link-external" format -- display name||URL
+          instance["chartUrlField"] = instance["resourceName"]+" Utilization Chart||" + instance["chartUrl"]
+
+          // Append the chart as image markdown to the recommendation details
+          // &from_pt=true appended to end of string (as last query param) is recommended to prevent issues with the URL being misinterpretted
+          recommendationDetails.push("\n\n![Utilization Chart](" + instance["chartUrl"] + "&from_pt=true)")
+        }
 
         instance["recommendationDetails"] = recommendationDetails.join('')
 
@@ -1094,14 +1409,54 @@ script "js_idle_and_underutil_instances", type:"javascript" do
           idle_list.push(instance)
         }
       } else if (is_underutil) {
-        instance["savings"] = parseFloat(parseFloat(total_cost / 2).toFixed(3))
+        savingsMultiplier = 1
+
         instance["recommendationType"] = "Downsize"
         instance["threshold"] = param_stats_underutil_threshold_cpu_value
         instance["memoryThreshold"] = param_stats_underutil_threshold_mem_value
 
-        if (ds_azure_instance_size_map[instance['resourceType']]) {
+        if (ds_azure_instance_size_map[instance['resourceType']] && ds_azure_instance_size_map[instance['resourceType']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['resourceType']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['resourceType']]['down']] >= instance["dataDiskCount"]) {
           instance["newResourceType"] = ds_azure_instance_size_map[instance['resourceType']]['down']
         }
+
+        if (instance["newResourceType"] && param_downsize_multiple == "Yes") {
+          if (checking_cpu && checking_mem && param_stats_check_both == "Both CPU and Memory") {
+            while (ds_azure_instance_size_map[instance['newResourceType']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] >= instance["dataDiskCount"] && cpu_value * 2 < param_stats_underutil_threshold_cpu_value && mem_value * 2 < param_stats_underutil_threshold_mem_value) {
+              cpu_value = cpu_value * 2
+              mem_value = mem_value * 2
+              instance["newResourceType"] = ds_azure_instance_size_map[instance['newResourceType']]['down']
+              savingsMultiplier += 1
+            }
+          }
+
+          if (checking_cpu && checking_mem && param_stats_check_both == "Either CPU or Memory") {
+            while (ds_azure_instance_size_map[instance['newResourceType']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] >= instance["dataDiskCount"] && (cpu_value * 2 < param_stats_underutil_threshold_cpu_value || mem_value * 2 < param_stats_underutil_threshold_mem_value)) {
+              cpu_value = cpu_value * 2
+              mem_value = mem_value * 2
+              instance["newResourceType"] = ds_azure_instance_size_map[instance['newResourceType']]['down']
+              savingsMultiplier += 1
+            }
+          }
+
+          if (checking_cpu && !checking_mem) {
+            while (ds_azure_instance_size_map[instance['newResourceType']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] >= instance["dataDiskCount"] && cpu_value * 2 < param_stats_underutil_threshold_cpu_value) {
+              cpu_value = cpu_value * 2
+              instance["newResourceType"] = ds_azure_instance_size_map[instance['newResourceType']]['down']
+              savingsMultiplier += 1
+            }
+          }
+
+          if (!checking_cpu && checking_mem) {
+            while (ds_azure_instance_size_map[instance['newResourceType']]['down'] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] && ds_azure_disk_count_table[ds_azure_instance_size_map[instance['newResourceType']]['down']] >= instance["dataDiskCount"] && mem_value * 2 < param_stats_underutil_threshold_mem_value) {
+              mem_value = mem_value * 2
+              instance["newResourceType"] = ds_azure_instance_size_map[instance['newResourceType']]['down']
+              savingsMultiplier += 1
+            }
+          }
+        }
+
+        savings = total_cost - (total_cost / (2 * savingsMultiplier))
+        instance["savings"] = Math.round(savings * 1000) / 1000
 
         recommendationDetails = [
           "Resize Azure virtual machine ", instance["resourceName"], " ",
@@ -1110,12 +1465,22 @@ script "js_idle_and_underutil_instances", type:"javascript" do
           "from ", instance["resourceType"], " ",
           "to ", instance["newResourceType"]
         ]
+        // Append utilization chart to recommendationDetails if we have one
+        if (_.isString(instance["chartUrl"])) {
+          // Below, we append &from_pt=true to the chart URL to handle the case where the markdown is not rendered and `)` is appended to the URL when it's rendered by email/browser client.. This moves the `)` value to the "from_pt" value which does nothing, and results in the chart rendering correctly still
+
+          // Construct chartUrlField which is in the "link-external" format -- display name||URL
+          instance["chartUrlField"] = instance["resourceName"]+" Utilization Chart||" + instance["chartUrl"] + "&from_pt=true"
+
+          // Append the chart as image markdown to the recommendation details
+          recommendationDetails.push("\n\n![Utilization Chart](" + instance["chartUrl"] + "&from_pt=true)")
+        }
 
         instance["recommendationDetails"] = recommendationDetails.join('')
 
         if (instance["newResourceType"] != null && instance["newResourceType"] != undefined) {
-          if (instance['savings'] >= param_min_savings) {
-            underutil_total_savings += total_cost / 2
+          if (savings >= param_min_savings) {
+            underutil_total_savings += savings
             underutil_list.push(instance)
           }
         }
@@ -1181,7 +1546,9 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
       lookback_message = [
         "CPU and memory usage was analyzed over the last ",
-        param_stats_lookback.toString(), " days.\n\n"
+        param_stats_lookback.toString(), " days. ",
+        "These metrics were gathered at a granularity of '",
+        ds_stats_interval['pretty'], "'.\n\n"
       ].join('')
     }
 
@@ -1202,7 +1569,9 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
       lookback_message = [
         "CPU usage was analyzed over the last ",
-        param_stats_lookback.toString() + " days.\n\n"
+        param_stats_lookback.toString() + " days. ",
+        "CPU metrics were gathered at a granularity of '",
+        ds_stats_interval['pretty'], "'.\n\n"
       ].join('')
     }
 
@@ -1223,11 +1592,22 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
       lookback_message = [
         "Memory usage was analyzed over the last ",
-        param_stats_lookback.toString() + " days.\n\n"
+        param_stats_lookback.toString() + " days. ",
+        "Memory metrics were gathered at a granularity of '",
+        ds_stats_interval['pretty'], "'.\n\n"
       ].join('')
     }
 
-    disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+    // first get host from ds_flexera_api_hosts
+    var applied_policy_url = "https://" + ds_flexera_api_hosts["ui"]
+    // determine if policyAggregate or regular applied policy
+    if (_.isString(ds_applied_policy['policyAggregateId'])) {
+      applied_policy_url = applied_policy_url + "/orgs/" + rs_org_id + "/automation/applied-policies?policyId=" + ds_applied_policy['policyAggregateId'];
+    } else {
+      applied_policy_url = applied_policy_url + "/orgs/" + rs_org_id + "/automation/applied-policies/projects/" + rs_project_id + "?policyId=" + ds_applied_policy['id'];
+    }
+
+    disclaimer = "The above settings can be modified by editing the [" + ds_applied_policy['name'] + "](" + applied_policy_url + ") applied policy and changing the appropriate parameters."
 
     if (param_exclude_databricks == "No") {
       disclaimer += "\n\nNote: Recommendations for Azure Databricks VMs may be invalid because not all instance sizes are available for Databricks. Please set the \"Exclude Databricks\" to \"Yes\" to exclude these VMs if desired."
@@ -1247,12 +1627,24 @@ script "js_idle_and_underutil_instances", type:"javascript" do
   // Add these to both lists to ensure the first item that fails validation for each
   // contains the necessary data for the summary and detail templates
   if (idle_list.length > 0) {
+    // Append the policy metadata to the recommendationDetails which is surfaced in UI and referenced by the Engineering/App Owner personas
+    // This helps them understand what thresholds, metrics, and statistics were used to determine if the resource is "idle" or "underutilized"
+    idle_list = _.map(idle_list, function(row) {
+      row.recommendationDetails = row.recommendationDetails + "\n\n" + idle_analysis_message + lookback_message + disclaimer || '';
+      return row;
+    });
     idle_list[0]['idle_message'] = idle_message
     idle_list[0]['idle_total_savings'] = idle_total_savings
     idle_list[0]['policy_name'] = ds_applied_policy['name']
   }
 
   if (underutil_list.length > 0) {
+    // Append the policy metadata to the recommendationDetails which is surfaced in UI and referenced by the Engineering/App Owner personas
+    // This helps them understand what thresholds, metrics, and statistics were used to determine if the resource is "idle" or "underutilized"
+    underutil_list = _.map(underutil_list, function(row) {
+      row.recommendationDetails = row.recommendationDetails + "\n\n" + underutil_analysis_message + lookback_message + disclaimer || '';
+      return row;
+    });
     underutil_list[0]['underutil_message'] = underutil_message
     underutil_list[0]['underutil_total_savings'] = underutil_total_savings
     underutil_list[0]['policy_name'] = ds_applied_policy['name']
@@ -1380,6 +1772,9 @@ policy "pol_utilization" do
       field "osType" do
         label "Operating System"
       end
+      field "dataDiskCount" do
+        label "Attached Disks (#)"
+      end
       field "imagePublisher" do
         label "Image Publisher"
       end
@@ -1410,6 +1805,18 @@ policy "pol_utilization" do
         label "CPU Average %"
         path "cpu_average"
       end
+      field "cpuP90" do
+        label "CPU p90"
+        path "cpu_p90"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+        path "cpu_p95"
+      end
+      field "cpuP99" do
+        label "CPU p99"
+        path "cpu_p99"
+      end
       field "memMaximum" do
         label "Memory Maximum %"
         path "mem_maximum"
@@ -1421,6 +1828,18 @@ policy "pol_utilization" do
       field "memAverage" do
         label "Memory Average %"
         path "mem_average"
+      end
+      field "memP90" do
+        label "Memory p90"
+        path "mem_p90"
+      end
+      field "memP95" do
+        label "Memory p95"
+        path "mem_p95"
+      end
+      field "memP99" do
+        label "Memory p99"
+        path "mem_p99"
       end
       field "thresholdType" do
         label "Threshold Statistic"
@@ -1440,6 +1859,10 @@ policy "pol_utilization" do
       field "id" do
         label "ID"
         path "resourceID"
+      end
+      field "chartUrlField" do
+        label "Utilization Chart External Link"
+        format "link-external"
       end
     end
   end
@@ -1494,6 +1917,9 @@ policy "pol_utilization" do
       field "osType" do
         label "Operating System"
       end
+      field "dataDiskCount" do
+        label "Attached Disks (#)"
+      end
       field "imagePublisher" do
         label "Image Publisher"
       end
@@ -1524,6 +1950,18 @@ policy "pol_utilization" do
         label "CPU Average %"
         path "cpu_average"
       end
+      field "cpuP90" do
+        label "CPU p90"
+        path "cpu_p90"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+        path "cpu_p95"
+      end
+      field "cpuP99" do
+        label "CPU p99"
+        path "cpu_p99"
+      end
       field "memMaximum" do
         label "Memory Maximum %"
         path "mem_maximum"
@@ -1535,6 +1973,18 @@ policy "pol_utilization" do
       field "memAverage" do
         label "Memory Average %"
         path "mem_average"
+      end
+      field "memP90" do
+        label "Memory p90"
+        path "mem_p90"
+      end
+      field "memP95" do
+        label "Memory p95"
+        path "mem_p95"
+      end
+      field "memP99" do
+        label "Memory p99"
+        path "mem_p99"
       end
       field "thresholdType" do
         label "Threshold Statistic"
@@ -1554,6 +2004,10 @@ policy "pol_utilization" do
       field "id" do
         label "ID"
         path "resourceID"
+      end
+      field "chartUrlField" do
+        label "Utilization Chart External Link"
+        format "link-external"
       end
     end
   end

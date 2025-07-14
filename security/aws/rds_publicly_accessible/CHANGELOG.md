@@ -1,5 +1,30 @@
 # Changelog
 
+## v5.1.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v5.1.0
+
+- Policy template now uses dynamically updated list of instance types.
+
+## v5.0.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v5.0.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v5.0.0
+
+- Policy template renamed to `AWS Publicly Accessible RDS Instances` to better reflect its functionality
+- Added more robust tag filtering options
+- Added option to automatically terminate offending instances
+- Added additional fields to incident table for added context
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v4.2.1
 
 - Added default value for parameters that do not require user input

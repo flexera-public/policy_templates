@@ -1,0 +1,251 @@
+name "Schedule ITAM Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Schedule a Flexera ITAM report (Custom view) and send it as a email to one or more recipients. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/itam/schedule_itam_report) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/itam/schedule_itam_report"
+severity "medium"
+category "Operational"
+default_frequency "weekly"
+info(
+  version: "0.2.1",
+  provider: "Flexera",
+  service: "IT Asset Management",
+  policy_set: "Schedule Report",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to send the report to."
+  default []
+end
+
+parameter "param_report_id" do
+  type "string"
+  category "Policy Settings"
+  label "Flexera ITAM Report ID"
+  description "The ID of the Flexera ITAM Custom View Report in Flexera One."
+  # No default value, user input required
+end
+
+parameter "param_report_title" do
+  type "string"
+  category "Policy Settings"
+  label "Report Title"
+  description "The title of the report. This will also be the subject of the report email."
+  default "Flexera ITAM Report"
+end
+
+parameter "param_report_datetime" do
+  type "string"
+  category "Policy Settings"
+  label "Show Full Date/Time"
+  description "Whether to show dates with full ISO-8601 formatting in the report. Set to 'No' to just show the date without the time or ISO-8601 formatting. See the README for more details."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_itam" do
+  get_page_marker do
+    # The skipToken is url encoded, so we need to decode the %3D and %253D to = .
+    # This is not ideal implementation this seems to be enough without a true urldecode function
+    body_path jq(response, 'try(.nextPage | split("skipToken=") | .[1] | sub("%3D";"=";"g") | sub("%253D";"=";"g")) catch null')
+  end
+  set_page_marker do
+    query "skipToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_fnms_reports" do
+  request do
+    auth $auth_flexera
+    pagination $pagination_itam
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/fnms/v1/orgs/", rs_org_id, "/reports/", $param_report_id, "/execute"])
+    header "Content-Type","application/json"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "values", jmes_path(response, "values")
+  end
+end
+
+datasource "ds_fnms_reports_combined" do
+  run_script $js_fnms_reports_combined, $ds_fnms_reports
+end
+
+script "js_fnms_reports_combined", type: "javascript" do
+  parameters "ds_fnms_reports"
+  result "result"
+  code <<-'EOS'
+  result = []
+  _.each(ds_fnms_reports, function(page) { result = result.concat(page['values']) })
+EOS
+end
+
+datasource "ds_markdown_report" do
+  run_script $js_markdown_report, $ds_fnms_reports_combined, $param_report_title, $param_report_datetime
+end
+
+script "js_markdown_report", type: "javascript" do
+  parameters "ds_fnms_reports_combined", "param_report_title", "param_report_datetime"
+  result "result"
+  code <<-'EOS'
+  // Function repeats a character a number of times
+  function pad(input, times) {
+    repeated = []
+    for (var i = 0; i < times; i++) ( repeated.push(input) )
+    return repeated.join('')
+  }
+
+  // Attempt to format the column name to something more human readable
+  // This is not perfect, but it is better than the raw column name
+  // Example starting key: "R2_38ad0c2d447c5fb62fbafb7ea424cbdb_UserToAssignedAsset_AssetID"
+  function humanizeColumnName(key) {
+    // Split on _ Result: [R2, 38ad0c2d447c5fb62fbafb7ea424cbdb, UserToAssignedAsset, AssetID]
+    formattedName = key.split("_")
+
+    // If the first element is `R[0-9]` and the second element is `[a-z0-9]+` then remove the first two elements
+
+    if (formattedName[0].match(/R[0-9]/) && formattedName[1].match(/[a-z0-9]+/) ) {
+      // Remove the first two elements Result: [UserToAssignedAsset, AssetID]
+      formattedName = formattedName.slice(2)
+    }
+
+    // Join the remaining column name values with a ` / `. Result: "UserToAssignedAsset / AssetID"
+    formattedName = formattedName.join(" / ")
+
+    // Add space before each sequential series of capital letter. Result: "User To Assigned Asset / Asset ID"
+    formattedName = formattedName.replace(/([A-Z])+/g, " $&")
+    formattedName = formattedName.charAt(0).toUpperCase() + formattedName.slice(1)
+    formattedName = formattedName.trim()
+
+    return formattedName
+  }
+
+  // Use first row to get the column names
+  // This assumes that all rows have the same columns
+  // Put object keys and labels into an ordered array to make the output consistent
+  columns = _.map(_.keys(ds_fnms_reports_combined[0]).sort(), function(key) {
+    label = humanizeColumnName(key)
+
+    return {
+      // key is used to get the value from the row
+      // label is used in the output report as a column header
+      // label_pad is used for the second row of the markdown table to create a separator
+      key: key,
+      label: label,
+      label_pad: pad('-', label.length)
+    }
+  })
+
+  // First line of a markdown table has the column header names
+  // | column1 | column2 | column3 | ... |
+  // Second line of a markdown table has the column header separators
+  // | ------- | ------- | ------- | ... |
+  details = [
+    [ "| ", _.pluck(columns, 'label').join(' | ').trim(), " |" ].join(''),
+    [ "| ", _.pluck(columns, 'label_pad').join(' | '), " |" ].join('')
+  ]
+
+  // Now the rest of the table the data
+  _.each(ds_fnms_reports_combined, function(line) {
+    entries = _.map(columns, function(column) {
+      entry = line[column['key']] ? line[column['key']] : ""
+
+      if (param_report_datetime == "No" && entry.length == 20 && entry.indexOf("T") == 10 && entry.indexOf("Z") == 19 && new Date(entry).toString != "Invalid Date") {
+        entry = new Date(entry).toISOString().substring(0, 10)
+      }
+
+      return [ entry, " | " ].join('')
+    })
+
+    details.push([ "| " ].concat(entries).concat([ " |" ]).join('').trim())
+  })
+
+  result = {
+    name: param_report_title,
+    details: details.join("\n")
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_fnms_reports_combined" do
+  validate $ds_markdown_report do
+    summary_template "{{ data.name }}"
+    detail_template "{{ data.details }}"
+    # The check always fails which results in the escalation always triggering
+    check eq(1, 0)
+    escalate $esc_email
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

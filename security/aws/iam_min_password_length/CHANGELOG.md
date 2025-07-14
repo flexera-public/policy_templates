@@ -1,5 +1,29 @@
 # Changelog
 
+## v3.0.4
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v3.0.3
+
+- Updated service field in metadata to "Identity & Access Management". Functionality unchanged.
+
+## v3.0.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.0.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v3.0.0
+
+- Policy template renamed to `AWS IAM Insufficient Required Password Length` to better reflect its functionality
+- Added ability to set a specific password length to test the password policy for
+- Improved readability of incident output with additional formatting and context
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v2.5
 
 - Updated description of `Account Number` parameter

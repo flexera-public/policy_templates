@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.5.4
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v2.5.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v2.5.2
 
 - Enhanced policy functionality to display data cumulatively or monthly (in both chart and table format) based on a new "report type" parameter.

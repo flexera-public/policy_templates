@@ -1,5 +1,30 @@
 # Changelog
 
+## v4.4.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v4.4.0
+
+- Policy template now uses dynamically updated list of instance types.
+
+## v4.3.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v4.3.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v4.3.0
+
+- Added `Resource ARN` to incident table.
+
+## v4.2.0
+
+- Added parameter `Statistic Lookback Period` to specify how many days of CloudWatch data to gather.
+- Improved policy execution speed by batching CloudWatch requests.
+
 ## v4.1
 
 - fixed link to README in policy description

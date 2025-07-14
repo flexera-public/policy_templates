@@ -4,7 +4,7 @@
 
 This policy template checks for AWS resources missing the user-specified tags. An incident is raised containing the untagged resources, and the user has the option to tag them.
 
-## Functional Details
+## How It Works
 
 - The policy leverages the AWS Tagging API to retrieve a list of all resources in the AWS estate.
 - The policy then filters that list based on user-specified parameters.
@@ -17,6 +17,13 @@ This policy template checks for AWS resources missing the user-specified tags. A
 - *Include Savings* - Whether or not to include the total estimated savings opportunities for each resource in the results. Disabling this can speed up policy execution but will result in the relevant fields in the report being empty.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Resource Types* - A list of resource types to report on. Leave empty to report all taggable resources that aren't compliant. Entries must be in `service` or `service:type` format. The specific values for each service and resource type [can be found in the AWS documentation](https://docs.aws.amazon.com/service-authorization/latest/reference/reference.html). Examples:
+  - ec2
+  - ec2:instance
+  - s3
+  - rds:db
+  - dynamodb:table
+- *Include Account Tags* - Whether or not to include the AWS account itself as a resource whose tags are checked and reported on.
 - *Tags* - The policy will report resources missing the specified tags. The following formats are supported:
   - `Key` - Find all resources missing the specified tag key.
   - `Key==Value` - Find all resources missing the specified tag key:value pair and all resources missing the specified tag key.
@@ -27,11 +34,9 @@ This policy template checks for AWS resources missing the user-specified tags. A
 - *Consider Tag Dimensions* - Exclude results when a resource is tagged with a tag key that is normalized by a Tag Dimension.
   - Considers resource tags which are normalized under tag dimensions and excludes those matching from the missing tags results.
   - Mitigates/prevents seeing resources that are tagged using some tag key which is normalized under a matching Tag Dimension.
-  - `Tags` parameter value must match a Tag Dimension Name ("Cost Center") or Tag Dimension ID ("tag_cost_center") for the lookup to occur
-
-  For example,
-   - A resource tagged `app=prod-cluster`
-   - A Tag Dimension named "Application" (tag_application) which normalizes tag resource tag keys `app`, `Application`, `App`, `application`, etc...
+  - `Tags` parameter value must match a Tag Dimension Name ("Cost Center") or Tag Dimension ID ("tag_cost_center") for the lookup to occur. For example:
+    - A resource tagged `app=prod-cluster`
+    - A Tag Dimension named "Application" (tag_application) which normalizes tag resource tag keys `app`, `Application`, `App`, `application`, etc.
 
   If Exclude Tag Dimensions is enabled and `Tags=["Application"]` the example resource would be considered to **not** be missing the `Application` tag, because it has the `app` tag which is normalized under the "Application" tag dimension
 
@@ -48,12 +53,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `sts:GetCallerIdentity`
-  - `config:TagResource`
   - `ec2:DescribeRegions`
   - `tag:GetResources`
-  - `ec2:CreateTags`*
   - `tag:TagResources`*
-  - `rds:AddTagsToResources`*
+  - `organizations:TagResource`*
 
   \* Only required for taking action (adding tags); the policy will still function in a read-only capacity without these permissions.
 
@@ -67,12 +70,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
               "Effect": "Allow",
               "Action": [
                   "sts:GetCallerIdentity",
-                  "config:TagResource",
                   "ec2:DescribeRegions",
                   "tag:GetResources",
-                  "ec2:CreateTags",
                   "tag:TagResources",
-                  "rds:AddTagsToResource"
+                  "organizations:TagResource"
               ],
               "Resource": "*"
           }
@@ -91,4 +92,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This policy template does not incur any cloud costs.

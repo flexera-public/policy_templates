@@ -3,14 +3,16 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Checks for Google Cloud Storage buckets that are open to the public. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/google/public_buckets) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/security/google/public_buckets"
 category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "3.1",
+  version: "3.2.1",
   provider: "Google",
   service: "Storage",
-  policy_set: "Open Buckets"
+  policy_set: "Open Buckets",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -40,6 +42,24 @@ parameter "param_projects_list" do
   label "Allow/Deny Projects List"
   description "A list of allowed or denied Subscription IDs/names. See the README for more details."
   default []
+end
+
+parameter "param_projects_ignore_sys" do
+  type "string"
+  category "Filters"
+  label "Ignore System Projects"
+  description "Whether or not to automatically ignore system projects e.g. projects whose id begins with 'sys-'"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_projects_ignore_app" do
+  type "string"
+  category "Filters"
+  label "Ignore Google Apps Script Projects"
+  description "Whether or not to automatically ignore Google Apps Script projects e.g. projects whose id begins with 'app-'"
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -143,15 +163,15 @@ datasource "ds_google_projects" do
 end
 
 datasource "ds_google_projects_filtered" do
-  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list, $param_projects_ignore_sys, $param_projects_ignore_app
 end
 
 script "js_google_projects_filtered", type: "javascript" do
-  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
   result "result"
   code <<-EOS
   if (param_projects_list.length > 0) {
-    result = _.filter(ds_google_projects, function(project) {
+    filtered = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
 
       if (param_projects_allow_or_deny == "Deny") {
@@ -161,8 +181,12 @@ script "js_google_projects_filtered", type: "javascript" do
       return include_project
     })
   } else {
-    result = ds_google_projects
+    filtered = ds_google_projects
   }
+
+  result = _.reject(filtered, function(project) {
+    return (project['id'].substring(0, 4) == "sys-" && param_projects_ignore_sys == "Yes") || (project['id'].substring(0, 4) == "app-" && param_projects_ignore_app == "Yes")
+  })
 EOS
 end
 
@@ -476,7 +500,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do

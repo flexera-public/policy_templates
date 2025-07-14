@@ -1,5 +1,17 @@
 # Changelog
 
+## v7.2.3
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v7.2.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v7.2.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
 ## v7.2.0
 
 - Modified internal names for incident fields for more accurate scraping into Optimization dashboard

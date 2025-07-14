@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.6.2
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v0.6.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v0.6.0
+
+- Added support for additional recommendation policy templates
+- Changed "Disk" option to "Storage" for `Recommendation List` parameter to better reflect functionality
+- Added "PaaS" option to `Recommendation List` parameter
+
 ## v0.5.0
 
 - Added parameter `Always Email Incident` that forces incident to always be emailed if enabled

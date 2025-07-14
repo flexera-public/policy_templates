@@ -3,15 +3,17 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Checks for Azure instance types that have been superseded and, optionally, updates the instance type. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/superseded_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/azure/superseded_instances"
 severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "2.1",
+  version: "2.1.5",
   provider: "Azure",
   service: "Compute",
   policy_set: "Superseded Compute Instances",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -142,18 +144,16 @@ end
 # Various data tables needed for later in the policy
 datasource "ds_azure_instance_size_map" do
   request do
-    verb "GET"
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/azure/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/azure/instance_types.json"
     header "User-Agent", "RS Policies"
   end
 end
 
 datasource "ds_azure_instance_cost_map" do
   request do
-    verb "GET"
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/azure/azure_vm_pricing.json"
+    path "/flexera-public/policy_templates/master/data/azure/azure_vm_pricing.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -237,9 +237,9 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -449,8 +449,8 @@ datasource "ds_azure_instances" do
       field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
       field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "tags", jmes_path(col_item, "tags")
-      field "subscriptionId",val(iter_item, "id")
-      field "subscriptionName",val(iter_item, "name")
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
     end
   end
 end
@@ -696,21 +696,28 @@ script "js_superseded_instances", type: "javascript" do
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
-  function formatNumber(number, separator){
-    numString = number.toString()
-    values = numString.split(".")
-    formatted_number = ''
+  function formatNumber(number, separator) {
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   result = []
@@ -749,6 +756,7 @@ script "js_superseded_instances", type: "javascript" do
     if (typeof(superseded_type) == 'string' && typeof(operating_system) == 'string') {
       if (ds_azure_instance_cost_map[region] != undefined) {
         instance_type_cost_map = ds_azure_instance_cost_map[region][instance_type]
+        instance_type_price_map = undefined
 
         if (instance_type_cost_map != undefined) {
           instance_type_price_map = instance_type_cost_map[operating_system]
@@ -759,6 +767,7 @@ script "js_superseded_instances", type: "javascript" do
         }
 
         superseded_type_cost_map = ds_azure_instance_cost_map[region][superseded_type]
+        superseded_type_price_map = undefined
 
         if (superseded_type_cost_map != undefined) {
           superseded_type_price_map = superseded_type_cost_map[operating_system]
@@ -876,14 +885,29 @@ script "js_superseded_instances", type: "javascript" do
 
   // Dummy entry to ensure the check statement in validation always runs at least once
   result.push({
-    accountID: "",          accountName: "",              resourceGroup: "",
-    resourceID: "",         resourceName: "",             resourceType: "",
-    resourceKind: "",       region: "",                   osType: "",
-    service: "",            cost: "",                     billing_center: "",
-    purchase_option: "",    recommendationDetails: "",    newResourceType: "",
-    tags: "",               instance_type_price: "",      superseded_type_price: "",
-    savings: "",            savingsCurrency: "",          policy_name: "",
-    total_savings: "",      message: ""
+    accountID: "",
+    accountName: "",
+    resourceGroup: "",
+    resourceID: "",
+    resourceName: "",
+    resourceType: "",
+    resourceKind: "",
+    region: "",
+    osType: "",
+    service: "",
+    cost: "",
+    billing_center: "",
+    purchase_option: "",
+    recommendationDetails: "",
+    newResourceType: "",
+    tags: "",
+    instance_type_price: "",
+    superseded_type_price: "",
+    savings: "",
+    savingsCurrency: "",
+    policy_name: "",
+    total_savings: "",
+    message: ""
   })
 
   result[0]['total_savings'] = savings_message
@@ -1034,7 +1058,7 @@ define change_instances($data, $param_azure_endpoint) return $all_responses do
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
@@ -1060,7 +1084,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     header "Api-Version", "1.0"
   end
   result do

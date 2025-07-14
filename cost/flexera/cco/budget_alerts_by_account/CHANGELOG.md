@@ -1,5 +1,21 @@
 # Changelog
 
+## v2.5.4
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v2.5.3
+
+- Policy template metadata modified so that it is no longer published in the catalog.
+
+## v2.5.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v2.5.1
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
 ## v2.5
 
 - Updated policy metadata to make it more clear what Flexera service the policy is for

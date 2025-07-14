@@ -1,5 +1,29 @@
 # Changelog
 
+## v2.10.6
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v2.10.5
+
+- Policy template metadata modified so that it is no longer published in the catalog.
+
+## v2.10.4
+
+- Updated policy template metadata provider from "GCE" to "Google". Functionality unchanged.
+
+## v2.10.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v2.10.2
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v2.10.1
+
+- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
 ## v2.10
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM

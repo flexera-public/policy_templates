@@ -1,5 +1,20 @@
 # Changelog
 
+## v3.0.2
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v3.0.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.0.0
+
+- Policy template renamed to `Azure Subscriptions Without Owner Security Alerts` to better reflect its functionality
+- Added ability to filter results by subscription
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v2.3
 
 - Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.

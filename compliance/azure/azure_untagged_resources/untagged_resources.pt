@@ -3,14 +3,16 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Find all taggable Azure resources missing any of the user provided tags with the option to update the tags. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources"
 category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.1",
+  version: "3.3.1",
   provider: "Azure",
   service: "Compute",
-  policy_set: "Untagged Resources"
+  policy_set: "Untagged Resources",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -102,6 +104,15 @@ parameter "param_regions_list" do
   default []
 end
 
+parameter "param_include_account" do
+  type "string"
+  category "Filters"
+  label "Include Subscription/Resource Group Tags"
+  description "Whether or not to include Azure Subscriptions and Resource Groups as resources whose tags are checked and reported on."
+  allowed_values "Include Subscription/Resource Group", "Do Not Include Subscription/Resource Group"
+  default "Do Not Include Subscription/Resource Group"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -151,7 +162,7 @@ end
 datasource "ds_azure_resource_types" do
   request do
     host "raw.githubusercontent.com"
-    path "/flexera/policy_templates/master/data/azure/resource_types.json"
+    path "/flexera-public/policy_templates/master/data/azure/resource_types.json"
   end
 end
 
@@ -203,8 +214,58 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_resources" do
+datasource "ds_azure_subscriptions_with_tags" do
   iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Resources/tags/default"])
+    query "api-version", "2021-04-01"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    field "tags", jmes_path(response, "properties.tags")
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "state", val(iter_item, "state")
+    field "subscriptionId", val(iter_item, "id")
+    field "subscriptionName", val(iter_item, "name")
+    field "type", "Subscription"
+    field "resourceType", "Subscription"
+  end
+end
+
+datasource "ds_azure_resource_groups" do
+  iterate $ds_azure_subscriptions_with_tags
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item, "id"), "/resourcegroups"])
+    query "api-version", "2021-04-01"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+      field "resourceGroup", jmes_path(col_item, "name")
+      field "type", "Resource Group"
+      field "resourceType", "Resource Group"
+    end
+  end
+end
+
+datasource "ds_azure_resources" do
+  iterate $ds_azure_subscriptions_with_tags
   request do
     auth $auth_azure
     pagination $pagination_azure
@@ -218,15 +279,16 @@ datasource "ds_azure_resources" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", val(iter_item, "id")
-      field "subscriptionName", val(iter_item, "name")
-      field "id", jmes_path(col_item,"id")
-      field "resourceGroup", get(4, split(jmes_path(col_item,"id"), '/'))
-      field "namespace", get(6, split(jmes_path(col_item,"id"), '/'))
+      field "id", jmes_path(col_item, "id")
+      field "namespace", get(6, split(jmes_path(col_item, "id"), '/'))
       field "region", jmes_path(col_item, "location")
       field "name", jmes_path(col_item, "name")
       field "tags", jmes_path(col_item, "tags")
-      field "type", jmes_path(col_item, "type")
+      field "resourceType", jmes_path(col_item, "type")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+      field "type", "Resource"
     end
   end
 end
@@ -242,11 +304,7 @@ script "js_azure_resources_region_filtered", type: "javascript" do
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_resources, function(resource) {
       include_resource = _.contains(param_regions_list, resource['region'])
-
-      if (param_regions_allow_or_deny == "Deny") {
-        include_resource = !include_resource
-      }
-
+      if (param_regions_allow_or_deny == "Deny") { include_resource = !include_resource }
       return include_resource
     })
   } else {
@@ -269,14 +327,11 @@ script "js_azure_resources_type_filtered", type: "javascript" do
         return type.toLowerCase().trim()
       })
 
-      include_resource = _.contains(resourcetypes_list, resource['type'].toLowerCase().trim())
-
-      if (param_resourcetypes_allow_or_deny == "Deny") {
-        include_resource = !include_resource
-      }
+      include_resource = _.contains(resourcetypes_list, resource['resourceType'].toLowerCase().trim())
+      if (param_resourcetypes_allow_or_deny == "Deny") { include_resource = !include_resource }
 
       // Filter out resources with untaggable resource types based on our list
-      return include_resource && ds_azure_resource_types[resource['type']]['supportsTags']
+      return include_resource && ds_azure_resource_types[resource['resourceType']]['supportsTags']
     })
   } else {
     result = ds_azure_resources_region_filtered
@@ -285,11 +340,11 @@ EOS
 end
 
 datasource "ds_azure_resources_missing_tags" do
-  run_script $js_azure_resources_missing_tags, $ds_azure_resources_type_filtered, $param_tags, $param_tags_boolean
+  run_script $js_azure_resources_missing_tags, $ds_azure_subscriptions_with_tags, $ds_azure_resource_groups, $ds_azure_resources_type_filtered, $param_tags, $param_tags_boolean, $param_include_account
 end
 
 script "js_azure_resources_missing_tags", type: "javascript" do
-  parameters "ds_azure_resources_type_filtered", "param_tags", "param_tags_boolean"
+  parameters "ds_azure_subscriptions_with_tags", "ds_azure_resource_groups", "ds_azure_resources_type_filtered", "param_tags", "param_tags_boolean", "param_include_account"
   result "result"
   code <<-'EOS'
   result = []
@@ -325,8 +380,14 @@ script "js_azure_resources_missing_tags", type: "javascript" do
   })
 
   if (comparators.length > 0) {
+    if (param_include_account == "Include Subscription/Resource Group") {
+      resources = ds_azure_resources_type_filtered.concat(ds_azure_subscriptions_with_tags, ds_azure_resource_groups)
+    } else {
+      resources = [].concat(ds_azure_resources_type_filtered)
+    }
+
     // Check each VM for missing tags
-    _.each(ds_azure_resources_type_filtered, function(resource) {
+    _.each(resources, function(resource) {
       resource_tags = resource['tags']
       if (typeof(resource_tags) != 'object') { resource_tags = {} }
 
@@ -427,28 +488,52 @@ script "js_missing_tags_incident", type: "javascript" do
       })
     }
 
+    if (resource['type'] == "Subscription") {
+      resourceID = "/subscriptions/" + resource['id']
+      api_version = "2021-01-01"
+      region = ""
+    } else if (resource['type'] == "Resource Group") {
+      resourceID = "/subscriptions/" + resource['subscriptionId'] + "/resourceGroups/" + resource['name']
+      api_version = "2021-04-01"
+      region = ""
+    } else {
+      resourceID = resource['id']
+      api_version = ds_azure_api_versions[resource['resourceType'].toLowerCase().trim()]
+      region = resource['region']
+    }
+
     return {
       accountID: resource['subscriptionId'],
       accountName: resource['subscriptionName'],
       resourceGroup: resource['resourceGroup'],
       resourceName: resource['name'],
-      resourceID: resource['id'],
-      resourceType: resource['type'],
-      region: resource['region'],
+      resourceID: resourceID,
+      resourceType: resource['resourceType'],
+      region: region,
+      type: resource['type'],
       tags_object: resource['tags'],
       tags: resource_tags.join(', '),
       missing_tags: resource['missing_tags'].join(', '),
       policy_name: ds_applied_policy['name'],
-      api_version: ds_azure_api_versions[resource['type'].toLowerCase().trim()],
+      api_version: api_version,
       message: ""
     }
   })
 
   // Dummy item to ensure that the check statement in the policy executes at least once
   result.push({
-    accountID: "",    accountName: "",   resourceGroup: "",  resourceName: "",
-    resourceID: "",   resourceType: "",  region: "",         tags_object: "",
-    tags: "",         policy_name: "",   api_version: "",    missing_tags: "",
+    accountID: "",
+    accountName: "",
+    resourceGroup: "",
+    resourceName: "",
+    resourceID: "",
+    resourceType: "",
+    region: "",
+    tags_object: "",
+    tags: "",
+    policy_name: "",
+    api_version: "",
+    missing_tags: "",
     message: ""
   })
 
@@ -474,10 +559,13 @@ policy "pol_azure_missing_tags" do
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
-    escalate $esc_tag_instances
+    escalate $esc_tag_resources
     hash_exclude "message", "api_version"
     export do
       resource_level true
+      field "type" do
+        label "Type"
+      end
       field "accountID" do
         label "Subscription ID"
       end
@@ -530,40 +618,42 @@ escalation "esc_email" do
   email $param_email
 end
 
-escalation "esc_tag_instances" do
+escalation "esc_tag_resources" do
   automatic false
-  label "Add Tags"
-  description "Update tags of the selected instance"
+  label "Add/Update Tags"
+  description "Update tags of the selected resources"
   parameter "param_tags_to_add" do
     type "list"
     category "Actions"
-    label "Add Tags (Key:Value)"
-    description "Cloud native tags to add to instances with missing tags. Use Key=Value format. Example: env=production"
+    label "Add/Update Tags (Key=Value)"
+    description "Cloud native tags to add to resources with missing tags. Use Key=Value format. Example: env=production"
     allowed_pattern /^[^=]+=[^=]+$/
+    # No default value, user input required
   end
-  run "tag_instances", data, $param_azure_endpoint, $param_tags_to_add
+  run "tag_resources", data, $param_azure_endpoint, $param_tags_to_add
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define tag_instances($data, $param_azure_endpoint, $param_tags_to_add) return $all_responses do
+define tag_resources($data, $param_azure_endpoint, $param_tags_to_add) return $all_responses do
   $$all_responses = []
 
-  foreach $instance in $data do
+  foreach $resource in $data do
     sub on_error: handle_error() do
-      call tag_instance($instance, $param_azure_endpoint, $param_tags_to_add) retrieve $tag_response
+      call tag_resource($resource, $param_azure_endpoint, $param_tags_to_add)
     end
   end
 
   if inspect($$errors) != "null"
-    raise join($$errors,"\n")
+    raise join($$errors, "\n")
   end
 end
 
-define tag_instance($instance, $param_azure_endpoint, $param_tags_to_add) return $response do
-  $tags = $instance["tags_object"]
+# https://learn.microsoft.com/en-us/rest/api/resources/tags/create-or-update-at-scope?view=rest-resources-2025-04-01
+define tag_resource($resource, $param_azure_endpoint, $param_tags_to_add) do
+  $tags = $resource["tags_object"]
 
   if $tags == null
     $tags = {}
@@ -576,28 +666,31 @@ define tag_instance($instance, $param_azure_endpoint, $param_tags_to_add) return
   end
 
   $host = $param_azure_endpoint
-  $href = $instance["id"]
-  $params = "?api-version=" + $instance["api_version"]
-  $url = $host + $href + $params
-  task_label("PATCH " + $url)
+  $href = $resource["id"] + "/providers/Microsoft.Resources/tags/default"
+  $url = $host + $href
+  task_label("PUT " + $url)
 
   $response = http_request(
     auth: $$auth_azure,
     https: true,
-    verb: "patch",
+    verb: "put",
     host: $host,
     href: $href,
-    query_strings: { "api-version": $instance["api_version"] },
-    body: { "tags": $tags }
+    query_strings: { "api-version": "2025-04-01" },
+    body: {
+        "properties": {
+          "tags": $tags
+        }
+      }
   )
 
-  task_label("Patch Azure resource response: " + $instance["id"] + " " + to_json($response))
-  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
+  task_label("Tag Azure Resource response: " + $resource["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PUT " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response patching Azure resource: "+ $instance["id"] + " " + to_json($response)
+    raise "Unexpected response from Tag Azure Resource: "+ $resource["id"] + " " + to_json($response)
   else
-    task_label("Patch Azure resource successful: " + $instance["id"])
+    task_label("Tag Azure Resource successful: " + $resource["id"])
   end
 end
 
@@ -623,7 +716,7 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
     header "Api-Version", "1.0"
   end
   result do

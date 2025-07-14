@@ -1,5 +1,20 @@
 # Changelog
 
+## v3.0.2
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v3.0.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v3.0.0
+
+- Added support for APAC API endpoint
+- Policy now uses and requires a general Flexera One credential
+- Incident summary now includes applied policy name
+- General code cleanup and normalization
+
 ## v2.5
 
 - Policy updated so that policy is correctly identified as a Flexera policy

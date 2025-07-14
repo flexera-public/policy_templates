@@ -1,5 +1,27 @@
 # Changelog
 
+## v4.3.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v4.3.0
+
+- Added `Version` and `Database Format` fields to the incident table.
+
+## v4.2.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v4.2.0
+
+- Added `Resource Hourly Cost` and `Currency` to incident table for added context
+
+## v4.1.0
+
+- Added ability to filter results by SQL resource type via `SQL Resource Types` parameter
+- Added ability to filter results by SQL Virtual Machine image SKU via `SQL Virtual Machine Image SKUs` parameter
+- Fixed bug where Elastic Pool recommendations were not properly reported in incident
+
 ## v4.0
 
 - Fixed bug where databases ineligible for AHUB would appear in incident

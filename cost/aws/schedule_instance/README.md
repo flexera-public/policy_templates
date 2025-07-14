@@ -8,19 +8,31 @@ This policy schedules AWS EC2 instances to start and stop at specific times base
 
 This policy uses the schedule tag value (default key: schedule) for scheduling the instance. The appropriate value should be added to as a tag to every instance you want to manage via this policy.
 
-This value is a string consisting of 3 semicolon-separated substrings:
+### Example Schedule Tables
+
+- `schedule` = `00:00-12:00;SU,SA`
+  Start at 12am (midnight) and stop at 12pm (noon) on Saturday and Sunday (default timezone is UTC)
+
+- `schedule` = `08:15-17:30;MO,TU,WE,TH,FR;America/New_York`
+  Start at 8:15am and stop at 5:30pm every weekday in US Eastern Time (America/New York)
+
+### Schedule Label Format
+
+`<Schedule Label>` = `<Hours>;<Days of the Week>[;<Optional Timezone>]`
+
+The Schedule Label value is a string consisting of 2 or 3 semicolon-separated (`;`) substrings (Hours, Days of the Week, and optional Timezone) with the following format:
 
 - *Hours* - Start and stop hours are 24 hour format. For example, a value of `8:15-17:30` will start instances at 8:15 and stop them at 17:30 (5:30 pm). If the minute field is left blank, the minute value of `00` will be assumed.
 - *Days of the Week* - Comma-separated list of days indicated by their two-letter abbreviation value from the following list: SU,MO,TU,WE,TH,FR,SA. For example, a value of `MO,TU,WE,TH,FR` will start and stop the instances on weekdays but not on weekends.
-- *Timezone* - Timezone in [tz database format](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). For example, a value of `America/New_York` would specify US Eastern Time. Defaults to UTC if no Timezone field is provided.
+- Optional: *Timezone* - Timezone in [tz database format](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). For example, a value of `America/New_York` would specify US Eastern Time. Defaults to UTC if no Timezone field is provided.
 
-**Example Value:** 8:15-17:30;MO,TU,WE,TH,FR;America/New_York
+### Schedule Action Tag (Optional)
 
-- Starts instances at 8:15am
-- Stops instance at 5:30pm
-- Monday - Friday, US Eastern Time.
+You can optionally use a Schedule Action tag (default key: schedule_action) to specify the behavior during and outside the scheduled window. Supported values are:
 
-In the above example, instances are off during the weekend and start back up on Monday morning at 8:15am and are off at 5:30pm every weekday. Times are UTC unless the Timezone field is provided.
+- `startstop` (default if not specified) - Start instances during the window, stop them outside the window
+- `start` - Only start instances during the window, never automatically stop them
+- `stop` - Only stop instances during the window, never automatically start them
 
 ## Input Parameters
 
@@ -29,8 +41,7 @@ This policy has the following input parameters required when launching the polic
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Schedule Tag Key* - Tag key that schedule information is stored in. Default is recommended for most use cases.
-- *Next Start Tag Key* - Tag key to use for scheduling instance to start. Default is recommended for most use cases.
-- *Next Stop Tag Key* - Tag key to use for scheduling instance to stop. Default is recommended for most use cases.
+- *Schedule Action Tag Key (Optional)* - Optional tag key to specify what action to use. Expected values are "startstop", "start", "stop". Default behavior is "startstop" if not specified.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
@@ -41,6 +52,7 @@ This policy has the following input parameters required when launching the polic
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+- *Enforce Schedules* - Whether to enforce schedules on instances that are not in the correct state. If set to 'No', the policy will not action if the instance is not in the expected state when an action is to be taken.
 
 Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
 For example if a user selects the "Schedule Instances" action while applying the policy, the identified resources will be stopped or started as per the schedule.
@@ -57,24 +69,39 @@ The following policy actions are taken on any resources found to be out of compl
 - *Stop Instances* - Stop the resources if they are currently running.
 - *Terminate Instances* - Terminate the resources.
 
-## Prerequisites
+## Error Handling and Retry Logic
 
-### Credential configuration
+This policy includes sophisticated error handling and retry mechanisms:
+
+- Each start/stop operation is attempted up to 3 times if it fails
+- Detailed error messages are collected and reported for troubleshooting
+- The policy verifies that instances reach the expected state after operations
+- If all retry attempts fail, comprehensive error information is provided in the incident
+
+## Prerequisites
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
+### Credential configuration
+
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `ec2:DescribeInstances`
-  - `ec2:StartInstances`
-  - `ec2:StopInstances`
-  - `ec2:TerminateInstances`
-  - `ec2:CreateTags`
-  - `ec2:DeleteTags`
+  - `ec2:StartInstances`*
+  - `ec2:StopInstances`*
+  - `ec2:DeleteTags`*
   - `ec2:DescribeRegions`
-  - `kms:CreateGrant`*
-  - `kms:Decrypt`*
+  - `kms:CreateGrant`*§
+  - `kms:Decrypt`*§
+  - `ec2:CreateTags`*†
+  - `ec2:TerminateInstances`*‡
 
-  \* Only required if using Customer Managed KMS Key on Volumes mounted by EC2 Instance(s)
+  \* These permissions enable taking actions against cloud resources.
+
+  † Only required for `Update Schedule` Action; the policy will still start/stop instance without this permission.
+
+  ‡ Only required for `Terminate Instance` Action; the policy will still start/stop instance without this permission.
+
+  § Only required if using Customer Managed KMS Key on Volumes mounted by EC2 Instance(s)
 
   Example IAM Permission Policy:
 

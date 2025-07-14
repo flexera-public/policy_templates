@@ -4,11 +4,11 @@
 
 This policy is no longer being updated. The [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) policy now includes this functionality and is the recommended policy for obtaining these recommendations.
 
-## What it does
+## What It Does
 
 This Policy Template gathers AWS instances with inefficient utilization using CloudWatch CPU and Memory Metrics over a 30 day average and downsized after approval.
 
-## Functional Details
+## How It Works
 
 This policy identifies all running instances reporting performance metrics to CloudWatch whose CPU or Memory utilization is below the thresholds set in the **Average used memory percentage** and **Average used CPU percentage** parameters.
 
@@ -105,4 +105,4 @@ Depending on the number of days you choose to collect metrics for, you may need 
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

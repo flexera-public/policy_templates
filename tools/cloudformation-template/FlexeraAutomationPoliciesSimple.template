@@ -1,0 +1,142 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "CloudFormation Stack with IAM Role and IAM Permission Policy used by Flexera Automation. Official Docs: https://docs.flexera.com/"
+# Read Only for all resources
+# For more details, see: https://github.com/flexera-public/policy_templates/blob/master/tools/cloudformation-template/README.md
+
+Metadata:
+  # AWS::CloudFormation::Interface is a metadata key that defines how parameters are grouped and sorted in the AWS CloudFormation console.
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-cloudformation-interface.html
+  AWS::CloudFormation::Interface:
+    # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-cloudformation-interface-parametergroup.html
+    ParameterGroups:
+      # ParameterGroup with paramFlexeraOrgId should be first.
+      # paramFlexeraOrgId only param that is actually required (if Org is on app.flexera.com)
+      - Label:
+          default: "Parameters related to your Organization on the Flexera Platform"
+        Parameters:
+          - paramFlexeraOrgId
+          - paramFlexeraZone
+      - Label:
+          default: "Parameters related to the IAM Role that is created"
+        Parameters:
+          - paramRoleName
+          - paramRolePath
+      - Label:
+          default: "Parameters related to permissions policies to attach to role"
+        Parameters:
+          # End for each policy template
+          - paramPermsAttachExistingPolicies
+    # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-cloudformation-interface-parameterlabel.html
+    ParameterLabels:
+      paramRoleName:
+        # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-cloudformation-interface-label.html
+        # The default label that the CloudFormation console uses to name a parameter group or parameter.
+        default: "IAM Role Name"
+      paramRolePath:
+        default: "IAM Role Path"
+      paramFlexeraOrgId:
+        default: "Flexera Organization ID"
+      paramFlexeraZone:
+        default: "Flexera Zone"
+      # End for each policy template
+      paramPermsAttachExistingPolicies:
+        default: "Permission Policies for IAM Role"
+
+Parameters:
+  # ParameterGroup: Parameters related to your Organization on the Flexera Platform
+  paramFlexeraOrgId:
+    Description: >-
+      The Organization ID in Flexera which trust will be granted to use the IAM Role that will be created
+    Type: String
+    AllowedPattern: "[0-9]+"
+    MinLength: 1
+    ConstraintDescription: Organization ID must be provided and match regex [0-9]+
+  paramFlexeraZone:
+    Description: >-
+      The Flexera Zone which trust will be granted to.  The Organization ID should be located in this Flexera Zone.
+    Type: String
+    Default: app.flexera.com
+    AllowedValues:
+      - app.flexera.com
+      - app.flexera.eu
+      - app.flexera.au
+      - app.flexeratest.com
+
+  # ParameterGroup: Parameters for the IAM Role that is created
+  paramRoleName:
+    Description: Name of the the IAM Role that will be created. If you plan to create more than one IAM Role (i.e. one for each Policy Template, or to trust multiple Orgs) you will need to modify this to prevent naming conflict.
+    Type: String
+    Default: FlexeraAutomationAccessRole
+    # IAM Role Name Max Length is 64chars
+    MaxLength: 64
+  paramRolePath:
+    Description: Path for the IAM Role that will be created. Generally does not need to be modified.
+    Type: String
+    Default: /
+
+  # End for each policy template
+  paramPermsAttachExistingPolicies:
+    Description: 'Existing IAM Permission Policies to attach to the IAM Role that will be created. Comma separated list of IAM Policy ARNs -- i.e. arn:aws:iam::aws:policy/ReadOnlyAccess'
+    Type: String
+    Default: arn:aws:iam::aws:policy/ReadOnlyAccess
+    #  AWS Managed Policy ARN:      arn:aws:iam::aws:policy/ReadOnlyAccess
+    #  Customer Managed Policy ARN: arn:aws:iam::123456789012:policy/CustomPolicy
+    AllowedPattern: '^((arn:aws:iam::(\d{12}|aws)?:policy\/[\w+=,.@-]{1,128})(,)?)*$'
+    ConstraintDescription: 'Malformed IAM Policy ARN.  Must match pattern ^((arn:aws:iam::(\d{12}|aws)?:policy\/[\w+=,.@-]{1,128})(,)?)*$'
+
+Conditions:
+  # End for each policy template
+  ValueProvidedparamPermsAttachExistingPolicies: !Not
+    - !Equals
+      - !Ref paramPermsAttachExistingPolicies
+      - ""
+
+Mappings:
+  TrustedRoleMap:
+    app.flexera.com:
+      roleArn: "arn:aws:iam::451234325714:role/production_customer_access"
+    app.flexera.eu:
+      roleArn: "arn:aws:iam::451234325714:role/production_eu_customer_access"
+    app.flexera.au:
+      roleArn: "arn:aws:iam::451234325714:role/production_apac_customer_access"
+    app.flexeratest.com:
+      roleArn: "arn:aws:iam::274571843445:role/staging_customer_access"
+
+Resources:
+  # IAM Role Resource
+  iamRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Ref paramRoleName
+      Description: !Join
+        - " "
+        - - "Allows access from Flexera Platform. This IAM Role and the attached permission policies were created and are managed by CloudFormation Stack:"
+          - !Ref AWS::StackId
+      Path: !Ref paramRolePath
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !FindInMap
+                - TrustedRoleMap
+                - !Ref paramFlexeraZone
+                - roleArn
+            Action: "sts:AssumeRole"
+            Condition:
+              StringEquals:
+                "sts:ExternalId": !Ref paramFlexeraOrgId
+      # ManagedPolicyArns value is conditional based on input paramPermsAttachExistingPolicies
+      ManagedPolicyArns: !If
+        - ValueProvidedparamPermsAttachExistingPolicies
+        # If value is provided for paramPermsAttachExistingPolicies, split that comma-separated list into a list object
+        - !Split [ ",", !Ref paramPermsAttachExistingPolicies ]
+        # Provide a null value if nothing provided for paramPermsAttachExistingPolicies
+        - !Ref AWS::NoValue
+
+Outputs:
+  iamRoleArn:
+    Description: The ARN of the IAM Role that was created
+    Value: !GetAtt
+      - iamRole
+      - Arn

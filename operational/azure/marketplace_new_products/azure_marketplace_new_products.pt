@@ -3,14 +3,16 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Checks for newly purchased Azure Marketplace products and reports on them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/marketplace_new_products) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/operational/azure/marketplace_new_products"
 severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.4",
+  version: "0.5.1",
   provider: "Azure",
   service: "Marketplace",
-  policy_set: "New Marketplace Products"
+  policy_set: "New Marketplace Products",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -30,8 +32,8 @@ parameter "param_lookback" do
   category "Policy Settings"
   label "Look Back Period (Days)"
   description "How far back, in days, to look at Marketplace product purchases to see if new items have been added."
-  default 10
   min_value 4
+  default 10
 end
 
 parameter "param_min_cost" do
@@ -68,42 +70,14 @@ datasource "ds_applied_policy" do
   end
 end
 
-# Get region-specific Flexera API endpoints
-datasource "ds_flexera_api_hosts" do
-  run_script $js_flexera_api_hosts, rs_optima_host
-end
-
-script "js_flexera_api_hosts", type: "javascript" do
-  parameters "rs_optima_host"
-  result "result"
-  code <<-EOS
-  host_table = {
-    "api.optima.flexeraeng.com": {
-      flexera: "api.flexera.com",
-      fsm: "api.fsm.flexeraeng.com"
-    },
-    "api.optima-eu.flexeraeng.com": {
-      flexera: "api.flexera.eu",
-      fsm: "api.fsm-eu.flexeraeng.com"
-    },
-    "api.optima-apac.flexeraeng.com": {
-      flexera: "api.flexera.au",
-      fsm: "api.fsm-apac.flexeraeng.com"
-    }
-  }
-
-  result = host_table[rs_optima_host]
-EOS
-end
-
 datasource "ds_billing_centers" do
   request do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -190,47 +164,101 @@ end
 
 datasource "ds_bill_connections" do
   request do
-    auth $auth_flexera
-    host val($ds_flexera_api_hosts, 'flexera')
-    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
+    run_script $js_bill_connections, $ds_top_level_bcs, $param_lookback, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
-    collect jmes_path(response, "values[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "kind", jmes_path(col_item, "kind")
+    collect jmes_path(response, "rows") do
+      field "bill_source", jmes_path(col_item, "dimensions.bill_source")
     end
   end
 end
 
+script "js_bill_connections", type: "javascript" do
+  parameters "ds_top_level_bcs", "param_lookback", "org_id", "optima_host"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setMilliseconds(999)
+  end_date.setSeconds(59)
+  end_date.setMinutes(59)
+  end_date.setHours(23)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_lookback)
+  start_date.setMilliseconds(0)
+  start_date.setSeconds(0)
+  start_date.setMinutes(0)
+  start_date = start_date.toISOString().split('T')[0]
+
+  payload = {
+    "billing_center_ids": ds_top_level_bcs,
+    "dimensions": [ "bill_source" ],
+    "granularity": "day",
+    "metrics": [ "cost_amortized_unblended_adj" ],
+    "end_at": end_date,
+    "start_at": start_date
+  }
+
+  var request = {
+    auth: "auth_flexera",
+    host: optima_host,
+    path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
+    verb: "POST",
+    body_fields: payload,
+    headers: {
+      "User-Agent": "RS Policies"
+    }
+  }
+EOS
+end
+
+# Filter out old Azure EA connections and new Azure EA connections
 datasource "ds_bill_connections_old" do
-  run_script $js_bill_connections_filter, $ds_bill_connections, "finops:bill-connect-azure-ea"
+  run_script $js_bill_connections_filter, $ds_bill_connections, "ea_old"
 end
 
 datasource "ds_bill_connections_new" do
-  run_script $js_bill_connections_filter, $ds_bill_connections, "finops:bill-connect-cbi-oi-azure-ea"
+  run_script $js_bill_connections_filter, $ds_bill_connections, "ea_new"
+end
+
+datasource "ds_bill_connections_mcacbi" do
+  run_script $js_bill_connections_filter, $ds_bill_connections, "mca_cbi"
 end
 
 script "js_bill_connections_filter", type:"javascript" do
-  parameters "ds_bill_connections", "filter_value"
+  parameters "bill_connections", "type"
   result "result"
   code <<-EOS
-  result = _.filter(ds_bill_connections, function(connection) {
-    return connection['kind'] == filter_value
-  })
+  switch (type) {
+    case "ea_old":
+      bill_sources = _.filter(bill_connections, function(connection) {
+        return connection["bill_source"].indexOf("azure-ea") == 0
+      })
+      break;
+    case "ea_new":
+      bill_sources = _.filter(bill_connections, function(connection) {
+        return connection["bill_source"].indexOf("azure-ea") == 7
+      })
+      break;
+    case "mca_cbi":
+      bill_sources = _.filter(bill_connections, function(connection) {
+        return connection["bill_source"].indexOf("cbi-oi-azure-mca") >= 0
+      })
+      break;
+  }
+  result = _.uniq(_.compact(_.pluck(bill_sources, 'bill_source')))
 EOS
 end
 
 datasource "ds_current_products_oldconnection" do
-  iterate $ds_bill_connections_old
   request do
-    run_script $js_get_products_oldconnection, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host, 3
+    run_script $js_get_products_oldconnection, $ds_bill_connections_old, $ds_top_level_bcs, 3, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
-    collect jmes_path(response,"rows[*]") do
+    collect jmes_path(response, "rows[*]") do
       field "product", jmes_path(col_item, "dimensions.usage_type")
       field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
     end
@@ -238,9 +266,8 @@ datasource "ds_current_products_oldconnection" do
 end
 
 datasource "ds_previous_products_oldconnection" do
-  iterate $ds_bill_connections_old
   request do
-    run_script $js_get_products_oldconnection, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host, $param_lookback
+    run_script $js_get_products_oldconnection, $ds_bill_connections_old, $ds_top_level_bcs, $param_lookback, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -252,16 +279,53 @@ datasource "ds_previous_products_oldconnection" do
 end
 
 script "js_get_products_oldconnection", type: "javascript" do
-  parameters "bill_source", "ds_top_level_bcs", "rs_org_id", "rs_optima_host", "lookback"
+  parameters "ds_bill_connections_old", "ds_top_level_bcs", "param_lookback", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   end_date = new Date()
-  end_date.setDate(end_date.getDate() - (lookback - 1))
+  end_date.setDate(end_date.getDate() - (param_lookback - 1))
   end_date = end_date.toISOString().split('T')[0]
 
   start_date = new Date()
-  start_date.setDate(start_date.getDate() - lookback)
+  start_date.setDate(start_date.getDate() - param_lookback)
   start_date = start_date.toISOString().split('T')[0]
+
+  filter = {
+    "type": "and",
+    "expressions": [
+      {
+        "type": "or",
+        "expressions": [
+          {
+            "dimension": "service",
+            "type": "equal",
+            "value": "Microsoft.Marketplace"
+          },
+          {
+            "dimension": "service",
+            "type": "equal",
+            "value": "microsoft.marketplace"
+          }
+        ]
+      },
+      {
+        "type": "not",
+        "expression": {
+          "dimension": "usage_type",
+          "type": "substring",
+          "substring": "Shared"
+        }
+      }
+    ]
+  }
+
+  bill_source_expressions = _.map(ds_bill_connections_old, function(bc) {
+    return { "dimension": "bill_source", "type": "equal", "value": bc }
+  })
+
+  if (bill_source_expressions.length > 0) {
+    filter["expressions"].push({ "type": "or", "expressions": bill_source_expressions })
+  }
 
   var request = {
     auth: "auth_flexera",
@@ -276,39 +340,7 @@ script "js_get_products_oldconnection", type: "javascript" do
       metrics: ["cost_amortized_unblended_adj"],
       billing_center_ids: ds_top_level_bcs,
       limit: 100000,
-      filter: {
-        "type": "and",
-        "expressions": [
-          {
-            "type": "or",
-            "expressions": [
-              {
-                "dimension": "service",
-                "type": "equal",
-                "value": "Microsoft.Marketplace"
-              },
-              {
-                "dimension": "service",
-                "type": "equal",
-                "value": "microsoft.marketplace"
-              }
-            ]
-          },
-          {
-            "dimension": "bill_source",
-            "type": "equal",
-            "value": bill_source
-          },
-          {
-            "type": "not",
-            "expression": {
-              "dimension": "usage_type",
-              "type": "substring",
-              "substring": "Shared"
-            }
-          }
-        ]
-      }
+      filter: filter
     },
     headers: {
       'User-Agent': "RS Policies",
@@ -320,13 +352,12 @@ EOS
 end
 
 datasource "ds_current_products_newconnection" do
-  iterate $ds_bill_connections_new
   request do
-    run_script $js_get_products_newconnection, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host, 3
+    run_script $js_get_products_newconnection, $ds_bill_connections_new, $ds_top_level_bcs, 3, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
-    collect jmes_path(response,"rows[*]") do
+    collect jmes_path(response, "rows[*]") do
       field "product", jmes_path(col_item, "dimensions.resource_type")
       field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
     end
@@ -334,9 +365,8 @@ datasource "ds_current_products_newconnection" do
 end
 
 datasource "ds_previous_products_newconnection" do
-  iterate $ds_bill_connections_new
   request do
-    run_script $js_get_products_newconnection, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host, $param_lookback
+    run_script $js_get_products_newconnection, $ds_bill_connections_new, $ds_top_level_bcs, $param_lookback, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -348,16 +378,46 @@ datasource "ds_previous_products_newconnection" do
 end
 
 script "js_get_products_newconnection", type: "javascript" do
-  parameters "bill_source", "ds_top_level_bcs", "rs_org_id", "rs_optima_host", "lookback"
+  parameters "ds_bill_connections_new", "ds_top_level_bcs", "param_lookback", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   end_date = new Date()
-  end_date.setDate(end_date.getDate() - (lookback - 1))
+  end_date.setDate(end_date.getDate() - (param_lookback - 1))
   end_date = end_date.toISOString().split('T')[0]
 
   start_date = new Date()
-  start_date.setDate(start_date.getDate() - lookback)
+  start_date.setDate(start_date.getDate() - param_lookback)
   start_date = start_date.toISOString().split('T')[0]
+
+  filter = {
+    "type": "and",
+    "expressions": [
+      {
+        "type": "not",
+        "expression": {
+          "dimension": "manufacturer_name",
+          "type": "substring",
+          "substring": "Microsoft"
+        }
+      },
+      {
+        "type": "not",
+        "expression": {
+          "dimension": "usage_type",
+          "type": "substring",
+          "substring": "Shared"
+        }
+      }
+    ]
+  }
+
+  bill_source_expressions = _.map(ds_bill_connections_new, function(bc) {
+    return { "dimension": "bill_source", "type": "equal", "value": bc }
+  })
+
+  if (bill_source_expressions.length > 0) {
+    filter["expressions"].push({ "type": "or", "expressions": bill_source_expressions })
+  }
 
   var request = {
     auth: "auth_flexera",
@@ -372,32 +432,99 @@ script "js_get_products_newconnection", type: "javascript" do
       metrics: ["cost_amortized_unblended_adj"],
       billing_center_ids: ds_top_level_bcs,
       limit: 100000,
-      filter: {
-        "type": "and",
-        "expressions": [
-          {
-            "dimension": "bill_source",
-            "type": "equal",
-            "value": bill_source
-          },
-          {
-            "type": "not",
-            "expression": {
-              "dimension": "manufacturer_name",
-              "type": "substring",
-              "substring": "Microsoft"
-            }
-          },
-          {
-            "type": "not",
-            "expression": {
-              "dimension": "usage_type",
-              "type": "substring",
-              "substring": "Shared"
-            }
-          }
-        ]
+      filter: filter
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_current_products_mcacbiconnection" do
+  request do
+    run_script $js_get_products_mcacbiconnection, $ds_bill_connections_mcacbi, $ds_top_level_bcs, 3, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "product", jmes_path(col_item, "dimensions.resource_type")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+datasource "ds_previous_products_mcacbiconnection" do
+  request do
+    run_script $js_get_products_mcacbiconnection, $ds_bill_connections_mcacbi, $ds_top_level_bcs, $param_lookback, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "product", jmes_path(col_item, "dimensions.resource_type")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_get_products_mcacbiconnection", type: "javascript" do
+  parameters "ds_bill_connections_mcacbi", "ds_top_level_bcs", "param_lookback", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - (param_lookback - 1))
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_lookback)
+  start_date = start_date.toISOString().split('T')[0]
+
+  filter = {
+    "type": "and",
+    "expressions": [
+      {
+        "type": "not",
+        "expression": {
+          "dimension": "manufacturer_name",
+          "type": "substring",
+          "substring": "Microsoft"
+        }
+      },
+      {
+        "type": "not",
+        "expression": {
+          "dimension": "usage_type",
+          "type": "substring",
+          "substring": "Shared"
+        }
       }
+    ]
+  }
+
+  bill_source_expressions = _.map(ds_bill_connections_mcacbi, function(bc) {
+    return { "dimension": "bill_source", "type": "equal", "value": bc }
+  })
+
+  if (bill_source_expressions.length > 0) {
+    filter["expressions"].push({ "type": "or", "expressions": bill_source_expressions })
+  }
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      dimensions: ["resource_type"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: filter
     },
     headers: {
       'User-Agent': "RS Policies",
@@ -409,18 +536,18 @@ EOS
 end
 
 datasource "ds_current_products" do
-  run_script $js_products_combiner, $ds_current_products_oldconnection, $ds_current_products_newconnection
+  run_script $js_products_combiner, $ds_current_products_oldconnection, $ds_current_products_newconnection, $ds_current_products_mcacbiconnection
 end
 
 datasource "ds_previous_products" do
-  run_script $js_products_combiner, $ds_previous_products_oldconnection, $ds_previous_products_newconnection
+  run_script $js_products_combiner, $ds_previous_products_oldconnection, $ds_previous_products_newconnection, $ds_previous_products_mcacbiconnection
 end
 
 script "js_products_combiner", type:"javascript" do
-  parameters "oldconnection", "newconnection"
+  parameters "oldconnection", "newconnection", "mcacbiconnection"
   result "result"
   code <<-EOS
-  result = oldconnection.concat(newconnection)
+  result = oldconnection.concat(newconnection).concat(mcacbiconnection)
 EOS
 end
 
@@ -434,21 +561,27 @@ script "js_new_products", type: "javascript" do
   code <<-'EOS'
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
-    var numString = number.toString()
-    var values = numString.split(".")
-    var formatted_number = ''
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   result = []
@@ -512,7 +645,7 @@ script "js_new_products", type: "javascript" do
 EOS
 end
 
-##############################################################################
+###############################################################################
 # Policy
 ###############################################################################
 

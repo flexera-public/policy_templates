@@ -1,5 +1,26 @@
 # Changelog
 
+## v3.3.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v3.3.0
+
+- Update tag resource action to use Azure Tags API, which enables `Tag Contributor` role to be used for enabling action capabilities with minimum scope.
+
+## v3.2.2
+
+- Fixed issue where prompt for adding tags incorrectly said to use "key:value" instead of "key=value" format.
+- Fixed issue where tags would fail to apply to Azure subscriptions.
+
+## v3.2.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.2.0
+
+- Added option to include Azure subscriptions and resource groups in the results alongside Azure resources
+
 ## v3.1
 
 - Fixed error where policy would fail completely when trying to access resources credential does not have access to. Policy will now simply skip these resources.

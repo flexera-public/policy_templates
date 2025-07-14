@@ -1,5 +1,13 @@
 # Cheaper Regions Policy
 
+## Deprecated
+
+This policy is no longer being updated. Cloud-specific policies now exist for this functionality and should be used instead:
+
+- [AWS Cheaper Regions](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/cheaper_regions/)
+- [Azure Cheaper Regions](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/cheaper_regions/)
+- [Google Cheaper Regions](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cheaper_regions/)
+
 ## What It Does
 
 This Policy Template determines which regions have cheaper alternatives by specifying the expensive region name and the cheaper region name for analysis
@@ -31,7 +39,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-## Functional Details
+## How It Works
 
 - This policy uses a hash to determine existing regions and newer compatible cheaper regions. It checks the billing center and reports on cheaper regions.
 
@@ -44,4 +52,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

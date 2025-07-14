@@ -2,67 +2,84 @@
 
 > Note: This is an **alpha** feature and should only be used with guidance from your Flexera Account Manager
 
-## Usage
+## Description
 
-1. **Create AWS IAM Roles in AWS Account(s)**
-   - AWS CloudFormation (StackSets) [CloudFormation StackSets Docs.. ideally an example CF Template for creating IAM Role + Custom Policy]
-   - Terraform [aws_iam_role resource docs]
-   - AWS APIs directly [AWS Docs]
+Meta policies enable the user to apply multiple child policy templates at the same time, consolidating the results into a single policy incident. The primary use case is for AWS, where certain API calls, such as API calls to gather information about EC2 instances, can only be performed on a per-account basis. Meta policies enable a user to apply a single policy that will run child policies across all AWS accounts. Meta policies for Azure and GCP work similarly, but are primarily intended for situations where scale is preventing a single policy from being able to complete, since both of these providers allow for access across the entire estate with a single credential.
 
-1. **Create AWS STS Credential on the Flexera Platform [Flexera Docs]**
-   > Note: if your Organization in on **app.flexera.com** has multiple "Projects" within the Organization, you must use your Org "Master" Project.
+There are two components of a meta policy; the child policy, which is just the normal policy template one would typically use from the Flexera policy catalog, and the `Meta Parent` policy, which handles managing and applying child policies across all accounts and consolidates their incidents into a single incident for convenience.
 
-1. **Upload Meta Parent Policy to Flexera Platform [Flexera Docs]**
+## Configuration
 
-1. **Apply Meta Parent Policy to Org Master Account**
-   - Org "Master" Project must be used for recommendations to get created from policy incidents
-   - "15 Minute" frequency recommended for all Meta Parent Policies
-   - "Daily" frequency is currently suggested for all Child Policies frequency due to limitations on Policies Engine.
+### Flexera
 
-### Credential Configuration
+For all meta policies, a Flexera credential with the appropriate permissions needs to be [added to the Flexera CCO platform](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm).
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+- Permissions:
+  - `governance:action_status:index`
+  - `governance:action_status:show`
+  - `governance:applied_policy:create`
+  - `governance:applied_policy:delete`
+  - `governance:applied_policy:index`
+  - `governance:applied_policy:show`
+  - `governance:applied_policy:update`
+  - `governance:incident:index`
+  - `governance:incident:run_action`
+  - `governance:incident:show`
+  - `governance:policy_aggregate:create`
+  - `governance:policy_aggregate:delete`
+  - `governance:policy_aggregate:index`
+  - `governance:policy_aggregate:show`
+  - `governance:policy_aggregate:update`
+  - `governance:policy_template:index`
+  - `governance:policy_template:retrieve_data`
+  - `governance:policy_template:show`
+  - `governance:published_template:index`
+  - `governance:published_template:show`
+  - `optima:billing_center:index`
+  - `optima:billing_center:show`
+  - `optima:cloud_vendor_account:index`
+  - `optima:custom_dimension:index`
+  - `optima:custom_dimension:show`
+  - `optima:recommendation:index`
+  - `optima:recommendation:show`
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following permissions:
-    - `governance:action_status:index`
-    - `governance:action_status:show`
-    - `governance:applied_policy:create`
-    - `governance:applied_policy:delete`
-    - `governance:applied_policy:index`
-    - `governance:applied_policy:show`
-    - `governance:applied_policy:update`
-    - `governance:incident:index`
-    - `governance:incident:run_action`
-    - `governance:incident:show`
-    - `governance:policy_aggregate:create`
-    - `governance:policy_aggregate:delete`
-    - `governance:policy_aggregate:index`
-    - `governance:policy_aggregate:show`
-    - `governance:policy_aggregate:update`
-    - `governance:policy_template:index`
-    - `governance:policy_template:retrieve_data`
-    - `governance:policy_template:show`
-    - `governance:published_template:index`
-    - `governance:published_template:show`
-    - `optima:billing_center:index`
-    - `optima:billing_center:show`
-    - `optima:cloud_vendor_account:index`
-    - `optima:custom_dimension:index`
-    - `optima:custom_dimension:show`
-    - `optima:recommendation:index`
-    - `optima:recommendation:show`
-
-- The above correspond to the following roles in the Flexera CCO platform:
-    - `Automation: Approve policies`
-    - `Automation: Create policies`
-    - `Automation: Manage policies`
-    - `Automation: Publish policies`
-    - `Automation: View policies`
-    - `Cloud: View bill adjustments`
-    - `Cloud: View cloud`
-    - `Cloud: View cloud costs`
+- The above permissions correspond to the following roles in the Flexera CCO platform:
+  - `Automation: Approve policies`
+  - `Automation: Create policies`
+  - `Automation: Manage policies`
+  - `Automation: Publish policies`
+  - `Automation: View policies`
+  - `Cloud: View bill adjustments`
+  - `Cloud: View cloud`
+  - `Cloud: View cloud costs`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
+### Amazon Web Services
+
+#### Create AWS Cross-Account Roles in AWS Account(s)
+
+- The same name should be used for the role in every account. Permissions should be configured for whichever policy templates you intended to use.
+- Recommended method for creating roles is AWS CloudFormation (StackSets). [We provide a template](https://raw.githubusercontent.com/flexera-public/policy_templates/master/tools/cloudformation-template/FlexeraAutomationPolicies.template) for this purpose.
+
+#### [Create an AWS credential in the Flexera CCO platform](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1122264)
+
+- This should be created as an ordinary AWS cross-account role.
+- The role can be any of the roles created in step 1. The meta policy will infer the credentials for the rest of the AWS accounts based on the shared name.
+
+### Microsoft Azure
+
+Microsoft Azure requires no special configuration. Simply [add a Microsoft Azure credential](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1124668) with the appropriate permissions to the Flexera CCO platform.
+
+### Google Cloud
+
+Google Cloud requires no special configuration. Simply [add a Google Cloud credential](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) with the appropriate permissions to the Flexera CCO platform.
+
+## Usage
+
+Once the above configuration is complete, usage is straight-forward; apply the Meta Parent policy from the policy catalog for the policy template you're interested in, selecting the appropriate credential when applying the policy.
+
+## Technical Details
 
 ### Expected lifecycle
 
@@ -166,7 +183,7 @@ end
 
 The majority of additions for child policies are common to all policies.  Generally it is recommended to place this at the bottom with the following comments.
 
-<details><summary><b>Click to Expand</b> Common Meta Policy Logic</summary>
+<details><summary>Common Meta Policy Logic (Click to Expand)</summary>
 
 ```ruby
 ###############################################################################
@@ -262,7 +279,7 @@ end
 
 </details>
 
----
+----
 
 ### Meta Parent Policy Template
 

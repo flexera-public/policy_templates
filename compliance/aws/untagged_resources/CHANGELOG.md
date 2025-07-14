@@ -1,5 +1,31 @@
 # Changelog
 
+## v5.4.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v5.4.0
+
+- New `Resource Types` parameter allows policy template to only report on specific services or resource types.
+- Small code changes made to improve the speed of policy template execution.
+
+## v5.3.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v5.3.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v5.3.0
+
+- Added option to include the AWS account in the results alongside AWS resources
+- Updated search logic for savings to speed up policy template execution
+
+## v5.2.1
+
+- Fixed bug related to pagination on the AWS Tagging API
+
 ## v5.2.0
 
 - Added parameter `Include Savings` to optionally allow the user to not report savings

@@ -1,5 +1,64 @@
 # Changelog
 
+## v6.2.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v6.2.0
+
+- Adds utilization chart for each resource to the result if metrics are available
+
+## v6.1.3
+
+- Code refactored to improve performance by gathering metrics in batched requests.
+
+## v6.1.2
+
+- Fixed incorrect calculation for memory related fields "Memory Average %", "Memory p90", Memory p95", and "Memory p99".
+
+## v6.1.1
+
+- Fix for memory stats showing decimal (such as 0.5 for half) instead of showing percentage (such as 50 for half).
+
+## v6.1.0
+
+- Added batch processing for large datasources as a performance enhancement (reduces memory usage) with no changes to logic or functionality.
+
+## v6.0.4
+
+- Fix for v6.0.3, changed the approach for handling memory statics for rightsized instances. Functionality unchanged.
+
+## v6.0.3
+
+- Fixed error that caused showing negative values at the incident fields for memory statistics for recently rightsized instances. Functionality unchanged.
+
+## v6.0.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v6.0.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v6.0.0
+
+- Recommendations now consider number of attached data disks. Sizes that would not support the current number of attached disks for an instance will not be recommended.
+- Azure credential now requires `Microsoft.Compute/locations/vmSizes/read` permission to support the above.
+
+## v5.4.0
+
+- Added support for downsizing multiple sizes where appropriate
+
+## v5.3.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v5.3.0
+
+- Added ability to set metrics granularity when gathering resource metrics from Azure
+- Added support for p90, p95, and p99 metrics for both CPU and memory.
+- Improved calculations for `Minimum` and `Maximum` for both CPU and memory.
+
 ## v5.2.0
 
 - New `Exclude Stopped Virtual Machines` parameter to filter stopped virtual machines from results

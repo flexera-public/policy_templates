@@ -1,5 +1,25 @@
 # Changelog
 
+## v3.6.4
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v3.6.3
+
+- Minor code improvements to bring template in line with current standards. Functionality unchanged.
+
+## v3.6.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.6.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v3.6.0
+
+- Added support for DynamoDB and MemoryDB reservation recommendations
+
 ## v3.5
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.

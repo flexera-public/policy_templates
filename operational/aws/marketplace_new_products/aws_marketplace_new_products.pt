@@ -3,14 +3,16 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Checks for newly purchased AWS Marketplace products and reports on them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/marketplace_new_products) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/operational/aws/marketplace_new_products"
 severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.3",
+  version: "0.3.5",
   provider: "AWS",
   service: "Marketplace",
-  policy_set: "New Marketplace Products"
+  policy_set: "New Marketplace Products",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -30,8 +32,8 @@ parameter "param_lookback" do
   category "Policy Settings"
   label "Look Back Period (Days)"
   description "How far back, in days, to look at Marketplace product purchases to see if new items have been added."
-  default 10
   min_value 4
+  default 10
 end
 
 parameter "param_min_cost" do
@@ -73,9 +75,9 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
     ignore_status [403]
   end
   result do
@@ -162,11 +164,11 @@ end
 
 datasource "ds_current_products" do
   request do
-    run_script $js_get_products, $ds_top_level_bcs, rs_org_id, rs_optima_host, 3
+    run_script $js_get_products, $ds_top_level_bcs, 3, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
-    collect jmes_path(response,"rows[*]") do
+    collect jmes_path(response, "rows[*]") do
       field "service", jmes_path(col_item, "dimensions.service")
       field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
     end
@@ -175,7 +177,7 @@ end
 
 datasource "ds_previous_products" do
   request do
-    run_script $js_get_products, $ds_top_level_bcs, rs_org_id, rs_optima_host, $param_lookback
+    run_script $js_get_products, $ds_top_level_bcs, $param_lookback, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -187,7 +189,7 @@ datasource "ds_previous_products" do
 end
 
 script "js_get_products", type: "javascript" do
-  parameters "ds_top_level_bcs", "rs_org_id", "rs_optima_host", "lookback"
+  parameters "ds_top_level_bcs", "lookback", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   end_date = new Date()
@@ -236,21 +238,27 @@ script "js_new_products", type: "javascript" do
   code <<-'EOS'
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
-    var numString = number.toString()
-    var values = numString.split(".")
-    var formatted_number = ''
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   result = []
@@ -314,7 +322,7 @@ script "js_new_products", type: "javascript" do
 EOS
 end
 
-##############################################################################
+###############################################################################
 # Policy
 ###############################################################################
 

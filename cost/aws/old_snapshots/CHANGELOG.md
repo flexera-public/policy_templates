@@ -1,5 +1,30 @@
 # Changelog
 
+## v8.4.5
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v8.4.4
+
+- Corrected incorrect filtering of RDS DB snapshots. The policy was previously only considering the most recent snapshot for each DB instance, leading to missed older snapshots. The logic has been updated to include all snapshots.
+
+## v8.4.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v8.4.2
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v8.4.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v8.4.0
+
+- Added `Resource ARN` to incident table.
+- Removed redundant `Resource Name` field from incident table.
+
 ## v8.3.0
 
 - Modified internal names for incident fields for more accurate scraping into Optimization dashboard

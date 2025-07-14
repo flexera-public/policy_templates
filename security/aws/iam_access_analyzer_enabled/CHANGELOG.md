@@ -1,5 +1,29 @@
 # Changelog
 
+## v4.0.4
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v4.0.3
+
+- Updated service field in metadata to "Identity & Access Management". Functionality unchanged.
+
+## v4.0.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v4.0.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v4.0.0
+
+- Policy template renamed to `AWS Regions Without Access Analyzer Enabled` to better reflect its functionality
+- Expanded region filtering options
+- Several parameters altered to be more descriptive and human-readable
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v3.1
 
 - Updated description of `Account Number` parameter

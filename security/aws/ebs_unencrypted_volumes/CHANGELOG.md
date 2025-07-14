@@ -1,5 +1,25 @@
 # Changelog
 
+## v5.0.3
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v5.0.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v5.0.1
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
+## v5.0.0
+
+- Policy template renamed to `AWS Unencrypted EBS Volumes` to better reflect its functionality
+- Expanded region and tag filtering options
+- Several parameters altered to be more descriptive and human-readable
+- Streamlined code for better readability and faster execution
+- Policy now requires a valid Flexera credential
+
 ## v4.2.1
 
 - Added default value for parameters that do not require user input

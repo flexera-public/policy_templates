@@ -1,5 +1,27 @@
 # Changelog
 
+## v3.8.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v3.8.0
+
+- Added `Excluded Cost Anomalies` parameter to allow user to add filters to exclude certain costs from anomaly reporting.
+
+## v3.7.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v3.7.1
+
+- Fixed bug when sending request to get the anomalies report that caused the policy to fail due to a bad request (400) error.
+
+## v3.7.0
+
+- Added `Minimum Period Spend Variance` parameter to optionally limit results based on amount of variance
+- Added `Anomalies To Report` parameter to optionally limit results based on whether the anomaly is upward or downward
+- Added `Variance From Average` field to incident table containing the difference (absolute value) between the total cost and the moving average
+
 ## v3.6
 
 - Fixed bug where incident link was redirecting to wrong url

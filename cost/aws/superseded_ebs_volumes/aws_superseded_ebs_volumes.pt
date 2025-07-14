@@ -1,18 +1,19 @@
-
 name "AWS Superseded EBS Volumes"
 rs_pt_ver 20180301
 type "policy"
 short_description "This policy finds AWS GP2 volume types and recommends them for an upgrade to GP3 if this would result in savings. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/superseded_ebs_volumes/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/superseded_ebs_volumes/"
 severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "6.2.0",
+  version: "6.3.7",
   provider: "AWS",
   service: "Compute",
   policy_set: "Inefficient Disk Usage",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -211,7 +212,6 @@ end
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
-    verb "GET"
     host "sts.amazonaws.com"
     path "/"
     query "Action", "GetCallerIdentity"
@@ -398,7 +398,6 @@ end
 datasource "ds_describe_regions" do
   request do
     auth $auth_aws
-    verb "GET"
     host "ec2.amazonaws.com"
     path "/"
     query "Action", "DescribeRegions"
@@ -443,7 +442,6 @@ datasource "ds_volumes" do
   request do
     auth $auth_aws
     pagination $pagination_aws
-    verb "GET"
     host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
     query "Action", "DescribeVolumes"
@@ -565,20 +563,47 @@ script "js_volumes_tag_filtered", type: "javascript" do
 EOS
 end
 
+# Get list of Volume regions for Pricing API requests
+datasource "ds_volume_regions_list" do
+  run_script $js_volume_regions_list, $ds_volumes_tag_filtered
+end
+
+script "js_volume_regions_list", type: "javascript" do
+  parameters "ds_volumes_tag_filtered"
+  result "result"
+  code <<-EOS
+  result = _.uniq(_.pluck(ds_volumes_tag_filtered, "region"))
+  EOS
+end
+
 datasource "ds_gp2_prices" do
+  iterate $ds_volume_regions_list
   request do
-    run_script $js_volume_prices, $ds_aws_api_hosts, "gp2"
+    run_script $js_volume_prices, iter_item, $ds_aws_api_hosts, "gp2"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "PriceList") do
+      field "priceList", jmes_path(col_item, "@")
+    end
   end
 end
 
 datasource "ds_gp3_prices" do
+  iterate $ds_volume_regions_list
   request do
-    run_script $js_volume_prices, $ds_aws_api_hosts, "gp3"
+    run_script $js_volume_prices, iter_item, $ds_aws_api_hosts, "gp3"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "PriceList") do
+      field "priceList", jmes_path(col_item, "@")
+    end
   end
 end
 
 script "js_volume_prices", type: "javascript" do
-  parameters "ds_aws_api_hosts", "volumeApiName"
+  parameters "volume_region", "ds_aws_api_hosts", "volumeApiName"
   result "request"
   code <<-EOS
   var request = {
@@ -603,6 +628,11 @@ script "js_volume_prices", type: "javascript" do
           "Type": "TERM_MATCH",
           "Field": "volumeApiName",
           "Value": volumeApiName
+        },
+        {
+          "Type": "TERM_MATCH",
+          "Field": "regionCode",
+          "Value": volume_region
         }
       ],
       "FormatVersion": "aws_v1",
@@ -623,11 +653,11 @@ script "js_volumes_with_prices", type: "javascript" do
   result "result"
   code <<-EOS
   // Function to convert price lists to proper JSON
-  function convertPriceList(priceList) {
+  function convertPriceList(prices) {
     convertedPriceList = {}
 
-    _.each(priceList, function(price) {
-      entry = JSON.parse(price.replace(/\\"/g, '"'))
+    _.each(prices, function(price) {
+      entry = JSON.parse(price.priceList.replace(/\\"/g, '"'))
       region = entry['product']['attributes']['regionCode']
 
       if (convertedPriceList[region] == undefined) {
@@ -721,8 +751,8 @@ script "js_volumes_with_prices", type: "javascript" do
   }
 
   result = []
-  gp2_pricelist = convertPriceList(ds_gp2_prices['PriceList'])
-  gp3_pricelist = convertPriceList(ds_gp3_prices['PriceList'])
+  gp2_pricelist = convertPriceList(ds_gp2_prices)
+  gp3_pricelist = convertPriceList(ds_gp3_prices)
 
   _.each(ds_volumes_tag_filtered, function(volume) {
     gp2_price = getGP2Price(volume, gp2_pricelist) * ds_currency['exchange_rate']
@@ -886,21 +916,28 @@ script "js_underutil_volumes", type: "javascript" do
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
-  function formatNumber(number, separator){
-    numString = number.toString()
-    values = numString.split(".")
-    formatted_number = ''
+  function formatNumber(number, separator) {
+    formatted_number = "0"
 
-    while (values[0].length > 3) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      formatted_number = separator + chunk + formatted_number
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
     }
 
-    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
-    if (values[1] == undefined) { return formatted_number }
-
-    return formatted_number + "." + values[1]
+    return formatted_number
   }
 
   result = []
@@ -925,8 +962,11 @@ script "js_underutil_volumes", type: "javascript" do
         "(", ds_aws_account['id'], ") from GP2 to GP3"
       ].join('')
 
+      resourceARN = "arn:aws:ec2:" + volume['region'] + ":" + ds_aws_account['id'] + ":volume/" + volume['volumeId']
+
       result.push({
         resourceID: volume['volumeId'],
+        resourceARN: resourceARN,
         resourceName: volume['volumeName'],
         type: volume['volumeType'],
         encrypted: volume['encrypted'],
@@ -980,7 +1020,7 @@ script "js_underutil_volumes", type: "javascript" do
 
   api_disclaimer = ""
 
-  if (ds_currency_conversion['to'] == undefined && ds_currency['code'] != 'USD') {
+  if (ds_currency_conversion.length == 0 || (ds_currency_conversion[0]['to'] == undefined && ds_currency['code'] != 'USD')) {
     api_disclaimer = "\n\nPrice and savings values are in USD due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
   }
 
@@ -1094,6 +1134,9 @@ policy "pol_underutil_volumes" do
       end
       field "service" do
         label "Service"
+      end
+      field "resourceARN" do
+        label "Resource ARN"
       end
       field "id" do
         label "ID"

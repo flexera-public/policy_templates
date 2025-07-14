@@ -1,5 +1,33 @@
 # Changelog
 
+## v4.2.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v4.2.0
+
+- Added batch processing for large datasources.
+
+## v4.1.2
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v4.1.1
+
+- Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators
+
+## v4.1.0
+
+- Updated Azure API versions to provide more up to date and accurate results
+
+## v4.0.0
+
+- Recommendations can now be generated at the "Resource Group" scope
+
+## v3.4.1
+
+- Incident fields for `Subscription ID` and `Subscription Name` no longer show a specific Azure Subscription when providing Shared recommendations.
+
 ## v3.4
 
 - Updated policy to use new source for currency information. Policy functionality is unchanged.

@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.1.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v1.1.0
+
+- Policy template now uses dynamically updated list of instance types.
+
+## v1.0.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v1.0.2
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v1.0.1
 
 - Fixed issue with URL encoding causing the chart to not render in emails in some instances.

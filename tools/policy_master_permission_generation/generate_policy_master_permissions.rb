@@ -2,6 +2,113 @@
 require 'json'
 require 'fileutils'
 require 'yaml'
+require 'csv'
+require 'pdfkit'
+require 'base64'
+
+# Code for generating HTML for a PDF
+def generate_pdf_html(values)
+  html_content = ""
+
+  values.sort_by { |v| v["name"] }.each do |value|
+    next unless value[:providers]
+
+    html_content += "<h3>#{value["name"]} <span style=\"font-size:70%;font-weight:normal;\">#{value["version"]}</span></h3>"
+
+    value[:providers].sort_by { |v| v[:name] }.each do |provider|
+      provider_name = ""
+
+      case provider[:name]
+      when "aws"
+        provider_name = "AWS"
+      when "azure_rm"
+        provider_name = "Azure Resource Manager"
+      when "azure_storage"
+        provider_name = "Azure Storage"
+      when "azure_ea_china"
+        provider_name = "Azure China Enterprise Agreement"
+      when "azure_graph"
+        provider_name = "Microsoft Graph"
+      when "gce"
+        provider_name = "Google Cloud"
+      when "flexera"
+        provider_name = "Flexera"
+      when "turbonomic"
+        provider_name = "Turbonomic"
+      when "github"
+        provider_name = "GitHub"
+      when "servicenow"
+        provider_name = "ServiceNow"
+      when "okta"
+        provider_name = "Okta"
+      end
+
+      required = provider[:permissions].select { |p| p["required"] }
+      not_required = provider[:permissions].select { |p| !p["required"] }
+
+      if required.length > 0
+        html_content += "<p><b>#{provider_name} Required Permissions:</b><br>"
+
+        required.sort_by { |v| v["name"] }.each do |permission|
+          read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:65%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:65%;\">Write</span></i>"
+          html_content += "#{permission["name"]}  #{read_only}<br>"
+        end
+      end
+
+      if not_required.length > 0
+        html_content += "<p><b>#{provider_name} Optional Permissions:</b><br>"
+
+        not_required.sort_by { |v| v["name"] }.each do |permission|
+          read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:65%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:65%;\">Write</span></i>"
+          html_content += "#{permission["name"]}  #{read_only}<br>"
+        end
+      end
+    end
+
+    html_content += "<hr>"
+  end
+
+  return html_content
+end
+
+# Code for generating a PDF
+def generate_pdf(data, cloud_provider, filename, permissions_list_dir, logo_svg, font)
+  template_type = ""
+  template_type = cloud_provider + " " if cloud_provider != "Master"
+
+  html_header = <<~EOS
+<html>
+  <head>
+    <meta charset='utf-8'>
+    <title>Flexera Cloud Cost Optimization - #{cloud_provider} Policy Permissions List</title>
+    <style>
+      body {
+        font-family: 'Source Sans Pro';
+        src: url("data:font/truetype;charset=utf-8;base64,#{font}") format('truetype');
+        font-size: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <center><img src="data:image/svg+xml;base64,#{logo_svg}" width="50%"></center>
+    <h1><center>Policy Catalog #{cloud_provider} Permissions List</center></h1>
+    <p>This document contains a list of cloud provider permissions required by each #{template_type}policy template in the Flexera Cloud Cost Optimization Policy Catalog.<br>
+    <ul>
+      <li>Required permissions may change as policy templates in the catalog are updated. An up-to-date version of this PDF file is <a href="https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/#{filename}.pdf">available in the Flexera Policy Template Github Repository</a>.</li>
+      <li><i>Required</i> permissions are required for the policy template in question to work correctly; <i>optional</i> permissions enable additional functionality.</li>
+      <li>Permissions with a green <i><span style="color:green;font-size:65%;">Read Only</span></i> label are read-only, while those with a red <i><span style="color:red;font-size:65%;">Write</span></i> label can potentially make changes to your cloud environment.</li>
+    </ul>
+    <hr>
+EOS
+
+  html_footer = <<~EOS
+  </body>
+</html>
+EOS
+
+  pdf = PDFKit.new(html_header + generate_pdf_html(data) + html_footer)
+  pdf.to_file("#{permissions_list_dir}/#{filename}.pdf")
+end
 
 # List of Policy Templates
 # Open YAML and parse validated_policy_templates[] array
@@ -59,9 +166,13 @@ def extract_permissions_from_readme(readme_content)
     "[**Azure Resource Manager Credential**]",
     "[**Azure Storage Credential**]",
     "[**Azure China Enterprise Agreement Credential**]",
+    "[**Microsoft Graph Credential**]",
     "[**Google Cloud Credential**]",
     "[**Flexera Credential**]",
     "[**Turbonomic Credential**]",
+    "[**GitHub Credential**]",
+    "[**ServiceNow Credential**]",
+    "[**Okta Credential**]"
   ]
 
   sections.each do |section|
@@ -74,12 +185,20 @@ def extract_permissions_from_readme(readme_content)
       provider = "azure_storage"
     when "[**Azure China Enterprise Agreement Credential**]"
       provider = "azure_ea_china"
+    when "[**Microsoft Graph Credential**]"
+      provider = "azure_graph"
     when "[**Google Cloud Credential**]"
       provider = "gce"
     when "[**Flexera Credential**]"
       provider = "flexera"
     when "[**Turbonomic Credential**]"
       provider = "turbonomic"
+    when "[**GitHub Credential**]"
+      provider = "github"
+    when "[**ServiceNow Credential**]"
+      provider = "servicenow"
+    when "[**Okta Credential**]"
+      provider = "okta"
     end
 
     # If the Credential Section exists...
@@ -87,9 +206,8 @@ def extract_permissions_from_readme(readme_content)
       # Extract the text from this section
       section_text = readme_content[section_start..-1]
 
-      # Find the line starting with '/*' or '†' to get any specific notes around permissions from the README
+      # Find the line starting with '/*', '†', '‡', '§', '‖' or '¶' to get any specific notes around permissions from the README
       list_of_notes = []
-      # note = ""
       section_text.each_line do |line|
         break if line.strip.start_with?( "##", "###", "- [**") && !line.strip.start_with?(section)
 
@@ -99,6 +217,18 @@ def extract_permissions_from_readme(readme_content)
         elsif line.strip.start_with?("\u2020")
           dagger_note = line.strip.sub(/^\†\s*/, '')
           list_of_notes << { symbol: "†", detail: dagger_note }
+        elsif line.strip.start_with?("\u2021")
+          cross_dagger_note = line.strip.sub(/^\‡\s*/, '')
+          list_of_notes << { symbol: "‡", detail: cross_dagger_note }
+        elsif line.strip.start_with?("\u00a7")
+          section_note = line.strip.sub(/^\§\s*/, '')
+          list_of_notes << { symbol: "§", detail: section_note }
+        elsif line.strip.start_with?("\u2016")
+          vertical_bar_note = line.strip.sub(/^\‖\s*/, '')
+          list_of_notes << { symbol: "‖", detail: vertical_bar_note }
+        elsif line.strip.start_with?("\u00b6")
+          pilcrow_note = line.strip.sub(/^\¶\s*/, '')
+          list_of_notes << { symbol: "¶", detail: pilcrow_note }
         end
       end
 
@@ -124,11 +254,21 @@ def extract_permissions_from_readme(readme_content)
 
             if symbol_if_exists != nil && !symbol_if_exists[:detail].strip.empty?
               required = false
-              if symbol_if_exists[:detail].include?("Only required for taking action")
+
+              if symbol_if_exists[:detail].include?("taking action")
                 read_only_permission = false
               end
 
+              if symbol_if_exists[:detail].include?("These permissions enable taking actions against cloud resources.")
+                required = true
+              end
+
               permission = permission.chomp(symbol_if_exists[:symbol])
+
+              # Failsafe to ensure that write permissions are not marked as read-only due to README errors
+              if permission.downcase().include?("write") || permission.downcase().include?("create") || permission.downcase().include?("delete") || permission.downcase().include?("start") || permission.downcase().include?("stop") || permission.downcase().include?("modify") || permission.downcase().include?("update") || permission.downcase().include?("change")
+                read_only_permission = false
+              end
 
               if credentials_section == "roles"
                 policy_credentials << { role: permission, provider: provider, read_only: read_only_permission, required: required, description: symbol_if_exists[:detail] }
@@ -249,6 +389,20 @@ values.sort_by! { |value| value["id"] }
 master_policy_permissions_doc[:values] = values
 puts values
 
+# Read existing JSON file to determine if we need to update assets.
+# Exit the script if we do not need to generate new assets.
+# Needed because the PDFs will always be "different" even if permissions have not changed.
+existing_json_path = "./data/policy_permissions_list/master_policy_permissions_list.json"
+
+if File.exist?(existing_json_path)
+  existing_json = File.read(existing_json_path)
+
+  if existing_json == JSON.pretty_generate(master_policy_permissions_doc)
+    puts "\nNo changes detected in policy permissions. Files not generated."
+    exit
+  end
+end
+
 # Create '.data/policy_permissions_list' directory
 # permissions_list_dir = "./dist"
 permissions_list_dir = "./data/policy_permissions_list"
@@ -264,3 +418,61 @@ File.open("#{permissions_list_dir}/master_policy_permissions_list.yaml", "w") do
   # Write YAML document
   f.write(master_policy_permissions_doc.to_yaml)
 end
+
+# Create CSV document in '.data/policy_permissions_list' directory
+CSV.open("#{permissions_list_dir}/master_policy_permissions_list.csv", "w") do |f|
+  # Write CSV headers
+  f << [ "Name", "Version", "Provider", "Permission/Role", "Required", "Read Only" ]
+
+  # Write CSV rows
+  values.sort_by { |v| v["name"] }.each do |value|
+    next unless value[:providers]
+
+    # Iterate through each provider and permission to create rows
+    value[:providers].each do |provider|
+      provider_name = ""
+
+      case provider[:name]
+      when "aws"
+        provider_name = "AWS"
+      when "azure_rm"
+        provider_name = "Azure Resource Manager"
+      when "azure_storage"
+        provider_name = "Azure Storage"
+      when "azure_ea_china"
+        provider_name = "Azure China Enterprise Agreement"
+      when "azure_graph"
+        provider_name = "Microsoft Graph"
+      when "gce"
+        provider_name = "Google Cloud"
+      when "flexera"
+        provider_name = "Flexera"
+      when "turbonomic"
+        provider_name = "Turbonomic"
+      when "github"
+        provider_name = "GitHub"
+      when "servicenow"
+        provider_name = "ServiceNow"
+      when "okta"
+        provider_name = "Okta"
+      end
+
+      provider[:permissions].each do |permission|
+        f << [value["name"], value["version"], provider_name, permission["name"], permission["required"], permission["read_only"]]
+      end
+    end
+  end
+end
+
+# Create PDF documents in '.data/policy_permissions_list' directory
+logo_svg = Base64.strict_encode64(File.read('tools/policy_master_permission_generation/flexera_logo.svg'))
+font = Base64.strict_encode64(File.binread('tools/policy_master_permission_generation/source-sans-pro-regular.ttf'))
+
+aws_values = values.select { |v| v["name"].include?("AWS") || v["name"].include?("Amazon") }
+azure_values = values.select { |v| v["name"].include?("Azure") || v["name"].include?("AKS") || v["name"].include?("Microsoft") }
+google_values = values.select { |v| v["name"].include?("Google") || v["name"].include?("GCP") || v["name"].include?("GCE") }
+
+generate_pdf(values, "Master", "master_policy_permissions_list", permissions_list_dir, logo_svg, font)
+generate_pdf(aws_values, "AWS", "master_policy_permissions_list_aws", permissions_list_dir, logo_svg, font)
+generate_pdf(azure_values, "Azure", "master_policy_permissions_list_azure", permissions_list_dir, logo_svg, font)
+generate_pdf(google_values, "Google", "master_policy_permissions_list_google", permissions_list_dir, logo_svg, font)

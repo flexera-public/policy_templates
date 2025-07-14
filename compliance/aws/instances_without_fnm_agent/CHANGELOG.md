@@ -1,5 +1,17 @@
 # Changelog
 
+## v4.3.4
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v4.3.3
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
+## v4.3.2
+
+- Minor code improvements to conform with current standards. Functionality unchanged.
+
 ## v4.3.1
 
 - Added default value for parameters that do not require user input

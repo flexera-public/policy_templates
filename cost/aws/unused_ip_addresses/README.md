@@ -4,7 +4,7 @@
 
 This Policy Template scans all IP addresses in the given account and identifies any unused IP addresses. If any are found, an incident report will show the IP addresses, and related information, and an email will be sent to the user-specified email address. If the user approves that the IP addresses should be deleted, the policy will delete the IP addresses. Optionally, the user can specify one or more tags that if found on an IP address will exclude the IP address from the list, as well as specify a minimum number of days for an IP address to be unattached before considering it unused.
 
-## Functional Details
+## How It Works
 
 The policy utilizes the AWS EC2 API to get a list of unattached IP addresses and the AWS CloudTrail API to determine when the IP address was detached from an instance. An incident is raised with any unattached IP addresses that have been detached for longer than the user-specified threshold.
 
@@ -90,4 +90,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This policy template does not incur any cloud costs.

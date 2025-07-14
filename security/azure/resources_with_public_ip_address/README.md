@@ -1,10 +1,14 @@
 # Azure Resources with public IP address
 
-## What it does
+## Deprecated
+
+This policy is no longer being updated.
+
+## What It Does
 
 This policy checks all the resources in the Azure Subscription with a public IP address, so that those IP's can be removed.
 
-## Functional Details
+## How It Works
 
 The policy leverages the Azure API to identify the resources that have public IP address associated with them and them produces the report of these instances.
 
@@ -34,4 +38,4 @@ Required permissions in the provider:
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.

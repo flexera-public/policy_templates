@@ -1,0 +1,308 @@
+name "Spot Eco - Commitment Source Dimension"
+rs_pt_ver 20180301
+type "policy"
+short_description "Creates and maintains a rule-based dimension to show the source for commitments from Spot Eco in Flexera CCO. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/spot/commitment_source_rbd/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/spot/commitment_source_rbd/"
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "0.1.1",
+  provider: "Flexera",
+  service: "Spot Eco",
+  policy_set: "Spot Eco",
+  hide_skip_approvals: "true",
+  skip_permissions: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_spot_org_id" do
+  type "string"
+  category "Policy Settings"
+  label "Spot Organization ID"
+  description "The organization ID of the Spot Eco account to use for the commitment source."
+  # No default value, user input required
+end
+
+parameter "param_rbd_name" do
+  type "string"
+  category "Policy Settings"
+  label "Dimension Name"
+  description "The name to give the new dimension for the commitment source. This is how the dimension will appear in Flexera One."
+  default "Commitment Source (Eco)"
+end
+
+parameter "param_rbd_id" do
+  type "string"
+  category "Policy Settings"
+  label "Dimension ID"
+  description "The internal ID to give the new dimension for the commitment source. Default is recommended for most use cases."
+  default "rbd_commitment_source_eco"
+end
+
+parameter "param_effective_date" do
+  type "string"
+  category "Policy Settings"
+  label "Effective Date"
+  description "Year/month you want rules to start applying in YYYY-MM format"
+  default "2010-01"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+credentials "auth_spot" do
+  schemes "api_key"
+  label "Spot"
+  description "Select the Spot Credential from the list."
+  tags "provider=spotinst"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_spot" do
+  get_page_marker do
+    body_path jq(response, ".response.paginationInfo.nextKey")
+  end
+  set_page_marker do
+    query "paginationKey"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_eco_commitments" do
+  request do
+    run_script $js_eco_commitments, $param_spot_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "response.items") do
+      field "commitment_type", jmes_path(col_item, "commitment_type")
+      field "commitment_id", jmes_path(col_item, "commitment_id")
+      field "account_id", jmes_path(col_item, "account_id")
+      field "generated_savings", jmes_path(col_item, "generated_savings")
+      field "dollar_used", jmes_path(col_item, "dollar_used")
+      field "percentage_used", jmes_path(col_item, "percentage_used")
+      field "equivalent_od", jmes_path(col_item, "equivalent_od")
+      field "source", jmes_path(col_item, "source")
+    end
+  end
+end
+
+script "js_eco_commitments", type: "javascript" do
+  parameters "param_spot_org_id"
+  result "request"
+  code <<-EOS
+  start_date = new Date("2010-01-01")
+  start_date = Math.round(start_date.getTime() / 1000).toString()
+
+  end_date = new Date()
+  end_date = Math.round(end_date.getTime() / 1000).toString()
+
+  var request = {
+    auth: "auth_spot",
+    pagination: "pagination_spot",
+    host: "n3hlz25n15.execute-api.us-east-1.amazonaws.com",
+    path: "/prod/aws/v2/billing/commitmentDistribution",
+    headers: {
+      "Spotinst-Organization-ID": param_spot_org_id
+    },
+    query_params: {
+      "start_date": start_date,
+      "end_date": end_date
+    }
+  }
+EOS
+end
+
+datasource "ds_existing_rbds" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "ruleListLinks", jmes_path(col_item, "ruleListLinks")
+    end
+  end
+end
+
+datasource "ds_rbds" do
+  run_script $js_rbds, $ds_eco_commitments, $ds_existing_rbds, $ds_applied_policy, $param_rbd_name, $param_rbd_id, $param_effective_date
+end
+
+script "js_rbds", type: "javascript" do
+  parameters "ds_eco_commitments", "ds_existing_rbds", "ds_applied_policy", "param_rbd_name", "param_rbd_id", "param_effective_date"
+  result "result"
+  code <<-'EOS'
+  eco_rbd = _.find(ds_existing_rbds, function(rbd) { return rbd['id'] == param_rbd_id })
+  eco_purchased = _.filter(ds_eco_commitments, function(entry) { return entry["source"] == "Eco" })
+
+  rules = _.map(eco_purchased, function(entry) {
+    return {
+      condition: {
+        type: "dimension_contains",
+        dimension: "commitment_id",
+        substring: entry["commitment_id"],
+        caseInsensitive: true
+      },
+      value: { text: "Eco" }
+    }
+  })
+
+  // Catch-all rule for commitments not purchased by Eco
+  rules.push({
+    condition: {
+      type: "not",
+      expression: {
+        type: "or",
+        expressions: [
+          {
+            type: "dimension_equals",
+            dimension: "commitment_id",
+            value: "",
+            caseInsensitive: true
+          },
+          {
+            type: "dimension_equals",
+            dimension: "commitment_id",
+            value: "None",
+            caseInsensitive: true
+          }
+        ]
+      }
+    },
+    value: { text: "Non-Eco" }
+  })
+
+  result = [
+    {
+      id: param_rbd_id,
+      name: param_rbd_name,
+      verb: eco_rbd ? "PATCH" : "POST",
+      effective_at: param_effective_date,
+      rules: rules
+    }
+  ]
+EOS
+end
+
+datasource "ds_create_rbds" do
+  iterate $ds_rbds
+  request do
+    run_script $js_create_rbds, val(iter_item, "id"), val(iter_item, "verb"), val(iter_item, "name"), val($ds_flexera_api_hosts, "flexera"), rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_create_rbds", type: "javascript" do
+  parameters "rbd_id", "verb", "name", "api_host", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    verb: verb,
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id].join(''),
+    body_fields: { name: name }
+  }
+EOS
+end
+
+datasource "ds_apply_rbds" do
+  iterate $ds_rbds
+  request do
+    # ds_create_rbds is a parameter to ensure that it executes before ds_apply_rbds does
+    run_script $js_apply_rbds, val(iter_item, "id"), val(iter_item, "effective_at"), val(iter_item, "rules"), val($ds_flexera_api_hosts, "flexera"), $ds_create_rbds, rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_apply_rbds", type: "javascript" do
+  parameters "rbd_id", "effective_at", "rules", "api_host", "ds_create_rbds", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    verb: "PUT",
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id, "/rules/", effective_at].join(''),
+    body_fields: { rules: rules }
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_rbds" do
+  validate $ds_apply_rbds do
+    summary_template "Commitment Source RBD Generated & Applied"
+    detail_template ""
+    check eq(0, 0)
+  end
+end

@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.4.3
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v2.4.2
+
+- Updated names of code blocks to align with current formatting standards. Functionality unchanged.
+
+## v2.4.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v2.4
 
 - Fixed spelling errors in short description and `Days since last inventory` parameter.

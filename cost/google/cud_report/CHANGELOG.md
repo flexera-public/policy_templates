@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.1.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v3.1.0
+
+- Added support for filtering system and Google Apps Script projects from the results.
+
+## v3.0.1
+
+- Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
+
 ## v3.0.0
 
 - Added ability to filter report by project
