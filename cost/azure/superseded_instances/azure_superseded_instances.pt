@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "2.1.5",
+  version: "2.2.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Superseded Compute Instances",
@@ -142,20 +142,33 @@ end
 ###############################################################################
 
 # Various data tables needed for later in the policy
-datasource "ds_azure_instance_size_map" do
-  request do
-    host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/azure/instance_types.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
 datasource "ds_azure_instance_cost_map" do
   request do
     host "raw.githubusercontent.com"
     path "/flexera-public/policy_templates/master/data/azure/azure_vm_pricing.json"
     header "User-Agent", "RS Policies"
   end
+end
+
+datasource "ds_azure_instance_types" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/azure_compute_instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_azure_instance_type_map" do
+  run_script $js_azure_instance_type_map, $ds_azure_instance_types
+end
+
+script "js_azure_instance_type_map", type: "javascript" do
+  parameters "ds_azure_instance_types"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  _.each(ds_azure_instance_types, function(entry) { result[entry["name"]] = entry })
+EOS
 end
 
 datasource "ds_region_table" do
@@ -688,11 +701,11 @@ EOS
 end
 
 datasource "ds_superseded_instances" do
-  run_script $js_superseded_instances, $ds_azure_instances_region_filtered, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_azure_instance_cost_map, $ds_region_table, $ds_currency_conversion, $ds_currency, $ds_applied_policy, $param_min_savings
+  run_script $js_superseded_instances, $ds_azure_instances_region_filtered, $ds_instance_costs_grouped, $ds_azure_instance_type_map, $ds_azure_instance_cost_map, $ds_region_table, $ds_currency_conversion, $ds_currency, $ds_applied_policy, $param_min_savings
 end
 
 script "js_superseded_instances", type: "javascript" do
-  parameters "ds_azure_instances_region_filtered", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_azure_instance_cost_map", "ds_region_table", "ds_currency_conversion", "ds_currency", "ds_applied_policy", "param_min_savings"
+  parameters "ds_azure_instances_region_filtered", "ds_instance_costs_grouped", "ds_azure_instance_type_map", "ds_azure_instance_cost_map", "ds_region_table", "ds_currency_conversion", "ds_currency", "ds_applied_policy", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -745,8 +758,8 @@ script "js_superseded_instances", type: "javascript" do
       purchase_option = ds_instance_costs_grouped[id]['purchase_option']
     }
 
-    if (ds_azure_instance_size_map[instance_type] != undefined) {
-      superseded_table = ds_azure_instance_size_map[instance_type]['superseded']
+    if (ds_azure_instance_type_map[instance_type] != undefined) {
+      superseded_table = ds_azure_instance_type_map[instance_type]['superseded']
 
       if (typeof(superseded_table) == 'object') {
         superseded_type = superseded_table[superseded_parameter]
