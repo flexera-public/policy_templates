@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.6
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v2.0.5
 
 - Minor change to policy template `short_description`. Functionality unchanged.

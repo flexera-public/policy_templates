@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1.5
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v2.1.4
 
 - Fixed error where policy would fail completely when finding the superseded instances prices.

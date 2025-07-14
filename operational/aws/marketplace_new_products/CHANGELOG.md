@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.5
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v0.3.4
 
 - Fixed code issue preventing policy from successfully completing.

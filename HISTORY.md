@@ -6,6 +6,163 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3312](https://github.com/flexera-public/policy_templates/pull/3312): POL-1551 Meta Parent Fix: Actions with Parameters
+
+*Bug Fix*
+
+#### Description
+
+> Fixes issue with meta parent policies where actions would not work if the actions had parameters. The root cause was a typo where a variable "action_options" was incorrectly declared as "actions_options".
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3312) for these details.
+- **Merged At**: 2025-07-11 14:46:22 UTC
+
+---
+
+### PR [#3306](https://github.com/flexera-public/policy_templates/pull/3306): FOAA-294 fix: improved savings calculation accuracy for underutilized resources on AWS Rightsize RDS
+
+*Minor Update, Bug Fix*
+
+#### Description
+
+> Improved accuracy of savings calculation for underutilized RDS instances recommending to be resized.  We now consider only the "InstanceUsage" usage type costs when estimating potential savings from resize.
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/FOAA-294
+>
+
+#### Metadata
+
+- **Policies**: [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md)
+- **Merged At**: 2025-07-11 12:05:29 UTC
+
+---
+
+### PR [#3210](https://github.com/flexera-public/policy_templates/pull/3210): FOPTS-10413 Add validation for tag tag_azure_databricks_clusterid
+
+*Minor Update*
+
+#### Description
+
+> This PR introduces a validation mechanism in the Azure Databricks Rightsize Compute Instances policy template to ensure accurate cost allocation. Specifically, it verifies the presence of the tag_azure_databricks_clusterid dimension by validating the required tag.
+>
+> ### Issues Resolved
+> * Prevents policies from failing by checking for the required tag in advance.
+>
+>
+>
+
+#### Metadata
+
+- **Policies**: [Azure Databricks Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/databricks/rightsize_compute/README.md)
+- **Merged At**: 2025-07-09 17:10:06 UTC
+
+---
+
+### PR [#3296](https://github.com/flexera-public/policy_templates/pull/3296): POL-1557 CBI Policy Daily Granularity Support
+
+*Minor Update*
+
+#### Description
+
+> Updates the "Common Bill Ingestion from AWS S3 Object Storage" and "Common Bill Ingestion from Azure Blob Storage" policy templates to support billing data stored at a daily, rather than a monthly, granularity. From the READMEs:
+>
+> - *Granularity* - Whether there will be one file per month of billing data, or one file per day of billing data.
+>   - If set to "Daily", file names will be expected to end with a full date like "2024-10-03.csv". The policy template will grab all of the files for a given month to upload to Flexera.
+>   - If set to "Monthly", file names will be expected to end with a year and month like "2024-10.csv". The policy template will grab one file for the month to upload to Flexera.
+>
+
+#### Metadata
+
+- **Policies**: [Common Bill Ingestion from AWS S3 Object Storage](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cbi_ingestion_aws_s3/README.md), [Common Bill Ingestion from Azure Blob Storage](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cbi_ingestion_azure_blob/README.md)
+- **Merged At**: 2025-07-09 12:18:25 UTC
+
+---
+
+### PR [#3111](https://github.com/flexera-public/policy_templates/pull/3111): POL-1514 - Add resource utilization charts to Azure + AWS Rightsize Compute PTs
+
+*Minor Update*
+
+#### Description
+
+> Adds resource utilization chart URLs to the resulting incidents for AWS+Azure Rightsize Compute Policy Templates.  This mitigates/prevents need to use cloud vendor console or another observability tool outside Flexera to validate the recommendation is true.
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/POL-1514
+>
+
+#### Metadata
+
+- **Policies**: [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/README.md), [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md)
+- **Merged At**: 2025-07-08 01:20:58 UTC
+
+---
+
+### PR [#3280](https://github.com/flexera-public/policy_templates/pull/3280): SQ-16235 | Bill Processing Errors Notification | Add support for Azure CSP and Azure MCA Enterprise
+
+*Minor Update*
+
+#### Description
+
+> Add support for Azure CSP and Azure MCA Enterprise accounts to Bill Processing Errors Notification policy.
+>
+> ### Issues Resolved
+>
+> - https://flexera.atlassian.net/browse/SQ-16235
+>
+
+#### Metadata
+
+- **Policies**: [Cloud Bill Processing Error Notification](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/bill_processing_errors_notification/README.md)
+- **Merged At**: 2025-07-07 17:55:14 UTC
+
+---
+
+### PR [#3272](https://github.com/flexera-public/policy_templates/pull/3272): POL-1553 AWS Untagged Resources Resource Type Filtering
+
+*Minor Update*
+
+#### Description
+
+> AWS Untagged Resources
+> - New `Resource Types` parameter allows policy template to only report on specific services or resource types.
+> - Small code changes made to improve the speed of policy template execution.*
+>
+> (Basically just amounts to changing IncludeComplianceDetails to false since we don't use this data in the policy template anyway)
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3272) for these details.
+- **Merged At**: 2025-07-07 14:04:48 UTC
+
+---
+
+### PR [#3275](https://github.com/flexera-public/policy_templates/pull/3275): POL-1542 feat: Update tag resource action to use Tags API and enable Tag Contributor role
+
+*Minor Update*
+
+#### Description
+
+> Update tag resource action to use Azure Tags API, which enables `Tag Contributor` role to be used for enabling action capabilities with minimum scope.
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/POL-1542
+>
+
+#### Metadata
+
+- **Policies**: [Azure Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources/README.md)
+- **Merged At**: 2025-07-07 12:31:41 UTC
+
+---
+
 ### PR [#3276](https://github.com/flexera-public/policy_templates/pull/3276): SQ-15559 Azure Superseded Compute Instances Reference Error
 
 *Minor Update, Bug Fix*
@@ -1865,132 +2022,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Superseded EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/superseded_ebs_volumes/README.md), [Meta Parent: AWS Superseded EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/superseded_ebs_volumes/README.md)
 - **Merged At**: 2024-10-24 06:58:29 UTC
-
----
-
-### PR [#2774](https://github.com/flexera-public/policy_templates/pull/2774): POL-1400 Fix Invalid Recommendations: Azure Rightsize SQL Managed Instances
-
-#### Description
-
-> Azure Rightsize SQL Managed Instances would sometimes produce recommendations for invalid sizes. This is because it was using the existing SQL tier sizes list, and SQL Managed Instances are only available for a much smaller subset of these sizes.
->
-> This fixes the issue by creating a separate JSON asset specific to SQL Managed Instances with only the sizes used for that product, and a small modification of the policy template to make use of this new asset.
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize SQL Managed Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_sql/README.md), [Meta Parent: Azure Rightsize SQL Managed Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_sql/README.md)
-- **Merged At**: 2024-10-22 14:45:54 UTC
-
----
-
-### PR [#2772](https://github.com/flexera-public/policy_templates/pull/2772): POL-1398 Azure Expiring Certificates - fix Days Until Expiration bug
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> Regardless of the threshold set, the Azure Expiring Certificates policy returns (in the incident) certificate resources that will expire months and years from now. The reason for this is an incorrect calculation which makes the 'Days Until Expiration' a negative number. This is a change to fix this.
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
-> - 'Days Until Expiration' no longer produces a negative value in the policy incident.
-> - Certificate resources outside of the threshold set are no longer returned in the policy incident.
->
-
-#### Metadata
-
-- **Policies**: [Azure Expiring Certificates](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/azure_certificates/README.md), [Meta Parent: Azure Expiring Certificates](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/azure_certificates/README.md)
-- **Merged At**: 2024-10-22 14:45:40 UTC
-
----
-
-### PR [#2763](https://github.com/flexera-public/policy_templates/pull/2763): POL-1392 AWS Rightsize RDS Instances: Downsize Multiple Tiers
-
-#### Description
-
-> Adds option to make recommendations to go down multiple sizes in the `AWS Rightsize RDS Instances` Instances policy template.
->
-
-#### Metadata
-
-- **Policies**: [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md), [Meta Parent: AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md)
-- **Merged At**: 2024-10-21 12:15:34 UTC
-
----
-
-### PR [#2762](https://github.com/flexera-public/policy_templates/pull/2762): POL-1391 Azure Rightsize Compute Instances: Downsize Multiple Tiers
-
-#### Description
-
-> Adds option to make recommendations to go down multiple sizes in the `Azure Rightsize Compute Instances` policy template.
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md), [Meta Parent: Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md)
-- **Merged At**: 2024-10-21 12:15:26 UTC
-
----
-
-### PR [#2756](https://github.com/flexera-public/policy_templates/pull/2756): POL-1387 New Object Storage Lifecycle Policies / Deprecate Object Storage Optimization Policies
-
-#### Description
-
-> This adds two new policy templates, `AWS S3 Buckets Without Lifecycle Configuration` and `Google Cloud Storage Without Lifecycle Configuration`, to the policy catalog. Additionally, it deprecates the `AWS Object Storage Optimization`, `Azure Blob Storage Optimization`, and `Google Object Storage Optimization` policy templates. The READMEs for these policy templates now direct users to the appropriate lifecycle policy templates instead.
->
-> Reason: Due to the scale involved, policy templates that attempt to manage individual objects within object storage buckets are not efficient or, in most cases, even able to run without errors on the Flexera platform. It is bad practice to attempt to micromanage individual objects anyway; users should instead be configuring their cloud environment to automate this via the lifecycle tools all three hyperscalers provide for their object storage solutions. The new policy templates ensure that we have a policy template solution available to users interested in enforcing the usage of lifecycle tools.
->
-> (Ignore the dead link warnings. Those links won't be dead once this PR is merged)
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2756) for these details.
-- **Merged At**: 2024-10-21 12:15:19 UTC
-
----
-
-### PR [#2759](https://github.com/flexera-public/policy_templates/pull/2759): POL-1390 AWS Rightsize EC2 Instances: Downsize Multiple Tiers
-
-#### Description
-
-> Adds option to make recommendations to go down multiple sizes in the `AWS Rightsize EC2 Instances` policy template.
->
-
-#### Metadata
-
-- **Policies**: [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/README.md), [Meta Parent: AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/README.md)
-- **Merged At**: 2024-10-21 12:04:19 UTC
-
----
-
-### PR [#2745](https://github.com/flexera-public/policy_templates/pull/2745): POL-1383 New Policy: Google Missing Projects
-
-#### Description
-
-> New policy template, `Google Missing Projects`, that mirrors the `Azure Missing Subscriptions` policy template. From the README:
->
-> This policy template checks the stored Flexera CCO billing data for Google from 3 days ago to obtain a list of Google Projects that we have billing data for and compares that to the list of Google Projects returned by the Google Cloud Resource Manager API. An incident is raised and email sent containing any projects present in Flexera CCO but not returned by the Google Cloud Resource Manager API, as well as projects returned by the Google Cloud Resource Manager API but not present in Flexera CCO. The user can select which of those two reports they'd like to produce.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2745) for details about unpublished policies.
-- **Merged At**: 2024-10-16 17:15:30 UTC
-
----
-
-### PR [#2738](https://github.com/flexera-public/policy_templates/pull/2738): POL-1380 Applied Policy Template Errors: Child Policy Support
-
-#### Description
-
-> This adds optional support for reporting child policy errors as a separate incident in the `Applied Policy Template Errors` policy template.
->
-
-#### Metadata
-
-- **Policies**: [Applied Policy Template Errors](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/automation/applied_policy_error_notification/README.md)
-- **Merged At**: 2024-10-16 17:04:31 UTC
 
 ---
 

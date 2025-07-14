@@ -12,7 +12,10 @@ def policy_missing_github_labels?(github, file, file_parsed, file_metadata)
 
   fail_message = ""
 
-  if !github.pr_labels.include?("NEW POLICY TEMPLATE") && !file_metadata
+  published = true
+  published = false if file_parsed.parsed_info && file_parsed.parsed_info[:publish] && file_parsed.parsed_info[:publish].downcase == "false"
+
+  if !github.pr_labels.include?("NEW POLICY TEMPLATE") && !file_metadata && published
     fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md#4-make-a-pull-request)] Policy Template is new but Pull Request is missing `NEW POLICY TEMPLATE` label. Please add this label to the Pull Request.\n\n"
   elsif file_parsed.parsed_info && file_parsed.parsed_info[:version] && file_metadata && file_metadata["version"]
     major_version = file_parsed.parsed_info[:version].split('.')[0]
@@ -28,7 +31,7 @@ def policy_missing_github_labels?(github, file, file_parsed, file_metadata)
     end
   end
 
-  if file_parsed.parsed_info && file_parsed.parsed_info[:publish] && file_parsed.parsed_info[:publish].downcase == "false" && !github.pr_labels.include?("UNPUBLISHED")
+  if !published && !github.pr_labels.include?("UNPUBLISHED")
     fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md#4-make-a-pull-request)] Policy Template is unpublished but Pull Request is missing `UNPUBLISHED` label. Please add this label to the Pull Request.\n\n"
   end
 
@@ -236,6 +239,7 @@ def policy_bad_readme_link?(file, file_parsed)
   fail_message = ""
 
   short_description = file_parsed.parsed_short_description
+  doc_link = file_parsed.parsed_doc_link
 
   file_path = file.split('/')
   file_path.pop
@@ -243,6 +247,8 @@ def policy_bad_readme_link?(file, file_parsed)
 
   url_regex = /https:\/\/[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:\/[^\s]*[^\s)])?/
   url_list = short_description.scan(url_regex)
+
+  url_list << doc_link if doc_link
 
   good_urls = 0
   bad_urls = 0
@@ -255,7 +261,7 @@ def policy_bad_readme_link?(file, file_parsed)
   end
 
   if bad_urls > 0 || good_urls == 0
-    fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Policy template `short_description` is missing a valid link to the README. Please ensure that the following link is present in the `short_description`:\n\n#{file_url}/"
+    fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Policy template `short_description` or `doc_link` is missing a valid link to the README. Please ensure that the following link is present in both the `short_description` and `doc_link`:\n\n#{file_url}/"
   end
 
   return fail_message.strip if !fail_message.empty?
@@ -393,6 +399,7 @@ def policy_bad_metadata?(file, file_parsed, field_name)
   name = file_parsed.parsed_name
   short_description = file_parsed.parsed_short_description
   long_description = file_parsed.parsed_long_description
+  doc_link = file_parsed.parsed_doc_link
   category = file_parsed.parsed_category
   default_frequency = file_parsed.parsed_default_frequency
   severity = file_parsed.parsed_severity
@@ -413,6 +420,11 @@ def policy_bad_metadata?(file, file_parsed, field_name)
   if field_name == "long_description"
     fail_message += "Please add a long_description field with an empty string as its value.\n\n" if !long_description
     fail_message += "Please make the long_description field an empty string.\n\n" if long_description && long_description != ""
+  end
+
+  if field_name == "doc_link"
+    fail_message += "Please add a doc_link field with a valid URL.\n\n" if !doc_link
+    fail_message += "Please add a valid URL to the doc_link field.\n\n" if doc_link && doc_link == ""
   end
 
   if field_name == "category"
