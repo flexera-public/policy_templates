@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.3.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v4.3.0
 
 - Added `Version` and `Database Format` fields to the incident table.

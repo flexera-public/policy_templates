@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.3
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v3.0.2
 
 - Fixed bug that would cause policy execution to fail when not filtering by region

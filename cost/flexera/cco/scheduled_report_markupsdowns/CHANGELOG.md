@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v2.0.0
 
 - Policy template now requires a valid Flexera credential.

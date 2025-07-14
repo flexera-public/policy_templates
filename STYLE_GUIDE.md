@@ -327,6 +327,10 @@ The following guidelines should be used when specifying policy template metadata
 - __long_description__
   - Always set to an empty string.
 
+- __doc_link__
+  - Should be a link to the policy template in the Github repository.
+  - _Example_: `https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/`
+
 - __category__
   - Should be set to one of the following categories based on the policy template's intended purpose: Compliance, Cost, Operational, SaaS Management, Security
 
@@ -357,6 +361,7 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Check for EC2 instances that have inefficient utilization for a specified number of days and downsizes or terminates them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/"
 severity "low"
 category "Cost"
 default_frequency "weekly"
