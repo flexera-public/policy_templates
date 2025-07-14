@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v2.6.0
 
 - Added support for Azure CSP and Azure MCA Enterprise account types.

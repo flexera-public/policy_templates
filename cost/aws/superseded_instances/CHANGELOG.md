@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v2.4.0
 
 - Policy template now uses dynamically updated list of instance types.

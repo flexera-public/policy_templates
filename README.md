@@ -450,7 +450,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * All
 
-  * [Flexera Onboarding](./operational/flexera/onboarding)
+  * [Flexera Onboarding](./operational/flexera/cco/onboarding)
 
 * Automation
 
@@ -477,7 +477,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Identity & Access Management
 
-  * [Configure Custom Branding](./operational/flexera/custom_branding)
+  * [Configure Custom Branding](./operational/flexera/flexeraone/custom_branding)
   * [Flexera One API Event Report](./operational/flexera/iam/api_event_report)
   * [Flexera One User Access Report](./operational/flexera/iam/iam_user_report)
 
