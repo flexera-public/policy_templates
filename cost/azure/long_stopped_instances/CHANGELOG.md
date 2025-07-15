@@ -3,6 +3,7 @@
 ## v6.1.0
 
 - Added `Monthly Resource Cost` to incident table.
+- Corrected issue with `Subscription ID` not being properly scraped into the Optimization dashboard in Flexera One.
 
 ## v6.0.2
 
