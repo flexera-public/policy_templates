@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.8.2",
+  version: "5.9.0",
   provider: "AWS",
   service: "RDS",
   policy_set: "Rightsize Database Instances",
@@ -1485,7 +1485,7 @@ script "js_rds_underutil_instances", type: "javascript" do
         savings = cost - new_cost
       }
 
-      new_instance = { newResourceType: cost_newtype, savings: savings }
+      new_instance = { newResourceType: cost_newtype, cost: cost, savings: savings }
       _.each(_.keys(instance), function(key) { new_instance[key] = instance[key] })
       result.push(new_instance)
     }
@@ -1674,6 +1674,7 @@ script "js_rds_idle_incident", type: "javascript" do
         connectionsTotal: instance['connectionsTotal'],
         connectionsAverage: instance['connectionsAverage'],
         vcpus: instance['vcpus'],
+        cost: Math.round(savings * 1000) / 1000,
         savings: Math.round(savings * 1000) / 1000,
         savingsCurrency: ds_currency['symbol'],
         lookbackPeriod: param_stats_lookback,
@@ -1727,6 +1728,7 @@ script "js_rds_idle_incident", type: "javascript" do
     tags: "",
     total_savings: "",
     message: "",
+    cost: "",
     savings: "",
     savingsCurrency: ""
   })
@@ -1773,8 +1775,8 @@ script "js_rds_underutil_incident", type: "javascript" do
   total_savings = 0.0
 
   _.each(ds_rds_underutil_instances_cleaned, function(instance) {
-    savings = 0.0
-    if (instance['savings'] != undefined) { savings = instance['savings'] }
+    cost = instance['cost'] ? instance['cost'] : 0.0
+    savings = instance['savings'] ? instance['savings'] : 0.0
 
     if (savings >= param_min_savings) {
       total_savings += savings
@@ -1825,6 +1827,7 @@ script "js_rds_underutil_incident", type: "javascript" do
         licenseModel: instance['licenseModel'],
         processorFeatures: instance['processorFeatures'],
         vcpus: instance['vcpus'],
+        cost: Math.round(cost * 1000) / 1000,
         savings: Math.round(savings * 1000) / 1000,
         savingsCurrency: ds_currency['symbol'],
         lookbackPeriod: param_stats_lookback,
@@ -1883,6 +1886,7 @@ script "js_rds_underutil_incident", type: "javascript" do
     tags: "",
     total_savings: "",
     message: "",
+    cost: "",
     savings: "",
     savingsCurrency: ""
   })
@@ -1908,7 +1912,7 @@ policy "pol_rightsize_rds" do
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_downsize_rds_instances
-    hash_exclude "tags", "total_savings", "message", "savings", "savingsCurrency"
+    hash_exclude "tags", "total_savings", "message", "cost", "savings", "savingsCurrency"
     export do
       resource_level true
       field "accountID" do
@@ -1938,11 +1942,14 @@ policy "pol_rightsize_rds" do
       field "state" do
         label "State"
       end
+      field "savingsCurrency" do
+        label "Currency"
+      end
+      field "cost" do
+        label "Monthly Resource Cost"
+      end
       field "savings" do
         label "Estimated Monthly Savings"
-      end
-      field "savingsCurrency" do
-        label "Savings Currency"
       end
       field "privateDnsName" do
         label "Private DNS Name"
@@ -2045,7 +2052,7 @@ policy "pol_rightsize_rds" do
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_terminate_rds_instances
-    hash_exclude "tags", "total_savings", "message", "savings", "savingsCurrency"
+    hash_exclude "tags", "total_savings", "message", "cost", "savings", "savingsCurrency"
     export do
       resource_level true
       field "accountID" do
@@ -2075,11 +2082,14 @@ policy "pol_rightsize_rds" do
       field "state" do
         label "State"
       end
+      field "savingsCurrency" do
+        label "Currency"
+      end
+      field "cost" do
+        label "Monthly Resource Cost"
+      end
       field "savings" do
         label "Estimated Monthly Savings"
-      end
-      field "savingsCurrency" do
-        label "Savings Currency"
       end
       field "privateDnsName" do
         label "Private DNS Name"

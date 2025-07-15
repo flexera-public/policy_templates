@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.9.0
+
+- Added `Monthly Resource Cost` to incident table.
+
 ## v5.8.2
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
