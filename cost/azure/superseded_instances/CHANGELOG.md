@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1.6
+
+- Will display 'price not found' if listed price is missing, instead of leaving the column empty.
+
 ## v2.1.5
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
