@@ -6,6 +6,44 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3305](https://github.com/flexera-public/policy_templates/pull/3305): POL-1558 New Unpublished CBI Policy Templates
+
+*Unpublished, New Policy Template*
+
+#### Description
+
+> Adds two new unpublished policy templates for sending CSV files from AWS S3 or Azure Blob Storage to Flexera CBI.
+>
+> Unpublished because these policy templates require some extra knowhow to use, since they send in CSV files over multiple executions, similar to the Oracle CBI policy template. They should generally only be used as a fallback, with guidance from Flexera, when the published policy templates that work in a much more straight-forward and user-friendly way are not able to be used due to the amount of data being sent to CBI.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3305) for details about unpublished policies.
+- **Merged At**: 2025-07-14 14:34:26 UTC
+
+---
+
+### PR [#3314](https://github.com/flexera-public/policy_templates/pull/3314): POL-1559 doc_link Metadata
+
+*Unpublished, Minor Update*
+
+#### Description
+
+> - Adds a new doc_link field to every policy's metadata that contains a link to the policy template in Github. This is to support a future UI enhancement.
+> - Adds appropriate changes to the meta parent templates to add doc_links to meta parent policies.
+> - Adds Dangerfile tests to check for the presence of a valid doc_link
+> - Updates the style guide to include doc_link
+>
+> NOTE: The various Dangerfile warnings/errors are unrelated to this change. This touches almost every policy template in the catalog.
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3314) for these details.
+- **Merged At**: 2025-07-14 14:18:53 UTC
+
+---
+
 ### PR [#3312](https://github.com/flexera-public/policy_templates/pull/3312): POL-1551 Meta Parent Fix: Actions with Parameters
 
 *Bug Fix*
@@ -208,7 +246,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Flexera Onboarding](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/onboarding/README.md)
+- **Policies**: [Flexera Onboarding](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/onboarding/README.md)
 - **Merged At**: 2025-06-30 18:34:50 UTC
 
 ---
@@ -343,7 +381,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Flexera Onboarding](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/onboarding/README.md)
+- **Policies**: [Flexera Onboarding](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/onboarding/README.md)
 - **Merged At**: 2025-06-05 16:48:07 UTC
 
 ---
@@ -363,7 +401,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Configure Custom Branding](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/custom_branding/README.md)
+- **Policies**: [Configure Custom Branding](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/flexeraone/custom_branding/README.md)
 - **Merged At**: 2025-05-30 12:14:27 UTC
 
 ---
@@ -1974,54 +2012,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md), [Meta Parent: AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md)
 - **Merged At**: 2024-10-29 12:11:04 UTC
-
----
-
-### PR [#2747](https://github.com/flexera-public/policy_templates/pull/2747): POL-1385 - New Template: Billing Centers from Dimensions
-
-*New Policy Template*
-
-#### Description
-
-> This policy generates a billing center structure based on specified dimensions. It allows users to create a hierarchical billing center structure that reflects their organizational needs by using existing dimensions -- including custom Rule-Based Dimensions, Tag Dimensions, or Cloud Bill Dimensions like Vendor, Cloud Vendor Account Name.
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/POL-1385
->
-
-#### Metadata
-
-- **Policies**: [Flexera Billing Centers from Dimension Values](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/billing_centers_from_dimensions/README.md)
-- **Merged At**: 2024-10-24 19:24:41 UTC
-
----
-
-### PR [#2777](https://github.com/flexera-public/policy_templates/pull/2777): POL-1404 AWS Superseded EBS Volumes - Fix Currency Conversion Message in Policy Incident
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This change fixes a bug in the policy incident of the AWS Superseded EBS Volumes policy in a customer's tenant.
->
-> This bug occurs when the customer’s native currency in the platform is not USD:
->
-> > “Price and savings values are in USD due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue.”
->
-> This message is incorrectly showing even though currency conversion was successful.
->
-> This change fixes this bug.
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
-> Fixes a bug where the Currency Conversion messaging in the policy incident is incorrectly showing.
->
-
-#### Metadata
-
-- **Policies**: [AWS Superseded EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/superseded_ebs_volumes/README.md), [Meta Parent: AWS Superseded EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/superseded_ebs_volumes/README.md)
-- **Merged At**: 2024-10-24 06:58:29 UTC
 
 ---
 
