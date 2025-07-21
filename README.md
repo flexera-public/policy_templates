@@ -245,7 +245,6 @@ These templates can generate savings estimates for your environment. The inciden
   * [ITAM Ignored Recent Inventory Dates](./compliance/flexera/fnms/ignored_recent_inventory_dates)
   * [ITAM Missing Active Machines](./compliance/flexera/fnms/missing_active_machines)
   * [ITAM Overused Licenses](./compliance/flexera/fnms/overused_licenses)
-  * [ITAM VMs Missing Host ID](./compliance/flexera/fnms/vms_missing_hostid)
 
 * Identity & Access Management
 
