@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.4.6
+
+- Fixed issue that caused RDS DB snapshots to be reported with overinflated estimated savings. Added additional context around these snapshots to the incident description.
+
 ## v8.4.5
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
