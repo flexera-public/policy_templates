@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.0
+
+- Estimated Monthly Savings is now provided for each S3 bucket that we have cost data for in Flexera
+
 ## v4.0.3
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.

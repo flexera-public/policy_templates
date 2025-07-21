@@ -8,17 +8,17 @@ category "Cost"
 severity "medium"
 default_frequency "weekly"
 info(
-  version: "4.0.3",
+  version: "4.1.0",
   provider: "AWS",
   service: "Storage",
-  policy_set: "",
+  policy_set: "Object Store Optimization",
+  recommendation_type: "Usage Reduction",
   hide_skip_approvals: "true"
 )
 
 ###############################################################################
 # Parameters
 ###############################################################################
-
 parameter "param_email" do
   type "list"
   category "Policy Settings"
@@ -98,7 +98,7 @@ datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
     host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies", switch(policy_id, join(["/",policy_id]), "")])
     header "Api-Version", "1.0"
   end
 end
@@ -197,7 +197,7 @@ datasource "ds_get_aws_buckets" do
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
-    header "Meta-Flexera", val($ds_is_deleted, "path")
+    # header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "xml"
@@ -215,6 +215,7 @@ datasource "ds_aws_buckets_with_region" do
     host "s3.amazonaws.com"
     path join(["/", val(iter_item, "name")])
     query "location", ""
+    ignore_status 403 # Ignore 403 AccessDenied -- we will identify
   end
   result do
     encoding "xml"
@@ -285,8 +286,9 @@ datasource "ds_aws_buckets_with_tags" do
     host val(iter_item, "host")
     path join(["/", val(iter_item, "name")])
     query "tagging", ""
-    # Buckets with no tags cause a 404 response so we ignore that
-    ignore_status [404]
+    # Ignore Buckets with no tags which return 404 Not Found
+    # Ignore 403 AccessDenied errors, identified and raised from the ds_aws_buckets_with_region and ds_identify_errors checks
+    ignore_status [404, 403]
   end
   result do
     encoding "xml"
@@ -404,7 +406,7 @@ datasource "ds_aws_bucket_policies" do
     host val(iter_item, "host")
     path join(["/", val(iter_item, "name"), "/"])
     query "intelligent-tiering", ""
-    ignore_status [404]
+    ignore_status [404, 403]
   end
   result do
     encoding "xml"
@@ -418,22 +420,34 @@ datasource "ds_aws_bucket_policies" do
 end
 
 datasource "ds_combined_bucket_info" do
-  run_script $js_combined_bucket_info, $ds_aws_bucket_policies, $ds_aws_account, $ds_applied_policy
+  run_script $js_combined_bucket_info, $ds_aws_bucket_policies, $ds_aws_account, $ds_applied_policy, $ds_costs_grouped_by_resource_id, $ds_identify_errors
 end
 
 script "js_combined_bucket_info", type: "javascript" do
-  parameters "ds_aws_bucket_policies", "ds_aws_account", "ds_applied_policy"
+  parameters "ds_aws_bucket_policies", "ds_aws_account", "ds_applied_policy", "ds_costs_grouped_by_resource_id", "ds_identify_errors"
   result "result"
   code <<-EOS
   buckets_without_it = _.filter(ds_aws_bucket_policies, function(bucket) {
     return bucket['it_configuration'] == "" || bucket['it_configuration'] == null || bucket['it_configuration'] == undefined
   })
 
+  var total_savings = 0;
   result = _.map(buckets_without_it, function(bucket) {
     tags = []
 
     if (bucket['tags'] != undefined && bucket['tags'] != null) {
       tags = _.map(bucket['tags'], function(tag) { return [tag['key'], tag['value']].join('=') })
+    }
+
+    var savings = null;
+    if (_.isNumber(ds_costs_grouped_by_resource_id[ bucket['name'] ])) {
+      // These figures come from AWS’s official page
+      // https://aws.amazon.com/s3/storage-classes/intelligent-tiering/
+      //     40% savings for infrequent access
+      //     68% savings for archive access
+      // If 40% lowest percent savings, lets be conservative and use 30% savings if they move to Intelligent Tiering
+      savings = ds_costs_grouped_by_resource_id[ bucket['name'] ] * 0.30;
+      total_savings += savings;
     }
 
     return {
@@ -444,13 +458,187 @@ script "js_combined_bucket_info", type: "javascript" do
       creation_date: new Date(bucket['creation_date']).toISOString(),
       accountID: ds_aws_account['id'],
       accountName: ds_aws_account['name'],
-      policy_name: ds_applied_policy['name'],
-      service: "AmazonS3"
+      service: "AmazonS3",
+      savings: savings
     }
   })
 
   // Dummy entry to ensure validation always occurs
   result.push({ resourceID: "", tags: "", policy_name: "" })
+
+  // Push metadata used in incident template
+  result[0].metadata = {
+      "policy": ds_applied_policy,
+      "total_savings": total_savings.toFixed(2),
+      "errors": ds_identify_errors || [],
+  }
+EOS
+end
+
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id')).sort()
+EOS
+end
+
+# Get the unique region list from
+datasource "ds_account_region_list" do
+  run_script $js_account_region_list, $ds_aws_buckets_region_filtered
+end
+
+script "js_account_region_list", type: "javascript" do
+  parameters "ds_aws_buckets_region_filtered"
+  result "result"
+  code <<-EOS
+  var result = _.unique(_.compact(_.pluck(ds_aws_buckets_region_filtered, 'region'))).sort() || []
+EOS
+end
+
+datasource "ds_resource_costs" do
+  request do
+    run_script $js_resource_costs, $ds_top_level_bcs, $ds_aws_account, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "dimensions", jmes_path(col_item, "dimensions")
+      field "metrics", jmes_path(col_item, "metrics")
+      field "resourceID", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "timestamp", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+script "js_resource_costs", type: "javascript" do
+  parameters "ds_top_level_bcs", "ds_aws_account", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: [
+        "resource_id",
+        "region",
+      ],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        "type": "and",
+        "expressions": [
+          { "dimension": "service", "type": "substring", "substring": "AmazonS3" },
+          { "dimension": "usage_type", "type": "substring", "substring": "TimedStorage-ByteHrs" }, // Only TimedStorage-ByteHrs is modified by storage tier
+          { "dimension": "vendor_account", "type": "equal", "value": ds_aws_account['id'] }
+        ]
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    }
+  }
+EOS
+end
+
+datasource "ds_costs_grouped_by_resource_id" do
+  run_script $js_costs_grouped_by_resource_id, $ds_resource_costs
+end
+
+script "js_costs_grouped_by_resource_id", type: "javascript" do
+  parameters "ds_resource_costs"
+  result "result"
+  code <<-EOS
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_resource_costs, function(item) {
+    id = item.resourceID.toLowerCase() // lowercase to normalize resourceID
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item.cost * cost_multiplier
+  });
+EOS
+end
+
+datasource "ds_identify_errors" do
+  run_script $js_identify_errors, $ds_get_aws_buckets, $ds_aws_buckets_with_region
+end
+
+script "js_identify_errors", type: "javascript" do
+  parameters "ds_get_aws_buckets", "ds_aws_buckets_with_region"
+  result "errors"
+  code <<-EOS
+  var errors = [];
+  // Check for buckets in ds_get_aws_buckets that are not in ds_aws_buckets_with_region
+  // This can happen if the bucket is in a region that is Denied by IAM (SCP or Permission Boundary)
+  ds_aws_buckets_with_region_indexed = _.groupBy(ds_aws_buckets_with_region, function(b) {
+    return b.name;
+  });
+  var missing_buckets = [];
+  _.each(ds_get_aws_buckets, function(bucket) {
+    var found = ds_aws_buckets_with_region_indexed[bucket.name];
+    if (found == undefined || found.length == 0) {
+        missing_buckets.push(bucket);
+    }
+  });
+  if (missing_buckets.length > 0) {
+    errors.push("We were unable to s3:GetBucketLocation for the following S3 Bucket resources. This can happen if the bucket is in a region that is Denied by IAM (SCP or Permission Boundary) or the IAM Role does not have the required Permission Policy attached: " + _.pluck(missing_buckets, 'name').join(", "));
+  }
+
+  // Deduplicate identical errors
+  errors = _.uniq(errors);
 EOS
 end
 
@@ -460,11 +648,32 @@ end
 
 policy "pol_aws_intelligent_tiering" do
   validate_each $ds_combined_bucket_info do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS S3 Buckets Without Intelligent Tiering Found"
+    summary_template "{{ with index data 0 }}{{ .metadata.policy.name }}{{ end }}: {{ len data }} AWS S3 Buckets Without Intelligent Tiering Found"
+    detail_template <<-EOS
+# AWS S3 Buckets Without Intelligent Tiering Found
+
+There was {{ len data }} AWS S3 Buckets Without Intelligent Tiering Found. S3 Intelligent-Tiering is the ideal storage class for data with unknown, changing, or unpredictable access patterns, independent of object size or retention period.
+
+AWS recommends using S3 Intelligent-Tiering as the default storage class for virtually any workload, especially data lakes, data analytics, new applications, and user-generated content.
+
+Frequent, Infrequent, and Archive Instant Access tiers have the same low-latency and high-throughput performance of S3 Standard.  The Infrequent Access tier saves up to 40% on storage costs, the Archive Instant Access tier saves up to 68% on storage costs [AWS S3 Storage Classes](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/)
+
+## Total Estimated Savings
+
+If all buckets had Intelligent Tiering enabled we estimate approximately **${{ with index data 0 }}{{ .metadata.total_savings}}{{ end }}** monthly savings.  This was derived from the `TimedStorage-ByteHrs` usage + cost values from a recent 24hr period and a conservative 30% savings factor from switching S3 Standard to S3 Intelligent Tiering.
+{{- with index data 0 }}{{ if .metadata.errors }}
+
+## Errors Found
+{{- range .metadata.errors }}
+- {{ . }}
+{{- end }}
+{{- end }}
+{{- end }}
+EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
-    hash_exclude "tags"
+    hash_exclude "tags", "savings"
     export do
       resource_level true
       field "accountID" do
@@ -475,6 +684,9 @@ policy "pol_aws_intelligent_tiering" do
       end
       field "resourceID" do
         label "Bucket Name"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
       end
       field "tags" do
         label "Bucket Tags"
@@ -493,6 +705,16 @@ policy "pol_aws_intelligent_tiering" do
         path "resourceID"
       end
     end
+  end
+  validate $ds_identify_errors do
+    summary_template "AWS S3 Buckets Without Intelligent Tiering: Errors Identified"
+    detail_template <<-EOS
+# AWS S3 Buckets Without Intelligent Tiering Errors Identified
+{{- range data }}
+- {{ . }}
+{{- end }}
+EOS
+    check gt(size(data), 0)
   end
 end
 
@@ -519,7 +741,16 @@ datasource "ds_get_policy" do
     auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies",
+      switch(
+        ne(meta_parent_policy_id, ""),
+        join(["/",meta_parent_policy_id]),
+        switch(
+          ne(policy_id, ""),
+          join(["/", policy_id]),
+          ""
+        )
+      )])
     header "Api-Version", "1.0"
   end
   result do

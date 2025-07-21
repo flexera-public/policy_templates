@@ -4,6 +4,16 @@
 
 This Policy Template scans all S3 buckets in the given account and checks if the bucket has an [intelligent tiering](https://docs.aws.amazon.com/AmazonS3/latest/userguide/intelligent-tiering-overview.html) policy configured. An incident is raised with any buckets without such a policy and, optionally, and email is sent.
 
+### Policy Savings Details
+
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is optimized by enabling intelligent tiering.
+
+- The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the `TimedStorage-ByteHrs` usage for a 24hour period, as found within Flexera, by 30.4375 (365.25 / 12), which is the average number of days in a month, and then applying a conservative 30% savings estimate based on [AWS's published intelligent tiering savings figures which is "40% savings for infrequent access", and "68% savings for archive access"](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
+- Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
+- If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
+- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Total Estimated Savings`.
+- Both `Estimated Monthly Savings` and `Total Estimated Savings` will be reported in the currency of the Flexera organization the policy is applied in.
+
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
