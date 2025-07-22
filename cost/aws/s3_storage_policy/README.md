@@ -2,42 +2,49 @@
 
 ## What It Does
 
-This Policy Template scans all S3 buckets in the given account and checks if the bucket has an [intelligent tiering](https://docs.aws.amazon.com/AmazonS3/latest/userguide/intelligent-tiering-overview.html) policy configured. An incident is raised with any buckets without such a policy.  Intelligent tiering can be enabled easily after user approval, or automatically when detected.
+This Policy Template scans all S3 buckets in your AWS account and identifies buckets that don't have [S3 Intelligent Tiering](https://docs.aws.amazon.com/AmazonS3/latest/userguide/intelligent-tiering-overview.html) enabled. An incident is created listing all non-compliant buckets, with the option to enable Intelligent Tiering after approval, or automatically for any non-compliant buckets.
+
+**S3 Intelligent Tiering** automatically moves your data between different storage tiers based on access patterns, optimizing costs without performance impact. This feature is ideal for data with unpredictable access patterns and can provide significant cost savings with zero operational overhead.
 
 ### Policy Savings Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is optimized by enabling intelligent tiering.
+This policy calculates estimated monthly savings based on your actual storage costs and AWS's published Intelligent Tiering savings rates.
 
-- The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the `TimedStorage-ByteHrs` usage for a 24hour period, as found within Flexera, by 30.4375 (365.25 / 12), which is the average number of days in a month, and then applying a conservative 30% savings estimate based on [AWS's published intelligent tiering savings figures which is "40% savings for infrequent access", and "68% savings for archive access"](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
-- Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
-- If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
-- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Total Estimated Savings`.
-- Both `Estimated Monthly Savings` and `Total Estimated Savings` will be reported in the currency of the Flexera organization the policy is applied in.
+**How savings are calculated:**
+- We analyze your actual `TimedStorage-ByteHrs` usage costs from the past 24 hours (as tracked in Flexera CCO)
+- Project this to monthly costs using 30.4375 days per month (accounting for leap years)
+- Apply a conservative 30% savings estimate based on [AWS's published Intelligent Tiering benefits](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/): up to 40% savings for infrequent access and 68% for archive access
+- All cost calculations include any Flexera adjustment rules or cloud provider discounts in your organization
+
+**Important notes:**
+- If a resource isn't found in Flexera CCO, the estimated savings will show as $0
+- The incident email shows both individual bucket savings and total estimated savings across all buckets
+- Savings amounts are displayed in your organization's configured currency
+- Actual savings may be higher depending on your specific data access patterns
 
 ## Input Parameters
 
-- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
-- *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
-- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
-- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
-  - `Key` - Filter all resources with the specified tag key.
-  - `Key==Value` - Filter all resources with the specified tag key:value pair.
-  - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
-  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
-  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
-- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
-- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+- **Email Addresses** - Email addresses to receive incident notifications when non-compliant buckets are found.
+- **Account Number** - AWS account number for cross-account role access. Leave blank when using standard AWS IAM credentials. Only needed when scanning an AWS account different from the one associated with your Flexera credential. [More details](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- **Allow/Deny Regions** - Choose whether the region list below should include or exclude specific regions from scanning.
+- **Allow/Deny Regions List** - Specific AWS regions to include or exclude. Use region codes (e.g., us-east-1, eu-west-1). Leave empty to scan all regions. Note: If using Service Control Policies (SCPs), enter only enabled regions to avoid policy failures.
+- **Exclusion Tags** - Skip buckets with specific tags. Useful for excluding buckets that shouldn't use Intelligent Tiering (e.g., high-frequency access buckets). Supported formats:
+  - `Environment` - Exclude all buckets with this tag key (any value)
+  - `Environment==Production` - Exclude buckets with this exact tag key and value
+  - `Environment!=Production` - Exclude buckets that don't have this tag or have different values
+  - `Environment=~/Prod.*/` - Exclude buckets where the tag value matches this pattern
+  - `Environment!~/Prod.*/` - Exclude buckets where the tag value doesn't match this pattern
+- **Exclusion Tags: Any / All** - When multiple exclusion tags are specified, choose whether a bucket needs to match ANY tag (more restrictive) or ALL tags (less restrictive) to be excluded.
+- **Automatic Actions** - When set to "Enable Intelligent Tiering", the policy will automatically implement Intelligent Tiering on all identified buckets without requiring manual approval for each action.
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
-For example, if a user selects the "Enable Intelligent Tiering" action while applying the policy, all the resources that didn't satisfy the policy condition will have intelligent tiering enabled.
+**Note about Automatic Actions:** When "Enable Intelligent Tiering" is selected, the policy will automatically configure lifecycle rules on all non-compliant buckets immediately after the incident is created. Leave this blank if you prefer to review and manually approve each action.
 
 ## Policy Actions
 
-The following policy actions are taken on any resources found to be out of compliance.
+When S3 buckets without Intelligent Tiering are discovered, this policy can:
 
-- Send an email report
-- Enable Intelligent Tiering on S3 buckets after approval
+- **Send an email report** - Always enabled. Provides a detailed list of all non-compliant buckets with estimated savings potential
+- **Enable Intelligent Tiering automatically** - Optional. When selected, the policy will automatically configure Intelligent Tiering on all identified buckets after approval (or immediately if automatic actions are enabled)
 
 ## Prerequisites
 
@@ -53,7 +60,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `s3:GetBucketLocation`
   - `s3:GetBucketTagging`
   - `s3:GetIntelligentTieringConfiguration`
-  - `s3:PutLifecycleConfiguration` *
+  - `s3:PutLifecycleConfiguration`*
 
   \* Only required for taking action (Enable Intelligent Tiering); the policy will still function in a read-only capacity without these permissions.
 

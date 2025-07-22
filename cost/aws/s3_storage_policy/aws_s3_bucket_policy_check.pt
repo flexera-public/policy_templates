@@ -462,9 +462,15 @@ script "js_combined_bucket_info", type: "javascript" do
     var lifecycleRule = {"Rules":[{"ID":"Move-to-Intelligent-Tiering","Status":"Enabled","Filter":{},"Transitions":[{"Days":0,"StorageClass":"INTELLIGENT_TIERING"}],"NoncurrentVersionTransitions":[{"NoncurrentDays":0,"StorageClass":"INTELLIGENT_TIERING"}]}]};
 
     var recommendationDetails = [
-      "Enable Intelligent Tiering by adding a Lifecycle rule on the S3 bucket to transition all objects to Intelligent Tiering.",
-      " This can be done using the AWS Console, or AWS CLI with the following command: ",
-      "\\n\\n `aws s3api put-bucket-lifecycle-configuration --region " + bucket['region'] + " --bucket " + bucket['name'] + " --lifecycle-configuration '" + JSON.stringify(lifecycleRule) + "'`",
+      "**Recommended Action:** Enable S3 Intelligent Tiering to automatically optimize storage costs.",
+      "\\n\\n**How to implement:**",
+      "\\n- **Option 1:** Use the automatic action in this policy to enable Intelligent Tiering with one click",
+      "\\n- **Option 2:** Configure manually in the AWS Console under S3 → Management → Lifecycle rules",
+      "\\n- **Option 3:** Use AWS CLI with this command:",
+      "\\n\\n```",
+      "\\naws s3api put-bucket-lifecycle-configuration --region " + bucket['region'] + " --bucket " + bucket['name'] + " --lifecycle-configuration '" + JSON.stringify(lifecycleRule) + "'",
+      "\\n```",
+      "\\n\\n**What this does:** Creates a lifecycle rule that automatically transitions all current and future objects to Intelligent Tiering, starting immediately (0 days)."
     ];
 
     return {
@@ -708,22 +714,34 @@ end
 
 policy "pol_aws_intelligent_tiering" do
   validate_each $ds_combined_bucket_info do
-    summary_template "{{ with index data 0 }}{{ .metadata.policy.name }}{{ end }}: {{ len data }} AWS S3 Buckets Without Intelligent Tiering Found"
+    summary_template "{{ with index data 0 }}{{ .metadata.policy.name }}{{ end }}: Found {{ len data }} S3 Buckets Missing Cost Optimization"
     detail_template <<-EOS
 # AWS S3 Buckets Without Intelligent Tiering Found
 
-There was {{ len data }} AWS S3 Buckets Without Intelligent Tiering Found. S3 Intelligent-Tiering is the ideal storage class for data with unknown, changing, or unpredictable access patterns, independent of object size or retention period.
+We found {{ len data }} AWS S3 buckets that don't have Intelligent Tiering enabled.
 
-AWS recommends using S3 Intelligent-Tiering as the default storage class for virtually any workload, especially data lakes, data analytics, new applications, and user-generated content.
+## What is S3 Intelligent Tiering?
 
-Frequent, Infrequent, and Archive Instant Access tiers have the same low-latency and high-throughput performance of S3 Standard.  The Infrequent Access tier saves up to 40% on storage costs, the Archive Instant Access tier saves up to 68% on storage costs [AWS S3 Storage Classes](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/)
+S3 Intelligent Tiering automatically moves your data between different storage tiers based on access patterns, optimizing costs without impacting performance or availability. This feature works best for data with unpredictable access patterns.
 
-## Total Estimated Savings
+**Key Benefits:**
+- **Automatic cost optimization** - No manual intervention required
+- **Same performance** - Maintains the speed and reliability of standard S3 storage
+- **Significant savings** - Up to 40% savings for infrequently accessed data and up to 68% for archive data
+- **No retrieval fees** - Unlike other storage classes, there are no charges to access your data
 
-If all buckets had Intelligent Tiering enabled we estimate approximately **{{ with index data 0 }}{{.savingsCurrency}}{{.metadata.total_savings}}{{ end }}** monthly savings.  This was derived from the `TimedStorage-ByteHrs` usage + cost values from a recent 24hr period and a conservative 30% savings factor from switching S3 Standard to S3 Intelligent Tiering.
+AWS recommends S3 Intelligent Tiering as the default storage class for most workloads, including data lakes, analytics, new applications, and user-generated content.
+
+## Potential Cost Savings
+
+**Total estimated monthly savings: {{ with index data 0 }}{{.savingsCurrency}}{{.metadata.total_savings}}{{ end }}**
+
+This estimate is based on your actual storage costs from the past 24 hours, projected monthly, with a conservative 30% savings assumption. Your actual savings may be higher depending on your data access patterns.
+
+*Calculation method: We analyzed your `TimedStorage-ByteHrs` usage costs and applied AWS's published savings rates for Intelligent Tiering.*
 {{- with index data 0 }}{{ if .metadata.errors }}
 
-## Errors Found
+## Issues Encountered
 {{- range .metadata.errors }}
 - {{ . }}
 {{- end }}
@@ -746,13 +764,13 @@ EOS
         label "Bucket Name"
       end
       field "savings" do
-        label "Estimated Monthly Savings"
+        label "Potential Monthly Savings"
       end
       field "savingsCurrency" do
-        label "Savings Currency"
+        label "Currency"
       end
       field "tags" do
-        label "Bucket Tags"
+        label "Tags"
       end
       field "region" do
         label "Region"
@@ -775,17 +793,24 @@ EOS
         path "resourceID"
       end
       field "recommendationDetails" do
-        label "Recommendation Details"
+        label "How to Fix"
       end
     end
   end
   validate $ds_identify_errors do
-    summary_template "AWS S3 Buckets Without Intelligent Tiering: Errors Identified"
+    summary_template "AWS S3 Policy: Permission Issues Detected"
     detail_template <<-EOS
-# AWS S3 Buckets Without Intelligent Tiering Errors Identified
+# Permission Issues Detected
+
+The following issues were encountered while scanning your S3 buckets:
 {{- range data }}
 - {{ . }}
 {{- end }}
+
+**Next Steps:**
+- Review your AWS IAM permissions to ensure the policy can access all required S3 resources
+- Check for Service Control Policies (SCPs) that might be blocking access to certain regions
+- Verify that your AWS credentials have the necessary permissions listed in the policy documentation
 EOS
     check gt(size(data), 0)
   end
@@ -804,8 +829,8 @@ end
 
 escalation "esc_enable_intelligent_tiering" do
   automatic contains($param_automatic_action, "Enable Intelligent Tiering")
-  label "Enable Intelligent Tiering"
-  description "Approval to enable Intelligent Tiering on all selected S3 Buckets"
+  label "Enable Cost Optimization"
+  description "Automatically configure S3 Intelligent Tiering on all identified buckets to optimize storage costs"
   run "enable_intelligent_tiering_s3_buckets", data
 end
 
