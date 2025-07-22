@@ -722,6 +722,7 @@ script "js_superseded_instances", type: "javascript" do
 
   result = []
   total_savings = 0.0
+  instance_type_without_price = []
 
   _.each(ds_azure_instances_region_filtered, function(instance) {
     id = instance['resourceId'].toLowerCase()
@@ -730,8 +731,8 @@ script "js_superseded_instances", type: "javascript" do
     region = ds_region_table[instance['region']]
     superseded_parameter = "regular"
     superseded_type = null
-    instance_type_price = 'price not found'
-    superseded_type_price = 'price not found'
+    instance_type_price = null
+    superseded_type_price = null
     savings = 0.0
     hourly_cost_multiplier = 365.25 / 12 * 24
 
@@ -789,6 +790,10 @@ script "js_superseded_instances", type: "javascript" do
 
     if (typeof(instance_type_price) == 'number' && typeof(superseded_type_price) == 'number') {
       savings = instance_type_price - superseded_type_price
+    }
+
+    if (typeof(superseded_type) == 'string' && instance_type_price == null) {
+      instance_type_without_price.push(instance_type)
     }
 
     if (typeof(superseded_type) == 'string' && savings >= param_min_savings) {
@@ -885,6 +890,14 @@ script "js_superseded_instances", type: "javascript" do
 
   savings_disclaimer = "Savings are estimated based on list price and may not reflect credits or discounts. "
 
+  missing_price_disclaimer = ""
+  if (instance_type_without_price.length > 0) {
+    missing_price_disclaimer = [
+      "The following instance types are superseded, but it is unable to calculate savings. Please manually check these instance types in Azure Console: ",
+      instance_type_without_price.join(", "),
+      ". "].join("")
+  }
+
   if (ds_currency['code'] != "USD" && api_disclaimer == "") {
     savings_disclaimer += "List prices were converted from USD using current exchange rates."
   }
@@ -917,7 +930,7 @@ script "js_superseded_instances", type: "javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + savings_disclaimer + api_disclaimer
+  result[0]['message'] = findings + savings_disclaimer + missing_price_disclaimer + api_disclaimer
 EOS
 end
 
