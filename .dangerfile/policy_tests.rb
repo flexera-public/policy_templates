@@ -1292,13 +1292,14 @@ def policy_block_fields_incorrect_order?(file, file_lines, block_type)
           field_list << line.strip.split(" ")[0]
         elsif !sub_block && !export_block && line.strip.start_with?("end")
           filtered_list = field_list.select { |item| correct_order.include?(item) }
-          # Print debug logging information
-          puts "[debug] Filtered list: #{filtered_list.inspect}"
           order_indices = filtered_list.map { |item| correct_order.index(item) }
-          puts "[debug] Order indices: #{order_indices.inspect}"
-          puts "[debug] Order indices sorted: #{order_indices.sort.inspect}"
+
 
           if order_indices != order_indices.sort
+            # Print debug logging information
+            puts "[debug] Filtered list: #{filtered_list.inspect}"
+            puts "[debug] Order indices: #{order_indices.inspect}"
+            puts "[debug] Order indices sorted: #{order_indices.sort.inspect}"
             if policy_id && block_type == "policy"
               fail_message += "Line #{block_line_number.to_s}: policy \"#{policy_id}\" #{block_name.strip}\n"
             else
