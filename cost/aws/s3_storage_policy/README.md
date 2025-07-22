@@ -11,12 +11,14 @@ This Policy Template scans all S3 buckets in your AWS account and identifies buc
 This policy calculates estimated monthly savings based on your actual storage costs and AWS's published Intelligent Tiering savings rates.
 
 **How savings are calculated:**
+
 - We analyze your actual `TimedStorage-ByteHrs` usage costs from the past 24 hours (as tracked in Flexera CCO)
 - Project this to monthly costs using 30.4375 days per month (accounting for leap years)
 - Apply a conservative 30% savings estimate based on [AWS's published Intelligent Tiering benefits](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/): up to 40% savings for infrequent access and 68% for archive access
 - All cost calculations include any Flexera adjustment rules or cloud provider discounts in your organization
 
 **Important notes:**
+
 - If a resource isn't found in Flexera CCO, the estimated savings will show as $0
 - The incident email shows both individual bucket savings and total estimated savings across all buckets
 - Savings amounts are displayed in your organization's configured currency
