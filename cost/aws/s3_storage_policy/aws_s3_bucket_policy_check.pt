@@ -1,7 +1,7 @@
 name "AWS S3 Buckets Without Intelligent Tiering"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy Template scans all AWS S3 buckets and reports any that don't have intelligent tiering enabled. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This Policy Template scans all AWS S3 buckets and reports any that don't have intelligent tiering enabled. Optionally, it can automatically enable intelligent tiering after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy"
 category "Cost"
@@ -67,6 +67,15 @@ parameter "param_regions_list" do
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. See the README for more details"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Enable Intelligent Tiering"]
   default []
 end
 
@@ -450,10 +459,19 @@ script "js_combined_bucket_info", type: "javascript" do
       total_savings += savings;
     }
 
+    var lifecycleRule = {"Rules":[{"ID":"Move-to-Intelligent-Tiering","Status":"Enabled","Filter":{},"Transitions":[{"Days":0,"StorageClass":"INTELLIGENT_TIERING"}],"NoncurrentVersionTransitions":[{"NoncurrentDays":0,"StorageClass":"INTELLIGENT_TIERING"}]}]};
+
+    var recommendationDetails = [
+      "Enable Intelligent Tiering by adding a Lifecycle rule on the S3 bucket to transition all objects to Intelligent Tiering.",
+      " This can be done using the AWS Console, or AWS CLI with the following command: ",
+      "\\n\\n `aws s3api put-bucket-lifecycle-configuration --region " + bucket['region'] + " --bucket " + bucket['name'] + " --lifecycle-configuration '" + JSON.stringify(lifecycleRule) + "'`",
+    ];
+
     return {
       resourceID: bucket['name'],
       name: bucket['name'],
       region: bucket['region'],
+      host: bucket['host'],
       tags: tags.join(", "),
       creation_date: new Date(bucket['creation_date']).toISOString(),
       accountID: ds_aws_account['id'],
@@ -461,6 +479,7 @@ script "js_combined_bucket_info", type: "javascript" do
       service: "AmazonS3",
       savings: savings,
       savingsCurrency: ds_currency['symbol'],
+      recommendationDetails: recommendationDetails.join(""),
     }
   })
 
@@ -713,6 +732,7 @@ If all buckets had Intelligent Tiering enabled we estimate approximately **{{ wi
 EOS
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), "")) # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     escalate $esc_email
+    escalate $esc_enable_intelligent_tiering
     hash_exclude "tags", "savings"
     export do
       resource_level true
@@ -740,6 +760,9 @@ EOS
       field "creation_date" do
         label "Creation Date"
       end
+      field "host" do
+        label "Host"
+      end
       field "service" do
         label "Service"
       end
@@ -750,6 +773,9 @@ EOS
       field "resourceName" do
         label "Bucket Name"
         path "resourceID"
+      end
+      field "recommendationDetails" do
+        label "Recommendation Details"
       end
     end
   end
@@ -774,6 +800,13 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email
+end
+
+escalation "esc_enable_intelligent_tiering" do
+  automatic contains($param_automatic_action, "Enable Intelligent Tiering")
+  label "Enable Intelligent Tiering"
+  description "Approval to enable Intelligent Tiering on all selected S3 Buckets"
+  run "enable_intelligent_tiering_s3_buckets", data
 end
 
 ###############################################################################
@@ -873,4 +906,66 @@ script "js_check_deleted", type: "javascript" do
   code <<-EOS
   result = {"path":"/"}
   EOS
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define enable_intelligent_tiering_s3_buckets($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $bucket in $data do
+    sub on_error: handle_error() do
+      call enable_intelligent_tiering_s3_bucket($bucket) retrieve $enable_response
+      $$all_responses << $enable_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define enable_intelligent_tiering_s3_bucket($bucket) return $response do
+  $host = $bucket["host"]
+  $href = "/" + $bucket["id"]
+  $params = "?lifecycle"
+  $url = $host + $href + $params
+  $body = '<LifecycleConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Rule><Filter /><ID>Move-to-Intelligent-Tiering</ID><NoncurrentVersionTransition><NoncurrentDays>0</NoncurrentDays><StorageClass>INTELLIGENT_TIERING</StorageClass></NoncurrentVersionTransition><Status>Enabled</Status><Transition><Days>0</Days><StorageClass>INTELLIGENT_TIERING</StorageClass></Transition></Rule></LifecycleConfiguration>'
+  task_label("PUT " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "put",
+    host: $host,
+    href: $href,
+    query_strings: { "lifecycle": "" },
+    headers: {
+      "Content-Type": "application/xml",
+      "x-amz-sdk-checksum-algorithm": "CRC64NVME",
+      "x-amz-checksum-crc64nvme": "pxKGAr7J0wk=" # Precompiled checksum algorithm value based on the static $body string above
+    },
+    body: $body
+  )
+
+  task_label("Put AWS S3 Bucket Lifecycle response: " + $bucket["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PUT " + $url, "resp": $response})
+
+  if $response["code"] < 200 || $response["code"] > 299
+    raise "Unexpected response putting AWS S3 Bucket Lifecycle: "+ $bucket["id"] + " " + to_json($response)
+  else
+    task_label("Put AWS S3 Bucket Lifecycle successful: " + $bucket["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
