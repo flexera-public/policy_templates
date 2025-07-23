@@ -2,7 +2,7 @@
 
 ## v3.3.0
 
--
+- Added additional parameters to allow user to gather cost reports from custom buckets.
 
 ## v3.2.4
 
