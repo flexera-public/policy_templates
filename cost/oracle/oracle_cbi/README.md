@@ -48,8 +48,6 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 This policy also requires a valid Oracle CBI endpoint created using the [Flexera Bill Connect API](https://reference.rightscale.com/optima-bill/#/CBIBillConnects/CBIBillConnects_create), as well as Cost & Usage Reporting to be enabled within the Oracle Cloud environment.
 
-Additionally, the policy requires that the Flexera Bill Upload limit be increased to 125 on your Flexera One organization. Please contact [Flexera Support](https://community.flexera.com/t5/Using-the-Case-Portal/Contact-Flexera-support/ta-p/94684) to have this done.
-
 ## Supported Clouds
 
 - Oracle Cloud (OCI)
