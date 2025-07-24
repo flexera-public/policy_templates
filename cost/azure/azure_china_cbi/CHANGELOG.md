@@ -1,6 +1,6 @@
 # Changelog
 
-## v2.1.0
+## v2.0.4
 
 - Deprecated: This policy template is no longer being updated. Please see policy README for more information.
 
