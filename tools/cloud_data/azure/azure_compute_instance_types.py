@@ -69,7 +69,7 @@ def create_instance_size_flexibility_ratio_table(url):
         print(f"Error creating instance size flexibility table: {e}")
         return {}
 
-isf_table = create_instance_size_flexibility_table(isf_url)
+isf_table = create_instance_size_flexibility_ratio_table(isf_url)
 if isf_table:
     print(f"Retrieved instance size flexibility table for {len(isf_table)} instance types.")
 
