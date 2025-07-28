@@ -1,8 +1,8 @@
 # Changelog
 
-## v0.4.4
+## v0.5.0
 
-- Updated API requests to use newer Flexera API. Functionality unchanged.
+- Removed batch processing for large datasources to improve policy reliability and performance.
 
 ## v0.4.4
 

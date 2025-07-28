@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.4.4",
+  version: "0.5.0",
   provider: "Azure",
   service: "Databricks",
   policy_set: "Databricks",
@@ -394,7 +394,6 @@ end
 
 # Get all subscriptions
 datasource "ds_azure_subscriptions" do
-  batch true
   request do
     auth $auth_azure
     pagination $pagination_azure
@@ -404,7 +403,7 @@ datasource "ds_azure_subscriptions" do
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
-    header "Meta-Flexera", val($ds_is_deleted, "path")
+    # header "Meta-Flexera", val($ds_is_deleted, "path")
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
   end
@@ -418,7 +417,6 @@ datasource "ds_azure_subscriptions" do
 end
 
 datasource "ds_azure_subscriptions_filtered" do
-  batch true
   run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
@@ -426,8 +424,9 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
   code <<-EOS
+  var result = [];
   if (param_subscriptions_list.length > 0) {
-    getIterator(ds_azure_subscriptions).Each(function(subscription, idx){
+    _.each(ds_azure_subscriptions, function(subscription, idx){
       include_subscription = _.contains(param_subscriptions_list, subscription['subscriptionId']) || _.contains(param_subscriptions_list, subscription['subscriptionName'])
 
       if (param_subscriptions_allow_or_deny == "Deny") {
@@ -435,18 +434,17 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
       }
 
       if (include_subscription) {
-        appendToResult(subscription)
+        result.push(subscription)
       }
     })
   } else {
-    getIterator(ds_azure_subscriptions).Each(appendToResult)
+    result = ds_azure_subscriptions;
   }
 EOS
 end
 
 #get workspaces, and urls
 datasource "ds_databricks_workspaces" do
-  batch true
   iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
@@ -473,7 +471,6 @@ datasource "ds_databricks_workspaces" do
 end
 
 datasource "ds_databricks_workspaces_region_filtered" do
-  batch true
   run_script $js_databricks_workspaces_region_filtered, $ds_databricks_workspaces, $param_regions_allow_or_deny, $param_regions_list
 end
 
@@ -481,46 +478,58 @@ script "js_databricks_workspaces_region_filtered", type: "javascript" do
   parameters "ds_databricks_workspaces", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-EOS
+  var result = [];
   if (param_regions_list.length > 0) {
-    getIterator(ds_databricks_workspaces).Each(function(item, idx){
+    result = _.filter(ds_databricks_workspaces, function(item, idx){
       include = _.contains(param_regions_list, item['location'])
 
       if (param_regions_allow_or_deny == "Deny") {
         include = !include
       }
 
-      if (include) {
-         appendToResult(item)
-      }
+      return include;
     })
   } else {
-    getIterator(ds_databricks_workspaces).Each(appendToResult)
+    result = ds_databricks_workspaces
   }
 EOS
 end
 
 datasource "ds_databricks_workspaces_filtered" do
-  batch true
   run_script $js_databricks_workspaces_filtered, $ds_databricks_workspaces_region_filtered, $param_databricks_workspace_list
 end
 
 script "js_databricks_workspaces_filtered", type: "javascript" do
-  parameters "ds_databricks_workspaces", "param_databricks_workspace_list"
+  parameters "ds_databricks_workspaces_region_filtered", "param_databricks_workspace_list"
   result "results"
   code <<-EOS
   var results = []
-  if ( param_databricks_workspace_list.length != 0){
+  if ( param_databricks_workspace_list.length != 0 ) {
     _.each(param_databricks_workspace_list, function(workspace){
-      getIterator(ds_databricks_workspaces).Each(function(item, idx) {
-        if (item.workspaceId == workspace || item.name.toLowerCase() == workspace.toLowerCase()) {
-          appendToResult(item);
-          return true;
-        }
-      })
-    })
+      var found_workspace = _.find(ds_databricks_workspaces_region_filtered, function(item) {
+        return item.workspaceId.toLowerCase() == workspace.toLowerCase() || item.name.toLowerCase() == workspace.toLowerCase()
+      });
+      if (found_workspace != undefined) {
+        results.push(found_workspace)
+      }
+    });
   } else {
-    getIterator(ds_databricks_workspaces).Each(appendToResult)
+    results = ds_databricks_workspaces_region_filtered
   }
+EOS
+end
+
+datasource "ds_databricks_workspaces_filtered_indexed" do
+  run_script $js_databricks_workspaces_filtered_indexed, $ds_databricks_workspaces_filtered
+end
+
+script "js_databricks_workspaces_filtered_indexed", type: "javascript" do
+  parameters "ds_databricks_workspaces_filtered"
+  result "results"
+  code <<-EOS
+  var results = _.groupBy(ds_databricks_workspaces_filtered, function(item) {
+    return item.managedResourceGroupId.toLowerCase() || null;
+  });
 EOS
 end
 
@@ -603,7 +612,6 @@ datasource "ds_azure_instance_size_map" do
 end
 
 datasource "ds_azure_skus" do
-  batch true
   iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
@@ -685,7 +693,7 @@ script "js_azure_sku_memory", type: "javascript" do
   result "result"
   code <<-EOS
   result = {}
-  getIterator(ds_azure_skus).Each(function (sku, idx){
+  _.each(ds_azure_skus, function (sku, idx){
     name = sku['name'].toLowerCase()
 
     if (result[name] == undefined && sku["resourceType"] == "virtualMachines") {
@@ -700,7 +708,6 @@ EOS
 end
 
 datasource "ds_azure_databricks_managed_vm_metrics" do
-  batch true
   iterate $ds_virtualmachines_from_bill
   request do
     run_script $js_azure_databricks_managed_vm_metrics, jq(iter_item, "[.virtualmachines[] .resourceId ]"), jq(iter_item, ".databricks_workspace.location"), jq(iter_item, ".databricks_workspace.managedResourceGroupId"), $ds_param_stats_interval, $ds_lookback_time_formats, $param_azure_endpoint
@@ -744,7 +751,6 @@ EOS
 end
 
 datasource "ds_databricks_clusters" do
-  batch true
   iterate $ds_databricks_workspaces_filtered
   request do
     auth $auth_databricks
@@ -764,12 +770,11 @@ datasource "ds_databricks_clusters" do
 end
 
 datasource "ds_filtered_workspace_virtualmachines" do
-  batch true
-  run_script $js_filtered_workspace_virtualmachines, $ds_databricks_workspaces_filtered, $ds_azure_databricks_managed_vm_metrics, $ds_param_stats_threshold, $ds_databricks_workspaces_vm_costs, $ds_lookback_time_formats, $ds_databricks_clusters, $ds_azure_sku_memory, $param_stats_underutil_threshold_cpu_value
+  run_script $js_filtered_workspace_virtualmachines, $ds_databricks_workspaces_filtered_indexed, $ds_azure_databricks_managed_vm_metrics, $ds_param_stats_threshold, $ds_databricks_workspaces_vm_costs, $ds_lookback_time_formats, $ds_databricks_clusters, $ds_azure_sku_memory, $param_stats_underutil_threshold_cpu_value
 end
 
 script "js_filtered_workspace_virtualmachines", type: "javascript" do
-  parameters "ds_databricks_workspaces", "ds_azure_databricks_managed_vm_metrics", "ds_param_stats_threshold", "ds_databricks_workspaces_vm_costs", "ds_lookback_time_formats", "ds_databricks_clusters", "ds_azure_sku_memory", "param_stats_underutil_threshold_cpu_value"
+  parameters "ds_databricks_workspaces_filtered_indexed", "ds_azure_databricks_managed_vm_metrics", "ds_param_stats_threshold", "ds_databricks_workspaces_vm_costs", "ds_lookback_time_formats", "ds_databricks_clusters", "ds_azure_sku_memory", "param_stats_underutil_threshold_cpu_value"
   result "result"
   code <<-EOS
   var lastTick = 0; // Holds the timestamp last tick was called
@@ -788,104 +793,102 @@ script "js_filtered_workspace_virtualmachines", type: "javascript" do
     return arr[Math.ceil(index) - 1];
   }
 
+  var result = [];
   // Loop through all the batched metrics results
-  getIterator(ds_azure_databricks_managed_vm_metrics).Each(function(batch_result, idx) {
+  _.each(ds_azure_databricks_managed_vm_metrics, function(batch_result, idx) {
     _.each(batch_result.values, function(vm_metrics) {
       // Each value for a result should be unique to a ResourceId (i.e. a Virtual Machine)
       // Get some information needed for the result
       vm_resourceId = vm_metrics.resourceid
-      var databricks_workspace = undefined;
-      getIterator(ds_databricks_workspaces).Each(function(dbws, idx){
-        // If the vm resource id contains the databricks workspace managed resource group (prefix of resource id), then return result
-        if (vm_resourceId.toLowerCase().lastIndexOf(dbws.managedResourceGroupId.toLowerCase()) == 0) {
-          databricks_workspace = dbws;
-          return true;
+      // Get just the resource group id (including /subscriptios/.../resourceGroups/ part) from the resourceId
+      vm_resourceGroupId = vm_resourceId.split("/").slice(0, 5).join("/");
+      // Get the databricks workspace for this resource
+      var databricks_workspace = ds_databricks_workspaces_filtered_indexed[vm_resourceGroupId.toLowerCase()][0];
+      if (databricks_workspace != undefined) {
+        databricks_workspace["resourceGroup"] = databricks_workspace["resourceId"].split("/")[4]
+        // Setup placeholder result and calculation values for this resource
+        var r = {
+          "databricks_workspace": databricks_workspace,
+          "resourceId": vm_resourceId,
+          "metricsForPeriod": {
+            "timespan": ds_lookback_time_formats["azure_timespan"],
+            "memory_minimum": null,
+            "memory_minimum_p95": null,
+            "memory_minimum_p99": null,
+            "memory_average": null,
+            "memory_average_p95": null,
+            "memory_average_p99": null,
+            "memory_maximum": null,
+            "memory_maximum_p95": null,
+            "memory_maximum_p99": null,
+            "memory_p95": null,
+            "memory_p99": null,
+            "cpu_minimum": null,
+            "cpu_minimum_p95": null,
+            "cpu_minimum_p99": null,
+            "cpu_average": null,
+            "cpu_average_p95": null,
+            "cpu_average_p99": null,
+            "cpu_maximum": null,
+            "cpu_maximum_p95": null,
+            "cpu_maximum_p99": null,
+            "cpu_p95": null,
+            "cpu_p99": null
+          }
         }
-      })
-      databricks_workspace["resourceGroup"] = databricks_workspace["resourceId"].split("/")[4]
-      // Setup placeholder result and calculation values for this resource
-      var r = {
-        "databricks_workspace": databricks_workspace,
-        "resourceId": vm_resourceId,
-        "metricsForPeriod": {
-          "timespan": ds_lookback_time_formats["azure_timespan"],
-          "memory_minimum": null,
-          "memory_minimum_p95": null,
-          "memory_minimum_p99": null,
-          "memory_average": null,
-          "memory_average_p95": null,
-          "memory_average_p99": null,
-          "memory_maximum": null,
-          "memory_maximum_p95": null,
-          "memory_maximum_p99": null,
-          "memory_p95": null,
-          "memory_p99": null,
-          "cpu_minimum": null,
-          "cpu_minimum_p95": null,
-          "cpu_minimum_p99": null,
-          "cpu_average": null,
-          "cpu_average_p95": null,
-          "cpu_average_p99": null,
-          "cpu_maximum": null,
-          "cpu_maximum_p95": null,
-          "cpu_maximum_p99": null,
-          "cpu_p95": null,
-          "cpu_p99": null
-        }
-      }
-      // Loop through the timeseries for this resource
-      // Each timeseries may has metric values if the resource was running during the time period
-      _.each(vm_metrics.value, function(metricNames) {
-        metricName = metricNames.name.value
-        switch (metricName) {
-          case "Percentage CPU":
-            metricName = "cpu"
-            break;
-          case "Available Memory Bytes":
-            metricName = "memory"
-            break;
-          default:
-            metricName = "unknown"
-        }
-        _.each(metricNames.timeseries, function(resourceMetrics, index) {
-          // Pluck metric values for timespans
-          var stats_data_names = ["minimum","average","maximum"] // convenient place to declare the stats we want to loop through
-          var all_measurements = []
-          _.each(stats_data_names, function(stat) {
-            var measurements = _.compact(_.pluck(resourceMetrics.data, stat))
-            // Append measurements for this stat to all_measurements
-            // We use all measurements (min, avg, max) to calculate percentile
-            all_measurements = all_measurements.concat(measurements)
-            if (measurements.length > 0) {
-              r["metricsForPeriod"][metricName+"_"+stat+"_measurements"] = measurements
-              switch(stat) {
-                case "minimum":
-                  r["metricsForPeriod"][metricName+"_minimum"] = _.min(measurements)
-                  break;
-                case "average":
-                  r["metricsForPeriod"][metricName+"_average"] = _.reduce(measurements, function(a, b){ return a + b; }, 0) / measurements.length
-                  break;
-                case "maximum":
-                  r["metricsForPeriod"][metricName+"_maximum"] = _.max(measurements)
-                  break;
+        // Loop through the timeseries for this resource
+        // Each timeseries may has metric values if the resource was running during the time period
+        _.each(vm_metrics.value, function(metricNames) {
+          metricName = metricNames.name.value
+          switch (metricName) {
+            case "Percentage CPU":
+              metricName = "cpu"
+              break;
+            case "Available Memory Bytes":
+              metricName = "memory"
+              break;
+            default:
+              metricName = "unknown"
+          }
+          _.each(metricNames.timeseries, function(resourceMetrics, index) {
+            // Pluck metric values for timespans
+            var stats_data_names = ["minimum","average","maximum"] // convenient place to declare the stats we want to loop through
+            var all_measurements = []
+            _.each(stats_data_names, function(stat) {
+              var measurements = _.compact(_.pluck(resourceMetrics.data, stat))
+              // Append measurements for this stat to all_measurements
+              // We use all measurements (min, avg, max) to calculate percentile
+              all_measurements = all_measurements.concat(measurements)
+              if (measurements.length > 0) {
+                r["metricsForPeriod"][metricName+"_"+stat+"_measurements"] = measurements
+                switch(stat) {
+                  case "minimum":
+                    r["metricsForPeriod"][metricName+"_minimum"] = _.min(measurements)
+                    break;
+                  case "average":
+                    r["metricsForPeriod"][metricName+"_average"] = _.reduce(measurements, function(a, b){ return a + b; }, 0) / measurements.length
+                    break;
+                  case "maximum":
+                    r["metricsForPeriod"][metricName+"_maximum"] = _.max(measurements)
+                    break;
+                }
               }
-            }
+            })
+            r["metricsForPeriod"][metricName+"_p90"] = percentile(all_measurements, 90)
+            r["metricsForPeriod"][metricName+"_p95"] = percentile(all_measurements, 95)
+            r["metricsForPeriod"][metricName+"_p99"] = percentile(all_measurements, 99)
+            r["metricsForPeriod"][metricName+"_measurement_count"] = all_measurements.length
           })
-          r["metricsForPeriod"][metricName+"_p90"] = percentile(all_measurements, 90)
-          r["metricsForPeriod"][metricName+"_p95"] = percentile(all_measurements, 95)
-          r["metricsForPeriod"][metricName+"_p99"] = percentile(all_measurements, 99)
-          r["metricsForPeriod"][metricName+"_measurement_count"] = all_measurements.length
         })
-      })
-      // Add the result to the result array
-      appendToResult(r)
+        // Add the result to the result array
+        result.push(r)
+      }
     })
   })
   EOS
 end
 
 datasource "ds_filtered_workspace_virtualmachines_with_costs" do
-  batch true
   run_script $js_filtered_workspace_virtualmachines_with_costs, $ds_filtered_workspace_virtualmachines, $ds_databricks_workspaces_vm_costs, $ds_databricks_clusters, $ds_azure_sku_memory, $param_stats_lookback
 end
 
@@ -893,19 +896,21 @@ script "js_filtered_workspace_virtualmachines_with_costs", type: "javascript" do
   parameters "ds_filtered_workspace_virtualmachines", "ds_databricks_workspaces_vm_costs", "ds_databricks_clusters", "ds_azure_sku_memory", "param_stats_lookback"
   result "result"
   code <<-EOS
-  getIterator(ds_filtered_workspace_virtualmachines).Each(function(r, idx) {
+  // Index ds_databricks_workspaces_vm_costs for quicker lookup
+  ds_databricks_workspaces_vm_costs_indexed = _.groupBy(ds_databricks_workspaces_vm_costs, function(item) {
+    return item["resourceId"].toLowerCase();
+  });
+  // Index ds_databricks_clusters for quicker lookup
+  ds_databricks_clusters_indexed = _.groupBy(ds_databricks_clusters, function(item) {
+    return item["databricks_workspace"]["resourceId"].toLowerCase();
+  });
+  var result = [];
+  _.each(ds_filtered_workspace_virtualmachines, function(r, idx) {
     // At this point we have all the utilization data from Azure Metrics API
     // We need to look at the data from Flexera to get cost, databricks cluster id, and cluster instance type
 
     // Filters costs for this resources from the datasource
-    resource_costs = [];
-    getIterator(ds_databricks_workspaces_vm_costs).Each(function(cost, idx) {
-      // check if names match using case-insensitive comparison
-      // bill data sometimes makes RG uppercase, whereas the api value is lowercase
-      if (cost["resourceId"].toLowerCase() == r["resourceId"].toLowerCase()){
-        resource_costs.push(cost);
-      }
-    })
+    resource_costs = ds_databricks_workspaces_vm_costs_indexed[r["resourceId"].toLowerCase()] || [];
 
     // Check if we found cost information for this resource
     if (resource_costs.length > 0) {
@@ -961,12 +966,7 @@ script "js_filtered_workspace_virtualmachines_with_costs", type: "javascript" do
     }
     if (typeof r["databricks_cluster_id"] === "string") {
       // Attempt to find additional cluster metadata in ds_databricks_clusters
-      getIterator(ds_databricks_clusters).Each(function(dbc, idx) {
-        if (dbc.cluster.cluster_id.toLowerCase() == r["databricks_cluster_id"].toLowerCase()) {
-          r["databricks_cluster"] = dbc.cluster
-          return true;
-        }
-      })
+      r["databricks_cluster"] = ds_databricks_clusters_indexed[r["databricks_cluster_id"].toLowerCase()];
     }
 
     // For each of our metricsForPeriod, lets round to 2 decimals
@@ -984,13 +984,12 @@ script "js_filtered_workspace_virtualmachines_with_costs", type: "javascript" do
     // Unit Cost to 4 digits (portions of a penny because that's how price is publicly listed)
     r["unit_cost"] = Math.round(r["unit_cost"] * 10000) / 10000
 
-    appendToResult(r)
+    result.push(r)
   })
   EOS
 end
 
 datasource "ds_databricks_workspaces_vm_costs" do
-  batch true
   iterate $ds_databricks_workspaces_filtered
   request do
     run_script $js_databricks_workspaces_vm_costs, iter_item, $ds_top_level_bcs, $ds_lookback_time_formats, $param_databricks_cluster_list, rs_org_id, rs_optima_host
@@ -1106,40 +1105,33 @@ EOS
 end
 
 datasource "ds_virtualmachines_from_bill" do
-  batch true
-  run_script $js_virtualmachines_from_bill, $ds_databricks_workspaces_vm_costs, $ds_databricks_workspaces_filtered
+  run_script $js_virtualmachines_from_bill, $ds_databricks_workspaces_vm_costs, $ds_databricks_workspaces_filtered_indexed
 end
 
 script "js_virtualmachines_from_bill", type: "javascript" do
-  parameters "ds_databricks_workspaces_vm_costs", "ds_databricks_workspaces"
+  parameters "ds_databricks_workspaces_vm_costs", "ds_databricks_workspaces_filtered_indexed"
   result "result"
   code <<-EOS
+  var result = [];
   var result_map = {}
-  getIterator(ds_databricks_workspaces_vm_costs).Each(function(vm, idx) {
+  _.each(ds_databricks_workspaces_vm_costs, function(vm, idx) {
     vm_cost_sub = vm["resourceId"].split("/")[2] // Get the subscription ID from the resource ID
     vm_cost_rg = vm["resourceId"].split("/")[4] // Get the resource group from the resource ID
     vm_rg_string = "/subscriptions/"+vm_cost_sub+"/resourceGroups/"+vm_cost_rg
 
-    var db_workspace = undefined;
-    getIterator(ds_databricks_workspaces).Each(function(dbws, idx){
-      if (dbws["managedResourceGroupId"].toLowerCase() == vm_rg_string.toLowerCase()) {
-        db_workspace = dbws;
-        return true;
+    var db_workspace = ds_databricks_workspaces_filtered_indexed[vm_rg_string.toLowerCase()][0];
+    if (db_workspace != undefined) {
+      if (result_map[vm_cost_sub] == undefined || result_map[vm_cost_sub] == null) {
+        result_map[vm_cost_sub] = {}
       }
-    })
-    // only keep what we need from db_workspace
-    db_workspace = _.pick(db_workspace, ["resourceId", "resourceGroup", "workspaceId", "subscriptionId", "location", "name", "workspaceUrl","managedResourceGroupId"])
-
-    if (result_map[vm_cost_sub] == undefined || result_map[vm_cost_sub] == null) {
-      result_map[vm_cost_sub] = {}
-    }
-    if (result_map[vm_cost_sub][db_workspace.location] == undefined || result_map[vm_cost_sub][db_workspace.location] == null) {
-      result_map[vm_cost_sub][db_workspace.location] = {
-        "databricks_workspace": db_workspace,
-        "virtualmachines": []
+      if (result_map[vm_cost_sub][db_workspace.location] == undefined || result_map[vm_cost_sub][db_workspace.location] == null) {
+        result_map[vm_cost_sub][db_workspace.location] = {
+          "databricks_workspace": db_workspace,
+          "virtualmachines": []
+        }
       }
+      result_map[vm_cost_sub][db_workspace.location]["virtualmachines"].push(vm)
     }
-    result_map[vm_cost_sub][db_workspace.location]["virtualmachines"].push(vm)
   })
 
   // The policy evaluation expects an array, and we don't need the keys anymore so lets convert it to an array
@@ -1152,11 +1144,15 @@ script "js_virtualmachines_from_bill", type: "javascript" do
       chunk_size = 25
       if (vm_count > 0 && vm_count <= chunk_size) {
         // If less <= chunk_size, just add the result as it is
-        appendToResult(result_map[subscriptionId][location])
+        result.push(result_map[subscriptionId][location])
       } else {
         // If more than chunk_size, do the chunking
         for (var i=0; i < vm_count; i+=chunk_size) {
-          appendToResult({
+          result.push({
+            // Add metadata to datasource results that this workspace has been chunked
+            // Helpful when debugging/troubleshooting
+            "chunkedWorkspaceIntoMultiple": true,
+            "chunkIndex": i,
             "databricks_workspace": result_map[subscriptionId][location]["databricks_workspace"],
             "virtualmachines": result_map[subscriptionId][location]["virtualmachines"].slice(i, i + chunk_size)
           })
@@ -1181,9 +1177,9 @@ script "js_idle_and_underutil_instances", type: "javascript" do
   underutil_list = []
   idle_list = []
 
-  applied_policy_name = ds_applied_policy["name"]
+  applied_policy_name = ds_applied_policy["name"] || "Azure Databricks Rightsize Compute Instances"
 
-  getIterator(ds_filtered_workspace_virtualmachines_with_costs).Each(function(vm, idx) {
+  _.each(ds_filtered_workspace_virtualmachines_with_costs, function(vm, idx) {
     // Set the Applied Policy Name which is used in the summary_template/detail_template output
     vm["policy_name"] = applied_policy_name
     // Get the utilization metrics that we are going to use for comparison
@@ -1255,8 +1251,8 @@ script "js_idle_and_underutil_instances", type: "javascript" do
         }
         vm["recommendationType"] = "Downsize"
         vm["recommendationDetails"] = [
-          "Resize Databricks Cluster", vm["databricks_cluster_id"],
-          "which created Azure virtual machine", vm["resourceId"],
+          "Resize Databricks Cluster", vm["databricks_cluster_id"], "from", vm["resourceType"], "to", vm["newResourceType"], ".", "\n\n",
+          "The cluster ", vm["databricks_cluster_id"], "launched the Virtual Machine", vm["resourceId"],
           "in Azure Subscription", vm["databricks_workspace"]["subscriptionName"], "(", vm["databricks_workspace"]["subscriptionId"], ")",
           "from", vm["resourceType"], "to", vm["newResourceType"]
         ].join(" ")
