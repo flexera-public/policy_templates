@@ -1,9 +1,11 @@
 import requests
+import csv
 import json
 import os
 import re
 from azure.identity import ClientSecretCredential
 from azure.mgmt.compute import ComputeManagementClient
+from io import StringIO
 
 def remove_duplicates(data):
     seen = set()
@@ -45,6 +47,32 @@ sku_dicts = [sku.as_dict() for sku in skus]
 
 print(f"Retrieved {len(sku_dicts)} instance types.")
 
+# Retrieve the instance size flexibility ratio table from Azure
+isf_url = 'https://aka.ms/isf'
+def create_instance_size_flexibility_ratio_table(url):
+    isf_table = {}
+    try:
+        response = requests.get(url)
+        response.raise_for_status()  # Raise an exception for bad status codes
+
+        csv_content = StringIO(response.text)
+        reader = csv.DictReader(csv_content)
+
+        for row in reader:
+            key = row['ArmSkuName']
+            value = row['Ratio']
+            isf_table[key] = float(value)
+
+        return isf_table
+
+    except Exception as e:
+        print(f"Error creating instance size flexibility table: {e}")
+        return {}
+
+isf_table = create_instance_size_flexibility_ratio_table(isf_url)
+if isf_table:
+    print(f"Retrieved instance size flexibility table for {len(isf_table)} instance types.")
+
 with open("./data/azure/instance_types.json", 'r') as f:
     manual_data = json.load(f)
 
@@ -59,7 +87,7 @@ for item in sku_dicts:
             "size": item.get("size", "None"),
             "family": item.get("family", "None"),
             "superseded": "None",
-            "specs": { "nfu": "None" }
+            "specs": { "nfu": isf_table.get(item.get("name"), None) }
         }
 
         for capability in item.get("capabilities", []):
