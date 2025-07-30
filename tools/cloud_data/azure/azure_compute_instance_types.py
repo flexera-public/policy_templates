@@ -87,7 +87,7 @@ for item in sku_dicts:
             "size": item.get("size", "None"),
             "family": item.get("family", "None"),
             "superseded": "None",
-            "specs": { "nfu": isf_table.get(item.get("name"), "None") }
+            "specs": { "nfu": isf_table.get(item.get("name"), None) }
         }
 
         for capability in item.get("capabilities", []):
