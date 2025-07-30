@@ -24,7 +24,7 @@ Consider a scenario where the default `Dimension List` parameter value is used: 
 
 The resulting Billing Centers hierarchy would look like this:
 
-```
+```text
 ├── AWS
 |   |
 |   ├── aws-account1
