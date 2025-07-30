@@ -462,6 +462,7 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Cloud Bill Processing Error Notification](./operational/flexera/cco/bill_processing_errors_notification)
   * [FinOps Dashboards](./operational/flexera/cco/finops_dashboards)
+  * [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
 
 * FlexNet Manager
 
@@ -483,10 +484,6 @@ These templates can generate savings estimates for your environment. The inciden
 * Kubernetes
 
   * [Spot Ocean - Common Bill Ingest](./cost/flexera/spot/ocean_cbi)
-
-* N/A
-
-  * [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
 
 #### Google
 
