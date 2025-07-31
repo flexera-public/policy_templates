@@ -1,0 +1,576 @@
+name "Automation Reports"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports on various aspects of automation within the Flexera One platform. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/automation/automation_reports/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/automation/automation_reports/"
+category "Operational"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "Automation",
+  policy_set: "Automation",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_reports" do
+  type "list"
+  category "Policy Settings"
+  label "Reports"
+  description "Select the reports you wish to generate."
+  allowed_values "Applied Policies", "Policy Templates", "Incidents"
+  default [ "Applied Policies" ]
+end
+
+parameter "param_include_children" do
+  type "string"
+  category "Filters"
+  label "Include Children"
+  description "Whether to include child policies/incidents in the Applied Policies and Incident reports."
+  allowed_values "Include Children", "Exclude Children"
+  default "Exclude Children"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera One website domain
+datasource "ds_flexera_web_domain" do
+  run_script $js_flexera_web_domain, rs_optima_host
+end
+
+script "js_flexera_web_domain", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  domain_table = {
+    "api.optima.flexeraeng.com": "app.flexera.com",
+    "api.optima-eu.flexeraeng.com": "app.flexera.eu",
+    "api.optima-apac.flexeraeng.com": "app.flexera.au"
+  }
+
+  result = domain_table[rs_optima_host]
+EOS
+end
+
+# Create a simple text boolean to use in API requests to include/exclude child policies/incidents
+datasource "ds_boolean_children" do
+  run_script $js_boolean_children, $param_include_children
+end
+
+script "js_boolean_children", type: "javascript" do
+  parameters "param_include_children"
+  result "result"
+  code <<-'EOS'
+  result = { include_children: param_include_children == "Include Children" ? "true" : "false" }
+EOS
+end
+
+# Gather data for various reports
+datasource "ds_applied_policies" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies"])
+    query "show_meta_child_policies", val($ds_boolean_children, "include_children")
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    collect jmes_path(response, "items[*]") do
+      field "category", jmes_path(col_item, "category")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "created_by", jmes_path(col_item, "created_by.email")
+      field "credentials", jmes_path(col_item, "credentials")
+      field "description", jmes_path(col_item, "description")
+      field "doc_link", jmes_path(col_item, "doc_link")
+      field "dry_run", jmes_path(col_item, "dry_run")
+      field "error", jmes_path(col_item, "error")
+      field "errored_at", jmes_path(col_item, "errored_at")
+      field "frequency", jmes_path(col_item, "frequency")
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "incident_aggregate_id", jmes_path(col_item, "incident_aggregate_id")
+      field "info", jmes_path(col_item, "info")
+      field "kind", jmes_path(col_item, "kind")
+      field "log_level", jmes_path(col_item, "log_level")
+      field "meta_parent_policy_id", jmes_path(col_item, "meta_parent_policy_id")
+      field "name", jmes_path(col_item, "name")
+      field "options", jmes_path(col_item, "options")
+      field "policy_aggregate_id", jmes_path(col_item, "policy_aggregate_id")
+      field "policy_template", jmes_path(col_item, "policy_template")
+      field "project", jmes_path(col_item, "project")
+      field "published_template", jmes_path(col_item, "published_template")
+      field "scope", jmes_path(col_item, "scope")
+      field "severity", jmes_path(col_item, "severity")
+      field "skip_approvals", jmes_path(col_item, "skip_approvals")
+      field "status", jmes_path(col_item, "status")
+      field "updated_at", jmes_path(col_item, "updated_at")
+    end
+  end
+end
+
+datasource "ds_policy_templates" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/policy_templates"])
+    query "view", "extended"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    collect jmes_path(response, "items[*]") do
+      field "category", jmes_path(col_item, "category")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "created_by", jmes_path(col_item, "created_by.email")
+      field "default_frequency", jmes_path(col_item, "default_frequency")
+      field "doc_link", jmes_path(col_item, "doc_link")
+      field "fingerprint", jmes_path(col_item, "fingerprint")
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "info", jmes_path(col_item, "info")
+      field "kind", jmes_path(col_item, "kind")
+      field "name", jmes_path(col_item, "name")
+      field "project_id", jmes_path(col_item, "project_id")
+      field "required_roles", jmes_path(col_item, "required_roles")
+      field "rs_pt_ver", jmes_path(col_item, "rs_pt_ver")
+      field "severity", jmes_path(col_item, "severity")
+      field "short_description", jmes_path(col_item, "short_description")
+      field "tenancy", jmes_path(col_item, "tenancy")
+      field "updated_at", jmes_path(col_item, "updated_at")
+      field "updated_by", jmes_path(col_item, "updated_by.email")
+    end
+  end
+end
+
+datasource "ds_incidents" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/incidents"])
+    query "show_incidents_with_meta_parent_policy_id", val($ds_boolean_children, "include_children")
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    collect jmes_path(response, "items[*]") do
+      field "action_failed", jmes_path(col_item, "action_failed")
+      field "applied_policy_id", jmes_path(col_item, "applied_policy.id")
+      field "category", jmes_path(col_item, "category")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "dry_run", jmes_path(col_item, "dry_run")
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "incident_aggregate_id", jmes_path(col_item, "incident_aggregate_id")
+      field "kind", jmes_path(col_item, "kind")
+      field "not_modified", jmes_path(col_item, "not_modified")
+      field "options", jmes_path(col_item, "options")
+      field "project", jmes_path(col_item, "project")
+      field "resolution_message", jmes_path(col_item, "resolution_message")
+      field "resolved_at", jmes_path(col_item, "resolved_at")
+      field "resolved_by", jmes_path(col_item, "resolved_by.email")
+      field "severity", jmes_path(col_item, "severity")
+      field "state", jmes_path(col_item, "state")
+      field "summary", jmes_path(col_item, "summary")
+      field "updated_at", jmes_path(col_item, "updated_at")
+      field "violation_data_count", jmes_path(col_item, "violation_data_count")
+    end
+  end
+end
+
+# Create a table to easily get applied policy metadata from a policy id
+datasource "ds_applied_policy_table" do
+  run_script $js_applied_policy_table, $ds_applied_policies
+end
+
+script "js_applied_policy_table", type: "javascript" do
+  parameters "ds_applied_policies"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  _.each(ds_applied_policies, function(policy) { result[policy["id"]] = policy })
+EOS
+end
+
+# Create incidents for various reports
+datasource "ds_applied_policy_report" do
+  run_script $js_applied_policy_report, $ds_applied_policies, $ds_applied_policy_table, $ds_flexera_web_domain, $ds_applied_policy, $param_reports, rs_org_id, rs_project_id
+end
+
+script "js_applied_policy_report", type: "javascript" do
+  parameters "ds_applied_policies", "ds_applied_policy_table", "ds_flexera_web_domain", "ds_applied_policy", "param_reports", "rs_org_id", "rs_project_id"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (_.contains(param_reports, "Applied Policies")) {
+    parent_ids = _.uniq(_.compact(_.pluck(ds_applied_policies, "meta_parent_policy_id")))
+
+    result = _.map(ds_applied_policies, function(item) {
+      // Ensure all data in the original list is included
+      new_item = {}
+      _.each(_.keys(item), function(key) { new_item[key] = item[key] })
+
+      // Add additional context
+      new_item["report_policy_id"] = ds_applied_policy["id"]
+      new_item["report_policy_name"] = ds_applied_policy["name"]
+
+      new_item["parent"] = _.contains(parent_ids, item["id"])
+      new_item["child"] = item["meta_parent_policy_id"] ? true : false
+      new_item["from_published"] = item["published_template"] ? true : false
+
+      new_item["meta_parent_policy_name"] = new_item["child"] ? ds_applied_policy_table[item["meta_parent_policy_id"]]["name"] : null
+      new_item["template"] = new_item["from_published"] ? item["published_template"] : item["policy_template"]
+      new_item["template_name"] = new_item["template"]["name"]
+      new_item["template_source"] = new_item["from_published"] ? "Policy Catalog" : "Policy Templates"
+
+      new_item["url"] = [
+        "https://", ds_flexera_web_domain,
+        "/orgs/", rs_org_id,
+        "/automation/applied-policies/projects/", rs_project_id,
+        "?policyId=", item["id"]
+      ].join('')
+
+      new_item["id_with_url"] = [ item["id"], new_item["url"] ].join("||")
+      new_item["name_with_url"] = [ item["name"], new_item["url"] ].join("||")
+
+      if (new_item["meta_parent_policy_name"]) {
+        new_item["meta_parent_policy_url"] = [
+          "https://", ds_flexera_web_domain,
+          "/orgs/", rs_org_id,
+          "/automation/applied-policies/projects/", rs_project_id,
+          "?policyId=", item["meta_parent_policy_id"]
+        ].join('')
+
+        new_item["meta_parent_policy_id_with_url"] = [ item["meta_parent_policy_id"], new_item["meta_parent_policy_url"] ].join("||")
+        new_item["meta_parent_policy_name_with_url"] = [ item["meta_parent_policy_name"], new_item["meta_parent_policy_url"] ].join("||")
+      }
+
+      // We have to set the actual id value to the one with the URL included.
+      // This is because 'path' and 'format "link-external"' won't work at the same time in an incident export
+      new_item["id"] = new_item["id_with_url"]
+
+      return new_item
+    })
+  }
+EOS
+end
+
+datasource "ds_policy_templates_report" do
+  run_script $js_policy_templates_report, $ds_policy_templates, $ds_applied_policy_report, $ds_flexera_web_domain, $ds_applied_policy, $param_reports, rs_org_id, rs_project_id
+end
+
+script "js_policy_templates_report", type: "javascript" do
+  parameters "ds_policy_templates", "ds_applied_policy_report", "ds_flexera_web_domain", "ds_applied_policy", "param_reports", "rs_org_id", "rs_project_id"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (_.contains(param_reports, "Policy Templates")) {
+    // Create table to count applied policies by policy template HREF
+    policy_count = {}
+
+    _.each(ds_applied_policy_report, function(policy) {
+      href = policy["template"]["href"]
+      if (!policy_count[href]) { policy_count[href] = 0 }
+      policy_count[href] += 1
+    })
+
+    result = _.map(ds_policy_templates, function(item) {
+      // Ensure all data in the original list is included
+      new_item = {}
+      _.each(_.keys(item), function(key) { new_item[key] = item[key] })
+
+      // Add additional context
+      new_item["report_policy_id"] = ds_applied_policy["id"]
+      new_item["report_policy_name"] = ds_applied_policy["name"]
+
+      new_item["applied_policy_count"] = policy_count[item["href"]] ? policy_count[item["href"]] : 0
+
+      new_item["url"] = [
+        "https://", ds_flexera_web_domain,
+        "/orgs/", rs_org_id,
+        "/automation/projects/", rs_project_id,
+        "/policy-templates/", item["id"]
+      ].join('')
+
+      new_item["id_with_url"] = [ item["id"], new_item["url"] ].join("||")
+      new_item["name_with_url"] = [ item["name"], new_item["url"] ].join("||")
+
+      // We have to set the actual id value to the one with the URL included.
+      // This is because 'path' and 'format "link-external"' won't work at the same time in an incident export
+      new_item["id"] = new_item["id_with_url"]
+
+      return new_item
+    })
+  }
+EOS
+end
+
+datasource "ds_incidents_report" do
+  run_script $js_incidents_report, $ds_incidents, $ds_applied_policy_table, $ds_flexera_web_domain, $ds_applied_policy, $param_reports, rs_org_id, rs_project_id
+end
+
+script "js_incidents_report", type: "javascript" do
+  parameters "ds_incidents", "ds_applied_policy_table", "ds_flexera_web_domain", "ds_applied_policy", "param_reports", "rs_org_id", "rs_project_id"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (_.contains(param_reports, "Incidents")) {
+    result = _.map(ds_incidents, function(item) {
+      // Ensure all data in the original list is included
+      new_item = {}
+      _.each(_.keys(item), function(key) { new_item[key] = item[key] })
+
+      // Add additional context
+      new_item["report_policy_id"] = ds_applied_policy["id"]
+      new_item["report_policy_name"] = ds_applied_policy["name"]
+
+      new_item["applied_policy_name"] = ds_applied_policy_table[item["applied_policy_id"]] ? ds_applied_policy_table[item["applied_policy_id"]]["name"] : null
+
+      new_item["url"] = [
+        "https://", ds_flexera_web_domain,
+        "/orgs/", rs_org_id,
+        "/automation/incidents/projects/", rs_project_id,
+        "?incidentId=", item["id"]
+      ].join('')
+
+      new_item["id_with_url"] = [ item["id"], new_item["url"] ].join("||")
+
+      new_item["applied_policy_url"] = [
+        "https://", ds_flexera_web_domain,
+        "/orgs/", rs_org_id,
+        "/automation/applied-policies/projects/", rs_project_id,
+        "?policyId=", item["applied_policy_id"]
+      ].join('')
+
+      new_item["applied_policy_id_with_url"] = [ item["applied_policy_id"], new_item["url"] ].join("||")
+
+      if (new_item["applied_policy_name"]) {
+        new_item["applied_policy_name_with_url"] = [
+          new_item["applied_policy_name"],
+          new_item["applied_policy_url"]
+        ].join("||")
+      }
+
+      // We have to set the actual id value to the one with the URL included.
+      // This is because 'path' and 'format "link-external"' won't work at the same time in an incident export
+      new_item["id"] = new_item["id_with_url"]
+
+      return new_item
+    })
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_reports" do
+  validate_each $ds_applied_policy_report do
+    summary_template "{{ with index data 0 }}{{ .report_policy_name }}{{ end }}: {{ len data }} Applied Policies Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    hash_exclude "report_policy_name", "updated_at", "errored_at"
+    export do
+      resource_level true
+      field "id" do
+        label "ID"
+        format "link-external"
+      end
+      field "name_with_url" do
+        label "Name"
+        format "link-external"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "category" do
+        label "Category"
+      end
+      field "severity" do
+        label "Severity"
+      end
+      field "frequency" do
+        label "Frequency"
+      end
+      field "log_level" do
+        label "Log Level"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "template_name" do
+        label "Template Name"
+      end
+      field "template_source" do
+        label "Template Source"
+      end
+      field "parent" do
+        label "Parent"
+      end
+      field "child" do
+        label "Child"
+      end
+      field "meta_parent_policy_id_with_url" do
+        label "Meta Parent ID"
+        format "link-external"
+      end
+      field "meta_parent_policy_name_with_url" do
+        label "Meta Parent Name"
+        format "link-external"
+      end
+      field "created_by" do
+        label "Created By"
+      end
+      field "created_at" do
+        label "Created At"
+      end
+      field "updated_at" do
+        label "Updated At"
+      end
+    end
+  end
+  validate_each $ds_policy_templates_report do
+    summary_template "{{ with index data 0 }}{{ .report_policy_name }}{{ end }}: {{ len data }} Policy Templates Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    hash_exclude "report_policy_name", "updated_at"
+    export do
+      resource_level true
+      field "id" do
+        label "ID"
+        format "link-external"
+      end
+      field "name_with_url" do
+        label "Name"
+        format "link-external"
+      end
+      field "short_description" do
+        label "Description"
+      end
+      field "category" do
+        label "Category (Default)"
+      end
+      field "severity" do
+        label "Severity (Default)"
+      end
+      field "default_frequency" do
+        label "Frequency (Default)"
+      end
+      field "created_by" do
+        label "Created By"
+      end
+      field "created_at" do
+        label "Created At"
+      end
+      field "updated_by" do
+        label "Updated By"
+      end
+      field "updated_at" do
+        label "Updated At"
+      end
+    end
+  end
+  validate_each $ds_incidents_report do
+    summary_template "{{ with index data 0 }}{{ .report_policy_name }}{{ end }}: {{ len data }} Policy Incidents Found"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    hash_exclude "report_policy_name", "updated_at"
+    export do
+      resource_level true
+      field "id" do
+        label "ID"
+        format "link-external"
+      end
+      field "summary" do
+        label "Summary"
+      end
+      field "category" do
+        label "Category"
+      end
+      field "severity" do
+        label "Severity"
+      end
+      field "state" do
+        label "State"
+      end
+      field "applied_policy_id_with_url" do
+        label "Applied Policy ID"
+        format "link-external"
+      end
+      field "applied_policy_name_with_url" do
+        label "Applied Policy Name"
+        format "link-external"
+      end
+      field "violation_data_count" do
+        label "Incident Table Rows (#)"
+      end
+      field "created_at" do
+        label "Created At"
+      end
+      field "updated_at" do
+        label "Updated At"
+      end
+      field "resolved_at" do
+        label "Resolved At"
+      end
+      field "resolved_by" do
+        label "Resolved At"
+      end
+      field "resolution_message" do
+        label "Resolution Message"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
