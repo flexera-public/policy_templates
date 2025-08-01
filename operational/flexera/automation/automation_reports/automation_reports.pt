@@ -190,6 +190,8 @@ datasource "ds_applied_aggregates" do
       field "status", jmes_path(col_item, "status")
       field "updated_at", jmes_path(col_item, "updated_at")
       field "aggregate", "true"
+      # Include this field to avoid errors during policy validation due to hash_exclude expecting it
+      field "errored_at", ""
     end
   end
 end
@@ -385,7 +387,7 @@ script "js_applied_policy_report", type: "javascript" do
       new_item["id"] = new_item["id_with_url"]
 
       // Message to show in detail_template of policy incident
-      new_item["incident_message"] = "Note: Fields related to meta policies will be empty for applied policies that do not make use of this functionality."
+      new_item["incident_message"] = "Note: Some fields may be empty if they are not applicable to a particular Applied Policy. Fields related to meta policies will be empty for applied policies that do not make use of this functionality."
 
       return new_item
     })
@@ -439,7 +441,7 @@ script "js_policy_templates_report", type: "javascript" do
       new_item["id"] = new_item["id_with_url"]
 
       // Message to show in detail_template of policy incident
-      new_item["incident_message"] = ""
+      new_item["incident_message"] = "Note: Some fields may be empty if they are not applicable to a particular Policy Template."
 
       return new_item
     })
@@ -489,7 +491,7 @@ script "js_incidents_report", type: "javascript" do
       new_item["id_with_url"] = [ item["id"], new_item["url"] ].join("||")
 
       if (ds_applied_policy_table[item["applied_policy_id"]] && ds_applied_policy_table[item["applied_policy_id"]]["aggregate"] == "true") {
-        new_item["meta_parent_policy_url"] = [
+        new_item["applied_policy_url"] = [
           "https://", ds_flexera_web_domain,
           "/orgs/", rs_org_id,
           "/automation/applied-policies?policyId=", item["applied_policy_id"]
@@ -503,7 +505,7 @@ script "js_incidents_report", type: "javascript" do
         ].join('')
       }
 
-      new_item["applied_policy_id_with_url"] = [ item["applied_policy_id"], new_item["url"] ].join("||")
+      new_item["applied_policy_id_with_url"] = [ item["applied_policy_id"], new_item["applied_policy_url"] ].join("||")
 
       if (new_item["applied_policy_name"]) {
         new_item["applied_policy_name_with_url"] = [
@@ -517,7 +519,7 @@ script "js_incidents_report", type: "javascript" do
       new_item["id"] = new_item["id_with_url"]
 
       // Message to show in detail_template of policy incident
-      new_item["incident_message"] = ""
+      new_item["incident_message"] = "Note: Some fields may be empty if they are not applicable to a particular Incident."
 
       return new_item
     })
@@ -652,6 +654,7 @@ policy "pol_reports" do
     detail_template "{{ with index data 0 }}{{ .incident_message }}{{ end }}"
     check eq(val(item, "id"), "")
     escalate $esc_email
+    escalate $esc_resolve_incidents
     hash_exclude "report_policy_name", "incident_message", "updated_at"
     export do
       resource_level true
