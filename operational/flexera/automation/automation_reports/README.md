@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template generates reports on various aspects of automation within the Flexera One platform. The user can select to generate reports on applied policies, policy templates, and incidents. Optionally, these reports can be emailed.
+This policy template generates reports on various aspects of automation within the Flexera One platform. The user can select to generate reports on applied policies, policy templates, and incidents. Optionally, these reports can be emailed, applied policies can be terminated, and active incidents can be resolved.
 
 ## Input Parameters
 
