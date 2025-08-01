@@ -410,7 +410,7 @@ def find_size_downgrade(disk_name, disk_size_gib, disk_tier_map):
             return None
         return _find_size_downgrade(tier_letter, disk_size_gib, disk_tier_map)
     else:
-        raise ValueError("Unknown disk tier: " + disk["tier"])
+        raise ValueError("Unknown disk tier: " + tier_letter)
 
 
 def find_disk_downgrades(disk_name, disk_size_gib, disk_tier_map):
