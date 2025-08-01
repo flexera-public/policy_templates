@@ -12,10 +12,13 @@ This policy template generates reports on various aspects of automation within t
   - **Policy Templates** - Reports all uploaded policy templates.
   - **Incidents** - Reports all active policy incidents.
 - *Child Policies* - Whether to include child policies/incidents in the Applied Policies and Incident reports. Child policies are created when using meta parent policies but are hidden from view in the Flexera One UI.
+- *Aggregates* - Whether to include aggregates in the Applied Policies and Incident reports. Aggregates are created when a policy template is applied at the organization level across multiple projects.
 
 ## Policy Actions
 
 - Send an email report.
+- Terminate applied policy after approval.
+- Resolve incident after approval.
 
 ## Prerequisites
 
@@ -27,6 +30,9 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `policy_viewer`
+  - `policy_manager`*
+
+  \* Only required for taking action (terminating applied policies and resolving incidents); the policy will still function in a read-only capacity without these permissions.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
