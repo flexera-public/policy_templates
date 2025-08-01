@@ -8,7 +8,7 @@ category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "3.0.3",
+  version: "3.0.4",
   provider: "AWS",
   service: "Storage",
   policy_set: "CIS",
@@ -442,7 +442,19 @@ script "js_aws_buckets_without_deny_http", type:"javascript" do
 
     if (typeof(bucket['policy']['Statement']) == 'object') {
       deny_http_statements = _.filter(bucket['policy']['Statement'], function(statement) {
-        return statement['Resource'] == 'arn:aws:s3:::' + bucket['id'] + '/*' && statement['Condition']['Bool']['aws:SecureTransport'] == "false" && statement['Action'] == "s3:GetObject" && statement['Effect'] == "Deny"
+
+        return (
+          // Check the Resource is the S3 bucket as well as all paths
+          (statement['Resource'] == 'arn:aws:s3:::' + bucket['id'] + '/*' || (_.isArray(statement['Resource']) && (_.contains(statement['Resource'], 'arn:aws:s3:::' + bucket['id'] + '/*'))))
+          // AND check the Condition to ensure 'Bool' object and 'aws:SecureTransport' field exist
+          && (statement['Condition'] && statement['Condition']['Bool'] && statement['Condition']['Bool']['aws:SecureTransport'])
+          // AND if so, check 'aws:SecureTransport' is false/False
+          && (statement['Condition']['Bool']['aws:SecureTransport'] == "false" || statement['Condition']['Bool']['aws:SecureTransport'] == "False")
+          // AND check the Action is 's3:GetObject' or 's3:*'
+          && (statement['Action'] == "s3:GetObject" || statement['Action'] == "s3:*") 
+          // AND check the Effect is 'Deny'
+          && statement['Effect'] == "Deny"
+        )
       })
     }
 
