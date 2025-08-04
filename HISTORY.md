@@ -6,6 +6,64 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3372](https://github.com/flexera-public/policy_templates/pull/3372): POL-1571 AWS S3 Buckets Accepting HTTP Requests - fix 'cannot access member' error
+
+*Minor Update, Bug Fix*
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+> This change updates fixes an issue where applied policies fail due to an undefined field in some scenarios. It also fixes an issue where false positive recommendations are produced in policy incidents.
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+>
+
+#### Metadata
+
+- **Policies**: [AWS S3 Buckets Accepting HTTP Requests](https://github.com/flexera-public/policy_templates/tree/master/security/aws/s3_buckets_deny_http/README.md), [Meta Parent: AWS S3 Buckets Accepting HTTP Requests](https://github.com/flexera-public/policy_templates/tree/master/security/aws/s3_buckets_deny_http/README.md)
+- **Merged At**: 2025-08-01 17:37:35 UTC
+
+---
+
+### PR [#3368](https://github.com/flexera-public/policy_templates/pull/3368): POL-1569 Flexera Billing Centers from Dimension Values Improvement
+
+*Minor Update*
+
+#### Description
+
+> `Flexera Billing Centers from Dimension Values` policy template will now create the rbd_bc dimension if it doesn't already exist. The README has also been updated to clean things up a bit and fix some Markdown errors.
+>
+> From the CHANGELOG:
+> - Policy execution will no longer fail if the "rbd_bc" Rule-Based Dimension doesn't already exist.
+> - Minor tweaks to bring policy template in compliance with best practices.
+>
+
+#### Metadata
+
+- **Policies**: [Flexera Billing Centers from Dimension Values](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/billing_centers_from_dimensions/README.md)
+- **Merged At**: 2025-07-30 19:10:01 UTC
+
+---
+
+### PR [#3350](https://github.com/flexera-public/policy_templates/pull/3350): POL-1566 Oracle Cloud Common Bill Ingestion: Custom Bucket Support
+
+*Minor Update*
+
+#### Description
+
+> Oracle Cloud Common Bill Ingestion
+> - Added additional parameters to allow user to gather cost reports from custom buckets.
+>
+
+#### Metadata
+
+- **Policies**: [Oracle Cloud Common Bill Ingestion](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/oracle_cbi/README.md)
+- **Merged At**: 2025-07-28 12:46:46 UTC
+
+---
+
 ### PR [#3353](https://github.com/flexera-public/policy_templates/pull/3353): POL-1568 Deprecate Azure China Common Bill Ingestion
 
 *Minor Update*
@@ -1994,47 +2052,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2800) for details about unpublished policies.
 - **Merged At**: 2024-10-31 17:48:14 UTC
-
----
-
-### PR [#2737](https://github.com/flexera-public/policy_templates/pull/2737): POL-1378 Linting Updates: Cost Policies: Misc
-
-#### Description
-
-> Various small changes to Cost policies not associated with the big 3 hyperscalers to bring them up to current linting standards. Also removes known bad coding patterns to avoid their reuse.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2737) for these details.
-- **Merged At**: 2024-10-30 14:58:32 UTC
-
----
-
-### PR [#2790](https://github.com/flexera-public/policy_templates/pull/2790): POL-1394 Downsize Multiple Sizes: Azure MySQL
-
-#### Description
-
-> Added support for downsizing multiple sizes where appropriate for the two Azure MySQL policy templates. Enabled via an optional parameter.
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize MySQL Flexible Servers](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_mysql_flexible/README.md), [Meta Parent: Azure Rightsize MySQL Flexible Servers](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_mysql_flexible/README.md), [Azure Rightsize MySQL Single Servers](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_mysql_single/README.md), [Meta Parent: Azure Rightsize MySQL Single Servers](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_mysql_single/README.md)
-- **Merged At**: 2024-10-30 12:04:39 UTC
-
----
-
-### PR [#2792](https://github.com/flexera-public/policy_templates/pull/2792): POL-1407 Downsize Multiple Sizes: AWS Rightsize ElastiCache
-
-#### Description
-
-> Added support for downsizing multiple sizes where appropriate. Enabled via an optional parameter.
->
-
-#### Metadata
-
-- **Policies**: [AWS Rightsize ElastiCache](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_elasticache/README.md), [Meta Parent: AWS Rightsize ElastiCache](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_elasticache/README.md)
-- **Merged At**: 2024-10-30 12:04:16 UTC
 
 ---
 
