@@ -454,6 +454,7 @@ These templates can generate savings estimates for your environment. The inciden
 * Automation
 
   * [Applied Policy Template Errors](./operational/flexera/automation/applied_policy_error_notification)
+  * [Automation Reports](./operational/flexera/automation/automation_reports)
   * [Flexera Automation Disallowed Credentials](./automation/flexera/disallowed_credentials)
   * [Flexera Automation Expiring Credentials](./automation/flexera/expiring_credentials)
   * [Flexera Automation Outdated Applied Policies](./automation/flexera/outdated_applied_policies)
