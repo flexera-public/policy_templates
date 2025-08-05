@@ -1,0 +1,1076 @@
+name "Azure Unused Storage Accounts"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports unused Azure Storage Accounts and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_storage_accounts) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_storage_accounts/"
+severity "low"
+category "Cost"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Azure",
+  service: "Storage",
+  policy_set: "Unused Storage Accounts",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Lookback Period"
+  description "How many days back to check Azure Storage Accounts for activity. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 90
+  default 30
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Delete Storage Accounts"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2022-12-01"
+    header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-'EOS'
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+      include_subscription = param_subscriptions_allow_or_deny == "Deny" ? !include_subscription : include_subscription
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_azure_storage_accounts" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Storage/storageAccounts"])
+    query "api-version", "2024-01-01"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
+      field "region", jmes_path(col_item, "location")
+      field "name", jmes_path(col_item, "name")
+      field "sku_name", jmes_path(col_item, "sku.name")
+      field "sku_tier", jmes_path(col_item, "sku.tier")
+      field "tags", jmes_path(col_item, "tags")
+      field "type", jmes_path(col_item, "type")
+      field "creationTime", jmes_path(col_item, "properties.creationTime")
+      field "encryption", jmes_path(col_item, "properties.encryption")
+      field "primaryEndpoints", jmes_path(col_item, "properties.primaryEndpoints")
+      field "primaryLocation", jmes_path(col_item, "properties.primaryLocation")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+      field "routingPreference", jmes_path(col_item, "properties.routingPreference")
+      field "secondaryLocation", jmes_path(col_item, "properties.secondaryLocation")
+      field "statusOfPrimary", jmes_path(col_item, "properties.statusOfPrimary")
+      field "statusOfSecondary", jmes_path(col_item, "properties.statusOfSecondary")
+      field "supportsHttpsTrafficOnly", jmes_path(col_item, "properties.supportsHttpsTrafficOnly")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "subscriptionID", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_storage_accounts_tag_filtered" do
+  run_script $js_azure_storage_accounts_tag_filtered, $ds_azure_storage_accounts, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_azure_storage_accounts_tag_filtered", type: "javascript" do
+  parameters "ds_azure_storage_accounts", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-'EOS'
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_storage_accounts, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_azure_storage_accounts
+  }
+EOS
+end
+
+datasource "ds_azure_storage_accounts_region_filtered" do
+  run_script $js_azure_storage_accounts_region_filtered, $ds_azure_storage_accounts_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_storage_accounts_region_filtered", type: "javascript" do
+  parameters "ds_azure_storage_accounts_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-'EOS'
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_storage_accounts_tag_filtered, function(account) {
+      include_account = _.contains(param_regions_list, account['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_account = !include_account
+      }
+
+      return include_account && typeof(account['blob_endpoint']) == 'string' && account['blob_endpoint'] != ''
+    })
+  } else {
+    result = _.filter(ds_azure_storage_accounts_tag_filtered, function(account) {
+      return typeof(account['blob_endpoint']) == 'string' && account['blob_endpoint'] != ''
+    })
+  }
+EOS
+end
+
+datasource "ds_azure_storage_accounts_batch" do
+  run_script $js_azure_storage_accounts_batch, $ds_azure_storage_accounts_region_filtered
+end
+
+script "js_azure_storage_accounts_batch", type: "javascript" do
+  parameters "ds_azure_storage_accounts_region_filtered"
+  result "result"
+  code <<-'EOS'
+  // group by subscription
+  instances_by_subscription = _.values(_.groupBy(ds_azure_storage_accounts_region_filtered, function(instance) {
+    return instance['subscriptionID']
+  }))
+
+  // group by region
+  instances_by_subscription_region = _.map(instances_by_subscription, function(instances) {
+    return _.values(_.groupBy(instances, function(instance) { return instance['region'] }))
+  })
+
+  // group into batches of same region
+  result = []
+
+  batch_size = 50 // Maximum batch size for Azure Metrics getBatch API is 50
+
+  _.each(instances_by_subscription_region, function(instances_same_subscription) {
+    _.each(instances_same_subscription, function(instances_same_subscription_region) {
+      for (var i = 0; i < instances_same_subscription_region.length; i += batch_size) {
+        result.push(instances_same_subscription_region.slice(i, i + batch_size))
+      }
+    })
+  })
+
+  // 'result' looks like this:
+  /*
+  [
+    [max of 50 instances of same subscription and same region...],
+    [max of 50 instances of same subscription and same region...],
+    ...
+  ]
+  */
+EOS
+end
+
+datasource "ds_azure_metrics_batch" do
+  iterate $ds_azure_storage_accounts_batch
+  request do
+    run_script $js_azure_metrics_batch, iter_item, $param_azure_endpoint, $param_stats_lookback
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "value", jmes_path(col_item, "value")
+      field "resourceID", jmes_path(col_item, "resourceid")
+    end
+  end
+end
+
+script "js_azure_metrics_batch", type: "javascript" do
+  parameters "storage_accounts", "param_azure_endpoint", "param_stats_lookback"
+  result "request"
+  code <<-'EOS'
+  end_date = new Date()
+  end_date.setMilliseconds(999)
+  end_date.setSeconds(59)
+  end_date.setMinutes(59)
+  end_date.setHours(23)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date.setMilliseconds(0)
+  start_date.setSeconds(0)
+  start_date.setMinutes(0)
+
+  host_tld = param_azure_endpoint == "management.chinacloudapi.cn" ? "cn" : "com"
+
+  var request = {
+    auth: "auth_azure",
+    pagination: "pagination_azure",
+    host: region + ".metrics.monitor.azure." + host_tld,
+    verb: "POST",
+    path: "subscriptions/" + storage_accounts[0]['subscriptionID'] + "/metrics:getBatch",
+    query_params: {
+      "api-version": "2018-01-01",
+      "timespan": start_date.toISOString() + "/" + end_date.toISOString(),
+      "interval": "FULL",
+      "metricnames": "Transactions",
+      "metricnamespace": "Microsoft.Storage/storageAccounts",
+      "aggregation": "count"
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ "resourceids": _.pluck(storage_accounts, "id") })
+  }
+EOS
+end
+
+datasource "ds_azure_storage_accounts_with_metrics" do
+  run_script $js_azure_storage_accounts_with_metrics, $ds_azure_storage_accounts_region_filtered, $ds_azure_metrics_batch
+end
+
+script "js_azure_storage_accounts_with_metrics", type: "javascript" do
+  parameters "ds_azure_storage_accounts_region_filtered", "ds_azure_metrics_batch"
+  result "result"
+  code <<-'EOS'
+  metrics_by_resource = {}
+  _.each(ds_azure_metrics_batch, function(item) { metrics_by_resource[item["resourceID"]] = item["value"] })
+
+  result = _.map(ds_azure_storage_accounts_region_filtered, function(item) {
+    new_item = {}
+    _.each(_.keys(item), function(key) { new_item[key] = item[key] })
+
+    new_item["transactions"] = 0
+
+    if (metrics_by_resource[item["id"]]) {
+      transaction_stats = null
+
+      _.each(metrics_by_resource[item["id"]], function(stat) {
+        if (stat["timeseries"][0] != undefined && stat['name']['value'] == "Transactions") {
+          transaction_stats = stat["timeseries"][0]["data"]
+        }
+      })
+
+      if (transaction_stats) {
+        _.each(transaction_stats, function(metric) {
+          if (typeof(metric['count']) == 'number') { new_item["transactions"] += metric['count'] }
+        })
+      }
+    }
+
+    return new_item
+  })
+EOS
+end
+
+datasource "ds_storage_account_subscriptions" do
+  run_script $js_storage_account_subscriptions, $ds_azure_storage_accounts_with_metrics
+end
+
+script "js_storage_account_subscriptions", type: "javascript" do
+  parameters "ds_azure_storage_accounts_with_metrics"
+  result "result"
+  code <<-EOS
+  result = _.compact(_.uniq(_.pluck(ds_azure_storage_accounts_with_metrics, 'subscriptionID')))
+EOS
+end
+
+datasource "ds_storage_account_costs" do
+  iterate $ds_storage_account_subscriptions
+  request do
+    run_script $js_storage_account_costs, iter_item, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceID", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_storage_account_costs", type:"javascript" do
+  parameters "subscriptionID", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      "dimensions": ["resource_id"],
+      "granularity": "day",
+      "start_at": start_date,
+      "end_at": end_date,
+      "metrics": ["cost_amortized_unblended_adj"],
+      "billing_center_ids": ds_top_level_bcs,
+      "limit": 100000,
+      "filter": {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Microsoft.Storage"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "microsoft.storage"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": subscriptionID
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_storage_account_costs_grouped" do
+  run_script $js_storage_account_costs_grouped, $ds_storage_account_costs
+end
+
+script "js_storage_account_costs_grouped", type: "javascript" do
+  parameters "ds_storage_account_costs"
+  result "result"
+  code <<-'EOS'
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_storage_account_costs, function(item) {
+    id = item['resourceID'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_unused_storage_accounts" do
+  run_script $js_unused_storage_accounts, $ds_azure_storage_accounts_with_metrics, $ds_storage_account_costs_grouped, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_min_savings
+end
+
+script "js_unused_storage_accounts", type: "javascript" do
+  parameters "ds_azure_storage_accounts_with_metrics", "ds_storage_account_costs_grouped", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_min_savings"
+  result "result"
+  code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  result = []
+  total_savings = 0.0
+
+  unused_accounts = _.filter(ds_storage_account_costs_grouped, function(item) { return item["transactions"] == 0 })
+
+  _.each(unused_accounts, function(item) {
+    savings = ds_storage_account_costs_grouped[item['id'].toLowerCase()] ? ds_storage_account_costs_grouped[item['id'].toLowerCase()] : 0.0
+
+    if (savings > param_min_savings) {
+      total_savings += savings
+      domain = item['primaryEndpoints'] && item['primaryEndpoints']['web'] ? item['primaryEndpoints']['web'].split("/")[2] : ""
+
+      recommendationDetails = [
+        "Delete unused Azure Storage Account ", item["name"], " ",
+        "in Azure Subscription ", item["subscriptionName"],
+        " (", item["subscriptionID"], ")"
+      ].join('')
+
+      result.push({
+        accountID: item['subscriptionID'],
+        accountName: item['subscriptionName'],
+        resourceID: item['id'],
+        resourceName: item['name'],
+        resourceGroup: item['resourceGroup'],
+        type: item['type'],
+        region: item['region'],
+        sku_name: item['sku_name'],
+        sku_tier: item['sku_tier'],
+        encryption: item['encryption'],
+        state: item['provisioningState'],
+        tags: item['tags'],
+        domain: domain,
+        transactions: item['transactions'],
+        creationTime: item['creationTime'],
+        savings: Math.round(savings * 1000) / 1000,
+        savingsCurrency: ds_currency['symbol'],
+        recommendationDetails: recommendationDetails,
+        lookbackPeriod: param_stats_lookback,
+        policy_name: ds_applied_policy['name'],
+        service: "Microsoft.Storage",
+        // These are to avoid errors when we hash_exclude these fields
+        total_savings: "",
+        message: ""
+      })
+    }
+  })
+
+  // Message for incident output
+  total_accounts = ds_storage_account_costs_grouped.length.toString()
+  total_unused_accounts = result.length.toString()
+  unused_accounts_percentage = (total_unused_accounts / total_accounts * 100).toFixed(2).toString() + '%'
+
+  account_noun = total_accounts > 1 ? "Storage Accounts" : "Storage Account"
+  account_verb = total_unused_accounts > 1 ? "are" : "is"
+
+  findings = [
+    "Out of ", total_accounts, " Azure ", account_noun, " analyzed, ",
+    total_unused_accounts, " (", unused_accounts_percentage,
+    ") ", account_verb, " unused and recommended for deletion. "
+  ].join('')
+
+  criteria = [
+    "A Storage Account is considered unused if it has had no transactions (including GET requests) ",
+    "for over ", param_stats_lookback, "days.\n\n"
+  ].join('')
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  savings_message = [ ds_currency['symbol'], formatNumber(total_savings, ds_currency['separator']) ].join(' ')
+
+  // Sort by descending order of savings value
+  result = _.sortBy(result, "savings").reverse()
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    accountID: "",
+    accountName: "",
+    resourceID: "",
+    resourceName: "",
+    resourceGroup: "",
+    type: "",
+    region: "",
+    sku_name: "",
+    sku_tier: "",
+    encryption: "",
+    state: "",
+    tags: "",
+    domain: "",
+    transactions: "",
+    creationTime: "",
+    savings: "",
+    savingsCurrency: "",
+    recommendationDetails: "",
+    lookbackPeriod: "",
+    policy_name: "",
+    service: "",
+    total_savings: "",
+    message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + criteria + disclaimer
+  result[0]['policy_name'] = ds_applied_policy['name']
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_azure_unused_storage_accounts" do
+  validate_each $ds_unused_storage_accounts do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Unused Storage Accounts Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_delete_storage_accounts
+    hash_exclude "savings", "savingsCurrency", "transactions"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "creationTime" do
+        label "Created At"
+      end
+      field "transactions" do
+        label "Transactions (#)"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "type" do
+        label "Type"
+      end
+      field "sku_name" do
+        label "SKU Name"
+      end
+      field "sku_tier" do
+        label "SKU Tier"
+      end
+      field "state" do
+        label "Provisioning State"
+      end
+      field "domain" do
+        label "Web Domain"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_delete_storage_accounts" do
+  automatic contains($param_automatic_action, "Delete Storage Accounts")
+  label "Delete Storage Accounts"
+  description "Approval to delete all selected storage accounts"
+  run "delete_storage_accounts", data, $param_azure_endpoint
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_storage_accounts($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $resource in $data do
+    sub on_error: handle_error() do
+      call delete_storage_account($resource, $param_azure_endpoint) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_storage_account($resource, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $resource["id"]
+  $params = "?api-version=2024-01-01"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2024-01-01" }
+  )
+
+  task_label("Delete Azure Storage Account response: " + $resource["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure Storage Account: "+ $resource["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure Storage Account successful: " + $resource["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end
