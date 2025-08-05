@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template reports Azure Storage Accounts that have had fewer than a user-specified number of transactions over a user specified number of days and, optionally, deletes them. A transaction is any API operation or action that interacts with the storage service, including reading, writing, or deleting data, as well as metadata operations.
+This policy template reports Azure Storage Accounts that have had fewer than a user-specified number of transactions over a user-specified number of days and, optionally, deletes them. A transaction is any API operation or action that interacts with the storage service, including reading, writing, or deleting data, as well as metadata operations.
 
 ## Input Parameters
 
