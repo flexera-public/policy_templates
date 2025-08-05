@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template reports Azure Storage Accounts that have had no transactions over a user specified number of days and, optionally, deletes them.
+This policy template reports Azure Storage Accounts that have had fewer than a user-specified number of transactions over a user specified number of days and, optionally, deletes them.
 
 ## Input Parameters
 
@@ -22,6 +22,7 @@ This policy template reports Azure Storage Accounts that have had no transaction
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Lookback Period* - How many days back to check Azure Storage Accounts for activity. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
+- *Maximum Transactions* - Number of transactions to consider a storage account unused. Storage account will be considered unused if it has this many transactions or fewer over the time period specified in the `Lookback Period` parameter.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.

@@ -106,6 +106,15 @@ parameter "param_stats_lookback" do
   default 30
 end
 
+parameter "param_transactions" do
+  type "number"
+  category "Policy Settings"
+  label "Maximum Transactions"
+  description "Number of transactions to consider a storage account unused. Storage account will be considered unused if it has this many transactions or fewer over the time period specified in the 'Lookback Period' parameter."
+  min_value 0
+  default 0
+end
+
 parameter "param_automatic_action" do
   type "list"
   category "Actions"
@@ -502,12 +511,13 @@ script "js_azure_metrics_batch", type: "javascript" do
   var request = {
     auth: "auth_azure",
     pagination: "pagination_azure",
-    host: region + ".metrics.monitor.azure." + host_tld,
+    host: storage_accounts[0]['region'] + ".metrics.monitor.azure." + host_tld,
     verb: "POST",
     path: "subscriptions/" + storage_accounts[0]['subscriptionID'] + "/metrics:getBatch",
     query_params: {
-      "api-version": "2018-01-01",
-      "timespan": start_date.toISOString() + "/" + end_date.toISOString(),
+      "api-version": "2024-02-01",
+      "starttime": start_date.toISOString(),
+      "endtime": end_date.toISOString(),
       "interval": "FULL",
       "metricnames": "Transactions",
       "metricnamespace": "Microsoft.Storage/storageAccounts",
@@ -679,11 +689,11 @@ EOS
 end
 
 datasource "ds_unused_storage_accounts" do
-  run_script $js_unused_storage_accounts, $ds_azure_storage_accounts_with_metrics, $ds_storage_account_costs_grouped, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_min_savings
+  run_script $js_unused_storage_accounts, $ds_azure_storage_accounts_with_metrics, $ds_storage_account_costs_grouped, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_min_savings, $param_transactions
 end
 
 script "js_unused_storage_accounts", type: "javascript" do
-  parameters "ds_azure_storage_accounts_with_metrics", "ds_storage_account_costs_grouped", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_min_savings"
+  parameters "ds_azure_storage_accounts_with_metrics", "ds_storage_account_costs_grouped", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_min_savings", "param_transactions"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -714,12 +724,12 @@ script "js_unused_storage_accounts", type: "javascript" do
   result = []
   total_savings = 0.0
 
-  unused_accounts = _.filter(ds_storage_account_costs_grouped, function(item) { return item["transactions"] == 0 })
+  unused_accounts = _.filter(ds_azure_storage_accounts_with_metrics, function(item) { return item["transactions"] <= param_transactions })
 
   _.each(unused_accounts, function(item) {
     savings = ds_storage_account_costs_grouped[item['id'].toLowerCase()] ? ds_storage_account_costs_grouped[item['id'].toLowerCase()] : 0.0
 
-    if (savings > param_min_savings) {
+    if (savings >= param_min_savings) {
       total_savings += savings
 
       recommendationDetails = [
@@ -770,8 +780,9 @@ script "js_unused_storage_accounts", type: "javascript" do
   ].join('')
 
   criteria = [
-    "A Storage Account is considered unused if it has had no transactions (including GET requests) ",
-    "for over ", param_stats_lookback, "days.\n\n"
+    "A Storage Account is considered unused if it has had ",
+    param_transactions, " or fewer transactions ",
+    "over the last ", param_stats_lookback, " days.\n\n"
   ].join('')
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
