@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.0
+
+- Changed how savings are calculated. Savings will now be calculated as the percentage difference between list prices of current instance type and recommended instance type. Please see Readme for more details.
+
 ## v2.1.5
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
