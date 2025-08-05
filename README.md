@@ -340,6 +340,10 @@ These templates can generate savings estimates for your environment. The inciden
   * [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   * [Azure SQL Servers Without Elastic Pools](./cost/azure/sql_servers_without_elastic_pool)
 
+* Storage
+
+  * [Azure Unused Storage Accounts](./cost/azure/unused_storage_accounts)
+
 * Storage Accounts
 
   * [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management)
