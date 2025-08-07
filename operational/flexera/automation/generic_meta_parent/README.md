@@ -22,49 +22,58 @@ The policy automatically creates, updates, and deletes child policies as cost di
 ## Input Parameters
 
 ### Policy Settings
+
 - **Email Addresses** - Email addresses to notify when incidents are created
 - **Child Policy Template Name** - Exact name of the policy template to deploy as children
 - **Child Policy Template Source** - Whether to use Published Catalog Template or Uploaded Template
 
 ### Child Policy Settings
+
 - **Cost Dimension to Parameter Mappings** - List of mappings from cost dimensions to child policy parameters (see *Cost Dimension to Parameter Mappings* section below)
 - **Child Policy Schedule** - Frequency for child policy execution (daily, weekly, monthly)
 - **Default Child Policy Options (JSON)** - Default options applied to all child policies
 
 ### Filters
+
 - **Dimension Include Filters** - Filters to determine which dimension values to include
 - **Dimension Exclude Filters** - Filters to determine which dimension values to exclude
 
 ### Cost Data Settings
+
 - **Cost Data Lookback Period (Days)** - Number of days to look back when querying cost data
 
 ## Cost Dimension to Parameter Mappings
 
 The core functionality uses mappings in the format: `"dimension_name::parameter_name"`
 
-### Single Dimension Examples:
+### Single Dimension Examples
+
 - `vendor_account::param_aws_account_number` - Creates one child policy per AWS account
 - `vendor_account::param_subscription_id` - Creates one child policy per Azure subscription
 - `billing_center_id::param_billing_center_id` - Creates one child policy per billing center
 - `region::param_region_list` - Creates one child policy per region
 
-### Multiple Dimension Examples:
+### Multiple Dimension Examples
+
 When multiple mappings are provided, child policies are created for each unique combination:
+
 - `["vendor_account::param_aws_account_number", "region::param_region_list"]` - Creates separate child policies for each AWS account + region combination
 - `["billing_center_id::param_billing_center_id", "service::param_service_list"]` - Creates child policies for each billing center + service combination
 
-### Available Dimensions:
+### Available Dimensions
+
 Any Flexera cost dimensions can be used including the Default Dimensions, and Custom Dimensions (RBD, Tag)
 
 See the [Bill Analysis API Documentation](https://reference.rightscale.com/bill_analysis/) for the complete list.
 
 ## Default Child Policy Options
 
-The **Default Child Policy Options** parameter accepts a JSON object with default parameter values for all child policies. 
+The **Default Child Policy Options** parameter accepts a JSON object with default parameter values for all child policies.
 
 **Parameters specified in the dimension mappings will override these defaults.**
 
-### Example:
+### Example
+
 ```json
 {
   "param_email": ["admin@company.com"],
@@ -76,12 +85,14 @@ The **Default Child Policy Options** parameter accepts a JSON object with defaul
 
 ## Filter Examples
 
-### Include Filters:
+### Include Filters
+
 - `vendor=AWS` - Only include AWS accounts
 - `region=us-east-1` - Only include us-east-1 region
 - `billing_center_name=~Production` - Only include billing centers containing "Production"
 
-### Exclude Filters:
+### Exclude Filters
+
 - `vendor_account=123456789012` - Exclude specific AWS account
 - `region=~test` - Exclude regions containing "test"
 - `billing_center_name=Development` - Exclude Development billing center
@@ -98,10 +109,11 @@ The policy provides the following escalations:
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
+### Credential configuration
+
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `policy_designer` (to create and manage child policies)
-  - `policy_manager` (to apply and manage child policies)
-  - `billing_center_viewer` (to access cost data)
+  - `billing_center_viewer`
+  - `policy_manager`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
