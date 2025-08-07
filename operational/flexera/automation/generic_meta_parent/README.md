@@ -5,8 +5,8 @@
 This generic meta parent policy template dynamically creates and manages child policies based on cost dimensions from the Flexera Bill Analysis API. Unlike traditional meta parent policies that are pre-compiled for specific child policy templates, this policy uses parameters to determine:
 
 1. **Which policy template** to deploy as children
-2. **How to map cost dimensions** to child policy parameters
-3. **Which cost dimensions** to use for grouping child policies
+1. **How to map cost dimensions** to child policy parameters
+1. **Which cost dimensions** to use for grouping child policies
 
 The policy automatically creates, updates, and deletes child policies as cost dimension values change over time, providing a flexible solution for managing policies across multiple accounts, subscriptions, regions, or other dimensions.
 
@@ -15,9 +15,9 @@ The policy automatically creates, updates, and deletes child policies as cost di
 ## How It Works
 
 1. **Query Cost Data:** The policy queries the Flexera Bill Analysis API using the specified dimension mappings and filters
-2. **Generate Combinations:** Creates unique combinations of dimension values based on the mappings provided
-3. **Compare with Existing:** Compares required child policies with existing child policies managed by this meta parent
-4. **Take Actions:** Automatically creates new child policies, and optionally deletes obsolete ones
+1. **Generate Combinations:** Creates unique combinations of dimension values based on the mappings provided
+1. **Compare with Existing:** Compares required child policies with existing child policies managed by this meta parent
+1. **Take Actions:** Automatically creates new child policies, and optionally deletes obsolete ones
 
 ## Input Parameters
 
