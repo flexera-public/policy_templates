@@ -33,6 +33,7 @@ For more details on Flexera Cloud Cost Anomaly Detection, please see the [docume
 - *Cost Anomaly Limit* - Number of anomalies to include in the incident
 - *Window Size* - Window size to use for [Bollinger Bands](https://en.wikipedia.org/wiki/Bollinger_Bands)
 - *Standard Deviations* - Number of [standard deviations](https://en.wikipedia.org/wiki/Standard_deviation) for the [Bollinger Band](https://en.wikipedia.org/wiki/Bollinger_Bands)
+- *Sort Anomalies By* - Sort the anomalies by cost or variance before applying the limit. Default is Cost.
 
 ## Policy Actions
 
