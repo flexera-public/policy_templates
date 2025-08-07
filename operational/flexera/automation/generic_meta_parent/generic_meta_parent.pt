@@ -1,0 +1,1015 @@
+name "Generic Meta Parent Policy"
+rs_pt_ver 20180301
+type "policy"
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** A generic meta parent policy that dynamically creates and manages child policies based on cost dimensions."
+long_description <<-EOS
+This generic meta parent policy template allows you to dynamically create child policies based on cost dimensions from the Flexera Bill Analysis API. Unlike traditional meta parent policies that are pre-compiled for specific child policies, this template uses parameters to determine:
+
+1. Which policy template to deploy as children
+2. How to map cost dimensions to child policy parameters
+3. Which cost dimensions to use for grouping child policies
+
+**Example Use Cases:**
+- Deploy AWS EC2 Rightsizing policies across all AWS accounts: `["vendor_account::param_aws_account_number"]`
+- Deploy Azure VM policies across subscriptions and regions: `["vendor_account::param_subscription_id", "region::param_region_list"]`
+- Deploy policies across billing centers: `["billing_center_id::param_billing_center_id"]`
+
+The policy will automatically create, update, and delete child policies as cost dimension values change over time.
+EOS
+severity "low"
+category "Meta"
+default_frequency "15 minutes"
+info(
+  provider: "Flexera",
+  version: "0.1.0",
+  publish: "false",
+  deprecated: "false",
+  hide_skip_approvals: "true"
+)
+
+##############################################################################
+# Parameters
+##############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify with the consolidated child policy incident."
+  default []
+end
+
+parameter "param_child_policy_name" do
+  type "string"
+  category "Child Policy Settings"
+  label "Child Policy Template Name"
+  description "The exact name of the policy template to deploy as child policies. This must match the name as it appears in the catalog or uploaded templates."
+  # No default - user must specify
+end
+
+parameter "param_template_source" do
+  type "string"
+  category "Child Policy Settings"
+  label "Child Policy Template Source"
+  description "Source location for the child policy template"
+  default "Published Catalog Template"
+  allowed_values "Published Catalog Template", "Uploaded Template"
+end
+
+parameter "param_dimension_mappings" do
+  type "list"
+  category "Child Policy Settings"
+  label "Cost Dimension to Parameter Mappings"
+  description <<-EOS
+  List of mappings from cost dimensions to child policy parameters in the format: "dimension_name::parameter_name" or "dimension_name::parameter_name::modifier"
+
+  **Examples:**
+  - `vendor_account::param_aws_account_number` - Creates one child policy per AWS account
+  - `vendor_account::param_subscription_id` - Creates one child policy per Azure subscription
+  - `billing_center_id::param_billing_center_id` - Creates one child policy per billing center
+  - `region::param_region_list` - Creates one child policy per region
+  - `rbd_team_contact::param_email::split` - Splits comma/pipe/semicolon/space-separated values into array
+  - `rbd_cost_center::param_dimension_filter::prefix:Cost Center=` - Adds prefix to create "Cost Center=CC-111"
+
+  **Multiple Dimensions:**
+  When multiple mappings are provided, child policies are created for each unique combination.
+  For example: `["vendor_account::param_aws_account_number", "region::param_region_list"]`
+  creates separate child policies for each AWS account + region combination.
+
+  **Value Modifiers:**
+  - `split` - Splits comma/pipe/semicolon/space-separated values into array
+  - `lower` - Converts value to lowercase
+  - `upper` - Converts value to uppercase
+  - `prefix:text=` - Adds specified prefix to the value (e.g., "prefix:Cost Center=" converts "CC-111" to "Cost Center=CC-111")
+
+  **Available Dimensions:**
+  Most Flexera cost dimensions can be used: vendor_account, vendor_account_name, region, service,
+  resource_type, billing_center_id, plus any custom tags or rule-based dimensions.
+  See [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/) for full list.
+  EOS
+  default []
+end
+
+parameter "param_dimension_filter_includes" do
+  type "list"
+  category "Filters"
+  label "Dimension Include Filters"
+  description <<-EOS
+  Filters in the format `dimension_name=dimension_value` or `dimension_name=~dimension_value` to determine which dimension values to **INCLUDE**.
+
+  Use `=` to match the entire value exactly and `=~` to match a substring contained in the value.
+
+  During each run this policy will select dimension values that match **all** the filters defined here.
+  If no include filters are provided, then all dimension values are included by default.
+
+  **Examples:**
+  - `vendor=AWS` - Only include AWS accounts
+  - `region=us-east-1` - Only include us-east-1 region
+  - `billing_center_name=~Production` - Only include billing centers with "Production" in the name
+  EOS
+  default []
+end
+
+parameter "param_dimension_filter_excludes" do
+  type "list"
+  category "Filters"
+  label "Dimension Exclude Filters"
+  description <<-EOS
+  Filters in the format `dimension_name=dimension_value` or `dimension_name=~dimension_value` to determine which dimension values to **EXCLUDE**.
+
+  Use `=` to match the entire value exactly and `=~` to match a substring contained in the value.
+
+  During each run this policy will select dimension values that match **all** the filters defined here and excludes them from results.
+
+  **Examples:**
+  - `vendor_account=123456789012` - Exclude specific AWS account
+  - `region=~test` - Exclude regions with "test" in the name
+  - `billing_center_name=Development` - Exclude Development billing center
+  EOS
+  default []
+end
+
+parameter "param_child_policy_frequency" do
+  type "string"
+  category "Child Policy Settings"
+  label "Child Policy Schedule"
+  description "The interval at which the child policies check for conditions and generate incidents."
+  default "weekly"
+  allowed_values "daily", "weekly", "monthly"
+end
+
+parameter "param_default_child_options" do
+  type "string"
+  category "Child Policy Settings"
+  label "Default Child Policy Options (JSON)"
+  description <<-EOS
+  JSON object containing default option values for child policies. These will be applied to all child policies.
+
+  **Example:**
+  ```json
+  {
+    "param_email": ["admin@company.com"],
+    "param_automatic_action": [],
+    "param_log_to_cm_audit_entries": "No"
+  }
+  ```
+
+  Parameters specified in the dimension mappings will override these defaults for each child policy.
+  EOS
+  default ""
+end
+
+parameter "param_default_child_credentials" do
+  type "string"
+  category "Child Policy Settings"
+  label "Default Child Policy Options (JSON)"
+  description <<-EOS
+  JSON object containing default credential values for child policies. These will be applied to all child policies.
+
+  **Example:**
+  ```json
+  {
+    "auth_flexera": "Flexera_User_Refresh_Token",
+    "auth_aws": "AWS_Master_Payer_123456789012",
+  }
+  ```
+  EOS
+  default ""
+end
+
+parameter "param_lookback_days" do
+  type "number"
+  category "Cost Data Settings"
+  label "Cost Data Lookback Period (Days)"
+  description "Number of days to look back when querying cost data to determine dimension values for child policies."
+  default 30
+  min_value 1
+  max_value 90
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-au.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies", switch(policy_id, join(["/",policy_id]), "")])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "name", jmes_path(response, "name")
+    field "href", jmes_path(response, "href")
+  end
+end
+
+# Get Published Policy Details
+datasource "ds_get_published_child_policy_information" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/orgs/", rs_org_id, "/published_templates"])
+    query "view", "extended" # Extended view so we get option details as well
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "href", jmes_path(col_item, "href")
+      field "short_description", jmes_path(col_item, "short_description")
+      field "created_by", jmes_path(col_item, "created_by")
+      field "parameters", jmes_path(col_item, "parameters")
+      # field "published_template", jq(col_item, ".")
+    end
+  end
+end
+
+# Select the published policy that matches the child policy name
+datasource "ds_published_child_policy_information" do
+  run_script $js_published_child_policy_information, $ds_get_published_child_policy_information, $param_child_policy_name
+end
+
+script "js_published_child_policy_information", type: "javascript" do
+  parameters "ds_get_published_child_policy_information", "param_child_policy_name"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_get_published_child_policy_information, function(item) {
+    return item['name'] == param_child_policy_name && item['created_by']['email'] == "support@flexera.com"
+  })
+EOS
+end
+
+# Get Uploaded Policy Details
+datasource "ds_get_project_child_policy_information" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/policy_templates"])
+    query "view", "extended" # Extended view so we get option details as well
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "href", jmes_path(col_item, "href")
+      field "short_description", jmes_path(col_item, "short_description")
+      field "parameters", jmes_path(col_item, "parameters")
+      # field "policy_template", jq(col_item, ".")
+    end
+  end
+end
+
+# Select the uploaded policy that matches the child policy name
+datasource "ds_project_child_policy_information" do
+  run_script $js_project_child_policy_information, $ds_get_project_child_policy_information, $param_child_policy_name
+end
+
+script "js_project_child_policy_information", type: "javascript" do
+  parameters "ds_get_project_child_policy_information", "param_child_policy_name"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_get_project_child_policy_information, function(item) {
+    return item['name'] == param_child_policy_name
+  })
+EOS
+end
+
+datasource "ds_get_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    # Select the Billing Centers that have "parent_id" undefined or "" (i.e. top-level Billing Centers)
+    collect jq(response, '.[] | select(.parent_id == null)' ) do
+      field "href", jq(col_item,".href")
+      field "id", jq(col_item,".id")
+      field "name", jq(col_item,".name")
+      field "parent_id", jq(col_item,".parent_id")
+    end
+  end
+end
+
+# Get cost dimension values based on mappings and filters
+datasource "ds_cost_dimensions" do
+  request do
+    run_script $js_make_cost_request, rs_org_id, rs_optima_host, $ds_get_billing_centers, $param_dimension_mappings, $param_dimension_filter_includes, $param_dimension_filter_excludes, $param_lookback_days
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "dimensions", jmes_path(col_item,"dimensions")
+    end
+  end
+end
+
+script "js_make_cost_request", type: "javascript" do
+  parameters "rs_org_id", "rs_optima_host", "billing_centers_unformatted", "param_dimension_mappings", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_lookback_days"
+  result "request"
+  code <<-EOS
+  billing_centers_formatted = _.pluck(billing_centers_unformatted, "id");
+
+  finish = new Date()
+  finishFormatted = finish.toJSON().split("T")[0]
+  start = new Date()
+  start.setDate(start.getDate() - param_lookback_days)
+  startFormatted = start.toJSON().split("T")[0]
+
+  // Extract dimensions from mappings
+  var dimensions = [];
+  _.each(param_dimension_mappings, function(mapping) {
+    var dimension = mapping.split("::")[0];
+    dimensions.push(dimension);
+  });
+
+  // Remove duplicates
+  dimensions = _.uniq(dimensions);
+
+  // Start with empty filter expressions
+  var filter_expressions = [];
+
+  // Add include filters
+  _.each(param_dimension_filter_includes, function(filter) {
+    if (filter.indexOf('=~') != -1) {
+      var split = filter.split("=~");
+      var dimension = split[0];
+      var value = split[1];
+      filter_expressions.push({ dimension: dimension, type: "substring", substring: value });
+    } else {
+      var split = filter.split("=");
+      var dimension = split[0];
+      var value = split[1];
+      filter_expressions.push({ dimension: dimension, type: "equal", value: value });
+    }
+  });
+
+  // Add exclude filters
+  _.each(param_dimension_filter_excludes, function(filter) {
+    if (filter.indexOf('=~') != -1) {
+      var split = filter.split("=~");
+      var dimension = split[0];
+      var value = split[1];
+      filter_expressions.push({
+        "type": "not",
+        "expression": { "dimension": dimension, "type": "substring", "substring": value }
+      });
+    } else {
+      var split = filter.split("=");
+      var dimension = split[0];
+      var value = split[1];
+      filter_expressions.push({
+        "type": "not",
+        "expression": { "dimension": dimension, "type": "equal", "value": value }
+      });
+    }
+  });
+
+  var body = {
+    "dimensions": dimensions || [],
+    "granularity": "day",
+    "start_at": startFormatted,
+    "end_at": finishFormatted,
+    "metrics": ["cost_amortized_unblended_adj"],
+    "billing_center_ids": billing_centers_formatted || [],
+    "summarized": true
+  }
+
+  if (filter_expressions.length > 0) {
+    if (filter_expressions.length == 1) {
+      body.filter = filter_expressions[0];
+    } else {
+      body.filter = {
+        "type": "and",
+        "expressions": filter_expressions
+      };
+    }
+  }
+
+  var request = {
+    auth: 'auth_flexera',
+    host: rs_optima_host,
+    scheme: 'https',
+    verb: 'POST',
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  }
+EOS
+end
+
+# Get existing child policies
+datasource "ds_get_existing_policies" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies"])
+    header "Api-Version", "1.0"
+    query "meta_parent_policy_id", policy_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "meta_parent_policy_id", jmes_path(col_item, "meta_parent_policy_id")
+      field "applied_policy_id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "href", jmes_path(col_item, "href")
+      field "status", jmes_path(col_item, "status")
+      field "updated_at", jmes_path(col_item, "updated_at")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "options", jmes_path(col_item, "options")
+    end
+  end
+end
+
+# Process dimension values and determine child policy actions
+datasource "ds_child_policy_actions" do
+  run_script $js_child_policy_actions, $ds_applied_policy, $ds_cost_dimensions, $ds_get_existing_policies, $ds_published_child_policy_information, $ds_project_child_policy_information, $param_dimension_mappings, $param_template_source, $param_child_policy_frequency, $param_default_child_credentials, $param_default_child_options, $param_child_policy_name, policy_id, rs_governance_host, rs_org_id, rs_project_id
+end
+
+script "js_child_policy_actions", type: "javascript" do
+  parameters "ds_applied_policy", "ds_cost_dimensions", "ds_get_existing_policies", "ds_published_child_policy_information", "ds_project_child_policy_information", "param_dimension_mappings", "param_template_source", "param_child_policy_frequency", "param_default_child_credentials", "param_default_child_options", "param_child_policy_name", "meta_parent_policy_id", "governance_host", "rs_org_id", "rs_project_id"
+  result "result"
+  code <<-EOS
+  var result = {};
+
+  var child_policy_information = null;
+  // Set Child Policy Information based on param_template_source value
+  if (param_template_source == "Published Catalog Template") {
+    child_policy_information = ds_published_child_policy_information[0];
+  } else {
+    child_policy_information = ds_project_child_policy_information[0];
+  }
+
+  if (!child_policy_information) {
+    result = {
+      grid: [{
+        error: "Child policy template '" + param_child_policy_name + "' not found in " + param_template_source,
+        status: "Error"
+      }],
+      to_create: [],
+      to_update: [],
+      to_delete: []
+    };
+  } else {
+    console.log("Valid Child Policy Template: " + child_policy_information.name + " (" + child_policy_information.href + ")");
+    // Parse default options
+    var default_options = null;
+    // Check that stringify works and is an object
+    var validOptions = _.isObject(param_default_child_options) || param_default_child_options == "";
+    var validCredentials = param_default_child_credentials == "" || _.isObject(JSON.parse(param_default_child_credentials));
+    console.log("bkdebug", param_default_child_credentials)
+    if (!validOptions || !validCredentials) {
+      result = {
+        grid: [],
+        to_create: [],
+        to_update: [],
+        to_delete: [],
+        debug_param_default_child_credentials: JSON.parse(param_default_child_credentials),
+      };
+      if (!validOptions) {
+        console.log("Error parsing Default Child Policy Options JSON: " + String(param_default_child_options));
+        result.grid.push({
+          error: "Invalid JSON in Default Child Policy Options: " + String(param_default_child_options),
+          status: "Error"
+        })
+      }
+      if (!validCredentials) {
+        console.log("Error parsing Default Child Policy Credentials JSON: " + String(param_default_child_credentials));
+        result.grid.push({
+          error: "Invalid JSON in Default Child Policy Credentials: " + String(param_default_child_credentials),
+          status: "Error"
+        })
+      }
+    } else {
+      var credentials = {};
+      // Setup credentials object
+      if (param_default_child_credentials == "") {
+        credentials = {};
+      } else {
+        credentials = JSON.parse(param_default_child_credentials);
+        console.log("Valid JSON in Default Child Policy Credentials");
+      }
+
+      // Setup options object
+      if (param_default_child_options == "") {
+        default_options = {};
+      } else {
+        default_options = param_default_child_options;
+        console.log("Valid JSON in Default Child Policy Options");
+      }
+      // Create unique dimension combinations
+      var dimension_combinations = {};
+
+      _.each(ds_cost_dimensions, function(row) {
+        console.log(" ");
+        console.log("Processing row: " + JSON.stringify(row));
+        var key_parts = [];
+        var child_options = {};
+        _.each(_.keys(default_options), function(parameter) {
+          var value = default_options[parameter];
+
+          // Get the parameter from child_policy_information.parameters
+          var param_info = _.find(child_policy_information.parameters, function(p) {
+            return p.name.toLowerCase() == parameter.toLowerCase(); // case insensitive match, mitigate issues from user input
+          });
+          if (!param_info) {
+            console.warn("Parameter '" + parameter + "' not found in child policy template options. Skipping.");
+          } else {
+            // Handle each parameter type according to conventions
+            if (param_info.type == "list") {
+              if (!_.isArray(value)) {
+                // If it's a list type, ensure value is an array
+                value = [value];
+              } else {
+                value = value;
+              }
+            } else if (param_info.type == "number") {
+              value = Number(value);
+            } else {
+              // All other types are treated as strings
+              if (!_.isString(value)) {
+                value = String(value);
+              } else {
+                value = value;
+              }
+            }
+
+            // For list parameters, create array with single value
+            child_options[parameter] = {
+              "name": param_info.name, // use parameter name from template instead of user provided param name value
+              "value": value
+            };
+          }
+
+        });
+
+        // Build combination key and child options
+        _.each(param_dimension_mappings, function(mapping) {
+          var mapping_split = mapping.split("::");
+          var dimension = mapping_split[0];
+          var parameter = mapping_split[1];
+          // Default to the raw value
+          var value = row.dimensions[dimension];
+          // If there is a 3rd part in the value, that's the modifier
+          function modifyValue(value, modifier) {
+            if (modifier == "lower") {
+              return value.toLowerCase();
+            } else if (modifier == "upper") {
+              return value.toUpperCase();
+            } else if (modifier == "split") {
+              // First attempt to split by comma
+              if (value.indexOf(",") != -1) {
+                return value.split(",").map(function(v) { return v.trim(); });
+              } else if (value.indexOf("|") != -1) {
+                // then pipe
+                return value.split("|").map(function(v) { return v.trim(); });
+              } else if (value.indexOf(";") != -1) {
+                // then semicolon
+                return value.split(";").map(function(v) { return v.trim(); });
+              } else if (value.indexOf(" ") != -1) {
+                // then space
+                return value.split(" ").map(function(v) { return v.trim(); });
+              }
+            } else if (modifier.indexOf("prefix:") == 0) {
+              // Extract prefix text after "prefix:"
+              var prefix = modifier.substring(7); // Remove "prefix:" from the beginning
+              return prefix + value;
+            }
+            return value; // if no match, return original value
+          }
+          // Check if we have a modifier which is the 3rd part
+          if (mapping_split.length === 3) {
+            var modifier = mapping_split[2];
+            value = modifyValue(value, modifier);
+          }
+
+          if (value) {
+            key_parts.push(dimension + "=" + value);
+
+            // Set the parameter value based on parameter type conventions
+            // TODO we should check the policy template options and determine the param type
+            if (parameter.indexOf("_list") != -1 || parameter == "param_billing_centers" || parameter == "param_email" || "param_dimension_filter") {
+              // For list parameters, create array with single value
+              child_options[parameter] = {
+                "name": parameter,
+                // Check if we already have an array for the list param, if not put the single item in an array
+                "value": _.isArray(value) ? value : [value]
+              };
+            } else {
+              // For string parameters, set directly
+              child_options[parameter] = {
+                "name": parameter,
+                "value": value
+              };
+            }
+          }
+        });
+
+        if (key_parts.length > 0) {
+          var combination_key = key_parts.join("|");
+          dimension_combinations[combination_key] = {
+            key: combination_key,
+            dimensions: row.dimensions,
+            options: _.values(child_options)
+          };
+        }
+      });
+
+      // Convert to array
+      var required_children = _.values(dimension_combinations);
+
+      // Create map of existing policies by their options signature
+      var existing_policies_map = {};
+      _.each(ds_get_existing_policies, function(policy) {
+        var options_key = JSON.stringify(policy.options || {});
+        existing_policies_map[options_key] = policy;
+      });
+
+      var to_create = [];
+      var to_update = [];
+      var to_delete = [];
+      var grid = [];
+
+      // Check what needs to be created or updated
+      _.each(required_children, function(child) {
+        var options_key = JSON.stringify(child.options);
+        var existing_policy = existing_policies_map[options_key];
+
+        if (!existing_policy) {
+          // Need to create
+          var child_name = param_child_policy_name + " - " + child.key;
+
+          var create_obj = {
+            name: child_name,
+            description: "Child policy for: " + child.key,
+            template_href: child_policy_information.href,
+            frequency: param_child_policy_frequency,
+            options: child.options,
+            credentials: credentials
+          }
+
+          to_create.push(create_obj);
+
+          grid.push({
+            // Create obj for action
+            policy_create_obj: create_obj,
+            // metadata for incident
+            meta_parent_policy_id: ds_applied_policy.id || "placeholder-value-for-meta-parent-policy-id-when-using-retrieve-data",
+            combination: child.key,
+            action: "Create",
+            policy_name: child_name,
+            status: "Pending Creation"
+          });
+        } else {
+          // Mark as existing (no action needed)
+          delete existing_policies_map[options_key];
+
+          grid.push({
+            meta_parent_policy_id: existing_policy.meta_parent_policy_id,
+            combination: child.key,
+            action: "Keep",
+            policy_name: existing_policy.name,
+            status: existing_policy.status,
+            policy_id: existing_policy.applied_policy_id
+          });
+        }
+      });
+
+      // Remaining policies in map that match the metaParentPolicy ID need to be deleted
+      _.each(existing_policies_map, function(policy) {
+        if (policy.meta_parent_policy_id == meta_parent_policy_id) {
+          to_delete.push({
+            id: policy.applied_policy_id,
+            name: policy.name
+          });
+
+          grid.push({
+            meta_parent_policy_id: policy.meta_parent_policy_id,
+            combination: "N/A",
+            action: "Delete",
+            policy_name: policy.name,
+            status: policy.status,
+            policy_id: policy.applied_policy_id
+          });
+        }
+      });
+
+      // Metadata that we need for the detail template
+      var metadata = {
+        meta_parent_policy_name: ds_applied_policy.name || "Generic Meta Parent Policy",
+        meta_parent_policy_id: meta_parent_policy_id,
+        required_children_count: required_children.length,
+        existing_children_count: ds_get_existing_policies.length,
+        to_create_count: to_create.length,
+        to_update_count: to_update.length,
+        to_delete_count: to_delete.length,
+        child_policy_info: child_policy_information
+      };
+      // Add metadata to the first object in grid[] so we can use it in the detail template
+      if (grid.length > 0) {
+        _.extend(grid[0], {metadata: metadata}); // append all metadata defined above under a "metadata" key in the first grid item
+      }
+      if (to_create.length) {
+        _.extend(to_create[0], {metadata: metadata}); // append metadata to the first item in to_create
+      }
+      if (to_update.length) {
+        _.extend(to_update[0], {metadata: metadata}); // append metadata to the first item in to_update
+      }
+      if (to_delete.length) {
+        _.extend(to_delete[0], {metadata: metadata}); // append metadata to the first item in to_delete
+      }
+
+      result = {
+        grid: grid,
+        to_create: to_create,
+        to_update: to_update,
+        to_delete: to_delete,
+        // debug_dimension_combinations: dimension_combinations,
+      };
+    }
+  }
+EOS
+end
+
+datasource "ds_grid" do
+  run_script $js_grid, $ds_child_policy_actions
+end
+
+script "js_grid", type: "javascript" do
+  parameters "ds_child_policy_actions"
+  result "result"
+  code <<-EOS
+  result = ds_child_policy_actions.grid || [];
+EOS
+end
+
+datasource "ds_to_create" do
+  run_script $js_to_create, $ds_child_policy_actions
+end
+
+script "js_to_create", type: "javascript" do
+  parameters "ds_child_policy_actions"
+  result "result"
+  code <<-EOS
+  result = ds_child_policy_actions.to_create || [];
+EOS
+end
+
+datasource "ds_to_delete" do
+  run_script $js_to_delete, $ds_child_policy_actions
+end
+
+script "js_to_delete", type: "javascript" do
+  parameters "ds_child_policy_actions"
+  result "result"
+  code <<-EOS
+  result = ds_child_policy_actions.to_delete || [];
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_child_policy_management" do
+  validate_each $ds_grid do
+    summary_template "{{ with index data 0 }}{{ .metadata.meta_parent_policy_name }}{{ end }}: {{ len data }} Child Policy Actions"
+    detail_template <<-'EOS'
+**Child Policy Template:** {{ with index data 0 }}{{ .metadata.child_policy_info }}{{ end }}
+**Required Children:** {{ with index data 0 }}{{ .required_children_count }}{{ end }}
+**Existing Children:** {{ with index data 0 }}{{ .existing_children_count }}{{ end }}
+
+The following child policy actions are planned:
+
+## Creating Child Policies
+{{- range data }}
+{{- if eq .action "Create" }}
+- **{{ .policy_name }}**
+{{- end }}
+{{- end }}
+
+## Deleting Child Policies
+{{- range data }}
+{{- if eq .action "Delete" }}
+- **{{ .policy_name }}** (ID: {{ .policy_id }})
+{{- end }}
+{{- end }}
+
+## Unchanged Child Policies
+{{- range data }}
+{{- if eq .action "Keep" }}
+- **{{ .policy_name }}** (ID: {{ .policy_id }})
+{{- end }}
+{{- end }}
+EOS
+    check eq(0, 1) # Always trigger
+    escalate $esc_email
+    export do
+      resource_level false
+      field "combination" do
+        label "Dimension Combination"
+      end
+      field "action" do
+        label "Action"
+      end
+      field "policy_name" do
+        label "Policy Name"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "policy_id" do
+        label "Policy ID"
+      end
+    end
+  end
+  validate $ds_to_create do
+    summary_template "{{ with index data 0 }}{{ .metadata.meta_parent_policy_name }}{{ end }}: {{ len data }} Child Policy Create"
+    detail_template <<-'EOS'
+## Creating Child Policies
+{{- range data }}
+- **{{ .name }}**
+{{- end }}
+EOS
+    check eq(size(data), 0) # Trigger if we any results
+    escalate $esc_create_policies
+  end
+  validate $ds_to_delete do
+    summary_template "{{ with index data 0 }}{{ .metadata.meta_parent_policy_name }}{{ end }}: {{ len data }} Child Policy Delete"
+    detail_template <<-'EOS'
+## Deleting Child Policies
+{{- range data }}
+- **{{ .name }}** (ID: {{ .id }})
+{{- end }}
+EOS
+    check eq(size(data), 0) # Trigger if we any results
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_create_policies" do
+  automatic true
+  label "Create Child Policies"
+  description "Create new child policies for new dimension combinations"
+  run "create_applied_policies", data, rs_governance_host, rs_project_id
+end
+
+escalation "esc_delete_policies" do
+  automatic false
+  label "Delete Obsolete Child Policies"
+  description "Delete child policies that are no longer needed"
+  run "delete_applied_policies", data, rs_governance_host, rs_project_id
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define create_applied_policies($data, $governance_host, $rs_project_id) return $responses do
+  $responses = []
+  $$debug = []
+  $$errors = []
+  $item_index = 0
+  $item_total = size($data)
+
+  foreach $item in $data do
+    $item_index = $item_index + 1
+    $status = to_s("(" + $item_index + "/" + $item_total + ")")
+    task_label($status + " Creating Applied Policy: " + $item["name"])
+
+    $response = http_request(
+      auth: $$auth_flexera,
+      verb: "post",
+      https: true,
+      host: $governance_host,
+      href: join(["/api/governance/projects/", $rs_project_id, "/applied_policies"]),
+      headers: { "Api-Version": "1.0" },
+      body: {
+        "name": $item["name"],
+        "description": $item["description"],
+        "template_href": $item["template_href"],
+        "frequency": $item["frequency"],
+        "options": $item["options"],
+        "credentials": $item["credentials"],
+        "meta_parent_policy_id": $item['meta_parent_policy_id']
+      }
+    )
+
+    if $response["code"] < 200 || $response["code"] >= 300
+      $$errors << "Failed to create applied policy: " + $item["name"] + ". Status: " + to_s($response["code"]) + ". Response: " + to_s($response["body"])
+    end
+
+    $responses << $response
+    $$debug << to_json({
+      "response": $response,
+      "item": $item,
+      "governance_host": $governance_host
+    })
+  end
+  if $$errors && size($$errors) > 0
+    raise "Errors occurred during policy creation: " + to_json($$errors)
+  end
+end
+
+define delete_applied_policies($data, $governance_host, $rs_project_id) return $responses do
+  $responses = []
+  $$debug = []
+  $item_index = 0
+  $item_total = size($data)
+
+  foreach $item in $data do
+    $item_index = $item_index + 1
+    $status = to_s("(" + $item_index + "/" + $item_total + ")")
+    task_label($status + " Deleting Applied Policy: " + $item["name"])
+
+    $response = http_request(
+      auth: $$auth_flexera,
+      verb: "delete",
+      https: true,
+      host: $governance_host,
+      href: join(["/api/governance/projects/", $rs_project_id, "/applied_policies/", $item["id"]]),
+      headers: { "Api-Version": "1.0" }
+    )
+
+    $responses << $response
+    $$debug << to_json({
+      "response": $response,
+      "item": $item,
+      "governance_host": $governance_host
+    })
+  end
+end
+
+# CWF function to handle errors
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
