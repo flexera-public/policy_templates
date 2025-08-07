@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.6.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v2.6.0
+
+- Policy template no longer raises an incident if user does not set any thresholds for determining underutilization.
+- Defaults changed for `IOPS Threshold (%)` and `Throughput Threshold (%)` parameters to something a typical user would expect.
+
 ## v2.5.1
 
 - Added batch processing for large datasources as a performance enhancement (reduces memory usage) with no changes to logic or functionality.

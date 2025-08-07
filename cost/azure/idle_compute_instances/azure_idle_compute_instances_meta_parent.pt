@@ -2,12 +2,14 @@ name "Meta Parent: Azure Idle Compute Instances"
 rs_pt_ver 20180301
 type "policy"
 short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Idle Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/idle_compute_instances) Policies."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md"
 severity "low"
 category "Meta"
-default_frequency "15 minutes"
+default_frequency "hourly"
 info(
   provider: "Azure",
-  version: "5.5.4", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "5.5.5", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false",
   deprecated: "true",
   hide_skip_approvals: "true"
@@ -84,7 +86,7 @@ parameter "param_policy_schedule" do
   label "Child Policy Schedule"
   description "The interval at which the child policy checks for conditions and generates incidents."
   default "weekly"
-  allowed_values "daily", "weekly", "monthly"
+  allowed_values "15 minutes", "hourly", "daily", "weekly", "monthly"
 end
 
 parameter "param_template_source" do
@@ -808,7 +810,7 @@ script "js_take_in_parameters", type: "javascript" do
           "id": ds_format_existing_policies.formatted[account_id].applied_policy_id,
           "name": ds_format_existing_policies.formatted[account_id].applied_policy_name
         })
-        
+
         add_to_grid(ds_format_existing_policies.formatted[account_id], "terminating")
       } else {
         add_to_grid(ds_format_existing_policies.formatted[account_id], "to be terminated")
@@ -997,7 +999,7 @@ escalation "esc_delete_resources" do
   run "esc_delete_resources", data, rs_governance_host, rs_project_id
 end
 define esc_delete_resources($data, $governance_host, $rs_project_id) do
-  $actions_options = []
+  $action_options = []
   call child_run_action($data, $governance_host, $rs_project_id, "Terminate Instances", $action_options)
 end
 
@@ -1332,9 +1334,8 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id, $
         body: { "options":[{ "name": "ids",  "value": $incident["resource_ids"] }] }
       }
       # If the action has parameters, add them to the request body
-      if type($action_options) == "array" && size($action_options) > 0
-        $request["body"]["options"] = $request["body"]["options"] + $action_options
-      end
+      $request["body"]["options"] = $request["body"]["options"] + $action_options
+
       $response = http_request($request)
       $$debug << to_json({
         "request": $request,

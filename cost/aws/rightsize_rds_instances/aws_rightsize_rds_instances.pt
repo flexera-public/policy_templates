@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Checks for RDS instances that have inefficient utilization for a user-specified number of days and downsizes or deletes them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances"
 severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.7.0",
+  version: "5.8.2",
   provider: "AWS",
   service: "RDS",
   policy_set: "Rightsize Database Instances",
@@ -185,7 +186,7 @@ datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
     host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies", switch(policy_id, join(["/", policy_id]), "")])
     header "Api-Version", "1.0"
   end
 end
@@ -216,6 +217,46 @@ script "js_flexera_api_hosts", type: "javascript" do
 
   result = host_table[rs_optima_host]
 EOS
+end
+
+# RDS Engine Table
+# For converting response from AWS to what's in the price list
+datasource "ds_aws_rds_engine_table" do
+  run_script $js_aws_rds_engine_table
+end
+
+script "js_aws_rds_engine_table", type: "javascript" do
+  result "result"
+  code <<-'EOS'
+  result = {
+    "mysql": "MySQL",
+    "aurora-mysql": "Aurora MySQL",
+    "aurora-postgresql": "Aurora PostgreSQL",
+    "postgres": "PostgreSQL",
+    "mariadb": "MariaDB",
+    "oracle-ee": "Oracle",
+    "oracle-ee-cdb": "Oracle",
+    "oracle-se2": "Oracle",
+    "oracle-se2-cdb": "Oracle",
+    "custom-oracle-ee": "Oracle",
+    "custom-oracle-ee-cdb": "Oracle",
+    "custom-oracle-se2": "Oracle",
+    "custom-oracle-se2-cdb": "Oracle",
+    "sqlserver-ee": "SQL Server",
+    "sqlserver-se": "SQL Server",
+    "sqlserver-ex": "SQL Server",
+    "sqlserver-web": "SQL Server"
+  }
+EOS
+end
+
+# Get AWS RDS instance prices
+datasource "ds_aws_rds_cost_map" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/aws_rds_pricing.json"
+    header "User-Agent", "RS Policies"
+  end
 end
 
 # Get AWS RDS instance sizes
@@ -423,7 +464,20 @@ end
 
 datasource "ds_instance_costs" do
   request do
-    run_script $js_instance_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+    run_script $js_instance_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host, "all"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "id", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_blended_adj")
+    end
+  end
+end
+
+datasource "ds_instance_costs_instanceusage" do
+  request do
+    run_script $js_instance_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host, "instanceusage"
   end
   result do
     encoding "json"
@@ -435,7 +489,7 @@ datasource "ds_instance_costs" do
 end
 
 script "js_instance_costs", type:"javascript" do
-  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host", "instanceusage_filter"
   result "request"
   code <<-EOS
   start_date = new Date()
@@ -472,6 +526,9 @@ script "js_instance_costs", type:"javascript" do
             "type": "equal",
             "value": ds_aws_account['id']
           }
+          // Do not filter on usage types
+          // For idle resources that are terminates -- all usage types can be considered savings
+          // For underutilized resources that are downsized -- only "InstanceUsage" can be considered for savings calculation (not DataTransfer, PIOPS, etc..)
         ]
       }
     },
@@ -481,15 +538,24 @@ script "js_instance_costs", type:"javascript" do
     },
     ignore_status: [400]
   }
+  // If instanceusage_filter is set to "instanceusage", filter the request to only include RDS:InstanceUsage usage type
+  if (instanceusage_filter == "instanceusage") {
+    request.body_fields.filter.expressions.push({
+      "dimension": "usage_type",
+      "type": "substring",
+      "substring": "InstanceUsage",
+      "caseInsensitive": true
+    })
+  }
 EOS
 end
 
 datasource "ds_instance_costs_grouped" do
-  run_script $js_instance_costs_grouped, $ds_instance_costs
+  run_script $js_instance_costs_grouped, $ds_instance_costs, $ds_instance_costs_instanceusage
 end
 
 script "js_instance_costs_grouped", type: "javascript" do
-  parameters "ds_instance_costs"
+  parameters "ds_instance_costs", "ds_instance_costs_instanceusage"
   result "result"
   code <<-EOS
   // Multiple a single day's cost by the average number of days in a month.
@@ -497,14 +563,32 @@ script "js_instance_costs_grouped", type: "javascript" do
   cost_multiplier = 365.25 / 12
 
   // Group cost data by resourceId for later use
-  result = {}
+  allusage = {}
+  instanceusage = {}
 
+  // Loop through and generate total costs for each instance
   _.each(ds_instance_costs, function(item) {
     id = item['id'].toLowerCase()
 
-    if (result[id] == undefined) { result[id] = 0.0 }
-    result[id] += item['cost'] * cost_multiplier
+    if (allusage[id] == undefined) {
+      allusage[id] = 0.0
+      instanceusage[id] = 0.0
+    }
+    allusage[id] += item['cost'] * cost_multiplier
   })
+  // Now loop through the InstanceUsage costs to get just InstanceUsage costs for each instance
+  _.each(ds_instance_costs_instanceusage, function(item) {
+    id = item['id'].toLowerCase()
+
+    if (instanceusage[id] == undefined) {
+      instanceusage[id] = 0.0
+    }
+    instanceusage[id] += item['cost'] * cost_multiplier
+  })
+  var result = {
+    "allusage": allusage,
+    "instanceusage": instanceusage
+  }
 EOS
 end
 
@@ -566,6 +650,7 @@ datasource "ds_rds_instances_set" do
       field "privateDnsName", xpath(col_item, "Endpoint/Address")
       field "databaseEngine", xpath(col_item, "Engine")
       field "engineVersion", xpath(col_item, "EngineVersion")
+      field "multiAZ", xpath(col_item, "MultiAZ")
       field "availabilityZone", xpath(col_item, "AvailabilityZone")
       field "licenseModel", xpath(col_item, "LicenseModel")
       field "processorFeatures" do
@@ -772,6 +857,7 @@ script "js_rds_instances", type: "javascript" do
           engineVersion: instance['engineVersion'],
           privateDnsName: instance['privateDnsName'],
           region: instance['region'],
+          multiAZ: instance['multiAZ'].toString() == "true" ? true : false,
           availabilityZone: instance['availabilityZone'],
           licenseModel: instance['licenseModel'],
           processorFeatures: instance['processorFeatures'],
@@ -970,8 +1056,8 @@ script "js_rds_idle_instances", type: "javascript" do
     savings_name = "db:" + instance['name'].toLowerCase()
     new_instance['savings'] = 0.0
 
-    if (typeof(ds_instance_costs_grouped[savings_name]) == 'number') {
-      new_instance['savings'] = ds_instance_costs_grouped[savings_name]
+    if (ds_instance_costs_grouped.allusage && typeof(ds_instance_costs_grouped.allusage[savings_name]) == 'number') {
+      new_instance['savings'] = ds_instance_costs_grouped.allusage[savings_name]
     }
 
     return new_instance
@@ -981,16 +1067,20 @@ end
 
 # Filter for instances already determined to be idle to avoid unnecessary CloudWatch queries
 datasource "ds_rds_nonidle_instances" do
-  run_script $js_rds_nonidle_instances, $ds_rds_instances_with_connections, $ds_rds_idle_instances, $param_unused_or_underutilized
+  run_script $js_rds_nonidle_instances, $ds_rds_instances, $ds_rds_instances_with_connections, $ds_rds_idle_instances, $param_unused_or_underutilized
 end
 
 script "js_rds_nonidle_instances", type: "javascript" do
-  parameters "ds_rds_instances_with_connections", "ds_rds_idle_instances", "param_unused_or_underutilized"
+  parameters "ds_rds_instances", "ds_rds_instances_with_connections", "ds_rds_idle_instances", "param_unused_or_underutilized"
   result "result"
   code <<-EOS
   result = []
 
-  if (param_unused_or_underutilized != "Unused") {
+  if (param_unused_or_underutilized == "Underutilized") {
+    result = ds_rds_instances
+  }
+
+  if (param_unused_or_underutilized == "Unused & Underutilized") {
     idle_resources = _.pluck(ds_rds_idle_instances, 'instanceId')
 
     result = _.reject(ds_rds_instances_with_connections, function(instance) {
@@ -1314,11 +1404,11 @@ EOS
 end
 
 datasource "ds_rds_underutil_instances" do
-  run_script $js_rds_underutil_instances, $ds_rds_nonidle_instances_with_metrics, $ds_aws_instance_type_map, $ds_aws_instance_types_by_family, $ds_instance_costs_grouped, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value, $param_downsize_multiple
+  run_script $js_rds_underutil_instances, $ds_rds_nonidle_instances_with_metrics, $ds_aws_instance_type_map, $ds_aws_instance_types_by_family, $ds_instance_costs_grouped, $ds_aws_rds_engine_table, $ds_aws_rds_cost_map, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value, $param_downsize_multiple
 end
 
 script "js_rds_underutil_instances", type: "javascript" do
-  parameters "ds_rds_nonidle_instances_with_metrics", "ds_aws_instance_type_map", "ds_aws_instance_types_by_family", "ds_instance_costs_grouped", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value", "param_downsize_multiple"
+  parameters "ds_rds_nonidle_instances_with_metrics", "ds_aws_instance_type_map", "ds_aws_instance_types_by_family", "ds_instance_costs_grouped", "ds_aws_rds_engine_table", "ds_aws_rds_cost_map", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value", "param_downsize_multiple"
   result "result"
   code <<-'EOS'
   result = []
@@ -1337,14 +1427,17 @@ script "js_rds_underutil_instances", type: "javascript" do
   }
 
   _.each(ds_rds_nonidle_instances_with_metrics, function(instance) {
-    family = instance["resourceType"].split('.')[0]
+    resourceType = instance['resourceType']
+    if (resourceType.substring(0, 3) == "db.") { resourceType = resourceType.substring(3) }
+
+    family = resourceType.split('.')[0]
     typeIndex = null
-    if (ds_aws_instance_types_by_family[family]) { typeIndex = findTypeIndex(ds_aws_instance_types_by_family[family], instance['resourceType']) }
+    if (ds_aws_instance_types_by_family[family]) { typeIndex = findTypeIndex(ds_aws_instance_types_by_family[family], resourceType) }
 
     cpu_value = instance['cpu_' + param_stats_threshold.toLowerCase()]
     if (typeof(cpu_value) != 'number') { cpu_value = 0 }
 
-    if (typeIndex != 0 && cpu_value < param_stats_underutil_threshold_cpu_value && ds_aws_instance_type_map[instance["resourceType"]]) {
+    if (typeIndex != 0 && cpu_value < param_stats_underutil_threshold_cpu_value && ds_aws_instance_type_map[resourceType]) {
       typeIndex = typeIndex - 1
       newResourceType = ds_aws_instance_types_by_family[family][typeIndex]["name"]
 
@@ -1360,14 +1453,39 @@ script "js_rds_underutil_instances", type: "javascript" do
       savings = 0.0
 
       cost = 0.0
-      if (typeof(ds_instance_costs_grouped[cost_name]) == 'number') { cost = ds_instance_costs_grouped[cost_name] }
+      if (ds_instance_costs_grouped.instanceusage && typeof(ds_instance_costs_grouped.instanceusage[cost_name]) == 'number') { cost = ds_instance_costs_grouped.instanceusage[cost_name] }
 
-      cost_per_nfu = cost / ds_aws_instance_type_map[instance["resourceType"]]['cpu']['nfus']
+      // See if we have list prices for the old and new types based on metadata from the instance
+      cost_region = instance['region']
+      cost_type = "db." + resourceType
+      cost_newtype = "db." + newResourceType
+      cost_engine = ds_aws_rds_engine_table[instance['databaseEngine']]
+      cost_multiaz = instance['multiAZ'] ? "Multi-AZ" : "Single-AZ"
+      old_price = null
+      new_price = null
 
-      new_cost = cost_per_nfu * ds_aws_instance_type_map[newResourceType]['cpu']['nfus']
-      savings = cost - new_cost
+      if (cost_region && cost_type && cost_newtype && cost_engine && cost_multiaz) {
+        if (ds_aws_rds_cost_map[cost_region] && ds_aws_rds_cost_map[cost_region][cost_type] && ds_aws_rds_cost_map[cost_region][cost_type][cost_engine] && ds_aws_rds_cost_map[cost_region][cost_type][cost_engine][cost_multiaz]) {
+          old_price = ds_aws_rds_cost_map[cost_region][cost_type][cost_engine][cost_multiaz]["pricePerUnit"]
+        }
 
-      new_instance = { newResourceType: newResourceType, savings: savings }
+        if (ds_aws_rds_cost_map[cost_region] && ds_aws_rds_cost_map[cost_region][cost_newtype] && ds_aws_rds_cost_map[cost_region][cost_newtype][cost_engine] && ds_aws_rds_cost_map[cost_region][cost_newtype][cost_engine][cost_multiaz]) {
+          new_price = ds_aws_rds_cost_map[cost_region][cost_newtype][cost_engine][cost_multiaz]["pricePerUnit"]
+        }
+      }
+
+      // If we have list prices, use those to calculate savings
+      if (old_price && new_price) {
+        new_cost = cost * (new_price / old_price)
+        savings = cost - new_cost
+      // If we don't have list prices, fall back on cruder NFU-based calculation
+      } else {
+        cost_per_nfu = cost / ds_aws_instance_type_map[resourceType]['cpu']['nfus']
+        new_cost = cost_per_nfu * ds_aws_instance_type_map[newResourceType]['cpu']['nfus']
+        savings = cost - new_cost
+      }
+
+      new_instance = { newResourceType: cost_newtype, savings: savings }
       _.each(_.keys(instance), function(key) { new_instance[key] = instance[key] })
       result.push(new_instance)
     }
@@ -1435,32 +1553,42 @@ script "js_rds_underutil_instance_options", type: "javascript" do
 EOS
 end
 
-datasource "ds_rds_underutil_instances_cleaned" do
-  run_script $js_rds_underutil_instances_cleaned, $ds_rds_underutil_instances, $ds_rds_underutil_instance_options
+datasource "ds_rds_underutil_instance_options_table" do
+  run_script $js_rds_underutil_instance_options_table, $ds_rds_underutil_instance_options
 end
 
-script "js_rds_underutil_instances_cleaned", type: "javascript" do
-  parameters "ds_rds_underutil_instances", "ds_rds_underutil_instance_options"
+script "js_rds_underutil_instance_options_table", type: "javascript" do
+  parameters "ds_rds_underutil_instance_options"
   result "result"
   code <<-'EOS'
-  resourceTypeTable = {}
+  result = {}
 
   _.each(ds_rds_underutil_instance_options, function(option) {
     databaseEngine = option['databaseEngine']
     region = option['region']
     resourceType = option['resourceType']
 
-    if (resourceTypeTable[region] == undefined) {
-      resourceTypeTable[region] = {}
+    if (result[region] == undefined) {
+      result[region] = {}
     }
 
-    if (resourceTypeTable[region][databaseEngine] == undefined) {
-      resourceTypeTable[region][databaseEngine] = []
+    if (result[region][databaseEngine] == undefined) {
+      result[region][databaseEngine] = []
     }
 
-    resourceTypeTable[region][databaseEngine].push(resourceType)
+    result[region][databaseEngine].push(resourceType)
   })
+EOS
+end
 
+datasource "ds_rds_underutil_instances_cleaned" do
+  run_script $js_rds_underutil_instances_cleaned, $ds_rds_underutil_instances, $ds_rds_underutil_instance_options_table
+end
+
+script "js_rds_underutil_instances_cleaned", type: "javascript" do
+  parameters "ds_rds_underutil_instances", "ds_rds_underutil_instance_options_table"
+  result "result"
+  code <<-'EOS'
   result = _.filter(ds_rds_underutil_instances, function(instance) {
     region = instance['region']
     databaseEngine = instance['databaseEngine']
@@ -1468,12 +1596,8 @@ script "js_rds_underutil_instances_cleaned", type: "javascript" do
 
     valid_recommendation = false
 
-    if (typeof(region) == 'string' && typeof(databaseEngine) == 'string' && typeof(newResourceType) == 'string') {
-      if (typeof(resourceTypeTable[region]) == 'object') {
-        if (typeof(resourceTypeTable[region][databaseEngine]) == 'object') {
-          valid_recommendation = _.contains(resourceTypeTable[region][databaseEngine], newResourceType)
-        }
-      }
+    if (region && databaseEngine && newResourceType && ds_rds_underutil_instance_options_table[region] && ds_rds_underutil_instance_options_table[region][databaseEngine]) {
+      valid_recommendation = _.contains(ds_rds_underutil_instance_options_table[region][databaseEngine], newResourceType)
     }
 
     return valid_recommendation
@@ -1555,7 +1679,7 @@ script "js_rds_idle_incident", type: "javascript" do
         lookbackPeriod: param_stats_lookback,
         newResourceType: "Terminate RDS Instance",
         service: "AmazonRDS",
-        policy_name: ds_applied_policy['name'],
+        policy_name: ds_applied_policy['name'] || "AWS Rightsize RDS Instances",
         // Dummy values to ensure hash_exclude works properly
         total_savings: "",
         message: ""
@@ -1678,6 +1802,7 @@ script "js_rds_underutil_incident", type: "javascript" do
         state: instance['status'],
         databaseEngine: instance['databaseEngine'],
         platform: instance['databaseEngine'],
+        multiAZ: instance['multiAZ'],
         engineVersion: instance['engineVersion'],
         connectionsTotal: instance['connectionsTotal'],
         connectionsAverage: instance['connectionsAverage'],
@@ -1881,6 +2006,9 @@ policy "pol_rightsize_rds" do
       end
       field "engineVersion" do
         label "Engine Version"
+      end
+      field "multiAZ" do
+        label "Multi-AZ"
       end
       field "vcpus" do
         label "vCPUs"

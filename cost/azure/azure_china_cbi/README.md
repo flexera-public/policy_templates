@@ -1,5 +1,9 @@
 # Azure China Common Bill Ingestion
 
+## Deprecated
+
+This policy template is no longer being updated. Flexera Cloud Cost Optimization now supports native ingestion of Azure China bills. Please see the [Azure China documentation](https://docs.flexera.com/flexera/EN/Administration/BillConnectConfigsAzureChina.htm) for more information.
+
 ## What It Does
 
 This Policy Template is used to automatically take billing data for Azure China and send the data to Flexera CBI so that Azure China costs are visible in Flexera One.

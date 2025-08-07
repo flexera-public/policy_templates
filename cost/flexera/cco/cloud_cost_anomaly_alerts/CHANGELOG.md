@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.8.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v3.8.0
+
+- Added `Excluded Cost Anomalies` parameter to allow user to add filters to exclude certain costs from anomaly reporting.
+
 ## v3.7.2
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.

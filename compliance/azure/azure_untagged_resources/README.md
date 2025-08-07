@@ -56,6 +56,8 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Resources/subscriptions/providers/read`
   - `Microsoft.Resources/subscriptions/resources/read`
+  - `Microsoft.Resources/subscriptions/resourceGroups/read`
+  - `Microsoft.Resources/tags/read`
   - `Microsoft.Resources/tags/write`*
 
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.

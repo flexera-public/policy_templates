@@ -8,6 +8,8 @@
 
 require 'uri'
 require 'yaml'
+require 'open-uri'
+require 'json'
 
 ###############################################################################
 # Required External Files
@@ -67,6 +69,9 @@ new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end
 puts Time.now.strftime("%H:%M:%S.%L") + " * Loading file-based assets..."
 
 permissions_yaml = YAML.load_file('tools/policy_master_permission_generation/validated_policy_templates.yaml')
+
+active_policy_url = 'https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/active_policy_list/active_policy_list.json'
+active_policy_list = JSON.parse(URI.open(active_policy_url).read)["policies"]
 
 ###############################################################################
 # Github Pull Request Testing
@@ -369,23 +374,27 @@ changed_pt_files.each do |file|
   file_text = File.read(file)
   file_lines = File.readlines(file)
   file_diff = git.diff_for_file(file)
+  file_metadata = active_policy_list.find { |policy| policy["name"] == file_parsed.parsed_name }
 
-  # Raise error if policy is missing info() block
+  # Raise error if pull request is missing required labels for this policy template
+  test = policy_missing_github_labels?(github, file, file_parsed, file_metadata); failures << test if test
+
+  # Raise error if policy template is missing info() block
   test = policy_missing_info_block?(file, file_parsed); failures << test if test
 
-  # Raise error if policy is deprecated but missing deprecated field in info() block
+  # Raise error if policy template is deprecated but missing deprecated field in info() block
   test = policy_missing_deprecated_field?(file, file_parsed); failures << test if test
 
-  # Raise error if policy changed but changelog has not been
+  # Raise error if policy template changed but changelog has not been
   test = policy_unmodified_changelog?(file, changed_changelog_files); failures << test if test
 
-  # Raise error if policy and changelog do not have matching version numbers
+  # Raise error if policy template and changelog do not have matching version numbers
   test = policy_changelog_mismatch?(file, file_parsed); failures << test if test
 
   # Run policy through fpt testing. Only raise error if there is a syntax error.
   test = policy_fpt_syntax_error?(file); failures << test if test
 
-  # Don't run remaining tests against deprecated policies
+  # Don't run remaining tests against deprecated policy templates
   unless policy_deprecated?(file, file_parsed)
     # Raise error if policy is not in a valid directory within the repo directory structure
     test = policy_bad_directory?(file); failures << test if test
@@ -396,22 +405,22 @@ changed_pt_files.each do |file|
     # Raise error if policy template name does not match name in README file
     test = policy_readme_correct_name?(file, file_parsed); failures << test if test
 
-    # Raise error if policy is not in the master permissions file.
-    # Raise warning if policy is in this file, but datasources have been added.
+    # Raise error if policy template is not in the master permissions file.
+    # Raise warning if policy template is in this file, but datasources have been added.
     # Only raise the above warning if the more general warning about updating the README doesn't exist.
     test = policy_missing_master_permissions?(file, file_parsed, permissions_yaml); failures << test if test
     ds_test = policy_new_datasource?(file, file_diff, permissions_yaml); warnings << ds_test if ds_test && !test && !rd_test
 
-    # Raise error if policy filename/path contains any uppercase letters
+    # Raise error if policy template filename/path contains any uppercase letters
     test = policy_bad_filename_casing?(file); failures << test if test
 
-    # Raise error if policy short_description is missing valid README link
+    # Raise error if policy template short_description is missing valid README link
     test = policy_bad_readme_link?(file, file_parsed); failures << test if test
 
-    # Raise warning if policy won't be published
+    # Raise warning if policy template won't be published
     test = policy_unpublished?(file, file_parsed); warnings << test if test
 
-    # Raise warning if policy's name has changed
+    # Raise warning if policy template's name has changed
     test = policy_name_changed?(file, file_diff); warnings << test if test
 
     # Raise warning if outdated terminology found
@@ -420,10 +429,10 @@ changed_pt_files.each do |file|
     # Raise error if the file contains any bad urls
     test = general_bad_urls?(file, file_diff); failures << test if test
 
-    # Raise warning if policy contains invalid indentation
+    # Raise warning if policy template contains invalid indentation
     test = policy_bad_indentation?(file, file_lines); warnings << test if test
 
-    # Raise error if policy contains multiple blank lines
+    # Raise error if policy template contains multiple blank lines
     test = policy_consecutive_empty_lines?(file, file_lines); failures << test if test
 
     # Raise errors or warnings if defunct metadata is found
@@ -433,6 +442,7 @@ changed_pt_files.each do |file|
     test = policy_bad_metadata?(file, file_parsed, "name"); failures << test if test
     test = policy_bad_metadata?(file, file_parsed, "short_description"); failures << test if test
     test = policy_bad_metadata?(file, file_parsed, "long_description"); failures << test if test
+    test = policy_bad_metadata?(file, file_parsed, "doc_link"); failures << test if test
     test = policy_bad_metadata?(file, file_parsed, "category"); failures << test if test
     test = policy_bad_metadata?(file, file_parsed, "default_frequency"); failures << test if test
     test = policy_bad_metadata?(file, file_parsed, "severity"); failures << test if test
@@ -450,16 +460,16 @@ changed_pt_files.each do |file|
       info_test = policy_abbreviated_info_field?(file, file_parsed); failures << info_test if info_test
     end
 
-    # Raise error if policy version number does not use semantic versioning
+    # Raise error if policy template version number does not use semantic versioning
     test = policy_nonsemantic_version?(file, file_parsed); failures << test if test
 
-    # Raise error if there is a mismatch between the policy's credentials and the README
+    # Raise error if there is a mismatch between the policy template's credentials and the README
     test = policy_readme_missing_credentials?(file, file_lines); failures << test if test
 
-    # Raise error if policy sections are out of order
+    # Raise error if policy template sections are out of order
     test = policy_sections_out_of_order?(file, file_lines); failures << test if test
 
-    # Raise error of code blocks exist in policy that aren't used anywhere
+    # Raise error of code blocks exist in policy template that aren't used anywhere
     test = policy_orphaned_blocks?(file, file_lines, "parameter"); failures << test if test
     test = policy_orphaned_blocks?(file, file_lines, "credentials"); failures << test if test
     test = policy_orphaned_blocks?(file, file_lines, "pagination"); failures << test if test
@@ -468,10 +478,10 @@ changed_pt_files.each do |file|
     test = policy_orphaned_blocks?(file, file_lines, "escalation"); failures << test if test
     test = policy_orphaned_blocks?(file, file_lines, "define"); failures << test if test
 
-    # Raise error if policy blocks are not grouped together by type
+    # Raise error if policy template blocks are not grouped together by type
     test = policy_blocks_ungrouped?(file, file_lines); failures << test if test
 
-    # Report on missing policy section comments
+    # Report on missing policy template section comments
     test = policy_missing_section_comments?(file, file_text, "parameter"); failures << test if test
     test = policy_missing_section_comments?(file, file_text, "credentials"); failures << test if test
     test = policy_missing_section_comments?(file, file_text, "pagination"); failures << test if test
@@ -539,25 +549,25 @@ changed_pt_files.each do |file|
     test = policy_block_fields_incorrect_order?(file, file_lines, "policy"); failures << test if test
     test = policy_block_fields_incorrect_order?(file, file_lines, "escalation"); failures << test if test
 
-    # Raise error if recommendation policy is missing required export fields
+    # Raise error if recommendation policy template is missing required export fields
     test = policy_missing_recommendation_fields?(file, file_lines, file_parsed, "required"); failures << test if test
 
-    # Raise warning if recommendation policy is missing recommended export fields
+    # Raise warning if recommendation policy template is missing recommended export fields
     test = policy_missing_recommendation_fields?(file, file_lines, file_parsed, "recommended"); warnings << test if test
 
-    # Raise error if policy has outdated links
+    # Raise error if policy template has outdated links
     test = policy_outdated_links?(file, file_lines); failures << test if test
 
-    # Raise warning if policy has any datasources using http instead of https
+    # Raise warning if policy template has any datasources using http instead of https
     test = policy_http_connections?(file, file_lines); warnings << test if test
 
     # Raise warning if improper spacing between comma-separated items found
     test = policy_bad_comma_spacing?(file, file_lines); warnings << test if test
 
-    # Raise error if policy has console.log() statements
+    # Raise error if policy template has console.log() statements
     test = policy_console_log?(file, file_lines); failures << test if test
 
-    # Raise error if policy has verb "GET" statements
+    # Raise error if policy template has verb "GET" statements
     test = policy_verb_get?(file, file_lines); failures << test if test
   end
 
@@ -572,17 +582,17 @@ end
 
 puts Time.now.strftime("%H:%M:%S.%L") + " * Testing all changed Meta Parent Policy Template files..."
 
-# Check meta policies for issues for each file
+# Check meta policy templates for issues for each file
 changed_meta_pt_files.each do |file|
   puts Time.now.strftime("%H:%M:%S.%L") + " ** Testing " + file + "..."
 
-  # Run meta policy through various methods that test for problems.
+  # Run meta policy template through various methods that test for problems.
   # These methods will return false if no problems are found.
   # Otherwise, they return the warning or error message that should be raised.
   warnings = []
   failures = []
 
-  # Run policy through fpt testing. Only raise error if there is a syntax error.
+  # Run policy template through fpt testing. Only raise error if there is a syntax error.
   test = policy_fpt_syntax_error?(file, "meta"); failures << test if test
 
   # Output final list of failures and warnings

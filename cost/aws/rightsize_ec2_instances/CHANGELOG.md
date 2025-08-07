@@ -1,5 +1,13 @@
 # Changelog
 
+## v5.4.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v5.4.0
+
+- Adds utilization chart for each resource to the result if metrics are available
+
 ## v5.3.2
 
 - Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators

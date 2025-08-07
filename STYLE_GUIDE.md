@@ -327,6 +327,10 @@ The following guidelines should be used when specifying policy template metadata
 - __long_description__
   - Always set to an empty string.
 
+- __doc_link__
+  - Should be a link to the policy template in the Github repository.
+  - _Example_: `https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/`
+
 - __category__
   - Should be set to one of the following categories based on the policy template's intended purpose: Compliance, Cost, Operational, SaaS Management, Security
 
@@ -357,6 +361,7 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Check for EC2 instances that have inefficient utilization for a specified number of days and downsizes or terminates them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/"
 severity "low"
 category "Cost"
 default_frequency "weekly"
@@ -530,18 +535,23 @@ The following guidelines should be used for the `policy` block:
   1. `export`
 
 - For the `summary_template` field:
-  - Include the name of the applied policy itself. This is to make it easier to know which policy template the incident is associated with on the Automation -> Incidents page in Flexera One.
+  - Should include the applied policy name and describe the thing the incident is reporting. If relevant, it should also indicate the number of resources being reported in the incident.
+    - Example: "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Old Snapshots Found"
 
 - For the `detail_template` field:
+  - Should contain useful information for contextualizing the contents of the incident table. For example, if the policy template is reporting unused disks, it should explain how we determined the disks were unused.
   - Use complete English sentences with proper grammar/spelling where it makes sense to do so.
   - __Currency__: Include currency symbol and appropriate separators. _Example_: `US$ 123,456.78`
   - __Percentages__: Append `%`. _Example_: `89.45%`
 
 - For the `export` field:
+  - Should contain the actual resources or items being reported by the incident when applicable.
   - Place fields with data the user is more likely to care about near the top of the list.
-  - Avoid putting currency symbols, percentage signs, or other characters in fields that contain numbers. This tends to break sorting, making the column less usable.
-    - Either place the symbol in the name of the field itself (_Example_: `CPU Usage (%)`) or include it in a separate column.
   - Sort the data by whichever field(s) make sense. For example, for a recommendations policy template, the largest potential savings should be at the top.
+  - The data in each field should be either strings or numbers, but in most cases, should not contain a mix of the two. Mixing the two will prevent the user from easily sorting data by number and making use of it in external tools, such as Excel.
+    - Avoid putting currency symbols, percentage signs, or other characters in fields that contain numbers. This tends to break sorting, making the column less usable. Either place the symbol in the name of the field itself (_Example_: `CPU Usage (%)`) or include it in a separate column.
+    - For fields that primarily contain numerical data, do not put "No value provided", "N/A", etc. for entries that lack a value. They should simply have a blank value. Additional contextualization, if needed, can be put in the `detail_template` field.
+  - Any fields that will contain JavaScript objects needed for Cloud Workflow automation, instead of information the user will need to see, should be at the end of the list.
   - For policy templates that produce recommendations for the Optimization Dashboard, [specific export fields are required](https://docs.flexera.com/flexera/EN/Automation/CreateRecomendationFromPolicyTemp.htm).
 
 #### Example

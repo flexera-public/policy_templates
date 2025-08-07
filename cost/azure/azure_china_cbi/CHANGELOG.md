@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.0.4
+
+- Deprecated: This policy template is no longer being updated. Please see policy README for more information.
+
+## v2.0.3
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v2.0.2
 
 - Minor code improvements to bring template in line with current standards. Functionality unchanged.
