@@ -128,7 +128,9 @@ This policy template does not incur any cloud costs. It only manages other polic
 ## Use Case Examples
 
 ### AWS Account-Based Policies
+
 Deploy AWS EC2 Rightsizing policies across all AWS accounts:
+
 ```
 Child Policy Template Name: AWS Rightsize EC2 Instances
 Dimension Mappings: ["vendor_account::param_aws_account_number"]
@@ -136,7 +138,9 @@ Include Filters: ["vendor=AWS"]
 ```
 
 ### Azure Subscription
+
 Deploy Azure VM policies across subscriptions and to a specific specific region:
+
 ```
 Child Policy Template Name: Azure Rightsize Compute Instances
 Dimension Mappings: ["vendor_account::param_subscription_id", "region::param_region_list"]
@@ -144,7 +148,9 @@ Include Filters: ["vendor=Azure", "region=East US"]
 ```
 
 ### Scheduled Reports delivered to each Cost Center Approver
+
 Create a Scheduled Report for each Cost Center configured to deliver to each Cost Center Approver
+
 ```
 Child Policy Template Name
 Exclude Filter: ["rbd_cost_center=None","rbd_cost_center_approver=None"]'
