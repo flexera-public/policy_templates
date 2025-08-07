@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "6.2.1",
+  version: "6.2.2",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -254,13 +254,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", policy_id])
   end
 end
 
@@ -1251,35 +1290,6 @@ script "js_azure_disk_count_table", type: "javascript" do
 EOS
 end
 
-datasource "ds_flexera_api_hosts" do
-  run_script $js_flexera_api_hosts, rs_optima_host
-end
-
-script "js_flexera_api_hosts", type: "javascript" do
-  parameters "rs_optima_host"
-  result "result"
-  code <<-EOS
-  host_table = {
-    "api.optima.flexeraeng.com": {
-      api: "api.flexera.com",
-      ui: "app.flexera.com",
-      tld: "flexera.com"
-    },
-    "api.optima-eu.flexeraeng.com": {
-      api: "api.flexera.eu",
-      ui: "app.flexera.eu",
-      tld: "flexera.eu"
-    },
-    "api.optima-apac.flexeraeng.com": {
-      api: "api.flexera.au",
-      ui: "app.flexera.au",
-      tld: "flexera.au"
-    }
-  }
-  result = host_table[rs_optima_host]
-EOS
-end
-
 datasource "ds_idle_and_underutil_instances" do
   run_script $js_idle_and_underutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_stats_interval, $ds_azure_disk_count_table, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_exclude_databricks, $param_downsize_multiple, rs_org_id, rs_project_id
 end
@@ -1392,7 +1402,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
           "in Azure Subscription ", instance["accountName"], " ",
           "(", instance["accountID"], ")"
         ]
-        // Append utilization chart to recommendationDetails if we have one  
+        // Append utilization chart to recommendationDetails if we have one
         if (_.isString(instance["chartUrl"])) {
           // Construct chartUrlField which is in the "link-external" format -- display name||URL
           instance["chartUrlField"] = instance["resourceName"]+" Utilization Chart||" + instance["chartUrl"]
