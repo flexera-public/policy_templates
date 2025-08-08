@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.4
+
+- Fixed bug where billing center hierarchy would be incorrectly implemented.
+
 ## v0.1.3
 
 - Policy execution will no longer fail if the "rbd_bc" Rule-Based Dimension doesn't already exist.
