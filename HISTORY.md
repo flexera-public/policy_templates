@@ -6,6 +6,60 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3399](https://github.com/flexera-public/policy_templates/pull/3399): POL-1576 Flexera Billing Centers from Dimension Values Fix
+
+*Minor Update*
+
+#### Description
+
+> Flexera Billing Centers from Dimension Values: Fixed bug where billing center hierarchy would be incorrectly implemented due to the order of dimensions changing during execution.
+>
+
+#### Metadata
+
+- **Policies**: [Flexera Billing Centers from Dimension Values](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/billing_centers_from_dimensions/README.md)
+- **Merged At**: 2025-08-08 16:08:55 UTC
+
+---
+
+### PR [#3388](https://github.com/flexera-public/policy_templates/pull/3388): POL-1548 Azure Unused Storage Accounts
+
+*New Policy Template*
+
+#### Description
+
+> New policy template `Azure Unused Storage Accounts`. From the README:
+>
+> This policy template reports Azure Storage Accounts that have had fewer than a user-specified number of transactions over a user specified number of days and, optionally, deletes them. A transaction is any API operation or action that interacts with the storage service, including reading, writing, or deleting data, as well as metadata operations.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Unused Storage Accounts](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_storage_accounts/README.md)
+- **Merged At**: 2025-08-05 16:21:38 UTC
+
+---
+
+### PR [#3375](https://github.com/flexera-public/policy_templates/pull/3375): POL-1572 Automation Reports
+
+*New Policy Template*
+
+#### Description
+
+> New policy template `Automation Reports`. From the README:
+>
+> This policy template generates reports on various aspects of automation within the Flexera One platform. The user can select to generate reports on applied policies, policy templates, and incidents. Optionally, these reports can be emailed.
+>
+> Note: Dangerfile warning is false positive. This is a brand new policy template.
+>
+
+#### Metadata
+
+- **Policies**: [Automation Reports](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/automation/automation_reports/README.md)
+- **Merged At**: 2025-08-04 12:13:52 UTC
+
+---
+
 ### PR [#3372](https://github.com/flexera-public/policy_templates/pull/3372): POL-1571 AWS S3 Buckets Accepting HTTP Requests - fix 'cannot access member' error
 
 *Minor Update, Bug Fix*
@@ -2002,56 +2056,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md), [Meta Parent: Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md)
 - **Merged At**: 2024-11-07 13:07:23 UTC
-
----
-
-### PR [#2799](https://github.com/flexera-public/policy_templates/pull/2799): FOPTS-4819 Added `hide_skip_approvals` to AWS Right Size policies
-
-#### Description
-
-> Adding a new hide_skip_approvals field to the info section of policy templates that do not utilize the request approval option in any escalation. This field enables the UI to dynamically show or hide the "Skip Approval" option based on the policy configuration. Initially, these changes are applied to AWS Right Size policies, with plans to update additional policies in subsequent steps.
->
-> More context:[ Seeking Your Input: Proposed Solution for Conditional "Skip Approvals" Visibility](https://teams.microsoft.com/l/message/19:833373548e104af2a20b0216eda1ba7b@thread.skype/1728495063426?tenantId=91034d23-0b63-4943-b138-367d4dfac252&groupId=fb250818-e040-4a26-b207-61c3cd99fd6e&parentMessageId=1728495063426&teamName=Team%20Flexera%20One&channelName=Policy%20Support%20and%20Questions&createdTime=1728495063426)
->
-> ### Issues Resolved
->
-> [FLEX-5397](https://flexera.atlassian.net/browse/FLEX-5397)
-> <!-- URL to the Applied Policy that was used for dev/testing below -->
-> <!-- This can be helpful for a reviewer to validate the changes proposed resulted in the expected behavior. If you do not have access or ability to apply the policy template, please mention this in your PR description.-->
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2799) for these details.
-- **Merged At**: 2024-11-05 22:00:13 UTC
-
----
-
-### PR [#2802](https://github.com/flexera-public/policy_templates/pull/2802): POL-1397 Flexera One API Event Report
-
-#### Description
-
-> This is a new policy template that reports API requests made to the Flexera API with several filtering options.
->
-
-#### Metadata
-
-- **Policies**: [Flexera One API Event Report](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/iam/api_event_report/README.md)
-- **Merged At**: 2024-11-04 13:12:12 UTC
-
----
-
-### PR [#2800](https://github.com/flexera-public/policy_templates/pull/2800): POL-1408 AWS Account Credentials Meta Not Spawning Children
-
-#### Description
-
-> Fixes issue where the meta policy for AWS Account Credentials was not spawning children due to the policy not properly filtering out meta-specific parameters.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2800) for details about unpublished policies.
-- **Merged At**: 2024-10-31 17:48:14 UTC
 
 ---
 
