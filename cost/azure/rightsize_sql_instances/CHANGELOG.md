@@ -1,5 +1,10 @@
 # Changelog
 
+## v6.0.2
+
+- Fixed bug that was causing Maximum, Minimum to not get selected correctly
+- Fixed bug that was preventing region filter from working
+
 ## v6.0.1
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
