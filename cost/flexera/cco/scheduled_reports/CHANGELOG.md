@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.2
+
+- Fixed issue with "Ignore Current Month" when "Month" granularity is used.
+
 ## v4.0.1
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
