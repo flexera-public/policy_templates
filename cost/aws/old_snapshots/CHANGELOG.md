@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.4.7
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v8.4.6
 
 - Fixed issue that caused RDS DB snapshots to be reported with overinflated estimated savings. Added additional context around these snapshots to the incident description.
