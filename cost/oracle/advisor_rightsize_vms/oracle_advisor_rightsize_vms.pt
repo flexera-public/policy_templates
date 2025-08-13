@@ -56,6 +56,33 @@ parameter "param_primary_region" do
   # No default value, user input required
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Downsize Underutilized Instances", "Terminate Idle Instances"]
+  default []
+end
+
+parameter "param_boot_volume_preservation" do
+  type "string"
+  category "Actions"
+  label "Preserve Boot Volume"
+  description "Whether to preserve the boot volume when deleting virtual machines. Note that savings won't be fully realized unless the boot volume is also deleted."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+
+parameter "param_data_volume_preservation" do
+  type "string"
+  category "Actions"
+  label "Preserve Data Volumes"
+  description "Whether to preserve the data volumes that were created at launch when deleting virtual machines."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -211,10 +238,8 @@ datasource "ds_oci_recommendation_actions" do
       field "compartmentId", jmes_path(col_item, "compartmentId")
       field "compartmentName", jmes_path(col_item, "compartmentName")
       field "estimatedCostSaving", jmes_path(col_item, "estimatedCostSaving")
-      field "extendedMetadata", jmes_path(col_item, "extendedMetadata")
       field "id", jmes_path(col_item, "id")
       field "lifecycleState", jmes_path(col_item, "lifecycleState")
-      field "metadata", jmes_path(col_item, "metadata")
       field "name", jmes_path(col_item, "name")
       field "recommendationId", jmes_path(col_item, "recommendationId")
       field "resourceId", jmes_path(col_item, "resourceId")
@@ -224,6 +249,14 @@ datasource "ds_oci_recommendation_actions" do
       field "timeStatusBegin", jmes_path(col_item, "timeStatusBegin")
       field "timeStatusEnd", jmes_path(col_item, "timeStatusEnd")
       field "timeUpdated", jmes_path(col_item, "timeUpdated")
+      field "metadata", jmes_path(col_item, "metadata")
+      field "computeCpuUtilization", jmes_path(col_item, "metadata.computeCpuUtilization")
+      field "computeMemoryUtilization", jmes_path(col_item, "metadata.computeMemoryUtilization")
+      field "extendedMetadata", jmes_path(col_item, "extendedMetadata")
+      field "region", jmes_path(col_item, "extendedMetadata.region")
+      field "osType", jmes_path(col_item, "extendedMetadata.operatingSystem")
+      field "currentShape", jmes_path(col_item, "extendedMetadata.CurrentShape.name")
+      field "recommendedShape", jmes_path(col_item, "extendedMetadata.RecommendedShape.name")
     end
   end
 end
@@ -247,7 +280,7 @@ datasource "ds_oci_recommendation_list" do
       field "description", jmes_path(col_item, "description")
       field "estimatedCostSaving", jmes_path(col_item, "estimatedCostSaving")
       field "id", jmes_path(col_item, "id")
-      field "importance", jmes_path(col_item,"importance")
+      field "importance", jmes_path(col_item, "importance")
       field "lifecycleState", jmes_path(col_item, "lifecycleState")
       field "name", jmes_path(col_item, "name")
       field "resourceCounts", jmes_path(col_item, "resourceCounts")
@@ -261,6 +294,8 @@ datasource "ds_oci_recommendation_list" do
       field "computeCpuUtilization", jmes_path(col_item, "metadata.computeCpuUtilization")
       field "computeMemoryUtilization", jmes_path(col_item, "metadata.computeMemoryUtilization")
       field "extendedMetadata", jmes_path(col_item, "extendedMetadata")
+      field "region", jmes_path(col_item, "extendedMetadata.region")
+      field "osType", jmes_path(col_item, "extendedMetadata.operatingSystem")
       field "currentShape", jmes_path(col_item, "extendedMetadata.CurrentShape.name")
       field "recommendedShape", jmes_path(col_item, "extendedMetadata.RecommendedShape.name")
     end
@@ -300,7 +335,7 @@ script "js_oci_filtered_recommendations_underutil", type: "javascript" do
     return formatted_number
   }
 
-  // This is what we use to filter for Rightsize Compute recommendations specifically
+  // This is what we use to filter for underutilized compute recommendations specifically
   category_filter = "cost-management-compute-host-underutilized-desc"
 
   result = []
@@ -335,10 +370,10 @@ script "js_oci_filtered_recommendations_underutil", type: "javascript" do
       savings: parseFloat(action['estimatedCostSaving']).toFixed(0),
       savingsCurrency: ds_currency['symbol'],
       resourceID: action['resourceId'],
+      region: action['region'],
       actionId: action['id'],
       status: action['status'],
-      region: action['extendedMetadata']['region'],
-      osType: action['extendedMetadata']['operatingSystem'],
+      osType: action['osType'],
       cpuAverage: Math.round(parseFloat(action['computeCpuUtilization']) * 100) / 100,
       memAverage: Math.round(parseFloat(action['computeMemoryUtilization']) * 100) / 100,
       resourceType: action['currentShape'],
@@ -385,6 +420,124 @@ script "js_oci_filtered_recommendations_underutil", type: "javascript" do
 EOS
 end
 
+datasource "ds_oci_filtered_recommendations_idle" do
+  run_script $js_oci_filtered_recommendations_idle, $ds_oci_recommendation_actions, $ds_oci_recommendation_list, $ds_oci_filtered_recommendations_underutil, $ds_currency, $ds_applied_policy, $param_min_savings
+end
+
+script "js_oci_filtered_recommendations_idle", type: "javascript" do
+  parameters "ds_oci_recommendation_actions", "ds_oci_recommendation_list", "ds_oci_filtered_recommendations_underutil", "ds_currency", "ds_applied_policy", "param_min_savings"
+  result "result"
+  code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  // This is what we use to filter for idle compute recommendations specifically
+  category_filter = "cost-management-compute-host-idle-desc"
+
+  result = []
+  total_savings = 0.0
+
+  // This is to make sure we don't recommend the same resource for both rightsizing and deletion
+  underutil_ids = _.compact(_.pluck(ds_oci_filtered_recommendations_underutil, "resourceID"))
+
+  valid_recommendations = _.filter(ds_oci_recommendation_list, function(item) {
+    return item['description'] == category_filter
+  })
+
+  valid_ids = _.pluck(valid_recommendations, "id")
+
+  recommendations = _.filter(ds_oci_recommendation_actions, function(action) {
+    return !_.contains(underutil_ids, action['resourceId']) && _.contains(valid_ids, action['recommendationId']) && parseFloat(action['estimatedCostSaving']) >= param_min_savings
+  })
+
+  _.each(recommendations, function(action) {
+    total_savings += parseFloat(action['estimatedCostSaving'])
+
+    recommendationDetails = [
+      "Terminate Oracle virtual machine ", action["resourceId"], " ",
+      "in Oracle Compartment ", action["compartmentName"], " ",
+      "(", action["compartmentId"], ") "
+    ].join('')
+
+    result.push({
+      accountID: action['compartmentId'],
+      accountName: action['compartmentName'],
+      tenantId: action['extendedMetadata']['resourceOwningTenancyId'],
+      tenantName: action['extendedMetadata']['resourceOwningTenancyName'],
+      savings: parseFloat(action['estimatedCostSaving']).toFixed(0),
+      savingsCurrency: ds_currency['symbol'],
+      resourceID: action['resourceId'],
+      region: action['region'],
+      actionId: action['id'],
+      status: action['status'],
+      osType: action['osType'],
+      cpuAverage: Math.round(parseFloat(action['computeCpuUtilization']) * 100) / 100,
+      memAverage: Math.round(parseFloat(action['computeMemoryUtilization']) * 100) / 100,
+      resourceType: action['currentShape'],
+      recommendationDetails: recommendationDetails,
+      service: "COMPUTE",
+      policy_name: ds_applied_policy["name"],
+      total_savings: "",
+      message: ""
+    })
+  })
+
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(Math.round(total_savings * 1000) / 1000, ds_currency['separator'])
+  ].join('')
+
+  noun = result.length == 1 ? "recommendation" : "recommendations"
+  phrase = result.length == 1 ? "This recommendation" : "These recommendations"
+
+  message = [
+    result.length, " Cloud Advisor idle ", noun, " found. ", phrase, " can be ",
+    "adjusted by modifying your Cloud Advisor settings within your Oracle environment.\n\n",
+    "CPU and Memory metrics are based on your Cloud Advisor configuration."
+  ].join('')
+
+  // Sort by descending order of savings value
+  result = _.sortBy(result, 'savings').reverse()
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    resourceID: "",
+    cpuAverage: "",
+    memAverage: "",
+    savings: "",
+    savingsCurrency: "",
+    total_savings: "",
+    message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = message
+  result[0]['policy_name'] = ds_applied_policy['name']
+EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
@@ -399,6 +552,7 @@ policy "pol_oci_rightsize_compute_recommendations" do
     EOS
     check eq(val(item, "resourceID"), "")
     escalate $esc_email
+    escalate $esc_downsize_instances
     hash_exclude "message", "total_savings", "savings", "savingsCurrency", "cpuAverage", "memAverage"
     export do
       resource_level true
@@ -429,14 +583,75 @@ policy "pol_oci_rightsize_compute_recommendations" do
       field "recommendationDetails" do
         label "Recommendation"
       end
-      field "newResourceType" do
-        label "Recommended Instance Size"
-      end
       field "resourceType" do
         label "Current Instance Size"
       end
       field "newResourceType" do
         label "Recommended Instance Size"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "cpuAverage" do
+        label "CPU Usage (%)"
+      end
+      field "memAverage" do
+        label "Memory Usage (%)"
+      end
+      field "id" do
+        label "ID"
+        path "resourceId"
+      end
+      field "actionId" do
+        label "Action ID"
+      end
+    end
+  end
+  validate_each $ds_oci_filtered_recommendations_idle do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Oracle Idle Virtual Machine Recommendations Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check eq(val(item, "resourceID"), "")
+    escalate $esc_email
+    escalate $esc_terminate_instances
+    hash_exclude "message", "total_savings", "savings", "savingsCurrency", "cpuAverage", "memAverage"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Compartment ID"
+      end
+      field "accountName" do
+        label "Compartment Name"
+      end
+      field "tenantId" do
+        label "Tenant ID"
+      end
+      field "tenantName" do
+        label "Tenant Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "osType" do
+        label "Operating System"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -470,4 +685,135 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email
+end
+
+escalation "esc_downsize_instances" do
+  automatic contains($param_automatic_action, "Downsize Underutilized Instances")
+  label "Downsize Underutilized Instances"
+  description "Approval to downsize all selected instances"
+  run "downsize_instances", data
+end
+
+escalation "esc_terminate_instances" do
+  automatic contains($param_automatic_action, "Terminate Idle Instances")
+  label "Terminate Idle Instances"
+  description "Approval to terminate all selected instances"
+  run "terminate_instances", data, $param_boot_volume_preservation, $param_data_volume_preservation
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define downsize_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call downsize_instance($instance) retrieve $downsize_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define downsize_instance($instance) return $response do
+  $host = "iaas." + $instance["region"] + ".oraclecloud.com"
+  $href = "/20160918/instances/" + $instance["id"]
+  $params = ""
+  $url = $host + $href + $params
+
+  task_label("PUT " + $url)
+
+  $response = http_request(
+    auth: $$auth_oracle,
+    https: true,
+    verb: "put",
+    host: $host,
+    href: $href,
+    body: { "shape": $instance["newResourceType"] }
+  )
+
+  task_label("Put Oracle VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PUT " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response putting Oracle VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Put Oracle VM instance successful: " + $instance["id"])
+  end
+end
+
+define terminate_instances($data, $param_boot_volume_preservation, $param_data_volume_preservation) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call terminate_instance($instance, $param_boot_volume_preservation, $param_data_volume_preservation) retrieve $terminate_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define terminate_instance($instance, $param_boot_volume_preservation, $param_data_volume_preservation) return $response do
+  $host = "iaas." + $instance["region"] + ".oraclecloud.com"
+  $href = "/20160918/instances/" + $instance["id"]
+
+  $query_strings = {}
+  $params = ""
+
+  if $param_boot_volume_preservation == "Yes"
+    $query_strings["preserveBootVolume"] = "true"
+    $params = "?preserveBootVolume=true"
+  else
+    $query_strings["preserveBootVolume"] = "false"
+    $params = "?preserveBootVolume=false"
+  end
+
+  if $param_data_volume_preservation == "Yes"
+    $query_strings["preserveDataVolumesCreatedAtLaunch"] = "true"
+    $params = $params + "&preserveDataVolumesCreatedAtLaunch=true"
+  else
+    $query_strings["preserveDataVolumesCreatedAtLaunch"] = "false"
+    $params = $params + "&preserveDataVolumesCreatedAtLaunch=false"
+  end
+
+  $url = $host + $href + $params
+
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_oracle,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: $query_strings
+  )
+
+  task_label("Delete Oracle VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Oracle VM instance: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Oracle VM instance successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+
+  $$errors << $_error["type"] + ": " + $_error["message"]
+
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
 end
