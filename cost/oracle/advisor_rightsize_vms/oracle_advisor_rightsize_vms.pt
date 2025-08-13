@@ -13,7 +13,8 @@ info(
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
   recommendation_type: "Usage Reduction",
-  hide_skip_approvals: "true"
+  hide_skip_approvals: "true",
+  skip_permissions: "true"
 )
 
 ###############################################################################
@@ -266,11 +267,11 @@ datasource "ds_oci_recommendation_list" do
   end
 end
 
-datasource "ds_oci_filtered_recommendations" do
-  run_script $js_oci_filtered_recommendations, $ds_oci_recommendation_actions, $ds_oci_recommendation_list, $ds_currency, $ds_applied_policy, $param_min_savings
+datasource "ds_oci_filtered_recommendations_underutil" do
+  run_script $js_oci_filtered_recommendations_underutil, $ds_oci_recommendation_actions, $ds_oci_recommendation_list, $ds_currency, $ds_applied_policy, $param_min_savings
 end
 
-script "js_oci_filtered_recommendations", type: "javascript" do
+script "js_oci_filtered_recommendations_underutil", type: "javascript" do
   parameters "ds_oci_recommendation_actions", "ds_oci_recommendation_list", "ds_currency", "ds_applied_policy", "param_min_savings"
   result "result"
   code <<-'EOS'
@@ -318,6 +319,14 @@ script "js_oci_filtered_recommendations", type: "javascript" do
   _.each(recommendations, function(action) {
     total_savings += parseFloat(action['estimatedCostSaving'])
 
+    recommendationDetails = [
+      "Resize Oracle virtual machine ", action["resourceId"], " ",
+      "in Oracle Compartment ", action["compartmentName"], " ",
+      "(", action["compartmentId"], ") ",
+      "from ", action["currentShape"], " ",
+      "to ", action["recommendedShape"]
+    ].join('')
+
     result.push({
       accountID: action['compartmentId'],
       accountName: action['compartmentName'],
@@ -334,6 +343,8 @@ script "js_oci_filtered_recommendations", type: "javascript" do
       memAverage: Math.round(parseFloat(action['computeMemoryUtilization']) * 100) / 100,
       resourceType: action['currentShape'],
       newResourceType: action['recommendedShape'],
+      recommendationDetails: recommendationDetails,
+      service: "COMPUTE",
       policy_name: ds_applied_policy["name"],
       total_savings: "",
       message: ""
@@ -379,7 +390,7 @@ end
 ###############################################################################
 
 policy "pol_oci_rightsize_compute_recommendations" do
-  validate $ds_oci_filtered_recommendations do
+  validate_each $ds_oci_filtered_recommendations_underutil do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Oracle Underutilized Virtual Machine Recommendations Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
@@ -411,6 +422,15 @@ policy "pol_oci_rightsize_compute_recommendations" do
       end
       field "osType" do
         label "Operating System"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
       end
       field "resourceType" do
         label "Current Instance Size"
