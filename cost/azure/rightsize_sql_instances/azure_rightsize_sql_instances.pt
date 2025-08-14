@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "6.0.2",
+  version: "6.0.3",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Database Instances",
@@ -262,6 +262,12 @@ datasource "ds_applied_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "name", jmes_path(response, "name")
+    field "policyAggregateId", jmes_path(response, "policy_aggregate_id")
   end
 end
 
@@ -624,7 +630,7 @@ script "js_azure_sql_databases_region_filtered", type: "javascript" do
   result "result"
   code <<-EOS
   if (param_regions_list.length > 0) {
-    result = _.filter(ds_azure_sql_databases_tag_filtered, function(ip) {
+    result = _.filter(ds_azure_sql_databases_tag_filtered, function(db) {
       include_db = _.contains(param_regions_list, db['region'])
 
       if (param_regions_allow_or_deny == "Deny") {
@@ -689,11 +695,12 @@ script "js_azure_sql_database_metrics", type: "javascript" do
 
   timespan = start_date.toISOString() + "/" + end_date.toISOString()
 
-  metricnames = "cpu_percent,connection_successful"
-
+  metricnames = ["cpu_percent", "connection_successful"];
   if (resource_tier == "Basic" || resource_tier == "Standard" || resource_tier == "Premium") {
-    metricnames = "dtu_consumption_percent,connection_successful"
+    metricnames = ["dtu_consumption_percent", "connection_successful"];
   }
+
+  var aggregation = ["Average", "Minimum", "Maximum", "count"];
 
   var request = {
     auth: "auth_azure",
@@ -703,8 +710,8 @@ script "js_azure_sql_database_metrics", type: "javascript" do
     query_params: {
       "api-version": "2018-01-01",
       "timespan": timespan,
-      "metricnames": metricnames,
-      "aggregation": "Average,Minimum,Maximum,count",
+      "metricnames": metricnames.join(","),
+      "aggregation": aggregation.join(","),
       "interval": ds_stats_interval["api"]
     },
     headers: {
@@ -734,7 +741,7 @@ script "js_merged_metrics", type: "javascript" do
   code <<-EOS
   // Function to calculate percentiles from metrics
   function percentile(arr, p) {
-    // array needs to be sorted to select based on percentile
+    // array needs to be sorted lowest to highest first
     arr.sort(function(a, b) { return a - b })
 
     // Get the index using desired percentile and array length
@@ -825,17 +832,39 @@ script "js_merged_metrics", type: "javascript" do
       metrics = cpu_metrics ? cpu_metrics : dtu_metrics
 
       if (metrics.length > 0) {
-        minimums = _.pluck(metrics, 'minimum').sort()
-        maximums = _.pluck(metrics, 'maximum').sort()
-        averages = _.pluck(metrics, 'average').sort()
-        all_metrics = minimums.concat(maximums, averages)
+        minimums = _.pluck(cpu_metrics, 'minimum')
+        maximums = _.pluck(cpu_metrics, 'maximum')
+        averages = _.pluck(cpu_metrics, 'average')
 
-        metric_minimum = minimums && minimums.length > 0 ? _.first(minimums) : 0
-        metric_maximum = maximums && maximums.length > 0 ? _.last(maximums) : 0
-        metric_average = averages && averages.length > 0 ? _.reduce(averages, function(memo, num) { return memo + num }, 0) / averages.length : 0
-        metric_p90 = all_metrics.length > 0 ? percentile(all_metrics, 90) : 0
-        metric_p95 = all_metrics.length > 0 ? percentile(all_metrics, 95) : 0
-        metric_p99 = all_metrics.length > 0 ? percentile(all_metrics, 99) : 0
+        metric_minimum = null
+        metric_maximum = null
+        metric_average = null
+        metric_p90 = null
+        metric_p95 = null
+        metric_p99 = null
+
+        _.each(minimums, function(item) {
+          if (metric_minimum == null || item < metric_minimum) { metric_minimum = item }
+        })
+
+        _.each(maximums, function(item) {
+          if (metric_maximum == null || item > metric_maximum) { metric_maximum = item }
+        })
+
+        if (metric_minimum == null) { metric_minimum = 0 }
+
+        if (averages.length > 0) {
+          metric_average = _.reduce(averages, function(memo, num) { return memo + num }, 0) / averages.length
+        }
+
+        if (minimums.length + maximums.length + averages.length > 0) {
+          all_metrics = minimums.concat(maximums, averages)
+          // combine all points from minimums, maximums, averages
+          // use percentile() function to get the percentile values from all measured utilization points
+          metric_p90 = percentile(all_metrics, 90)
+          metric_p95 = percentile(all_metrics, 95)
+          metric_p99 = percentile(all_metrics, 99)
+        }
 
         if (param_stats_threshold == "Average") { metric_test_value = metric_average }
         if (param_stats_threshold == "Maximum") { metric_test_value = metric_maximum }
