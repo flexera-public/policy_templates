@@ -1,5 +1,9 @@
 # Changelog
 
+## v7.0.4
+
+- Fixed the "invalid request host" bug from v7.0.3
+
 ## v7.0.3
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
