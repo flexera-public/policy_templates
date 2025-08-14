@@ -6,6 +6,10 @@
 - Added new parameter 'Sort Anomalies By' to enable user to select sorting by cost or variance.
 - Fixed report formatting which affected report rendering in some email clients.
 
+## v3.8.2
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v3.8.1
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.

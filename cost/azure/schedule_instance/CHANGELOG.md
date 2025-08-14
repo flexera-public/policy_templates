@@ -1,5 +1,13 @@
 # Changelog
 
+## v7.0.4
+
+- Fixed mapping in datasource `ds_flexera_api_hosts` which as causing error during evaluation: "invalid request host", "host must be a string"
+
+## v7.0.3
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v7.0.2
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
