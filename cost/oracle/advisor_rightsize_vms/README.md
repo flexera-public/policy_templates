@@ -32,6 +32,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
+- *Report Idle or Underutilized* - Whether to report on idle VM instances, underutilized VM instances, or both. If both are selected, VM instances raised in the idle VM instances incident will never appear in the underutilized VM instances incident.
 - *Preserve Boot Volume* - Whether to preserve the boot volume when terminating virtual machines. Note that savings won't be fully realized unless the boot volume is also deleted.
 - *Preserve Data Volumes* - Whether to preserve the data volumes that were created at launch when terminating virtual machines.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).

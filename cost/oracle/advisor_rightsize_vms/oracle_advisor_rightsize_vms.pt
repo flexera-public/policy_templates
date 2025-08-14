@@ -56,6 +56,15 @@ parameter "param_primary_region" do
   # No default value, user input required
 end
 
+parameter "param_idle_or_underutilized" do
+  type "string"
+  category "Filters"
+  label "Report Idle or Underutilized"
+  description "Whether to report on idle VM instances, underutilized VM instances, or both."
+  allowed_values "Idle & Underutilized", "Idle", "Underutilized"
+  default "Idle & Underutilized"
+end
+
 parameter "param_regions_allow_or_deny" do
   type "string"
   category "Filters"
@@ -340,11 +349,11 @@ datasource "ds_oci_recommendation_list" do
 end
 
 datasource "ds_oci_filtered_recommendations_underutil" do
-  run_script $js_oci_filtered_recommendations_underutil, $ds_oci_recommendation_actions_region_filtered, $ds_oci_recommendation_list, $ds_currency, $ds_applied_policy, $param_min_savings
+  run_script $js_oci_filtered_recommendations_underutil, $ds_oci_recommendation_actions_region_filtered, $ds_oci_recommendation_list, $ds_currency, $ds_applied_policy, $param_min_savings, $param_idle_or_underutilized
 end
 
 script "js_oci_filtered_recommendations_underutil", type: "javascript" do
-  parameters "ds_oci_recommendation_actions_region_filtered", "ds_oci_recommendation_list", "ds_currency", "ds_applied_policy", "param_min_savings"
+  parameters "ds_oci_recommendation_actions_region_filtered", "ds_oci_recommendation_list", "ds_currency", "ds_applied_policy", "param_min_savings", "param_idle_or_underutilized"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -378,50 +387,52 @@ script "js_oci_filtered_recommendations_underutil", type: "javascript" do
   result = []
   total_savings = 0.0
 
-  valid_recommendations = _.filter(ds_oci_recommendation_list, function(item) {
-    return item['description'] == category_filter
-  })
-
-  valid_ids = _.pluck(valid_recommendations, "id")
-
-  recommendations = _.filter(ds_oci_recommendation_actions_region_filtered, function(action) {
-    return _.contains(valid_ids, action['recommendationId']) && parseFloat(action['estimatedCostSaving']) >= param_min_savings
-  })
-
-  _.each(recommendations, function(action) {
-    total_savings += parseFloat(action['estimatedCostSaving'])
-
-    recommendationDetails = [
-      "Resize Oracle virtual machine ", action["resourceId"], " ",
-      "in Oracle Compartment ", action["compartmentName"], " ",
-      "(", action["compartmentId"], ") ",
-      "from ", action["currentShape"], " ",
-      "to ", action["recommendedShape"]
-    ].join('')
-
-    result.push({
-      accountID: action['compartmentId'],
-      accountName: action['compartmentName'],
-      tenantId: action['extendedMetadata']['resourceOwningTenancyId'],
-      tenantName: action['extendedMetadata']['resourceOwningTenancyName'],
-      savings: parseFloat(action['estimatedCostSaving']).toFixed(0),
-      savingsCurrency: ds_currency['symbol'],
-      resourceID: action['resourceId'],
-      region: action['region'],
-      actionId: action['id'],
-      status: action['status'],
-      osType: action['osType'],
-      cpuAverage: Math.round(parseFloat(action['computeCpuUtilization']) * 100) / 100,
-      memAverage: Math.round(parseFloat(action['computeMemoryUtilization']) * 100) / 100,
-      resourceType: action['currentShape'],
-      newResourceType: action['recommendedShape'],
-      recommendationDetails: recommendationDetails,
-      service: "COMPUTE",
-      policy_name: ds_applied_policy["name"],
-      total_savings: "",
-      message: ""
+  if (param_idle_or_underutilized != "Idle") {
+    valid_recommendations = _.filter(ds_oci_recommendation_list, function(item) {
+      return item['description'] == category_filter
     })
-  })
+
+    valid_ids = _.pluck(valid_recommendations, "id")
+
+    recommendations = _.filter(ds_oci_recommendation_actions_region_filtered, function(action) {
+      return _.contains(valid_ids, action['recommendationId']) && parseFloat(action['estimatedCostSaving']) >= param_min_savings
+    })
+
+    _.each(recommendations, function(action) {
+      total_savings += parseFloat(action['estimatedCostSaving'])
+
+      recommendationDetails = [
+        "Resize Oracle virtual machine ", action["resourceId"], " ",
+        "in Oracle Compartment ", action["compartmentName"], " ",
+        "(", action["compartmentId"], ") ",
+        "from ", action["currentShape"], " ",
+        "to ", action["recommendedShape"]
+      ].join('')
+
+      result.push({
+        accountID: action['compartmentId'],
+        accountName: action['compartmentName'],
+        tenantId: action['extendedMetadata']['resourceOwningTenancyId'],
+        tenantName: action['extendedMetadata']['resourceOwningTenancyName'],
+        savings: parseFloat(action['estimatedCostSaving']).toFixed(0),
+        savingsCurrency: ds_currency['symbol'],
+        resourceID: action['resourceId'],
+        region: action['region'],
+        actionId: action['id'],
+        status: action['status'],
+        osType: action['osType'],
+        cpuAverage: Math.round(parseFloat(action['computeCpuUtilization']) * 100) / 100,
+        memAverage: Math.round(parseFloat(action['computeMemoryUtilization']) * 100) / 100,
+        resourceType: action['currentShape'],
+        newResourceType: action['recommendedShape'],
+        recommendationDetails: recommendationDetails,
+        service: "COMPUTE",
+        policy_name: ds_applied_policy["name"],
+        total_savings: "",
+        message: ""
+      })
+    })
+  }
 
   savings_message = [
     ds_currency['symbol'], ' ',
@@ -458,11 +469,11 @@ EOS
 end
 
 datasource "ds_oci_filtered_recommendations_idle" do
-  run_script $js_oci_filtered_recommendations_idle, $ds_oci_recommendation_actions, $ds_oci_recommendation_list, $ds_oci_filtered_recommendations_underutil, $ds_currency, $ds_applied_policy, $param_min_savings
+  run_script $js_oci_filtered_recommendations_idle, $ds_oci_recommendation_actions, $ds_oci_recommendation_list, $ds_oci_filtered_recommendations_underutil, $ds_currency, $ds_applied_policy, $param_min_savings, $param_idle_or_underutilized
 end
 
 script "js_oci_filtered_recommendations_idle", type: "javascript" do
-  parameters "ds_oci_recommendation_actions", "ds_oci_recommendation_list", "ds_oci_filtered_recommendations_underutil", "ds_currency", "ds_applied_policy", "param_min_savings"
+  parameters "ds_oci_recommendation_actions", "ds_oci_recommendation_list", "ds_oci_filtered_recommendations_underutil", "ds_currency", "ds_applied_policy", "param_min_savings", "param_idle_or_underutilized"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -496,50 +507,53 @@ script "js_oci_filtered_recommendations_idle", type: "javascript" do
   result = []
   total_savings = 0.0
 
-  // This is to make sure we don't recommend the same resource for both rightsizing and deletion
-  underutil_ids = _.compact(_.pluck(ds_oci_filtered_recommendations_underutil, "resourceID"))
 
-  valid_recommendations = _.filter(ds_oci_recommendation_list, function(item) {
-    return item['description'] == category_filter
-  })
+  if (param_idle_or_underutilized != "Underutilized") {
+    // This is to make sure we don't recommend the same resource for both rightsizing and deletion
+    underutil_ids = _.compact(_.pluck(ds_oci_filtered_recommendations_underutil, "resourceID"))
 
-  valid_ids = _.pluck(valid_recommendations, "id")
-
-  recommendations = _.filter(ds_oci_recommendation_actions, function(action) {
-    return !_.contains(underutil_ids, action['resourceId']) && _.contains(valid_ids, action['recommendationId']) && parseFloat(action['estimatedCostSaving']) >= param_min_savings
-  })
-
-  _.each(recommendations, function(action) {
-    total_savings += parseFloat(action['estimatedCostSaving'])
-
-    recommendationDetails = [
-      "Terminate Oracle virtual machine ", action["resourceId"], " ",
-      "in Oracle Compartment ", action["compartmentName"], " ",
-      "(", action["compartmentId"], ") "
-    ].join('')
-
-    result.push({
-      accountID: action['compartmentId'],
-      accountName: action['compartmentName'],
-      tenantId: action['extendedMetadata']['resourceOwningTenancyId'],
-      tenantName: action['extendedMetadata']['resourceOwningTenancyName'],
-      savings: parseFloat(action['estimatedCostSaving']).toFixed(0),
-      savingsCurrency: ds_currency['symbol'],
-      resourceID: action['resourceId'],
-      region: action['region'],
-      actionId: action['id'],
-      status: action['status'],
-      osType: action['osType'],
-      cpuAverage: Math.round(parseFloat(action['computeCpuUtilization']) * 100) / 100,
-      memAverage: Math.round(parseFloat(action['computeMemoryUtilization']) * 100) / 100,
-      resourceType: action['currentShape'],
-      recommendationDetails: recommendationDetails,
-      service: "COMPUTE",
-      policy_name: ds_applied_policy["name"],
-      total_savings: "",
-      message: ""
+    valid_recommendations = _.filter(ds_oci_recommendation_list, function(item) {
+      return item['description'] == category_filter
     })
-  })
+
+    valid_ids = _.pluck(valid_recommendations, "id")
+
+    recommendations = _.filter(ds_oci_recommendation_actions, function(action) {
+      return !_.contains(underutil_ids, action['resourceId']) && _.contains(valid_ids, action['recommendationId']) && parseFloat(action['estimatedCostSaving']) >= param_min_savings
+    })
+
+    _.each(recommendations, function(action) {
+      total_savings += parseFloat(action['estimatedCostSaving'])
+
+      recommendationDetails = [
+        "Terminate Oracle virtual machine ", action["resourceId"], " ",
+        "in Oracle Compartment ", action["compartmentName"], " ",
+        "(", action["compartmentId"], ") "
+      ].join('')
+
+      result.push({
+        accountID: action['compartmentId'],
+        accountName: action['compartmentName'],
+        tenantId: action['extendedMetadata']['resourceOwningTenancyId'],
+        tenantName: action['extendedMetadata']['resourceOwningTenancyName'],
+        savings: parseFloat(action['estimatedCostSaving']).toFixed(0),
+        savingsCurrency: ds_currency['symbol'],
+        resourceID: action['resourceId'],
+        region: action['region'],
+        actionId: action['id'],
+        status: action['status'],
+        osType: action['osType'],
+        cpuAverage: Math.round(parseFloat(action['computeCpuUtilization']) * 100) / 100,
+        memAverage: Math.round(parseFloat(action['computeMemoryUtilization']) * 100) / 100,
+        resourceType: action['currentShape'],
+        recommendationDetails: recommendationDetails,
+        service: "COMPUTE",
+        policy_name: ds_applied_policy["name"],
+        total_savings: "",
+        message: ""
+      })
+    })
+  }
 
   savings_message = [
     ds_currency['symbol'], ' ',
