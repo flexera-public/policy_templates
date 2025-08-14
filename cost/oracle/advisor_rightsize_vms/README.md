@@ -9,8 +9,9 @@ This policy template reports on any existing underutilized virtual machine recom
 This policy template reports the following Oracle Cloud Advisor recommendations:
 
 - `cost-management-compute-host-underutilized-desc`: Checks if a virtual machine is underutilized and recommends a more appropriate machine type when appropriate.
+- `cost-management-compute-host-idle-desc`: Checks if a virtual machine is idle and recommends termination when appropriate.
 
-More information is available in Oracle's documentation:
+More information on Cloud Advisor is available in Oracle's documentation:
 
 - [About Cloud Advisor](https://docs.public.oneportal.content.oci.oraclecloud.com/en-us/iaas/Content/CloudAdvisor/Concepts/cloudadvisoroverview.htm)
 - [Getting Started with Cloud Advisor](https://docs.oracle.com/en-us/iaas/Content/CloudAdvisor/Tasks/cloudadvisor-getting_started.htm)
@@ -20,7 +21,7 @@ More information is available in Oracle's documentation:
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized for underutilized resources if the resource is downsized.
 
 - The `Estimated Monthly Savings` is obtained directly from the Oracle Cloud Advisor service.
-- Since the savings estimates are obtained directly from Oracle, they will take into account any cloud provider discounts but *not* any Flexera adjustment rules or other cost manipulations specific to the Flexera platform.
+- Since the savings estimates are obtained directly from Oracle, they will take into account any cloud provider discounts but *not* any Flexera adjustment rules or other cost manipulations specific to the Flexera platform. They will also be in whatever currency you've configured your Oracle Cloud environment to use.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 
 ## Input Parameters
