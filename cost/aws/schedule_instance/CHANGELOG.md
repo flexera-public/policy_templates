@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.0.3
+
+- Fixed mapping in datasource `ds_flexera_api_hosts` which as causing error during evaluation: "invalid request host", "host must be a string"
+
 ## v8.0.2
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
