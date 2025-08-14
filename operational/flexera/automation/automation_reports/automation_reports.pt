@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.1",
+  version: "0.1.2",
   provider: "Flexera",
   service: "Automation",
   policy_set: "Automation",
@@ -118,25 +118,6 @@ datasource "ds_applied_policy" do
   end
 end
 
-# Get region-specific Flexera One website domain
-datasource "ds_flexera_web_domain" do
-  run_script $js_flexera_web_domain, rs_optima_host
-end
-
-script "js_flexera_web_domain", type: "javascript" do
-  parameters "rs_optima_host"
-  result "result"
-  code <<-EOS
-  domain_table = {
-    "api.optima.flexeraeng.com": "app.flexera.com",
-    "api.optima-eu.flexeraeng.com": "app.flexera.eu",
-    "api.optima-apac.flexeraeng.com": "app.flexera.au"
-  }
-
-  result = domain_table[rs_optima_host]
-EOS
-end
-
 # Create a simple text boolean to use in API requests to include/exclude child policies/incidents
 datasource "ds_boolean_children" do
   run_script $js_boolean_children, $param_children
@@ -153,82 +134,109 @@ end
 # Gather data for various reports
 datasource "ds_applied_policies" do
   request do
-    auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies"])
-    query "show_meta_child_policies", val($ds_boolean_children, "include_children")
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
+    run_script $js_applied_policies, $ds_flexera_api_hosts, $param_children, rs_org_id, rs_project_id
   end
   result do
-    collect jmes_path(response, "items[*]") do
+    collect jmes_path(response, "values[*]") do
       field "category", jmes_path(col_item, "category")
-      field "created_at", jmes_path(col_item, "created_at")
-      field "created_by", jmes_path(col_item, "created_by.email")
+      field "created_at", jmes_path(col_item, "createdAt")
+      field "created_by", jmes_path(col_item, "createdBy.email")
       field "credentials", jmes_path(col_item, "credentials")
       field "description", jmes_path(col_item, "description")
-      field "doc_link", jmes_path(col_item, "doc_link")
-      field "dry_run", jmes_path(col_item, "dry_run")
+      field "doc_link", jmes_path(col_item, "docLink")
+      field "dry_run", jmes_path(col_item, "dryRun")
       field "error", jmes_path(col_item, "error")
-      field "errored_at", jmes_path(col_item, "errored_at")
-      field "frequency", jmes_path(col_item, "frequency")
-      field "href", jmes_path(col_item, "href")
+      field "errored_at", jmes_path(col_item, "erroredAt")
+      field "frequency", get(1, split(jmes_path(col_item, "schedule.rrule"), '='))
       field "id", jmes_path(col_item, "id")
-      field "incident_aggregate_id", jmes_path(col_item, "incident_aggregate_id")
+      field "incident_aggregate_id", jmes_path(col_item, "incidentAggregateId")
       field "info", jmes_path(col_item, "info")
       field "kind", jmes_path(col_item, "kind")
-      field "log_level", jmes_path(col_item, "log_level")
-      field "meta_parent_policy_id", jmes_path(col_item, "meta_parent_policy_id")
+      field "log_level", jmes_path(col_item, "logLevel")
+      field "parent", jmes_path(col_item, "parent.ref")
       field "name", jmes_path(col_item, "name")
       field "options", jmes_path(col_item, "options")
-      field "policy_aggregate_id", jmes_path(col_item, "policy_aggregate_id")
-      field "policy_template", jmes_path(col_item, "policy_template")
-      field "project", jmes_path(col_item, "project")
-      field "published_template", jmes_path(col_item, "published_template")
+      field "policy_aggregate_id", jmes_path(col_item, "policyAggregateId")
+      field "policy_template", jmes_path(col_item, "policyTemplate")
+      field "published_template", jmes_path(col_item, "publishedTemplate")
       field "scope", jmes_path(col_item, "scope")
       field "severity", jmes_path(col_item, "severity")
-      field "skip_approvals", jmes_path(col_item, "skip_approvals")
+      field "skip_approvals", jmes_path(col_item, "skipApprovals")
       field "status", jmes_path(col_item, "status")
-      field "updated_at", jmes_path(col_item, "updated_at")
+      field "updated_at", jmes_path(col_item, "updatedAt")
+      field "href", join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", jmes_path(col_item, "id")])
       field "aggregate", "false"
     end
   end
 end
 
+script "js_applied_policies", type: "javascript" do
+  parameters "ds_flexera_api_hosts", "param_children", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies" ].join('')
+  }
+
+  if (param_children == "Exclude Children") {
+    request["query_params"] = { filter: "metaParentPolicyId eq \"null\"" }
+  }
+EOS
+end
+
+datasource "ds_applied_policies_cleaned" do
+  run_script $js_applied_policies_cleaned, $ds_applied_policies
+end
+
+script "js_applied_policies_cleaned", type: "javascript" do
+  parameters "ds_applied_policies"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_applied_policies, function(policy) {
+    new_policy = {}
+    _.each(_.keys(policy), function(key) { new_policy[key] = policy[key] })
+
+    new_policy["meta_parent_policy_id"] = policy["parent"] ? policy["parent"].split(':')[6] : null
+
+    return new_policy
+  })
+EOS
+end
+
 datasource "ds_applied_aggregates" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/orgs/", rs_org_id, "/policy_aggregates"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/policy-aggregates"])
   end
   result do
-    collect jmes_path(response, "items[*]") do
+    collect jmes_path(response, "values[*]") do
       field "category", jmes_path(col_item, "category")
-      field "created_at", jmes_path(col_item, "created_at")
-      field "created_by", jmes_path(col_item, "created_by.email")
+      field "created_at", jmes_path(col_item, "createdAt")
+      field "created_by", jmes_path(col_item, "createdBy.email")
       field "credentials", jmes_path(col_item, "credentials")
       field "description", jmes_path(col_item, "description")
-      field "doc_link", jmes_path(col_item, "doc_link")
-      field "dry_run", jmes_path(col_item, "dry_run")
-      field "error_count", jmes_path(col_item, "error_count")
-      field "frequency", jmes_path(col_item, "frequency")
-      field "href", jmes_path(col_item, "href")
+      field "doc_link", jmes_path(col_item, "docLink")
+      field "dry_run", jmes_path(col_item, "dryRun")
+      field "error_count", jmes_path(col_item, "errorCount")
+      field "frequency", get(1, split(jmes_path(col_item, "schedule.rrule"), '='))
       field "id", jmes_path(col_item, "id")
-      field "incident_aggregate_href", jmes_path(col_item, "incident_aggregate_href")
+      field "incident_aggregate_id", jmes_path(col_item, "incidentAggregateId")
       field "info", jmes_path(col_item, "info")
       field "kind", jmes_path(col_item, "kind")
+      field "log_level", jmes_path(col_item, "logLevel")
       field "name", jmes_path(col_item, "name")
       field "options", jmes_path(col_item, "options")
-      field "org", jmes_path(col_item, "org")
-      field "published_template", jmes_path(col_item, "published_template")
-      field "running_project_ids", jmes_path(col_item, "running_project_ids")
+      field "published_template", jmes_path(col_item, "publishedTemplate")
+      field "running_project_ids", jmes_path(col_item, "runningProjectIds")
       field "severity", jmes_path(col_item, "severity")
-      field "skip_approvals", jmes_path(col_item, "skip_approvals")
+      field "skip_approvals", jmes_path(col_item, "skipApprovals")
       field "status", jmes_path(col_item, "status")
-      field "updated_at", jmes_path(col_item, "updated_at")
+      field "updated_at", jmes_path(col_item, "updatedAt")
       field "aggregate", "true"
+      field "href", join(["/policy/v1/orgs/", rs_org_id, "/policy-aggregates/", jmes_path(col_item, "id")])
       # Include this field to avoid errors during policy validation due to hash_exclude expecting it
       field "errored_at", ""
     end
@@ -238,33 +246,29 @@ end
 datasource "ds_policy_templates" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/policy_templates"])
-    query "view", "extended"
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/policy-templates"])
   end
   result do
-    collect jmes_path(response, "items[*]") do
+    collect jmes_path(response, "values[*]") do
       field "category", jmes_path(col_item, "category")
-      field "created_at", jmes_path(col_item, "created_at")
-      field "created_by", jmes_path(col_item, "created_by.email")
-      field "default_frequency", jmes_path(col_item, "default_frequency")
-      field "doc_link", jmes_path(col_item, "doc_link")
+      field "created_at", jmes_path(col_item, "createdAt")
+      field "created_by", jmes_path(col_item, "createdBy.email")
+      field "default_frequency", jmes_path(col_item, "defaultFrequency")
+      field "doc_link", jmes_path(col_item, "docLink")
       field "fingerprint", jmes_path(col_item, "fingerprint")
-      field "href", jmes_path(col_item, "href")
       field "id", jmes_path(col_item, "id")
       field "info", jmes_path(col_item, "info")
       field "kind", jmes_path(col_item, "kind")
       field "name", jmes_path(col_item, "name")
-      field "project_id", jmes_path(col_item, "project_id")
-      field "required_roles", jmes_path(col_item, "required_roles")
-      field "rs_pt_ver", jmes_path(col_item, "rs_pt_ver")
+      field "project_id", jmes_path(col_item, "projectId")
+      field "required_roles", jmes_path(col_item, "requiredRoles")
       field "severity", jmes_path(col_item, "severity")
-      field "short_description", jmes_path(col_item, "short_description")
+      field "short_description", jmes_path(col_item, "shortDescription")
       field "tenancy", jmes_path(col_item, "tenancy")
-      field "updated_at", jmes_path(col_item, "updated_at")
-      field "updated_by", jmes_path(col_item, "updated_by.email")
+      field "updated_at", jmes_path(col_item, "updatedAt")
+      field "updated_by", jmes_path(col_item, "updatedBy.email")
+      field "href", join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/policy-templates/", jmes_path(col_item, "id")])
     end
   end
 end
@@ -337,33 +341,33 @@ end
 
 # Create a table to easily get applied policy metadata from a policy id
 datasource "ds_applied_policy_table" do
-  run_script $js_applied_policy_table, $ds_applied_policies, $ds_applied_aggregates
+  run_script $js_applied_policy_table, $ds_applied_policies_cleaned, $ds_applied_aggregates
 end
 
 script "js_applied_policy_table", type: "javascript" do
-  parameters "ds_applied_policies", "ds_applied_aggregates"
+  parameters "ds_applied_policies_cleaned", "ds_applied_aggregates"
   result "result"
   code <<-'EOS'
   result = {}
-  _.each(ds_applied_policies, function(policy) { result[policy["id"]] = policy })
+  _.each(ds_applied_policies_cleaned, function(policy) { result[policy["id"]] = policy })
   _.each(ds_applied_aggregates, function(aggregate) { result[aggregate["id"]] = aggregate })
 EOS
 end
 
 # Create incidents for various reports
 datasource "ds_applied_policy_report" do
-  run_script $js_applied_policy_report, $ds_applied_policies, $ds_applied_aggregates, $ds_applied_policy_table, $ds_flexera_web_domain, $ds_applied_policy, $param_reports, $param_aggregates, rs_org_id, rs_project_id
+  run_script $js_applied_policy_report, $ds_applied_policies_cleaned, $ds_applied_aggregates, $ds_applied_policy_table, $ds_flexera_api_hosts, $ds_applied_policy, $param_reports, $param_aggregates, rs_org_id, rs_project_id
 end
 
 script "js_applied_policy_report", type: "javascript" do
-  parameters "ds_applied_policies", "ds_applied_aggregates", "ds_applied_policy_table", "ds_flexera_web_domain", "ds_applied_policy", "param_reports", "param_aggregates", "rs_org_id", "rs_project_id"
+  parameters "ds_applied_policies_cleaned", "ds_applied_aggregates", "ds_applied_policy_table", "ds_flexera_api_hosts", "ds_applied_policy", "param_reports", "param_aggregates", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
   result = []
 
   if (_.contains(param_reports, "Applied Policies")) {
-    parent_ids = _.uniq(_.compact(_.pluck(ds_applied_policies, "meta_parent_policy_id")))
-    policy_list = param_aggregates == "Include Aggregates" ? ds_applied_policies.concat(ds_applied_aggregates) : ds_applied_policies
+    parent_ids = _.uniq(_.compact(_.pluck(ds_applied_policies_cleaned, "meta_parent_policy_id")))
+    policy_list = param_aggregates == "Include Aggregates" ? ds_applied_policies_cleaned.concat(ds_applied_aggregates) : ds_applied_policies_cleaned
 
     result = _.map(policy_list, function(item) {
       // Ensure all data in the original list is included
@@ -371,6 +375,8 @@ script "js_applied_policy_report", type: "javascript" do
       _.each(_.keys(item), function(key) { new_item[key] = item[key] })
 
       // Add additional context
+      new_item["api_host"] = ds_flexera_api_hosts["flexera"]
+
       new_item["report_policy_id"] = ds_applied_policy["id"]
       new_item["report_policy_name"] = ds_applied_policy["name"]
 
@@ -385,13 +391,13 @@ script "js_applied_policy_report", type: "javascript" do
 
       if (item["aggregate"] == "true") {
         new_item["url"] = [
-          "https://", ds_flexera_web_domain,
+          "https://", ds_flexera_api_hosts["ui"],
           "/orgs/", rs_org_id,
           "/automation/applied-policies?policyId=", item["id"]
         ].join('')
       } else {
         new_item["url"] = [
-          "https://", ds_flexera_web_domain,
+          "https://", ds_flexera_api_hosts["ui"],
           "/orgs/", rs_org_id,
           "/automation/applied-policies/projects/", rs_project_id,
           "?policyId=", item["id"]
@@ -404,13 +410,13 @@ script "js_applied_policy_report", type: "javascript" do
       if (new_item["meta_parent_policy_name"]) {
         if (ds_applied_policy_table[item["meta_parent_policy_id"]] && ds_applied_policy_table[item["meta_parent_policy_id"]]["aggregate"] == "true") {
           new_item["meta_parent_policy_url"] = [
-            "https://", ds_flexera_web_domain,
+            "https://", ds_flexera_api_hosts["ui"],
             "/orgs/", rs_org_id,
             "/automation/applied-policies?policyId=", item["meta_parent_policy_id"]
           ].join('')
         } else {
           new_item["meta_parent_policy_url"] = [
-            "https://", ds_flexera_web_domain,
+            "https://", ds_flexera_api_hosts["ui"],
             "/orgs/", rs_org_id,
             "/automation/applied-policies/projects/", rs_project_id,
             "?policyId=", item["meta_parent_policy_id"]
@@ -435,11 +441,11 @@ EOS
 end
 
 datasource "ds_policy_templates_report" do
-  run_script $js_policy_templates_report, $ds_policy_templates, $ds_applied_policy_report, $ds_flexera_web_domain, $ds_applied_policy, $param_reports, rs_org_id, rs_project_id
+  run_script $js_policy_templates_report, $ds_policy_templates, $ds_applied_policy_report, $ds_flexera_api_hosts, $ds_applied_policy, $param_reports, rs_org_id, rs_project_id
 end
 
 script "js_policy_templates_report", type: "javascript" do
-  parameters "ds_policy_templates", "ds_applied_policy_report", "ds_flexera_web_domain", "ds_applied_policy", "param_reports", "rs_org_id", "rs_project_id"
+  parameters "ds_policy_templates", "ds_applied_policy_report", "ds_flexera_api_hosts", "ds_applied_policy", "param_reports", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
   result = []
@@ -466,7 +472,7 @@ script "js_policy_templates_report", type: "javascript" do
       new_item["applied_policy_count"] = policy_count[item["href"]] ? policy_count[item["href"]] : 0
 
       new_item["url"] = [
-        "https://", ds_flexera_web_domain,
+        "https://", ds_flexera_api_hosts["ui"],
         "/orgs/", rs_org_id,
         "/automation/projects/", rs_project_id,
         "/policy-templates/", item["id"]
@@ -489,11 +495,11 @@ EOS
 end
 
 datasource "ds_incidents_report" do
-  run_script $js_incidents_report, $ds_incidents, $ds_incident_aggregates, $ds_applied_policy_table, $ds_flexera_web_domain, $ds_applied_policy, $param_reports, $param_aggregates, rs_org_id, rs_project_id
+  run_script $js_incidents_report, $ds_incidents, $ds_incident_aggregates, $ds_applied_policy_table, $ds_flexera_api_hosts, $ds_applied_policy, $param_reports, $param_aggregates, rs_org_id, rs_project_id
 end
 
 script "js_incidents_report", type: "javascript" do
-  parameters "ds_incidents", "ds_incident_aggregates", "ds_applied_policy_table", "ds_flexera_web_domain", "ds_applied_policy", "param_reports", "param_aggregates", "rs_org_id", "rs_project_id"
+  parameters "ds_incidents", "ds_incident_aggregates", "ds_applied_policy_table", "ds_flexera_api_hosts", "ds_applied_policy", "param_reports", "param_aggregates", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
   result = []
@@ -514,13 +520,13 @@ script "js_incidents_report", type: "javascript" do
 
       if (item["aggregate"] == "true") {
         new_item["url"] = [
-          "https://", ds_flexera_web_domain,
+          "https://", ds_flexera_api_hosts["ui"],
           "/orgs/", rs_org_id,
           "/automation/incidents?incidentId=", item["id"]
         ].join('')
       } else {
         new_item["url"] = [
-          "https://", ds_flexera_web_domain,
+          "https://", ds_flexera_api_hosts["ui"],
           "/orgs/", rs_org_id,
           "/automation/incidents/projects/", rs_project_id,
           "?incidentId=", item["id"]
@@ -531,13 +537,13 @@ script "js_incidents_report", type: "javascript" do
 
       if (ds_applied_policy_table[item["applied_policy_id"]] && ds_applied_policy_table[item["applied_policy_id"]]["aggregate"] == "true") {
         new_item["applied_policy_url"] = [
-          "https://", ds_flexera_web_domain,
+          "https://", ds_flexera_api_hosts["ui"],
           "/orgs/", rs_org_id,
           "/automation/applied-policies?policyId=", item["applied_policy_id"]
         ].join('')
       } else {
         new_item["applied_policy_url"] = [
-          "https://", ds_flexera_web_domain,
+          "https://", ds_flexera_api_hosts["ui"],
           "/orgs/", rs_org_id,
           "/automation/applied-policies/projects/", rs_project_id,
           "?policyId=", item["applied_policy_id"]
@@ -640,6 +646,9 @@ policy "pol_reports" do
       end
       field "href" do
         label "HREF"
+      end
+      field "api_host" do
+        label "API Host"
       end
     end
   end
@@ -764,7 +773,7 @@ escalation "esc_terminate_applied_policies" do
   automatic false
   label "Terminate Applied Policies"
   description "Approval to terminate all selected applied policies"
-  run "terminate_applied_policies", data, rs_governance_host
+  run "terminate_applied_policies", data
 end
 
 escalation "esc_resolve_incidents" do
@@ -778,12 +787,12 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define terminate_applied_policies($data, $rs_governance_host) return $all_responses do
+define terminate_applied_policies($data) return $all_responses do
   $$all_responses = []
 
   foreach $policy in $data do
     sub on_error: handle_error() do
-      call terminate_applied_policy($policy, $rs_governance_host) retrieve $terminate_response
+      call terminate_applied_policy($policy) retrieve $terminate_response
     end
   end
 
@@ -792,8 +801,8 @@ define terminate_applied_policies($data, $rs_governance_host) return $all_respon
   end
 end
 
-define terminate_applied_policy($policy, $rs_governance_host) return $response, $code do
-  $host = $rs_governance_host
+define terminate_applied_policy($policy) return $response, $code do
+  $host = $policy["api_host"]
   $href = $policy["href"]
   $url = $host + $href
   task_label("DELETE " + $url)
