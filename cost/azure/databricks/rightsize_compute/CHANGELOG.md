@@ -1,7 +1,9 @@
 # Changelog
 
-## v0.4.2
+## v0.5.0
 
+- Improved Incident and Recommendation Details
+- Adds resource utilization chart URLs to the resulting incidents. This mitigates/prevents need to use cloud vendor console or another observability tool outside Flexera to validate the recommendation is true.
 - Removed batch processing for large datasources to improve policy reliability and performance.
 
 ## v0.4.1
