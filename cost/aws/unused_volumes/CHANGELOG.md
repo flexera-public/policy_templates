@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.3.7
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
 ## v8.3.6
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
