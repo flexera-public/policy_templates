@@ -129,6 +129,52 @@ A "child" policy is essentially just a standard policy template [i.e. from the c
 These changes should follow the standard change management processes, which includes bumping the version and updating the CHANGELOG.  Example CHANGELOG message:
 `- Added logic required for "Meta Policy" use-cases`
 
+#### **Add Flexera API datasource if not already present**
+
+The following datasource should be added to the policy template if it does not already exist. It is recommended that this be the first datasource, since it is likely to be used by other, non-meta related tasks as well.
+
+```ruby
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+```
+
 #### **Identify "first" datasource and Add Header**
 
 The easiest way to identify the "first" datasource absolutely is to apply the policy and then "View Logs" -- the first datasource listed is the one that should be modified.  The header parameter below should be added to the request.
