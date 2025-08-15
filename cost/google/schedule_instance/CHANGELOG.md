@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0.4
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
 ## v6.0.3
 
 - Fixed mapping in datasource `ds_flexera_api_hosts` which as causing error during evaluation: "invalid request host", "host must be a string"

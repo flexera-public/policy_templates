@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.4.6
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
 ## v5.4.5
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
