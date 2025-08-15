@@ -58,7 +58,7 @@ parameter "param_fnms_host" do
   label "FlexNet Manager host"
   description "Flexera One FlexNet Manager host"
   allowed_values "slo.app.flexera.com", "slo.app.flexera.eu", "slo.app.flexera.au", "slo-uat.app.flexera.com", "slo-uat.app.flexera.eu", "slo-uat.app.flexera.au"
-  # No default value because parameter is required
+  # No default value, user input required
 end
 
 parameter "param_report_id" do
@@ -66,6 +66,7 @@ parameter "param_report_id" do
   category "Policy Settings"
   label "FNMS Report ID"
   description "FlexNet manager Custom View ID."
+  # No default value, user input required
 end
 
 ###############################################################################
@@ -161,9 +162,9 @@ datasource "ds_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "displayName", jmes_path(col_item,"displayName")
-      field "state", jmes_path(col_item,"state")
+      field "subscriptionId", jmes_path(col_item, "subscriptionId")
+      field "displayName", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
@@ -197,7 +198,7 @@ datasource "ds_list_virtual_machines" do
     auth $auth_azure
     pagination $pagination_azure
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version", "2018-06-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
@@ -206,15 +207,15 @@ datasource "ds_list_virtual_machines" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
       field "resourcename", get(4, split(jmes_path(col_item, "id"),"/"))
-      field "location", jmes_path(col_item,"location")
-      field "vmSize", jmes_path(col_item,"properties.hardwareProfile.vmSize")
-      field "osType", jmes_path(col_item,"properties.storageProfile.osDisk.osType")
-      field "tags", jmes_path(col_item,"tags")
-      field "subscriptionId",val(iter_item,"subscriptionId")
-      field "subscriptionName",val(iter_item,"displayName")
+      field "location", jmes_path(col_item, "location")
+      field "vmSize", jmes_path(col_item, "properties.hardwareProfile.vmSize")
+      field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "tags", jmes_path(col_item, "tags")
+      field "subscriptionId",val(iter_item, "subscriptionId")
+      field "subscriptionName",val(iter_item, "displayName")
     end
   end
 end
@@ -228,7 +229,7 @@ script "js_fnms_report_api_body", type: "javascript" do
   result "result"
   code <<-'EOS'
   body = [
-    "<?xml version="1.0" encoding="utf-8"?>\n",
+    "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n",
     "  <soap:Body>\n",
     "    <tem:GetCustomView>\n",
     "      <tem:customViewID>", param_report_id, "</tem:customViewID>\n",
@@ -256,18 +257,18 @@ datasource "ds_fnms_report" do
   end
   result do
     encoding "xml"
-    collect xpath(response,"//NewDataSet/SearchResults") do
+    collect xpath(response, "//NewDataSet/SearchResults") do
       field "computerName", xpath(col_item, "ComputerName")
     end
   end
 end
 
 datasource "ds_formatted_instances", type: "javascript" do
-  run_script $js_format_instances, $ds_list_virtual_machines, $ds_fnms_report, $param_exclusion_tag_key
+  run_script $js_formatted_instances, $ds_list_virtual_machines, $ds_fnms_report, $param_exclusion_tag_key
 end
 
-script "js_format_instances", type: "javascript" do
-  parameters "azure_VMs","ds_fnms_report", "param_exclusion_tag_key"
+script "js_formatted_instances", type: "javascript" do
+  parameters "azure_VMs", "ds_fnms_report", "param_exclusion_tag_key"
   result "result"
   code <<-EOS
     var result = [];
