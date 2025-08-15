@@ -104,6 +104,46 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 datasource "ds_subscriptions" do
   request do
     auth $auth_azure
@@ -166,17 +206,40 @@ datasource "ds_list_virtual_machines" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-        field "id", jmes_path(col_item,"id")
-        field "name", jmes_path(col_item,"name")
-        field "resourcename", get(4, split(jmes_path(col_item, "id"),"/"))
-        field "location", jmes_path(col_item,"location")
-        field "vmSize", jmes_path(col_item,"properties.hardwareProfile.vmSize")
-        field "osType", jmes_path(col_item,"properties.storageProfile.osDisk.osType")
-        field "tags", jmes_path(col_item,"tags")
-        field "subscriptionId",val(iter_item,"subscriptionId")
-        field "subscriptionName",val(iter_item,"displayName")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "resourcename", get(4, split(jmes_path(col_item, "id"),"/"))
+      field "location", jmes_path(col_item,"location")
+      field "vmSize", jmes_path(col_item,"properties.hardwareProfile.vmSize")
+      field "osType", jmes_path(col_item,"properties.storageProfile.osDisk.osType")
+      field "tags", jmes_path(col_item,"tags")
+      field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionName",val(iter_item,"displayName")
     end
   end
+end
+
+datasource "ds_fnms_report_api_body" do
+  run_script $js_fnms_report_api_body, $param_report_id
+end
+
+script "js_fnms_report_api_body", type: "javascript" do
+  parameters "param_report_id"
+  result "result"
+  code <<-'EOS'
+  body = [
+    "<?xml version="1.0" encoding="utf-8"?>\n",
+    "  <soap:Body>\n",
+    "    <tem:GetCustomView>\n",
+    "      <tem:customViewID>", param_report_id, "</tem:customViewID>\n",
+    "      <tem:rowLimit>100000</tem:rowLimit>\n",
+    "   </tem:GetCustomView>\n",
+    "  </soap:Body>\n",
+    "</soap:Envelope>"
+  ].join('')
+
+  result = { body: body }
+EOS
 end
 
 # Make API call and get the report data
@@ -189,15 +252,7 @@ datasource "ds_fnms_report" do
     path "/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx"
     query "orgid", to_s(rs_org_id) # Must convert rs_org_id to string otherwise query param does not get set
     header "Content-Type", "text/xml;charset=utf-8"
-    body join(['<?xml version="1.0" encoding="utf-8"?>',
-                '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">',
-                '  <soap:Body>',
-                '    <tem:GetCustomView>',
-                '      <tem:customViewID>', $param_report_id, '</tem:customViewID>',
-                '      <tem:rowLimit>100000</tem:rowLimit>',
-                '   </tem:GetCustomView>',
-                '  </soap:Body>',
-                '</soap:Envelope>'])
+    body val($ds_fnms_report_api_body, "body")
   end
   result do
     encoding "xml"
