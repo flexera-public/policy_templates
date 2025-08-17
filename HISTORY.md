@@ -6,6 +6,126 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3426](https://github.com/flexera-public/policy_templates/pull/3426): POL-1581 Meta Child API Update
+
+*Unpublished, Minor Update*
+
+#### Description
+
+> This PR updates the code for child policies to use the new APIs, and updates meta policy documentation accordingly.
+>
+> This also updates some policy templates to use the new API endpoint for getting policy information about themselves that were missed in the first pass.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3426) for these details.
+- **Merged At**: 2025-08-15 20:18:43 UTC
+
+---
+
+### PR [#3423](https://github.com/flexera-public/policy_templates/pull/3423): POL-1580 Policy API Updates
+
+*Minor Update*
+
+#### Description
+
+> This updates the following policy templates to use the newer api.flexera.com APIs where applicable. Functionality is unchanged.
+>
+> * Automation Reports
+> * Applied Policy Template Errors
+> * Flexera Automation Outdated Applied Policies
+>
+
+#### Metadata
+
+- **Policies**: [Flexera Automation Outdated Applied Policies](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/outdated_applied_policies/README.md), [Applied Policy Template Errors](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/automation/applied_policy_error_notification/README.md), [Automation Reports](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/automation/automation_reports/README.md)
+- **Merged At**: 2025-08-15 14:13:18 UTC
+
+---
+
+### PR [#3418](https://github.com/flexera-public/policy_templates/pull/3418): SQ-17255 - fix: mapping in ds_flexera_api_hosts
+
+*Minor Update, Bug Fix*
+
+#### Description
+
+> - Fixes mapping in datasource `ds_flexera_api_hosts` which as causing error during evaluation: "invalid request host", "host must be a string" for the Scheduled Instance Policy Templates
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/SQ-17255
+>
+
+#### Metadata
+
+- **Policies**: [AWS Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/schedule_instance/README.md), [Azure Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/schedule_instance/README.md), [Google Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/google/schedule_instance/README.md)
+- **Merged At**: 2025-08-14 23:56:10 UTC
+
+---
+
+### PR [#3410](https://github.com/flexera-public/policy_templates/pull/3410): POL-1577 - fix: max/min selection method
+
+*Minor Update, Bug Fix*
+
+#### Description
+
+> Fixes issue that was causing incorrect Max or minimum values to get selected
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/POL-1577
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
+- **Merged At**: 2025-08-14 23:55:00 UTC
+
+---
+
+### PR [#3395](https://github.com/flexera-public/policy_templates/pull/3395): POL-1573 API Update
+
+*Unpublished, Minor Update*
+
+#### Description
+
+> Updates most policy templates to get metadata about themselves using the newer APIs at flexera.com instead of the governance APIs.
+>
+> This does not update meta parent policies or update other API calls to the governance APIs. This is part 1 in a larger piece of work.
+>
+> https://app.flexera.com/orgs/6/automation/applied-policies/projects/7954?policyId=6895fc931b706bb1b63f0ed8
+>
+> The Dangerfile errors/warnings are for stuff that already exists in these policy templates that are not relevant to this change.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3395) for these details.
+- **Merged At**: 2025-08-13 18:26:14 UTC
+
+---
+
+### PR [#3394](https://github.com/flexera-public/policy_templates/pull/3394): FOAA-307 - Scheduled Report fix issue with ignore current mont and month granularity
+
+*Minor Update, Bug Fix*
+
+#### Description
+
+> Fixes issue with ignore current month and month granularity with the expected outcome that the result would show 1 month in the chart and it would be the previous month.  Currently it's showing 2 months (current and previous)
+>
+> ### Issues Resolved
+>
+> Identified during work related to https://flexera.atlassian.net/browse/FOAA-307
+>
+
+#### Metadata
+
+- **Policies**: [Scheduled Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_reports/README.md)
+- **Merged At**: 2025-08-11 16:13:00 UTC
+
+---
+
 ### PR [#3399](https://github.com/flexera-public/policy_templates/pull/3399): POL-1576 Flexera Billing Centers from Dimension Values Fix
 
 *Minor Update*
@@ -1923,139 +2043,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS S3 Incomplete Multi-Part Uploads](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_multipart_uploads/README.md), [Meta Parent: AWS S3 Incomplete Multi-Part Uploads](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_multipart_uploads/README.md)
 - **Merged At**: 2024-11-22 13:28:09 UTC
-
----
-
-### PR [#2722](https://github.com/flexera-public/policy_templates/pull/2722): FOPTS-5124 Added batch processing for some Policies with high memory consumption
-
-#### Description
-
-> Added batch processing in AWS Object Storage Optimization, Azure Databricks Rightsize Compute Instances and Azure Reserved Instance Recommendations Policies
->
->
-> Following the release of batch processing for all organizations, it was decided to modify the templates with the highest memory consumption to make use of batch processing. These policies are:
-> - Azure Databricks Rightsize Compute Instances
-> - Azure Reserved Instance Recommendations
->
-> NOTE: For AWS Object Storage Optimization, I think there was a mistake in the parameters to run script
-> _$js_aws_s3_objects_with_storage_class_. It was using _$ds_aws_list_s3_objects_ but I think it should use, _$ds_aws_s3_objects_ because it is the data source that has the objects filtered by tags if we use that param, and _$ds_aws_s3_objects_  was not being used by any other datasource. I changed the data source used as input, but let me know if it was correct
->
-> ### Issues Resolved
->
-> [FOPTS-5124](https://flexera.atlassian.net/browse/FOPTS-5124)
->
-
-#### Metadata
-
-- **Policies**: [Azure Databricks Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/databricks/rightsize_compute/README.md), [Meta Parent: Azure Databricks Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/databricks/rightsize_compute/README.md), [Azure Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/recommendations/README.md), [Meta Parent: Azure Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/recommendations/README.md)
-- **Merged At**: 2024-11-21 17:03:20 UTC
-
----
-
-### PR [#2830](https://github.com/flexera-public/policy_templates/pull/2830): FOPTS-5507  Added hide_skip_approvals to All Active Policies
-
-#### Description
-
-> This PR marks the last update for the Hide Skip Approval [task](https://flexera.atlassian.net/browse/FLEX-5397).
-> ✅ The first phase, updating AWS Right Size policies, is complete in [PR-2799](https://github.com/flexera-public/policy_templates/pull/2799).
-> ✅ Additionally, the metaparent policy compiler and Rakefile have been successfully updated : [PR-2813](https://github.com/flexera-public/policy_templates/pull/2813)
->
-> Current Phase (Phase 2):
-> In this phase, we have added the hide_skip_approvals field to the info section of policy templates that do not use the request approval option in any escalation. This field allows the UI to dynamically show or hide the "Skip Approval" option based on the policy’s configuration. Following the AWS Right Size policy updates, these changes have now been applied to **all remaining active policies.**
->
-> More context:[ Seeking Your Input: Proposed Solution for Conditional "Skip Approvals" Visibility](https://teams.microsoft.com/l/message/19:833373548e104af2a20b0216eda1ba7b@thread.skype/1728495063426?tenantId=91034d23-0b63-4943-b138-367d4dfac252&groupId=fb250818-e040-4a26-b207-61c3cd99fd6e&parentMessageId=1728495063426&teamName=Team%20Flexera%20One&channelName=Policy%20Support%20and%20Questions&createdTime=1728495063426)
->
-> ### Issues Resolved
->
->
-> [FLEX-5397](https://flexera.atlassian.net/browse/FLEX-5397)
->
-> <!-- URL to the Applied Policy that was used for dev/testing below -->
-> <!-- This can be helpful for a reviewer to validate the changes proposed resulted in the expected behavior. If you do not have access or ability to apply the policy template, please mention this in your PR description.-->
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2830) for these details.
-- **Merged At**: 2024-11-14 19:54:59 UTC
-
----
-
-### PR [#2829](https://github.com/flexera-public/policy_templates/pull/2829): FOPTS-5505 Fixed consumption calculation for ITAM Overused Licenses
-
-#### Description
-
-> An issue with consumption percentage calculation was fixed.
->
-> ### Issues Resolved
->
-> [SQ-11024](https://flexera.atlassian.net/browse/SQ-11024)
-> [FOPTS-5505](https://flexera.atlassian.net/browse/FOPTS-5505)
->
-
-#### Metadata
-
-- **Policies**: [ITAM Overused Licenses](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/fnms/overused_licenses/README.md)
-- **Merged At**: 2024-11-14 16:49:56 UTC
-
----
-
-### PR [#2818](https://github.com/flexera-public/policy_templates/pull/2818): POL-1413 Currency Separator Fix
-
-#### Description
-
-> This fixes the commonly-used formatNumber function present in many policy templates to ensure that it does not end up inserting the text "undefined" where comma separators are supposed to go.
->
-> (Warnings/errors are false positives unrelated to the specific change being made with this PR)
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2818) for these details.
-- **Merged At**: 2024-11-11 18:09:26 UTC
-
----
-
-### PR [#2813](https://github.com/flexera-public/policy_templates/pull/2813): FLEX-5397 - Modify Meta Parent Compiler to Conditionally Include `hide_skip_approvals`
-
-#### Description
-
-> This pull request enhances the Meta Parent Policy Template Compiler to conditionally include the hide_skip_approvals field in the generated meta parent policy templates when it exists in the child policy templates.
-> It also removes prior manual modifications to meta parent policies : https://github.com/flexera-public/policy_templates/pull/2799
->
-> More context:[ Seeking Your Input: Proposed Solution for Conditional "Skip Approvals" Visibility](https://teams.microsoft.com/l/message/19:833373548e104af2a20b0216eda1ba7b@thread.skype/1728495063426?tenantId=91034d23-0b63-4943-b138-367d4dfac252&groupId=fb250818-e040-4a26-b207-61c3cd99fd6e&parentMessageId=1728495063426&teamName=Team%20Flexera%20One&channelName=Policy%20Support%20and%20Questions&createdTime=1728495063426)
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-> [FLEX-5397](https://flexera.atlassian.net/browse/FLEX-5397)
->
->
-> <!-- URL to the Applied Policy that was used for dev/testing below -->
-> <!-- This can be helpful for a reviewer to validate the changes proposed resulted in the expected behavior. If you do not have access or ability to apply the policy template, please mention this in your PR description.-->
->
-
-#### Metadata
-
-- **Policies**: [Meta Parent: AWS Rightsize EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/README.md), [Meta Parent: AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/README.md), [Meta Parent: AWS Rightsize ElastiCache](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_elasticache/README.md), [Meta Parent: AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md), [Meta Parent: AWS Rightsize Redshift](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_redshift/README.md)
-- **Merged At**: 2024-11-08 19:46:42 UTC
-
----
-
-### PR [#2808](https://github.com/flexera-public/policy_templates/pull/2808): POL-1402 Azure Rightsizing Compute: Consider Managed Disk
-
-#### Description
-
-> This updates the `Azure Rightsize Compute Instances` policy template so that it never recommends a downsize to a size that wouldn't support the current number of attached disks for an instance.
->
-> The [Virtual Machine Sizes - List](https://learn.microsoft.com/en-us/rest/api/compute/virtual-machine-sizes/list?view=rest-compute-2024-07-01&tabs=HTTP) API call is used during policy execution to get a list of resource types and the maximum number of attached disks. The policy template has been given a major version change since the above API call requires an additional permission.
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md), [Meta Parent: Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md)
-- **Merged At**: 2024-11-07 13:07:23 UTC
 
 ---
 
