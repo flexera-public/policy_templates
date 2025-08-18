@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "2.1.7",
+  version: "3.0.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Superseded Compute Instances",
@@ -182,12 +182,25 @@ EOS
 end
 
 # Various data tables needed for later in the policy
-datasource "ds_azure_instance_size_map" do
+datasource "ds_azure_instance_types" do
   request do
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/azure/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/azure/azure_compute_instance_types.json"
     header "User-Agent", "RS Policies"
   end
+end
+
+datasource "ds_azure_instance_type_map" do
+  run_script $js_azure_instance_type_map, $ds_azure_instance_types
+end
+
+script "js_azure_instance_type_map", type: "javascript" do
+  parameters "ds_azure_instance_types"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  _.each(ds_azure_instance_types, function(entry) { result[entry["name"]] = entry })
+EOS
 end
 
 datasource "ds_azure_instance_cost_map" do
@@ -727,11 +740,11 @@ EOS
 end
 
 datasource "ds_superseded_instances" do
-  run_script $js_superseded_instances, $ds_azure_instances_region_filtered, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_azure_instance_cost_map, $ds_region_table, $ds_currency_conversion, $ds_currency, $ds_applied_policy, $param_min_savings
+  run_script $js_superseded_instances, $ds_azure_instances_region_filtered, $ds_instance_costs_grouped, $ds_azure_instance_type_map, $ds_azure_instance_cost_map, $ds_region_table, $ds_currency_conversion, $ds_currency, $ds_applied_policy, $param_min_savings
 end
 
 script "js_superseded_instances", type: "javascript" do
-  parameters "ds_azure_instances_region_filtered", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_azure_instance_cost_map", "ds_region_table", "ds_currency_conversion", "ds_currency", "ds_applied_policy", "param_min_savings"
+  parameters "ds_azure_instances_region_filtered", "ds_instance_costs_grouped", "ds_azure_instance_type_map", "ds_azure_instance_cost_map", "ds_region_table", "ds_currency_conversion", "ds_currency", "ds_applied_policy", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -771,6 +784,8 @@ script "js_superseded_instances", type: "javascript" do
     superseded_type = null
     instance_type_price = null
     superseded_type_price = null
+    current_nfu = 0
+    superseded_nfu = 0
     savings = 0.0
     hourly_cost_multiplier = 365.25 / 12 * 24
 
@@ -784,8 +799,8 @@ script "js_superseded_instances", type: "javascript" do
       purchase_option = ds_instance_costs_grouped[id]['purchase_option']
     }
 
-    if (ds_azure_instance_size_map[instance_type] != undefined) {
-      superseded_table = ds_azure_instance_size_map[instance_type]['superseded']
+    if (ds_azure_instance_type_map[instance_type] != undefined) {
+      superseded_table = ds_azure_instance_type_map[instance_type]['superseded']
 
       if (typeof(superseded_table) == 'object') {
         superseded_type = superseded_table[superseded_parameter]
@@ -818,10 +833,25 @@ script "js_superseded_instances", type: "javascript" do
       }
     }
 
-    if (typeof(instance_type_price) == 'number' && typeof(superseded_type_price) == 'number') {
-      instance_type_price *= ds_currency['exchange_rate'] * hourly_cost_multiplier
-      superseded_type_price *= ds_currency['exchange_rate'] * hourly_cost_multiplier
-      savings = instance_type_price - superseded_type_price
+    if (ds_azure_instance_type_map[instance_type] != undefined) {
+      current_nfu = Number(ds_azure_instance_type_map[instance_type]['specs']['nfu'])
+    }
+    if (ds_azure_instance_type_map[superseded_type] != undefined) {
+      superseded_nfu = Number(ds_azure_instance_type_map[instance_type]['specs']['nfu'])
+    }
+
+    if (typeof(cost) == 'number') {
+      if (typeof(instance_type_price) == 'number' && typeof(superseded_type_price) == 'number') {
+        // Calculate savings based on proportion of listed prices
+        savings = cost - cost * superseded_type_price / instance_type_price
+      } else if (
+        typeof(current_nfu) == 'number' &&
+        typeof(superseded_nfu) == 'number' &&
+        current_nfu > 0 &&
+        superseded_nfu > 0 // avoid NaN and 0 by using greater than
+      ) {
+        savings = cost - cost * superseded_nfu / current_nfu
+      }
     }
 
     if (typeof(superseded_type) == 'string' && savings >= param_min_savings) {
