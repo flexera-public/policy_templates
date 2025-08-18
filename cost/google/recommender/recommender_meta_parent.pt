@@ -171,9 +171,8 @@ end
 datasource "ds_self_policy_information" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", policy_id])
   end
   result do
     encoding "json"
@@ -247,9 +246,8 @@ end
 datasource "ds_get_published_child_policy_information" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/orgs/", rs_org_id, "/published_templates"])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/published-templates"])
   end
   result do
     encoding "json"
@@ -281,9 +279,8 @@ end
 datasource "ds_get_project_child_policy_information" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/policy_templates"])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/policy-templates"])
   end
   result do
     encoding "json"
@@ -453,9 +450,8 @@ end
 datasource "ds_get_existing_policies" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies"])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies"])
     query "meta_parent_policy_id", policy_id
   end
   result do
@@ -474,9 +470,8 @@ end
 datasource "ds_get_existing_policies_incidents" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/incidents"])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/incidents"])
     query "meta_parent_policy_id", policy_id
     query "state", "triggered"
   end
@@ -958,10 +953,8 @@ datasource "ds_child_incident_details" do
   iterate $ds_get_existing_policies_incidents
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/incidents/", val(iter_item, 'incident_id')])
-    header "User-Agent", "RS Policies"
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/incidents/", val(iter_item, 'incident_id')])
     query "view", "extended"
   end
 end
@@ -1280,9 +1273,8 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id, $
         auth: $$auth_flexera,
         verb: "get",
         https: true,
-        host: $governance_host,
-        href: join(["/api/governance/projects/", $rs_project_id, "/incidents/", $incident["id"]]),
-        headers: { "Api-Version": "1.0" },
+        host: val($ds_flexera_api_hosts, "flexera"),
+        href: join(["/policy/v1/orgs/", $rs_org_id, "/projects/", $rs_project_id, "/incidents/", $incident["id"]]),
         query_strings: { "view": "extended" }
       }
       $response = http_request($request)
@@ -1306,9 +1298,8 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id, $
         auth: $$auth_flexera,
         verb: "post",
         https: true,
-        host: $governance_host,
-        href: join(["/api/governance/projects/", $rs_project_id, "/incidents/", $incident["id"],"/actions/", $action_id,"/run_action"]),
-        headers: { "Api-Version": "1.0" },
+        host: val($ds_flexera_api_hosts, "flexera"),
+        href: join(["/policy/v1/orgs/", $rs_org_id, "/projects/", $rs_project_id, "/incidents/", $incident["id"],"/actions/", $action_id,"/run_action"]),
         body: { "options":[{ "name": "ids",  "value": $incident["resource_ids"] }] }
       }
       # If the action has parameters, add them to the request body
@@ -1338,9 +1329,8 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id, $
           auth: $$auth_flexera,
           verb: "get",
           https: true,
-          host: $governance_host,
+          host: val($ds_flexera_api_hosts, "flexera"),
           href: $action_location,
-          headers: { "Api-Version": "1.0" },
           query_strings: { "view": "extended" }
         }
         $response = http_request($request)
@@ -1386,11 +1376,11 @@ escalation "esc_email" do
 end
 
 escalation "create_policies" do
-  run "create_applied_policies", data, rs_governance_host, rs_project_id
+  run "create_applied_policies", data, val($ds_flexera_api_hosts, "flexera"), rs_org_id, rs_project_id
 end
 
 # if name !=null
-define create_applied_policies($data, $governance_host, $rs_project_id) return $responses do
+define create_applied_policies($data, $governance_host, $rs_org_id, $rs_project_id) return $responses do
   $responses = []
   $$debug = []
   $item_index = 0
@@ -1404,8 +1394,7 @@ define create_applied_policies($data, $governance_host, $rs_project_id) return $
       verb: "post",
       https: true,
       host: $governance_host,
-      href: join(["/api/governance/projects/", $rs_project_id, "/applied_policies"]),
-      headers: { "Api-Version": "1.0" },
+      href: join(["/policy/v1/orgs/", $rs_org_id, "/projects/", $rs_project_id, "/applied-policies"]),
       body: {
         "name": $item["name"],
         "description": $item["description"],
@@ -1426,10 +1415,10 @@ define create_applied_policies($data, $governance_host, $rs_project_id) return $
 end
 
 escalation "update_policies" do
-  run "update_applied_policies", data, rs_governance_host, rs_project_id
+  run "update_applied_policies", data, val($ds_flexera_api_hosts, "flexera"), rs_org_id, rs_project_id
 end
 
-define update_applied_policies($data, $governance_host, $rs_project_id) return $responses do
+define update_applied_policies($data, $governance_host, $rs_org_id, $rs_project_id) return $responses do
   $responses = []
   $$debug = []
   $item_index = 0
@@ -1443,8 +1432,7 @@ define update_applied_policies($data, $governance_host, $rs_project_id) return $
       verb: "patch",
       https: true,
       host: $governance_host,
-      href: join(["/api/governance/projects/", $rs_project_id, "/applied_policies/", $item["applied_policy_id"]]),
-      headers: { "Api-Version": "1.0" },
+      href: join(["/policy/v1/orgs/", $rs_org_id, "/projects/", $rs_project_id, "/applied-policies/", $item["applied_policy_id"]]),
       body: {
         "options": $item["options"]
       }
@@ -1459,17 +1447,17 @@ define update_applied_policies($data, $governance_host, $rs_project_id) return $
 end
 
 escalation "delete_policies" do
-  run "delete_applied_policies", data, rs_governance_host, rs_project_id
+  run "delete_applied_policies", data, val($ds_flexera_api_hosts, "flexera"), rs_org_id, rs_project_id
 end
 
 escalation "delete_policies_from_ui" do
   automatic false
   label "Delete Child Policies"
   description "Approval to delete selected child policies. New child policies will be created the next time the meta parent executes."
-  run "delete_applied_policies", data, rs_governance_host, rs_project_id
+  run "delete_applied_policies", data, val($ds_flexera_api_hosts, "flexera"), rs_org_id, rs_project_id
 end
 
-define delete_applied_policies($data, $governance_host, $rs_project_id) return $responses do
+define delete_applied_policies($data, $governance_host, $rs_org_id, $rs_project_id) return $responses do
   $responses = []
   $$debug = []
   $item_index = 0
@@ -1483,8 +1471,7 @@ define delete_applied_policies($data, $governance_host, $rs_project_id) return $
       verb: "delete",
       https: true,
       host: $governance_host,
-      href: join(["/api/governance/projects/", $rs_project_id, "/applied_policies/", $item["id"]]),
-      headers: { "Api-Version": "1.0" }
+      href: join(["/policy/v1/orgs/", $rs_org_id, "/projects/", $rs_project_id, "/applied-policies/", $item["id"]]),
     )
     $responses << $response
     $$debug << to_json({
