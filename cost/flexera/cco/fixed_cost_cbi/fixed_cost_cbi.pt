@@ -53,6 +53,15 @@ parameter "param_month_specific" do
   default "2020-01"
 end
 
+parameter "param_amortization" do
+  type "string"
+  category "Policy Settings"
+  label "Amortization"
+  description "Whether or not to amortize the fixed cost across the month. See the README for more details."
+  allowed_values "Amortize", "Do Not Amortize"
+  default "Amortize"
+end
+
 parameter "param_cbi_endpoint" do
   type "string"
   category "Policy Settings"
@@ -292,11 +301,11 @@ EOS
 end
 
 datasource "ds_cost_csv" do
-  run_script $js_cost_csv, $ds_dates, $ds_currency, $param_cost_amount, $param_metadata_cloud_vendor_account_id, $param_metadata_cloud_vendor_account_name, $param_metadata_category, $param_metadata_service, $param_metadata_region, $param_metadata_resourcetype, $param_metadata_instancetype, $param_metadata_lineitemtype, $param_metadata_tags
+  run_script $js_cost_csv, $ds_dates, $ds_currency, $param_cost_amount, $param_metadata_cloud_vendor_account_id, $param_metadata_cloud_vendor_account_name, $param_metadata_category, $param_metadata_service, $param_metadata_region, $param_metadata_resourcetype, $param_metadata_instancetype, $param_metadata_lineitemtype, $param_metadata_tags, $param_amortization
 end
 
 script "js_cost_csv", type: "javascript" do
-  parameters "ds_dates", "ds_currency", "param_cost_amount", "param_metadata_cloud_vendor_account_id", "param_metadata_cloud_vendor_account_name", "param_metadata_category", "param_metadata_service", "param_metadata_region", "param_metadata_resourcetype", "param_metadata_instancetype", "param_metadata_lineitemtype", "param_metadata_tags"
+  parameters "ds_dates", "ds_currency", "param_cost_amount", "param_metadata_cloud_vendor_account_id", "param_metadata_cloud_vendor_account_name", "param_metadata_category", "param_metadata_service", "param_metadata_region", "param_metadata_resourcetype", "param_metadata_instancetype", "param_metadata_lineitemtype", "param_metadata_tags", "param_amortization"
   result "result"
   code <<-'EOS'
   // Set static field values. These will be the same for every entry in the CSV file
@@ -339,17 +348,23 @@ script "js_cost_csv", type: "javascript" do
   future_date.setDate(future_date.getDate() - 1)
   total_days_in_month = Number(future_date.toISOString().substring(8, 10))
 
-  // Calculate daily cost from monthly cost.
-  // Round it to avoid causing problems with extremely small numbers in scientific notation.
-  Cost = Math.round(param_cost_amount / total_days_in_month * 1000000) / 1000000
+  if (param_amortization == "Amortize") {
+    // Calculate daily cost from monthly cost.
+    // Round it to avoid causing problems with extremely small numbers in scientific notation.
+    Cost = Math.round(param_cost_amount / total_days_in_month * 1000000) / 1000000
 
-  // Determine the number of days we need to insert billing data for
-  // Simply use the number of days in the entire month if not current month
-  days_in_month = total_days_in_month
+    // Determine the number of days we need to insert billing data for
+    // Simply use the number of days in the entire month if not current month
+    days_in_month = total_days_in_month
 
-  // Otherwise, figure out how far into the current month we are and use that
-  if (ds_dates['period'] == new Date().toISOString().substring(0, 7)) {
-    days_in_month = Number(new Date().toISOString().substring(8, 10))
+    // Otherwise, figure out how far into the current month we are and use that
+    if (ds_dates['period'] == new Date().toISOString().substring(0, 7)) {
+      days_in_month = Number(new Date().toISOString().substring(8, 10))
+    }
+  } else {
+    // If we're not amortizing, just do the flat cost on the 1st of the month
+    Cost = param_cost_amount
+    days_in_month = 1
   }
 
   // Create header row
