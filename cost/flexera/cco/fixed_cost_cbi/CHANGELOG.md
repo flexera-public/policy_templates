@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.4
+
+- Fixed issue where valid CBI Endpoint IDs were not being accepted when applying the policy template.
+
 ## v0.2.3
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
