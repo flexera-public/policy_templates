@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.0
+
+- Added option to either amortize or not amortize the fixed cost.
+- Fixed issue where valid CBI Endpoint IDs were not being accepted when applying the policy template.
+- Increased precision of daily cost calculation to avoid rounding errors producing slightly incorrect results.
+
 ## v0.2.3
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
