@@ -1,8 +1,9 @@
 # Changelog
 
-## v0.2.4
+## v0.3.0
 
 - Fixed issue where valid CBI Endpoint IDs were not being accepted when applying the policy template.
+- Increased precision of daily cost calculation to avoid rounding errors producing slightly incorrect results.
 
 ## v0.2.3
 
