@@ -1,5 +1,10 @@
 # Changelog
 
+## v6.0.3
+
+- Updated meta policy code to use newer Flexera API.
+- Updated incident table to ensure Account ID is properly scraped for Optimization dashboard.
+
 ## v6.0.2
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.

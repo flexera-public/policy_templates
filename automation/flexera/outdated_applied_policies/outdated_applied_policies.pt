@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "weekly"
 info(
-  version: "0.2.4",
+  version: "0.2.5",
   provider: "Flexera",
   service: "Automation",
   policy_set: "Automation",
@@ -77,74 +77,129 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
 datasource "ds_self_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
 datasource "ds_applied_policies" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies"])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies"])
+    query "filter", 'metaParentPolicyId eq "null"'
   end
   result do
-    encoding "json"
-    collect jmes_path(response, "items[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "href", jmes_path(col_item, "href")
-      field "name", jmes_path(col_item, "name")
-      field "description", jmes_path(col_item, "description")
+    collect jmes_path(response, "values[*]") do
       field "category", jmes_path(col_item, "category")
-      field "created_at", jmes_path(col_item, "created_at")
-      field "created_by", jmes_path(col_item, "created_by.email")
-      field "frequency", jmes_path(col_item, "frequency")
-      field "category", jmes_path(col_item, "category")
+      field "created_at", jmes_path(col_item, "createdAt")
+      field "created_by", jmes_path(col_item, "createdBy.email")
       field "credentials", jmes_path(col_item, "credentials")
-      field "options", jmes_path(col_item, "options")
-      field "severity", jmes_path(col_item, "severity")
-      field "skip_approvals", jmes_path(col_item, "skip_approvals")
-      field "scope", jmes_path(col_item, "scope")
-      field "dry_run", jmes_path(col_item, "dry_run")
-      field "log_level", jmes_path(col_item, "log_level")
+      field "description", jmes_path(col_item, "description")
+      field "doc_link", jmes_path(col_item, "docLink")
+      field "dry_run", jmes_path(col_item, "dryRun")
+      field "error", jmes_path(col_item, "error")
+      field "errored_at", jmes_path(col_item, "erroredAt")
+      field "frequency", get(1, split(jmes_path(col_item, "schedule.rrule"), '='))
+      field "id", jmes_path(col_item, "id")
+      field "incident_aggregate_id", jmes_path(col_item, "incidentAggregateId")
+      field "info", jmes_path(col_item, "info")
+      field "kind", jmes_path(col_item, "kind")
+      field "log_level", jmes_path(col_item, "logLevel")
       field "version", jmes_path(col_item, "info.version")
-      field "policy_template", jmes_path(col_item, "policy_template")
-      field "published_template", jmes_path(col_item, "published_template")
+      field "parent", jmes_path(col_item, "parent.ref")
+      field "name", jmes_path(col_item, "name")
+      field "options", jmes_path(col_item, "options")
+      field "policy_aggregate_id", jmes_path(col_item, "policyAggregateId")
+      field "policy_template", jmes_path(col_item, "policyTemplate")
+      field "published_template", jmes_path(col_item, "publishedTemplate")
+      field "scope", jmes_path(col_item, "scope")
+      field "severity", jmes_path(col_item, "severity")
+      field "skip_approvals", jmes_path(col_item, "skipApprovals")
+      field "status", jmes_path(col_item, "status")
+      field "updated_at", jmes_path(col_item, "updatedAt")
+      field "href", join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", jmes_path(col_item, "id")])
     end
   end
 end
 
-datasource "ds_policy_aggregates" do
+datasource "ds_applied_aggregates" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/orgs/", rs_org_id, "/policy_aggregates"])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/policy-aggregates"])
   end
   result do
-    encoding "json"
-    collect jmes_path(response, "items[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "href", jmes_path(col_item, "href")
-      field "name", jmes_path(col_item, "name")
-      field "description", jmes_path(col_item, "description")
+    collect jmes_path(response, "values[*]") do
       field "category", jmes_path(col_item, "category")
-      field "created_at", jmes_path(col_item, "created_at")
-      field "created_by", jmes_path(col_item, "created_by.email")
-      field "frequency", jmes_path(col_item, "frequency")
-      field "category", jmes_path(col_item, "category")
+      field "created_at", jmes_path(col_item, "createdAt")
+      field "created_by", jmes_path(col_item, "createdBy.email")
       field "credentials", jmes_path(col_item, "credentials")
+      field "description", jmes_path(col_item, "description")
+      field "doc_link", jmes_path(col_item, "docLink")
+      field "dry_run", jmes_path(col_item, "dryRun")
+      field "error_count", jmes_path(col_item, "errorCount")
+      field "frequency", get(1, split(jmes_path(col_item, "schedule.rrule"), '='))
+      field "id", jmes_path(col_item, "id")
+      field "incident_aggregate_id", jmes_path(col_item, "incidentAggregateId")
+      field "info", jmes_path(col_item, "info")
+      field "kind", jmes_path(col_item, "kind")
+      field "log_level", jmes_path(col_item, "logLevel")
+      field "version", jmes_path(col_item, "info.version")
+      field "name", jmes_path(col_item, "name")
       field "options", jmes_path(col_item, "options")
+      field "published_template", jmes_path(col_item, "publishedTemplate")
+      field "running_project_ids", jmes_path(col_item, "runningProjectIds")
       field "severity", jmes_path(col_item, "severity")
-      field "skip_approvals", jmes_path(col_item, "skip_approvals")
-      field "dry_run", jmes_path(col_item, "dry_run")
-      field "running_project_ids", jmes_path(col_item, "running_project_ids")
-      field "published_template", jmes_path(col_item, "published_template")
+      field "skip_approvals", jmes_path(col_item, "skipApprovals")
+      field "status", jmes_path(col_item, "status")
+      field "updated_at", jmes_path(col_item, "updatedAt")
+      field "aggregate", "true"
+      field "href", join(["/policy/v1/orgs/", rs_org_id, "/policy-aggregates/", jmes_path(col_item, "id")])
     end
   end
 end
@@ -178,11 +233,11 @@ datasource "ds_catalog_policies" do
 end
 
 datasource "ds_outdated_policies" do
-  run_script $js_outdated_policies, $ds_applied_policies, $ds_catalog_policies, $ds_policy_aggregates, $ds_self_policy, $param_ignore_list, $param_report_filter, rs_org_id, rs_project_id, policy_id, rs_optima_host
+  run_script $js_outdated_policies, $ds_applied_policies, $ds_catalog_policies, $ds_applied_aggregates, $ds_flexera_api_hosts, $ds_self_policy, $param_ignore_list, $param_report_filter, rs_org_id, rs_project_id, policy_id, rs_optima_host
 end
 
 script "js_outdated_policies", type: "javascript" do
-  parameters "ds_applied_policies", "ds_catalog_policies", "ds_policy_aggregates", "ds_self_policy", "param_ignore_list", "param_report_filter", "rs_org_id", "rs_project_id", "policy_id", "rs_optima_host"
+  parameters "ds_applied_policies", "ds_catalog_policies", "ds_applied_aggregates", "ds_flexera_api_hosts", "ds_self_policy", "param_ignore_list", "param_report_filter", "rs_org_id", "rs_project_id", "policy_id", "rs_optima_host"
   result "result"
   code <<-'EOS'
   tld_table = {
@@ -195,7 +250,7 @@ script "js_outdated_policies", type: "javascript" do
 
   aggregate_object = {}
 
-  _.each(ds_policy_aggregates, function(agg) {
+  _.each(ds_applied_aggregates, function(agg) {
     if (typeof(agg['running_project_ids']) == 'object') {
       if (agg['running_project_ids'].length == 1 && agg['running_project_ids'][0] == rs_project_id) {
         aggregate_object[agg['name']] = agg['href']
@@ -213,9 +268,7 @@ script "js_outdated_policies", type: "javascript" do
     reject_policy = false
 
     // Exclude this policy to avoid the policy trying to terminate itself if the user actions on it
-    if (policy['id'] == policy_id) {
-      reject_policy = true
-    }
+    if (policy['id'] == policy_id) { reject_policy = true }
 
     // Exclude policies on the user-provided ignore list
     ignore_list = _.map(param_ignore_list, function(item) { return item.toLowerCase().trim() })
@@ -234,7 +287,7 @@ script "js_outdated_policies", type: "javascript" do
       }
 
       // Exclude policies applied from a catalog other than the Flexera one
-      if (!reject_policy && policy['published_template']['updated_by']['email'] != 'support@flexera.com') {
+      if (!reject_policy && policy['published_template']['updatedBy']['email'] != 'support@flexera.com') {
         reject_policy = true
       }
     }
@@ -275,14 +328,14 @@ script "js_outdated_policies", type: "javascript" do
     update_body = {
       credentials: policy['credentials'],
       description: policy['description'],
-      dry_run: policy['dry_run'],
-      frequency: policy['frequency'],
-      log_level: policy['log_level'],
+      dryRun: policy['dry_run'],
+      logLevel: policy['log_level'],
       name: policy['name'],
       options: policy['options'],
       severity: policy['severity'],
-      skip_approvals: policy['skip_approvals'],
-      template_href: policy['published_template']['href']
+      skipApprovals: policy['skip_approvals'],
+      schedule: { rrule: [ "FREQ", policy['frequency'] ].join("=") },
+      templateRef: policy['published_template']['ref']
     }
 
     catalog_recommendation_type = ""
@@ -332,6 +385,7 @@ script "js_outdated_policies", type: "javascript" do
       self_policy_name: ds_self_policy['name'],
       href: href,
       update_body: update_body,
+      api_host: ds_flexera_api_hosts["flexera"],
       recommendationDetails: recommendationDetails,
       message: ''
     }
@@ -374,11 +428,11 @@ EOS
 end
 
 datasource "ds_deprecated_policies" do
-  run_script $js_deprecated_policies, $ds_applied_policies, $ds_catalog_policies, $ds_policy_aggregates, $ds_self_policy, $param_ignore_list, $param_report_filter, rs_org_id, rs_project_id, policy_id, rs_optima_host
+  run_script $js_deprecated_policies, $ds_applied_policies, $ds_catalog_policies, $ds_applied_aggregates, $ds_flexera_api_hosts, $ds_self_policy, $param_ignore_list, $param_report_filter, rs_org_id, rs_project_id, policy_id, rs_optima_host
 end
 
 script "js_deprecated_policies", type: "javascript" do
-  parameters "ds_applied_policies", "ds_catalog_policies", "ds_policy_aggregates", "ds_self_policy", "param_ignore_list", "param_report_filter", "rs_org_id", "rs_project_id", "policy_id", "rs_optima_host"
+  parameters "ds_applied_policies", "ds_catalog_policies", "ds_applied_aggregates", "ds_flexera_api_hosts", "ds_self_policy", "param_ignore_list", "param_report_filter", "rs_org_id", "rs_project_id", "policy_id", "rs_optima_host"
   result "result"
   code <<-'EOS'
   tld_table = {
@@ -391,7 +445,7 @@ script "js_deprecated_policies", type: "javascript" do
 
   aggregate_object = {}
 
-  _.each(ds_policy_aggregates, function(agg) {
+  _.each(ds_applied_aggregates, function(agg) {
     if (typeof(agg['running_project_ids']) == 'object') {
       if (agg['running_project_ids'].length == 1 && agg['running_project_ids'][0] == rs_project_id) {
         aggregate_object[agg['name']] = agg['href']
@@ -408,44 +462,38 @@ script "js_deprecated_policies", type: "javascript" do
   filtered_policies = _.reject(ds_applied_policies, function(policy) {
     reject_policy = false
 
+    // Exclude all policies if the user opted not to report on deprecated policies
+    if (param_report_filter == "Report Outdated Only") { return true }
+
+    // Exclude policies that were not applied from the catalog
+    if (!policy['published_template']) { return true }
+
     // Exclude this policy to avoid the policy trying to terminate itself if the user actions on it
-    if (policy['id'] == policy_id) {
-      reject_policy = true
-    }
+    if (policy['id'] == policy_id) { return true }
 
     // Exclude policies on the user-provided ignore list
     ignore_list = _.map(param_ignore_list, function(item) { return item.toLowerCase().trim() })
 
     if (!reject_policy && (_.contains(ignore_list, policy['name'].toLowerCase()) || _.contains(ignore_list, policy['id'].toLowerCase()))) {
-      reject_policy = true
+      return true
     }
 
-    // Exclude policies that were not applied from the catalog
-    if (!reject_policy && policy['published_template'] == null) {
-      reject_policy = true
-    } else if (!reject_policy) {
-      // Exclude policies where we did not find a corresponding entry in the active policy list
-      if (catalog_object[policy['published_template']['name']] == undefined) {
-        reject_policy = true
-      }
-
-      // Exclude policies applied from a catalog other than the Flexera one
-      if (!reject_policy && policy['published_template']['updated_by']['email'] != 'support@flexera.com') {
-        reject_policy = true
-      }
+    // Exclude policies where we did not find a corresponding entry in the active policy list
+    if (!catalog_object[policy['published_template']['name']]) {
+      return true
     }
 
-    // Exclude all policies if the user opted not to report on deprecated policies
-    if (!reject_policy && param_report_filter == "Report Outdated Only") {
-      reject_policy = true
+    // Exclude policies applied from a catalog other than the Flexera one
+    if (policy['published_template']['updatedBy']['email'] != 'support@flexera.com') {
+      return true
     }
 
     // Exclude non-deprecated policies
-    if (!reject_policy && !catalog_object[policy['published_template']['name']]['deprecated']) {
-      reject_policy = true
+    if (!catalog_object[policy['published_template']['name']]['deprecated']) {
+      return true
     }
 
-    return reject_policy
+    return false
   })
 
   result = _.map(filtered_policies, function(policy) {
@@ -469,14 +517,14 @@ script "js_deprecated_policies", type: "javascript" do
     update_body = {
       credentials: policy['credentials'],
       description: policy['description'],
-      dry_run: policy['dry_run'],
-      frequency: policy['frequency'],
-      log_level: policy['log_level'],
+      dryRun: policy['dry_run'],
+      logLevel: policy['log_level'],
       name: policy['name'],
       options: policy['options'],
       severity: policy['severity'],
-      skip_approvals: policy['skip_approvals'],
-      template_href: policy['published_template']['href']
+      skipApprovals: policy['skip_approvals'],
+      schedule: { rrule: [ "FREQ", policy['frequency'] ].join("=") },
+      templateRef: policy['published_template']['ref']
     }
 
     catalog_recommendation_type = ""
@@ -526,6 +574,7 @@ script "js_deprecated_policies", type: "javascript" do
       self_policy_name: ds_self_policy['name'],
       href: href,
       update_body: update_body,
+      api_host: ds_flexera_api_hosts["flexera"],
       recommendationDetails: recommendationDetails,
       message: ''
     }
@@ -645,6 +694,9 @@ policy "pol_outdated_policies" do
       field "update_body" do
         label "Applied Policy Details"
       end
+      field "api_host" do
+        label "API Host"
+      end
     end
   end
   validate_each $ds_deprecated_policies do
@@ -719,6 +771,9 @@ policy "pol_outdated_policies" do
       field "update_body" do
         label "Applied Policy Details"
       end
+      field "api_host" do
+        label "API Host"
+      end
     end
   end
 end
@@ -738,24 +793,24 @@ escalation "esc_update_policies" do
   automatic contains($param_automatic_action, "Update Applied Policies")
   label "Update Applied Policies"
   description "Approval to update all selected applied policies to the latest version"
-  run "update_policies", data, $param_allow_major, rs_governance_host, rs_project_id
+  run "update_policies", data, $param_allow_major, rs_org_id, rs_project_id
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define update_policies($data, $param_allow_major, $rs_governance_host, $rs_project_id) return $all_responses do
+define update_policies($data, $param_allow_major, $rs_org_id, $rs_project_id) return $all_responses do
   $$all_responses = []
 
   foreach $policy in $data do
     sub on_error: handle_error() do
 
       if split($policy['version'], '.')[0] == split($policy['catalog_version'], '.')[0] || $param_allow_major == "Allow"
-        call apply_policy($policy, $rs_governance_host, $rs_project_id) retrieve $apply_response, $code
+        call apply_policy($policy, $rs_org_id, $rs_project_id) retrieve $apply_response, $code
 
         if $code == 204 || $code == 202 || $code == 200
-          call delete_policy($policy, $rs_governance_host) retrieve $delete_response
+          call delete_policy($policy) retrieve $delete_response
         end
       else
         $policy_name = $policy["name_without_link"] + " (" + $policy["id"] + ")"
@@ -769,9 +824,9 @@ define update_policies($data, $param_allow_major, $rs_governance_host, $rs_proje
   end
 end
 
-define apply_policy($policy, $rs_governance_host, $rs_project_id) return $response, $code do
-  $host = $rs_governance_host
-  $href = "/api/governance/projects/" + $rs_project_id + "/applied_policies"
+define apply_policy($policy, $rs_org_id, $rs_project_id) return $response, $code do
+  $host = $policy["api_host"]
+  $href = "/policy/v1/orgs/" + $rs_org_id + "/projects/" + $rs_project_id + "/applied-policies"
   $url = $host + $href
   task_label("POST " + $url)
 
@@ -781,7 +836,6 @@ define apply_policy($policy, $rs_governance_host, $rs_project_id) return $respon
     href: $href,
     https: true,
     verb: "post",
-    headers: { "Api-Version": "1.0" },
     body: $policy["update_body"]
   )
 
@@ -791,16 +845,16 @@ define apply_policy($policy, $rs_governance_host, $rs_project_id) return $respon
   task_label("Apply Catalog Policy response: " + $policy_name + " " + to_json($response))
   $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
 
-  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+  if $response["code"] < 200 || $response["code"] >= 300
     raise "Unexpected response applying Catalog Policy: " + $policy_name + " " + to_json($response)
   else
     task_label("Apply Catalog Policy successful: " + $policy_name)
   end
 end
 
-define delete_policy($policy, $rs_governance_host) return $response do
-  $host = $rs_governance_host
-  $href = $policy['href']
+define delete_policy($policy) return $response do
+  $host = $policy["api_host"]
+  $href = $policy["href"]
   $url = $host + $href
   task_label("DELETE " + $url)
 
@@ -809,8 +863,7 @@ define delete_policy($policy, $rs_governance_host) return $response do
     host: $host,
     href: $href,
     https: true,
-    verb: "delete",
-    headers: { "Api-Version": "1.0" }
+    verb: "delete"
   )
 
   $policy_name = $policy["name_without_link"] + " (" + $policy["id"] + ")"
@@ -818,7 +871,7 @@ define delete_policy($policy, $rs_governance_host) return $response do
   task_label("Delete Applied Policy response: " + $policy_name + " " + to_json($response))
   $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
 
-  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+  if $response["code"] < 200 || $response["code"] >= 300
     raise "Unexpected response deleting Applied Policy: " + $policy_name + " " + to_json($response)
   else
     task_label("Delete Applied Policy successful: " + $policy_name)
@@ -829,7 +882,9 @@ define handle_error() do
   if !$$errors
     $$errors = []
   end
+
   $$errors << $_error["type"] + ": " + $_error["message"]
+
   # We check for errors at the end, and raise them all together
   # Skip errors handled by this definition
   $_error_behavior = "skip"

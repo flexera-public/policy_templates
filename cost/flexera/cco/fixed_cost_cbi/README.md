@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template injects a fixed cost with the user-specified metadata into the Flexera Cloud Cost Optimization (CCO) platform. The user specifies the amount to inject as a monthly cost; this cost is then split into a daily cost by dividing the cost by the number of days in the month and then inserted into Flexera CCO via [Common Bill Ingestion](https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBI.htm). Optionally, an email is sent indicating that this has happened.
+This policy template injects a fixed cost with the user-specified metadata into the Flexera Cloud Cost Optimization (CCO) platform. The user specifies the amount to inject as a monthly cost. Optionally, an email is sent indicating that this has happened.
 
 ## Input Parameters
 
@@ -11,6 +11,7 @@ This policy template injects a fixed cost with the user-specified metadata into 
 - *Billing Month* - Month to insert fixed cost into. Select `Specific Month` to specify a month.
 - *Specific Month* - Month to insert fixed cost into in YYYY-MM format. Only relevant if `Specific Month` is selected for the Billing Month parameter.
 - *CBI (Common Bill Ingestion) Endpoint ID* - The ID of CBI endpoint to create/use when injecting the fixed cost. Leave blank to have this generated and managed automatically. Ex: cbi-oi-optima-laborcosts
+- *Amortization* - Whether or not to amortize the fixed cost across the month. If the "Amortize" option is selected, the fixed cost will be divided by the number of days in the month and then each day will receive that cost. Otherwise, a simple fixed cost for the total amount will be applied for the 1st of the month.
 - *Cloud Vendor* - The value the fixed cost should have for the `Cloud Vendor` dimension in Flexera CBI. Only has an effect when the CBI endpoint is first created. This is because the `Cloud Vendor` dimension isn't based on billing data but is configured for the CBI endpoint itself.
 - *Cloud Vendor Account* - The value the fixed cost should have for the `Cloud Vendor Account` dimension in Flexera CBI. Leave blank to have no value for this dimension.
 - *Cloud Vendor Account Name* - The value the fixed cost should have for the `Cloud Vendor Account Name` dimension in Flexera CBI. Leave blank to have no value for this dimension.

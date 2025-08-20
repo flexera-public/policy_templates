@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.6
+
+- Minor changes to code to bring it up to standard. Functionality unchanged.
+
 ## v3.3.5
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.

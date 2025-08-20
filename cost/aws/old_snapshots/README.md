@@ -13,6 +13,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
+- Note: [AWS RDS snapshots are incremental](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_WorkingWithAutomatedBackups.html); for this reason, the `Estimated Monthly Savings` will only be fully realized if all snapshots of a given RDS instance are deleted.
 
 ## Input Parameters
 
