@@ -35,6 +35,14 @@ parameter "param_percentage" do
   # No default value, user input required
 end
 
+parameter "param_filters" do
+  type "list"
+  category "Policy Settings"
+  label "Monthly Spend Filters"
+  description "Filters to apply to the monthly spend when calculating the percentage in Dimension=Value format. Only monthly spend that matches all filters will be used in the calculation. Leave blank to use all monthly send. Ex: Cloud Vendor=AWS"
+  default []
+end
+
 parameter "param_month_billing" do
   type "string"
   category "Policy Settings"
@@ -56,7 +64,7 @@ end
 parameter "param_amortization_spend" do
   type "string"
   category "Policy Settings"
-  label "Existing Spend Amortization"
+  label "Monthly Spend Amortization"
   description "Whether to use amortized or unamortized cloud spend when calculating the percentage."
   allowed_values "Amortized", "Unamortized"
   default "Unamortized"
@@ -65,7 +73,7 @@ end
 parameter "param_amortization" do
   type "string"
   category "Policy Settings"
-  label "Amortization"
+  label "Injected Cost Amortization"
   description "Whether or not to amortize the percentage cost across the month. See the README for more details."
   allowed_values "Amortize", "Do Not Amortize"
   default "Amortize"
@@ -224,6 +232,51 @@ datasource "ds_applied_policy" do
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
+end
+
+datasource "ds_dimensions" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "dimensions") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+    end
+  end
+end
+
+datasource "ds_filters" do
+  run_script $js_filters, $ds_dimensions, $param_filters
+end
+
+script "js_filters", type: "javascript" do
+  parameters "ds_dimensions", "param_filters"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(param_filters, function(item) {
+    key = item.split('=')[0]
+    value = item.split('=')[1]
+
+    if (key && value) {
+      dimension = _.find(ds_dimensions, function(dimension) {
+        return dimension["id"].toLowerCase().trim() == key || dimension["name"].toLowerCase().trim() == value
+      })
+
+      if (dimension) {
+        result.push({ dimension: dimension, value: value })
+      }
+    }
+  })
+EOS
 end
 
 datasource "ds_dates" do
@@ -403,30 +456,46 @@ end
 
 datasource "ds_total_spend" do
   request do
-    run_script $js_total_spend, $ds_cbi_endpoint, $ds_top_level_bcs, $ds_dates, $param_amortization_spend, rs_org_id, rs_optima_host
+    run_script $js_total_spend, $ds_cbi_endpoint, $ds_top_level_bcs, $ds_dates, $ds_filters, $param_amortization_spend, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
     collect jmes_path(response, "rows[*]") do
-      field "metrics", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "cost_amortized", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "cost_nonamortized", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
     end
   end
 end
 
-script "js_snapshot_costs", type: "javascript" do
-  parameters "ds_cbi_endpoint", "ds_top_level_bcs", "ds_dates", "param_amortization_spend", "rs_org_id", "rs_optima_host"
+script "js_total_spend", type: "javascript" do
+  parameters "ds_cbi_endpoint", "ds_top_level_bcs", "ds_dates", "ds_filters", "param_amortization_spend", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
-  //Get Start and End dates
-  start_date = new Date()
-  start_date.setDate(start_date.getDate() - 3)
-  start_date = start_date.toISOString().split("T")[0]
-
-  end_date = new Date()
-  end_date.setDate(end_date.getDate() - 2)
-  end_date = end_date.toISOString().split("T")[0]
+  end_year = Number(ds_dates["period"].substring(0, 4))
+  end_month = Number(ds_dates["period"].substring(5, 7)) + 1
+  if (end_month == 13) { end_month = 1; end_year += 1 }
+  if (end_month < 10) { end_month = "0" + end_month.toString() }
+  end_date = [ end_year.toString(), end_month.toString() ].join('-')
 
   metric = param_amortization_spend == "Amortized" ? "cost_amortized_unblended_adj" : "cost_nonamortized_unblended_adj"
+
+  filters = _.map(ds_filters, function(filter) {
+    return {
+      "dimension": filter["dimension"]["id"],
+      "type": "equal",
+      "value": filter["value"]
+    }
+  })
+
+  // Always exclude the spend for this endpoint itself
+  filters.push({
+    type: "not",
+    expression: {
+      "dimension": "bill_source",
+      "type": "equal",
+      "value": ds_cbi_endpoint['id']
+    }
+  })
 
   var request = {
     auth: "auth_flexera",
@@ -435,30 +504,43 @@ script "js_snapshot_costs", type: "javascript" do
     path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
     body_fields: {
       "granularity": "month",
-      "start_at": start_date,
+      "start_at": ds_dates["period"],
       "end_at": end_date,
-      "metrics": [ "cost_amortized_unblended_adj" ],
+      "metrics": [ metric ],
       "billing_center_ids": ds_top_level_bcs,
       "limit": 100000,
-      "filter": {
-        "type": "and",
-        "expressions": [
-          {
-            type: "not",
-            expression: {
-              "dimension": "bill_source",
-              "type": "equal",
-              "value": ds_cbi_endpoint['id']
-            }
-          }
-        ]
-      }
+      "filter": { "type": "and", "expressions": filters }
     },
     headers: {
       "User-Agent": "RS Policies",
       "Api-Version": "1.0"
     }
   }
+EOS
+end
+
+datasource "ds_calculated_spend" do
+  run_script $js_calculated_spend, $ds_total_spend, $param_percentage
+end
+
+script "js_calculated_spend", type: "javascript" do
+  parameters "ds_total_spend", "param_percentage"
+  result "result"
+  code <<-EOS
+  result = {
+    total: 0.0,
+    portion: 0.0
+  }
+
+  if (ds_total_spend[0]) {
+    if (ds_total_spend[0]["cost_amortized"]) {
+      result["total_spend"] = ds_total_spend[0]["cost_amortized"]
+    } else {
+      result["total_spend"] = ds_total_spend[0]["cost_nonamortized"]
+    }
+  }
+
+  result["portion"] = result["total_spend"] * (param_percentage / 100)
 EOS
 end
 
@@ -520,11 +602,11 @@ EOS
 end
 
 datasource "ds_cost_csv" do
-  run_script $js_cost_csv, $ds_dates, $ds_currency, $param_percentage, $param_metadata_cloud_vendor_account_id, $param_metadata_cloud_vendor_account_name, $param_metadata_category, $param_metadata_service, $param_metadata_region, $param_metadata_resourcetype, $param_metadata_instancetype, $param_metadata_lineitemtype, $param_metadata_tags, $param_amortization
+  run_script $js_cost_csv, $ds_dates, $ds_currency, $ds_calculated_spend, $param_metadata_cloud_vendor_account_id, $param_metadata_cloud_vendor_account_name, $param_metadata_category, $param_metadata_service, $param_metadata_region, $param_metadata_resourcetype, $param_metadata_instancetype, $param_metadata_lineitemtype, $param_metadata_tags, $param_amortization
 end
 
 script "js_cost_csv", type: "javascript" do
-  parameters "ds_dates", "ds_currency", "param_percentage", "param_metadata_cloud_vendor_account_id", "param_metadata_cloud_vendor_account_name", "param_metadata_category", "param_metadata_service", "param_metadata_region", "param_metadata_resourcetype", "param_metadata_instancetype", "param_metadata_lineitemtype", "param_metadata_tags", "param_amortization"
+  parameters "ds_dates", "ds_currency", "ds_calculated_spend", "param_metadata_cloud_vendor_account_id", "param_metadata_cloud_vendor_account_name", "param_metadata_category", "param_metadata_service", "param_metadata_region", "param_metadata_resourcetype", "param_metadata_instancetype", "param_metadata_lineitemtype", "param_metadata_tags", "param_amortization"
   result "result"
   code <<-'EOS'
   // Set static field values. These will be the same for every entry in the CSV file
@@ -570,7 +652,7 @@ script "js_cost_csv", type: "javascript" do
   if (param_amortization == "Amortize") {
     // Calculate daily cost from monthly cost.
     // Round it to avoid causing problems with extremely small numbers in scientific notation.
-    Cost = Math.round(param_percentage / total_days_in_month * 1000000) / 1000000
+    Cost = Math.round(ds_calculated_spend["portion"] / total_days_in_month * 1000000) / 1000000
 
     // Determine the number of days we need to insert billing data for
     // Simply use the number of days in the entire month if not current month
@@ -582,7 +664,7 @@ script "js_cost_csv", type: "javascript" do
     }
   } else {
     // If we're not amortizing, just do the flat cost on the 1st of the month
-    Cost = param_percentage
+    Cost = ds_calculated_spend["portion"]
     days_in_month = 1
   }
 
@@ -755,13 +837,17 @@ EOS
 end
 
 datasource "ds_incident" do
-  run_script $js_incident, $ds_cbi_commit_bill_upload, $ds_applied_policy, $ds_cost_csv, $param_percentage, $param_cbi_cloud_vendor
+  run_script $js_incident, $ds_filters, $ds_cbi_commit_bill_upload, $ds_applied_policy, $ds_cost_csv, $ds_calculated_spend, $param_percentage, $param_cbi_cloud_vendor
 end
 
 script "js_incident", type: "javascript" do
-  parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_cost_csv", "param_percentage", "param_cbi_cloud_vendor"
+  parameters "ds_filters", "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_cost_csv", "ds_calculated_spend", "param_percentage", "param_cbi_cloud_vendor"
   result "result"
   code <<-EOS
+  filters = _.map(ds_filters, function(filter) {
+    return [ filter["dimension"]["name"], filter["value"] ].join('=')
+  }).join(", ")
+
   result = [{
     policy_name: ds_applied_policy['name'],
     id: ds_cbi_commit_bill_upload['id'],
@@ -771,8 +857,11 @@ script "js_incident", type: "javascript" do
     billConnectId: ds_cbi_commit_bill_upload['billConnectId'],
     billingPeriod: ds_cbi_commit_bill_upload['billingPeriod'],
     csv: ds_cost_csv['csv'],
-    cost_amount: param_percentage,
-    cloud_vendor: param_cbi_cloud_vendor
+    total_spend: ds_calculated_spend["total"],
+    portioned_spend: ds_calculated_spend["portion"],
+    percentage: param_percentage,
+    cloud_vendor: param_cbi_cloud_vendor,
+    filters: filters
   }]
 EOS
 end
@@ -798,8 +887,17 @@ EOS
       field "cloud_vendor" do
         label "Cloud Vendor"
       end
-      field "cost_amount" do
-        label "Monthly Cost"
+      field "total_spend" do
+        label "Monthly Spend"
+      end
+      field "percentage" do
+        label "Percentage of Monthly Spend"
+      end
+      field "portioned_spend" do
+        label "Injected Cost"
+      end
+      field "filters" do
+        label "Filters"
       end
       field "id" do
         label "Bill Upload ID"

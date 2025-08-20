@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template injects a fixed cost with the user-specified metadata into the Flexera Cloud Cost Optimization (CCO) platform. The user specifies the amount to inject as a monthly cost; this cost is then split into a daily cost by dividing the cost by the number of days in the month and then inserted into Flexera CCO via [Common Bill Ingestion](https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBI.htm). Optionally, an email is sent indicating that this has happened.
+This policy template injects a fixed cost with the user-specified metadata into the Flexera Cloud Cost Optimization (CCO) platform. The user specifies the amount to inject as a monthly cost. Optionally, an email is sent indicating that this has happened.
 
 ## Input Parameters
 
