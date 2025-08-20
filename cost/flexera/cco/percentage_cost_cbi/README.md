@@ -1,17 +1,19 @@
-# Fixed Cost Common Bill Ingestion
+# Percentage Cost Common Bill Ingestion
 
 ## What It Does
 
-This policy template injects a fixed cost with the user-specified metadata into the Flexera Cloud Cost Optimization (CCO) platform. The user specifies the amount to inject as a monthly cost. Optionally, an email is sent indicating that this has happened.
+This policy template injects a percentage of all spend as a cost into the Flexera Cloud Cost Optimization (CCO)platform. The user specifies the percentage of monthly spend to inject. Optionally, an email is sent indicating that this has happened.
 
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when billing data is uploaded
-- *Cost Amount (Monthly)* - The monthly amount of the fixed cost to inject in the currency that the Flexera organization is configured to use.
+- *Percentage* - The percentage of spend to insert as a cost into the Flexera CCO platform. Ex: 5.5.
 - *Billing Month* - Month to insert fixed cost into. Select `Specific Month` to specify a month.
 - *Specific Month* - Month to insert fixed cost into in YYYY-MM format. Only relevant if `Specific Month` is selected for the Billing Month parameter.
 - *CBI (Common Bill Ingestion) Endpoint ID* - The ID of CBI endpoint to create/use when injecting the fixed cost. Leave blank to have this generated and managed automatically. Ex: cbi-oi-optima-laborcosts
-- *Amortization* - Whether or not to amortize the fixed cost across the month. If the "Amortize" option is selected, the fixed cost will be divided by the number of days in the month and then each day will receive that cost. Otherwise, a simple fixed cost for the total amount will be applied for the 1st of the month.
+- *Monthly Spend Filters* - Filters to apply to the monthly spend when calculating the percentage in Dimension=Value format. Only monthly spend that matches all filters will be used in the calculation. Leave blank to use all monthly send. Ex: Cloud Vendor=AWS
+- *Monthly Spend Amortization* - "Whether to use amortized or unamortized cloud spend when calculating the percentage.
+- *Injected Cost Amortization* - Whether or not to amortize the percentage cost across the month. If the "Amortize" option is selected, the cost will be divided by the number of days in the month and then each day will receive that cost. Otherwise, a single cost for the total amount will be applied for the 1st of the month.
 - *Cloud Vendor* - The value the fixed cost should have for the `Cloud Vendor` dimension in Flexera CBI. Only has an effect when the CBI endpoint is first created. This is because the `Cloud Vendor` dimension isn't based on billing data but is configured for the CBI endpoint itself.
 - *Cloud Vendor Account* - The value the fixed cost should have for the `Cloud Vendor Account` dimension in Flexera CBI. Leave blank to have no value for this dimension.
 - *Cloud Vendor Account Name* - The value the fixed cost should have for the `Cloud Vendor Account Name` dimension in Flexera CBI. Leave blank to have no value for this dimension.
@@ -25,7 +27,7 @@ This policy template injects a fixed cost with the user-specified metadata into 
 
 ## Policy Actions
 
-- Uploads fixed cost billing data to Flexera CCO
+- Uploads percentage cost billing data to Flexera CCO
 - Sends an email notification
 
 ## Prerequisites
