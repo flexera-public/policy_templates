@@ -6,9 +6,9 @@ long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/spot/ocean_recommendations/"
 category "Operational"
 severity "low"
-default_frequency "hourly"
+default_frequency "daily"
 info(
-  version: "0.1.3",
+  version: "0.2.0",
   provider: "Flexera",
   service: "Kubernetes",
   policy_set: "Rightsize Containers",
@@ -177,8 +177,6 @@ script "js_spotinst_accounts_filtered", type: "javascript" do
 EOS
 end
 
-# https://api.spotinst.io/ocean/aws/k8s/cluster
-# Docs: https://docs.spot.io/api/#tag/Ocean-AWS/operation/OceanAWSClusterList
 datasource "ds_spotinst_clusters" do
   iterate $ds_spotinst_accounts_filtered
   request do
@@ -219,8 +217,6 @@ script "js_spotinst_clusters", type: "javascript" do
   EOS
 end
 
-# https://api.spotinst.io/ocean/aws/k8s/cluster/o-86a443f1/rightSizing/suggestion?accountId=act-b04d40ef
-# Docs: https://docs.spot.io/api/#tag/Ocean-AWS/operation/oceanAwsFilterRightSizingWithFilter
 datasource "ds_spotinst_clusters_rightsizing_suggestions" do
   iterate $ds_spotinst_clusters
   request do
@@ -228,7 +224,7 @@ datasource "ds_spotinst_clusters_rightsizing_suggestions" do
   end
   result do
     encoding "json"
-    collect jq(response, ".response.items.suggestions[]") do
+    collect jmes_path(response, "response.items[*]") do
       # iteration fields
       field "account", jq(iter_item, ".account")
       field "cluster", jq(iter_item, ".cluster")
@@ -252,6 +248,7 @@ script "js_spotinst_rightsizing_suggestions", type: "javascript" do
     }
 
     request = {
+      verb: "POST",
       auth: "auth_spotinst",
       host: host,
       path: path,
@@ -272,11 +269,13 @@ script "js_spotinst_clusters_rightsizing_suggestions_filtered", type: "javascrip
   result "result"
   code <<-EOS
   result = _.filter(ds_spotinst_clusters_rightsizing_suggestions, function(suggestion) {
-    var checkHasRequest = param_include_recommendations_request_undefined == "No" \
-                          && suggestion.suggestion.requestedCPU > 0 \
-                          && suggestion.suggestion.requestedMemory > 0
-
-    return checkHasRequest
+    // Should include if:
+    // param_include_recommendations_request_undefined == "Yes"
+    // OR
+    // requestCPU > 0
+    // OR
+    // requestedMemory > 0
+    return (param_include_recommendations_request_undefined == "Yes" || suggestion.suggestion.requestedCPU > 0 || suggestion.suggestion.requestedMemory > 0);
   })
 EOS
 end
@@ -728,9 +727,9 @@ script "js_report", type: "javascript" do
       return key + "=" + value
     })
 
-    // TODO get these values to populate dynamically or with improved logic
-    // Just filling in for now
-    suggestion.service = "AmazonEKS"; // TODO map service name using the suggestion.account.cloudProvider
+    // Recommendations are all for "Kubernetes" service, not specific to any vendor or service
+    suggestion.service = "Kubernetes"
+
     suggestion.recommendationDetails = "Update container request specification in cluster `" + suggestion.cluster.name + "`, namespace `"+ suggestion.suggestion.namespace  +"`, resource `" + properCase(suggestion.suggestion.resourceType)
       + "/" + suggestion.suggestion.resourceName + "`.\\n\\nThe container request specification is currently `" + suggestion.suggestion.requestedCPU + "m` CPU and `" + suggestion.suggestion.requestedMemory + "Mi` Memory.  The suggested request specification is `" + suggestion.suggestion.suggestedCPU + "m` CPU and `" + suggestion.suggestion.suggestedMemory + "Mi` Memory.  The suggested request specifications will more closely match actual usage, and reduce usage by enabling more containers to run on each node.";
     // Lookup key is resourceId+`/${usageType}` (compute, storage, networking)
