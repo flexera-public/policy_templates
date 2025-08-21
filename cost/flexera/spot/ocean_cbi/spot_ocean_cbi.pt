@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "hourly"
 info(
-  version: "0.1.1",
+  version: "0.2.0",
   provider: "Flexera",
   service: "Kubernetes",
   policy_set: "Common Bill Ingest",
@@ -142,10 +142,7 @@ end
 datasource "ds_spotinst_clusters" do
   iterate $ds_spotinst_accounts_filtered
   request do
-    auth $auth_spotinst
-    host "api.spotinst.io"
-    path "/ocean/aws/k8s/cluster"
-    query "accountId", val(val(iter_item, "account"), "accountId")
+    run_script $js_spotinst_clusters, val(iter_item, "account")
   end
   result do
     encoding "json"
@@ -171,6 +168,31 @@ datasource "ds_spotinst_clusters" do
   end
 end
 
+script "js_spotinst_clusters", type: "javascript" do
+  parameters "spot_inst_account"
+  result "request"
+  code <<-EOS
+    host = "api.spotinst.io"
+    path = "/ocean/aws/k8s/cluster"
+
+    if (spot_inst_account.cloudProvider == "AZURE") {
+      path = "/ocean/azure/np/cluster"
+    } else if (spot_inst_account.cloudProvider == "GCP") {
+      path = "/ocean/gcp/k8s/cluster"
+    }
+
+    request = {
+      auth: "auth_spotinst",
+      host: host,
+      path: path,
+      query_params: {
+        'accountId': spot_inst_account.accountId
+      }
+    }
+  EOS
+end
+
+# Get Billing Period Dates
 datasource "ds_dates" do
   run_script $js_dates, $param_period, $param_period_specific_month, $param_reallocation_granularity
 end
@@ -294,13 +316,7 @@ end
 datasource "ds_spotinst_cluster_aggregated_costs" do
   iterate $ds_requests_spotinst_cluster_aggregated_costs
   request do
-    auth $auth_spotinst
-    verb "POST"
-    host "api.spotinst.io"
-    path join(["/ocean/aws/k8s/cluster/", val(val(iter_item, "spotinst_cluster"), "id"), "/aggregatedCosts"])
-    query "accountId", jq(iter_item, ".spotinst_cluster.account.accountId")
-    body_field "startTime", val(val(iter_item, "date_period"), "start_date")
-    body_field "endTime", val(val(iter_item, "date_period"), "end_date")
+    run_script $js_spotinst_cluster_aggregated_costs, val(iter_item, "spotinst_cluster"), val(iter_item, "date_period")
   end
   result do
     encoding "json"
@@ -314,6 +330,35 @@ datasource "ds_spotinst_cluster_aggregated_costs" do
       field "summary", jq(col_item, ".summary")
     end
   end
+end
+
+script "js_spotinst_cluster_aggregated_costs", type: "javascript" do
+  parameters "spotinst_cluster", "date_period"
+  result "request"
+  code <<-EOS
+    host = "api.spotinst.io"
+    path = (["/ocean/aws/k8s/cluster/", spotinst_cluster.id, "/aggregatedCosts"]).join("")
+
+    if (spotinst_cluster.account.cloudProvider == "AZURE") {
+      path = (["/ocean/azure/k8s/cluster/", spotinst_cluster.id, "/aggregatedCosts"]).join("")
+    } else if (spotinst_cluster.account.cloudProvider == "GCP" ) {
+      path = (["/ocean/gcp/k8s/cluster/", spotinst_cluster.id, "/aggregatedCosts"]).join("")  
+    }
+
+    request = {
+      auth: "auth_spotinst",
+      verb: "POST",
+      host: host,
+      path: path,
+      query_params: {
+        'accountId': spotinst_cluster.account.accountId
+      },
+      body_fields: {
+        "startTime": date_period.start_date,
+        "endTime": date_period.end_date
+      }
+    }
+  EOS
 end
 
 datasource "ds_calculated_proportions" do
@@ -353,8 +398,8 @@ script "js_calculated_proportions", type: "javascript" do
           _.each(usageCategories, function(usageCategory){
             // Values that are the same for all usage categories
             var obj = {
-              "CloudVendorAccountID": "412879992092", // Should be the Cloud Account the K8S cluster resides in
-              "CloudVendorAccountName": "demo-poc-infra-production", // Should be the Cloud Account Name the K8S cluster resides in
+              "CloudVendorAccountID": cost.spotinst_cluster.account.providerExternalId, // Should be the Cloud Account the K8S cluster resides in
+              "CloudVendorAccountName": "", // Should be the Cloud Account Name the K8S cluster resides in
               "Category": properCase(usageCategory), // Category can be the usage, with proper case (Networking, Storage, Compute)
               "InstanceType": "",
               "LineItemType": "Usage", // Static value used in other bills
@@ -479,16 +524,28 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-EOS
   host_table = {
     "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
       flexera: "api.flexera.com",
-      fsm: "api.fsm.flexeraeng.com"
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
       flexera: "api.flexera.eu",
-      fsm: "api.fsm-eu.flexeraeng.com"
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
       flexera: "api.flexera.au",
-      fsm: "api.fsm-apac.flexeraeng.com"
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
     }
   }
 

@@ -14,11 +14,13 @@ This policy checks all the virtual machines in an Azure account to determine if 
 
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the instance type is changed to the recommended instance type.
 
-- The `Estimated Monthly Cost` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month. This value is not used for calculating savings but is provided as a reference.
+- The `Estimated Monthly Cost` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
 - Since the `Estimated Monthly Cost` of individual resources is obtained from Flexera CCO, it will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
-- The `Estimated Monthly Savings` is calculated by taking the difference in the hourly list price between the current instance type and the recommended instance type. This value is then multiplied by 24 to get the daily savings, and then by 30.44 (the average number of days in a month) to get the monthly savings.
+- The `Estimated Monthly Savings` is calculated as the percentage differences between either the ["Azure VM listed price"](https://github.com/flexera-public/policy_templates/blob/master/data/azure/azure_vm_pricing.json) or ["Instance Size Flexibility Ratio"](https://learn.microsoft.com/en-us/azure/virtual-machines/reserved-vm-instance-size-flexibility) between current instance type and the recommended instance type. More specifically:
+  - If the "listed price" of both instance types is available, the `Estimated Monthly Savings` is calculated as ("actual cost" * (1 - "list price of recommended instance type" / "list price of current instance type"))
+  - If the "listed price" is unavailable but the "Instance Size Flexibility Ratio" is available, the `Estimated Monthly Savings` is calculated as ("actual cost" * (1 - "Instance Size Flexibility Ratio of recommended instance type" - "Instance Size Flexibility Ratio of current instance type"))
+  - If neither the "listed price" nor the "Instance Size Flexibility Ratio" is available, the `Estimated Monthly Savings` will be 0.
 - If no cost information for the resource type was found in our internal database, the `Estimated Monthly Savings` is 0.
-- Since the savings is calculated from list prices rather than data obtained from Flexera CCO, they will *not* take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
 
