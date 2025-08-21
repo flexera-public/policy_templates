@@ -377,6 +377,7 @@ These templates can generate savings estimates for your environment. The inciden
   * [Common Bill Ingestion from AWS S3 Object Storage](./cost/flexera/cco/cbi_ingestion_aws_s3)
   * [Common Bill Ingestion from Azure Blob Storage](./cost/flexera/cco/cbi_ingestion_azure_blob)
   * [Fixed Cost Common Bill Ingestion](./cost/flexera/cco/fixed_cost_cbi)
+  * [Percentage Cost Common Bill Ingestion](./cost/flexera/cco/percentage_cost_cbi)
 
 * Spot Eco
 
