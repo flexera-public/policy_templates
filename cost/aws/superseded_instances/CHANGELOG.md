@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.0
+
+- Changed savings calculation to improve accuracy. See README for more details.
+
 ## v2.4.3
 
 - Updated meta policy code to use newer Flexera API. Functionality unchanged.
