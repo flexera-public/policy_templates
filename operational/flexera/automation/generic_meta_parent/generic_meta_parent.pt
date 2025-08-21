@@ -2,20 +2,7 @@ name "Generic Meta Parent Policy"
 rs_pt_ver 20180301
 type "policy"
 short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** A generic meta parent policy that dynamically creates and manages child policies based on cost dimensions."
-long_description <<-EOS
-This generic meta parent policy template allows you to dynamically create child policies based on cost dimensions from the Flexera Bill Analysis API. Unlike traditional meta parent policies that are pre-compiled for specific child policies, this template uses parameters to determine:
-
-1. Which policy template to deploy as children
-2. How to map cost dimensions to child policy parameters
-3. Which cost dimensions to use for grouping child policies
-
-**Example Use Cases:**
-- Deploy AWS EC2 Rightsizing policies across all AWS accounts: `["vendor_account::param_aws_account_number"]`
-- Deploy Azure VM policies across subscriptions and regions: `["vendor_account::param_subscription_id", "region::param_region_list"]`
-- Deploy policies across billing centers: `["billing_center_id::param_billing_center_id"]`
-
-The policy will automatically create, update, and delete child policies as cost dimension values change over time.
-EOS
+long_description ""
 severity "low"
 category "Meta"
 default_frequency "hourly"
@@ -202,6 +189,7 @@ end
 # Datasources
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
 end
@@ -212,16 +200,28 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-EOS
   host_table = {
     "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
       flexera: "api.flexera.com",
-      fsm: "api.fsm.flexeraeng.com"
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
       flexera: "api.flexera.eu",
-      fsm: "api.fsm-eu.flexeraeng.com"
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
       flexera: "api.flexera.au",
-      fsm: "api.fsm-au.flexeraeng.com"
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
     }
   }
 
@@ -476,11 +476,11 @@ end
 
 # Process dimension values and determine child policy actions
 datasource "ds_child_policy_actions" do
-  run_script $js_child_policy_actions, $ds_applied_policy, $ds_cost_dimensions, $ds_get_existing_policies, $ds_published_child_policy_information, $ds_project_child_policy_information, $param_dimension_mappings, $param_template_source, $param_child_policy_frequency, $param_default_child_credentials, $param_default_child_options, $param_child_policy_name, policy_id, rs_governance_host, rs_org_id, rs_project_id
+  run_script $js_child_policy_actions, $ds_applied_policy, $ds_cost_dimensions, $ds_get_existing_policies, $ds_published_child_policy_information, $ds_project_child_policy_information, $ds_flexera_api_hosts, $param_dimension_mappings, $param_template_source, $param_child_policy_frequency, $param_default_child_credentials, $param_default_child_options, $param_child_policy_name, policy_id, rs_governance_host, rs_org_id, rs_project_id
 end
 
 script "js_child_policy_actions", type: "javascript" do
-  parameters "ds_applied_policy", "ds_cost_dimensions", "ds_get_existing_policies", "ds_published_child_policy_information", "ds_project_child_policy_information", "param_dimension_mappings", "param_template_source", "param_child_policy_frequency", "param_default_child_credentials", "param_default_child_options", "param_child_policy_name", "meta_parent_policy_id", "governance_host", "rs_org_id", "rs_project_id"
+  parameters "ds_applied_policy", "ds_cost_dimensions", "ds_get_existing_policies", "ds_published_child_policy_information", "ds_project_child_policy_information", "ds_flexera_api_hosts", "param_dimension_mappings", "param_template_source", "param_child_policy_frequency", "param_default_child_credentials", "param_default_child_options", "param_child_policy_name", "meta_parent_policy_id", "governance_host", "rs_org_id", "rs_project_id"
   result "result"
   code <<-EOS
   var result = {};
@@ -508,9 +508,8 @@ script "js_child_policy_actions", type: "javascript" do
     // Parse default options
     var default_options = null;
     // Check that stringify works and is an object
-    var validOptions = _.isObject(param_default_child_options) || param_default_child_options == "";
+    var validOptions = param_default_child_options == "" || _.isObject(JSON.parse(param_default_child_options));
     var validCredentials = param_default_child_credentials == "" || _.isObject(JSON.parse(param_default_child_credentials));
-    console.log("bkdebug", param_default_child_credentials)
     if (!validOptions || !validCredentials) {
       result = {
         grid: [],
@@ -520,16 +519,16 @@ script "js_child_policy_actions", type: "javascript" do
         debug_param_default_child_credentials: JSON.parse(param_default_child_credentials),
       };
       if (!validOptions) {
-        console.log("Error parsing Default Child Policy Options JSON: " + String(param_default_child_options));
+        console.log("Error parsing Default Child Policy Options JSON: " + JSON.stringify(param_default_child_options));
         result.grid.push({
-          error: "Invalid JSON in Default Child Policy Options: " + String(param_default_child_options),
+          error: "Invalid JSON in Default Child Policy Options: " + JSON.stringify(param_default_child_options),
           status: "Error"
         })
       }
       if (!validCredentials) {
-        console.log("Error parsing Default Child Policy Credentials JSON: " + String(param_default_child_credentials));
+        console.log("Error parsing Default Child Policy Credentials JSON: " + JSON.stringify(param_default_child_credentials));
         result.grid.push({
-          error: "Invalid JSON in Default Child Policy Credentials: " + String(param_default_child_credentials),
+          error: "Invalid JSON in Default Child Policy Credentials: " + JSON.stringify(param_default_child_credentials),
           status: "Error"
         })
       }
@@ -547,9 +546,10 @@ script "js_child_policy_actions", type: "javascript" do
       if (param_default_child_options == "") {
         default_options = {};
       } else {
-        default_options = param_default_child_options;
+        default_options = JSON.parse(param_default_child_options);
         console.log("Valid JSON in Default Child Policy Options");
       }
+      console.log("bkdebug default_options " + JSON.stringify(default_options));
       // Create unique dimension combinations
       var dimension_combinations = {};
 
@@ -559,12 +559,17 @@ script "js_child_policy_actions", type: "javascript" do
         var key_parts = [];
         var child_options = {};
         _.each(_.keys(default_options), function(parameter) {
+          console.log("bkdebug default_option " + parameter + ": " + JSON.stringify(default_options[parameter]));
           var value = default_options[parameter];
 
           // Get the parameter from child_policy_information.parameters
-          var param_info = _.find(child_policy_information.parameters, function(p) {
-            return p.name.toLowerCase() == parameter.toLowerCase(); // case insensitive match, mitigate issues from user input
-          });
+          var param_info = null;
+          if (_.isObject(child_policy_information.parameters)) {
+            // Parameters is an object with param names as keys
+            param_info = _.find(_.values(child_policy_information.parameters), function(p) {
+              return p.name.toLowerCase() == parameter.toLowerCase(); // case insensitive match, mitigate issues from user input
+            });
+          }
           if (!param_info) {
             console.warn("Parameter '" + parameter + "' not found in child policy template options. Skipping.");
           } else {
@@ -641,8 +646,15 @@ script "js_child_policy_actions", type: "javascript" do
 
             // Identify parameter type based on child policy information
             var param_type = "string"; // Default to string
-            if (_.isObject(child_policy_information.parameters) && _.isObject(child_policy_information.parameters[parameter])) {
-              param_type = child_policy_information.parameters[parameter].type || "string"; // This lookup should never fail but just in case fallback to string
+            var param_info = null;
+            if (_.isObject(child_policy_information.parameters)) {
+              // Parameters is an object with param names as keys
+              param_info = _.find(_.values(child_policy_information.parameters), function(p) {
+                return p.name.toLowerCase() == parameter.toLowerCase();
+              });
+            }
+            if (param_info) {
+              param_type = param_info.type || "string";
             }
             // Add to child options based on parameter type
             if (param_type == "list") {
@@ -665,10 +677,43 @@ script "js_child_policy_actions", type: "javascript" do
 
         if (key_parts.length > 0) {
           var combination_key = key_parts.join("|");
+
+          // Ensure we have all required parameters from the child policy template
+          var complete_child_options = {};
+
+          // Start with our computed child_options (these have proper type conversion applied)
+          _.each(child_options, function(option) {
+            complete_child_options[option.name] = option;
+          });
+
+          // Then add any missing parameters from the template with their default values and proper type conversion
+          if (_.isObject(child_policy_information.parameters)) {
+            _.each(_.values(child_policy_information.parameters), function(param_def) {
+              if (!complete_child_options[param_def.name]) {
+                // Apply type conversion to default values too
+                var default_value = param_def.default;
+                if (param_def.type == "list" && !_.isArray(default_value)) {
+                  default_value = default_value ? [default_value] : [];
+                } else if (param_def.type == "number") {
+                  default_value = Number(default_value || 0);
+                } else if (param_def.type == "string") {
+                  default_value = String(default_value || "");
+                }
+
+                complete_child_options[param_def.name] = {
+                  "name": param_def.name,
+                  "value": default_value
+                };
+              }
+            });
+          }
+
+          console.log("bkdebug complete_child_options for " + combination_key + ": " + JSON.stringify(_.values(complete_child_options)));
+
           dimension_combinations[combination_key] = {
             key: combination_key,
             dimensions: row.dimensions,
-            options: _.values(child_options)
+            options: _.values(complete_child_options)
           };
         }
       });
@@ -676,12 +721,54 @@ script "js_child_policy_actions", type: "javascript" do
       // Convert to array
       var required_children = _.values(dimension_combinations);
 
-      // Create map of existing policies by their options signature
+      // Helper function to normalize ALL options for comparison (not just relevant ones)
+      function normalizeAllOptionsForComparison(options) {
+        var normalized = [];
+        _.each(options || [], function(option) {
+          normalized.push({
+            name: option.name,
+            value: option.value
+          });
+        });
+        // Sort by name for consistent ordering
+        return _.sortBy(normalized, 'name');
+      }
+
+      // Helper function to check if two normalized option arrays are exactly equal
+      function optionsAreEqual(options1, options2) {
+        if (options1.length !== options2.length) {
+          return false;
+        }
+
+        for (var i = 0; i < options1.length; i++) {
+          var opt1 = options1[i];
+          var opt2 = options2[i];
+
+          if (opt1.name !== opt2.name) {
+            return false;
+          }
+
+          // Deep comparison of values
+          if (JSON.stringify(opt1.value) !== JSON.stringify(opt2.value)) {
+            return false;
+          }
+        }
+
+        return true;
+      }
+
+      var ui_url_prefix = "https://" + ds_flexera_api_hosts.ui + "/orgs/" + rs_org_id;
+      var applied_policy_url_prefix = ui_url_prefix + "/automation/applied-policies/projects/" + rs_project_id + "?noIndex=1&policyId=";
+
+      // Create map of existing policies by their complete options signature
       var existing_policies_map = {};
       _.each(ds_get_existing_policies, function(policy) {
-        var options_key = JSON.stringify(policy.options || {});
+        var normalizedOptions = normalizeAllOptionsForComparison(policy.options);
+        var options_key = hashHmac("sha256", JSON.stringify(normalizedOptions), "secret-key");
+        console.log("bkdebug existing_policy_all_options " + JSON.stringify(normalizedOptions));
         existing_policies_map[options_key] = policy;
       });
+      console.log("bkdebug existing_policies_map keys " + JSON.stringify(_.keys(existing_policies_map)));
 
       var to_create = [];
       var to_update = [];
@@ -690,7 +777,9 @@ script "js_child_policy_actions", type: "javascript" do
 
       // Check what needs to be created or updated
       _.each(required_children, function(child) {
-        var options_key = JSON.stringify(child.options);
+        var normalizedChildOptions = normalizeAllOptionsForComparison(child.options);
+        var options_key = hashHmac("sha256", JSON.stringify(normalizedChildOptions), "secret-key");
+        console.log("bkdebug child_all_options " + JSON.stringify(normalizedChildOptions));
         var existing_policy = existing_policies_map[options_key];
 
         if (!existing_policy) {
@@ -698,6 +787,7 @@ script "js_child_policy_actions", type: "javascript" do
           var child_name = param_child_policy_name + " - " + child.key;
 
           var create_obj = {
+            meta_parent_policy_id: ds_applied_policy.id || "placeholder-value-for-meta-parent-policy-id-when-using-retrieve-data",
             name: child_name,
             description: "Child policy for: " + child.key,
             template_href: child_policy_information.href,
@@ -726,7 +816,7 @@ script "js_child_policy_actions", type: "javascript" do
             meta_parent_policy_id: existing_policy.meta_parent_policy_id,
             combination: child.key,
             action: "Keep",
-            policy_name: existing_policy.name,
+            policy_name: existing_policy.name + "||" + applied_policy_url_prefix + existing_policy.applied_policy_id,
             status: existing_policy.status,
             policy_id: existing_policy.applied_policy_id
           });
@@ -734,18 +824,19 @@ script "js_child_policy_actions", type: "javascript" do
       });
 
       // Remaining policies in map that match the metaParentPolicy ID need to be deleted
+      var meta_parent_id = ds_applied_policy.id || "placeholder-value-for-meta-parent-policy-id-when-using-retrieve-data";
       _.each(existing_policies_map, function(policy) {
-        if (policy.meta_parent_policy_id == meta_parent_policy_id) {
+        if (policy.meta_parent_policy_id == meta_parent_id) {
           to_delete.push({
             id: policy.applied_policy_id,
             name: policy.name
           });
 
           grid.push({
-            meta_parent_policy_id: policy.meta_parent_policy_id,
+            meta_parent_policy_id: ds_applied_policy.id || "placeholder-value-for-meta-parent-policy-id-when-using-retrieve-data",
             combination: "N/A",
             action: "Delete",
-            policy_name: policy.name,
+            policy_name: policy.name + "||" + applied_policy_url_prefix + policy.applied_policy_id,
             status: policy.status,
             policy_id: policy.applied_policy_id
           });
@@ -755,7 +846,7 @@ script "js_child_policy_actions", type: "javascript" do
       // Metadata that we need for the detail template
       var metadata = {
         meta_parent_policy_name: ds_applied_policy.name || "Generic Meta Parent Policy",
-        meta_parent_policy_id: meta_parent_policy_id,
+        meta_parent_policy_id: ds_applied_policy.id || "placeholder-value-for-meta-parent-policy-id-when-using-retrieve-data",
         required_children_count: required_children.length,
         existing_children_count: ds_get_existing_policies.length,
         to_create_count: to_create.length,
@@ -864,14 +955,15 @@ EOS
     escalate $esc_email
     export do
       resource_level false
-      field "combination" do
-        label "Dimension Combination"
+      field "policy_name" do
+        label "Policy Name"
+        format "link-external"
       end
       field "action" do
         label "Action"
       end
-      field "policy_name" do
-        label "Policy Name"
+      field "combination" do
+        label "Dimension Combination"
       end
       field "status" do
         label "Status"
@@ -901,6 +993,7 @@ EOS
 {{- end }}
 EOS
     check eq(size(data), 0) # Trigger if we any results
+    escalate $esc_delete_policies
   end
 end
 
@@ -923,7 +1016,7 @@ escalation "esc_create_policies" do
 end
 
 escalation "esc_delete_policies" do
-  automatic false
+  automatic true
   label "Delete Obsolete Child Policies"
   description "Delete child policies that are no longer needed"
   run "delete_applied_policies", data, rs_governance_host, rs_project_id
@@ -998,6 +1091,10 @@ define delete_applied_policies($data, $governance_host, $rs_project_id) return $
       href: join(["/api/governance/projects/", $rs_project_id, "/applied_policies/", $item["id"]]),
       headers: { "Api-Version": "1.0" }
     )
+
+    if $response["code"] < 200 || $response["code"] >= 300
+      $$errors << "Failed to delete applied policy: " + $item["name"] + ". Status: " + to_s($response["code"]) + ". Response: " + to_s($response["body"])
+    end
 
     $responses << $response
     $$debug << to_json({
