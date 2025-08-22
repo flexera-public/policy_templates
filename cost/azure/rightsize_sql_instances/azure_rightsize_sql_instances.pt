@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "6.0.1",
+  version: "6.0.4",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Database Instances",
@@ -216,13 +216,58 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "name", jmes_path(response, "name")
+    field "policyAggregateId", jmes_path(response, "policy_aggregate_id")
   end
 end
 
@@ -585,7 +630,7 @@ script "js_azure_sql_databases_region_filtered", type: "javascript" do
   result "result"
   code <<-EOS
   if (param_regions_list.length > 0) {
-    result = _.filter(ds_azure_sql_databases_tag_filtered, function(ip) {
+    result = _.filter(ds_azure_sql_databases_tag_filtered, function(db) {
       include_db = _.contains(param_regions_list, db['region'])
 
       if (param_regions_allow_or_deny == "Deny") {
@@ -650,11 +695,12 @@ script "js_azure_sql_database_metrics", type: "javascript" do
 
   timespan = start_date.toISOString() + "/" + end_date.toISOString()
 
-  metricnames = "cpu_percent,connection_successful"
-
+  metricnames = ["cpu_percent", "connection_successful"];
   if (resource_tier == "Basic" || resource_tier == "Standard" || resource_tier == "Premium") {
-    metricnames = "dtu_consumption_percent,connection_successful"
+    metricnames = ["dtu_consumption_percent", "connection_successful"];
   }
+
+  var aggregation = ["Average", "Minimum", "Maximum", "count"];
 
   var request = {
     auth: "auth_azure",
@@ -664,8 +710,8 @@ script "js_azure_sql_database_metrics", type: "javascript" do
     query_params: {
       "api-version": "2018-01-01",
       "timespan": timespan,
-      "metricnames": metricnames,
-      "aggregation": "Average,Minimum,Maximum,count",
+      "metricnames": metricnames.join(","),
+      "aggregation": aggregation.join(","),
       "interval": ds_stats_interval["api"]
     },
     headers: {
@@ -695,7 +741,7 @@ script "js_merged_metrics", type: "javascript" do
   code <<-EOS
   // Function to calculate percentiles from metrics
   function percentile(arr, p) {
-    // array needs to be sorted to select based on percentile
+    // array needs to be sorted lowest to highest first
     arr.sort(function(a, b) { return a - b })
 
     // Get the index using desired percentile and array length
@@ -786,17 +832,39 @@ script "js_merged_metrics", type: "javascript" do
       metrics = cpu_metrics ? cpu_metrics : dtu_metrics
 
       if (metrics.length > 0) {
-        minimums = _.pluck(metrics, 'minimum').sort()
-        maximums = _.pluck(metrics, 'maximum').sort()
-        averages = _.pluck(metrics, 'average').sort()
-        all_metrics = minimums.concat(maximums, averages)
+        minimums = _.pluck(cpu_metrics, 'minimum')
+        maximums = _.pluck(cpu_metrics, 'maximum')
+        averages = _.pluck(cpu_metrics, 'average')
 
-        metric_minimum = minimums && minimums.length > 0 ? _.first(minimums) : 0
-        metric_maximum = maximums && maximums.length > 0 ? _.last(maximums) : 0
-        metric_average = averages && averages.length > 0 ? _.reduce(averages, function(memo, num) { return memo + num }, 0) / averages.length : 0
-        metric_p90 = all_metrics.length > 0 ? percentile(all_metrics, 90) : 0
-        metric_p95 = all_metrics.length > 0 ? percentile(all_metrics, 95) : 0
-        metric_p99 = all_metrics.length > 0 ? percentile(all_metrics, 99) : 0
+        metric_minimum = null
+        metric_maximum = null
+        metric_average = null
+        metric_p90 = null
+        metric_p95 = null
+        metric_p99 = null
+
+        _.each(minimums, function(item) {
+          if (metric_minimum == null || item < metric_minimum) { metric_minimum = item }
+        })
+
+        _.each(maximums, function(item) {
+          if (metric_maximum == null || item > metric_maximum) { metric_maximum = item }
+        })
+
+        if (metric_minimum == null) { metric_minimum = 0 }
+
+        if (averages.length > 0) {
+          metric_average = _.reduce(averages, function(memo, num) { return memo + num }, 0) / averages.length
+        }
+
+        if (minimums.length + maximums.length + averages.length > 0) {
+          all_metrics = minimums.concat(maximums, averages)
+          // combine all points from minimums, maximums, averages
+          // use percentile() function to get the percentile values from all measured utilization points
+          metric_p90 = percentile(all_metrics, 90)
+          metric_p95 = percentile(all_metrics, 95)
+          metric_p99 = percentile(all_metrics, 99)
+        }
 
         if (param_stats_threshold == "Average") { metric_test_value = metric_average }
         if (param_stats_threshold == "Maximum") { metric_test_value = metric_maximum }
@@ -1728,13 +1796,12 @@ end
 
 # If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
 # if it is set we will look for the parent policy.
-datasource "ds_get_policy" do
+datasource "ds_get_parent_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
   end
   result do
     encoding "json"
@@ -1742,59 +1809,42 @@ datasource "ds_get_policy" do
   end
 end
 
-datasource "ds_parent_policy_terminated" do
-  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
-end
-
 # If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
 # This information is used in two places:
 # - determining whether or not we make a delete call
 # - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
-script "js_decide_if_self_terminate", type: "javascript" do
-  parameters "found", "self_policy_id", "meta_parent_policy_id"
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
   result "result"
-  code <<-EOS
-  var result
-  if (meta_parent_policy_id != "" && found.id == undefined) {
-    result = true
-  } else {
-    result = false
-  }
-  EOS
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
 end
 
 # Two potentials ways to set this up:
 # - this way and make a unneeded 'get' request when not deleting
 # - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
-script "js_make_terminate_request", type: "javascript" do
-  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
-  result "request"
-  code <<-EOS
-
-  var request = {
-    auth:  'auth_flexera',
-    host: rs_governance_host,
-    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
-    headers: {
-      "API-Version": "1.0",
-      "Content-Type":"application/json"
-    },
-  }
-
-  if (should_delete) {
-    request.verb = 'DELETE'
-  }
-  EOS
-end
-
 datasource "ds_terminate_self" do
   request do
-    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
   end
 end
 
-datasource "ds_is_deleted" do
-  run_script $js_check_deleted, $ds_terminate_self
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", policy_id ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
 end
 
 # This is just a way to have the check delete request connect to the farthest leaf from policy.
@@ -1803,10 +1853,12 @@ end
 # The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
 # would not have access to self-terminate
 # It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
-script "js_check_deleted", type: "javascript" do
-  parameters "response"
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
   result "result"
-  code <<-EOS
-  result = {"path":"/"}
-  EOS
+  code 'result = { path: "/"}'
 end

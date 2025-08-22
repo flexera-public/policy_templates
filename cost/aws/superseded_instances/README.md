@@ -12,9 +12,17 @@ This policy template checks all the EC2 instances in an AWS Account to determine
 
 ### Policy Savings Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the instance type is changed to the recommended instance type. The savings is calculated by taking the difference in the hourly list price between the current instance type and the recommended instance type. This value is then multiplied by 24 to get the daily savings, and then by 30.44 (the average number of days in a month) to get the monthly savings. The savings value is 0 if no cost information for the resource type was found in our internal database.
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the instance type is changed to the recommended instance type.
 
-The savings is displayed in the Estimated Monthly Savings column. The incident message detail includes the sum of each resource *Estimated Monthly Savings* as *Potential Monthly Savings*. If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
+- The `Estimated Monthly Cost` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
+- Since the `Estimated Monthly Cost` of individual resources is obtained from Flexera CCO, it will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
+- The `Estimated Monthly Savings` is calculated as the percentage differences between either the ["AWS VM listed price"](https://github.com/flexera-public/policy_templates/blob/master/data/aws/aws_ec2_pricing.json) or ["NFUs (Normal Form Units)"](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/apply_ri.html) between current instance type and the recommended instance type. More specifically:
+  - If the "listed price" of both instance types is available, the `Estimated Monthly Savings` is calculated as ("actual cost" * (1 - "list price of recommended instance type" / "list price of current instance type"))
+  - If the "listed price" is unavailable but the "NFU" is available, the `Estimated Monthly Savings` is calculated as ("actual cost" * (1 - "NFU of recommended instance type" - "NFU of current instance type"))
+  - If neither the "listed price" nor the "NFU" is available, the `Estimated Monthly Savings` will be 0.
+- If no cost information for the resource type was found in our internal database, the `Estimated Monthly Savings` will also be 0.
+- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
+- If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
 
 ## Input Parameters
 

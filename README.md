@@ -340,6 +340,10 @@ These templates can generate savings estimates for your environment. The inciden
   * [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   * [Azure SQL Servers Without Elastic Pools](./cost/azure/sql_servers_without_elastic_pool)
 
+* Storage
+
+  * [Azure Unused Storage Accounts](./cost/azure/unused_storage_accounts)
+
 * Storage Accounts
 
   * [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management)
@@ -373,6 +377,7 @@ These templates can generate savings estimates for your environment. The inciden
   * [Common Bill Ingestion from AWS S3 Object Storage](./cost/flexera/cco/cbi_ingestion_aws_s3)
   * [Common Bill Ingestion from Azure Blob Storage](./cost/flexera/cco/cbi_ingestion_azure_blob)
   * [Fixed Cost Common Bill Ingestion](./cost/flexera/cco/fixed_cost_cbi)
+  * [Percentage Cost Common Bill Ingestion](./cost/flexera/cco/percentage_cost_cbi)
 
 * Spot Eco
 
@@ -454,6 +459,7 @@ These templates can generate savings estimates for your environment. The inciden
 * Automation
 
   * [Applied Policy Template Errors](./operational/flexera/automation/applied_policy_error_notification)
+  * [Automation Reports](./operational/flexera/automation/automation_reports)
   * [Flexera Automation Disallowed Credentials](./automation/flexera/disallowed_credentials)
   * [Flexera Automation Expiring Credentials](./automation/flexera/expiring_credentials)
   * [Flexera Automation Outdated Applied Policies](./automation/flexera/outdated_applied_policies)
@@ -462,6 +468,7 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Cloud Bill Processing Error Notification](./operational/flexera/cco/bill_processing_errors_notification)
   * [FinOps Dashboards](./operational/flexera/cco/finops_dashboards)
+  * [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
 
 * FlexNet Manager
 
@@ -483,10 +490,6 @@ These templates can generate savings estimates for your environment. The inciden
 * Kubernetes
 
   * [Spot Ocean - Common Bill Ingest](./cost/flexera/spot/ocean_cbi)
-
-* N/A
-
-  * [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
 
 #### Google
 
