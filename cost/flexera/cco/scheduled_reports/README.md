@@ -8,6 +8,10 @@ This policy can be used for automated "reporting" use-cases, as well as "alertin
 
 *Note: Any cost data that is less than 3 days old will be incomplete. This is because cloud cost data is not imported into Flexera CCO in real time.*
 
+## Example Incident
+
+![Example Incident](example.png "Example Incident")
+
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to send the scheduled report to.
