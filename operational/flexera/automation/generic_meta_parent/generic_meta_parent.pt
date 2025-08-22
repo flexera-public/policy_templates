@@ -451,6 +451,25 @@ EOS
 end
 
 # Get existing child policies
+datasource "ds_org_existing_policies" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies"])
+    header "Api-Version", "1.0"
+    query "show_meta_child_policies", "true"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "meta_parent_policy_id", jmes_path(col_item, "meta_parent_policy_id")
+      field "id", jmes_path(col_item, "id")
+      field "href", jmes_path(col_item, "href")
+    end
+  end
+end
+
+# Get existing child policies
 datasource "ds_get_existing_policies" do
   request do
     auth $auth_flexera
@@ -463,7 +482,7 @@ datasource "ds_get_existing_policies" do
     encoding "json"
     collect jmes_path(response, "items[*]") do
       field "meta_parent_policy_id", jmes_path(col_item, "meta_parent_policy_id")
-      field "applied_policy_id", jmes_path(col_item, "id")
+      field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "status", jmes_path(col_item, "status")
@@ -471,6 +490,48 @@ datasource "ds_get_existing_policies" do
       field "created_at", jmes_path(col_item, "created_at")
       field "options", jmes_path(col_item, "options")
     end
+  end
+end
+
+# Process dimension values and determine child policy actions
+datasource "ds_child_policy_orphans" do
+  run_script $js_child_policy_orphans, $ds_org_existing_policies
+end
+
+script "js_child_policy_orphans", type: "javascript" do
+  parameters "ds_org_existing_policies"
+  result "results"
+  code <<-EOS
+  // Identify any orphaned child policies
+  // Orphaned child policies have a meta_parent_policy_id value set, but no applied policy exists matching that id
+  var results = [];
+  // Index policy ids and meta parent ids for quick lookup
+  var policy_ids = _.groupBy(ds_org_existing_policies, "id");
+  var meta_parent_policies = _.groupBy(ds_org_existing_policies, "meta_parent_policy_id");
+  // Loop through each meta parent id
+  _.each(_.keys(meta_parent_policies), function(parent_id) {
+    if (parent_id == null || parent_id == "" || parent_id == "undefined" || typeof parent_id === 'undefined') {
+      // Skip if meta parent id is null or ""
+      return;
+    }
+    // Check to see if the meta parent exists
+    if (!policy_ids[parent_id]) {
+      // If it does not, add all child policies to results for deletion
+      results = results.concat(meta_parent_policies[parent_id]);
+    }
+  });
+  EOS
+end
+
+datasource "ds_terminate_child_policy_orphans" do
+  iterate $ds_child_policy_orphans
+  request do
+    verb "DELETE"
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", val(iter_item, "id")])
+    header "Api-Version", "1.0"
+    ignore_status [404,403]
   end
 end
 
@@ -816,9 +877,9 @@ script "js_child_policy_actions", type: "javascript" do
             meta_parent_policy_id: existing_policy.meta_parent_policy_id,
             combination: child.key,
             action: "Keep",
-            policy_name: existing_policy.name + "||" + applied_policy_url_prefix + existing_policy.applied_policy_id,
+            policy_name: existing_policy.name + "||" + applied_policy_url_prefix + existing_policy.id,
             status: existing_policy.status,
-            policy_id: existing_policy.applied_policy_id
+            policy_id: existing_policy.id
           });
         }
       });
@@ -828,7 +889,7 @@ script "js_child_policy_actions", type: "javascript" do
       _.each(existing_policies_map, function(policy) {
         if (policy.meta_parent_policy_id == meta_parent_id) {
           to_delete.push({
-            id: policy.applied_policy_id,
+            id: policy.id,
             name: policy.name
           });
 
@@ -836,9 +897,9 @@ script "js_child_policy_actions", type: "javascript" do
             meta_parent_policy_id: ds_applied_policy.id || "placeholder-value-for-meta-parent-policy-id-when-using-retrieve-data",
             combination: "N/A",
             action: "Delete",
-            policy_name: policy.name + "||" + applied_policy_url_prefix + policy.applied_policy_id,
+            policy_name: policy.name + "||" + applied_policy_url_prefix + policy.id,
             status: policy.status,
-            policy_id: policy.applied_policy_id
+            policy_id: policy.id
           });
         }
       });
@@ -905,11 +966,11 @@ EOS
 end
 
 datasource "ds_to_delete" do
-  run_script $js_to_delete, $ds_child_policy_actions
+  run_script $js_to_delete, $ds_child_policy_actions, $ds_terminate_child_policy_orphans
 end
 
 script "js_to_delete", type: "javascript" do
-  parameters "ds_child_policy_actions"
+  parameters "ds_child_policy_actions", "ds_terminate_child_policy_orphans"
   result "result"
   code <<-EOS
   result = ds_child_policy_actions.to_delete || [];
@@ -922,34 +983,13 @@ end
 
 policy "pol_child_policy_management" do
   validate_each $ds_grid do
-    summary_template "{{ with index data 0 }}{{ .metadata.meta_parent_policy_name }}{{ end }}: {{ len data }} Child Policy Actions"
+    summary_template "{{ with index data 0 }}{{ .metadata.meta_parent_policy_name }}{{ end }}: Status of Child Policies"
     detail_template <<-'EOS'
-**Child Policy Template:** {{ with index data 0 }}{{ .metadata.child_policy_info }}{{ end }}
-**Required Children:** {{ with index data 0 }}{{ .required_children_count }}{{ end }}
-**Existing Children:** {{ with index data 0 }}{{ .existing_children_count }}{{ end }}
+**Child Policy Template:** {{ with index data 0 }}{{ .metadata.child_policy_info.name }}{{ end }}
 
-The following child policy actions are planned:
+**Number of Expected Child Applied Policies:** {{ with index data 0 }}{{ .metadata.required_children_count }}{{ end }}
 
-## Creating Child Policies
-{{- range data }}
-{{- if eq .action "Create" }}
-- **{{ .policy_name }}**
-{{- end }}
-{{- end }}
-
-## Deleting Child Policies
-{{- range data }}
-{{- if eq .action "Delete" }}
-- **{{ .policy_name }}** (ID: {{ .policy_id }})
-{{- end }}
-{{- end }}
-
-## Unchanged Child Policies
-{{- range data }}
-{{- if eq .action "Keep" }}
-- **{{ .policy_name }}** (ID: {{ .policy_id }})
-{{- end }}
-{{- end }}
+**Number of Existing Child Applied Policies:** {{ with index data 0 }}{{ .metadata.existing_children_count }}{{ end }}
 EOS
     check eq(0, 1) # Always trigger
     escalate $esc_email
@@ -981,7 +1021,7 @@ EOS
 - **{{ .name }}**
 {{- end }}
 EOS
-    check eq(size(data), 0) # Trigger if we any results
+    check eq(size(data), 0) # Trigger if we have any results
     escalate $esc_create_policies
   end
   validate $ds_to_delete do
@@ -992,7 +1032,7 @@ EOS
 - **{{ .name }}** (ID: {{ .id }})
 {{- end }}
 EOS
-    check eq(size(data), 0) # Trigger if we any results
+    check eq(size(data), 0) # Trigger if we have any results
     escalate $esc_delete_policies
   end
 end
@@ -1010,16 +1050,18 @@ end
 
 escalation "esc_create_policies" do
   automatic true
-  label "Create Child Policies"
-  description "Create new child policies for new dimension combinations"
+  label "Create Applied Policies"
+  description "Create applied policies"
   run "create_applied_policies", data, rs_governance_host, rs_project_id
+  resolve_incident # Automatically close the incident once the escalation has run
 end
 
 escalation "esc_delete_policies" do
   automatic true
-  label "Delete Obsolete Child Policies"
-  description "Delete child policies that are no longer needed"
+  label "Delete Applied Policies"
+  description "Delete applied policies"
   run "delete_applied_policies", data, rs_governance_host, rs_project_id
+  resolve_incident # Automatically close the incident once the escalation has run
 end
 
 ###############################################################################
@@ -1092,7 +1134,11 @@ define delete_applied_policies($data, $governance_host, $rs_project_id) return $
       headers: { "Api-Version": "1.0" }
     )
 
-    if $response["code"] < 200 || $response["code"] >= 300
+    if $response["code"] == 404
+      # If already deleted, treat as success
+      $response["code"] = 200
+      $response["body"] = "Already deleted"
+    elsif $response["code"] < 200 || $response["code"] >= 300
       $$errors << "Failed to delete applied policy: " + $item["name"] + ". Status: " + to_s($response["code"]) + ". Response: " + to_s($response["body"])
     end
 
