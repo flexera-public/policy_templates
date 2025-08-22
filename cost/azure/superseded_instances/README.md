@@ -20,7 +20,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
   - If the "listed price" of both instance types is available, the `Estimated Monthly Savings` is calculated as ("actual cost" * (1 - "list price of recommended instance type" / "list price of current instance type"))
   - If the "listed price" is unavailable but the "Instance Size Flexibility Ratio" is available, the `Estimated Monthly Savings` is calculated as ("actual cost" * (1 - "Instance Size Flexibility Ratio of recommended instance type" - "Instance Size Flexibility Ratio of current instance type"))
   - If neither the "listed price" nor the "Instance Size Flexibility Ratio" is available, the `Estimated Monthly Savings` will be 0.
-- If no cost information for the resource type was found in our internal database, the `Estimated Monthly Savings` is 0.
+- If no cost information for the resource type was found in our internal database, the `Estimated Monthly Savings` will also be 0.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
 

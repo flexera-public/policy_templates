@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "2.4.3",
+  version: "3.0.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Superseded Compute Instances",
@@ -736,6 +736,8 @@ script "js_superseded_instances", type: "javascript" do
     superseded_type = null
     instance_type_price = null
     superseded_type_price = null
+    instance_size_rank = null
+    superseded_size_rank = null
     savings = 0.0
     hourly_cost_multiplier = 365.25 / 12 * 24
 
@@ -763,15 +765,17 @@ script "js_superseded_instances", type: "javascript" do
     superseded_parameter = type_table[param_instance_type]
 
     if (ds_aws_instance_type_map[instance_type]) {
+      instance_size_rank = ds_aws_instance_type_map[instance_type]['size_rank']
       superseded_table = ds_aws_instance_type_map[instance_type]['superseded']
 
       if (typeof(superseded_table) == 'object') {
         superseded_type = superseded_table[superseded_parameter]
+        superseded_size_rank = ds_aws_instance_type_map[superseded_type]['size_rank']
         recommendationType = param_instance_type
       }
     }
 
-    if ((typeof(superseded_type) != 'string' || superseded_type != '') && param_fallback_instance_type != "None") {
+    if ((typeof(superseded_type) != 'string' || superseded_type == '') && param_fallback_instance_type != "None") {
       superseded_parameter = type_table[param_fallback_instance_type]
 
       if (ds_aws_instance_type_map[instance_type]) {
@@ -809,10 +813,15 @@ script "js_superseded_instances", type: "javascript" do
         }
       }
 
+      savings_multiplier = 0.0
       if (typeof(instance_type_price) == 'number' && typeof(superseded_type_price) == 'number') {
-        instance_type_price *= ds_currency['exchange_rate'] * hourly_cost_multiplier
-        superseded_type_price *= ds_currency['exchange_rate'] * hourly_cost_multiplier
-        savings = instance_type_price - superseded_type_price
+        savings_multiplier = 1 - superseded_type_price / instance_type_price
+      } else if (typeof(instance_size_rank) == 'number' && typeof(superseded_size_rank) == 'number' && instance_size_rank > 0 && superseded_size_rank > 0) {
+        savings_multiplier = 1 - superseded_size_rank / instance_size_rank
+      }
+
+      if (typeof(cost) == 'number') {
+        savings = cost * savings_multiplier
       }
 
       if (savings >= param_min_savings) {
