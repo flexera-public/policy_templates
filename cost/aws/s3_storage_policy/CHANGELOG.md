@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.1.0
+
+- Estimated Monthly Savings is now provided for each S3 bucket that we have cost data for in Flexera
+- Added "Enable Intelligent Tiering" policy action
+
 ## v4.0.5
 
 - Updated meta policy code to use newer Flexera API. Functionality unchanged.
