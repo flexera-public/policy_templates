@@ -281,7 +281,7 @@ datasource "ds_oci_recommendation_actions" do
       field "region", jmes_path(col_item, "extendedMetadata.region")
       field "osType", jmes_path(col_item, "extendedMetadata.operatingSystem")
       field "currentShape", jmes_path(col_item, "extendedMetadata.CurrentShape.name")
-      field "recommendedShape", jmes_path(col_item, "extendedMetadata.RecommendedShape.name")
+      field "recommendedShape", jmes_path(col_item, "extendedMetadata.instanceRecommendedShape")
     end
   end
 end
@@ -320,14 +320,14 @@ datasource "ds_oci_recommendation_list" do
   result do
     encoding "json"
     collect jmes_path(response, "items[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
       field "categoryId", jmes_path(col_item, "categoryId")
       field "compartmentId", jmes_path(col_item, "compartmentId")
       field "description", jmes_path(col_item, "description")
       field "estimatedCostSaving", jmes_path(col_item, "estimatedCostSaving")
-      field "id", jmes_path(col_item, "id")
       field "importance", jmes_path(col_item, "importance")
       field "lifecycleState", jmes_path(col_item, "lifecycleState")
-      field "name", jmes_path(col_item, "name")
       field "resourceCounts", jmes_path(col_item, "resourceCounts")
       field "status", jmes_path(col_item, "status")
       field "supportedLevels", jmes_path(col_item, "supportedLevels")
@@ -381,14 +381,14 @@ script "js_oci_filtered_recommendations_underutil", type: "javascript" do
   }
 
   // This is what we use to filter for underutilized compute recommendations specifically
-  category_filter = "cost-management-compute-host-underutilized-desc"
+  category_filter = "cost-management-compute-host-underutilized"
 
   result = []
   total_savings = 0.0
 
   if (param_idle_or_underutilized != "Idle") {
     valid_recommendations = _.filter(ds_oci_recommendation_list, function(item) {
-      return item['description'] == category_filter
+      return item['name'].indexOf(category_filter) != -1
     })
 
     valid_ids = _.pluck(valid_recommendations, "id")
@@ -400,13 +400,31 @@ script "js_oci_filtered_recommendations_underutil", type: "javascript" do
     _.each(recommendations, function(action) {
       total_savings += parseFloat(action['estimatedCostSaving'])
 
-      recommendationDetails = [
-        "Resize Oracle virtual machine ", action["resourceId"], " ",
-        "in Oracle Compartment ", action["compartmentName"], " ",
-        "(", action["compartmentId"], ") ",
-        "from ", action["currentShape"], " ",
-        "to ", action["recommendedShape"]
-      ].join('')
+      resourceType = action['currentShape']
+      cpuAverage = Math.round(parseFloat(action['computeCpuUtilization']) * 100) / 100
+      memAverage = Math.round(parseFloat(action['computeMemoryUtilization']) * 100) / 100
+
+      if (!cpuAverage) { cpuAverage = '' }
+      if (!memAverage) { cpuAverage = '' }
+      if (!resourceType) { resourceType = '' }
+
+      if (resourceType) {
+        recommendationDetails = [
+          "Resize Oracle virtual machine ", action["resourceId"], " ",
+          "in Oracle Compartment ", action["compartmentName"], " ",
+          "(", action["compartmentId"], ") ",
+          "from ", resourceType, " ",
+          "to ", action["recommendedShape"]
+        ].join('')
+      } else {
+        recommendationDetails = [
+          "Resize Oracle virtual machine ", action["resourceId"], " ",
+          "in Oracle Compartment ", action["compartmentName"], " ",
+          "(", action["compartmentId"], ") ",
+          "to ", action["recommendedShape"]
+        ].join('')
+      }
+
 
       result.push({
         accountID: action['compartmentId'],
@@ -420,9 +438,9 @@ script "js_oci_filtered_recommendations_underutil", type: "javascript" do
         actionId: action['id'],
         status: action['status'],
         osType: action['osType'],
-        cpuAverage: Math.round(parseFloat(action['computeCpuUtilization']) * 100) / 100,
-        memAverage: Math.round(parseFloat(action['computeMemoryUtilization']) * 100) / 100,
-        resourceType: action['currentShape'],
+        cpuAverage: cpuAverage,
+        memAverage: memAverage,
+        resourceType: resourceType,
         newResourceType: action['recommendedShape'],
         recommendationDetails: recommendationDetails,
         service: "COMPUTE",
@@ -501,7 +519,7 @@ script "js_oci_filtered_recommendations_idle", type: "javascript" do
   }
 
   // This is what we use to filter for idle compute recommendations specifically
-  category_filter = "cost-management-compute-host-idle-desc"
+  category_filter = "cost-management-compute-host-idle"
 
   result = []
   total_savings = 0.0
@@ -512,7 +530,7 @@ script "js_oci_filtered_recommendations_idle", type: "javascript" do
     underutil_ids = _.compact(_.pluck(ds_oci_filtered_recommendations_underutil, "resourceID"))
 
     valid_recommendations = _.filter(ds_oci_recommendation_list, function(item) {
-      return item['description'] == category_filter
+      return item['name'].indexOf(category_filter) != -1
     })
 
     valid_ids = _.pluck(valid_recommendations, "id")
@@ -523,6 +541,14 @@ script "js_oci_filtered_recommendations_idle", type: "javascript" do
 
     _.each(recommendations, function(action) {
       total_savings += parseFloat(action['estimatedCostSaving'])
+
+      resourceType = action['currentShape']
+      cpuAverage = Math.round(parseFloat(action['computeCpuUtilization']) * 100) / 100
+      memAverage = Math.round(parseFloat(action['computeMemoryUtilization']) * 100) / 100
+
+      if (!cpuAverage) { cpuAverage = '' }
+      if (!memAverage) { cpuAverage = '' }
+      if (!resourceType) { resourceType = '' }
 
       recommendationDetails = [
         "Terminate Oracle virtual machine ", action["resourceId"], " ",
@@ -542,9 +568,9 @@ script "js_oci_filtered_recommendations_idle", type: "javascript" do
         actionId: action['id'],
         status: action['status'],
         osType: action['osType'],
-        cpuAverage: Math.round(parseFloat(action['computeCpuUtilization']) * 100) / 100,
-        memAverage: Math.round(parseFloat(action['computeMemoryUtilization']) * 100) / 100,
-        resourceType: action['currentShape'],
+        cpuAverage: cpuAverage,
+        memAverage: memAverage,
+        resourceType: resourceType,
         recommendationDetails: recommendationDetails,
         service: "COMPUTE",
         policy_name: ds_applied_policy["name"],
