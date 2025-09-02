@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.1
+
+- Fixed lookup when using NFU comparison for estimated savings.
+
 ## v3.0.0
 
 - Changed savings calculation to improve accuracy. See README for more details.
