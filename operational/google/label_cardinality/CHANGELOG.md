@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.3
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
 ## v0.2.2
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
