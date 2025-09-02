@@ -8,8 +8,8 @@ This policy template reports on any existing underutilized virtual machine recom
 
 This policy template reports the following Oracle Cloud Advisor recommendations:
 
-- `cost-management-compute-host-underutilized-desc`: Checks if a virtual machine is underutilized and recommends a more appropriate machine type when appropriate.
-- `cost-management-compute-host-idle-desc`: Checks if a virtual machine is idle and recommends termination when appropriate.
+- `cost-management-compute-host-underutilized`: Checks if a virtual machine is underutilized and recommends a more appropriate machine type when appropriate.
+- `cost-management-compute-host-idle`: Checks if a virtual machine is idle and recommends termination when appropriate.
 
 More information on Cloud Advisor is available in Oracle's documentation:
 
