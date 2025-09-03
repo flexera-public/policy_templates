@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.3
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v2.0.2
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
