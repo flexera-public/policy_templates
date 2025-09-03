@@ -187,6 +187,12 @@ These templates can generate savings estimates for your environment. The inciden
   * [Kubecost Cluster Rightsizing Recommendation](./cost/kubecost/cluster)
   * [Kubecost Container Request Rightsizing Recommendations](./cost/kubecost/sizing)
 
+#### Oracle
+
+* Compute
+
+  * [Oracle Cloud Advisor: Rightsize Virtual Machines](./cost/oracle/advisor_rightsize_vms)
+
 ### Policy Templates for Compliance
 
 #### AWS
