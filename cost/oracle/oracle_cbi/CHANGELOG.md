@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.1
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v3.3.0
 
 - Added additional parameters to allow user to gather cost reports from custom buckets.

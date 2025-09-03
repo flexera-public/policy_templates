@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.7
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v3.1.6
 
 - Removed unnecessarily empty lines from code. Functionality unchanged.
