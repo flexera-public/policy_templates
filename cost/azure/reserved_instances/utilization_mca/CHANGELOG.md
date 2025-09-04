@@ -1,8 +1,11 @@
 # Changelog
 
-## v1.0.4
+## v1.0.5
 
 - Deprecated: This policy is no longer being updated. Please see policy README for more information.
+
+## v1.0.4
+
 - Updated API requests to use newer Flexera API. Functionality unchanged.
 
 ## v1.0.3
