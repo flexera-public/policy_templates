@@ -52,7 +52,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**Oracle Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_3335267112_1121578) (*provider=oracle*) which meets the below requirements:
   - Allow group [Group] to read optimizer-api-family in tenancy
-    - [Group] should be replaced with a group that the user associated with the Oracle Cloud credential is a member of.
+  - Allow group [Group] to read optimizer-resource-metadata in tenancy
+  - [Group] should be replaced with a group that the user associated with the Oracle Cloud credential is a member of.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
