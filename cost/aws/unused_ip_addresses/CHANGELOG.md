@@ -1,5 +1,9 @@
 # Changelog
 
+## v9.2.8
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v9.2.7
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

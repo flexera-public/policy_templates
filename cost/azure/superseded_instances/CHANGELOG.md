@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.2
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v3.0.1
 
 - Fixed lookup when using NFU comparison for estimated savings.

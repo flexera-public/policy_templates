@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.10.8
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v2.10.7
 
 - Removed unnecessarily empty lines from code. Functionality unchanged.

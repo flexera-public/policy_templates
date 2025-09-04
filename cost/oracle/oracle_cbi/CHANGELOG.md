@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.2
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v3.3.1
 
 - Fixed issue that would prevent policy template from completing execution.
