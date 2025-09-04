@@ -37,7 +37,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**Oracle Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_3335267112_1121578) (*provider=oracle*) which meets the below requirements:
   - define tenancy usage-report as [OCID]
-    - [OCID] should be replaced with the OCID shown on the Cost & Usage Reports page in Oracle Cloud's web UI.
+    - [OCID] should be replaced with the OCID of the object storage bucket that stores the Cost & Usage Reports. In most cases, this will be the same as the OCID of the Tenancy itself.
   - endorse group [Group] to read objects in tenancy usage-report
     - [Group] should be replaced with a group that the user associated with the Oracle Cloud credential is a member of.
 
