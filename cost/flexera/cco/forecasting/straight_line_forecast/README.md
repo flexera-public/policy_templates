@@ -4,6 +4,10 @@
 
 This policy template produces a forecast for monthly cloud spend based on cost data stored in Flexera Cloud Cost Optimization (CCO) and presents this forecast as a chart and table. The user can specify the number of months to look back, the number of months to forecast, the formula used for producing the forecast, and the Flexera CCO dimension to split costs by in the chart. Optionally, this forecast can be emailed.
 
+## Example Incident
+
+![Example Incident](example.png "Example Incident")
+
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to send the report to.
