@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.1
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v3.0.0
 
 - Changed savings calculation to improve accuracy. See README for more details.

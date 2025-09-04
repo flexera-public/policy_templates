@@ -187,6 +187,12 @@ These templates can generate savings estimates for your environment. The inciden
   * [Kubecost Cluster Rightsizing Recommendation](./cost/kubecost/cluster)
   * [Kubecost Container Request Rightsizing Recommendations](./cost/kubecost/sizing)
 
+#### Oracle
+
+* Compute
+
+  * [Oracle Cloud Advisor: Rightsize Virtual Machines](./cost/oracle/advisor_rightsize_vms)
+
 ### Policy Templates for Compliance
 
 #### AWS
@@ -467,6 +473,7 @@ These templates can generate savings estimates for your environment. The inciden
 * Cloud Cost Optimization
 
   * [Cloud Bill Processing Error Notification](./operational/flexera/cco/bill_processing_errors_notification)
+  * [Dynamic Dashboards](./operational/flexera/cco/dynamic_dashboards)
   * [FinOps Dashboards](./operational/flexera/cco/finops_dashboards)
   * [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
 

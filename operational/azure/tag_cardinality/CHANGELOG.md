@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.2.6
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v3.2.5
+
+- Fixed subscription filtering which will optimize data collection
+
 ## v3.2.4
 
 - Updated meta policy code to use newer Flexera API. Functionality unchanged.

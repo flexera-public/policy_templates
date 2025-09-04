@@ -284,7 +284,7 @@ script "js_make_terminate_request", type: "javascript" do
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],
-    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", policy_id ].join(''),
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
     verb: ds_parent_policy_terminated ? "DELETE" : "GET"
   }
 EOS
