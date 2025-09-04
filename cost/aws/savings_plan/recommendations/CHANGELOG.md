@@ -2,7 +2,7 @@
 
 ## v3.3.7
 
-- Changed incident field "Recommendeded Quantity to Purchase" to "Recommended Hourly Commitment" to both correct a spelling error and make the field more clear.
+- Changed incident field "Recommendeded Quantity to Purchase" to "Recommended Hourly Commitment" to both correct a spelling error and make the field clearer.
 
 ## v3.3.6
 
