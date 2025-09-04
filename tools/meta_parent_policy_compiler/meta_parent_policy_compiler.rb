@@ -21,7 +21,7 @@ end
 def child_missing_requirements(file_path, file_contents)
   header_found = file_contents.include?("header \"Meta-Flexera\", val($ds_is_deleted, \"path\")")
   check_found = file_contents.include?("check logic_or($ds_parent_policy_terminated,")
-  footer_found = file_contents.include?("# Meta Policy [alpha]") && file_contents.include?("datasource \"ds_get_policy\" do") && file_contents.include?("datasource \"ds_parent_policy_terminated\" do") && file_contents.include?("datasource \"ds_terminate_self\" do") && file_contents.include?("datasource \"ds_is_deleted\" do")
+  footer_found = file_contents.include?("# Meta Policy [alpha]") && file_contents.include?("datasource \"ds_get_parent_policy\" do") && file_contents.include?("datasource \"ds_parent_policy_terminated\" do") && file_contents.include?("datasource \"ds_terminate_self\" do") && file_contents.include?("datasource \"ds_is_deleted\" do")
 
   unless header_found && check_found && footer_found
     print("Unable to generate meta parent for #{file_path}\n\n")

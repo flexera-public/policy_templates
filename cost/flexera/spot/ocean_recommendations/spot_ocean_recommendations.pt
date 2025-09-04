@@ -6,9 +6,9 @@ long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/spot/ocean_recommendations/"
 category "Operational"
 severity "low"
-default_frequency "hourly"
+default_frequency "daily"
 info(
-  version: "0.1.1",
+  version: "0.2.1",
   provider: "Flexera",
   service: "Kubernetes",
   policy_set: "Rightsize Containers",
@@ -87,13 +87,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -138,15 +177,10 @@ script "js_spotinst_accounts_filtered", type: "javascript" do
 EOS
 end
 
-# https://api.spotinst.io/ocean/aws/k8s/cluster
-# Docs: https://docs.spot.io/api/#tag/Ocean-AWS/operation/OceanAWSClusterList
 datasource "ds_spotinst_clusters" do
   iterate $ds_spotinst_accounts_filtered
   request do
-    auth $auth_spotinst
-    host "api.spotinst.io"
-    path "/ocean/aws/k8s/cluster"
-    query "accountId", val(val(iter_item, "account"), "accountId")
+    run_script $js_spotinst_clusters, val(iter_item, "account")
   end
   result do
     encoding "json"
@@ -159,20 +193,38 @@ datasource "ds_spotinst_clusters" do
   end
 end
 
-# https://api.spotinst.io/ocean/aws/k8s/cluster/o-86a443f1/rightSizing/suggestion?accountId=act-b04d40ef
-# Docs: https://docs.spot.io/api/#tag/Ocean-AWS/operation/oceanAwsFilterRightSizingWithFilter
+script "js_spotinst_clusters", type: "javascript" do
+  parameters "spot_inst_account"
+  result "request"
+  code <<-EOS
+    host = "api.spotinst.io"
+    path = "/ocean/aws/k8s/cluster"
+
+    if (spot_inst_account.cloudProvider == "AZURE") {
+      path = "/ocean/azure/np/cluster"
+    } else if (spot_inst_account.cloudProvider == "GCP") {
+      path = "/ocean/gcp/k8s/cluster"
+    }
+
+    request = {
+      auth: "auth_spotinst",
+      host: host,
+      path: path,
+      query_params: {
+        'accountId': spot_inst_account.accountId
+      }
+    }
+  EOS
+end
+
 datasource "ds_spotinst_clusters_rightsizing_suggestions" do
   iterate $ds_spotinst_clusters
   request do
-    auth $auth_spotinst
-    host "api.spotinst.io"
-    path join(["/ocean/aws/k8s/cluster/", val(val(iter_item, "cluster"), "id"), "/rightSizing/suggestion"])
-    query "accountId", val(val(iter_item, "account"), "accountId")
-    # ignore_status 400 # Ignore 400 status code -- when ocean cluster no longer exists
+    run_script $js_spotinst_clusters_rightsizing_suggestions, val(iter_item, "cluster"), val(iter_item, "account")
   end
   result do
     encoding "json"
-    collect jq(response, ".response.items.suggestions[]") do
+    collect jmes_path(response, "response.items[*]") do
       # iteration fields
       field "account", jq(iter_item, ".account")
       field "cluster", jq(iter_item, ".cluster")
@@ -180,6 +232,31 @@ datasource "ds_spotinst_clusters_rightsizing_suggestions" do
       field "suggestion", jq(col_item, ".")
     end
   end
+end
+
+script "js_spotinst_clusters_rightsizing_suggestions", type: "javascript" do
+  parameters "spotinst_cluster", "spotinst_account"
+  result "request"
+  code <<-EOS
+    host = "api.spotinst.io"
+    path = (["/ocean/aws/k8s/cluster/", spotinst_cluster.id, "/rightSizing/suggestion"]).join("")
+
+    if (spotinst_account.cloudProvider == "AZURE") {
+      path = (["/ocean/azure/k8s/cluster/", spotinst_cluster.id, "/rightSizing/suggestion"]).join("")
+    } else if (spotinst_account.cloudProvider == "GCP") {
+      path = (["/ocean/gcp/k8s/cluster/", spotinst_cluster.id, "/rightSizing/suggestion"]).join("")
+    }
+
+    request = {
+      verb: "POST",
+      auth: "auth_spotinst",
+      host: host,
+      path: path,
+      query_params: {
+        'accountId': spotinst_account.accountId
+      }
+    }
+  EOS
 end
 
 # Filter out suggestions based on used input parameters
@@ -192,11 +269,13 @@ script "js_spotinst_clusters_rightsizing_suggestions_filtered", type: "javascrip
   result "result"
   code <<-EOS
   result = _.filter(ds_spotinst_clusters_rightsizing_suggestions, function(suggestion) {
-    var checkHasRequest = param_include_recommendations_request_undefined == "No" \
-                          && suggestion.suggestion.requestedCPU > 0 \
-                          && suggestion.suggestion.requestedMemory > 0
-
-    return checkHasRequest
+    // Should include if:
+    // param_include_recommendations_request_undefined == "Yes"
+    // OR
+    // requestCPU > 0
+    // OR
+    // requestedMemory > 0
+    return (param_include_recommendations_request_undefined == "Yes" || suggestion.suggestion.requestedCPU > 0 || suggestion.suggestion.requestedMemory > 0);
   })
 EOS
 end
@@ -257,13 +336,7 @@ end
 datasource "ds_spotinst_cluster_aggregated_costs" do
   iterate $ds_requests_spotinst_cluster_aggregated_costs
   request do
-    auth $auth_spotinst
-    verb "POST"
-    host "api.spotinst.io"
-    path join(["/ocean/aws/k8s/cluster/", jq(iter_item,".spotinst_cluster.cluster.id"), "/aggregatedCosts"])
-    query "accountId", jq(iter_item, ".spotinst_cluster.account.accountId")
-    body_field "startTime", jq(iter_item, ".date_period.start_date")
-    body_field "endTime",   jq(iter_item, ".date_period.end_date")
+    run_script $js_spotinst_cluster_aggregated_costs, val(iter_item, "spotinst_cluster"), val(iter_item, "date_period")
   end
   result do
     encoding "json"
@@ -277,6 +350,35 @@ datasource "ds_spotinst_cluster_aggregated_costs" do
       field "summary", jq(col_item, ".summary")
     end
   end
+end
+
+script "js_spotinst_cluster_aggregated_costs", type: "javascript" do
+  parameters "spotinst_cluster", "date_period"
+  result "request"
+  code <<-EOS
+    host = "api.spotinst.io"
+    path = (["/ocean/aws/k8s/cluster/", spotinst_cluster.cluster.id, "/aggregatedCosts"]).join("")
+
+    if (spotinst_cluster.account.cloudProvider == "AZURE") {
+      path = (["/ocean/azure/k8s/cluster/", spotinst_cluster.cluster.id, "/aggregatedCosts"]).join("")
+    } else if (spotinst_cluster.account.cloudProvider == "GCP") {
+      path = (["/ocean/gcp/k8s/cluster/", spotinst_cluster.cluster.id, "/aggregatedCosts"]).join("")
+    }
+
+    request = {
+      auth: "auth_spotinst",
+      verb: "POST",
+      host: host,
+      path: path,
+      query_params: {
+        'accountId': spotinst_cluster.account.accountId
+      },
+      body_fields: {
+        "startTime": date_period.start_date,
+        "endTime": date_period.end_date
+      }
+    }
+  EOS
 end
 
 datasource "ds_calculated_proportions" do
@@ -625,11 +727,11 @@ script "js_report", type: "javascript" do
       return key + "=" + value
     })
 
-    // TODO get these values to populate dynamically or with improved logic
-    // Just filling in for now
-    suggestion.service = "AmazonEKS"; // TODO map service name using the suggestion.account.cloudProvider
+    // Recommendations are all for "Kubernetes" service, not specific to any vendor or service
+    suggestion.service = "Kubernetes"
+
     suggestion.recommendationDetails = "Update container request specification in cluster `" + suggestion.cluster.name + "`, namespace `"+ suggestion.suggestion.namespace  +"`, resource `" + properCase(suggestion.suggestion.resourceType)
-     + "/" + suggestion.suggestion.resourceName + "`.\\n\\nThe container request specification is currently `" + suggestion.suggestion.requestedCPU + "m` CPU and `" + suggestion.suggestion.requestedMemory + "Mi` Memory.  The suggested request specification is `" + suggestion.suggestion.suggestedCPU + "m` CPU and `" + suggestion.suggestion.suggestedMemory + "Mi` Memory.  The suggested request specifications will more closely match actual usage, and reduce usage by enabling more containers to run on each node.";
+      + "/" + suggestion.suggestion.resourceName + "`.\\n\\nThe container request specification is currently `" + suggestion.suggestion.requestedCPU + "m` CPU and `" + suggestion.suggestion.requestedMemory + "Mi` Memory.  The suggested request specification is `" + suggestion.suggestion.suggestedCPU + "m` CPU and `" + suggestion.suggestion.suggestedMemory + "Mi` Memory.  The suggested request specifications will more closely match actual usage, and reduce usage by enabling more containers to run on each node.";
     // Lookup key is resourceId+`/${usageType}` (compute, storage, networking)
     var key = resourceId+"/compute"
     if (ds_spotinst_cluster_aggregated_costs_summed[key]) {

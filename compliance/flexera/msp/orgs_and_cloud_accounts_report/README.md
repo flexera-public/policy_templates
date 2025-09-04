@@ -1,5 +1,9 @@
 # Orgs and Clouds Vendor Accounts
 
+## Deprecated
+
+This policy is no longer being updated. Please use [native MSP functionality in the Flexera One platform](https://docs.flexera.com/flexera/EN/Partners/GetStarted.htm) instead.
+
 ## What It Does
 
 This policy generates a list of cross organization Cloud Vendor Accounts connected to Flexera Cloud Cost Optimization based on the bill connection settings for Azure and Google, as well as full list of AWS accounts under the payer account connected for each Flexera Organization.
