@@ -6,7 +6,7 @@ This policy allows you to set up scheduled reports that will provide summaries o
 
 ## Example Incident
 
-![Example Incident](example_report.png "Example Incident")
+![Example Incident](example.png "Example Incident")
 
 ## Input Parameters
 
