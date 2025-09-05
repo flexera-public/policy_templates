@@ -4,6 +4,10 @@
 
 This Policy Template produces a report of all users that have access to the target Billing Center(s), including whether or not they have that access by virtue of group membership. If the user does not specify any Billing Centers, the report is produced for all Billing Centers.
 
+## Example Incident
+
+![Example Incident](example.png "Example Incident")
+
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
