@@ -4,6 +4,10 @@
 
 This policy generates an email report comparing actual spending to budgeted values. It utilizes the Flexera Budget API to gather details and sends the report via email, eliminating the need for stakeholders to log in to Flexera One for report access.
 
+## Example Incident
+
+![Example Incident](example.png "Example Incident")
+
 ## Input Parameters
 
 - _Report Type_: Allows selection between cumulative and monthly reporting options.
