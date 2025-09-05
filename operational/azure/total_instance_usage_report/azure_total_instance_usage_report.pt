@@ -299,44 +299,20 @@ datasource "ds_azure_instance_size_map" do
   end
 end
 
-datasource "ds_isf_ratio_csv" do
+datasource "ds_azure_instance_families" do
   request do
-    host "aka.ms"
-    path "/isf"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/azure_vm_families.json"
+    header "User-Agent", "RS Policies"
   end
-  result do
-    encoding "text"
-  end
-end
-
-datasource "ds_isf_ratio" do
-  run_script $js_isf_ratio, $ds_isf_ratio_csv
-end
-
-script "js_isf_ratio", type: "javascript" do
-  parameters "ds_isf_ratio_csv"
-  result "result"
-  code <<-'EOS'
-  // Convert CSV into lines
-  lines = ds_isf_ratio_csv.toString().split("\r\n")
-  lines.shift() // Get rid of first line because it's the header row
-
-  // Create a list containing all of the resource families
-  result = _.map(lines, function(line) {
-    return {
-      instance_family: line.split(',')[0].replace(/"/g, ''),
-      instance_type: line.split(',')[1].replace(/"/g, '')
-    }
-  })
-EOS
 end
 
 datasource "ds_instance_units_per_family" do
-  run_script $js_instance_units_per_family, $ds_azure_instance_size_map, $ds_isf_ratio, $ds_usage_data, $param_unit_time, $param_unit_instance
+  run_script $js_instance_units_per_family, $ds_azure_instance_size_map, $ds_azure_instance_families, $ds_usage_data, $param_unit_time, $param_unit_instance
 end
 
 script "js_instance_units_per_family", type: "javascript" do
-  parameters "ds_azure_instance_size_map", "ds_isf_ratio", "ds_usage_data", "param_unit_time", "param_unit_instance"
+  parameters "ds_azure_instance_size_map", "ds_azure_instance_families", "ds_usage_data", "param_unit_time", "param_unit_instance"
   result "result"
   code <<-'EOS'
   // Tables to convert parameters to units
@@ -355,7 +331,7 @@ script "js_instance_units_per_family", type: "javascript" do
 
   // Enrich current data with Instance Family, and then calculate Normalized Instance Count/Units using ISF
   enriched_usage_data = _.map(ds_usage_data, function(data) {
-    matched_inst_fam = _.find(ds_isf_ratio, function(fam) {
+    matched_inst_fam = _.find(ds_azure_instance_families, function(fam) {
       return data.instance_type == fam.instance_type
     })
 
