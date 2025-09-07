@@ -6,6 +6,175 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3504](https://github.com/flexera-public/policy_templates/pull/3504): POL-1588 AWS Savings Plan Recommendations: Rename Incident Field
+
+*Minor Update*
+
+#### Description
+
+>  `AWS Savings Plan Recommendations`
+> - Changed incident field "Recommendeded Quantity to Purchase" to "Recommended Hourly Commitment" to both correct a spelling error and make the field clearer.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Savings Plan Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/recommendations/README.md)
+- **Merged At**: 2025-09-05 18:54:18 UTC
+
+---
+
+### PR [#3363](https://github.com/flexera-public/policy_templates/pull/3363): POL-1567 - Removed batch processing for large datasources to improve policy reliability and performance
+
+*Minor Update*
+
+#### Description
+
+> Removed batch processing for large datasources to improve policy reliability and performance
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/POL-1567
+>
+
+#### Metadata
+
+- **Policies**: [Azure Databricks Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/databricks/rightsize_compute/README.md), [Meta Parent: Azure Databricks Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/databricks/rightsize_compute/README.md)
+- **Merged At**: 2025-09-05 17:58:32 UTC
+
+---
+
+### PR [#3474](https://github.com/flexera-public/policy_templates/pull/3474): fix: js_make_terminate_request gracefully handle if policy_id not def…
+
+*Unpublished*
+
+#### Description
+
+> Updates the `js_make_terminate_request` script to gracefully handle when policy_id is not set (i.e. during retrieve_data).  This snippet is used for "Meta" capabilities in the child policy template, and today it causes an error during local development.
+>
+> This change, combined with https://github.com/flexera-public/policy_sdk/pull/43 should enable most catalog policy templates to run `retrieve_data` without any need to modify the template, which should improve the policy developers QoL.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3474) for these details.
+- **Merged At**: 2025-09-04 17:56:41 UTC
+
+---
+
+### PR [#3397](https://github.com/flexera-public/policy_templates/pull/3397): FOAA-307 - New Template Dynamic Dashboards
+
+*New Policy Template, Minor Update*
+
+#### Description
+
+> This policy template creates dynamic dashboards based on cost data aggregated by user-specified dimensions over the previous 12 months. For each unique value of the selected dashboard dimension, the policy creates a dashboard showcasing the top N widget dimension values by cost. This enables automatic creation of focused cost dashboards for different organizational segments (vendors, regions, services, etc.).
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/FOAA-307
+>
+
+#### Metadata
+
+- **Policies**: [Dynamic Dashboards](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/dynamic_dashboards/README.md)
+- **Merged At**: 2025-09-04 17:28:27 UTC
+
+---
+
+### PR [#3492](https://github.com/flexera-public/policy_templates/pull/3492): POL-1599 Oracle Cloud Common Bill Ingestion Fix
+
+*Minor Update*
+
+#### Description
+
+> Fixes some incorrectly referenced variables that would cause the policy template to fail.
+>
+
+#### Metadata
+
+- **Policies**: [Oracle Cloud Common Bill Ingestion](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/oracle_cbi/README.md)
+- **Merged At**: 2025-09-04 13:13:12 UTC
+
+---
+
+### PR [#3396](https://github.com/flexera-public/policy_templates/pull/3396): FOAA-307 - New Template: Generic Meta Parent
+
+*New Policy Template, Minor Update*
+
+#### Description
+
+> This generic meta parent policy template dynamically creates and manages child policies based on cost dimensions from the Flexera Bill Analysis API. Unlike traditional meta parent policies that are pre-compiled for specific child policy templates, this policy uses parameters so it is very extendable and can be used for many use-cases.
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/FOAA-307
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3396) for details about unpublished policies.
+- **Merged At**: 2025-09-03 20:44:23 UTC
+
+---
+
+### PR [#3487](https://github.com/flexera-public/policy_templates/pull/3487): POL-743 New Policy Template: Oracle Cloud Advisor: Rightsize Virtual Machines
+
+*New Policy Template*
+
+#### Description
+
+> This policy template reports on any existing idle and underutilized virtual machine recommendations generated by Oracle Cloud Advisor. Optionally, this report can be emailed.
+>
+> This is a functioning first pass. There will undoubtedly be improvements as we get user feedback and a better understanding of how to manipulate Oracle's APIs.
+>
+
+#### Metadata
+
+- **Policies**: [Oracle Cloud Advisor: Rightsize Virtual Machines](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_rightsize_vms/README.md)
+- **Merged At**: 2025-09-03 13:14:36 UTC
+
+---
+
+### PR [#3473](https://github.com/flexera-public/policy_templates/pull/3473): FOAA-343 - fix: Azure Tag Cardinality subscription filtering
+
+*Bug Fix*
+
+#### Description
+
+> Fixes subscription filtering in Azure Tag Cardinality PT.  Currently was iterating over all subscriptions to inventory RGs + resources which is not expected.
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/FOAA-342
+>
+
+#### Metadata
+
+- **Policies**: [Azure Tag Cardinality Report](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/tag_cardinality/README.md)
+- **Merged At**: 2025-09-02 13:43:46 UTC
+
+---
+
+### PR [#3475](https://github.com/flexera-public/policy_templates/pull/3475): POL-1582 - fix: superseded_nfu lookup
+
+*Bug Fix*
+
+#### Description
+
+> Fixed lookup when using NFU comparison for estimated savings.  This was causing estimated savings to be $0 for a lot of instances when NFU comparison method was used.
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/POL-1582
+>
+
+#### Metadata
+
+- **Policies**: [Azure Superseded Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/superseded_instances/README.md)
+- **Merged At**: 2025-09-02 13:43:22 UTC
+
+---
+
 ### PR [#3446](https://github.com/flexera-public/policy_templates/pull/3446): FOPTS-12555 Use actual cost to calculate savings for AWS superseded instance policy
 
 *Major Update*
@@ -1879,202 +2048,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Azure New Marketplace Products](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/marketplace_new_products/README.md)
 - **Merged At**: 2025-01-27 15:33:40 UTC
-
----
-
-### PR [#2911](https://github.com/flexera-public/policy_templates/pull/2911): POL-1441 ITAM Reporting Policies
-
-#### Description
-
-> This creates 3 new policy templates for ITAM to report on asset, licenses, and installed applications. All are fairly simple but can serve both as basic reporting policies and as a springboard for more sophisticated ITAM policies down the road.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2911) for these details.
-- **Merged At**: 2025-01-23 13:28:22 UTC
-
----
-
-### PR [#2921](https://github.com/flexera-public/policy_templates/pull/2921): FOPTS-6693 Fix conversion issue that stops policy execution
-
-#### Description
-
-> This fixes a problem when the ds_currency_conversion is an empty list, causing the policy to terminate.
->
-> ### Issues Resolved
->
-> - https://flexera.atlassian.net/browse/SQ-12110 (Support Case 02978642 - Issue with Meta Policy - AWS Superseded volumes)
->
-
-#### Metadata
-
-- **Policies**: [AWS Superseded EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/superseded_ebs_volumes/README.md)
-- **Merged At**: 2025-01-10 21:38:45 UTC
-
----
-
-### PR [#2916](https://github.com/flexera-public/policy_templates/pull/2916): POL-1443 AWS Rightsize Elasticache - Fix undeclared variable causing policy to fail
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This change rearranges the code so that the `savings` variable is no longer being referenced before it is declared/defined, meaning the policy no longer fails when it is run.
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
-> Fixed an issue with the `savings` variable causing the policy to fail.
->
-
-#### Metadata
-
-- **Policies**: [AWS Rightsize ElastiCache](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_elasticache/README.md), [Meta Parent: AWS Rightsize ElastiCache](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_elasticache/README.md)
-- **Merged At**: 2025-01-08 14:07:17 UTC
-
----
-
-### PR [#2892](https://github.com/flexera-public/policy_templates/pull/2892): POL-1433 Use Flexera CCO Costs for Azure Rightsize Managed Disks
-
-#### Description
-
-> This updates the Azure Rightsize Managed Disks policy template to use Flexera CCO to obtain costs for managed disks. Calculations of savings now incorporate this to give more accurate estimates. From the CHANGELOG:
->
-> - Savings are now calculated using cost data stored in Flexera Cloud Cost Optimization instead of only via Azure list price.
-> - Currency conversion functionality has been removed. It is no longer needed due to actual cost data stored in Flexera Cloud Cost Optimization being used to assess cost and savings.
->
-> From the README:
->
-> The `Estimated Monthly Savings` is calculated via the following:
->
-> - The `monthly list price` of the current disk type obtained via the Azure Pricing API.
-> - The `real monthly cost of the disk` is calculated by multiplying the amortized cost of the disk for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
-> - The percentage difference between the two is calculated by dividing the `real monthly cost of the disk` by the `monthly list price` of the current disk type.
-> - The `monthly list price of the new disk type` is multiplied by the above percentage to get an `estimated real monthly cost of the new disk` type under the assumption that any discounts or other changes from list price that applied to the old disk type will also apply to the new one.
-> - The savings is then calculated by subtracting the `estimated real monthly cost of the new disk type` from the `real monthly cost of the disk`.
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md), [Meta Parent: Azure Rightsize Managed Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_managed_disks/README.md)
-- **Merged At**: 2025-01-07 14:35:14 UTC
-
----
-
-### PR [#2907](https://github.com/flexera-public/policy_templates/pull/2907): POL-1440 Flexera FOCUS Report Bug Fix
-
-#### Description
-
-> This fixes an issue in the `Flexera FOCUS Report` policy template where the policy would fail when reporting unamortized costs.
->
-
-#### Metadata
-
-- **Policies**: [Flexera FOCUS Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/focus_report/README.md)
-- **Merged At**: 2025-01-02 13:32:31 UTC
-
----
-
-### PR [#2896](https://github.com/flexera-public/policy_templates/pull/2896): POL-1434 Scheduled Report for Unallocated Costs "7 Days" Fix
-
-#### Description
-
-> From the `Scheduled Report for Unallocated Costs` CHANGELOG:
-> - Fixed issue that would cause policy template to fail when "Last 7 Days" was selected for the "Date Range" parameter.
-> - "Dimensions List" parameter now accepts both dimension names and dimension IDs as valid inputs.
-> - Markdown tables in incident now uses pretty names for various fields to improve readability.
->
-
-#### Metadata
-
-- **Policies**: [Scheduled Report for Unallocated Costs](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_report_unallocated/README.md)
-- **Merged At**: 2025-01-02 13:32:12 UTC
-
----
-
-### PR [#2887](https://github.com/flexera-public/policy_templates/pull/2887): FLEX-5165 Add datalake optimization policy template
-
-*New Policy Template*
-
-#### Description
-
-> Initial implementation of a Policy (Azure Data Lake Optimization) which enables customers to run efficiently for Azure Data Lake. The policy type is Usage Reduction and provide the recommendations with Potential savings.
->
-> ### Issues Resolved
-> https://flexera.atlassian.net/browse/FLEX-5165
->
-
-#### Metadata
-
-- **Policies**: [Azure Data Lake Optimization](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/data_lake_optimization/README.md), [Meta Parent: Azure Data Lake Optimization](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/data_lake_optimization/README.md)
-- **Merged At**: 2024-12-23 18:30:07 UTC
-
----
-
-### PR [#2833](https://github.com/flexera-public/policy_templates/pull/2833): POL-1405 Replace deprecated Kubecost endpoints for Kubecost Cluster Policy
-
-#### Description
-
-> The endpoint we are currently using has been deprecated “/model/savings/clusterSizing"
-> It still works but only returns one cluster rather than all clusters.
->
-> The new endpoint is returns a different response “/model/savings/clusterSizingETL" and simply adding ETL onto the end of our current end point in the policy returns null values in ds_cluster_sizing
->
-> This endpoint returns all cluster recommendations in one response.
->
->
-> The `ds_clusters` function has been created  to include two new parameters in the Kubecost API call:
->
-> * param_allow_shared_core: This boolean parameter indicates whether shared cores should be allowed in the cluster sizing calculation. By default, Kubecost may not consider the shared cores between pods as part of the cost savings calculations. With this new parameter, the explicit inclusion of shared cores in the calculations can be enabled. This is useful for environments where resources are shared between multiple pods, and a more accurate estimate of potential savings is desired.
->
->
->
-> #### Changes Made:
->
-> * Updated the function responsible for the API call to /model/savings/clusterSizing
-> * Added the param_allow_shared_core to the `ds_clusters` function.
-> * Updated the HTTP call to send these parameters in the Request.
-> * Set the default values of these parameters to False, meaning shared cores will not be allowed.
->
-> > How the response for the new endpoint differs from what we initially wanted: we modified it and added new functions to handle the response and convert it to the expected struct
->
-> ### Issues Resolved
->
-> - Deprecated endpoint from kubecost was replaced.
-> - https://flexera.atlassian.net/browse/POL-1405
->
-
-#### Metadata
-
-- **Policies**: [Kubecost Cluster Rightsizing Recommendation](https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/cluster/README.md)
-- **Merged At**: 2024-12-19 15:58:27 UTC
-
----
-
-### PR [#2869](https://github.com/flexera-public/policy_templates/pull/2869): POL-1414 Currency Conversion Functionality on Kubecost cluster rightsizing policy
-
-#### Description
-
-> This update introduces functionality to handle automatic currency conversion within Kubecost cluster rightsizing policy, ensuring that incidents reflect values across different currencies.
->
-> #### Changes
->
-> * Support for multiple currencies has been added to the system.
-> * If the kubecost config endpoint returns an empty currency, USD (United States Dollar) will be used as the default currency.
-> * A condition has been implemented where, if Kubecost's currency matches Flexera's, no currency conversion will take place.
->
-> ### Issues Resolved
->
-> Resolves the issue where currency discrepancies occurred between our template and Kubecost when they had different base currencies.
->
->
-> https://flexera.atlassian.net/browse/POL-1414
->
-
-#### Metadata
-
-- **Policies**: [Kubecost Cluster Rightsizing Recommendation](https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/cluster/README.md)
-- **Merged At**: 2024-12-16 22:02:52 UTC
 
 ---
 
