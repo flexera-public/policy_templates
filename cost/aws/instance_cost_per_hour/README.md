@@ -4,6 +4,10 @@
 
 This policy template generates a report and chart showing the average AWS EC2 instance cost per hour per month going back a user-specified number of months. Instance costs are normalized to [NFUs (Normal Form Units)](https://docs.aws.amazon.com/whitepapers/latest/cost-optimization-reservation-models/normalization-factor-for-dedicated-ec2-instances.html). Optionally, this report, with chart, can be emailed.
 
+## Example Incident
+
+![Example Incident](example.png "Example Incident")
+
 ## Input Parameters
 
 - *Email Addresses* - A list of email addresses to notify.

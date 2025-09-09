@@ -4,6 +4,10 @@
 
 This Policy uses Flexera Cloud Cost Optimization (CCO) to determine a view of total savings realized from using Compute Reservations in Azure, for the entire Organization or specified billing centers across a period of historical months.
 
+## Example Incident
+
+![Example Incident](example.png "Example Incident")
+
 ## How It Works
 
 - This policy currently supports only a view of savings realized from Azure Reserved Instances.
