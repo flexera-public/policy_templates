@@ -4,6 +4,10 @@
 
 This policy template utilizes Flexera Budgets to detect if budget expense has exceeded its allocated value. The policy template can be run daily to determine if actual or projected spend exceeded the specified threshold.
 
+## Example Incident
+
+![Example Incident](example.png "Example Incident")
+
 ## How It Works
 
 - This policy template supports a single target (1 specific Budget). In order to apply a budget alert for multiple budgets, you will need to apply this policy template multiple times.
