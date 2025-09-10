@@ -1,0 +1,298 @@
+name "AWS > AI > Under-utilized Bedrock Provisioned Throughput (PTU)"
+rs_pt_ver 20180301
+type "policy"
+
+short_description "Identifies Amazon Bedrock Provisioned Throughput (PTU) with low or zero usage over a recent window."
+long_description <<-EOS
+This policy finds Amazon Bedrock Provisioned Throughput (PTU) that appear under-utilized using AWS APIs:
+
+• Enumerates PTUs via ListProvisionedModelThroughputs.
+• Derives the Bedrock ModelId from the model ARN for each PTU.
+• Queries CloudWatch Bedrock metrics (InputTokenCount, OutputTokenCount, Invocations) over a configurable lookback window.
+• Flags PTUs whose total tokens and/or invocations are below thresholds.
+
+No business context is required; findings are purely signal-based from AWS Bedrock and CloudWatch.
+EOS
+
+severity "medium"
+category "Cost"
+default_frequency "daily"
+
+info(
+  version: "0.1.2",
+  provider: "AWS",
+  service: "Bedrock",
+  policy_set: "AI Cost Optimization",
+  recommendation_type: "Rightsizing",
+  hide_skip_approvals: true
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_aws_regions" do
+  type "list"
+  label "AWS Regions to check"
+  description "Regions where Bedrock PTUs may exist."
+  default ["us-east-1", "us-east-2", "us-west-2", "eu-west-1", "eu-central-1", "ap-northeast-1", "ap-southeast-1", "ap-southeast-2"]
+end
+
+parameter "param_lookback_days" do
+  type "number"
+  label "Lookback window (days)"
+  description "Days back to sum Bedrock token and invocation metrics."
+  default 7
+  min_value 1
+  max_value 30
+end
+
+parameter "param_min_total_tokens" do
+  type "number"
+  label "Min total tokens over window"
+  description "Flag PTU when (InputTokenCount + OutputTokenCount) over the lookback window is below this number."
+  default 10000
+  min_value 0
+end
+
+parameter "param_min_invocations" do
+  type "number"
+  label "Min invocations over window"
+  description "Flag PTU when total invocations over the lookback window is below this number."
+  default 1
+  min_value 0
+end
+
+parameter "param_excluded_provisioned_model_ids" do
+  type "list"
+  label "Exclude PTUs (by ProvisionedModelId)"
+  description "Optional allowlist to exclude specific PTUs from evaluation."
+  default []
+end
+
+parameter "param_email" do
+  type "string"
+  label "Email recipients"
+  description "Comma-separated email addresses to notify when under-utilized PTUs are found."
+  default ""
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  label "AWS Account Number (for STS credential)"
+  description "Optional account number when selecting an aws_sts credential."
+  default ""
+end
+
+###############################################################################
+# Credentials
+###############################################################################
+
+credentials "cred_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS credential"
+  description "Credential with read access to Bedrock and CloudWatch (GetMetricData)."
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+###############################################################################
+# Helpers
+###############################################################################
+
+pagination "aws_json_next_token" do
+  get_page_marker do
+    body_path jmes_path(response, "nextToken")
+  end
+  set_page_marker do
+    query "nextToken"
+  end
+end
+
+datasource "time_window" do
+  result do
+    encoding "json"
+    field "endTimeIso", to_iso8601(now())
+    field "startTimeIso", to_iso8601(timestamp_add(now(), 0 - $param_lookback_days, "days"))
+    field "periodSeconds", 3600
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+# List PTUs and derive ModelId from modelArn
+datasource "ptu_list" do
+  iterate $param_aws_regions
+  request do
+    auth $cred_aws
+    host join(["bedrock.", iter_item, ".amazonaws.com"])
+    path "/provisioned-model-throughputs"
+    query "maxResults", "100"
+    pagination $aws_json_next_token
+  end
+  result do
+    encoding "json"
+    collect jq(response, <<-JQ) do
+      .provisionedModelSummaries[]
+      | {
+          provisionedModelId,
+          provisionedModelArn,
+          modelArn,
+          modelUnits,
+          provisionedModelName,
+          status,
+          commitmentDuration,
+          commitmentExpirationTime,
+          modelId: ((.modelArn // "") | capture("foundation-model/(?<id>.*)$").id? // "")
+        }
+    JQ
+      field "region", iter_item
+      field "provisionedModelId", jmes_path(col_item, "provisionedModelId")
+      field "provisionedModelArn", jmes_path(col_item, "provisionedModelArn")
+      field "modelArn", jmes_path(col_item, "modelArn")
+      field "modelUnits", jmes_path(col_item, "modelUnits")
+      field "provisionedModelName", jmes_path(col_item, "provisionedModelName")
+      field "status", jmes_path(col_item, "status")
+      field "commitmentDuration", jmes_path(col_item, "commitmentDuration")
+      field "commitmentExpirationTime", jmes_path(col_item, "commitmentExpirationTime")
+      field "modelId", jmes_path(col_item, "modelId")
+    end
+  end
+end
+
+# CloudWatch usage for each PTU's ModelId
+datasource "cw_usage" do
+  iterate $ptu_list
+  request do
+    auth $cred_aws
+    host join(["monitoring.", val(iter_item,"region"), ".amazonaws.com"])
+    verb "POST"
+    path "/"
+    header "Content-Type", "application/x-amz-json-1.1"
+    header "X-Amz-Target", "GraniteServiceVersion2010-08-01.GetMetricData"
+    body <<-EOS
+      {
+        "StartTime": "#{val($time_window[0], "startTimeIso")}",
+        "EndTime": "#{val($time_window[0], "endTimeIso")}",
+        "ScanBy": "TimestampAscending",
+        "MaxDatapoints": 5000,
+        "MetricDataQueries": [
+          {
+            "Id": "in",
+            "MetricStat": {
+              "Metric": { "Namespace": "AWS/Bedrock", "MetricName": "InputTokenCount",
+                "Dimensions": [ { "Name": "ModelId", "Value": "#{val(iter_item,"modelId")}" } ]
+              },
+              "Period": #{val($time_window[0], "periodSeconds")},
+              "Stat": "Sum"
+            },
+            "ReturnData": true
+          },
+          {
+            "Id": "out",
+            "MetricStat": {
+              "Metric": { "Namespace": "AWS/Bedrock", "MetricName": "OutputTokenCount",
+                "Dimensions": [ { "Name": "ModelId", "Value": "#{val(iter_item,"modelId")}" } ]
+              },
+              "Period": #{val($time_window[0], "periodSeconds")},
+              "Stat": "Sum"
+            },
+            "ReturnData": true
+          },
+          {
+            "Id": "inv",
+            "MetricStat": {
+              "Metric": { "Namespace": "AWS/Bedrock", "MetricName": "Invocations",
+                "Dimensions": [ { "Name": "ModelId", "Value": "#{val(iter_item,"modelId")}" } ]
+              },
+              "Period": #{val($time_window[0], "periodSeconds")},
+              "Stat": "Sum"
+            },
+            "ReturnData": true
+          }
+        ]
+      }
+    EOS
+  end
+  result do
+    encoding "json"
+    field "region", val(iter_item, "region")
+    field "provisionedModelId", val(iter_item, "provisionedModelId")
+    field "provisionedModelName", val(iter_item, "provisionedModelName")
+    field "modelId", val(iter_item, "modelId")
+    field "modelUnits", val(iter_item, "modelUnits")
+    field "status", val(iter_item, "status")
+    field "commitmentDuration", val(iter_item, "commitmentDuration")
+    field "commitmentExpirationTime", val(iter_item, "commitmentExpirationTime")
+    field "input_tokens", to_n(jq(response, "[.MetricDataResults[] | select(.Id == \"in\") | .Values[]] | add // 0"))
+    field "output_tokens", to_n(jq(response, "[.MetricDataResults[] | select(.Id == \"out\") | .Values[]] | add // 0"))
+    field "invocations", to_n(jq(response, "[.MetricDataResults[] | select(.Id == \"inv\") | .Values[]] | add // 0"))
+  end
+end
+
+###############################################################################
+# Export
+###############################################################################
+
+export "underutilized_ptu" do
+  resource_level false
+  field("region"){ label "Region" }
+  field("provisionedModelId"){ label "ProvisionedModelId" }
+  field("provisionedModelName"){ label "Provisioned Model Name" }
+  field("modelId"){ label "ModelId" }
+  field("modelUnits"){ label "Model Units (MUs)" }
+  field("status"){ label "PTU Status" }
+  field("input_tokens"){ label "Input Tokens (sum)"; format "right %d" }
+  field("output_tokens"){ label "Output Tokens (sum)"; format "right %d" }
+  field("invocations"){ label "Invocations (sum)"; format "right %d" }
+  field("commitmentDuration"){ label "Commitment" }
+  field("commitmentExpirationTime"){ label "Commitment Ends" }
+end
+
+###############################################################################
+# Escalation
+###############################################################################
+
+escalation "email" do
+  automatic true
+  label "Notify owners"
+  email $param_email do
+    subject_template "Under-utilized Bedrock PTUs found in {{ rs_project_name }}"
+    body_template <<-EOS
+The following Amazon Bedrock Provisioned Throughput (PTU) appear under-utilized over the last {{ parameters.param_lookback_days }} days.
+
+Criteria:
+- Total tokens (input + output) < {{ parameters.param_min_total_tokens }}
+- OR total invocations < {{ parameters.param_min_invocations }}
+
+Recommendation:
+- Consider reducing Model Units (MUs) or deleting the PTU if it's no longer needed.
+EOS
+  end
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "underutilized_bedrock_ptu" do
+  validate_each $cw_usage do
+    summary_template "Under-utilized Bedrock PTU detected in project {{ rs_project_name }}"
+    detail_template "Evaluated the last {{ parameters.param_lookback_days }} day(s) of Bedrock metrics for PTUs."
+
+    # Skip if excluded or if we couldn't derive a ModelId (cannot query metrics)
+    check not(in($param_excluded_provisioned_model_ids, field("provisionedModelId"))), "Not excluded"
+    check ne(field("modelId"), ""), "ModelId present"
+
+    # Under-utilization if EITHER low tokens OR low invocations
+    check or(
+      lt(add(field("input_tokens"), field("output_tokens")), $param_min_total_tokens),
+      lt(field("invocations"), $param_min_invocations)
+    ), "Under-utilized"
+
+    export $underutilized_ptu
+    escalate $email
+  end
+end
