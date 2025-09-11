@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.8.6
+
+- handled the validation error for GetMetricData. Functionality unchanged.
+
+# Changelog
+
 ## v5.8.5
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
