@@ -2,9 +2,7 @@
 
 ## v0.3.9
 
-- handled the validation error for GetMetricData. Functionality unchanged.
-
-# Changelog
+- Handled the validation error for GetMetricData. Functionality unchanged.
 
 ## v0.3.8
 
