@@ -24,8 +24,8 @@ This policy has the following input parameters required when launching the polic
 
 **Note:** The *End of Support Information* list is manually maintained and should be updated regularly based on the AWS Release calendars:
 
-- [AWS Postrgres]https://docs.aws.amazon.com/AmazonRDS/latest/PostgreSQLReleaseNotes/postgresql-release-calendar.html
-- [AWS MySQL]https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/MySQL.Concepts.VersionMgmt.html#MySQL.Concepts.VersionMgmt.ReleaseCalendar
+- [AWS Postrgres]<https://docs.aws.amazon.com/AmazonRDS/latest/PostgreSQLReleaseNotes/postgresql-release-calendar.html>
+- [AWS MySQL]<https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/MySQL.Concepts.VersionMgmt.html#MySQL.Concepts.VersionMgmt.ReleaseCalendar>
 
 ## Policy Actions
 
@@ -50,10 +50,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
           {
               "Effect": "Allow",
               "Action": [
-                "sts:GetCallerIdentity",
                 "ec2:DescribeRegions",
                 "rds:DescribeDBInstances",
-                "rds:ListTagsForResource"
+                "rds:ListTagsForResource",
+                "sts:GetCallerIdentity"
               ],
               "Resource": "*"
           }
