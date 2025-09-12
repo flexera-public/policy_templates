@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.2
+
+- Fixed a bug where incident emails were rendering as plain text instead of HTML. Functionality unchanged.
+
 ## v4.0.1
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
