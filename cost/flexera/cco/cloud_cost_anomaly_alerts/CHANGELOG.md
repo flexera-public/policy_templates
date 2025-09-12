@@ -2,7 +2,7 @@
 
 ## v4.0.2
 
-- Fixed a bug where incident emails were rendering as plain text instead of HTML.
+- Fixed a bug where incident emails were rendering as plain text instead of HTML. Functionality unchanged.
 
 ## v4.0.1
 
