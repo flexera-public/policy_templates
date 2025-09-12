@@ -20,11 +20,16 @@ This policy has the following input parameters required when launching the polic
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *End of support notification timeframe* - The number of days to check and notify on before the end of standard support date.
-- *End of support Information* - This is the engine versions and dates that are provided by AWS. 
+- *End of support Information* - This is the engine versions and dates that are provided by AWS.
 
 **Note:** The *End of Support Information* list is manually maintained and should be updated regularly based on the AWS Release calendars:
-- https://docs.aws.amazon.com/AmazonRDS/latest/PostgreSQLReleaseNotes/postgresql-release-calendar.html
-- https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/MySQL.Concepts.VersionMgmt.html#MySQL.Concepts.VersionMgmt.ReleaseCalendar
+
+- [AWS Postrgres]https://docs.aws.amazon.com/AmazonRDS/latest/PostgreSQLReleaseNotes/postgresql-release-calendar.html
+- [AWS MySQL]https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/MySQL.Concepts.VersionMgmt.html#MySQL.Concepts.VersionMgmt.ReleaseCalendar
+
+## Policy Actions
+
+- Send an email report
 
 ## Prerequisites
 
@@ -44,7 +49,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
       "Statement": [
           {
               "Effect": "Allow",
-              "Action": [                
+              "Action": [
                 "sts:GetCallerIdentity",
                 "ec2:DescribeRegions",
                 "rds:DescribeDBInstances",
