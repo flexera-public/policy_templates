@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.8.6
+
+- Fixed issue with `GetMetricData` API request when gathering CloudWatch metrics. Functionality unchanged.
+
 ## v5.8.5
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
