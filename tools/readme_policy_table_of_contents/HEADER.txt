@@ -23,6 +23,7 @@ Policy templates require the correct permissions configured for your [Flexera Cr
 * [PDF (AWS Policy Templates Only)](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list_aws.pdf)
 * [PDF (Azure Policy Templates Only)](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list_azure.pdf)
 * [PDF (Google Policy Templates Only)](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list_google.pdf)
+* [PDF (Oracle Policy Templates Only)](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list_oracle.pdf)
 
 ## Released Policy Templates
 
