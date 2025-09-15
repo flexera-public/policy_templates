@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.0.2
+
+- Fixed a bug where incident emails were rendering as plain text instead of HTML. Functionality unchanged.
+
+## v4.0.1
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v4.0.0
 
 - Fixed bug where anomaly limit was applied before checking variance threshold, which resulted in an incorrect resulting number of anomalies in the report. Now, anomalies are sorted by cost or variance (user-selectable) before filtering, ensuring the top N are always shown.

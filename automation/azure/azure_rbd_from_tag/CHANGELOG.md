@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.1.0
+
+- Policy template now supports multiple tag keys for a single dimension. See README for details.
+
+## v2.0.3
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v2.0.2
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.1
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v0.3.0
 
 - Added option to either amortize or not amortize the fixed cost.

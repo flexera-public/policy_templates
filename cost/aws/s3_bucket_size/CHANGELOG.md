@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.1.7
+
+- Fixed issue with `GetMetricData` API request when gathering CloudWatch metrics. Functionality unchanged.
+
+## v3.1.6
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v3.1.5
 
 - Updated meta policy code to use newer Flexera API. Functionality unchanged.
