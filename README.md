@@ -187,6 +187,12 @@ These templates can generate savings estimates for your environment. The inciden
   * [Kubecost Cluster Rightsizing Recommendation](./cost/kubecost/cluster)
   * [Kubecost Container Request Rightsizing Recommendations](./cost/kubecost/sizing)
 
+#### Oracle
+
+* Compute
+
+  * [Oracle Cloud Advisor: Rightsize Virtual Machines](./cost/oracle/advisor_rightsize_vms)
+
 ### Policy Templates for Compliance
 
 #### AWS
@@ -245,7 +251,6 @@ These templates can generate savings estimates for your environment. The inciden
   * [ITAM Ignored Recent Inventory Dates](./compliance/flexera/fnms/ignored_recent_inventory_dates)
   * [ITAM Missing Active Machines](./compliance/flexera/fnms/missing_active_machines)
   * [ITAM Overused Licenses](./compliance/flexera/fnms/overused_licenses)
-  * [ITAM VMs Missing Host ID](./compliance/flexera/fnms/vms_missing_hostid)
 
 * Identity & Access Management
 
@@ -341,6 +346,10 @@ These templates can generate savings estimates for your environment. The inciden
   * [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   * [Azure SQL Servers Without Elastic Pools](./cost/azure/sql_servers_without_elastic_pool)
 
+* Storage
+
+  * [Azure Unused Storage Accounts](./cost/azure/unused_storage_accounts)
+
 * Storage Accounts
 
   * [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management)
@@ -374,6 +383,7 @@ These templates can generate savings estimates for your environment. The inciden
   * [Common Bill Ingestion from AWS S3 Object Storage](./cost/flexera/cco/cbi_ingestion_aws_s3)
   * [Common Bill Ingestion from Azure Blob Storage](./cost/flexera/cco/cbi_ingestion_azure_blob)
   * [Fixed Cost Common Bill Ingestion](./cost/flexera/cco/fixed_cost_cbi)
+  * [Percentage Cost Common Bill Ingestion](./cost/flexera/cco/percentage_cost_cbi)
 
 * Spot Eco
 
@@ -455,6 +465,7 @@ These templates can generate savings estimates for your environment. The inciden
 * Automation
 
   * [Applied Policy Template Errors](./operational/flexera/automation/applied_policy_error_notification)
+  * [Automation Reports](./operational/flexera/automation/automation_reports)
   * [Flexera Automation Disallowed Credentials](./automation/flexera/disallowed_credentials)
   * [Flexera Automation Expiring Credentials](./automation/flexera/expiring_credentials)
   * [Flexera Automation Outdated Applied Policies](./automation/flexera/outdated_applied_policies)
@@ -462,7 +473,9 @@ These templates can generate savings estimates for your environment. The inciden
 * Cloud Cost Optimization
 
   * [Cloud Bill Processing Error Notification](./operational/flexera/cco/bill_processing_errors_notification)
+  * [Dynamic Dashboards](./operational/flexera/cco/dynamic_dashboards)
   * [FinOps Dashboards](./operational/flexera/cco/finops_dashboards)
+  * [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
 
 * FlexNet Manager
 
@@ -484,10 +497,6 @@ These templates can generate savings estimates for your environment. The inciden
 * Kubernetes
 
   * [Spot Ocean - Common Bill Ingest](./cost/flexera/spot/ocean_cbi)
-
-* N/A
-
-  * [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
 
 #### Google
 

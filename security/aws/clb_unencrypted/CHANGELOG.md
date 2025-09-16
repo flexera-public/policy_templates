@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.1.7
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v3.1.6
+
+- Removed unnecessarily empty lines from code. Functionality unchanged.
+
 ## v3.1.5
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.

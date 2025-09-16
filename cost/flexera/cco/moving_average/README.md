@@ -4,6 +4,10 @@
 
 This policy template pulls cost data from Flexera Cloud Cost Optimization (CCO) and produces a graph and report showing the moving average over time. Optionally, this report can be emailed.
 
+## Example Incident
+
+![Example Incident](example.png "Example Incident")
+
 ## How It Works
 
 - Aggregated monthly cloud costs are gathered from Flexera CCO via the [Flexera Bill Analysis API](https://reference.rightscale.com/bill_analysis/).

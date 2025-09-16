@@ -4,6 +4,10 @@
 
 This Policy Template leverages Flexera CCO APIs to produce a stacked bar chart showing Total Instance Time for Azure Virtual Machine Families used per month for the last 12 months. The user can specify which unit of time and which instance spec to use to normalize time against; for example, a chart can be produced for total instance vCPU hours. The data feeding this chart can be filtered by Azure region or Flexera Billing Center if desired. Optionally, the result can be emailed.
 
+## Example Incident
+
+![Example Incident](example.png "Example Incident")
+
 ## How It Works
 
 - This policy supports a single Azure region or the entire Organization.

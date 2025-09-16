@@ -4,6 +4,10 @@
 
 This policy template produces a report with chart showing the total savings realized from using AWS Reservations, Savings Plans, and Spot Instances. This report can either be for the entire organization or specific Billing Centers. Optionally, this report can be emailed.
 
+## Example Incident
+
+![Example Incident](example.png "Example Incident")
+
 ## How It Works
 
 - Data is obtained from Flexera's stored cloud cost data via the [Flexera Bill Analysis API](https://reference.rightscale.com/bill_analysis/)

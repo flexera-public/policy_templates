@@ -1,5 +1,21 @@
 # Changelog
 
+## v8.4.9
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v8.4.8
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v8.4.7
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v8.4.6
+
+- Fixed issue that caused RDS DB snapshots to be reported with overinflated estimated savings. Added additional context around these snapshots to the incident description.
+
 ## v8.4.5
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.

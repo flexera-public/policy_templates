@@ -1,5 +1,25 @@
 # Changelog
 
+## v7.0.7
+
+- Updated "Last Start Status" and "Last Stop Status" values from `Unknown` to `No Action` to indicate when no Flexera start/stop action has been performed.
+
+## v7.0.6
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v7.0.5
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v7.0.4
+
+- Fixed mapping in datasource `ds_flexera_api_hosts` which as causing error during evaluation: "invalid request host", "host must be a string"
+
+## v7.0.3
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v7.0.2
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.

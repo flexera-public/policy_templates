@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.3.6
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v3.3.5
+
+- Removed unnecessarily empty lines from code. Functionality unchanged.
+
 ## v3.3.4
 
 - Policy template metadata modified so that it is no longer published in the catalog.

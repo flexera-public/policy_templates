@@ -5,6 +5,18 @@
 - Fixed escalation that erroneously referred to 'VM' instead of 'Cloud SQL'
 - Updated escalation descriptions/parameters to be more specific
 
+## v0.2.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v0.2.3
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v0.2.2
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v0.2.1
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
