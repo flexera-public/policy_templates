@@ -55,12 +55,12 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 - [**Oracle Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_3335267112_1121578) (*provider=oracle*) which meets the below requirements:
   - `Allow group <group> to read optimizer-api-family in tenancy`
   - `Allow group <group> to read optimizer-resource-metadata in tenancy`
-  - `Allow group <group> to use instance-family in tenancy`†
-  - `Allow group <group> to manage instance-family in tenancy`†
-  - `Allow group <group> to use virtual-network-family in tenancy`†
-  - `Allow group <group> to use volume-family in tenancy`†
+  - `Allow group <group> to use instance-family in tenancy`*
+  - `Allow group <group> to manage instance-family in tenancy`*
+  - `Allow group <group> to use virtual-network-family in tenancy`*
+  - `Allow group <group> to use volume-family in tenancy`*
 
-  † Only required for taking action; the policy will still function in a read-only capacity without these permissions.
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
   Replace `<group>` with a group that the user associated with the Oracle Cloud credential is a member of.
 

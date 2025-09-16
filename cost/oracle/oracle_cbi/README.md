@@ -39,7 +39,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `define tenancy usage-report as <ocid>`
   - `endorse group <group> to read objects in tenancy usage-report`
 
-  Replace `<ocid>` with the OCID of the object storage bucket that stores the Cost & Usage Reports. In most cases, this will be the same as the OCID of the Tenancy itself. Replace `<group>` with a group that the user associated with the Oracle Cloud credential is a member of.
+  Replace `<ocid>` with the OCID of the object storage bucket that stores the Cost & Usage Reports. In most cases, this will be the same as the OCID of the Tenancy itself. Replace `<group>` with a group that the user associated with the Oracle Cloud credential is a member of. The user should be in the `Default` domain to ensure it has full access.
 
 Note: Oracle Cloud credentials cannot be added in Flexera One; the [Flexera Credential Management API](https://reference.rightscale.com/cred-management/#/Credentials/Credentials_create_oracle) must be used to create the credential.
 
