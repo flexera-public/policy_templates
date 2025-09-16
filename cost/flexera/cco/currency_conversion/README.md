@@ -20,6 +20,10 @@ This policy has the following input parameters required when launching the polic
 - *Backfill Adjustments* - Whether to add/modify currency conversion to just the current month or to backfill previous months.
 - *Backfill Start Date* - The month and year in YYYY-MM format to backfill adjustments to. Only applicable if `Backfill Previous Months` is selected for the `Backfill Adjustments` parameter.
 - *Backfill Exchange Rates* - Whether or not to use the current exchange rate, or the exchange rate at the time, when applying currency conversion to previous months. Only applicable if `Backfill Previous Months` is selected for the `Backfill Adjustments` parameter.
+- *Bring Adjustments Forward* - Whether to automatically fill months with no adjustments with the adjustments from the previous month.
+  - Example: You run this policy template in June 2025 and you choose to backfill starting in January 2025. You currently only have adjustment rules for January 2025 and March 2025.
+    - With this option enabled, the existing adjustment rules for January 2025 will be carried forward to February, and existing rules for March 2025 will be carried forward to April, May, and June.
+    - With this option disabled, the only adjustment rules for March, April, May, and June will be the currency conversion adjustment created by this policy template. This means, for those months, the rules configured for January 2025 and March 2025 respectively will no longer apply for those months when they did previously.
 - *Dimensions* - The Flexera CCO cost dimension names/ids and values to apply the currency conversion to in 'Dimension=Value' format. Example: Cloud Vendor=AWS
 - *Dimensions Boolean* - Whether to apply the currency conversion to costs that match any of the criteria in the `Dimensions` parameter or only those that match all of them. Only applicable if more than one value is specified for the `Dimensions` parameter.
 - *Currency From* - Currency you want to convert from (based on ISO 4217 codes - e.g., 'USD' for US Dollar)
