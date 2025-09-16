@@ -6,7 +6,7 @@ This policy template creates adjustment rules that convert the currency of the c
 
 ## How It Works
 
-- This policy supports currency codes as per [ISO 4217](https://www.xe.com/iso4217.php), and uses the xe.com API to retrieve monthly average exchange rate.
+- This policy supports currency codes as per [ISO 4217](https://www.iban.com/currency-codes), and uses the xe.com API to retrieve monthly average exchange rate.
 - This policy supports four cloud providers natively: AWS, Azure, Google Cloud, and Oracle Cloud.
 - This policy also supports custom cloud provider names to handle specialized use cases.
 - This policy creates an adjustment rule for currency conversion using the exchange rate from xe.com.
