@@ -135,6 +135,7 @@ class PolicyTemplate
 end
 
 readme_files = []
+
 pt_files.each do |pt|
   # Get the README file for each Policy Template
   readme_files += Dir.glob("#{File.dirname(pt)}/[Rr][Ee][Aa][Dd][Mm][Ee]*")
@@ -168,6 +169,7 @@ def extract_permissions_from_readme(readme_content)
     "[**Azure China Enterprise Agreement Credential**]",
     "[**Microsoft Graph Credential**]",
     "[**Google Cloud Credential**]",
+    "[**Oracle Credential**]",
     "[**Flexera Credential**]",
     "[**Turbonomic Credential**]",
     "[**GitHub Credential**]",
@@ -189,6 +191,8 @@ def extract_permissions_from_readme(readme_content)
       provider = "azure_graph"
     when "[**Google Cloud Credential**]"
       provider = "gce"
+    when "[**Oracle Credential**]"
+      provider = "oracle"
     when "[**Flexera Credential**]"
       provider = "flexera"
     when "[**Turbonomic Credential**]"
@@ -208,6 +212,7 @@ def extract_permissions_from_readme(readme_content)
 
       # Find the line starting with '/*', '†', '‡', '§', '‖' or '¶' to get any specific notes around permissions from the README
       list_of_notes = []
+
       section_text.each_line do |line|
         break if line.strip.start_with?( "##", "###", "- [**") && !line.strip.start_with?(section)
 
@@ -234,6 +239,7 @@ def extract_permissions_from_readme(readme_content)
 
       # For each line within the Section get the list of permissions and roles and push to 'policy_credentials' object
       credentials_section = ""
+
       section_text.each_line do |line|
         break if line.strip.start_with?( "##", "###", "- [**") && !line.strip.start_with?(section)
 
@@ -305,7 +311,7 @@ readme_files.each do |path|
 
     policy_credentials = extract_permissions_from_readme(readme_content)
 
-    readmes <<Readme.new(path, credentials: policy_credentials)
+    readmes << Readme.new(path, credentials: policy_credentials)
   rescue => e
     puts "Error processing file: #{path}"
     puts e.message
@@ -319,8 +325,8 @@ values = []
 readmes.each do |readme|
   # Match READMEs with Policy Templates based on paths
   matching_template = policy_templates.find { |template| readme.path.gsub("/README.md", "") == File.dirname(template.path) }
-  if matching_template
 
+  if matching_template
     policy_template_details = {
       "id" => matching_template.path,
       "name" => matching_template.name,
@@ -328,11 +334,12 @@ readmes.each do |readme|
     }
 
     if readme.credentials
-
       cred_providers = []
+
       readme.credentials.each do |cred|
         cred_providers.push({ name: cred[:provider] })
       end
+
       cred_providers = cred_providers.uniq
 
       cred_providers.each do |provider|
@@ -350,28 +357,25 @@ readmes.each do |readme|
               "read_only" => credential[:read_only],
               "required" => credential[:required]
             }
+
             permission_list["description"] = credential[:description] if credential[:description]
 
             cred_permissions.push(permission_list)
           elsif credential[:role]
-
             role_list = {
               "name" => credential[:role],
               "read_only" => credential[:read_only],
               "required" => credential[:required]
             }
+
             role_list["description"] = credential[:description] if credential[:description]
 
             cred_roles.push(role_list)
           end
         end
 
-        if cred_permissions.any?
-          provider[:permissions] = cred_permissions
-        end
-        if cred_roles.any?
-          provider[:roles] = cred_roles
-        end
+        provider[:permissions] = cred_permissions if cred_permissions.any?
+        provider[:roles] = cred_roles if cred_roles.any?
       end
 
       policy_template_details[:providers] = cred_providers if cred_providers.any?
@@ -445,6 +449,8 @@ CSV.open("#{permissions_list_dir}/master_policy_permissions_list.csv", "w") do |
         provider_name = "Microsoft Graph"
       when "gce"
         provider_name = "Google Cloud"
+      when "oracle"
+        provider_name = "Oracle Cloud"
       when "flexera"
         provider_name = "Flexera"
       when "turbonomic"
@@ -471,8 +477,10 @@ font = Base64.strict_encode64(File.binread('tools/policy_master_permission_gener
 aws_values = values.select { |v| v["name"].include?("AWS") || v["name"].include?("Amazon") }
 azure_values = values.select { |v| v["name"].include?("Azure") || v["name"].include?("AKS") || v["name"].include?("Microsoft") }
 google_values = values.select { |v| v["name"].include?("Google") || v["name"].include?("GCP") || v["name"].include?("GCE") }
+oracle_values = values.select { |v| v["name"].include?("Oracle") || v["name"].include?("OCI") }
 
 generate_pdf(values, "Master", "master_policy_permissions_list", permissions_list_dir, logo_svg, font)
 generate_pdf(aws_values, "AWS", "master_policy_permissions_list_aws", permissions_list_dir, logo_svg, font)
 generate_pdf(azure_values, "Azure", "master_policy_permissions_list_azure", permissions_list_dir, logo_svg, font)
 generate_pdf(google_values, "Google", "master_policy_permissions_list_google", permissions_list_dir, logo_svg, font)
+generate_pdf(oracle_values, "Oracle", "master_policy_permissions_list_oracle", permissions_list_dir, logo_svg, font)
