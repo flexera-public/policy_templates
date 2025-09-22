@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.1
+
+- Fixed issue where estimated savings value would sometimes be incorrectly inflated
+
 ## v0.2.0
 
 - Added additional metadata to incidents
