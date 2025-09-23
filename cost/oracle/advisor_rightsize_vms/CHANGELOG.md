@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.2
+
+- Fixed issue where estimated savings value had all fractional values rounded away
+
 ## v0.2.1
 
 - Fixed issue where estimated savings value would sometimes be incorrectly inflated
