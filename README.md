@@ -194,6 +194,10 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Oracle Cloud Advisor: Rightsize Virtual Machines](./cost/oracle/advisor_rightsize_vms)
 
+* Database
+
+  * [Oracle Cloud Advisor: Rightsize Base Database Service](./cost/oracle/advisor_rightsize_basedbs)
+
 ### Policy Templates for Compliance
 
 #### AWS
