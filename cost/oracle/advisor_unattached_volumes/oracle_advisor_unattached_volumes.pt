@@ -1,17 +1,17 @@
-name "Oracle Cloud Advisor: Rightsize Base Database Service"
+name "Oracle Cloud Advisor: Unattached Volumes"
 rs_pt_ver 20180301
 type "policy"
-short_description "Reports Oracle Cloud Advisor recommendations for underutilized base database services. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_rightsize_basedbs/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports Oracle Cloud Advisor recommendations for unattached volumes. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_unattached_volumes/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_rightsize_basedbs/"
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_unattached_volumes/"
 category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.1",
+  version: "0.1.0",
   provider: "Oracle",
-  service: "Database",
-  policy_set: "Rightsize Database Instances",
+  service: "Storage",
+  policy_set: "Unused Volumes",
   recommendation_type: "Usage Reduction",
   hide_skip_approvals: "true"
 )
@@ -71,12 +71,21 @@ parameter "param_regions_list" do
   default []
 end
 
+parameter "param_volume_type" do
+  type "list"
+  category "Filters"
+  label "Volume Types"
+  description "The types of volumes to provide recommendations for."
+  allowed_values ["Boot", "Block"]
+  default ["Boot", "Block"]
+end
+
 parameter "param_automatic_action" do
   type "list"
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Downsize Underutilized Instances"]
+  allowed_values ["Delete Unattached Volumes"]
   default []
 end
 
@@ -253,15 +262,17 @@ datasource "ds_oci_recommendation_list" do
 end
 
 datasource "ds_oci_recommendation_list_filtered" do
-  run_script $js_oci_recommendation_list_filtered, $ds_oci_recommendation_list
+  run_script $js_oci_recommendation_list_filtered, $ds_oci_recommendation_list, $param_volume_type
 end
 
 script "js_oci_recommendation_list_filtered", type:"javascript" do
-  parameters "ds_oci_recommendation_list"
+  parameters "ds_oci_recommendation_list", "param_volume_type"
   result "result"
   code <<-'EOS'
   result = _.filter(ds_oci_recommendation_list, function(item) {
-    return item["name"].indexOf("downsize-vmdb-system") != -1
+    boot = _.contains(param_volume_type, "Boot") ? item["name"].indexOf("cost-management-boot-volume-attachment") != -1 : false
+    block = _.contains(param_volume_type, "Block") ? item["name"].indexOf("cost-management-block-volume-attachment") != -1 : false
+    return boot || block
   })
 EOS
 end
@@ -291,16 +302,17 @@ datasource "ds_oci_recommendation_actions" do
       field "resourceType", jmes_path(col_item, "resourceType")
       field "estimatedCostSaving", jmes_path(col_item, "extendedMetadata.estimatedSaving")
       field "currencyCode", jmes_path(col_item, "extendedMetadata.currencyCode")
-      field "currentCpuCoreCount", jmes_path(col_item, "extendedMetadata.currentCpuCoreCount")
-      field "currentNodeCount", jmes_path(col_item, "extendedMetadata.currentNodeCount")
-      field "currentShape", jmes_path(col_item, "extendedMetadata.currentShape")
-      field "dbType", jmes_path(col_item, "extendedMetadata.dbType")
-      field "maxCpuUtilizationMeanAllNodes", jmes_path(col_item, "extendedMetadata.maxCpuUtilizationMeanAllNodes")
-      field "recommendedCpuCoreCount", jmes_path(col_item, "extendedMetadata.recommendedCpuCoreCount")
-      field "recommendedShape", jmes_path(col_item, "extendedMetadata.recommendedShape")
       field "region", jmes_path(col_item, "extendedMetadata.region")
       field "resourceOwningTenancyId", jmes_path(col_item, "extendedMetadata.resourceOwningTenancyId")
       field "resourceOwningTenancyName", jmes_path(col_item, "extendedMetadata.resourceOwningTenancyName")
+      field "attachedOn", jmes_path(col_item, "extendedMetadata.attachedOn")
+      field "attachmentCount", jmes_path(col_item, "extendedMetadata.attachmentCount")
+      field "autoTuneEnabled", jmes_path(col_item, "extendedMetadata.autoTuneEnabled")
+      field "lifecycleState", jmes_path(col_item, "extendedMetadata.lifecycleState")
+      field "sizeInGBs", jmes_path(col_item, "extendedMetadata.sizeInGBs")
+      field "unattachedSince", jmes_path(col_item, "extendedMetadata.unattachedSince")
+      field "volumeDetachedStatus", jmes_path(col_item, "extendedMetadata.volumeDetachedStatus")
+      field "vpusPerGB", jmes_path(col_item, "extendedMetadata.vpusPerGB")
       field "recommendationId", val(iter_item, "id")
       field "recommendationName", val(iter_item, "name")
       field "categoryId", val(iter_item, "categoryId")
@@ -341,11 +353,11 @@ script "js_oci_recommendation_actions_region_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_oci_filtered_recommendations_underutil" do
-  run_script $js_oci_filtered_recommendations_underutil, $ds_oci_recommendation_actions_region_filtered, $ds_currency, $ds_applied_policy, $param_min_savings
+datasource "ds_oci_filtered_recommendations_unattached" do
+  run_script $js_oci_filtered_recommendations_unattached, $ds_oci_recommendation_actions_region_filtered, $ds_currency, $ds_applied_policy, $param_min_savings
 end
 
-script "js_oci_filtered_recommendations_underutil", type: "javascript" do
+script "js_oci_filtered_recommendations_unattached", type: "javascript" do
   parameters "ds_oci_recommendation_actions_region_filtered", "ds_currency", "ds_applied_policy", "param_min_savings"
   result "result"
   code <<-'EOS'
@@ -384,52 +396,13 @@ script "js_oci_filtered_recommendations_underutil", type: "javascript" do
   result = _.map(valid_recommendations, function(action) {
     total_savings += parseFloat(action['estimatedCostSaving'])
 
-    resourceType = ''
-    dbType = ''
-    cpuAverage = ''
+    volumeType = action["recommendationName"].indexOf("boot-volume") != -1 ? "Boot" : "Block"
 
-    if (action['currentShape']) { resourceType = action['currentShape'] }
-    if (action['dbType']) { dbType = action['dbType'] }
-    if (action['maxCpuUtilizationMeanAllNodes']) { cpuAverage = Math.round(parseFloat(action['maxCpuUtilizationMeanAllNodes']) * 100) / 100 }
-
-    // Normalize values to integers since, by default, they are floats
-    currentCPU = action['currentCpuCoreCount'] ? parseInt(action['currentCpuCoreCount']) : ''
-    currentNodes = action['currentNodeCount'] ? parseInt(action['currentNodeCount']) : ''
-    newCPU = action['recommendedCpuCoreCount'] ? parseInt(action['recommendedCpuCoreCount']) : ''
-
-    prettyResourceType = resourceType
-    prettyNewResourceType = action['recommendedShape']
-
-    if (action['currentCPU']) {
-      prettyResourceType = [
-        resourceType, " (",
-        currentCPU, " ECPUs)"
-      ].join('')
-    }
-
-    if (action['recommendedCPU']) {
-      prettyNewResourceType = [
-        action['recommendedShape'], " (",
-        newCPU, " ECPUs)"
-      ].join('')
-    }
-
-    if (prettyResourceType) {
-      recommendationDetails = [
-        "Resize Oracle Base Database Service ", action["resourceId"], " ",
-        "in Oracle Compartment ", action["compartmentName"], " ",
-        "(", action["compartmentId"], ") ",
-        "from ", prettyResourceType, " ",
-        "to ", prettyNewResourceType
-      ].join('')
-    } else {
-      recommendationDetails = [
-        "Resize Oracle Base Database Service ", action["resourceId"], " ",
-        "in Oracle Compartment ", action["compartmentName"], " ",
-        "(", action["compartmentId"], ") ",
-        "to ", prettyNewResourceType
-      ].join('')
-    }
+    recommendationDetails = [
+      "Delete Oracle ", volumeType, " Volume ", action["resourceId"], " ",
+      "in Oracle Compartment ", action["compartmentName"], " ",
+      "(", action["compartmentId"], ")"
+    ].join('')
 
     return {
       accountID: action['compartmentId'],
@@ -441,15 +414,10 @@ script "js_oci_filtered_recommendations_underutil", type: "javascript" do
       region: action['region'],
       actionId: action['id'],
       status: action['status'],
-      dbType: dbType,
-      cpuAverage: cpuAverage,
-      currentCPU: currentCPU,
-      currentNodes: currentNodes,
-      newCPU: newCPU,
-      resourceType: resourceType,
-      newResourceType: action['recommendedShape'],
+      resourceType: volumeType,
+      size: action['sizeInGBs'],
       recommendationDetails: recommendationDetails,
-      service: "DATABASE",
+      service: "BLOCK_STORAGE",
       policy_name: ds_applied_policy["name"],
       total_savings: "",
       message: ""
@@ -465,13 +433,11 @@ script "js_oci_filtered_recommendations_underutil", type: "javascript" do
   phrase = result.length == 1 ? "This recommendation" : "These recommendations"
 
   message = [
-    result.length, " Cloud Advisor rightsizing ", noun, " found. ", phrase, " can be ",
+    result.length, " Cloud Advisor volume ", noun, " found. ", phrase, " can be ",
     "adjusted by modifying your Cloud Advisor settings within your Oracle environment.\n\n",
     "Metrics and other data may be missing depending on whether ",
     "Cloud Advisor has been configured to provide this information.\n\n"
   ].join('')
-
-  addendum = "Note: The CPU Average (%) field is the highest reported average among all of the nodes for a given database instance."
 
   // Sort by descending order of savings value
   result = _.sortBy(result, 'savings').reverse()
@@ -479,7 +445,6 @@ script "js_oci_filtered_recommendations_underutil", type: "javascript" do
   // Dummy item to ensure that the check statement in the policy executes at least once
   result.push({
     resourceID: "",
-    cpuAverage: "",
     savings: "",
     savingsCurrency: "",
     total_savings: "",
@@ -487,7 +452,7 @@ script "js_oci_filtered_recommendations_underutil", type: "javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = message + addendum
+  result[0]['message'] = message
   result[0]['policy_name'] = ds_applied_policy['name']
 EOS
 end
@@ -496,9 +461,9 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_oci_rightsize_db_recommendations" do
-  validate_each $ds_oci_filtered_recommendations_underutil do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Oracle Underutilized Base Database Service Recommendations Found"
+policy "pol_oci_volume_recommendations" do
+  validate_each $ds_oci_filtered_recommendations_unattached do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Oracle Unattached Volume Recommendations Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
 
@@ -506,8 +471,8 @@ policy "pol_oci_rightsize_db_recommendations" do
     EOS
     check eq(val(item, "resourceID"), "")
     escalate $esc_email
-    escalate $esc_downsize_instances
-    hash_exclude "message", "total_savings", "savings", "savingsCurrency", "cpuAverage"
+    escalate $esc_delete_volumes
+    hash_exclude "message", "total_savings", "savings", "savingsCurrency"
     export do
       resource_level true
       field "accountID" do
@@ -525,9 +490,6 @@ policy "pol_oci_rightsize_db_recommendations" do
       field "region" do
         label "Region"
       end
-      field "dbType" do
-        label "Database Type"
-      end
       field "service" do
         label "Service"
       end
@@ -535,25 +497,16 @@ policy "pol_oci_rightsize_db_recommendations" do
         label "Recommendation"
       end
       field "resourceType" do
-        label "Current Instance Size"
+        label "Type"
       end
-      field "currentCPU" do
-        label "Current CPU (#)"
-      end
-      field "newResourceType" do
-        label "Recommended Instance Size"
-      end
-      field "newCPU" do
-        label "Recommended CPU (#)"
+      field "size" do
+        label "Size (GB)"
       end
       field "savings" do
         label "Estimated Monthly Savings"
       end
       field "savingsCurrency" do
         label "Savings Currency"
-      end
-      field "cpuAverage" do
-        label "CPU Average (%)"
       end
       field "id" do
         label "ID"
@@ -577,23 +530,23 @@ escalation "esc_email" do
   email $param_email
 end
 
-escalation "esc_downsize_instances" do
-  automatic contains($param_automatic_action, "Downsize Underutilized Instances")
-  label "Downsize Underutilized Instances"
-  description "Approval to downsize all selected instances"
-  run "downsize_instances", data
+escalation "esc_delete_volumes" do
+  automatic contains($param_automatic_action, "Delete Unattached Volumes")
+  label "Delete Unattached Volumes"
+  description "Approval to delete all selected volumes"
+  run "delete_volumes", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define downsize_instances($data) return $all_responses do
+define delete_volumes($data) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      call downsize_instance($instance) retrieve $downsize_response
+      call delete_volume($instance) retrieve $delete_response
     end
   end
 
@@ -602,39 +555,29 @@ define downsize_instances($data) return $all_responses do
   end
 end
 
-define downsize_instance($instance) return $response do
-  $host = "database." + $instance["region"] + ".oraclecloud.com"
-  $href = "/20160918/dbSystems/" + $instance["id"]
+define delete_volume($instance) return $response do
+  $host = "iaas." + $instance["region"] + ".oraclecloud.com"
+  $href = "/20160918/volumes/" + $instance["id"]
   $params = ""
   $url = $host + $href + $params
 
-  task_label("PUT " + $url)
-
-  $body = { "shape": $instance["newResourceType"] }
-
-  if $instance["resourceType"] == $instance["newResourceType"]
-    $body = {
-      "computeModel": "ECPU",
-      "computeCount": $instance["newCPU"]
-    }
-  end
+  task_label("DELETE " + $url)
 
   $response = http_request(
     auth: $$auth_oracle,
     https: true,
-    verb: "put",
+    verb: "delete",
     host: $host,
-    href: $href,
-    body: $body
+    href: $href
   )
 
-  task_label("Put Oracle Base Database instance response: " + $instance["id"] + " " + to_json($response))
+  task_label("Delete Oracle volume response: " + $instance["id"] + " " + to_json($response))
   $$all_responses << to_json({"req": "PUT " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response putting Oracle Base Database instance: "+ $instance["id"] + " " + to_json($response)
+    raise "Unexpected response deleting Oracle volume: "+ $instance["id"] + " " + to_json($response)
   else
-    task_label("Put Oracle Base Database instance successful: " + $instance["id"])
+    task_label("Delete Oracle volume successful: " + $instance["id"])
   end
 end
 
