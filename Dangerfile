@@ -564,6 +564,9 @@ changed_pt_files.each do |file|
     # Raise warning if improper spacing between comma-separated items found
     test = policy_bad_comma_spacing?(file, file_lines); warnings << test if test
 
+    # Raise warning if heredoc or escape characters are found in policy summary_template field
+    test = policy_summary_escape_character?(file, file_lines); warnings << test if test
+
     # Raise error if policy template has console.log() statements
     test = policy_console_log?(file, file_lines); failures << test if test
 
