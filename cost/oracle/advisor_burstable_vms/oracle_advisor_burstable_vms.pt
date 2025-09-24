@@ -1,0 +1,672 @@
+name "Oracle Cloud Advisor: Burstable Virtual Machines"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports Oracle Cloud Advisor recommendations for resizing virtual machines to burstable machine types. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_burstable_vms/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_burstable_vms/"
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Oracle",
+  service: "Compute",
+  policy_set: "Rightsize Compute Instances",
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_root_compartment" do
+  type "string"
+  category "Policy Settings"
+  label "Oracle Cloud Root Compartment OCID"
+  description "The OCID of the Oracle Cloud root compartment."
+  # No default value, user input required
+end
+
+parameter "param_primary_region" do
+  type "string"
+  category "Policy Settings"
+  label "Primary Oracle Cloud Region"
+  description "Primary Oracle Cloud region. Example: us-phoenix-1"
+  min_length 1
+  # No default value, user input required
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Resize Virtual Machines"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_oracle" do
+  schemes "oracle"
+  label "Oracle"
+  description "Select the Oracle Cloud (OCI) Credential from the list."
+  tags "provider=oracle"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_oracle" do
+  get_page_marker do
+    body_path "nextStartWith"
+  end
+  set_page_marker do
+    query "start"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_oci_recommendation_list" do
+  request do
+    auth $auth_oracle
+    pagination $pagination_oracle
+    host join(["optimizer.", $param_primary_region, ".oci.oraclecloud.com"])
+    path "/20200606/recommendations"
+    query "compartmentId", $param_root_compartment
+    query "compartmentIdInSubtree", "true"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "categoryId", jmes_path(col_item, "categoryId")
+      field "compartmentId", jmes_path(col_item, "compartmentId")
+      field "description", jmes_path(col_item, "description")
+      field "estimatedCostSaving", jmes_path(col_item, "estimatedCostSaving")
+      field "importance", jmes_path(col_item, "importance")
+      field "lifecycleState", jmes_path(col_item, "lifecycleState")
+      field "resourceCounts", jmes_path(col_item, "resourceCounts")
+      field "status", jmes_path(col_item, "status")
+      field "supportedLevels", jmes_path(col_item, "supportedLevels")
+      field "timeCreated", jmes_path(col_item, "timeCreated")
+      field "timeStatusBegin", jmes_path(col_item, "timeStatusBegin")
+      field "timeStatusEnd", jmes_path(col_item, "timeStatusEnd")
+      field "timeUpdated", jmes_path(col_item, "timeUpdated")
+      field "estimatedSavingCalculationError", jmes_path(col_item, "extendedMetadata.estimatedSavingCalculationError")
+      field "monthlyBillPercentage", jmes_path(col_item, "extendedMetadata.monthlyBillPercentage")
+    end
+  end
+end
+
+datasource "ds_oci_recommendation_list_filtered" do
+  run_script $js_oci_recommendation_list_filtered, $ds_oci_recommendation_list
+end
+
+script "js_oci_recommendation_list_filtered", type:"javascript" do
+  parameters "ds_oci_recommendation_list"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_oci_recommendation_list, function(item) {
+    return  item["name"].indexOf("cost-management-compute-host-burstable") != -1
+  })
+EOS
+end
+
+# This is where future dev work starts once we have an example of a burstable rec
+
+datasource "ds_oci_recommendation_actions" do
+  iterate $ds_oci_recommendation_list_filtered
+  request do
+    auth $auth_oracle
+    pagination $pagination_oracle
+    verb "POST"
+    host join(["optimizer.", $param_primary_region, ".oci.oraclecloud.com"])
+    path "/20200606/actions/filterResourceActions"
+    query "compartmentId", $param_root_compartment
+    query "compartmentIdInSubtree", "true"
+    query "includeResourceMetadata", "true"
+    query "recommendationId", val(iter_item, "id")
+    header "User-Agent", "RS Policies"
+    body_field "query", "query ResourceAction sorted by timeUpdated desc"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "compartmentName", jmes_path(col_item, "compartmentName")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "resourceId", jmes_path(col_item, "resourceId")
+      field "resourceType", jmes_path(col_item, "resourceType")
+      field "estimatedCostSaving", jmes_path(col_item, "extendedMetadata.estimatedSaving")
+      field "currencyCode", jmes_path(col_item, "extendedMetadata.currencyCode")
+      field "region", jmes_path(col_item, "extendedMetadata.region")
+      field "resourceOwningTenancyId", jmes_path(col_item, "extendedMetadata.resourceOwningTenancyId")
+      field "resourceOwningTenancyName", jmes_path(col_item, "extendedMetadata.resourceOwningTenancyName")
+      field "maxPeakBandwidthUtilization", jmes_path(col_item, "extendedMetadata.maxPeakBandwidthUtilization")
+      field "maximumBandwidthInMbps", jmes_path(col_item, "extendedMetadata.maximumBandwidthInMbps")
+      field "minPeakBandwidthUtilization", jmes_path(col_item, "extendedMetadata.minPeakBandwidthUtilization")
+      field "minimumBandwidthInMbps", jmes_path(col_item, "extendedMetadata.minimumBandwidthInMbps")
+      field "recommendedMaxBandwidth", jmes_path(col_item, "extendedMetadata.recommendedMaxBandwidth")
+      field "recommendedMinBandwidth", jmes_path(col_item, "extendedMetadata.recommendedMinBandwidth")
+      field "recommendedShape", jmes_path(col_item, "extendedMetadata.recommendedShape")
+      field "shapeName", jmes_path(col_item, "extendedMetadata.shapeName")
+      field "recommendationId", val(iter_item, "id")
+      field "recommendationName", val(iter_item, "name")
+      field "categoryId", val(iter_item, "categoryId")
+      field "compartmentId", val(iter_item, "compartmentId")
+      field "description", val(iter_item, "description")
+      field "importance", val(iter_item, "importance")
+      field "lifecycleState", val(iter_item, "lifecycleState")
+      field "resourceCounts", val(iter_item, "resourceCounts")
+      field "status", val(iter_item, "status")
+      field "supportedLevels", val(iter_item, "supportedLevels")
+      field "timeCreated", val(iter_item, "timeCreated")
+      field "timeStatusBegin", val(iter_item, "timeStatusBegin")
+      field "timeStatusEnd", val(iter_item, "timeStatusEnd")
+      field "timeUpdated", val(iter_item, "timeUpdated")
+      field "estimatedSavingCalculationError", val(iter_item, "estimatedSavingCalculationError")
+      field "monthlyBillPercentage", val(iter_item, "monthlyBillPercentage")
+    end
+  end
+end
+
+datasource "ds_oci_recommendation_actions_region_filtered" do
+  run_script $js_oci_recommendation_actions_region_filtered, $ds_oci_recommendation_actions, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_oci_recommendation_actions_region_filtered", type: "javascript" do
+  parameters "ds_oci_recommendation_actions", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_oci_recommendation_actions, function(action) {
+      include_action = _.contains(param_regions_list, action['region'])
+      if (param_regions_allow_or_deny == "Deny") { include_action = !include_action }
+      return include_action
+    })
+  } else {
+    result = ds_oci_recommendation_actions
+  }
+EOS
+end
+
+datasource "ds_oci_recommendation_actions_noncost_filtered" do
+  run_script $js_oci_recommendation_actions_noncost_filtered, $ds_oci_recommendation_actions_region_filtered
+end
+
+script "js_oci_recommendation_actions_noncost_filtered", type: "javascript" do
+  parameters "ds_oci_recommendation_actions_region_filtered"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_oci_recommendation_actions_region_filtered, function(action) {
+    return parseFloat(action["estimatedCostSaving"]) >= 0 && action["recommendedShape"]
+  })
+EOS
+end
+
+datasource "ds_oci_filtered_recommendations_lbs" do
+  run_script $js_oci_filtered_recommendations_lbs, $ds_oci_recommendation_actions_noncost_filtered, $ds_currency, $ds_applied_policy, $param_min_savings
+end
+
+script "js_oci_filtered_recommendations_lbs", type: "javascript" do
+  parameters "ds_oci_recommendation_actions_noncost_filtered", "ds_currency", "ds_applied_policy", "param_min_savings"
+  result "result"
+  code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  result = []
+  total_savings = 0.0
+
+  valid_recommendations = _.filter(ds_oci_recommendation_actions_noncost_filtered, function(action) {
+    return parseFloat(action['estimatedCostSaving']) >= param_min_savings
+  })
+
+  result = _.map(valid_recommendations, function(action) {
+    total_savings += parseFloat(action['estimatedCostSaving'])
+
+    resourceType = ''
+    netMaximum = ''
+    netMinimum = ''
+
+    if (action['shapeName']) { resourceType = action['shapeName'] }
+    if (action['maxPeakBandwidthUtilization']) { netMaximum = Math.round(parseFloat(action['maxPeakBandwidthUtilization']) * 100) / 100 }
+    if (action['minPeakBandwidthUtilization']) { netMinimum = Math.round(parseFloat(action['minPeakBandwidthUtilization']) * 100) / 100 }
+
+    // Normalize values to numbers
+    minimumBandwidthInMbps = action['minimumBandwidthInMbps'] ? Number(action['minimumBandwidthInMbps']) : ''
+    maximumBandwidthInMbps = action['maximumBandwidthInMbps'] ? Number(action['maximumBandwidthInMbps']) : ''
+    recommendedMinBandwidth = action['recommendedMinBandwidth'] ? Number(action['recommendedMinBandwidth']) : ''
+    recommendedMaxBandwidth = action['recommendedMaxBandwidth'] ? Number(action['recommendedMaxBandwidth']) : ''
+
+    prettyResourceType = resourceType
+    prettyNewResourceType = action['recommendedShape']
+
+    if (minimumBandwidthInMbps) {
+      prettyResourceType = [
+        resourceType, " (",
+        minimumBandwidthInMbps, " Min. Mbps, ",
+        maximumBandwidthInMbps, " Max. Mbps)"
+      ].join('')
+    }
+
+    if (recommendedMinBandwidth) {
+      prettyNewResourceType = [
+        action['recommendedShape'], " (",
+        recommendedMinBandwidth, " Min. Mbps, ",
+        recommendedMaxBandwidth, " Max. Mbps)"
+      ].join('')
+    }
+
+    if (prettyResourceType) {
+      recommendationDetails = [
+        "Resize Oracle Load Balancer ", action["resourceId"], " ",
+        "in Oracle Compartment ", action["compartmentName"], " ",
+        "(", action["compartmentId"], ") ",
+        "from ", prettyResourceType, " ",
+        "to ", prettyNewResourceType
+      ].join('')
+    } else {
+      recommendationDetails = [
+        "Resize Oracle Load Balancer ", action["resourceId"], " ",
+        "in Oracle Compartment ", action["compartmentName"], " ",
+        "(", action["compartmentId"], ") ",
+        "to ", prettyNewResourceType
+      ].join('')
+    }
+
+    return {
+      accountID: action['compartmentId'],
+      accountName: action['compartmentName'],
+      savings: Math.round(parseFloat(action['estimatedCostSaving']) * 100) / 100,
+      savingsCurrency: ds_currency['symbol'],
+      resourceID: action['resourceId'],
+      resourceName: action['name'],
+      region: action['region'],
+      actionId: action['id'],
+      status: action['status'],
+      netMaximum: netMaximum,
+      netMinimum: netMinimum,
+      resourceType: resourceType,
+      newResourceType: action['recommendedShape'],
+      minBandwidth: minimumBandwidthInMbps,
+      maxBandwidth: maximumBandwidthInMbps,
+      newMinBandwidth: recommendedMinBandwidth,
+      newMaxBandwidth: recommendedMaxBandwidth,
+      recommendationDetails: recommendationDetails,
+      service: "ORALB",
+      policy_name: ds_applied_policy["name"],
+      total_savings: "",
+      message: ""
+    }
+  })
+
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(Math.round(total_savings * 1000) / 1000, ds_currency['separator'])
+  ].join('')
+
+  noun = result.length == 1 ? "recommendation" : "recommendations"
+  phrase = result.length == 1 ? "This recommendation" : "These recommendations"
+
+  message = [
+    result.length, " Cloud Advisor Load Balancer ", noun, " found. ", phrase, " can be ",
+    "adjusted by modifying your Cloud Advisor settings within your Oracle environment.\n\n",
+    "Metrics and other data may be missing depending on whether ",
+    "Cloud Advisor has been configured to provide this information.\n\n"
+  ].join('')
+
+  // Sort by descending order of savings value
+  result = _.sortBy(result, 'savings').reverse()
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    resourceID: "",
+    savings: "",
+    savingsCurrency: "",
+    total_savings: "",
+    message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = message
+  result[0]['policy_name'] = ds_applied_policy['name']
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_oci_lb_recommendations" do
+  validate_each $ds_oci_filtered_recommendations_lbs do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Oracle Underutilized Load Balancer Recommendations Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check eq(val(item, "resourceID"), "")
+    escalate $esc_email
+    escalate $esc_downsize_lbs
+    hash_exclude "message", "total_savings", "savings", "savingsCurrency"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Compartment ID"
+      end
+      field "accountName" do
+        label "Compartment Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Current Instance Size"
+      end
+      field "minBandwidth" do
+        label "Current Minimum Bandwidth (Mbps)"
+      end
+      field "maxBandwidth" do
+        label "Current Maximum Bandwidth (Mbps)"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
+      field "newMinBandwidth" do
+        label "Recommended Minimum Bandwidth (Mbps)"
+      end
+      field "newMaxBandwidth" do
+        label "Recommended Maximum Bandwidth (Mbps)"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "netMinimum" do
+        label "Minimum Peak Bandwidth Usage (Mbps)"
+      end
+      field "netMaximum" do
+        label "Maximum Peak Bandwidth Usage (Mbps)"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+      field "actionId" do
+        label "Action ID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_downsize_lbs" do
+  automatic contains($param_automatic_action, "Resize Virtual Machines")
+  label "Resize Virtual Machines"
+  description "Approval to delete all selected volumes"
+  run "downsize_lbs", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define downsize_lbs($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call downsize_lb($instance) retrieve $downsize_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define downsize_lb($instance) return $response do
+  $host = "iaas." + $instance["region"] + ".oraclecloud.com"
+  $href = "/20170115/loadBalancers/" + $instance["id"] + "/updateShape"
+  $params = ""
+  $url = $host + $href + $params
+
+  task_label("PUT " + $url)
+
+  $response = http_request(
+    auth: $$auth_oracle,
+    https: true,
+    verb: "put",
+    host: $host,
+    href: $href,
+    body: {
+      "shapeName": $instance["newResourceType"],
+      "shapeDetails": {
+        "minimumBandwidthInMbps": $instance["newMinBandwidth"],
+        "maximumBandwidthInMbps": $instance["newMaxBandwidth"]
+      }
+    }
+  )
+
+  task_label("Put Oracle Load Balancer response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PUT " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response putting Oracle Load Balancer: "+ $instance["id"] + " " + to_json($response)
+  else
+    task_label("Put Oracle Load Balancer successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+
+  $$errors << $_error["type"] + ": " + $_error["message"]
+
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
