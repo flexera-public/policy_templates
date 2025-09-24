@@ -198,6 +198,10 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Oracle Cloud Advisor: Rightsize Base Database Service](./cost/oracle/advisor_rightsize_basedbs)
 
+* Network
+
+  * [Oracle Cloud Advisor: Rightsize Load Balancers](./cost/oracle/advisor_rightsize_lbs)
+
 * Storage
 
   * [Oracle Cloud Advisor: Unattached Volumes](./cost/oracle/advisor_unattached_volumes)
