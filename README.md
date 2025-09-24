@@ -421,6 +421,10 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Oracle Cloud Common Bill Ingestion](./cost/oracle/oracle_cbi)
 
+* Storage
+
+  * [Oracle Cloud Advisor: Object Storage Without Lifecycle Management](./cost/oracle/advisor_lifecycle_mgmt)
+
 ### Policy Templates for Operational
 
 #### AWS
