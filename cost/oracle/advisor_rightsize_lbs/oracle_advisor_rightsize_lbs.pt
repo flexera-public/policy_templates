@@ -1,17 +1,17 @@
-name "Oracle Cloud Advisor: Unattached Volumes"
+name "Oracle Cloud Advisor: Rightsize Load Balancers"
 rs_pt_ver 20180301
 type "policy"
-short_description "Reports Oracle Cloud Advisor recommendations for unattached volumes. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_unattached_volumes/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports Oracle Cloud Advisor recommendations for underutilized load balancers. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_rightsize_lbs/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_unattached_volumes/"
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_rightsize_lbs/"
 category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.1",
+  version: "0.1.0",
   provider: "Oracle",
-  service: "Storage",
-  policy_set: "Unused Volumes",
+  service: "Network",
+  policy_set: "Unused Load Balancers",
   recommendation_type: "Usage Reduction",
   hide_skip_approvals: "true"
 )
@@ -71,21 +71,12 @@ parameter "param_regions_list" do
   default []
 end
 
-parameter "param_volume_type" do
-  type "list"
-  category "Filters"
-  label "Volume Types"
-  description "The types of volumes to provide recommendations for."
-  allowed_values ["Boot", "Block"]
-  default ["Boot", "Block"]
-end
-
 parameter "param_automatic_action" do
   type "list"
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
-  allowed_values ["Delete Unattached Volumes"]
+  allowed_values ["Downsize Underutilized Load Balancers"]
   default []
 end
 
@@ -262,17 +253,15 @@ datasource "ds_oci_recommendation_list" do
 end
 
 datasource "ds_oci_recommendation_list_filtered" do
-  run_script $js_oci_recommendation_list_filtered, $ds_oci_recommendation_list, $param_volume_type
+  run_script $js_oci_recommendation_list_filtered, $ds_oci_recommendation_list
 end
 
 script "js_oci_recommendation_list_filtered", type:"javascript" do
-  parameters "ds_oci_recommendation_list", "param_volume_type"
+  parameters "ds_oci_recommendation_list"
   result "result"
   code <<-'EOS'
   result = _.filter(ds_oci_recommendation_list, function(item) {
-    boot = _.contains(param_volume_type, "Boot") ? item["name"].indexOf("cost-management-boot-volume-attachment") != -1 : false
-    block = _.contains(param_volume_type, "Block") ? item["name"].indexOf("cost-management-block-volume-attachment") != -1 : false
-    return boot || block
+    return  item["name"].indexOf("cost-management-load-balancer-underutilized") != -1
   })
 EOS
 end
@@ -305,14 +294,14 @@ datasource "ds_oci_recommendation_actions" do
       field "region", jmes_path(col_item, "extendedMetadata.region")
       field "resourceOwningTenancyId", jmes_path(col_item, "extendedMetadata.resourceOwningTenancyId")
       field "resourceOwningTenancyName", jmes_path(col_item, "extendedMetadata.resourceOwningTenancyName")
-      field "attachedOn", jmes_path(col_item, "extendedMetadata.attachedOn")
-      field "attachmentCount", jmes_path(col_item, "extendedMetadata.attachmentCount")
-      field "autoTuneEnabled", jmes_path(col_item, "extendedMetadata.autoTuneEnabled")
-      field "lifecycleState", jmes_path(col_item, "extendedMetadata.lifecycleState")
-      field "sizeInGBs", jmes_path(col_item, "extendedMetadata.sizeInGBs")
-      field "unattachedSince", jmes_path(col_item, "extendedMetadata.unattachedSince")
-      field "volumeDetachedStatus", jmes_path(col_item, "extendedMetadata.volumeDetachedStatus")
-      field "vpusPerGB", jmes_path(col_item, "extendedMetadata.vpusPerGB")
+      field "maxPeakBandwidthUtilization", jmes_path(col_item, "extendedMetadata.maxPeakBandwidthUtilization")
+      field "maximumBandwidthInMbps", jmes_path(col_item, "extendedMetadata.maximumBandwidthInMbps")
+      field "minPeakBandwidthUtilization", jmes_path(col_item, "extendedMetadata.minPeakBandwidthUtilization")
+      field "minimumBandwidthInMbps", jmes_path(col_item, "extendedMetadata.minimumBandwidthInMbps")
+      field "recommendedMaxBandwidth", jmes_path(col_item, "extendedMetadata.recommendedMaxBandwidth")
+      field "recommendedMinBandwidth", jmes_path(col_item, "extendedMetadata.recommendedMinBandwidth")
+      field "recommendedShape", jmes_path(col_item, "extendedMetadata.recommendedShape")
+      field "shapeName", jmes_path(col_item, "extendedMetadata.shapeName")
       field "recommendationId", val(iter_item, "id")
       field "recommendationName", val(iter_item, "name")
       field "categoryId", val(iter_item, "categoryId")
@@ -353,12 +342,26 @@ script "js_oci_recommendation_actions_region_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_oci_filtered_recommendations_unattached" do
-  run_script $js_oci_filtered_recommendations_unattached, $ds_oci_recommendation_actions_region_filtered, $ds_currency, $ds_applied_policy, $param_min_savings
+datasource "ds_oci_recommendation_actions_noncost_filtered" do
+  run_script $js_oci_recommendation_actions_noncost_filtered, $ds_oci_recommendation_actions_region_filtered
 end
 
-script "js_oci_filtered_recommendations_unattached", type: "javascript" do
-  parameters "ds_oci_recommendation_actions_region_filtered", "ds_currency", "ds_applied_policy", "param_min_savings"
+script "js_oci_recommendation_actions_noncost_filtered", type: "javascript" do
+  parameters "ds_oci_recommendation_actions_region_filtered"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_oci_recommendation_actions_region_filtered, function(action) {
+    return parseFloat(action["estimatedCostSaving"]) >= 0 && action["recommendedShape"]
+  })
+EOS
+end
+
+datasource "ds_oci_filtered_recommendations_lbs" do
+  run_script $js_oci_filtered_recommendations_lbs, $ds_oci_recommendation_actions_noncost_filtered, $ds_currency, $ds_applied_policy, $param_min_savings
+end
+
+script "js_oci_filtered_recommendations_lbs", type: "javascript" do
+  parameters "ds_oci_recommendation_actions_noncost_filtered", "ds_currency", "ds_applied_policy", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -389,20 +392,62 @@ script "js_oci_filtered_recommendations_unattached", type: "javascript" do
   result = []
   total_savings = 0.0
 
-  valid_recommendations = _.filter(ds_oci_recommendation_actions_region_filtered, function(action) {
+  valid_recommendations = _.filter(ds_oci_recommendation_actions_noncost_filtered, function(action) {
     return parseFloat(action['estimatedCostSaving']) >= param_min_savings
   })
 
   result = _.map(valid_recommendations, function(action) {
     total_savings += parseFloat(action['estimatedCostSaving'])
 
-    volumeType = action["recommendationName"].indexOf("boot-volume") != -1 ? "Boot" : "Block"
+    resourceType = ''
+    netMaximum = ''
+    netMinimum = ''
 
-    recommendationDetails = [
-      "Delete Oracle ", volumeType, " Volume ", action["resourceId"], " ",
-      "in Oracle Compartment ", action["compartmentName"], " ",
-      "(", action["compartmentId"], ")"
-    ].join('')
+    if (action['shapeName']) { resourceType = action['shapeName'] }
+    if (action['maxPeakBandwidthUtilization']) { netMaximum = Math.round(parseFloat(action['maxPeakBandwidthUtilization']) * 100) / 100 }
+    if (action['minPeakBandwidthUtilization']) { netMinimum = Math.round(parseFloat(action['minPeakBandwidthUtilization']) * 100) / 100 }
+
+    // Normalize values to numbers
+    minimumBandwidthInMbps = action['minimumBandwidthInMbps'] ? Number(action['minimumBandwidthInMbps']) : ''
+    maximumBandwidthInMbps = action['maximumBandwidthInMbps'] ? Number(action['maximumBandwidthInMbps']) : ''
+    recommendedMinBandwidth = action['recommendedMinBandwidth'] ? Number(action['recommendedMinBandwidth']) : ''
+    recommendedMaxBandwidth = action['recommendedMaxBandwidth'] ? Number(action['recommendedMaxBandwidth']) : ''
+
+    prettyResourceType = resourceType
+    prettyNewResourceType = action['recommendedShape']
+
+    if (minimumBandwidthInMbps) {
+      prettyResourceType = [
+        resourceType, " (",
+        minimumBandwidthInMbps, " Min. Mbps, ",
+        maximumBandwidthInMbps, " Max. Mbps)"
+      ].join('')
+    }
+
+    if (recommendedMinBandwidth) {
+      prettyNewResourceType = [
+        action['recommendedShape'], " (",
+        recommendedMinBandwidth, " Min. Mbps, ",
+        recommendedMaxBandwidth, " Max. Mbps)"
+      ].join('')
+    }
+
+    if (prettyResourceType) {
+      recommendationDetails = [
+        "Resize Oracle Load Balancer ", action["resourceId"], " ",
+        "in Oracle Compartment ", action["compartmentName"], " ",
+        "(", action["compartmentId"], ") ",
+        "from ", prettyResourceType, " ",
+        "to ", prettyNewResourceType
+      ].join('')
+    } else {
+      recommendationDetails = [
+        "Resize Oracle Load Balancer ", action["resourceId"], " ",
+        "in Oracle Compartment ", action["compartmentName"], " ",
+        "(", action["compartmentId"], ") ",
+        "to ", prettyNewResourceType
+      ].join('')
+    }
 
     return {
       accountID: action['compartmentId'],
@@ -414,10 +459,16 @@ script "js_oci_filtered_recommendations_unattached", type: "javascript" do
       region: action['region'],
       actionId: action['id'],
       status: action['status'],
-      resourceType: volumeType,
-      size: action['sizeInGBs'],
+      netMaximum: netMaximum,
+      netMinimum: netMinimum,
+      resourceType: resourceType,
+      newResourceType: action['recommendedShape'],
+      minBandwidth: minimumBandwidthInMbps,
+      maxBandwidth: maximumBandwidthInMbps,
+      newMinBandwidth: recommendedMinBandwidth,
+      newMaxBandwidth: recommendedMaxBandwidth,
       recommendationDetails: recommendationDetails,
-      service: "BLOCK_STORAGE",
+      service: "ORALB",
       policy_name: ds_applied_policy["name"],
       total_savings: "",
       message: ""
@@ -433,7 +484,7 @@ script "js_oci_filtered_recommendations_unattached", type: "javascript" do
   phrase = result.length == 1 ? "This recommendation" : "These recommendations"
 
   message = [
-    result.length, " Cloud Advisor volume ", noun, " found. ", phrase, " can be ",
+    result.length, " Cloud Advisor Load Balancer ", noun, " found. ", phrase, " can be ",
     "adjusted by modifying your Cloud Advisor settings within your Oracle environment.\n\n",
     "Metrics and other data may be missing depending on whether ",
     "Cloud Advisor has been configured to provide this information.\n\n"
@@ -461,9 +512,9 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_oci_volume_recommendations" do
-  validate_each $ds_oci_filtered_recommendations_unattached do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Oracle Unattached Volume Recommendations Found"
+policy "pol_oci_lb_recommendations" do
+  validate_each $ds_oci_filtered_recommendations_lbs do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Oracle Underutilized Load Balancer Recommendations Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
 
@@ -471,7 +522,7 @@ policy "pol_oci_volume_recommendations" do
     EOS
     check eq(val(item, "resourceID"), "")
     escalate $esc_email
-    escalate $esc_delete_volumes
+    escalate $esc_downsize_lbs
     hash_exclude "message", "total_savings", "savings", "savingsCurrency"
     export do
       resource_level true
@@ -497,16 +548,34 @@ policy "pol_oci_volume_recommendations" do
         label "Recommendation"
       end
       field "resourceType" do
-        label "Type"
+        label "Current Instance Size"
       end
-      field "size" do
-        label "Size (GB)"
+      field "minBandwidth" do
+        label "Current Minimum Bandwidth (Mbps)"
+      end
+      field "maxBandwidth" do
+        label "Current Maximum Bandwidth (Mbps)"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
+      field "newMinBandwidth" do
+        label "Recommended Minimum Bandwidth (Mbps)"
+      end
+      field "newMaxBandwidth" do
+        label "Recommended Maximum Bandwidth (Mbps)"
       end
       field "savings" do
         label "Estimated Monthly Savings"
       end
       field "savingsCurrency" do
         label "Savings Currency"
+      end
+      field "netMinimum" do
+        label "Minimum Peak Bandwidth Usage (Mbps)"
+      end
+      field "netMaximum" do
+        label "Maximum Peak Bandwidth Usage (Mbps)"
       end
       field "id" do
         label "ID"
@@ -530,23 +599,23 @@ escalation "esc_email" do
   email $param_email
 end
 
-escalation "esc_delete_volumes" do
-  automatic contains($param_automatic_action, "Delete Unattached Volumes")
-  label "Delete Unattached Volumes"
+escalation "esc_downsize_lbs" do
+  automatic contains($param_automatic_action, "Downsize Underutilized Load Balancers")
+  label "Downsize Underutilized Load Balancers"
   description "Approval to delete all selected volumes"
-  run "delete_volumes", data
+  run "downsize_lbs", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_volumes($data) return $all_responses do
+define downsize_lbs($data) return $all_responses do
   $$all_responses = []
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      call delete_volume($instance) retrieve $delete_response
+      call downsize_lb($instance) retrieve $downsize_response
     end
   end
 
@@ -555,29 +624,36 @@ define delete_volumes($data) return $all_responses do
   end
 end
 
-define delete_volume($instance) return $response do
+define downsize_lb($instance) return $response do
   $host = "iaas." + $instance["region"] + ".oraclecloud.com"
-  $href = "/20160918/volumes/" + $instance["id"]
+  $href = "/20170115/loadBalancers/" + $instance["id"] + "/updateShape"
   $params = ""
   $url = $host + $href + $params
 
-  task_label("DELETE " + $url)
+  task_label("PUT " + $url)
 
   $response = http_request(
     auth: $$auth_oracle,
     https: true,
-    verb: "delete",
+    verb: "put",
     host: $host,
-    href: $href
+    href: $href,
+    body: {
+      "shapeName": $instance["newResourceType"],
+      "shapeDetails": {
+        "minimumBandwidthInMbps": $instance["newMinBandwidth"],
+        "maximumBandwidthInMbps": $instance["newMaxBandwidth"]
+      }
+    }
   )
 
-  task_label("Delete Oracle volume response: " + $instance["id"] + " " + to_json($response))
-  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+  task_label("Put Oracle Load Balancer response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PUT " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response deleting Oracle volume: "+ $instance["id"] + " " + to_json($response)
+    raise "Unexpected response putting Oracle Load Balancer: "+ $instance["id"] + " " + to_json($response)
   else
-    task_label("Delete Oracle volume successful: " + $instance["id"])
+    task_label("Put Oracle Load Balancer successful: " + $instance["id"])
   end
 end
 
