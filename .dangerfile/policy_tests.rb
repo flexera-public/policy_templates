@@ -1649,3 +1649,31 @@ def policy_verb_get?(file, file_lines)
   return fail_message.strip if !fail_message.empty?
   return false
 end
+
+### Summary Template Escape Character Test
+# Verify that summary_template does not contain invalid escape characters like \b
+def policy_summary_escape_character?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template summary_template has invalid escape characters..."
+
+  # Message to return of test fails
+  fail_message = ""
+
+  file_lines.each_with_index do |line, index|
+    break if line.strip.start_with?('# Meta Policy [alpha]') # Break out of definition when enounter meta policy code at the bottom
+    next if line.strip.start_with?('#') # Skip comment lines
+
+    line_number = index + 1
+
+    if line.include?("summary_template")
+      fail_message += "Line #{line_number.to_s}: Heredoc Found\n" if line.include?("<<-")
+      fail_message += "Line #{line_number.to_s}: \\n Found\n" if line.include?('\n')
+      fail_message += "Line #{line_number.to_s}: \\t Found\n" if line.include?('\t')
+      fail_message += "Line #{line_number.to_s}: \\r Found\n" if line.include?('\r')
+    end
+  end
+
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#policy)] Policy Template summary_template contains line breaks, heredocs, or escape characters. Please remove these to avoid causing incident emails to present as raw HTML instead of as intended:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end

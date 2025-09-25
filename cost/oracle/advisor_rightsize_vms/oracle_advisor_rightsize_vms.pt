@@ -8,13 +8,12 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.0",
+  version: "0.2.2",
   provider: "Oracle",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
   recommendation_type: "Usage Reduction",
-  hide_skip_approvals: "true",
-  skip_permissions: "true"
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -246,12 +245,12 @@ script "js_currency", type:"javascript" do
 EOS
 end
 
-datasource "ds_oci_recommendation_actions" do
+datasource "ds_oci_recommendation_list" do
   request do
     auth $auth_oracle
     pagination $pagination_oracle
     host join(["optimizer.", $param_primary_region, ".oci.oraclecloud.com"])
-    path "/20200606/resourceActions"
+    path "/20200606/recommendations"
     query "compartmentId", $param_root_compartment
     query "compartmentIdInSubtree", "true"
     header "User-Agent", "RS Policies"
@@ -259,29 +258,107 @@ datasource "ds_oci_recommendation_actions" do
   result do
     encoding "json"
     collect jmes_path(response, "items[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
       field "categoryId", jmes_path(col_item, "categoryId")
       field "compartmentId", jmes_path(col_item, "compartmentId")
-      field "compartmentName", jmes_path(col_item, "compartmentName")
+      field "description", jmes_path(col_item, "description")
       field "estimatedCostSaving", jmes_path(col_item, "estimatedCostSaving")
-      field "id", jmes_path(col_item, "id")
+      field "importance", jmes_path(col_item, "importance")
       field "lifecycleState", jmes_path(col_item, "lifecycleState")
-      field "name", jmes_path(col_item, "name")
-      field "recommendationId", jmes_path(col_item, "recommendationId")
-      field "resourceId", jmes_path(col_item, "resourceId")
-      field "resourceType", jmes_path(col_item, "resourceType")
+      field "resourceCounts", jmes_path(col_item, "resourceCounts")
       field "status", jmes_path(col_item, "status")
+      field "supportedLevels", jmes_path(col_item, "supportedLevels")
       field "timeCreated", jmes_path(col_item, "timeCreated")
       field "timeStatusBegin", jmes_path(col_item, "timeStatusBegin")
       field "timeStatusEnd", jmes_path(col_item, "timeStatusEnd")
       field "timeUpdated", jmes_path(col_item, "timeUpdated")
-      field "metadata", jmes_path(col_item, "metadata")
-      field "computeCpuUtilization", jmes_path(col_item, "metadata.computeCpuUtilization")
-      field "computeMemoryUtilization", jmes_path(col_item, "metadata.computeMemoryUtilization")
-      field "extendedMetadata", jmes_path(col_item, "extendedMetadata")
-      field "region", jmes_path(col_item, "extendedMetadata.region")
-      field "osType", jmes_path(col_item, "extendedMetadata.operatingSystem")
-      field "currentShape", jmes_path(col_item, "extendedMetadata.CurrentShape.name")
+      field "currencyCode", jmes_path(col_item, "extendedMetadata.currencyCode")
+      field "estimatedSavingCalculationError", jmes_path(col_item, "extendedMetadata.estimatedSavingCalculationError")
+      field "monthlyBillPercentage", jmes_path(col_item, "extendedMetadata.monthlyBillPercentage")
+    end
+  end
+end
+
+datasource "ds_oci_recommendation_list_filtered" do
+  run_script $js_oci_recommendation_list_filtered, $ds_oci_recommendation_list
+end
+
+script "js_oci_recommendation_list_filtered", type:"javascript" do
+  parameters "ds_oci_recommendation_list"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_oci_recommendation_list, function(item) {
+    return item["name"].indexOf("cost-management-compute-host-underutilized") != -1 || item["name"].indexOf("cost-management-compute-host-idle") != -1
+  })
+EOS
+end
+
+datasource "ds_oci_recommendation_actions" do
+  iterate $ds_oci_recommendation_list_filtered
+  request do
+    auth $auth_oracle
+    pagination $pagination_oracle
+    verb "POST"
+    host join(["optimizer.", $param_primary_region, ".oci.oraclecloud.com"])
+    path "/20200606/actions/filterResourceActions"
+    query "compartmentId", $param_root_compartment
+    query "compartmentIdInSubtree", "true"
+    query "includeResourceMetadata", "true"
+    query "recommendationId", val(iter_item, "id")
+    header "User-Agent", "RS Policies"
+    body_field "query", "query ResourceAction sorted by timeUpdated desc"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "compartmentName", jmes_path(col_item, "compartmentName")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "resourceId", jmes_path(col_item, "resourceId")
+      field "resourceType", jmes_path(col_item, "resourceType")
+      field "estimatedCostSaving", jmes_path(col_item, "extendedMetadata.estimatedSaving")
+      field "currentCPU", jmes_path(col_item, "extendedMetadata.currentCPU")
+      field "currentMemory", jmes_path(col_item, "extendedMetadata.currentMemory")
+      field "currentVnicAttachments", jmes_path(col_item, "extendedMetadata.currentVnicAttachments")
+      # Yes, it's actually spelled "Newtork" in the API response instead of "Network" for some reason
+      # Grab both in case OCI fixes this at some point
+      field "currentMaxNewtorkBandwidth", jmes_path(col_item, "extendedMetadata.currentMaxNewtorkBandwidth")
+      field "currentMaxNetworkBandwidth", jmes_path(col_item, "extendedMetadata.currentMaxNetworkBandwidth")
+      field "currentMaxVnicAttachments", jmes_path(col_item, "extendedMetadata.currentMaxVnicAttachments")
+      field "currentShape", jmes_path(col_item, "extendedMetadata.currentShape")
+      field "recommendedCPU", jmes_path(col_item, "extendedMetadata.instanceRecommendedCPU")
+      field "recommendedMemory", jmes_path(col_item, "extendedMetadata.instanceRecommendedMemory")
+      # Yes, it's actually spelled "Newtork" in the API response instead of "Network" for some reason
+      # Grab both in case OCI fixes this at some point
+      field "recommendedMaxNewtorkBandwidth", jmes_path(col_item, "extendedMetadata.instancerecommendedMaxNewtorkBandwidth")
+      field "recommendedMaxNetworkBandwidth", jmes_path(col_item, "extendedMetadata.instancerecommendedMaxNetworkBandwidth")
+      field "recommendedMaxVnicAttachments", jmes_path(col_item, "extendedMetadata.instanceRecommendedMaxVnicAttachments")
       field "recommendedShape", jmes_path(col_item, "extendedMetadata.instanceRecommendedShape")
+      field "cpuAverage", jmes_path(col_item, "extendedMetadata.CpuUtilizationavg")
+      field "cpuMaximum", jmes_path(col_item, "extendedMetadata.CpuUtilizationmax")
+      field "cpuP95", jmes_path(col_item, "extendedMetadata.CpuUtilizationp95")
+      field "memMaximum", jmes_path(col_item, "extendedMetadata.MemoryUtilizationmax")
+      field "netMaximum", jmes_path(col_item, "extendedMetadata.NetworkUtilizationmax")
+      field "operatingSystem", jmes_path(col_item, "extendedMetadata.operatingSystem")
+      field "region", jmes_path(col_item, "extendedMetadata.region")
+      field "recommendationId", val(iter_item, "id")
+      field "recommendationName", val(iter_item, "name")
+      field "categoryId", val(iter_item, "categoryId")
+      field "compartmentId", val(iter_item, "compartmentId")
+      field "description", val(iter_item, "description")
+      field "importance", val(iter_item, "importance")
+      field "lifecycleState", val(iter_item, "lifecycleState")
+      field "resourceCounts", val(iter_item, "resourceCounts")
+      field "status", val(iter_item, "status")
+      field "supportedLevels", val(iter_item, "supportedLevels")
+      field "timeCreated", val(iter_item, "timeCreated")
+      field "timeStatusBegin", val(iter_item, "timeStatusBegin")
+      field "timeStatusEnd", val(iter_item, "timeStatusEnd")
+      field "timeUpdated", val(iter_item, "timeUpdated")
+      field "currencyCode", val(iter_item, "currencyCode")
+      field "estimatedSavingCalculationError", val(iter_item, "estimatedSavingCalculationError")
+      field "monthlyBillPercentage", val(iter_item, "monthlyBillPercentage")
     end
   end
 end
@@ -306,53 +383,12 @@ script "js_oci_recommendation_actions_region_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_oci_recommendation_list" do
-  request do
-    auth $auth_oracle
-    pagination $pagination_oracle
-    host join(["optimizer.", $param_primary_region, ".oci.oraclecloud.com"])
-    path "/20200606/recommendations"
-    query "compartmentId", $param_root_compartment
-    query "compartmentIdInSubtree", "true"
-    query "includeResourceMetadata", "true"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "items[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "name", jmes_path(col_item, "name")
-      field "categoryId", jmes_path(col_item, "categoryId")
-      field "compartmentId", jmes_path(col_item, "compartmentId")
-      field "description", jmes_path(col_item, "description")
-      field "estimatedCostSaving", jmes_path(col_item, "estimatedCostSaving")
-      field "importance", jmes_path(col_item, "importance")
-      field "lifecycleState", jmes_path(col_item, "lifecycleState")
-      field "resourceCounts", jmes_path(col_item, "resourceCounts")
-      field "status", jmes_path(col_item, "status")
-      field "supportedLevels", jmes_path(col_item, "supportedLevels")
-      field "timeCreated", jmes_path(col_item, "timeCreated")
-      field "timeStatusBegin", jmes_path(col_item, "timeStatusBegin")
-      field "timeStatusEnd", jmes_path(col_item, "timeStatusEnd")
-      field "timeUpdated", jmes_path(col_item, "timeUpdated")
-      field "metadata", jmes_path(col_item, "metadata")
-      field "computeCpuUtilization", jmes_path(col_item, "metadata.computeCpuUtilization")
-      field "computeMemoryUtilization", jmes_path(col_item, "metadata.computeMemoryUtilization")
-      field "extendedMetadata", jmes_path(col_item, "extendedMetadata")
-      field "region", jmes_path(col_item, "extendedMetadata.region")
-      field "osType", jmes_path(col_item, "extendedMetadata.operatingSystem")
-      field "currentShape", jmes_path(col_item, "extendedMetadata.CurrentShape.name")
-      field "recommendedShape", jmes_path(col_item, "extendedMetadata.RecommendedShape.name")
-    end
-  end
-end
-
 datasource "ds_oci_filtered_recommendations_underutil" do
-  run_script $js_oci_filtered_recommendations_underutil, $ds_oci_recommendation_actions_region_filtered, $ds_oci_recommendation_list, $ds_currency, $ds_applied_policy, $param_min_savings, $param_idle_or_underutilized
+  run_script $js_oci_filtered_recommendations_underutil, $ds_oci_recommendation_actions_region_filtered, $ds_currency, $ds_applied_policy, $param_min_savings, $param_idle_or_underutilized
 end
 
 script "js_oci_filtered_recommendations_underutil", type: "javascript" do
-  parameters "ds_oci_recommendation_actions_region_filtered", "ds_oci_recommendation_list", "ds_currency", "ds_applied_policy", "param_min_savings", "param_idle_or_underutilized"
+  parameters "ds_oci_recommendation_actions_region_filtered", "ds_currency", "ds_applied_policy", "param_min_savings", "param_idle_or_underutilized"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -387,58 +423,108 @@ script "js_oci_filtered_recommendations_underutil", type: "javascript" do
   total_savings = 0.0
 
   if (param_idle_or_underutilized != "Idle") {
-    valid_recommendations = _.filter(ds_oci_recommendation_list, function(item) {
-      return item['name'].indexOf(category_filter) != -1
+    valid_recommendations = _.filter(ds_oci_recommendation_actions_region_filtered, function(action) {
+      return action['recommendationName'].indexOf(category_filter) != -1 && parseFloat(action['estimatedCostSaving']) >= param_min_savings
     })
 
-    valid_ids = _.pluck(valid_recommendations, "id")
-
-    recommendations = _.filter(ds_oci_recommendation_actions_region_filtered, function(action) {
-      return _.contains(valid_ids, action['recommendationId']) && parseFloat(action['estimatedCostSaving']) >= param_min_savings
-    })
-
-    _.each(recommendations, function(action) {
+    result = _.map(valid_recommendations, function(action) {
       total_savings += parseFloat(action['estimatedCostSaving'])
 
       resourceType = ''
+      osType = ''
       cpuAverage = ''
-      memAverage = ''
+      cpuMaximum = ''
+      cpuP95 = ''
+      memMaximum = ''
+      netMaximum = ''
 
-      if (cpuAverage) { cpuAverage = Math.round(parseFloat(action['computeCpuUtilization']) * 100) / 100 }
-      if (memAverage) { memAverage = Math.round(parseFloat(action['computeMemoryUtilization']) * 100) / 100 }
-      if (resourceType) { resourceType = action['currentShape'] }
+      if (action['currentShape']) { resourceType = action['currentShape'] }
+      if (action['operatingSystem']) { osType = action['operatingSystem'] }
+      if (action['cpuAverage']) { cpuAverage = Math.round(parseFloat(action['cpuAverage']) * 100) / 100 }
+      if (action['cpuMaximum']) { cpuMaximum = Math.round(parseFloat(action['cpuMaximum']) * 100) / 100 }
+      if (action['cpuP95']) { cpuP95 = Math.round(parseFloat(action['cpuP95']) * 100) / 100 }
+      if (action['memMaximum']) { memMaximum = Math.round(parseFloat(action['memMaximum']) * 100) / 100 }
+      if (action['netMaximum']) { netMaximum = Math.round(parseFloat(action['netMaximum']) * 100) / 100 }
 
-      if (resourceType) {
-        recommendationDetails = [
-          "Resize Oracle virtual machine ", action["resourceId"], " ",
-          "in Oracle Compartment ", action["compartmentName"], " ",
-          "(", action["compartmentId"], ") ",
-          "from ", resourceType, " ",
-          "to ", action["recommendedShape"]
-        ].join('')
-      } else {
-        recommendationDetails = [
-          "Resize Oracle virtual machine ", action["resourceId"], " ",
-          "in Oracle Compartment ", action["compartmentName"], " ",
-          "(", action["compartmentId"], ") ",
-          "to ", action["recommendedShape"]
+      // Oracle's API currently misspells "network" as "newtork"
+      // So we grab both values and use the one that actually exists
+      currentMaxNetworkBandwidth = action['currentMaxNetworkBandwidth']
+      if (!currentMaxNetworkBandwidth) { currentMaxNetworkBandwidth = action['currentMaxNewtorkBandwidth'] }
+
+      newMaxNetworkBandwidth = action['recommendedMaxNetworkBandwidth']
+      if (!newMaxNetworkBandwidth) { newMaxNetworkBandwidth = action['recommendedMaxNewtorkBandwidth'] }
+
+      // Normalize values to integers since, by default, they are floats
+      currentCPU = action['currentCPU'] ? parseInt(action['currentCPU']) : ''
+      currentMemory = action['currentMemory'] ? parseInt(action['currentMemory']) : ''
+      currentMaxNetworkBandwidth = currentMaxNetworkBandwidth ? parseInt(currentMaxNetworkBandwidth) : ''
+      currentMaxVnicAttachments = action['currentMaxVnicAttachments'] ? parseInt(action['currentMaxVnicAttachments']) : ''
+
+      newCPU = action['recommendedCPU'] ? parseInt(action['recommendedCPU']) : ''
+      newMemory = action['recommendedMemory'] ? parseInt(action['recommendedMemory']) : ''
+      newMaxNetworkBandwidth = newMaxNetworkBandwidth ? parseInt(newMaxNetworkBandwidth) : ''
+      newMaxVnicAttachments = action['recommendedMaxVnicAttachments'] ? parseInt(action['recommendedMaxVnicAttachments']) : ''
+
+      prettyResourceType = resourceType
+      prettyNewResourceType = action['recommendedShape']
+
+      if (action['currentCPU']) {
+        prettyResourceType = [
+          resourceType, " (",
+          currentCPU, " OCPUs, ",
+          currentMemory, " GB Memory)"
         ].join('')
       }
 
-      result.push({
+      if (action['recommendedCPU']) {
+        prettyNewResourceType = [
+          action['recommendedShape'], " (",
+          newCPU, " OCPUs, ",
+          newMemory, " GB Memory)"
+        ].join('')
+      }
+
+      if (prettyResourceType) {
+        recommendationDetails = [
+          "Resize Oracle Virtual Machine ", action["resourceId"], " ",
+          "in Oracle Compartment ", action["compartmentName"], " ",
+          "(", action["compartmentId"], ") ",
+          "from ", prettyResourceType, " ",
+          "to ", prettyNewResourceType
+        ].join('')
+      } else {
+        recommendationDetails = [
+          "Resize Oracle Virtual Machine ", action["resourceId"], " ",
+          "in Oracle Compartment ", action["compartmentName"], " ",
+          "(", action["compartmentId"], ") ",
+          "to ", prettyNewResourceType
+        ].join('')
+      }
+
+      return {
         accountID: action['compartmentId'],
         accountName: action['compartmentName'],
-        tenantId: action['extendedMetadata']['resourceOwningTenancyId'],
-        tenantName: action['extendedMetadata']['resourceOwningTenancyName'],
-        savings: parseFloat(action['estimatedCostSaving']).toFixed(0),
+        savings: Math.round(parseFloat(action['estimatedCostSaving']) * 100) / 100,
         savingsCurrency: ds_currency['symbol'],
         resourceID: action['resourceId'],
+        resourceName: action['name'],
         region: action['region'],
         actionId: action['id'],
         status: action['status'],
-        osType: action['osType'],
+        osType: osType,
         cpuAverage: cpuAverage,
-        memAverage: memAverage,
+        cpuMaximum: cpuMaximum,
+        cpuP95: cpuP95,
+        memMaximum: memMaximum,
+        netMaximum: netMaximum,
+        currentCPU: currentCPU,
+        currentMemory: currentMemory,
+        currentMaxNetworkBandwidth: currentMaxNetworkBandwidth,
+        currentMaxVnicAttachments: currentMaxVnicAttachments,
+        newCPU: newCPU,
+        newMemory: newMemory,
+        newMaxNetworkBandwidth: newMaxNetworkBandwidth,
+        newMaxVnicAttachments: newMaxVnicAttachments,
         resourceType: resourceType,
         newResourceType: action['recommendedShape'],
         recommendationDetails: recommendationDetails,
@@ -446,7 +532,7 @@ script "js_oci_filtered_recommendations_underutil", type: "javascript" do
         policy_name: ds_applied_policy["name"],
         total_savings: "",
         message: ""
-      })
+      }
     })
   }
 
@@ -461,8 +547,7 @@ script "js_oci_filtered_recommendations_underutil", type: "javascript" do
   message = [
     result.length, " Cloud Advisor rightsizing ", noun, " found. ", phrase, " can be ",
     "adjusted by modifying your Cloud Advisor settings within your Oracle environment.\n\n",
-    "The specific statistic used for CPU and Memory metrics (average, P90, etc.) is based on ",
-    "your Cloud Advisor configuration. Metrics and other data may be missing depending on whether ",
+    "Metrics and other data may be missing depending on whether ",
     "Cloud Advisor has been configured to provide this information."
   ].join('')
 
@@ -473,7 +558,10 @@ script "js_oci_filtered_recommendations_underutil", type: "javascript" do
   result.push({
     resourceID: "",
     cpuAverage: "",
-    memAverage: "",
+    cpuMaximum: "",
+    cpuP95: "",
+    memMaximum: "",
+    netMaximum: "",
     savings: "",
     savingsCurrency: "",
     total_savings: "",
@@ -487,11 +575,11 @@ EOS
 end
 
 datasource "ds_oci_filtered_recommendations_idle" do
-  run_script $js_oci_filtered_recommendations_idle, $ds_oci_recommendation_actions, $ds_oci_recommendation_list, $ds_oci_filtered_recommendations_underutil, $ds_currency, $ds_applied_policy, $param_min_savings, $param_idle_or_underutilized
+  run_script $js_oci_filtered_recommendations_idle, $ds_oci_recommendation_actions_region_filtered, $ds_oci_filtered_recommendations_underutil, $ds_currency, $ds_applied_policy, $param_min_savings, $param_idle_or_underutilized
 end
 
 script "js_oci_filtered_recommendations_idle", type: "javascript" do
-  parameters "ds_oci_recommendation_actions", "ds_oci_recommendation_list", "ds_oci_filtered_recommendations_underutil", "ds_currency", "ds_applied_policy", "param_min_savings", "param_idle_or_underutilized"
+  parameters "ds_oci_recommendation_actions_region_filtered", "ds_oci_filtered_recommendations_underutil", "ds_currency", "ds_applied_policy", "param_min_savings", "param_idle_or_underutilized"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -529,54 +617,58 @@ script "js_oci_filtered_recommendations_idle", type: "javascript" do
     // This is to make sure we don't recommend the same resource for both rightsizing and deletion
     underutil_ids = _.compact(_.pluck(ds_oci_filtered_recommendations_underutil, "resourceID"))
 
-    valid_recommendations = _.filter(ds_oci_recommendation_list, function(item) {
-      return item['name'].indexOf(category_filter) != -1
+    valid_recommendations = _.filter(ds_oci_recommendation_actions_region_filtered, function(action) {
+      return !_.contains(underutil_ids, action['resourceId']) && action['recommendationName'].indexOf(category_filter) != -1 && parseFloat(action['estimatedCostSaving']) >= param_min_savings
     })
 
-    valid_ids = _.pluck(valid_recommendations, "id")
-
-    recommendations = _.filter(ds_oci_recommendation_actions, function(action) {
-      return !_.contains(underutil_ids, action['resourceId']) && _.contains(valid_ids, action['recommendationId']) && parseFloat(action['estimatedCostSaving']) >= param_min_savings
-    })
-
-    _.each(recommendations, function(action) {
+    result = _.map(valid_recommendations, function(action) {
       total_savings += parseFloat(action['estimatedCostSaving'])
 
       resourceType = ''
+      osType = ''
       cpuAverage = ''
-      memAverage = ''
+      cpuMaximum = ''
+      cpuP95 = ''
+      memMaximum = ''
+      netMaximum = ''
 
-      if (cpuAverage) { cpuAverage = Math.round(parseFloat(action['computeCpuUtilization']) * 100) / 100 }
-      if (memAverage) { memAverage = Math.round(parseFloat(action['computeMemoryUtilization']) * 100) / 100 }
-      if (resourceType) { resourceType = action['currentShape'] }
+      if (action['currentShape']) { resourceType = action['currentShape'] }
+      if (action['operatingSystem']) { osType = action['operatingSystem'] }
+      if (action['cpuAverage']) { cpuAverage = Math.round(parseFloat(action['cpuAverage']) * 100) / 100 }
+      if (action['cpuMaximum']) { cpuMaximum = Math.round(parseFloat(action['cpuMaximum']) * 100) / 100 }
+      if (action['cpuP95']) { cpuP95 = Math.round(parseFloat(action['cpuP95']) * 100) / 100 }
+      if (action['memMaximum']) { memMaximum = Math.round(parseFloat(action['memMaximum']) * 100) / 100 }
+      if (action['netMaximum']) { netMaximum = Math.round(parseFloat(action['netMaximum']) * 100) / 100 }
 
       recommendationDetails = [
-        "Terminate Oracle virtual machine ", action["resourceId"], " ",
+        "Terminate Oracle Virtual Machine ", action["resourceId"], " ",
         "in Oracle Compartment ", action["compartmentName"], " ",
         "(", action["compartmentId"], ") "
       ].join('')
 
-      result.push({
+      return {
         accountID: action['compartmentId'],
         accountName: action['compartmentName'],
-        tenantId: action['extendedMetadata']['resourceOwningTenancyId'],
-        tenantName: action['extendedMetadata']['resourceOwningTenancyName'],
-        savings: parseFloat(action['estimatedCostSaving']).toFixed(0),
+        savings: Math.round(parseFloat(action['estimatedCostSaving']) * 100) / 100,
         savingsCurrency: ds_currency['symbol'],
         resourceID: action['resourceId'],
+        resourceName: action['name'],
         region: action['region'],
         actionId: action['id'],
         status: action['status'],
-        osType: action['osType'],
+        osType: osType,
         cpuAverage: cpuAverage,
-        memAverage: memAverage,
+        cpuMaximum: cpuMaximum,
+        cpuP95: cpuP95,
+        memMaximum: memMaximum,
+        netMaximum: netMaximum,
         resourceType: resourceType,
         recommendationDetails: recommendationDetails,
         service: "COMPUTE",
         policy_name: ds_applied_policy["name"],
         total_savings: "",
         message: ""
-      })
+      }
     })
   }
 
@@ -591,8 +683,7 @@ script "js_oci_filtered_recommendations_idle", type: "javascript" do
   message = [
     result.length, " Cloud Advisor idle ", noun, " found. ", phrase, " can be ",
     "adjusted by modifying your Cloud Advisor settings within your Oracle environment.\n\n",
-    "The specific statistic used for CPU and Memory metrics (average, P90, etc.) is based on ",
-    "your Cloud Advisor configuration. Metrics and other data may be missing depending on whether ",
+    "Metrics and other data may be missing depending on whether ",
     "Cloud Advisor has been configured to provide this information."
   ].join('')
 
@@ -603,7 +694,10 @@ script "js_oci_filtered_recommendations_idle", type: "javascript" do
   result.push({
     resourceID: "",
     cpuAverage: "",
-    memAverage: "",
+    cpuMaximum: "",
+    cpuP95: "",
+    memMaximum: "",
+    netMaximum: "",
     savings: "",
     savingsCurrency: "",
     total_savings: "",
@@ -631,7 +725,7 @@ policy "pol_oci_rightsize_compute_recommendations" do
     check eq(val(item, "resourceID"), "")
     escalate $esc_email
     escalate $esc_downsize_instances
-    hash_exclude "message", "total_savings", "savings", "savingsCurrency", "cpuAverage", "memAverage"
+    hash_exclude "message", "total_savings", "savings", "savingsCurrency", "cpuAverage", "cpuMaximum", "cpuP95", "memMaximum", "netMaximum"
     export do
       resource_level true
       field "accountID" do
@@ -640,14 +734,11 @@ policy "pol_oci_rightsize_compute_recommendations" do
       field "accountName" do
         label "Compartment Name"
       end
-      field "tenantId" do
-        label "Tenant ID"
-      end
-      field "tenantName" do
-        label "Tenant Name"
-      end
       field "resourceID" do
         label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
       end
       field "region" do
         label "Region"
@@ -664,8 +755,20 @@ policy "pol_oci_rightsize_compute_recommendations" do
       field "resourceType" do
         label "Current Instance Size"
       end
+      field "currentCPU" do
+        label "Current CPU (#)"
+      end
+      field "currentMemory" do
+        label "Current Memory (GB)"
+      end
       field "newResourceType" do
         label "Recommended Instance Size"
+      end
+      field "newCPU" do
+        label "Recommended CPU (#)"
+      end
+      field "newMemory" do
+        label "Recommended Memory (GB)"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -673,11 +776,17 @@ policy "pol_oci_rightsize_compute_recommendations" do
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "cpuAverage" do
-        label "CPU Usage (%)"
+      field "cpuMaximum" do
+        label "CPU Maximum (%)"
       end
-      field "memAverage" do
-        label "Memory Usage (%)"
+      field "cpuAverage" do
+        label "CPU Average (%)"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+      end
+      field "memMaximum" do
+        label "Memory Maximum (%)"
       end
       field "id" do
         label "ID"
@@ -698,7 +807,7 @@ policy "pol_oci_rightsize_compute_recommendations" do
     check eq(val(item, "resourceID"), "")
     escalate $esc_email
     escalate $esc_terminate_instances
-    hash_exclude "message", "total_savings", "savings", "savingsCurrency", "cpuAverage", "memAverage"
+    hash_exclude "message", "total_savings", "savings", "savingsCurrency", "cpuAverage", "cpuMaximum", "cpuP95", "memMaximum", "netMaximum"
     export do
       resource_level true
       field "accountID" do
@@ -707,14 +816,11 @@ policy "pol_oci_rightsize_compute_recommendations" do
       field "accountName" do
         label "Compartment Name"
       end
-      field "tenantId" do
-        label "Tenant ID"
-      end
-      field "tenantName" do
-        label "Tenant Name"
-      end
       field "resourceID" do
         label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
       end
       field "region" do
         label "Region"
@@ -737,11 +843,17 @@ policy "pol_oci_rightsize_compute_recommendations" do
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "cpuAverage" do
-        label "CPU Usage (%)"
+      field "cpuMaximum" do
+        label "CPU Maximum (%)"
       end
-      field "memAverage" do
-        label "Memory Usage (%)"
+      field "cpuAverage" do
+        label "CPU Average (%)"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+      end
+      field "memMaximum" do
+        label "Memory Maximum (%)"
       end
       field "id" do
         label "ID"
@@ -805,13 +917,22 @@ define downsize_instance($instance) return $response do
 
   task_label("PUT " + $url)
 
+  $body = { "shape": $instance["newResourceType"] }
+
+  if $instance["resourceType"] == $instance["newResourceType"]
+    $body["shapeConfig"] = {
+      ocpus: $instance["newCPU"],
+      memoryInGBs: $instance["newMemory"]
+    }
+  end
+
   $response = http_request(
     auth: $$auth_oracle,
     https: true,
     verb: "put",
     host: $host,
     href: $href,
-    body: { "shape": $instance["newResourceType"] }
+    body: $body
   )
 
   task_label("Put Oracle VM instance response: " + $instance["id"] + " " + to_json($response))

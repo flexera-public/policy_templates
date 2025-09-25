@@ -23,6 +23,7 @@ Policy templates require the correct permissions configured for your [Flexera Cr
 * [PDF (AWS Policy Templates Only)](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list_aws.pdf)
 * [PDF (Azure Policy Templates Only)](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list_azure.pdf)
 * [PDF (Google Policy Templates Only)](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list_google.pdf)
+* [PDF (Oracle Policy Templates Only)](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list_oracle.pdf)
 
 ## Released Policy Templates
 
@@ -192,6 +193,19 @@ These templates can generate savings estimates for your environment. The inciden
 * Compute
 
   * [Oracle Cloud Advisor: Rightsize Virtual Machines](./cost/oracle/advisor_rightsize_vms)
+
+* Database
+
+  * [Oracle Cloud Advisor: Rightsize Autonomous Database Service](./cost/oracle/advisor_rightsize_autodbs)
+  * [Oracle Cloud Advisor: Rightsize Base Database Service](./cost/oracle/advisor_rightsize_basedbs)
+
+* Network
+
+  * [Oracle Cloud Advisor: Rightsize Load Balancers](./cost/oracle/advisor_rightsize_lbs)
+
+* Storage
+
+  * [Oracle Cloud Advisor: Unattached Volumes](./cost/oracle/advisor_unattached_volumes)
 
 ### Policy Templates for Compliance
 
@@ -411,6 +425,10 @@ These templates can generate savings estimates for your environment. The inciden
 * Common Bill Ingestion
 
   * [Oracle Cloud Common Bill Ingestion](./cost/oracle/oracle_cbi)
+
+* Storage
+
+  * [Oracle Cloud Advisor: Object Storage Without Lifecycle Management](./cost/oracle/advisor_lifecycle_mgmt)
 
 ### Policy Templates for Operational
 

@@ -6,6 +6,31 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3552](https://github.com/flexera-public/policy_templates/pull/3552): POL-1626 Currency Conversion - Bring Adjustments Forward
+
+*Minor Update*
+
+#### Description
+
+> Added a parameter to bring adjustments forward to the `Currency Conversion` policy template. From the updated README:
+>
+> - *Bring Adjustments Forward* - Whether to automatically fill months with no adjustments with the adjustments from the previous month.
+>   - Example: You run this policy template in June 2025 and you choose to backfill starting in January 2025. You currently only have adjustment rules for January 2025 and March 2025.
+>     - With this option enabled, the existing adjustment rules for January 2025 will be carried forward to February, and existing rules for March 2025 will be carried forward to April, May, and June.
+>     - With this option disabled, the only adjustment rules for March, April, May, and June will be the currency conversion adjustment created by this policy template. This means, for those months, the rules configured for January 2025 and March 2025 respectively will no longer apply for those months when they did previously.
+>
+> Also replaced a broken link in the README with a working one.
+>
+> Also made some small tweaks to the ESLint YAML file so that JavaScript is linted by the same standards we use in policy templates.
+>
+
+#### Metadata
+
+- **Policies**: [Currency Conversion](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/currency_conversion/README.md)
+- **Merged At**: 2025-09-17 20:51:32 UTC
+
+---
+
 ### PR [#3540](https://github.com/flexera-public/policy_templates/pull/3540): FOPTS-14803 Fixed Cloud Cost Anomaly Alerts PT Email
 
 *Bug Fix*
@@ -137,7 +162,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 >
 > https://app.flexera.com/orgs/1105/automation/applied-policies/projects/60073?policyId=68bb98241b0befcdc03d2bdc
 >
-> <img width="1592" height="492" alt="image" src="https://github.com/user-attachments/assets/a0055cde-454e-45ee-9e35-d60e98b709c3" />
+> <img width="1588" height="361" alt="image" src="https://github.com/user-attachments/assets/d7437ad8-bb4b-466d-82de-bf108fad292a" />
 >
 
 #### Metadata
@@ -2021,55 +2046,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md)
 - **Merged At**: 2025-03-06 14:05:52 UTC
-
----
-
-### PR [#2965](https://github.com/flexera-public/policy_templates/pull/2965): FOPTS-6833 - Batch Processing Adoption for Azure RightSize Policies
-
-#### Description
-
-> This represents the second step in enabling Batch Processing for prioritized policies. The selected policies are the ones with the highest overall and cross-organizational usage, as well as those consuming the most memory.
->
-> In this PR, the identified policies have been refactored to leverage Batch Processing. Specifically, the datasource operations that involve large datasets have been optimized to use EFS (Elastic File System) instead of in-memory processing. This change ensures that **memory usage is reduced** while **maintaining** or improving **execution times**
->
-> - [x] Azure Rightsize SQL Databases
-> - [x] Azure Rightsize Manage Disk
-> - [x] Azure Rightsize  Database SQL Storage
-> - Note : excluded Azure Rightsize Compute Instance  as the refactored version (enable batch processing) result in considerable increase in execution time)
->
-> For each policy these steps got taken :
-> -  **Investigate Memory and Time Usage** : Analyze the memory and execution time of data sources in to identify bottlenecks.
-> - **Enable Batch Processing**: Refactor the identified data sources to use batch processing.
-> - **Test Consistency**: Run both the original and batch-enabled versions on staging data to ensure error-free execution and consistent results across both.
-> - **Create Mock Policies**: Generate mock versions of both the original and batch-enabled policies to simulate real-world use cases.
-> - **Performance Analysis**: Verified that the changes effectively reduce memory usage without significantly increasing execution time.
->
->
->
-> ### Issues Resolved
->
-> Please check the policies and applied policy links here:
-> https://flexera.atlassian.net/browse/FOPTS-7713?focusedCommentId=2717833
->
-> [Grafana link](https://g-1cda041840.grafana-workspace.us-east-1.amazonaws.com/d/6r9N9ysIk/evaluation-service-usage?orgId=1&var-dataSource=Prometheus%20Prod%20US&var-pod=All&viewPanel=2&from=1741647410214&to=1741649609883)
->
-> ![image](https://github.com/user-attachments/assets/7903ca7d-6ea5-47ad-9c92-025870a9bebe)
->
->
->
->
-> Grafana Reference:
->
-> [Azure Rightsize SQL Databases](https://g-1cda041840.grafana-workspace.us-east-1.amazonaws.com/d/6r9N9ysIk/evaluation-service-usage?orgId=1&var-dataSource=Prometheus%20Staging&var-pod=All&viewPanel=2&from=1740429756026&to=1740430085811)
->
-> ![image](https://github.com/user-attachments/assets/1d0eb87c-0c0f-4f4f-a42f-c0c73a255c89)
->
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2965) for these details.
-- **Merged At**: 2025-03-05 22:22:54 UTC
 
 ---
 

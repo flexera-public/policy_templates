@@ -537,6 +537,8 @@ The following guidelines should be used for the `policy` block:
 - For the `summary_template` field:
   - Should include the applied policy name and describe the thing the incident is reporting. If relevant, it should also indicate the number of resources being reported in the incident.
     - Example: "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Old Snapshots Found"
+  - Should _not_ contain escape characters, such as `\n` and `\t`. These will cause the incident email to render incorrectly as raw HTML code.
+  - Should _not_ make use of a heredoc, such as `<<-EOS`, for the same reason.
 
 - For the `detail_template` field:
   - Should contain useful information for contextualizing the contents of the incident table. For example, if the policy template is reporting unused disks, it should explain how we determined the disks were unused.
