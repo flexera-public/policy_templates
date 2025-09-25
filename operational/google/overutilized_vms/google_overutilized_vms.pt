@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.4",
+  version: "0.1.5",
   provider: "Google",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -377,32 +377,15 @@ script "js_google_projects_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_calculated_utilization" do
+datasource "ds_cpu_stats" do
   iterate $ds_google_projects_filtered
   request do
-    run_script $js_calculated_utilization, val(iter_item, "id"), $param_stats_lookback
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "timeSeriesData[*]") do
-      field "resourceName", jmes_path(col_item, "labelValues[3].stringValue")
-      field "resourceID", jmes_path(col_item, "labelValues[2].stringValue")
-      field "zone", jmes_path(col_item, "labelValues[1].stringValue")
-      field "cpuAverage", prod(jmes_path(col_item, "pointData[0].values[0].doubleValue"), 100)
-      field "cpuMaximum", prod(jmes_path(col_item, "pointData[0].values[1].doubleValue"), 100)
-      field "cpuMinimum", prod(jmes_path(col_item, "pointData[0].values[2].doubleValue"), 100)
-      field "cpuP99", prod(jmes_path(col_item, "pointData[0].values[3].doubleValue"), 100)
-      field "cpuP95", prod(jmes_path(col_item, "pointData[0].values[4].doubleValue"), 100)
-      field "cpuP90", prod(jmes_path(col_item, "pointData[0].values[5].doubleValue"), 100)
-      field "projectId", val(iter_item, "id")
-      field "projectName", val(iter_item, "name")
-      field "projectNumber", val(iter_item, "number")
-    end
+    run_script $js_cpu_stats, val(iter_item, "id"), $param_stats_lookback, "compute.googleapis.com/instance/cpu/utilization"
   end
 end
 
-script "js_calculated_utilization", type: "javascript" do
-  parameters "projectId", "param_stats_lookback"
+script "js_cpu_stats", type: "javascript" do
+  parameters "projectId", "param_stats_lookback", "metric"
   result "request"
   code <<-EOS
   group_by = [
@@ -416,7 +399,7 @@ script "js_calculated_utilization", type: "javascript" do
 
   query = [
     "fetch gce_instance",
-    "metric compute.googleapis.com/instance/cpu/utilization",
+    "metric " + metric,
     "within " + param_stats_lookback + "d",
     "{ " + group_by + " }",
     "join"
@@ -434,6 +417,43 @@ script "js_calculated_utilization", type: "javascript" do
     body_fields: { "query": query },
     ignore_status: [ 403, 404 ]
   }
+EOS
+end
+
+datasource "ds_parsed_stats" do
+  run_script $js_parsed_stats, $ds_cpu_stats
+end
+
+script "js_parsed_stats", type: "javascript" do
+  parameters "ds_cpu_stats"
+  result "result"
+  code <<-EOS
+  result = {}
+
+  _.each(ds_cpu_stats, function(entry) {
+    cpu_descriptors = _.pluck(entry['timeSeriesDescriptor']['labelDescriptors'], 'key')
+
+    _.each(entry["timeSeriesData"], function(item) {
+      labels = {}
+
+      for (var i = 0; i < cpu_descriptors.length; i++) {
+        labels[cpu_descriptors[i]] = item['labelValues'][i]['stringValue']
+      }
+
+      instanceId = labels['resource.instance_id']
+
+      if (instanceId) {
+        if (result[instanceId] == undefined) { result[instanceId] = {} }
+
+        result[instanceId]['cpuAverage'] = Number(item['pointData'][0]['values'][0]['doubleValue']) * 100
+        result[instanceId]['cpuMaximum'] = Number(item['pointData'][0]['values'][1]['doubleValue']) * 100
+        result[instanceId]['cpuMinimum'] = Number(item['pointData'][0]['values'][2]['doubleValue']) * 100
+        result[instanceId]['cpuP99'] = Number(item['pointData'][0]['values'][3]['doubleValue']) * 100
+        result[instanceId]['cpuP95'] = Number(item['pointData'][0]['values'][4]['doubleValue']) * 100
+        result[instanceId]['cpuP90'] = Number(item['pointData'][0]['values'][5]['doubleValue']) * 100
+      }
+    })
+  })
 EOS
 end
 
@@ -457,20 +477,13 @@ datasource "ds_get_instances" do
 end
 
 datasource "ds_instances" do
-  run_script $js_instances, $ds_get_instances, $ds_calculated_utilization, $ds_zone_to_region
+  run_script $js_instances, $ds_get_instances, $ds_parsed_stats, $ds_zone_to_region
 end
 
 script "js_instances", type: "javascript" do
-  parameters "ds_get_instances", "ds_calculated_utilization", "ds_zone_to_region"
+  parameters "ds_get_instances", "ds_parsed_stats", "ds_zone_to_region"
   result "result"
   code <<-EOS
-  stats_by_resource = {}
-
-  _.each(ds_calculated_utilization, function(item) {
-    id = item['resourceID'].toLowerCase()
-    stats_by_resource[id] = item
-  })
-
   result = []
 
   _.each(ds_get_instances, function(response) {
@@ -485,13 +498,13 @@ script "js_instances", type: "javascript" do
         cpuP95 = null
         cpuP90 = null
 
-        if (stats_by_resource[id] != undefined) {
-          cpuAverage = stats_by_resource[id]['cpuAverage']
-          cpuMaximum = stats_by_resource[id]['cpuMaximum']
-          cpuMinimum = stats_by_resource[id]['cpuMinimum']
-          cpuP99 = stats_by_resource[id]['cpuP99']
-          cpuP95 = stats_by_resource[id]['cpuP95']
-          cpuP90 = stats_by_resource[id]['cpuP90']
+        if (ds_parsed_stats[id] != undefined) {
+          cpuAverage = ds_parsed_stats[id]['cpuAverage'] ? ds_parsed_stats[id]['cpuAverage'] : null
+          cpuMaximum = ds_parsed_stats[id]['cpuMaximum'] ? ds_parsed_stats[id]['cpuMaximum'] : null
+          cpuMinimum = ds_parsed_stats[id]['cpuMinimum'] ? ds_parsed_stats[id]['cpuMinimum'] : null
+          cpuP99 = ds_parsed_stats[id]['cpuP99'] ? ds_parsed_stats[id]['cpuP99'] : null
+          cpuP95 = ds_parsed_stats[id]['cpuP95'] ? ds_parsed_stats[id]['cpuP95'] : null
+          cpuP90 = ds_parsed_stats[id]['cpuP90'] ? ds_parsed_stats[id]['cpuP90'] : null
         }
 
         zone = instance['zone'].split('/')[8]

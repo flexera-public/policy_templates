@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.0
+
+- Fixed escalation that erroneously referred to 'VM' instead of 'Cloud SQL'
+- Updated escalation descriptions/parameters to be more specific
+
 ## v0.2.4
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
