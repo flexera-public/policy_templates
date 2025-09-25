@@ -196,6 +196,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Database
 
+  * [Oracle Cloud Advisor: Rightsize Autonomous Database Service](./cost/oracle/advisor_rightsize_autodbs)
   * [Oracle Cloud Advisor: Rightsize Base Database Service](./cost/oracle/advisor_rightsize_basedbs)
 
 * Network
