@@ -1,5 +1,9 @@
 # AWS Savings Realized From Rate Reduction Purchases
 
+## Deprecated
+
+This policy template is no longer being updated. The more accurate "Savings" and "Savings Percent" cost metrics now available natively in Flexera CCO, in conjunction with the [Dashboards](https://docs.flexera.com/flexera/EN/Optima/Accessing_the_Cloud_Dashboard.htm#usingcco_3910196062_1183924) and [Tabular View](https://docs.flexera.com/flexera/EN/Optima/TabularView.htm#usingcco_3910196062_1186809) feature, should be used instead.
+
 ## What It Does
 
 This policy template produces a report with chart showing the total savings realized from using AWS Reservations, Savings Plans, and Spot Instances. This report can either be for the entire organization or specific Billing Centers. Optionally, this report can be emailed.
