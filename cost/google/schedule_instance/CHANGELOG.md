@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0.6
+
+- Added metadata specific to meta parent policies. Functionality unchanged.
+
 ## v6.0.5
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
