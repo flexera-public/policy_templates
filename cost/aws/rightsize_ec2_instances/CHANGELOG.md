@@ -2,8 +2,8 @@
 
 ## v5.4.6
 
-- Resolved an issue where memory statistics were not being captured.
-- Fixed an issue where the policy would fail when only considering memory metrics for recommendations.
+- Resolved issue where memory statistics were not being captured.
+- Fixed issue where the policy would fail when only considering memory metrics for recommendations.
 
 ## v5.4.5
 
