@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.2
+
+- Updated default policy frequency to "daily" to mitigate/prevent hitting Spot API limits
+
 ## v0.2.1
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
