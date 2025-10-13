@@ -6,7 +6,7 @@ This policy template reports any active GPv1 Azure Storage Accounts and, optiona
 
 Manual migration ahead of this schedule is recommended to ensure optimal configuration of workloads. In most cases, storage capacity costs should be lower for GPv2, especially if you take advantage of cool or archive tiering for infrequently accessed blobs, but operational costs may be higher for workloads with a large number of write or list operations.
 
-More information is available on [Microsoft Learn](https://learn.microsoft.com/en-us/azure/storage/common/general-purpose-version-1-account-migration-overview?utm_source=chatgpt.com).
+More information is available on [Microsoft Learn](https://learn.microsoft.com/en-us/azure/storage/common/general-purpose-version-1-account-migration-overview).
 
 ## Input Parameters
 
