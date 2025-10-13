@@ -171,6 +171,97 @@ datasource "ds_applied_policy" do
   end
 end
 
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
 datasource "ds_azure_subscriptions" do
   request do
     auth $auth_azure
@@ -379,12 +470,149 @@ script "js_deprecated_storage_accounts", type: "javascript" do
 EOS
 end
 
+datasource "ds_deprecated_subscriptions" do
+  run_script $js_deprecated_subscriptions, $ds_deprecated_storage_accounts
+end
+
+script "js_deprecated_subscriptions", type: "javascript" do
+  parameters "ds_deprecated_storage_accounts"
+  result "result"
+  code <<-EOS
+  sub_list = _.uniq(_.pluck(ds_deprecated_storage_accounts, 'subscriptionId'))
+  result = _.map(sub_list, function(sub) { return { subscriptionId: sub } })
+EOS
+end
+
+datasource "ds_storage_costs" do
+  iterate $ds_deprecated_subscriptions
+  request do
+    run_script $js_storage_costs, val(iter_item, 'subscriptionId'), $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "usage_type", jmes_path(col_item, "dimensions.usage_type")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_storage_costs", type: "javascript" do
+  parameters "subscription_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 32)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: [ "resource_id", "usage_type" ],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: [ "cost_amortized_unblended_adj" ],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Microsoft.Storage"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "microsoft.storage"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": subscription_id
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_storage_costs_grouped" do
+  run_script $js_storage_costs_grouped, $ds_storage_costs
+end
+
+script "js_storage_costs_grouped", type: "javascript" do
+  parameters "ds_storage_costs"
+  result "result"
+  code <<-EOS
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_storage_costs, function(item) {
+    id = item['resource_id'].toLowerCase()
+    cost = item['cost'] * cost_multiplier
+
+    if (result[id] == undefined) {
+      result[id] = {
+        total: 0.0,
+        storage: 0.0,
+        network: 0.0,
+        operations: 0.0
+      }
+    }
+
+    result[id]['total'] += cost
+
+    if (item['usage_type'] && _.indexOf(item['usage_type'].toLowerCase(), "stored") != -1) {
+      result[id]['storage'] += cost
+    } else if (item['usage_type'] && _.indexOf(item['usage_type'].toLowerCase(), "transfer") != -1) {
+      result[id]['network'] += cost
+    } else {
+      result[id]['operations'] += cost
+    }
+  })
+EOS
+end
+
 datasource "ds_incident" do
-  run_script $js_incident, $ds_deprecated_storage_accounts, $ds_applied_policy
+  run_script $js_incident, $ds_deprecated_storage_accounts, $ds_storage_costs_grouped, $ds_currency, $ds_applied_policy
 end
 
 script "js_incident", type: "javascript" do
-  parameters "ds_deprecated_storage_accounts", "ds_applied_policy"
+  parameters "ds_deprecated_storage_accounts", "ds_storage_costs_grouped", "ds_currency", "ds_applied_policy"
   result "result"
   code <<-'EOS'
   result = _.map(ds_deprecated_storage_accounts, function(item) {
@@ -399,6 +627,29 @@ script "js_incident", type: "javascript" do
       "in Azure Subscription ", item["subscriptionName"],
       " (", item["subscriptionID"], ") from GPv1 to GPv2"
     ].join('')
+
+    cost_total = 0.0
+    cost_storage = 0.0
+    cost_network = 0.0
+    cost_operations = 0.0
+    cost_storage_percent = null
+    cost_network_percent  = null
+    cost_operations_percent = null
+
+    id = item['id'].toLowerCase()
+
+    if (ds_storage_costs_grouped[id]) {
+      cost_total = ds_storage_costs_grouped['total']
+      cost_storage = ds_storage_costs_grouped['storage']
+      cost_network = ds_storage_costs_grouped['network']
+      cost_operations = ds_storage_costs_grouped['operations']
+
+      if (cost_total > 0) {
+        cost_storage_percent = Math.round((cost_storage / cost_total) * 10000) / 100
+        cost_network_percent = Math.round((cost_network / cost_total) * 10000) / 100
+        cost_operations_percent = Math.round((cost_storage / cost_total) * 10000) / 100
+      }
+    }
 
     return {
       id: item['id'],
@@ -418,6 +669,14 @@ script "js_incident", type: "javascript" do
       accountID: item['subscriptionId'],
       accountName: item['subscriptionName'],
       recommendationDetails: recommendationDetails,
+      cost_total: Math.round(cost_total * 1000) / 1000,
+      cost_storage: Math.round(cost_storage * 1000) / 1000,
+      cost_network: Math.round(cost_network * 1000) / 1000,
+      cost_operations: Math.round(cost_operations * 1000) / 1000,
+      cost_storage_percent: cost_storage_percent,
+      cost_network_percent: cost_network_percent,
+      cost_operations_percent: cost_operations_percent,
+      currency: ds_currency['symbol'],
       policy_name: ds_applied_policy['name'],
       message: ""
     }
@@ -428,8 +687,8 @@ script "js_incident", type: "javascript" do
     "to GPv2 in October 2026. It is recommended that you manually migrate ahead of this schedule ",
     "to ensure that you've migrated to the optimal GPv2 settings for your specific workloads.\n\n",
     "In most cases, storage capacity costs should be lower for GPv2, especially if you take advantage ",
-    "of cool or archive tiering for infrequently accessed blobs, but transaction costs may be higher ",
-    "for workloads with a large number of write or list transactions.\n\n",
+    "of cool or archive tiering for infrequently accessed blobs, but operational costs may be higher ",
+    "for workloads with a large number of write or list operations.\n\n",
     "More information is available on [Microsoft Learn](https://learn.microsoft.com/en-us/azure/storage/common/general-purpose-version-1-account-migration-overview?utm_source=chatgpt.com)."
   ].join('')
 
@@ -452,6 +711,13 @@ script "js_incident", type: "javascript" do
     accountID: "",
     accountName: "",
     recommendationDetails: "",
+    cost_total: "",
+    cost_storage: "",
+    cost_network: "",
+    cost_operations: "",
+    cost_storage_percent: "",
+    cost_network_percent: "",
+    cost_operations_percent: "",
     policy_name: "",
     message: ""
   })
@@ -470,7 +736,7 @@ policy "pol_deprecated_storage_accounts" do
     detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
-    hash_exclude "tags", "message"
+    hash_exclude "cost_total", "cost_storage", "cost_network", "cost_operations", "cost_storage_percent", "cost_network_percent", "cost_operations_percent", "tags", "message"
     export do
       resource_level true
       field "accountID" do
@@ -505,6 +771,27 @@ policy "pol_deprecated_storage_accounts" do
       end
       field "sku_tier" do
         label "SKU Tier"
+      end
+      field "cost_total" do
+        label "Total Cost (Last 30 Days)"
+      end
+      field "cost_storage" do
+        label "Storage Cost (Last 30 Days)"
+      end
+      field "cost_storage_percent" do
+        label "Storage Cost Percentage (Last 30 Days)"
+      end
+      field "cost_network" do
+        label "Network Cost (Last 30 Days)"
+      end
+      field "cost_network_percent" do
+        label "Network Cost Percentage (Last 30 Days)"
+      end
+      field "cost_operations" do
+        label "Operations Cost (Last 30 Days)"
+      end
+      field "cost_operations_percent" do
+        label "Operations Cost Percentage (Last 30 Days)"
       end
       field "id" do
         label "ID"
