@@ -1,16 +1,14 @@
 # Changelog
 
-<<<<<<< Updated upstream
-## v5.4.6
-
-- Resolved issue where memory statistics were not being captured.
-- Fixed issue where the policy would fail when only considering memory metrics for recommendations.
-=======
 ## v5.5.0
 
 - Policy now continues execution for accessible regions when some regions return permission errors
 - Added separate incident report to identify regions with access issues and provide remediation guidance
->>>>>>> Stashed changes
+
+## v5.4.6
+
+- Resolved issue where memory statistics were not being captured.
+- Fixed issue where the policy would fail when only considering memory metrics for recommendations.
 
 ## v5.4.5
 
