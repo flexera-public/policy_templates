@@ -366,6 +366,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Storage Accounts
 
+  * [Azure Deprecated Storage Accounts](./compliance/azure/deprecated_storage_accounts)
   * [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management)
 
 #### Azure China
