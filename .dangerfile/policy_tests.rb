@@ -82,7 +82,7 @@ def policy_missing_deprecated_field?(file, file_parsed)
 
   fail_message = ""
 
-  if short_description.downcase.include?("deprecated")
+  if short_description.downcase.include?("deprecated: this policy")
     if info[:deprecated].nil?
       fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Policy is deprecated but has no `deprecated` field in the info() block. Please add the following line to the info() block: deprecated: \"true\""
     elsif info[:deprecated].downcase != "true"
