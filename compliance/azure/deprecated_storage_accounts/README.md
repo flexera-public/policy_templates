@@ -4,7 +4,7 @@
 
 This policy template reports any active GPv1 Azure Storage Accounts and, optionally, emails this report. Microsoft has deprecated these Storage Accounts and will be migrating them to GPv2 in October 2026.
 
-Manual migration ahead of this schedule is recommended to ensure optimal configuration of workloads. In most cases, storage capacity costs should be lower for GPv2, especially if you take advantage of cool or archive tiering for infrequently accessed blobs, but operational costs may be higher for workloads with a large number of write or list operations.
+Manual migration ahead of this schedule is recommended to avoid unexpected downtime and ensure optimal configuration of workloads. In most cases, storage capacity costs should be lower for GPv2, especially if you take advantage of cool or archive tiering for infrequently accessed blobs, but operational costs may be higher for workloads with a large number of write or list operations.
 
 More information is available on [Microsoft Learn](https://learn.microsoft.com/en-us/azure/storage/common/general-purpose-version-1-account-migration-overview).
 
