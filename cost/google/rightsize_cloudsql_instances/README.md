@@ -4,7 +4,7 @@
 
 This policy template checks all the Cloud SQL instances in Google Projects for the average or maximum CPU and/or memory usage over a user-specified number of days. If the usage is less than the user provided Idle Instance CPU and/or memory percentage threshold then the Cloud SQL instance is recommended for stopping. If the usage is less than the user provided Underutilized Instance CPU and/or Memory percentage threshold, then the Cloud SQL instance is recommended for downsizing. Both sets of Cloud SQL instances returned from this policy are emailed to the user.
 
-NOTE: If you prefer to receive recommendations produced by the Google Recommender service rather than Flexera, or have not configured Flexera One to ingest detailed billing information from Google, please use the [Google Rightsize Cloud SQL Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_recommendations) policy template instead of this one.
+NOTE: Estimated savings will only appear if you are ingesting Google Detailed Billing into Flexera CCO. If you have not configured Flexera One to ingest detailed billing information from Google, or prefer to receive recommendations produced by the Google Recommender service rather than Flexera, please use the [Google Rightsize Cloud SQL Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_recommendations) policy template instead of this one.
 
 ## How It Works
 

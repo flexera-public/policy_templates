@@ -4,7 +4,7 @@
 
 This policy template reports on unused Google persistent disks and, optionally, deletes them. A persistent disk is considered unused if it is currently detached and has been detached for a user-specified number of days.
 
-NOTE: If you prefer to receive recommendations produced by the Google Recommender service rather than Flexera, or have not configured Flexera One to ingest detailed billing information from Google, please use the [Google Idle Persistent Disk Recommenderr](https://github.com/flexera-public/policy_templates/tree/master/cost/google/idle_persistent_disk_recommendations) policy template instead of this one.
+NOTE: Estimated savings will only appear if you are ingesting Google Detailed Billing into Flexera CCO. If you have not configured Flexera One to ingest detailed billing information from Google, or prefer to receive recommendations produced by the Google Recommender service rather than Flexera, please use the [Google Idle Persistent Disk Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/idle_persistent_disk_recommendations) policy template instead of this one.
 
 ### Policy Savings Details
 

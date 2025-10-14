@@ -4,6 +4,8 @@
 
 This policy template reports on Google snapshots that are older than a user-specified number of days and, optionally, deletes them.
 
+NOTE: Estimated savings will only appear if you are ingesting Google Detailed Billing into Flexera CCO.
+
 ### Policy Savings Details
 
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is deleted.
