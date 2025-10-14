@@ -26,7 +26,7 @@ This policy has the following input parameters required when launching the polic
 - *Look Back Period* - Number of days of prior usage to analyze
 - *Service* - AWS Services to scan for recommendations. Items can be removed by clicking X to the right of the name.
 - *EC2 Reservation Type* - The type of reservation recommendations to produce for EC2. Standard reservations are less flexible than convertible ones but provide a higher discount. Has no effect on recommendations for services other than `Elastic Compute Cloud (EC2)`
-- *Account Scope* - The account scope that you want your recommendations for. Select Payer to produce results only for a Master Payer account, or Linked to produce results for all linked accounts as well.
+- *Account Scope* - The account scope that you want your recommendations for. Select `Payer` to produce results aggregated across the entire AWS Organization (Master Payer and Linked accounts), or `Linked` to produce results for each linked account individually.
 - *Reservation Term* - Length of reservation term to provide recommendations for.
 - *Payment Option* - Reservation purchase option to provide recommendations for. Select `Everything` to produce recommendations for all three.
 

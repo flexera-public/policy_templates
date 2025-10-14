@@ -97,6 +97,10 @@ def compile_meta_parent_policy(file_path, specified_parent_pt_path)
   hide_skip_approvals_scan = pt.scan(/hide_skip_approvals: "(.*?)"/)
   hide_skip_approvals = ""
   hide_skip_approvals = hide_skip_approvals_scan[0][0] if !hide_skip_approvals_scan.empty?
+  # get the enable_child_schedule_options string if it exists, defaulting to false if not present
+  enable_child_schedule_options_scan = pt.scan(/enable_child_schedule_options: "(.*?)"/)
+  enable_child_schedule_options = "false"
+  enable_child_schedule_options = enable_child_schedule_options_scan[0][0] if !enable_child_schedule_options_scan.empty?
   # print("Name: #{name}\n")
   # print("Description: #{description}\n")
   # print("\n###########################\n")
@@ -346,6 +350,7 @@ end
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_VERSION__", version)
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PUBLISH__", publish)
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_DEPRECATED__", deprecated)
+
   if !hide_skip_approvals.empty?
     output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_HIDE_SKIP_APPROVALS__", hide_skip_approvals)
   else
@@ -353,6 +358,13 @@ end
     output_pt = output_pt.gsub(/^\s*,?\s*hide_skip_approvals: "__PLACEHOLDER_FOR_CHILD_POLICY_HIDE_SKIP_APPROVALS__",?\s*\n/, "")
     output_pt = output_pt.gsub(/,\s*\)/, "\n)")
   end
+
+  if enable_child_schedule_options == "true"
+    output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_SCHEDULE_OPTIONS__", '"15 minutes", "hourly", "daily", "weekly", "monthly"')
+  else
+    output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_SCHEDULE_OPTIONS__", '"daily", "weekly", "monthly"')
+  end
+
   # Attempt to identify the URL to the child policy template file on github using the file_path provided
   # This would only work if the pt file is located under the `policy_templates` repo directory
   # If it is not, then the URL will be incorrect

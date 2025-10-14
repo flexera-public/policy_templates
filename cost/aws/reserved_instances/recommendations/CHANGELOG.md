@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.6.7
+
+- Updated description of `Account Scope` parameter for greater clarity. Functionality unchanged.
+
 ## v3.6.6
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

@@ -6,6 +6,223 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3613](https://github.com/flexera-public/policy_templates/pull/3613): POL-1650 AWS Rightsize EC2 Instances - Capture Missing Memory Stats in Incident
+
+*Bug Fix*
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+>
+> ### Issues Resolved
+> This change fixes a gap where memory usage data from CloudWatch wasn’t being captured in the policy for many EC2 instances. This fix ensures users now get a more complete picture when reviewing rightsizing recommendations across both CPU and Memory metrics.
+>
+> <!-- List any existing issues this PR resolves below -->
+>
+
+#### Metadata
+
+- **Policies**: [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/README.md)
+- **Merged At**: 2025-10-09 17:05:21 UTC
+
+---
+
+### PR [#3610](https://github.com/flexera-public/policy_templates/pull/3610): POL-1652 AWS Reserved Instances Recommendations - Update Account Scope Parameter description in README
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+> This change updates the description of the "Account Scope" parameter for greater clarity.
+>
+> This clarification aligns with AWS's documentation and avoids misinterpretation by users applying the policy.
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+>
+
+#### Metadata
+
+- **Policies**: [AWS Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/recommendations/README.md)
+- **Merged At**: 2025-10-09 14:27:05 UTC
+
+---
+
+### PR [#3607](https://github.com/flexera-public/policy_templates/pull/3607): POL-1651 Remove "15 minutes" and "Hourly" child schedule options
+
+*Minor Update*
+
+#### Description
+
+> Removes the "15 minutes" and "Hourly" child schedule options from most meta policies. Adds logic in the meta parent compiler to allow for exceptions if the info() block contains enable_child_schedule_options: "true"
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3607) for these details.
+- **Merged At**: 2025-10-07 15:01:14 UTC
+
+---
+
+### PR [#3591](https://github.com/flexera-public/policy_templates/pull/3591): POL-1589 Deprecate AWS Savings Realized From Rate Reduction Purchases Policy Template
+
+*Minor Update*
+
+#### Description
+
+> Deprecates `AWS Savings Realized From Rate Reduction Purchases` in favor of more accurate, native product functionality.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Savings Realized From Rate Reduction Purchases](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_realized/README.md)
+- **Merged At**: 2025-09-26 14:56:05 UTC
+
+---
+
+### PR [#3587](https://github.com/flexera-public/policy_templates/pull/3587): POL-1631 AWS Load Balancer Savings Fixes
+
+*Minor Update*
+
+#### Description
+
+> `AWS Unused Application Load Balancers`
+> - Fixed issue where estimated savings would sometimes be reported as 0 inaccurately.
+>
+> `AWS Unused Classic Load Balancers`
+> - Fixed issue where estimated savings would sometimes be reported as 0 inaccurately.
+> - Fixed issue where `Resource ARN` field was malformed.
+>
+> `AWS Unused Network Load Balancers`
+> - Fixed issue where estimated savings would sometimes be reported as 0 inaccurately.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Unused Application Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_albs/README.md), [AWS Unused Classic Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_clbs/README.md), [AWS Unused Network Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_nlbs/README.md)
+- **Merged At**: 2025-09-26 13:34:46 UTC
+
+---
+
+### PR [#3583](https://github.com/flexera-public/policy_templates/pull/3583): POL-1634 New Policy: Oracle Cloud Advisor: Rightsize Autonomous Database Service
+
+*New Policy Template*
+
+#### Description
+
+> `Oracle Cloud Advisor: Rightsize Autonomous Database Service`
+> - New recommendation policy template.
+>
+
+#### Metadata
+
+- **Policies**: [Oracle Cloud Advisor: Rightsize Autonomous Database Service](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_rightsize_autodbs/README.md)
+- **Merged At**: 2025-09-25 17:03:04 UTC
+
+---
+
+### PR [#3578](https://github.com/flexera-public/policy_templates/pull/3578): POL-1630 New Policy: Oracle Cloud Advisor: Rightsize Load Balancers
+
+*New Policy Template, Minor Update*
+
+#### Description
+
+> `Oracle Cloud Advisor: Rightsize Load Balancers`
+> - This policy template reports on any existing underutilized Load Balancer recommendations generated by Oracle Cloud Advisor.
+>
+> `Oracle Cloud Advisor: Rightsize Virtual Machines`
+> - Fixed small grammatical error in README
+>
+> `Oracle Cloud Advisor: Unattached Volumes`
+> - Fixed issue where a DELETE request was incorrectly logged as a PUT request. Functionality unchanged.
+>
+
+#### Metadata
+
+- **Policies**: [Oracle Cloud Advisor: Rightsize Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_rightsize_lbs/README.md), [Oracle Cloud Advisor: Unattached Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_unattached_volumes/README.md)
+- **Merged At**: 2025-09-24 17:06:58 UTC
+
+---
+
+### PR [#3574](https://github.com/flexera-public/policy_templates/pull/3574): POL-1629 New Policy: Oracle Cloud Advisor: Object Storage Without Lifecycle Management
+
+*New Policy Template*
+
+#### Description
+
+> `Oracle Cloud Advisor: Object Storage Without Lifecycle Management`
+> - This policy template reports on any existing Object Storage lifecycle management recommendations generated by Oracle Cloud Advisor.
+>
+
+#### Metadata
+
+- **Policies**: [Oracle Cloud Advisor: Object Storage Without Lifecycle Management](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_lifecycle_mgmt/README.md)
+- **Merged At**: 2025-09-24 15:14:16 UTC
+
+---
+
+### PR [#3570](https://github.com/flexera-public/policy_templates/pull/3570): POL-1628 New Policy: Oracle Cloud Advisor: Unattached Volumes
+
+*New Policy Template, Minor Update*
+
+#### Description
+
+> `Oracle Cloud Advisor: Unattached Volumes`
+> - New policy template
+>
+> `Oracle Cloud Advisor: Rightsize Virtual Machines`
+> - Fixed issue where estimated savings value had all fractional values rounded away
+>
+> `Oracle Cloud Advisor: Rightsize Base Database Service`
+> - Fixed issue where estimated savings value had all fractional values rounded away
+>
+
+#### Metadata
+
+- **Policies**: [Oracle Cloud Advisor: Rightsize Base Database Service](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_rightsize_basedbs/README.md), [Oracle Cloud Advisor: Rightsize Virtual Machines](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_rightsize_vms/README.md), [Oracle Cloud Advisor: Unattached Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_unattached_volumes/README.md)
+- **Merged At**: 2025-09-23 15:37:12 UTC
+
+---
+
+### PR [#3566](https://github.com/flexera-public/policy_templates/pull/3566): POL-1627 Oracle Cloud Advisor: Rightsize Base Database Service
+
+*New Policy Template, Minor Update*
+
+#### Description
+
+> Oracle Cloud Advisor: Rightsize Base Database Service
+> - New policy template to report cloud advisor recommendations for the Oracle Base Database Service
+>
+> Oracle Cloud Advisor: Rightsize Virtual Machines
+> - Fixed issue where estimated savings value would sometimes be incorrectly inflated
+>
+
+#### Metadata
+
+- **Policies**: [Oracle Cloud Advisor: Rightsize Base Database Service](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_rightsize_basedbs/README.md), [Oracle Cloud Advisor: Rightsize Virtual Machines](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_rightsize_vms/README.md)
+- **Merged At**: 2025-09-22 20:07:14 UTC
+
+---
+
+### PR [#3550](https://github.com/flexera-public/policy_templates/pull/3550): POL-1600 Oracle Rightsizing VMs Improvements
+
+*Major Update, Minor Update*
+
+#### Description
+
+> - Multiple improvements for the `Oracle Cloud Advisor: Rightsize Virtual Machines` policy template based on user feedback.
+> - Improvements to the README for the `Oracle Cloud Common Bill Ingestion` policy template.
+> - Automation to gather and store Oracle credential permissions has been implemented.
+>
+> Dead link warnings can be ignored; the links will be valid once this PR is merged.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3550) for these details.
+- **Merged At**: 2025-09-22 14:25:38 UTC
+
+---
+
 ### PR [#3552](https://github.com/flexera-public/policy_templates/pull/3552): POL-1626 Currency Conversion - Bring Adjustments Forward
 
 *Minor Update*
@@ -1823,229 +2040,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Google Overutilized VM Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/google/overutilized_vms/README.md), [Meta Parent: Google Overutilized VM Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/google/overutilized_vms/README.md)
 - **Merged At**: 2025-03-31 12:15:40 UTC
-
----
-
-### PR [#2991](https://github.com/flexera-public/policy_templates/pull/2991): POL-1459 New Policy: AWS Overutilized EC2 Instances
-
-*New Policy Template*
-
-#### Description
-
-> New policy template to report and optionally upsize overutilized oversized AWS EC2 instances.
->
-> Also made some minor fixes to the AWS Rightsize EC2 Instances README that I spotted.
->
-
-#### Metadata
-
-- **Policies**: [AWS Overutilized EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/overutilized_ec2_instances/README.md), [Meta Parent: AWS Overutilized EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/overutilized_ec2_instances/README.md)
-- **Merged At**: 2025-03-28 13:48:08 UTC
-
----
-
-### PR [#3017](https://github.com/flexera-public/policy_templates/pull/3017): POL-1469 Dangerfile Fixes/Updates
-
-#### Description
-
-> * Updated Ruby and node packages to update versions and solve potential security vulnerabilities.
->
-> * Added CodeQL configuration file so that we can enable CodeQL scanning for additional security on PRs.
->
-> * Updated Dangerfile "policy_missing_master_permissions?" test to ignore policy templates with `skip_permissions: "true"` in their info block for policy templates with unusual permissions that won't properly scrape or other extenuating reasons we might not want to scape them for permissions.
->
-> * Updated Dangerfile "policy_bad_block_name?" test to work when the block name is in single quotes instead of double quotes. Previously, the test would fail to capture a bad block name in this situation.
->
-> * Added new Dangerfile "policy_block_name_single_quotes?" test to check if block names are in single quotes instead of double quotes.
->
-> * Added new Dangerfile "policy_defunct_metadata?" test to check if defunct metadata fields such as tenancy are used.
->
-> * Added new Dangerfile "policy_abbreviated_info_field?" test to ensure consistent naming of info() fields and to avoid abbreviations like CCO, MSP, etc.
->
-> * Added new Dangerfile "policy_missing_info_block?" test to report when the info() block is missing entirely. Stolen shamelessly from Bryan.
->
-> * Updated existing policy templates so that they will pass the above tests. Also changed these policy templates to pass existing tests as warnings and errors arose from modifying them.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3017) for these details.
-- **Merged At**: 2025-03-28 12:29:47 UTC
-
----
-
-### PR [#2966](https://github.com/flexera-public/policy_templates/pull/2966): POL-1456 Azure/Google Credential Testing Policy Templates
-
-*New Policy Template*
-
-#### Description
-
-> This adds two new unpublished policy templates to test credentials for Azure and Google. A modified meta parent is used for each to ensure that an incident is still raised even if the credential fails in a way that prevents policy template execution from completing. More detail is in the README and META_README files for each policy template.
->
-> Also fixes a minor bug in the AWS policy template and makes some minor changes to the docs for that policy template to conform to the two new policy templates added here.
->
-> Note: Dead link warnings can be ignored. Those links won't be dead once this PR is merged.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2966) for these details.
-- **Merged At**: 2025-03-27 12:10:18 UTC
-
----
-
-### PR [#3014](https://github.com/flexera-public/policy_templates/pull/3014): POL-1468  Bug/fixing retired status in results ITAM Expiring Licenses
-
-#### Description
-
-> Fixed issue with retired status not being filtered out of the results
->
-> ### Issues Resolved
->
-> Fixed issue with retired status not being filtered out of the results
->
-
-#### Metadata
-
-- **Policies**: [ITAM Expiring Licenses](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/fnms/fnms_licenses_expiring/README.md)
-- **Merged At**: 2025-03-26 17:31:52 UTC
-
----
-
-### PR [#3005](https://github.com/flexera-public/policy_templates/pull/3005): FOPTS-6901 - Batch Processing Adoption for AWS Rightsize EBS Volumes
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
->
-> This represents the last step in enabling Batch Processing for prioritized policies. The selected policies are the ones with the highest overall and cross-organizational usage, as well as those consuming the most memory.
->
-> In this PR, AWS Rightsize EBS Volumes has been refactored to leverage Batch Processing. Specifically, the datasource operations that involve large datasets have been optimized to use EFS (Elastic File System) instead of in-memory processing. This change ensures that **memory usage is reduced** while **maintaining** or improving **execution times**
->
-> ### Issues Resolved
->
-> Please check the policies and applied policy links here:
-> https://flexera.atlassian.net/browse/FOPTS-7713?focusedCommentId=2717833
->
-> [Grafana link](https://g-1cda041840.grafana-workspace.us-east-1.amazonaws.com/d/6r9N9ysIk/evaluation-service-usage?orgId=1&var-dataSource=Prometheus%20Prod%20US&var-pod=All&viewPanel=2&from=1741647410214&to=1741649609883)
->
-> ![image](https://github.com/user-attachments/assets/7903ca7d-6ea5-47ad-9c92-025870a9bebe)
->
->
->
->
-
-#### Metadata
-
-- **Policies**: [AWS Rightsize EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/README.md), [Meta Parent: AWS Rightsize EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/README.md)
-- **Merged At**: 2025-03-24 16:39:39 UTC
-
----
-
-### PR [#3006](https://github.com/flexera-public/policy_templates/pull/3006): SQ-12222 Fixed incorrect calculation for "average used memory"
-
-#### Description
-
-> Fixed incorrect calculation for "average used memory".
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/SQ-12222
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md), [Meta Parent: Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md)
-- **Merged At**: 2025-03-20 18:47:56 UTC
-
----
-
-### PR [#3003](https://github.com/flexera-public/policy_templates/pull/3003): POL-1464 Meta Policy Fix
-
-#### Description
-
-> This is a fix for the meta policy script that prevents the generated meta policy from containing consolidated incidents out of child policy incidents that don't have an export table. 3 malfunctioning meta policies generated by the old version of the script are also being updated using this fixed version of the script.
-
-#### Metadata
-
-- **Policies**: [Meta Parent: AWS Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/schedule_instance/README.md), [Meta Parent: Azure Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/schedule_instance/README.md), [Meta Parent: Google Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/google/schedule_instance/README.md)
-- **Merged At**: 2025-03-18 18:57:26 UTC
-
----
-
-### PR [#2996](https://github.com/flexera-public/policy_templates/pull/2996): FOPTS-8007 Fixed OAuth authentication for `Common Bill Ingestion from Azure Blob Storage` policy
-
-#### Description
-
-> Fixed OAuth2 authentication for `Common Bill Ingestion from Azure Blob Storage` policy.
->
-> This is caused by the request missing `x-ms-version` header.
-> (See section "**Requests that use an OAuth 2.0 token from Microsoft Entra**" in Microsoft documentation [Versioning for Azure Storage](https://learn.microsoft.com/en-us/rest/api/storageservices/versioning-for-the-azure-storage-services#specify-service-versions-in-requests))
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/FOPTS-8007
-> https://flexera.atlassian.net/browse/SQ-13259
->
-
-#### Metadata
-
-- **Policies**: [Common Bill Ingestion from Azure Blob Storage](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cbi_ingestion_azure_blob/README.md)
-- **Merged At**: 2025-03-14 22:12:33 UTC
-
----
-
-### PR [#2990](https://github.com/flexera-public/policy_templates/pull/2990): POL-1460 New Policy: Azure Overutilized Compute Instances
-
-*New Policy Template*
-
-#### Description
-
-> This adds a new policy template to the catalog, Azure Overutilized Compute Instances, that reports instances above a certain threshold of CPU and/or memory usage.
->
-
-#### Metadata
-
-- **Policies**: [Azure Overutilized Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/overutilized_compute_instances/README.md), [Meta Parent: Azure Overutilized Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/overutilized_compute_instances/README.md)
-- **Merged At**: 2025-03-13 17:30:30 UTC
-
----
-
-### PR [#2950](https://github.com/flexera-public/policy_templates/pull/2950): POL-1448 New Policy: FinOps Dashboards
-
-*New Policy Template*
-
-#### Description
-
-> This policy template creates a series of FinOps cloud dashboards within the Flexera organization. Created dashboards are public and can be accessed at the Dashboards -> Cloud page in Flexera One. Optionally, information about the newly created dashboards can be emailed.
->
-> Configuration information for these dashboards is stored in separate JSON files located at `data/dashboards/`
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2950) for these details.
-- **Merged At**: 2025-03-11 17:09:10 UTC
-
----
-
-### PR [#2976](https://github.com/flexera-public/policy_templates/pull/2976): FOPTS-7572 Fixed memory stats showing decimal instead of percentage | Policy: Azure Rightsize Compute Instances
-
-#### Description
-
-> Memory stats were showing decimal numbers (such as `0.5` for half), instead of showing percentage (such as `50` for half).
-> Showing `50` for half and `100` for all is the expected behavior.
->
-> ### Issues Resolved
->
-> - https://flexera.atlassian.net/browse/SQ-12222
-> - https://flexera.atlassian.net/browse/FOPTS-7572
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md)
-- **Merged At**: 2025-03-06 14:05:52 UTC
 
 ---
 
