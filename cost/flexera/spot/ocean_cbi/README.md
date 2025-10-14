@@ -1,4 +1,4 @@
-# Spot Ocean - Common Bill Ingest
+# Spot Ocean Common Bill Ingestion
 
 ## What It Does
 
