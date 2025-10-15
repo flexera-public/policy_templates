@@ -12,8 +12,10 @@ The following policy types will always be ignored and not reported on by this po
 - This policy itself.
 - Policies applied from a source other than the Flexera Automation Catalog.
 - Organization-specific policies published to that organization's own catalog.
-- Flexera policies present in the [policy-templates Github Repository](https://github.com/flexera-public/policy_templates) but not published in the Flexera Automation Catalog, such as meta policies and other misc. utility policies.
+- Flexera policies present in the [policy-templates Github Repository](https://github.com/flexera-public/policy_templates) but not published in the Flexera Automation Catalog.
 - Policy aggregates applied across multiple projects. Aggregates applied only to the project this policy is applied in will still be included in the results and are actionable.
+
+NOTE: Any updated policies applied by this policy template will show the user associated with the Flexera credential in the Automation platform as the individual responsible for applying the policy. This may be different than the user that applied the original policy.
 
 ## How It Works
 
@@ -42,6 +44,8 @@ Updating an outdated policy is done as follows:
 - *Policy Templates To Report* - Whether to report outdated policy templates, deprecated policy templates, or both. Separate incidents will be raised/emailed if both are selected and found.
 - *Allow Automated Major Version Updates* - Whether to allow actions to automatically update outdated policy templates when there's been a major version change. This is not recommended in most cases.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that updated policies applied by this policy template will show the user associated with the Flexera credential in the Automation platform as the individual responsible for applying the policy. This may be different than the user that applied the original policy.
 
 ## Policy Actions
 
