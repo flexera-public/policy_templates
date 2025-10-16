@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.4.6",
+  version: "5.4.7",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -444,10 +444,37 @@ EOS
 end
 
 # List Metrics
+datasource "ds_cloudwatch_metric_names" do
+  run_script $js_cloudwatch_metric_names, $ds_regions
+end
+
+script "js_cloudwatch_metric_names", type: "javascript" do
+  parameters "ds_regions"
+  result "result"
+  code <<-EOS
+
+  result = []
+
+  _.each(ds_regions, function(reg) {
+    // Memory Utilization Metric Name for Linux instances
+    result.push({
+      "metricName": "mem_used_percent",
+      "region": reg["region"]
+    })
+
+    // Memory Utilization Metric Name for Windows instances
+    result.push({
+      "metricName": "Memory % Committed Bytes In Use",
+      "region": reg["region"]
+    })
+  })
+EOS
+end
+
 datasource "ds_cloudwatch_metrics" do
-  iterate $ds_regions
+  iterate $ds_cloudwatch_metric_names
   request do
-    run_script $js_cloudwatch_metrics, val(iter_item, "region")
+    run_script $js_cloudwatch_metrics, val(iter_item, "metricName"), val(iter_item, "region")
   end
   result do
     encoding "xml"
@@ -466,26 +493,26 @@ datasource "ds_cloudwatch_metrics" do
 end
 
 script "js_cloudwatch_metrics", type: "javascript" do
-  parameters "region"
+  parameters "metric_name", "region"
   result "request"
   code <<-EOS
-    query_params = {
-      "Action": "ListMetrics",
-      "Version": "2010-08-01",
-      "Namespace": "CWAgent",
-      "MetricName": "mem_used_percent"
-    }
+  query_params = {
+    "Action": "ListMetrics",
+    "Version": "2010-08-01",
+    "Namespace": "CWAgent",
+    "MetricName": metric_name
+  }
 
-    var request = {
-      auth: "auth_aws",
-      host: "monitoring." + region + ".amazonaws.com",
-      path: "/",
-      headers: {
-        "User-Agent": "RS Policies",
-      },
-      query_params: query_params
-    }
-  EOS
+  var request = {
+    auth: "auth_aws",
+    host: "monitoring." + region + ".amazonaws.com",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+    },
+    query_params: query_params
+  }
+EOS
 end
 
 datasource "ds_cloudwatch_metrics_by_instance" do
@@ -496,22 +523,22 @@ script "js_cloudwatch_metrics_by_instance", type: "javascript" do
   parameters "ds_cloudwatch_metrics"
   result "result"
   code <<-EOS
-    result = {}
+  result = {}
 
-    _.each(ds_cloudwatch_metrics, function(metric) {
-      dims = metric.dimensions || []
-      inst = _.find(dims, function(dim) { return dim.name == "InstanceId" })
-      if (!inst || !inst.value) return
+  _.each(ds_cloudwatch_metrics, function(metric) {
+    dims = metric.dimensions || []
+    inst = _.find(dims, function(dim) { return dim.name == "InstanceId" })
+    if (!inst || !inst.value) return
 
-      inst_id = inst.value
+    inst_id = inst.value
 
-      result[inst_id] = {
-        namespace: metric.namespace,
-        metricName: metric.metricName,
-        dimensions: metric.dimensions
-      }
-    })
-  EOS
+    result[inst_id] = {
+      namespace: metric.namespace,
+      metricName: metric.metricName,
+      dimensions: metric.dimensions
+    }
+  })
+EOS
 end
 
 datasource "ds_instance_sets" do
@@ -715,8 +742,24 @@ script "js_cloudwatch_queries", type: "javascript" do
 
     // Only query for MEM usage if we're actually checking it
     if (param_avg_mem != -1) {
-      if (instance['platform'] == "Windows") {
-        // If platform is Windows, we need to use the Windows custom metric
+
+      // Find dimensions
+      metric_details = ds_cloudwatch_metrics_by_instance[ instance['instanceId'] ]
+
+      if (metric_details != null) {
+        // Custom metric taken from ListMetrics API response
+        mem_metricname = metric_details["metricName"]
+
+        dimensions = []
+        _.each(metric_details['dimensions'], function (dim) {
+          dimensions.push({
+            "Name": dim["name"],
+            "Value": dim["value"]
+          })
+        })
+
+      } else if (instance['platform'] == "Windows") {
+        // Fallback - If platform is Windows, we need to use the Windows custom metric
         mem_metricname = "Memory % Committed Bytes In Use"
 
         dimensions = [
@@ -725,29 +768,16 @@ script "js_cloudwatch_queries", type: "javascript" do
           { "Name": "InstanceType", "Value": instance['resourceType'] },
           { "Name": "objectname", "Value": "Memory" }
         ]
+
       } else {
-        // Else assume Platform is Linux, and use the Linux custom metric
+        // Fallback - Else assume Platform is Linux, and use the Linux custom metric
         mem_metricname = "mem_used_percent"
 
-        // Find dimensions
-        metric_details = ds_cloudwatch_metrics_by_instance[ instance['instanceId'] ]
-
-        if (metric_details != null) {
-          dimensions = []
-          _.each(metric_details['dimensions'], function (dim) {
-            dimensions.push({
-              "Name": dim["name"],
-              "Value": dim["value"]
-            })
-          })
-
-        } else {
-          dimensions = [
-            { "Name": "ImageId", "Value": instance['imageId'] },
-            { "Name": "InstanceId", "Value": instance['instanceId'] },
-            { "Name": "InstanceType", "Value": instance['resourceType'] }
-          ]
-        }
+        dimensions = [
+          { "Name": "ImageId", "Value": instance['imageId'] },
+          { "Name": "InstanceId", "Value": instance['instanceId'] },
+          { "Name": "InstanceType", "Value": instance['resourceType'] }
+        ]
       }
 
       // If instance.tags contains object with key value == aws:autoscaling:groupName
