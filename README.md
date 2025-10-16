@@ -515,7 +515,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Kubernetes
 
-  * [Spot Ocean - Common Bill Ingest](./cost/flexera/spot/ocean_cbi)
+  * [Spot Ocean Common Bill Ingestion](./cost/flexera/spot/ocean_cbi)
 
 #### Google
 
