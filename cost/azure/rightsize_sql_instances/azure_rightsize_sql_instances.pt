@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "6.0.5",
+  version: "6.0.6",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Database Instances",
@@ -832,39 +832,23 @@ script "js_merged_metrics", type: "javascript" do
       metrics = cpu_metrics ? cpu_metrics : dtu_metrics
 
       if (metrics.length > 0) {
-        minimums = _.pluck(cpu_metrics, 'minimum')
-        maximums = _.pluck(cpu_metrics, 'maximum')
-        averages = _.pluck(cpu_metrics, 'average')
-
-        metric_minimum = null
-        metric_maximum = null
-        metric_average = null
-        metric_p90 = null
-        metric_p95 = null
-        metric_p99 = null
-
-        _.each(minimums, function(item) {
-          if (metric_minimum == null || item < metric_minimum) { metric_minimum = item }
-        })
-
-        _.each(maximums, function(item) {
-          if (metric_maximum == null || item > metric_maximum) { metric_maximum = item }
-        })
-
-        if (metric_minimum == null) { metric_minimum = 0 }
-
-        if (averages.length > 0) {
-          metric_average = _.reduce(averages, function(memo, num) { return memo + num }, 0) / averages.length
+        function isNumber(item) {
+          return typeof item === 'number';
         }
-
-        if (minimums.length + maximums.length + averages.length > 0) {
-          all_metrics = minimums.concat(maximums, averages)
-          // combine all points from minimums, maximums, averages
-          // use percentile() function to get the percentile values from all measured utilization points
-          metric_p90 = percentile(all_metrics, 90)
-          metric_p95 = percentile(all_metrics, 95)
-          metric_p99 = percentile(all_metrics, 99)
+        function cmp(a, b) {
+          return a - b
         }
+        minimums = _.pluck(metrics, 'minimum').filter(isNumber).sort(cmp);
+        maximums = _.pluck(metrics, 'maximum').filter(isNumber).sort(cmp);
+        averages = _.pluck(metrics, 'average').filter(isNumber).sort(cmp);
+        all_metrics = minimums.concat(maximums, averages)
+
+        metric_minimum = minimums.length > 0 ? _.first(minimums) : 0
+        metric_maximum = maximums.length > 0 ? _.last(maximums) : 0
+        metric_average = averages.length > 0 ? _.reduce(averages, function(memo, num) { return memo + num }, 0) / averages.length : 0
+        metric_p90 = all_metrics.length > 0 ? percentile(all_metrics, 90) : 0
+        metric_p95 = all_metrics.length > 0 ? percentile(all_metrics, 95) : 0
+        metric_p99 = all_metrics.length > 0 ? percentile(all_metrics, 99) : 0
 
         if (param_stats_threshold == "Average") { metric_test_value = metric_average }
         if (param_stats_threshold == "Maximum") { metric_test_value = metric_maximum }
