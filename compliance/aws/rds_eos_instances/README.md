@@ -2,7 +2,28 @@
 
 ## What It Does
 
-This policy finds AWS RDS Instances in the given account which are running mysql or postgres, meet the list of currently supported instances but are coming to their end of standard support based on the notification period specified.
+This policy template finds AWS RDS Instances in the given account which are running MySQL or PostgreSQL, meet the list of currently supported instances that are coming to their end of standard support based on the notification period specified and provides an estimated on what extended support could cost you.
+
+**Note:** Limitations
+- We are not reporting back on serverless deployments at this time as the calculation for vCPU requires cloudwatch metrics and calculations to understand the minimum, maximum and average vCPU being used. 
+- If you have a deployment not listed in a region in our list we will default to USD$0.10 per vCPU per running hour.
+
+### Policy Savings Details
+
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized for RDS resources if the resource is approaching end of standard support within the predefined time frame.
+
+- The `Estimated Monthly Savings` is calculated by multiplying the amount of vCPU assigned to the resource, by the region the resource resides in (see Notes for links) which is the provided extended support cost for year one of MySQL and PostgreSQL RDS Instances. This is then multiplied by 720 hours which is the amount of running hours per month which is also estimated by AWS.
+- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
+- Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
+
+**Note:** The *End of Support dates* list is manually maintained and updated based on the AWS Release calendars and the calculations for extended support costs are provided by AWS.  Refer to the links below for further information.
+- [AWS PostgreSQL] (https://docs.aws.amazon.com/AmazonRDS/latest/PostgreSQLReleaseNotes/postgresql-release-calendar.html)
+- [AWS MySQL] (https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/MySQL.Concepts.VersionMgmt.html#MySQL.Concepts.VersionMgmt.ReleaseCalendar)
+- [AWS Aurora PostgreSQL] (https://docs.aws.amazon.com/AmazonRDS/latest/AuroraPostgreSQLReleaseNotes/aurorapostgresql-release-calendar.html#aurorapostgresql.minor.versions.supported)
+- [AWS Aurora MySQL] (https://docs.aws.amazon.com/AmazonRDS/latest/AuroraMySQLReleaseNotes/AuroraMySQL.release-calendars.html#AuroraMySQL.release-calendars.minor)
+- [AWS Postgresql extended support pricing] (https://aws.amazon.com/rds/postgresql/pricing/#Amazon_RDS_Extended_Support_costs)
+- [AWS MySQL extended support pricing] (https://aws.amazon.com/rds/mysql/pricing/#Amazon_RDS_Extended_Support_costs)
+- [AWS Aurora extended support pricing] (https://aws.amazon.com/rds/aurora/pricing/#Amazon_RDS_Extended_Support_costs)
 
 ## Input Parameters
 
@@ -20,16 +41,6 @@ This policy has the following input parameters required when launching the polic
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *End of support notification timeframe* - The number of days to check and notify on before the end of standard support date.
-- *End of support Information* - This is the engine versions and dates that are provided by AWS.
-
-**Note:** The *End of Support Information* list is manually maintained and should be updated regularly based on the AWS Release calendars:
-
-- [AWS Postrgres]<https://docs.aws.amazon.com/AmazonRDS/latest/PostgreSQLReleaseNotes/postgresql-release-calendar.html>
-- [AWS MySQL]<https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/MySQL.Concepts.VersionMgmt.html#MySQL.Concepts.VersionMgmt.ReleaseCalendar>
-
-## Policy Actions
-
-- Send an email report
 
 ## Prerequisites
 
@@ -49,11 +60,11 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
       "Statement": [
           {
               "Effect": "Allow",
-              "Action": [
+              "Action": [                
+                "sts:GetCallerIdentity",
                 "ec2:DescribeRegions",
                 "rds:DescribeDBInstances",
-                "rds:ListTagsForResource",
-                "sts:GetCallerIdentity"
+                "rds:ListTagsForResource"
               ],
               "Resource": "*"
           }
