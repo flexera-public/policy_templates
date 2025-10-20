@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "8.4.9",
+  version: "8.5.0",
   provider: "AWS",
   service: "Storage",
   policy_set: "Old Snapshots",
@@ -131,6 +131,25 @@ parameter "param_automatic_action" do
   description "When this value is set, this policy will automatically take the selected action."
   allowed_values ["Delete Snapshots"]
   default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Size"
+  description "The number of results to include in the incident table in the incident email. Does not impact attached CSV files. Set to '0' to not show an incident table in the email."
+  min_value 0
+  max_value 1000
+  default 1000
 end
 
 ###############################################################################
@@ -927,11 +946,11 @@ EOS
 end
 
 datasource "ds_snapshots_cost_mapping" do
-  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs_grouped, $ds_snapshots_combined, $ds_currency, $ds_applied_policy, $ds_aws_account, $param_min_savings, $param_snapshot_age, $param_snapshot_include_ami
+  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs_grouped, $ds_snapshots_combined, $ds_currency, $ds_applied_policy, $ds_aws_account, $param_min_savings, $param_snapshot_age, $param_snapshot_include_ami, $param_incident_csv
 end
 
 script "js_snapshots_cost_mapping", type: "javascript" do
-  parameters "ds_filter_ami_snapshots", "ds_snapshot_costs_grouped", "ds_snapshots_combined", "ds_currency", "ds_applied_policy", "ds_aws_account", "param_min_savings", "param_snapshot_age", "param_snapshot_include_ami"
+  parameters "ds_filter_ami_snapshots", "ds_snapshot_costs_grouped", "ds_snapshots_combined", "ds_currency", "ds_applied_policy", "ds_aws_account", "param_min_savings", "param_snapshot_age", "param_snapshot_include_ami", "param_incident_csv"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -1037,7 +1056,9 @@ script "js_snapshots_cost_mapping", type: "javascript" do
 
   empty_message = "Empty values either indicate that data was unavailable or that particular field is not applicable to that specific resource. Only EC2 snapshots will have a Description and only RDS snapshots will have a Snapshot Type.\n\n"
 
-  rds_message = "Note: AWS RDS snapshots are incremental. To avoid reporting overinflated savings estimates, only the most recent snapshot of a given RDS instance is reported. The estimated savings will only be fully realized if all snapshots of a given RDS instance are deleted."
+  rds_message = "Note: AWS RDS snapshots are incremental. To avoid reporting overinflated savings estimates, only the most recent snapshot of a given RDS instance is reported. The estimated savings will only be fully realized if all snapshots of a given RDS instance are deleted.\n\n"
+
+  csv_message = param_incident_csv == "No" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   savings_message = [
     ds_currency['symbol'], ' ',
@@ -1059,7 +1080,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + ami_message + disclaimer + empty_message + rds_message
+  result[0]['message'] = findings + ami_message + disclaimer + empty_message + rds_message + csv_message
   result[0]['policy_name'] = ds_applied_policy['name']
 EOS
 end
@@ -1159,7 +1180,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table eq($param_incident_csv, "Yes")
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_delete_snapshot" do
