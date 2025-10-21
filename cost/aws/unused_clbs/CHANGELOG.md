@@ -2,7 +2,7 @@
 
 ## v6.4.9
 
-- Changed "resourceID" field in generated incident. The "resourceID" field will be composed of "resource name" and "region". Example value for the "resourceID" field: "LoadBalancer123-us-east-1". Functionality unchanged.
+- Changed "resourceID" field in generated incident. The "resourceID" field will be composed of "resource name" and "region". Example value for the "resourceID" field: "LoadBalancer123 (us-east-1)". Functionality unchanged.
 
 ## v6.4.8
 
