@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.4.9
+
+- Modifications were implemented to make the Resource ID globally unique in order to resolve historical recommendation issues. Functionality unchanged.
+
 ## v6.4.8
 
 - Fixed issue where estimated savings would sometimes be reported as 0 inaccurately.
