@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.3
+
+- Updated policy name from `Spot Ocean - Common Bill Ingest` to `Spot Ocean Common Bill Ingestion` to be consistent with other Common Bill Ingestion policies.
+- Updated policy to populate `Cloud Vendor Account Name` and `Service` dimensions for the Spot Ocean CBI.
+
 ## v0.2.2
 
 - Updated default policy frequency to "daily" to mitigate/prevent hitting Spot API limits

@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.4.7
+
+- Resolved issue where memory statistics for Windows instances specifically were not being captured.
+
 ## v5.4.6
 
 - Resolved issue where memory statistics were not being captured.

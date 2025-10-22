@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.6
+
+- Resolved issue where memory statistics for both Linux and Windows instances were not being captured.
+
 ## v0.1.5
 
 - Fixed issue with `GetMetricData` API request when gathering CloudWatch metrics. Functionality unchanged.

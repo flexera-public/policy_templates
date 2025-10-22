@@ -6,6 +6,128 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3648](https://github.com/flexera-public/policy_templates/pull/3648): FOPTS-15895 Fixed Azure Rightsize SQL Databases policy not showing metrics for DTU database.
+
+*Bug Fix*
+
+#### Description
+
+> Fixed Azure Rightsize SQL Databases policy not showing metrics for DTU databases.
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/FOPTS-15895
+> https://flexera.atlassian.net/browse/SQ-18478
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md), [Meta Parent: Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
+- **Merged At**: 2025-10-16 17:32:58 UTC
+
+---
+
+### PR [#3641](https://github.com/flexera-public/policy_templates/pull/3641): POL-1664 AWS Rightsize EC2 Instances - Capture Missing Memory Stats for Windows Instances in Incident
+
+*Bug Fix*
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+> This change fixes a gap where memory usage data from CloudWatch wasn’t being captured in the policy for many EC2 instances.
+>
+> The previous fix seen in https://github.com/flexera-public/policy_templates/pull/3613 fixed the issue for Linux instances, however the problem persisted for Windows instances. This change addresses that.
+>
+> This fix ensures users now get a more complete picture when reviewing rightsizing recommendations across both CPU and Memory metrics for both Windows and Linux instances.
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+>
+
+#### Metadata
+
+- **Policies**: [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/README.md)
+- **Merged At**: 2025-10-16 12:56:42 UTC
+
+---
+
+### PR [#3634](https://github.com/flexera-public/policy_templates/pull/3634): POL-1653 Spot Ocean Common Bill Ingestion - Add Cloud Vendor Account Name and Service Dimensions
+
+*New Policy Template*
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+> This update improves consistency and data completeness for the Spot Ocean Common Bill Ingestion policy. Specifically:
+>
+> - Renamed the policy to align with naming conventions used across other Common Bill Ingestion policies.
+> - Enhanced the policy to now populate the `Cloud Vendor Account Name` and `Service` dimensions, enabling more accurate reporting and filtering.
+>
+> These changes support better integration with CCO workflows and improve clarity for downstream users.
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+>
+
+#### Metadata
+
+- **Policies**: [Spot Ocean Common Bill Ingestion](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/spot/ocean_cbi/README.md)
+- **Merged At**: 2025-10-16 12:56:23 UTC
+
+---
+
+### PR [#3636](https://github.com/flexera-public/policy_templates/pull/3636): POL-1598 Azure Rightsize Compute Instances / Long Stopped Compute Instances Better Cost Gathering
+
+*Minor Update*
+
+#### Description
+
+> Improves the `Azure Rightsize Compute Instances` and `Azure Long Stopped Compute Instances` policy templates to use better filters when gathering costs. This should result in more relevant results and reduce the risk of the output exceeding 100,000 responses and resulting in some costs being missed.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Long Stopped Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/long_stopped_instances/README.md), [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md)
+- **Merged At**: 2025-10-15 19:39:39 UTC
+
+---
+
+### PR [#3629](https://github.com/flexera-public/policy_templates/pull/3629): POL-1658 New Policy Template: Azure Deprecated Storage Accounts
+
+*New Policy Template*
+
+#### Description
+
+> `Azure Deprecated Storage Accounts`
+> - This policy template reports any active GPv1 Azure Storage Accounts and, optionally, emails this report. Microsoft has deprecated these Storage Accounts and will be migrating them to GPv2 in October 2026.
+>
+> Also includes a small Dangerfile test fix to prevent false positives on the deprecated policy tests.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Deprecated Storage Accounts](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/deprecated_storage_accounts/README.md), [Meta Parent: Azure Deprecated Storage Accounts](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/deprecated_storage_accounts/README.md)
+- **Merged At**: 2025-10-13 19:36:25 UTC
+
+---
+
+### PR [#3619](https://github.com/flexera-public/policy_templates/pull/3619): FOPTS-0000 - Spot Ocean CBI update to daily schedule
+
+*Bug Fix*
+
+#### Description
+
+> Quick fix to update default policy schedule
+
+#### Metadata
+
+- **Policies**: [Spot Ocean Common Bill Ingestion](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/spot/ocean_cbi/README.md)
+- **Merged At**: 2025-10-13 08:45:57 UTC
+
+---
+
 ### PR [#3613](https://github.com/flexera-public/policy_templates/pull/3613): POL-1650 AWS Rightsize EC2 Instances - Capture Missing Memory Stats in Incident
 
 *Bug Fix*
@@ -647,7 +769,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Metadata
 
-- **Policies**: [Spot Ocean - Common Bill Ingest](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/spot/ocean_cbi/README.md)
+- **Policies**: [Spot Ocean Common Bill Ingestion](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/spot/ocean_cbi/README.md)
 - **Merged At**: 2025-08-21 15:39:43 UTC
 
 ---
@@ -1922,124 +2044,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3032) for these details.
 - **Merged At**: 2025-04-14 12:19:28 UTC
-
----
-
-### PR [#3055](https://github.com/flexera-public/policy_templates/pull/3055): POL-1478 New Policy Template: Spot Eco - Commitment Source Dimension
-
-*New Policy Template*
-
-#### Description
-
-> This policy template creates a rule-based dimension in Flexera Cloud Cost Optimization that reports on whether commitments were purchased by Spot Eco or not. Costs will have one of three values for this dimension:
->
-> - "Eco" - The commitment was purchased by Spot Eco.
-> - "Non-Eco" - The commitment was not purchased by Spot Eco.
-> - "None" - The cost is not a commitment and therefore the commitment source is not applicable.
->
-> **NOTE: This policy template should be considered an alpha release and currently only works with a single Spot Eco organization. Support for multiple organizations may be added in a future iteration.**
->
-
-#### Metadata
-
-- **Policies**: [Spot Eco - Commitment Source Dimension](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/spot/commitment_source_rbd/README.md)
-- **Merged At**: 2025-04-11 21:27:17 UTC
-
----
-
-### PR [#2941](https://github.com/flexera-public/policy_templates/pull/2941): POL-1449 - Initial Spot Policy Templates
-
-*New Policy Template*
-
-#### Description
-
-> Adds 3 new policy templates showcasing early integrations between Flexera and Spot after the announcement of [definitive agreement to acquire the Spot by NetApp FinOps business from NetApp®](https://www.flexera.com/about-us/press-center/flexera-to-acquire-finops-business-from-netapp-to-strengthen-portfolio)
->
-> **Spot Ocean - Common Bill Ingest**
-> Brings cost and usage visibility from Kubernetes Clusters into Flexera.
->
-> **Spot Security - Compliance Report**
-> Brings misconfigurations and compliance recommendations into Flexera.
->
-> **Spot Ocean - Rightsize Recommendations**
-> Brings rightsizing recommendations for Kubernetes Containers into Flexera.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2941) for these details.
-- **Merged At**: 2025-04-07 19:07:19 UTC
-
----
-
-### PR [#3038](https://github.com/flexera-public/policy_templates/pull/3038): POL-1477 Update Repository README Automation
-
-#### Description
-
-> This updates and improves the automation for generating the repository's README file. It now makes use of the active policy JSON file.
->
-> PR also updates the provider for a couple of Google policies from "GCE" to "Google" for accurate categorization in the README file.
->
-> (Ignore linting warnings for FOOTER.md. That file is just used to generate the README.md. As long as the linting warnings don't persist in README.md, they aren't an issue)
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3038) for these details.
-- **Merged At**: 2025-04-07 17:04:16 UTC
-
----
-
-### PR [#2995](https://github.com/flexera-public/policy_templates/pull/2995): POL-1462 Azure Long Stopped Compute Instances: Savings and Disk Support
-
-#### Description
-
-> This is a major update to the Azure Long Stopped Compute Instances policy template. From the CHANGELOG:
->
-> - Corrected issue where policy template incorrectly calculated length of time an instance had been stopped for.
-> - Added potential savings information to policy output, including potential disk savings.
-> - Policy recommendations will now appear in the Optimization dashboard in Flexera One.
-> - Changed policy category from "Compliance" to "Cost".
->
-
-#### Metadata
-
-- **Policies**: [Azure Long Stopped Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/long_stopped_instances/README.md), [Meta Parent: Azure Long Stopped Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/long_stopped_instances/README.md)
-- **Merged At**: 2025-04-07 12:27:33 UTC
-
----
-
-### PR [#3029](https://github.com/flexera-public/policy_templates/pull/3029): POL-1473 Schedule ITAM Report: Add Truncated Date Option
-
-#### Description
-
-> Adds an option to truncate dates to just YYYY-MM-DD instead of showing full ISO-8601 format for users that want the emailed report to resemble the report as shown in the Flexera One UI.
->
-> From the CHANGELOG:
->
-> - Added parameter to normalize dates in report to match Flexera One UI
-> - Streamlined code for better readability and faster execution
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3029) for these details.
-- **Merged At**: 2025-04-07 12:06:20 UTC
-
----
-
-### PR [#2994](https://github.com/flexera-public/policy_templates/pull/2994): POL-1461 New Policy: Google Overutilized VM Instances
-
-*New Policy Template*
-
-#### Description
-
-> This adds a new policy template to report on overutilized Google VM instances.
->
-
-#### Metadata
-
-- **Policies**: [Google Overutilized VM Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/google/overutilized_vms/README.md), [Meta Parent: Google Overutilized VM Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/google/overutilized_vms/README.md)
-- **Merged At**: 2025-03-31 12:15:40 UTC
 
 ---
 

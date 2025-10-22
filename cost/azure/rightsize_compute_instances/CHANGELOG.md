@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.2.5
+
+- Updated API request for gathering instance costs to only gather costs specific to virtual machines. Functionality unchanged but policy template is now less likely to fail to report costs.
+
 ## v6.2.4
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
