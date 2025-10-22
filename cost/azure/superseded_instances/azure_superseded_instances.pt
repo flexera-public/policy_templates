@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.0.2",
+  version: "4.0.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Superseded Compute Instances",
@@ -485,7 +485,7 @@ datasource "ds_azure_instances" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
-    query "api-version", "2019-03-01"
+    query "api-version", "2024-07-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
@@ -499,6 +499,7 @@ datasource "ds_azure_instances" do
       field "name", jmes_path(col_item, "name")
       field "region", jmes_path(col_item, "location")
       field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "dataDisks", jmes_path(col_item, "properties.storageProfile.dataDisks")
       field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "tags", jmes_path(col_item, "tags")
       field "subscriptionId", val(iter_item, "id")
@@ -739,12 +740,69 @@ script "js_instance_costs_grouped", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_regions_for_instance_sizes" do
+  run_script $js_azure_regions_for_instance_sizes, $ds_azure_instances_region_filtered
+end
+
+script "js_azure_regions_for_instance_sizes", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered"
+  result "result"
+  code <<-EOS
+  result = []
+
+  if (ds_azure_instances_region_filtered.length > 0) {
+    regions = _.uniq(_.compact(_.pluck(ds_azure_instances_region_filtered, "region")))
+
+    result = _.map(regions, function(region) {
+      return {
+        subscriptionId: ds_azure_instances_region_filtered[0]['accountID'],
+        region: region
+      }
+    })
+  }
+EOS
+end
+
+datasource "ds_azure_instance_size_details" do
+  iterate $ds_azure_regions_for_instance_sizes
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.Compute/locations/", val(iter_item, "region"), "/vmSizes"])
+    query "api-version", "2024-07-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "maxDataDiskCount", jmes_path(col_item, "maxDataDiskCount")
+    end
+  end
+end
+
+datasource "ds_azure_disk_count_table" do
+  run_script $js_azure_disk_count_table, $ds_azure_instance_size_details
+end
+
+script "js_azure_disk_count_table", type: "javascript" do
+  parameters "ds_azure_instance_size_details"
+  result "result"
+  code <<-EOS
+  result = {}
+  _.each(ds_azure_instance_size_details, function(size) { result[size['name']] = size['maxDataDiskCount'] })
+EOS
+end
+
 datasource "ds_superseded_instances" do
-  run_script $js_superseded_instances, $ds_azure_instances_region_filtered, $ds_instance_costs_grouped, $ds_azure_instance_type_map, $ds_azure_instance_cost_map, $ds_region_table, $ds_currency_conversion, $ds_currency, $ds_applied_policy, $param_min_savings
+  run_script $js_superseded_instances, $ds_azure_instances_region_filtered, $ds_instance_costs_grouped, $ds_azure_instance_type_map, $ds_azure_instance_cost_map, $ds_region_table, $ds_azure_disk_count_table, $ds_currency_conversion, $ds_currency, $ds_applied_policy, $param_min_savings
 end
 
 script "js_superseded_instances", type: "javascript" do
-  parameters "ds_azure_instances_region_filtered", "ds_instance_costs_grouped", "ds_azure_instance_type_map", "ds_azure_instance_cost_map", "ds_region_table", "ds_currency_conversion", "ds_currency", "ds_applied_policy", "param_min_savings"
+  parameters "ds_azure_instances_region_filtered", "ds_instance_costs_grouped", "ds_azure_instance_type_map", "ds_azure_instance_cost_map", "ds_region_table", "ds_azure_disk_count_table", "ds_currency_conversion", "ds_currency", "ds_applied_policy", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -788,6 +846,7 @@ script "js_superseded_instances", type: "javascript" do
     superseded_nfu = 0
     savings = 0.0
     hourly_cost_multiplier = 365.25 / 12 * 24
+    dataDiskCount = instance['dataDisks'] ? instance['dataDisks'].length : 0
 
     cost = null
     billing_center = null
@@ -840,7 +899,7 @@ script "js_superseded_instances", type: "javascript" do
       superseded_nfu = Number(ds_azure_instance_type_map[superseded_type]['specs']['nfu'])
     }
 
-    if (typeof(cost) == 'number') {
+    if (typeof(cost) == 'number' && ds_azure_disk_count_table[superseded_type] && ds_azure_disk_count_table[superseded_type] >= dataDiskCount) {
       if (typeof(instance_type_price) == 'number' && typeof(superseded_type_price) == 'number') {
         // Calculate savings based on proportion of listed prices
         savings = cost - cost * superseded_type_price / instance_type_price
@@ -850,6 +909,7 @@ script "js_superseded_instances", type: "javascript" do
         current_nfu > 0 &&
         superseded_nfu > 0 // avoid NaN and 0 by using greater than
       ) {
+        // Calculate savings based on proportion of NFU
         savings = cost - cost * superseded_nfu / current_nfu
       }
     }
@@ -897,6 +957,7 @@ script "js_superseded_instances", type: "javascript" do
         resourceKind: instance['resourceKind'],
         region: instance['region'],
         osType: instance['osType'],
+        dataDiskCount: dataDiskCount,
         service: "Microsoft.Compute",
         cost: cost,
         billing_center: billing_center,
@@ -1037,6 +1098,9 @@ policy "pol_superseded_instances" do
       end
       field "osType" do
         label "Operating System"
+      end
+      field "dataDiskCount" do
+        label "Attached Disks (#)"
       end
       field "cost" do
         label "Estimated Monthly Cost"
