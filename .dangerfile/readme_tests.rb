@@ -466,7 +466,7 @@ def readme_invalid_credentials?(file, file_lines)
       fail_message += "```- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:```\n\n"
     end
 
-    flexera_perm_tester = /^`[a-zA-Z0-9\-_\.]+`(?:[\*\u2020\u2021\u00a7\u2016\u00b6])?$/
+    flexera_perm_tester = /^`[a-zA-Z0-9\-_\.]+`(?:[\*\u2020\u2021\u00a7\u2016\u00b6]+)?$/
 
     # Hash to track the presence of each footnote symbol in the permission list
     footnote_symbols = { "*" => false,  "†" => false, "‡" => false, "§" => false, "‖" => false, "¶" => false }

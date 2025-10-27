@@ -14,7 +14,7 @@ This policy template uses the following Google recommenders:
 More information is available in Google's documentation:
 
 - [Viewing and applying machine type recommendations](https://cloud.google.com/compute/docs/instances/apply-machine-type-recommendations-for-instances)
-- [Viewing and applying idle resources recommendations](https://cloud.google.com/compute/docs/viewing-and-applying-idle-resources-recommendations)
+- [Viewing and applying idle resources recommendations](https://cloud.google.com/compute/docs/viewing-and-applying-idle-resources-recommendations?hl=en)
 
 ### Policy Savings Details
 
@@ -101,4 +101,4 @@ This policy template does not incur any cloud costs.
 
 ## API Quotas
 
-Google sets quotas on the Recommender API; this will cause a `429 RESOURCE_EXHAUSTED` response when the quota is exceeded. See [Quotas & Limits](https://cloud.google.com/recommender/quotas) for more information.
+Google sets quotas on the Recommender API; this will cause a `429 RESOURCE_EXHAUSTED` response when the quota is exceeded. See [Quotas & Limits](https://cloud.google.com/recommender/quotas?hl=en) for more information.
