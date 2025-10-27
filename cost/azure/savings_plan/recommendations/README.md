@@ -6,11 +6,11 @@ This policy template reports any Savings Plan Purchase Recommendations generated
 
 ## How It Works
 
-Recommendations are obtained via requests to the [Azure Cost Management API](https://learn.microsoft.com/en-us/rest/api/cost-management/benefit-recommendations/list?tabs=HTTP).
+Recommendations are obtained via requests to the [Azure Cost Management API](https://learn.microsoft.com/en-us/rest/api/cost-management/benefit-recommendations/list?view=rest-cost-management-2025-03-01&tabs=HTTP).
 
 ### Policy Savings Details
 
-The policy includes several cost and savings metrics provided directly by the [Azure Cost Management API](https://learn.microsoft.com/en-us/rest/api/cost-management/benefit-recommendations/list?tabs=HTTP):
+The policy includes several cost and savings metrics provided directly by the [Azure Cost Management API](https://learn.microsoft.com/en-us/rest/api/cost-management/benefit-recommendations/list?view=rest-cost-management-2025-03-01&tabs=HTTP):
 
 - *Current Monthly Cost* - Total monthly cost for the covered resources before any Savings Plans are purchased.
 - *New Monthly Cost with Savings Plan* - New monthly cost for the covered resources after any Savings Plans are purchased. Should always be lower than the `Current Monthly Cost`
@@ -21,7 +21,7 @@ The policy includes several cost and savings metrics provided directly by the [A
 - *Wastage Cost (Hours)* - Estimated unused portion of `Benefit Cost (Hours)`.
 - *Overage Cost (Hours)* - The difference between `New Monthly Cost with Savings Plan` and `Benefit Cost (Hours)` across `Total Hours`
 
-If the Flexera organization is configured to use a currency other than the one the [Azure Cost Management API](https://learn.microsoft.com/en-us/rest/api/cost-management/benefit-recommendations/list?tabs=HTTP) returns, the savings values will be converted using the exchange rate at the time that the policy executes.
+If the Flexera organization is configured to use a currency other than the one the [Azure Cost Management API](https://learn.microsoft.com/en-us/rest/api/cost-management/benefit-recommendations/list?view=rest-cost-management-2025-03-01&tabs=HTTP) returns, the savings values will be converted using the exchange rate at the time that the policy executes.
 
 ## Input Parameters
 

@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This Policy Template leverages the [Azure API for Reserved Instance Utilization and Details](https://learn.microsoft.com/en-us/rest/api/reserved-vm-instances/reservation/list-all). It will notify only if utilization of a RI falls below the value specified in the `Show Reservations with utilization below this value (%)` field. It examines the RI utilization for the prior 7 days or 30 days.
+This Policy Template leverages the [Azure API for Reserved Instance Utilization and Details](https://learn.microsoft.com/en-us/rest/api/reserved-vm-instances/reservation/list-all?view=rest-reserved-vm-instances-2022-11-01&tabs=HTTP). It will notify only if utilization of a RI falls below the value specified in the `Show Reservations with utilization below this value (%)` field. It examines the RI utilization for the prior 7 days or 30 days.
 
 ## Input Parameters
 
