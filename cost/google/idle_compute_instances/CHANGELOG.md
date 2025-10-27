@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.11.10
+
+- Changed description to say "policy template" for clarity. Functionality unchanged.
+
 ## v2.11.9
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
