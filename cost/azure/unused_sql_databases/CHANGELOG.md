@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.4.8
+
+- Changed description to say "policy template" for clarity. Functionality unchanged.
+
 ## v5.4.7
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

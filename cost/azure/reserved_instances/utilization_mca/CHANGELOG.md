@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.6
+
+- Changed description to say "policy template" for clarity. Functionality unchanged.
+
 ## v1.0.5
 
 - Deprecated: This policy template is no longer being updated. Please see policy README for more information.
