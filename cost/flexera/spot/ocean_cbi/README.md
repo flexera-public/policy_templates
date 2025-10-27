@@ -13,7 +13,7 @@ This policy template exposes costs from the Spot Ocean Cluster Aggregated Detail
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Allow/Deny Spot Accounts* - Allow or Deny entered Spot Accounts.
 - *Allow/Deny Spot Accounts List* - A list of allowed or denied Spot Accounts.

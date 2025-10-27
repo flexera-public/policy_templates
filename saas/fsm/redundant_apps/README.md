@@ -6,11 +6,11 @@ This policy will create an incident when Flexera SaaS Manager identifies applica
 
 ## How It Works
 
-This policy uses the [SaaS Management API](https://developer.flexera.com/docs/api/saas/v1) to retrieve a list of managed SaaS applications and their categories. The policy then counts the number of applications in each category, raising an incident with a list of application categories where the number of applications exceeds a user-specified threshold.
+This policy template uses the [SaaS Management API](https://developer.flexera.com/docs/api/saas/v1) to retrieve a list of managed SaaS applications and their categories. The policy then counts the number of applications in each category, raising an incident with a list of application categories where the number of applications exceeds a user-specified threshold.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Category Application Limit* - The number of SaaS applications within a single category required to report on the category.

@@ -12,7 +12,7 @@ This policy template uses billing data stored in Flexera Cloud Cost Optimization
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - A list of email addresses to notify.
 - *Cost Metric* - The cost metric to use for per-region spend in the report.

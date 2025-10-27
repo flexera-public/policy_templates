@@ -6,7 +6,7 @@ This Policy Template will check your account for Google Cloud Storage buckets wi
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Allow/Deny Projects* - Whether to treat Allow/Deny Projects List parameter as allow or deny list. Has no effect if Allow/Deny Projects List is left empty.

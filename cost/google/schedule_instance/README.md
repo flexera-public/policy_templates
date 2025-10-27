@@ -6,7 +6,7 @@ This policy schedules Google VM instances to start and stop at specific times ba
 
 ## How To Use
 
-This policy uses the schedule label value (default key: `schedule`) for scheduling the instance. The appropriate value should be added to as a label to every instance you want to manage via this policy.
+This policy template uses the schedule label value (default key: `schedule`) for scheduling the instance. The appropriate value should be added to as a label to every instance you want to manage via this policy.
 
 ### Example Schedule Labels
 
@@ -35,7 +35,7 @@ You can optionally use a second label (default key: `schedule_action`) to specif
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Schedule Label Key* - Label key that schedule information is stored in. Default is recommended for most use cases.

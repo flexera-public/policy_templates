@@ -15,7 +15,7 @@ This policy template creates adjustment rules that convert the currency of the c
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Backfill Adjustments* - Whether to add/modify currency conversion to just the current month or to backfill previous months.
 - *Backfill Start Date* - The month and year in YYYY-MM format to backfill adjustments to. Only applicable if `Backfill Previous Months` is selected for the `Backfill Adjustments` parameter.

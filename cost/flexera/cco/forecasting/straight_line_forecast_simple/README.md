@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. The [Cloud Spend Forecast - Straight-Line](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/forecasting/straight_line_forecast/) policy has superseded this one and includes significantly more functionality.
+This policy template is no longer being updated. The [Cloud Spend Forecast - Straight-Line](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/forecasting/straight_line_forecast/) policy has superseded this one and includes significantly more functionality.
 
 ## What It Does
 
@@ -20,14 +20,14 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 ## How It Works
 
 - This policy supports a group of Billing Centers or the entire Organization.
-- This policy uses the last month before current to guarantee full data.
+- This policy template uses the last month before current to guarantee full data.
 - This policy supports different dimensions to break down costs by, such as Category, Service and Region.
 - This policy produces a straight-line forecast by dividing the earliest month in the dataset by the last month in the dataset.
 - This policy omits costs for Commitments, as refunds are difficult to forecast.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Billing Center Name* - List of Billing Center Names to check
 - *Lookback Months* - Number of months to lookback to generate forecast

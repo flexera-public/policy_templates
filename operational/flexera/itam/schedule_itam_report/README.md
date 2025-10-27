@@ -8,7 +8,7 @@ NOTE: Only the first 100,000 rows of the report will be included. This is due to
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to send the report to.
 - *Flexera ITAM Report ID* - The ID of the Flexera ITAM Custom View Report in Flexera One.

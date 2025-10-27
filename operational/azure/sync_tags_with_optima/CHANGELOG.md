@@ -22,7 +22,7 @@
 
 ## v3.3.1
 
-- Deprecated: This policy is no longer being updated.
+- Deprecated: This policy template is no longer being updated.
 
 ## v3.3
 

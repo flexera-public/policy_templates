@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks all Azure Storage Accounts to verify that they have lifecycle management policies enabled. If any are found that do not, an incident is raised with a list of the offending Storage Accounts. Optionally, an email is sent with this list.
+This policy template checks all Azure Storage Accounts to verify that they have lifecycle management policies enabled. If any are found that do not, an incident is raised with a list of the offending Storage Accounts. Optionally, an email is sent with this list.
 
 ## Input Parameters
 

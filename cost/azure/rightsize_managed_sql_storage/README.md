@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks the storage usage for all Azure SQL Managed Instances and determines if a smaller maximum storage space would be viable. A report is created with these recommendations that can optionally be emailed, and overprovisioned resources can optionally be downsized.
+This policy template checks the storage usage for all Azure SQL Managed Instances and determines if a smaller maximum storage space would be viable. A report is created with these recommendations that can optionally be emailed, and overprovisioned resources can optionally be downsized.
 
 ### Policy Savings Details
 

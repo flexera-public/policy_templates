@@ -6,11 +6,11 @@ This policy will create an incident when Flexera SaaS Manager identifies duplica
 
 ## How It Works
 
-This policy uses the [SaaS Management API](https://developer.flexera.com/docs/api/saas/v1) to retrieve a list of managed SaaS applications and their users. The policy then looks for duplicate users within each application. Users are considered duplicates if they share the same first name, last name, and email address. These fields are normalized to lowercase and have extraneous whitespace removed to ensure matching occurs when appropriate.
+This policy template uses the [SaaS Management API](https://developer.flexera.com/docs/api/saas/v1) to retrieve a list of managed SaaS applications and their users. The policy then looks for duplicate users within each application. Users are considered duplicates if they share the same first name, last name, and email address. These fields are normalized to lowercase and have extraneous whitespace removed to ensure matching occurs when appropriate.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 

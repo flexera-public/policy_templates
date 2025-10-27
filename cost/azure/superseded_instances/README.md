@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks all the virtual machines in an Azure account to determine if the instance type has been superseded. If it has, the virtual machine is recommended for resizing to a more modern instance type. An incident listing all of these superseded virtual machines is emailed to the user.
+This policy template checks all the virtual machines in an Azure account to determine if the instance type has been superseded. If it has, the virtual machine is recommended for resizing to a more modern instance type. An incident listing all of these superseded virtual machines is emailed to the user.
 
 ## How It Works
 

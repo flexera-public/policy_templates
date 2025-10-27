@@ -26,7 +26,7 @@ This policy template checks for Google Cloud resources missing the user-specifie
   - `Key!~/Regex/` - Find all resources where the value for the specified key matches the specified regex string.
 - *Any / All* - Whether to report on instances missing any of the specified labels or all of them. Only applicable if more than one value is entered in the `Labels` field.
 
-This policy has the following input parameters required when adding labels to resources from a raised incident:
+This policy template has the following input parameters required when adding labels to resources from a raised incident:
 
 - *Add Labels (Key=Value)* - Cloud native labels to add to resources with missing labels. Use Key=Value format. Examples: env=production, team=finance
 

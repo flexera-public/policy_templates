@@ -10,7 +10,7 @@ This policy template leverages Flexera CCO APIs to produce a stacked bar chart s
 
 ## How It Works
 
-- This policy uses data up until the last full month before current date to guarantee full data.
+- This policy template uses data up until the last full month before current date to guarantee full data.
 - This policy produces a straight-line forecast by calculating a line of best fit (linear regression line) from the historical dataset and then extrapolating this to calculate forecasted costs.
 - The forecast is displayed as a stacked-bar chart showing Total Instance Hours by Instance Family for the top 8 most used Instance Families. All other Instance Families will be aggregated and displayed as "Other". Values shown in the graph are for the past 12 months.
 - The unit used for normalizing instance usage depends on the value of the `Instance Unit` parameter.

@@ -6,7 +6,7 @@ This policy reports on any existing underutilized or idle Cloud SQL recommendati
 
 ### How It Works
 
-This policy uses the following Google recommenders:
+This policy template uses the following Google recommenders:
 
 - `google.cloudsql.instance.IdleRecommender`: Checks if a Cloud SQL instance is idle and recommends stopping the instance when appropriate.
 - `google.cloudsql.instance.OverprovisionedRecommender`: Checks if a Cloud SQL instance is idle and recommends stopping the instance when appropriate.

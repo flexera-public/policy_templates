@@ -2,9 +2,9 @@
 
 ## What It Does
 
-This policy checks all the EBS volumes in an AWS Account for Read and Write Operations and Provisioned IOPS metrics over a user-specified number of days.  If the volume is unattached, or has zero read or write operations for the lookback period, then the Volume is considered "Idle" and recommended for deletion (with option to create snapshot before).  For the volumes not considered Idle, if volume is a Provisioned IOPS volume and usage less than the user provided threshold for Provisioned IOPS % then it is considered "Underutilized" and recommended for rightsizing.
+This policy template checks all the EBS volumes in an AWS Account for Read and Write Operations and Provisioned IOPS metrics over a user-specified number of days.  If the volume is unattached, or has zero read or write operations for the lookback period, then the Volume is considered "Idle" and recommended for deletion (with option to create snapshot before).  For the volumes not considered Idle, if volume is a Provisioned IOPS volume and usage less than the user provided threshold for Provisioned IOPS % then it is considered "Underutilized" and recommended for rightsizing.
 
-This policy does not currently support Capacity Used % for identified Underutilized volumes because of complexity involved with mapping the volume device mount(s) to the OS mount points for each disk, which is required to map the volume to the `disk_used_percent` metric provided by the CloudWatch Agent on the EC2 Instance.  This device to mount point information is typically retrieved from the OS/Application layer (i.e. `df -h`):
+This policy template does not currently support Capacity Used % for identified Underutilized volumes because of complexity involved with mapping the volume device mount(s) to the OS mount points for each disk, which is required to map the volume to the `disk_used_percent` metric provided by the CloudWatch Agent on the EC2 Instance.  This device to mount point information is typically retrieved from the OS/Application layer (i.e. `df -h`):
 
 ```sh
 $ df -h

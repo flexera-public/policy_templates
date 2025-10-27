@@ -13,7 +13,7 @@ This policy integrates with the Flexera SaaS Manager API to retrieve suspicious 
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify
 

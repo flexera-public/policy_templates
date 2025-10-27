@@ -13,7 +13,7 @@ This policy template provides rightsizing recommendations for Kubernetes cluster
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Include Recommendations with Request Undefined* - Whether to include recommendations where the requested CPU and Memory are not defined.

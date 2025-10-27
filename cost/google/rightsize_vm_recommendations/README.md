@@ -6,7 +6,7 @@ This policy reports on any existing underutilized or idle VM recommendations gen
 
 ### How It Works
 
-This policy uses the following Google recommenders:
+This policy template uses the following Google recommenders:
 
 - `google.compute.instance.MachineTypeRecommender`: Checks if a VM instance is underutilized and recommends a more appropriate machine type when appropriate.
 - `google.compute.instance.IdleResourceRecommender`: Checks if a VM instance is idle and recommends stopping the instance when appropriate.
@@ -27,7 +27,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.

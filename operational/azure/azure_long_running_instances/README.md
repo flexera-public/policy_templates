@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks for running instances that have been running longer than the `Minimum Age (Days)` parameter. It will then take the appropriate action (Power Off/Delete) on the instance.
+This policy template checks for running instances that have been running longer than the `Minimum Age (Days)` parameter. It will then take the appropriate action (Power Off/Delete) on the instance.
 
 ## Input Parameters
 

@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated.
+This policy template is no longer being updated.
 
 ## What It Does
 
@@ -22,7 +22,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email addresses* - A list of email addresses to notify
 - *Azure Endpoint* - Azure Endpoint to access resources

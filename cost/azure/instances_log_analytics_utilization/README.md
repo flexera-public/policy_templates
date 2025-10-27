@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. CPU and memory usage data can now be obtained from Azure resources without the need for Log Analytics. The [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/) policy now includes this functionality and is the recommended policy for getting recommendations for inefficient instance utilization.
+This policy template is no longer being updated. CPU and memory usage data can now be obtained from Azure resources without the need for Log Analytics. The [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/) policy now includes this functionality and is the recommended policy for getting recommendations for inefficient instance utilization.
 
 ## What It Does
 
@@ -15,7 +15,7 @@ This Policy Template uses performance metrics from Log Analytics from the last 3
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Average used memory percentage* - Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.
 - *Average used CPU percentage* - Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.
@@ -40,7 +40,7 @@ Azure Service Principal (AKA Azure Active Directory Application) with the below 
 
 Virtual Machines must have the Log Analytics/OMS Agent installed for sending performance metrics to a Azure Log Analytics workspace.
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This policy template uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
 ### Credential configuration
 

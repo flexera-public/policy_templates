@@ -12,7 +12,7 @@ This policy generated a report of aggregated billing data for either the current
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Billing Month* - Billing month to report on in YYYY-MM format. Leave blank to do current month.

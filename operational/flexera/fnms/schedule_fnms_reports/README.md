@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy uses the SOAP version of the FlexNet Manager Cloud APIs, will run a FlexNet Manager report (Custom view), and send the result via email.
+This policy template uses the SOAP version of the FlexNet Manager Cloud APIs, will run a FlexNet Manager report (Custom view), and send the result via email.
 
 The policy is a report only policy, no action is taken during the Policy Escalation.
 
@@ -15,7 +15,7 @@ Current limitations:
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *FlexNet Manager host* - Flexera One FlexNet Manager host.  *Required*. *Allowed Values: [`slo.app.flexera.com`, `slo.app.flexera.eu`, `slo.app.flexera.au`, `slo-uat.app.flexera.com`, `slo-uat.app.flexera.eu`, `slo-uat.app.flexera.au`]*
 - *FlexNet Manager Report ID* - FlexNet Manager Report ID. *Required*.

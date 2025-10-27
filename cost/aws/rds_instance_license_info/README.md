@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. The [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/) policy can be used with the `Underutilized Instance CPU Threshold (%)` parameter set to `100` and the `Report Unused or Underutilized` parameter set to `Underutilized` to retrieve the same information.
+This policy template is no longer being updated. The [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/) policy can be used with the `Underutilized Instance CPU Threshold (%)` parameter set to `100` and the `Report Unused or Underutilized` parameter set to `Underutilized` to retrieve the same information.
 
 ## What It Does
 
@@ -10,11 +10,11 @@ This Policy Template gathers AWS RDS Instance data related to licensing.
 
 ## How It Works
 
-- This policy identifies all RDS instances and provides details on engine, version, license, and vCPU.
+This policy template identifies all RDS instances and provides details on engine, version, license, and vCPU.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Allowed/Denied Regions* - Whether to treat regions parameter as allow or deny list.
 - *Regions* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.

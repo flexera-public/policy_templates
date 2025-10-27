@@ -39,7 +39,7 @@
 ## v8.2.0
 
 - Modified internal names for incident fields for more accurate scraping into Optimization dashboard
-- Deprecated: This policy is no longer being updated.
+- Deprecated: This policy template is no longer being updated.
 
 ## v8.1
 

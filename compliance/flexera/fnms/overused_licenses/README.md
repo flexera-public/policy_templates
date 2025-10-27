@@ -2,11 +2,11 @@
 
 ## What It Does
 
-This policy uses the ITAM Inventories API to look up software licenses and raise an incident if more than the specified percentage of available licenses are in use. The incident provides a detailed list of the affected licenses.
+This policy template uses the ITAM Inventories API to look up software licenses and raise an incident if more than the specified percentage of available licenses are in use. The incident provides a detailed list of the affected licenses.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email addresses of the recipients you wish to notify* - A list of email address(es) to notify
 - *Percentage of License Usage* - The percentage of available licenses in use to consider a license overused

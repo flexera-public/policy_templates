@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks all the Azure MySQL Single Servers in Azure Subscriptions for the average CPU usage and number of connections over a user-specified number of days. If there were no connections to the server, the server is recommended for deletion. If there were connections but the average CPU usage was below a user-specified threshold, the server is recommended for downsizing. Both sets of servers returned from this policy are emailed to the user.
+This policy template checks all the Azure MySQL Single Servers in Azure Subscriptions for the average CPU usage and number of connections over a user-specified number of days. If there were no connections to the server, the server is recommended for deletion. If there were connections but the average CPU usage was below a user-specified threshold, the server is recommended for downsizing. Both sets of servers returned from this policy are emailed to the user.
 
 ## How It Works
 

@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks all Azure Certificates and reports on any that have either expired or are going to expire within a user-specified number of days. Optionally, an email report is sent with a list of these certificates.
+This policy template checks all Azure Certificates and reports on any that have either expired or are going to expire within a user-specified number of days. Optionally, an email report is sent with a list of these certificates.
 
 ## Input Parameters
 

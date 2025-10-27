@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. The [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/) policy now includes this functionality and is the recommended policy for getting unused SQL recommendations.
+This policy template is no longer being updated. The [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/) policy now includes this functionality and is the recommended policy for getting unused SQL recommendations.
 
 ## What It Does
 
@@ -36,7 +36,7 @@ If the user is missing the minimum required role of `billing_center_viewer` or i
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Exclusion Tag Key* - Azure-native SQL Database tag key to ignore databases. Only supply the tag key. The policy assumes that the tag value is irrelevant.

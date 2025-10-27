@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks whether the user-specified AWS IAM roles exist in an account. An incident is raised with a list of all checked roles and whether or not they exist. Optionally, an email is sent with this information.
+This policy template checks whether the user-specified AWS IAM roles exist in an account. An incident is raised with a list of all checked roles and whether or not they exist. Optionally, an email is sent with this information.
 
 ## How It Works
 

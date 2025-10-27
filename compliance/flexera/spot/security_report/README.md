@@ -13,7 +13,7 @@ This policy template retrieves and reports on compliance findings from Spot Secu
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses to notify.
 - *Allow/Deny Spot Accounts* - Allow or Deny entered Spot Accounts.

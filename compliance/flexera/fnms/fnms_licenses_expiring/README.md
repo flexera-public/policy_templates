@@ -6,7 +6,7 @@ Generates report of licenses expiring and sends the result as an email.
 
 ## How It Works
 
-This policy uses the ITAM API to look up Active IT Asset Manager Licenses Expiring within set Time Period and sends the result as an email.
+This policy template uses the ITAM API to look up Active IT Asset Manager Licenses Expiring within set Time Period and sends the result as an email.
 
 The report / Mail output looks like this:
 ITAM Expiring Licenses
@@ -22,7 +22,7 @@ Current limitations:
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Time Period of Expiration* - Time Period, in days, to find licenses expiring within
 - *Email addresses of the recipients you wish to notify* - A list of email address(es) to notify

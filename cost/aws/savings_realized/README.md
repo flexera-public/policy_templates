@@ -15,7 +15,7 @@ This policy template produces a report with chart showing the total savings real
 ## How It Works
 
 - Data is obtained from Flexera's stored cloud cost data via the [Flexera Bill Analysis API](https://reference.rightscale.com/bill_analysis/)
-- This policy uses [savings metric](https://docs.flexera.com/flexera/EN/Optima/TabularView.htm#tabularview_3352643092_1192596) calculated as difference between list price and cost.
+- This policy template uses [savings metric](https://docs.flexera.com/flexera/EN/Optima/TabularView.htm#tabularview_3352643092_1192596) calculated as difference between list price and cost.
 
 ## Input Parameters
 

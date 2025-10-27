@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. The [AWS Usage Report - Instance Time Used](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_usage_report/) policy now includes this functionality and should be used instead.
+This policy template is no longer being updated. The [AWS Usage Report - Instance Time Used](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_usage_report/) policy now includes this functionality and should be used instead.
 
 ## What It Does
 
@@ -16,7 +16,7 @@ This policy allows the user to specify a *Region* to filter results by, and will
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Allow/Deny Regions* - Whether to treat `Allow/Deny Regions List` parameter as allow or deny list. Has no effect if `Allow/Deny Regions List` is left empty.
 - *Allow/Deny Regions List* - A list of allowed or denied regions. Example: `US West (Oregon)`. Leave blank to check all regions.

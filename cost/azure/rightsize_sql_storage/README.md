@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks the storage usage for all the Azure SQL database instances purchased using the vCore purchasing model and determines if a smaller maximum storage space would be viable. A report is created with these recommendations that can optionally be emailed.
+This policy template checks the storage usage for all the Azure SQL database instances purchased using the vCore purchasing model and determines if a smaller maximum storage space would be viable. A report is created with these recommendations that can optionally be emailed.
 
 Only vCore purchases are supported because DTU-purchased databases cannot have their maximum storage space changed independently without changing the entire SKU, including CPU and memory usage. Automatic actions are not supported because a SQL database cannot have its maximum storage space reduced; a new smaller database would need to be provisioned and data would need to be migrated to it.
 

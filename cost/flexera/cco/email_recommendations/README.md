@@ -10,7 +10,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - The email addresses to send recommendations to.
 - *Always Email Incident* - Whether or not to always email the incident even if no new items were added to the recommendations since the policy's last execution.

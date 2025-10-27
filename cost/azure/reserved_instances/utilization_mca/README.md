@@ -6,7 +6,7 @@ This Policy Template leverages the [Azure API for Reserved Instance Utilization 
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - A list of email addresses to notify
 - *Azure Endpoint* - Azure Endpoint to access resources

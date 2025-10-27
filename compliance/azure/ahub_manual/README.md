@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks all virtual machines in Azure to determine how many are using AHUB and raises an incident when that number does not match a user-specified number of licenses.
+This policy template checks all virtual machines in Azure to determine how many are using AHUB and raises an incident when that number does not match a user-specified number of licenses.
 
 ## How It Works
 
@@ -14,7 +14,7 @@ The policy leverages the Azure Resource Manager API to get data for all virtual 
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Azure Endpoint* - Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China.

@@ -6,11 +6,11 @@ This policy will create an incident when Flexera SaaS Manager identifies applica
 
 ## How It Works
 
-This policy uses the [SaaS Management API](https://developer.flexera.com/docs/api/saas/v1) to retrieve a list of managed SaaS applications and their licenses. The policy then determines how many days away the licenses are from expiration.
+This policy template uses the [SaaS Management API](https://developer.flexera.com/docs/api/saas/v1) to retrieve a list of managed SaaS applications and their licenses. The policy then determines how many days away the licenses are from expiration.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify
 - *Applications* - A list of application names and/or IDs to check. Leave blank to check all applications.

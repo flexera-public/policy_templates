@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks all Azure virtual machines and reports on any that are not making use of [Managed Disks](https://learn.microsoft.com/en-us/azure/virtual-machines/managed-disks-overview). Optionally, a report listing the non-compliant virtual machines is emailed.
+This policy template checks all Azure virtual machines and reports on any that are not making use of [Managed Disks](https://learn.microsoft.com/en-us/azure/virtual-machines/managed-disks-overview). Optionally, a report listing the non-compliant virtual machines is emailed.
 
 ## How It Works
 

@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks all the Azure SQL Managed Instances in Azure Subscriptions for CPU usage over a user-specified number of days. If CPU usage is below a user-specified threshold, the instance is recommended for downsizing. Optionally, this report can be emailed, and the reported instances can be downsized or deleted.
+This policy template checks all the Azure SQL Managed Instances in Azure Subscriptions for CPU usage over a user-specified number of days. If CPU usage is below a user-specified threshold, the instance is recommended for downsizing. Optionally, this report can be emailed, and the reported instances can be downsized or deleted.
 
 ## How It Works
 

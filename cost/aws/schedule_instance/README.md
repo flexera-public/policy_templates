@@ -2,11 +2,11 @@
 
 ## What It Does
 
-This policy schedules AWS EC2 instances to start and stop at specific times based on a configuration stored in the instance's tags. The user can also perform a variety of ad hoc actions on the instance from the incident page.
+This policy template schedules AWS EC2 instances to start and stop at specific times based on a configuration stored in the instance's tags. The user can also perform a variety of ad hoc actions on the instance from the incident page.
 
 ## How To Use
 
-This policy uses the schedule tag value (default key: schedule) for scheduling the instance. The appropriate value should be added to as a tag to every instance you want to manage via this policy.
+This policy template uses the schedule tag value (default key: schedule) for scheduling the instance. The appropriate value should be added to as a tag to every instance you want to manage via this policy.
 
 ### Example Schedule Tables
 
@@ -36,7 +36,7 @@ You can optionally use a Schedule Action tag (default key: schedule_action) to s
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)

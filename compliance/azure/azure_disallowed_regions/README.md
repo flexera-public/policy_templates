@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy finds all Azure virtual machines within a user-specified list of disallowed regions or outside of a user-specified list of allowed regions. An incident is raised and a report emailed containing all of the non-compliant instances, with the option to power off or delete offending instances.
+This policy template finds all Azure virtual machines within a user-specified list of disallowed regions or outside of a user-specified list of allowed regions. An incident is raised and a report emailed containing all of the non-compliant instances, with the option to power off or delete offending instances.
 
 ## Input Parameters
 

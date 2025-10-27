@@ -13,7 +13,7 @@ This Policy Template is used to automatically apply the Azure Hybrid Use Benefit
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - A list of email addresses to notify
 - *Azure Endpoint* - Azure Endpoint to access resources

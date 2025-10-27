@@ -16,7 +16,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Azure Endpoint* - Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China.

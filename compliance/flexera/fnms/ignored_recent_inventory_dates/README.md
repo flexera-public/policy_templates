@@ -2,12 +2,12 @@
 
 ## What It Does
 
-This policy uses the ITAM Inventories API to look up machines, when it finds a machine that is ignored we compare it's `lastInventoryDate` to the current time and
+This policy template uses the ITAM Inventories API to look up machines, when it finds a machine that is ignored we compare it's `lastInventoryDate` to the current time and
 if it has reported in during that time period an incident is triggered.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Days since last inventory* - Number of days since Last Inventory
 - *Email addresses of the recipients you wish to notify* - A list of email addresse(s) to notify

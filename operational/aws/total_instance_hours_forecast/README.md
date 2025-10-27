@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. The [AWS Usage Forecast - Instance Time Used](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_usage_forecast/) policy now includes this functionality and should be used instead.
+This policy template is no longer being updated. The [AWS Usage Forecast - Instance Time Used](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_usage_forecast/) policy now includes this functionality and should be used instead.
 
 ## What It Does
 
@@ -10,14 +10,14 @@ This Policy leverages Flexera CCO APIs to determine a usage forecast for a norma
 
 ## How It Works
 
-- This policy uses the last month before current to guarantee full data.
+- This policy template uses the last month before current to guarantee full data.
 - This policy supports filtering by a specific AWS region or the entire Organization.
 - This policy produces a straight-line forecast by calculating a line of best fit (linear regression line) from the historical dataset and then extrapolating this to calculate forecasted costs.
 - The forecast is displayed as a stacked-bar chart showing Total Instance Hours by Instance Family for the top 8 most used Instance Families. All other Instance Families will be aggregated and displayed as "Other". Values shown in the graph are for the past 12 months.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Region* - Name of the AWS Region to filter by. Example: 'US West (Oregon)'. Leave this blank for 'Organization' scope.
 - *Lookback Months* - Number of months to lookback to generate forecast.

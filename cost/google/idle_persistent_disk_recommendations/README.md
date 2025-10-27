@@ -6,7 +6,7 @@ This policy reports on any existing delete recommendations for persistent disks 
 
 ### How It Works
 
-This policy uses the following Google recommenders:
+This policy template uses the following Google recommenders:
 
 - `google.compute.disk.IdleResourceRecommender`: Checks if a persistent disk is idle and recommends deleting the idle disk.
 
@@ -25,7 +25,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Days Unattached* - The number of days since the disk was last attached to an instance to include it in the results. Cannot be set to less than 15 days because Google does not produce recommendations for disks that have been idle for < 15 days.

@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. Please use the version of this policy specific to the cloud environment you need recommendations for.
+This policy template is no longer being updated. Please use the version of this policy specific to the cloud environment you need recommendations for.
 
 - [**AWS Superseded EC2 Instances**](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/superseded_instances)
 - [**Azure Superseded Compute Instances**](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/superseded_instances)
@@ -26,7 +26,7 @@ This policy used Optima data to get a list of instances used in the month and th
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email addresses* - A list of email addresses to notify
 - *Billing Center Name* - List of Billing Center Names to check

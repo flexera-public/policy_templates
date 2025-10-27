@@ -15,7 +15,7 @@ This Policy Template is used to automatically take billing data for Azure China 
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Month To Ingest* - Whether to process bills for the current month, previous month, or a specific month.
 - *Billing Period* - The year and month to process bills for in YYYY-MM format. Only relevant if Specific Month is selected for the Month To Ingest parameter. Example: 2022-09

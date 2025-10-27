@@ -13,7 +13,7 @@ This policy integrates with the Flexera SaaS Manager API to retrieve Managed Saa
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify
 - *Department* - Department to report on entitled SaaS subscription users

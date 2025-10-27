@@ -27,7 +27,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Monthly Budget* - specify the monthly budget.  Currency is irrelevant; the policy will default to whichever currency is used in Optima.
 - *Cloud Vendor Account Name* - the name of the Cloud Vendor Account that the budget should be enforced against

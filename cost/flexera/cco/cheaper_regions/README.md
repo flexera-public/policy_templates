@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. Cloud-specific policies now exist for this functionality and should be used instead:
+This policy template is no longer being updated. Cloud-specific policies now exist for this functionality and should be used instead:
 
 - [AWS Cheaper Regions](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/cheaper_regions/)
 - [Azure Cheaper Regions](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/cheaper_regions/)
@@ -14,7 +14,7 @@ This Policy Template determines which regions have cheaper alternatives by speci
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Billing Center Name* - The list of Billing centers to check against
 - *Email Addresses* - A list of email addresses to notify
@@ -41,7 +41,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## How It Works
 
-- This policy uses a hash to determine existing regions and newer compatible cheaper regions. It checks the billing center and reports on cheaper regions.
+- This policy template uses a hash to determine existing regions and newer compatible cheaper regions. It checks the billing center and reports on cheaper regions.
 
 ## Supported Clouds
 

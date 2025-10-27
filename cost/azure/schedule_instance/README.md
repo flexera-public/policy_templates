@@ -6,7 +6,7 @@ This policy schedules Azure virtual machines to start and stop at specific times
 
 ## How To Use
 
-This policy uses the schedule tag value (default key: schedule) for scheduling the instance. The appropriate value should be added to as a tag to every instance you want to manage via this policy.
+This policy template uses the schedule tag value (default key: schedule) for scheduling the instance. The appropriate value should be added to as a tag to every instance you want to manage via this policy.
 
 ### Example Schedule Tables
 
@@ -45,7 +45,7 @@ The Schedule Tag value is a string consisting of 2 or 3 semicolon-separated (`;`
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.

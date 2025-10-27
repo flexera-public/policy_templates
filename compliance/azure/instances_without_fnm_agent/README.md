@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy uses the SOAP version of the FlexNet Manager Cloud APIs, checks all instances running in Azure to determine if the FlexNet Inventory Agent is running on the instance, and reports on any that are missing the agent.
+This policy template uses the SOAP version of the FlexNet Manager Cloud APIs, checks all instances running in Azure to determine if the FlexNet Inventory Agent is running on the instance, and reports on any that are missing the agent.
 
 The policy is a recommendation only policy, no action is taken during the Policy Escalation.
 
@@ -16,7 +16,7 @@ Current limitations:
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Azure Endpoint* - Azure Endpoint to access resources

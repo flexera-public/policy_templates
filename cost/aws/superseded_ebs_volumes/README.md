@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks all GP2 volumes on an AWS Account to see if the GP3 equivalent would be less expensive. An incident is raised with all volumes that would be less expensive if upgraded from GP2 to GP3.
+This policy template checks all GP2 volumes on an AWS Account to see if the GP3 equivalent would be less expensive. An incident is raised with all volumes that would be less expensive if upgraded from GP2 to GP3.
 
 ## How It Works
 

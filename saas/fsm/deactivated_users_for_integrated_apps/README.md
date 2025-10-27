@@ -6,11 +6,11 @@ This policy will create an incident when Flexera SaaS Manager identifies integra
 
 ## How It Works
 
-This policy uses the [SaaS Management API](https://developer.flexera.com/docs/api/saas/v1) to retrieve a list of managed SaaS applications. The policy then obtains a list of integrated applications for each managed SaaS application and their users. The policy then filters for users with a `deactivatedAt` date and calculates the number of days since the user was deactivated.
+This policy template uses the [SaaS Management API](https://developer.flexera.com/docs/api/saas/v1) to retrieve a list of managed SaaS applications. The policy then obtains a list of integrated applications for each managed SaaS application and their users. The policy then filters for users with a `deactivatedAt` date and calculates the number of days since the user was deactivated.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Applications* - A list of parent application names and/or IDs to check for deactivated users. Leave blank to check all applications.

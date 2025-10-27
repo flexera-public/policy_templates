@@ -2,13 +2,13 @@
 
 ## What It Does
 
-This policy checks the list of AWS regions returned by an AWS `DescribeRegions` API request and tests each region with an EC2 `DescribeInstances` request to see if the Flexera AWS credential can actually run API requests against that region. An incident is raised and email sent with any regions that are inaccessible.
+This policy template checks the list of AWS regions returned by an AWS `DescribeRegions` API request and tests each region with an EC2 `DescribeInstances` request to see if the Flexera AWS credential can actually run API requests against that region. An incident is raised and email sent with any regions that are inaccessible.
 
 __NOTE: Meta Parent policy will only work if both the parent and the child are uploaded to the Flexera org and the "Uploaded Template" option is selected for the `Child Policy Template Source` parameter. This is because the child policy is *not* published in the catalog.__
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)

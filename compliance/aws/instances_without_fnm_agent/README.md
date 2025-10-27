@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy uses the SOAP version of the FlexNet Manager Cloud APIs, checks all EC2 instances running in AWS to determine if the FlexNet Inventory Agent is running on the instance, and reports on any that are missing the agent.
+This policy template uses the SOAP version of the FlexNet Manager Cloud APIs, checks all EC2 instances running in AWS to determine if the FlexNet Inventory Agent is running on the instance, and reports on any that are missing the agent.
 
 The policy is a recommendation only policy, no action is taken during the Policy Escalation.
 
@@ -16,7 +16,7 @@ Current limitations:
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Allowed/Denied Regions* - Whether to treat regions parameter as allow or deny list.
 - *Regions* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.

@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. The [AWS Rightsize EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/) policy has superseded this one and includes significantly more functionality.
+This policy template is no longer being updated. The [AWS Rightsize EBS Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ebs_volumes/) policy has superseded this one and includes significantly more functionality.
 
 ## What It Does
 
@@ -25,7 +25,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)

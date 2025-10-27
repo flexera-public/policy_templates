@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks all the instances in Azure Subscriptions for the average or maximum CPU and/or memory usage over a user-specified number of days. If the usage is greater than the user provided Instance CPU and/or memory percentage threshold then the virtual machine is recommended for upsizing.
+This policy template checks all the instances in Azure Subscriptions for the average or maximum CPU and/or memory usage over a user-specified number of days. If the usage is greater than the user provided Instance CPU and/or memory percentage threshold then the virtual machine is recommended for upsizing.
 
 ## How It Works
 

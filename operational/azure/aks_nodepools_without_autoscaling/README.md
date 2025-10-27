@@ -6,11 +6,11 @@ This policy will raise an incident if there are any AKS clusters with user node 
 
 ## How It Works
 
-This policy checks all the user node pools associated with each AKS cluster. If the 'enableAutoScaling' value for a node pool is set to 'false', that node pool is added to the list of problematic pools, and an incident is raised if this list contains any items.
+This policy template checks all the user node pools associated with each AKS cluster. If the 'enableAutoScaling' value for a node pool is set to 'false', that node pool is added to the list of problematic pools, and an incident is raised if this list contains any items.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.

@@ -10,7 +10,7 @@ NOTE: If updating from a version of this policy template prior to version 2.0, i
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Effective Date* - The month and year in YYYY-MM format that you want the rules to apply. This should be left at its default value in most cases to ensure that the rules apply to all costs, including historical costs.
 - *Label Keys* - A list of Google Project label keys to create custom Rule-Based Dimensions for. Multiple labels can be specified for a single dimension by placing a single entry with each label key separated by a semicolon (;) character. For example, a value of `env;environment;environ` will create one Rule-Based Dimension that checks the keys "env", "environment", and "environ" for values.

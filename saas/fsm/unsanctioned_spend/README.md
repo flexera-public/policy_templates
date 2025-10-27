@@ -13,7 +13,7 @@ This policy integrates with the Flexera SaaS Manager API to retrieve the expense
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Unsanctioned Application Names* - List of SaaS Application names that the policy will target for identifying unsanctioned spend. Note: if left blank, the policy will detect all unsanctioned spend.

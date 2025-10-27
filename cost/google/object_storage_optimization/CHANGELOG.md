@@ -26,7 +26,7 @@
 
 ## v3.0.2
 
-- Deprecated: This policy is no longer being updated. See README for more details.
+- Deprecated: This policy template is no longer being updated. See README for more details.
 
 ## v3.0.1
 

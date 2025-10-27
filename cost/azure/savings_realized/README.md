@@ -12,12 +12,12 @@ This Policy uses Flexera Cloud Cost Optimization (CCO) to determine a view of to
 
 - This policy currently supports only a view of savings realized from Azure Reserved Instances.
 - This policy supports a view of savings realized for a list of specific billing centers or for the entire Organization.
-- This policy uses the on-demand rate and the reserved instance rate by instance type and region to derive a savings rate. The policy then uses usage amount to calculate total savings realized.
+- This policy template uses the on-demand rate and the reserved instance rate by instance type and region to derive a savings rate. The policy then uses usage amount to calculate total savings realized.
 - This policy produces a bar chart showing savings realized vs. total actual spend for the period of historical months specified.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Billing Center Name* - List of Billing Center Names to check Savings Realized for. Leave blank for whole Organization view
 - *Period Start Date* - The starting month of the historical data to analyze (in YYYY-MM format e.g., "2021-10")

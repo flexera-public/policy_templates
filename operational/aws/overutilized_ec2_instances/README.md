@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks all of the EC2 instances in an AWS Account for CPU and Memory usage over a user-specified number of days. If the usage is above the user provided CPU/Memory percentage thresholds then the EC2 instance is recommended for upsizing. Optionally, a list of oversized EC2 instances is emailed.
+This policy template checks all of the EC2 instances in an AWS Account for CPU and Memory usage over a user-specified number of days. If the usage is above the user provided CPU/Memory percentage thresholds then the EC2 instance is recommended for upsizing. Optionally, a list of oversized EC2 instances is emailed.
 
 ## How It Works
 

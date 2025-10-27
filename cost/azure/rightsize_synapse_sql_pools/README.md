@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks for Synapse Dedicated SQL Pools instances that have inefficient utilization for the last N days and recommend downsizes or pauses them after approval.
+This policy template checks for Synapse Dedicated SQL Pools instances that have inefficient utilization for the last N days and recommend downsizes or pauses them after approval.
 
 ## How It Works
 

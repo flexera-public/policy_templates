@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated.
+This policy template is no longer being updated.
 
 ## What It Does
 

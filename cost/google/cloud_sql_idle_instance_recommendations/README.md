@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. The [Google Rightsize Cloud SQL Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_recommendations/) policy produces recommendations for both idle and underutilized Cloud SQL instances and should be used instead.
+This policy template is no longer being updated. The [Google Rightsize Cloud SQL Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_recommendations/) policy produces recommendations for both idle and underutilized Cloud SQL instances and should be used instead.
 
 ## What It Does
 
@@ -10,7 +10,7 @@ This policy reports on any idle Cloud SQL instances identified by the Google Rec
 
 ### How It Works
 
-This policy uses the following Google recommenders:
+This policy template uses the following Google recommenders:
 
 - `google.cloudsql.instance.IdleRecommender`: Checks if a Cloud SQL instance is idle and recommends stopping the instance when appropriate.
 
@@ -58,7 +58,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.

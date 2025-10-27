@@ -8,7 +8,7 @@ This Policy Template leverages the [AWS Savings Plans Utilization API](https://d
 
 ## How It Works
 
-- This policy uses [AWS Savings Plans Utilization API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetSavingsPlansUtilization.html) to retrieve Savings Plan Utilization data.
+- This policy template uses [AWS Savings Plans Utilization API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetSavingsPlansUtilization.html) to retrieve Savings Plan Utilization data.
 - That data is used to produce a pie chart showing Used Commitment, Unused Commitment and Utilization for each Savings Plan.
 
 ## Input Parameters

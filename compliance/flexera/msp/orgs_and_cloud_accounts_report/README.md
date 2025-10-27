@@ -2,11 +2,11 @@
 
 ## Deprecated
 
-This policy is no longer being updated. Please use [native MSP functionality in the Flexera One platform](https://docs.flexera.com/flexera/EN/Partners/GetStarted.htm) instead.
+This policy template is no longer being updated. Please use [native MSP functionality in the Flexera One platform](https://docs.flexera.com/flexera/EN/Partners/GetStarted.htm) instead.
 
 ## What It Does
 
-This policy generates a list of cross organization Cloud Vendor Accounts connected to Flexera Cloud Cost Optimization based on the bill connection settings for Azure and Google, as well as full list of AWS accounts under the payer account connected for each Flexera Organization.
+This policy template generates a list of cross organization Cloud Vendor Accounts connected to Flexera Cloud Cost Optimization based on the bill connection settings for Azure and Google, as well as full list of AWS accounts under the payer account connected for each Flexera Organization.
 
 _Note 1: 'enterprise_manager' user role is required for each organization._
 
@@ -14,7 +14,7 @@ _Note 2: If excluding orgs is needed use only either 'Excluded Organizations' or
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email list* - Email addresses of the recipients you wish to notify
 - *Excluded Organizations* - Names of organizations to exclude

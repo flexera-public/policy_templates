@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. The [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) policy now includes this functionality and is the recommended policy for getting idle compute recommendations.
+This policy template is no longer being updated. The [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) policy now includes this functionality and is the recommended policy for getting idle compute recommendations.
 
 ## What It Does
 
@@ -68,11 +68,11 @@ To enable windows support you will need to add the following to your cloudwatch 
 
 ## How It Works
 
-- This policy identifies all instances reporting performance metrics to CloudWatch whose CPU or Memory utilization is below the thresholds set in the **Average used memory percentage** and **Average used CPU percentage** parameters. These thresholds are what you would consider to be and idle instance.
+- This policy template identifies all instances reporting performance metrics to CloudWatch whose CPU or Memory utilization is below the thresholds set in the **Average used memory percentage** and **Average used CPU percentage** parameters. These thresholds are what you would consider to be and idle instance.
 - The **Exclusion Tag Key:Value** parameter is a string value. If the exclusion tag is used on an Instance, that Instance is presumed to be exempt from this policy.
-- This policy can terminate instances after approval for instances that match the criteria.
+- This policy template can terminate instances after approval for instances that match the criteria.
 - If you get an **N/A** in a field you will need to install the [CloudWatch Agent](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Install-CloudWatch-Agent.html) on the instance to get those metrics.
-- This policy only pulls running instances, as it is unable to get correct monitoring metrics from instances in other states.
+- This policy template only pulls running instances, as it is unable to get correct monitoring metrics from instances in other states.
 
 ### Policy Savings Details
 
@@ -81,7 +81,7 @@ If the user is not having the minimum required role of `billing_center_viewer` o
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Allowed/Denied Regions* - Whether to treat regions parameter as allow or deny list.
 - *Regions* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.

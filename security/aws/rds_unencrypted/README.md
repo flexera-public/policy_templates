@@ -6,7 +6,7 @@ This policy template reports on AWS Relational Database Service (RDS) instances 
 
 ## How It Works
 
-This policy uses the AWS RDS API to gather information on all RDS instances in the AWS account. An RDS instance is determined to be unencrypted and at risk if the API returns the following fields for an instance:
+This policy template uses the AWS RDS API to gather information on all RDS instances in the AWS account. An RDS instance is determined to be unencrypted and at risk if the API returns the following fields for an instance:
 
 - StorageEncrypted: false
 - DeletionProtection: false

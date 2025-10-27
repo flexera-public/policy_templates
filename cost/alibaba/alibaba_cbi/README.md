@@ -12,7 +12,7 @@ This policy template downloads cost reports from Alibaba Cloud Object Storage an
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when billing data is uploaded
 - *Month To Ingest* - Whether to process bills for the current month, previous month, or a specific month

@@ -34,7 +34,7 @@
 
 ## v2.11.1
 
-- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+- Deprecated: This policy template is no longer being updated. Please see policy README for more information.
 
 ## v2.11
 

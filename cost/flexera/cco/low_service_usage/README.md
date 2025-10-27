@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. The [Low Usage Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/low_usage/) policy has superseded this one and includes significantly more functionality.
+This policy template is no longer being updated. The [Low Usage Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/low_usage/) policy has superseded this one and includes significantly more functionality.
 
 ## What It Does
 
@@ -26,7 +26,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Low Service Spend Threshold* - Estimated run-rate below which a service should be reviewed for wasted usage. Example: 100.0
 - *Email addresses* - A list of email addresses to notify

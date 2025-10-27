@@ -6,7 +6,7 @@ This policy template creates and updates custom Rule-Based Dimensions that dupli
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Effective Date* - The month and year in YYYY-MM format that you want the rules to apply. This should be left at its default value in most cases to ensure that the rules apply to all costs, including historical costs.
 - *Custom Tags* - A list of Custom Tags keys to build Rule-Based Dimensions from. Can be either the Custom Tag name as seen in the Flexera platform or the ID returned by Flexera APIs.

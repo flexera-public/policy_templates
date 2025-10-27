@@ -2,11 +2,11 @@
 
 ## What It Does
 
-This policy finds AWS EC2 instances in the given account which have been stopped for more than a user-specified number of days and emails a report containing a list of the offending instances. Optionally, the policy will terminate the instances after user approval.
+This policy template finds AWS EC2 instances in the given account which have been stopped for more than a user-specified number of days and emails a report containing a list of the offending instances. Optionally, the policy will terminate the instances after user approval.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)

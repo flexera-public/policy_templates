@@ -6,7 +6,7 @@ This policy template reports on any AWS Savings Plans that have expired or are a
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters required when launching the policy.
 
 - *Email Addresses* - enter the number of days you want before the Savings Plan expires.
 - *Days Until Expiration* - The number of days until expiration to include a Savings Plan in the report. Set to '0' to only report expired Savings Plans.
