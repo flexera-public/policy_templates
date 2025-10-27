@@ -169,4 +169,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-The policy template will start instances and those instances will incur costs. The stopped instances will not incur costs. This policy is not running on an instance and running it does not incur any costs.
+The policy template will start instances and those instances will incur costs. The stopped instances will not incur costs. This policy template is not running on an instance and running it does not incur any costs.

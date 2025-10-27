@@ -106,4 +106,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-The policy template will start virtual machines and those virtual machines will incur costs. The stopped virtual machines will not incur costs. This policy is not running on a virtual machine and running it does not incur any costs.
+The policy template will start virtual machines and those virtual machines will incur costs. The stopped virtual machines will not incur costs. This policy template is not running on a virtual machine and running it does not incur any costs.

@@ -4,7 +4,7 @@
 
 This policy template checks for Azure virtual machines missing the user-specified tags. An incident is raised containing the untagged virtual machines, and the user has the option to power off, delete, or tag the virtual machines.
 
-NOTE: This policy is specific to virtual machines (Microsoft.Compute/virtualMachines). The [Azure Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources/) policy is recommended for finding untagged resources that are not virtual machines.
+NOTE: This policy template is specific to virtual machines (Microsoft.Compute/virtualMachines). The [Azure Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources/) policy is recommended for finding untagged resources that are not virtual machines.
 
 ## How It Works
 

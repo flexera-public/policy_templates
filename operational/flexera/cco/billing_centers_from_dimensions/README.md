@@ -84,4 +84,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This policy does not incur any additional costs as it only generates a billing center structure based on the specified dimensions.
+This policy template does not incur any additional costs as it only generates a billing center structure based on the specified dimensions.

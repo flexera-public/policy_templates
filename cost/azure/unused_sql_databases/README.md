@@ -58,4 +58,4 @@ For example if a user selects the "Terminate Instances" action while applying th
 
 ## Cost
 
-This policy does not incur any cloud costs.
+This policy template does not incur any cloud costs.
