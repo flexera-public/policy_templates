@@ -8,7 +8,7 @@ The Turbonomic Rightsize Databases Recommendations Azure policy uses Turbonomic 
 
 - *Provider* - Cloud provider where we get recommendations, it supports Azure.
 - *Turbonomic Audience* - Audience configured on the Turbonomic instance
-- *Email addresses to notify* - A list of email addresses to notify.
+- *Email Addresses* - A list of email addresses to notify.
 - *Turbonomic endpoint* - Turbonomic endpoint where we'll get all data and authorization validation.
 
 ## Policy Actions

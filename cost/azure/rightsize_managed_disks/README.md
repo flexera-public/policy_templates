@@ -21,7 +21,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 ## Input Parameters
 
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:

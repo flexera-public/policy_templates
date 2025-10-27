@@ -38,7 +38,7 @@ If the user is missing the minimum required role of `billing_center_viewer` or i
 
 This policy template has the following input parameters required when launching the policy.
 
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Exclusion Tag Key* - Azure-native SQL Database tag key to ignore databases. Only supply the tag key. The policy assumes that the tag value is irrelevant.
 - *Azure Endpoint* - Azure Endpoint to access resources
 - *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked

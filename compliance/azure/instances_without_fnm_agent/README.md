@@ -18,7 +18,7 @@ Current limitations:
 
 This policy template has the following input parameters required when launching the policy.
 
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Azure Endpoint* - Azure Endpoint to access resources
 - *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked
 - *Exclusion Tag Key* - Azure-native Virtual machines tag to ignore VM's which has FNMS inventory agent running. Only supply the tag key. The policy assumes that the tag value is irrelevant.

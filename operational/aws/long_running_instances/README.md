@@ -13,7 +13,7 @@ This policy template checks for running instances that have been running longer 
 This policy template has the following Input parameters which require value before
 the policy can be applied.
 
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Minimum Age (Days)* - The minimum age, in days, to consider an instance to be long running.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.

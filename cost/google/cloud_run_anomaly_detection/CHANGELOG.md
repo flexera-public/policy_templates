@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.3
+
+- Updated label of email parameter to "Email Addresses" to match other policy templates. Functionality unchanged.
+
 ## v0.2.2
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

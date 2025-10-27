@@ -3,6 +3,7 @@
 ## v3.3.9
 
 - Changed description to say "policy template" for clarity. Functionality unchanged.
+- Updated label of email parameter to "Email Addresses" to match other policy templates. Functionality unchanged.
 
 ## v3.3.8
 

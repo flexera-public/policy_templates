@@ -8,7 +8,7 @@ The Turbonomic Rightsize Virtual Volumes Recommendations AWS policy uses Turbono
 
 - *Provider* - Cloud provider where we get recommendations, it supports AWS.
 - *Turbonomic Audience* - Audience configured on the Turbonomic instance
-- *Email addresses to notify* - A list of email addresses to notify.
+- *Email Addresses* - A list of email addresses to notify.
 - *Turbonomic endpoint* - Turbonomic endpoint where we'll get all data and authorization validation.
 
 ## Policy Actions

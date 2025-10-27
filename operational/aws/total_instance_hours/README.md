@@ -22,7 +22,7 @@ This policy template has the following input parameters required when launching 
 - *Allow/Deny Regions List* - A list of allowed or denied regions. Example: `US West (Oregon)`. Leave blank to check all regions.
 - *Allow/Deny Billing Centers* - Whether to treat `Allow/Deny Billing Center List` parameter as allow or deny list. Has no effect if `Allow/Deny Billing Center List` is left empty.
 - *Allow/Deny Billing Center List* - A list of allowed or denied Billing Center names/IDs. Leave blank to check all Billing Centers.
-- *Email addresses to notify* - A list of email addresses to notify.
+- *Email Addresses* - A list of email addresses to notify.
 
 ## Policy Actions
 
