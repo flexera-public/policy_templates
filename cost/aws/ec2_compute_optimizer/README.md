@@ -17,7 +17,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation. This is based on the value of the `Estimated Monthly Savings` field.
 - *CPU Family* - CPU family recommendations to include. Recommendations for CPU families not listed here will not be included in the results.
 - *Operating System Family* - Which operating system families to include. EC2 instances not running one of the specified operating system families will not be included in the results.

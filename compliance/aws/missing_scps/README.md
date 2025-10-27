@@ -9,7 +9,7 @@ This policy template checks every AWS account in the AWS organization to see if 
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Service Control Policy Names* - The names of the Service Control Policies to check.
 
 ## Policy Actions

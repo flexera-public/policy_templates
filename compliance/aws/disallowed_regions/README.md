@@ -7,7 +7,7 @@ This policy template finds all AWS EC2 instances within a user-specified list of
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Exclusion Tags (Key:Value)* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
 - *Disallow/Allow Regions* - Whether to allow or disallow the regions specified in the `Disallow/Allow Regions List` parameter. If set to "Allow", all EC2 instances outside of the listed regions will be considered out of compliance. If set to "Disallow", all EC2 instances within the listed regions will be considered out of compliance.
 - *Disallow/Allow Regions List* - A list of regions to disallow or allow. Example: us-east-1

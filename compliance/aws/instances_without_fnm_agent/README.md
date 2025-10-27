@@ -23,7 +23,7 @@ This policy template has the following input parameters:
 - *FlexNet Manager host* - Flexera One FlexNet Manager host.  *Required*. *Allowed Values: [`slo.app.flexera.com`, `slo.app.flexera.eu`, `slo.app.flexera.au`, `slo-uat.app.flexera.com`, `slo-uat.app.flexera.eu`, `slo-uat.app.flexera.au`]*
 - *FlexNet Manager Report ID* - FlexNet Manager Report ID. *Required*.
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Tags to ignore* - List of tags that will exclude EC2 instance from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'.
 
 ## Policy Actions

@@ -21,7 +21,7 @@ If the Flexera organization is configured to use a currency other than the one t
 This policy template has the following input parameters:
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Look Back Period* - Number of days of prior usage to analyze
 - *Account Scope* - The account scope that you want your recommendations for. Select Payer to produce results only for a Master Payer account, or Linked to produce results for all linked accounts as well.
