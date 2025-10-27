@@ -1,5 +1,10 @@
 # Changelog
 
+## v5.5.0
+
+- Policy now continues execution for accessible regions when some regions return permission errors
+- Added separate incident report to identify regions with access issues and provide remediation guidance
+
 ## v5.4.7
 
 - Resolved issue where memory statistics for Windows instances specifically were not being captured.
