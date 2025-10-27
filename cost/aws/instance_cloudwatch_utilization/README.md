@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy template is no longer being updated. The [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) policy now includes this functionality and is the recommended policy for obtaining these recommendations.
+This policy template is no longer being updated. The [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) policy template now includes this functionality and is the recommended policy for obtaining these recommendations.
 
 ## What It Does
 
@@ -64,7 +64,7 @@ Required permissions in the provider:
 
 ## Input Parameters
 
-This policy template has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *Allowed/Denied Regions* - Whether to treat regions parameter as allow or deny list.
 - *Regions* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.

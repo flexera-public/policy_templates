@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy template is no longer being updated. CPU and memory usage data can now be obtained from Azure resources without the need for Log Analytics. The [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/) policy now includes this functionality and is the recommended policy for getting recommendations for inefficient instance utilization.
+This policy template is no longer being updated. CPU and memory usage data can now be obtained from Azure resources without the need for Log Analytics. The [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/) policy template now includes this functionality and is the recommended policy for getting recommendations for inefficient instance utilization.
 
 ## What It Does
 
@@ -15,7 +15,7 @@ This Policy Template uses performance metrics from Log Analytics from the last 3
 
 ## Input Parameters
 
-This policy template has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *Average used memory percentage* - Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.
 - *Average used CPU percentage* - Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.

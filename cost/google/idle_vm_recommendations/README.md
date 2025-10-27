@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy template is no longer being updated. The [Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations) policy now includes this functionality and is the recommended policy for getting idle VM recommendations.
+This policy template is no longer being updated. The [Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations) policy template now includes this functionality and is the recommended policy for getting idle VM recommendations.
 
 ## What It Does
 
@@ -27,7 +27,7 @@ Check the following official GCP docs for more:
 
 ## Input Parameters
 
-This policy template has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *Email addresses* - A list of email addresses to notify
 - *Zone* - Location to check, it is specifically Google zones

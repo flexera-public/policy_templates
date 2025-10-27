@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy template is no longer being updated. The [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/) policy now includes this functionality and is the recommended policy for getting unused SQL recommendations.
+This policy template is no longer being updated. The [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/) policy template now includes this functionality and is the recommended policy for getting unused SQL recommendations.
 
 ## What It Does
 
@@ -10,7 +10,7 @@ This Policy template checks for Azure SQL Databases that are unused by reviewing
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Sql/servers/databases/read`
@@ -36,7 +36,7 @@ If the user is missing the minimum required role of `billing_center_viewer` or i
 
 ## Input Parameters
 
-This policy template has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Exclusion Tag Key* - Azure-native SQL Database tag key to ignore databases. Only supply the tag key. The policy assumes that the tag value is irrelevant.

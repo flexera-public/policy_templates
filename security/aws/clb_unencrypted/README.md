@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy template is no longer being updated. The [AWS Elastic Load Balancers With Unencrypted Listeners](https://github.com/flexera-public/policy_templates/tree/master/security/aws/elb_unencrypted/) policy now includes this functionality.
+This policy template is no longer being updated. The [AWS Elastic Load Balancers With Unencrypted Listeners](https://github.com/flexera-public/policy_templates/tree/master/security/aws/elb_unencrypted/) policy template now includes this functionality.
 
 ## What It Does
 

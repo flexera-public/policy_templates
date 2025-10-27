@@ -17,7 +17,7 @@ Current limitations:
 
 ## Input Parameters
 
-This policy template has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *FNMS Report URL* - Full FlexNet URL (e.g. `https://demo.flexnetmanager.com/Suite` or WStunnel tunnel URL `https://wstunnel1-1.rightscale.com/_token/<token>/`)
 - *FNMS Report ID* - FlexNet manager Custom View ID

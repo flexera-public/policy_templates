@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy template is no longer being updated. The [Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations) policy now includes this functionality and is the recommended policy for getting idle VM recommendations.
+This policy template is no longer being updated. The [Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations) policy template now includes this functionality and is the recommended policy for getting idle VM recommendations.
 
 ## What It Does
 
@@ -18,7 +18,7 @@ This Policy Template checks for idle instance in Google Compute Engine and then 
 
 ## Input Parameters
 
-This policy template has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Average used memory percentage"* - Set to -1 to ignore memory utilization

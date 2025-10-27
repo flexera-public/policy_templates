@@ -18,7 +18,7 @@ This Policy Template checks Google Cloud SQL instances based on provided CPU thr
 
 ## Input Parameters
 
-This policy template has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *Email Addresses* - A list of email addresses to notify
 - *Average used CPU % - Upsize threshold* - Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.

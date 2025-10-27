@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy template is no longer being updated. The [Azure Storage Accounts Without Secure Transfer](https://github.com/flexera-public/policy_templates/tree/master/security/azure/secure_transfer_required/) policy now includes this functionality.
+This policy template is no longer being updated. The [Azure Storage Accounts Without Secure Transfer](https://github.com/flexera-public/policy_templates/tree/master/security/azure/secure_transfer_required/) policy template now includes this functionality.
 
 ## What It Does
 
@@ -14,7 +14,7 @@ This Policy checks for Azure Storage Accounts with HTTPs not enforced.
 
 ## Input Parameters
 
-This policy template has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Azure Endpoint* - Azure Endpoint to access resources
