@@ -1426,6 +1426,9 @@ def policy_bad_comma_spacing?(file, file_lines)
     test_line = line
     parts = []
 
+    # Skip image charts stuff
+    next if line.include("chxt=") || line.include("chxs=") || line.include("chco=") || line.include("chdls=") || line.include("chls=") || line.include("chma=") || line.include("chxr=") || line.include("chg=") || line.include("chg=") || line.include("chg=") || line.include("chg=") || line.include("chg=")
+
     # Look for stuff quotations and remove those
     # This is to reduce false positives
     parts = line.split("\"") if line.include?("\"") && !line.include?("'") && !line.start_with?("\"")
