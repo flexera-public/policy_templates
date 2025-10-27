@@ -79,10 +79,6 @@ Once saved, note the report number in the URL field : ![Alt text][ReportNumber] 
 This policy template does not incur any cloud costs.
 
 <!-- Image referances -->
-[APIToken]: images/APIToken.png "APIToken"
-[CreateServeceAccount]: images/CreateServeceAccount.png "Create Service Account"
 [FNMSReport]: images/FNMS_cv_Report.png "FNMS Cloud Instance Report"
 [FilterFNMSReport]: images/Filter_FNMS_Report.PNG "FNMS Amazon Web Services Instance Report"
 [ReportNumber]: images/ReportNumber.png "Report Number"
-[WebServiceRole]: images/WebServiceRole.png "WebServiceRole"
-[CMPToken]: images/CMP_NewToken.png "CMP Token"

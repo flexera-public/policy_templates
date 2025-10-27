@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This Policy Template gathers AWS CloudWatch CPU and Burst Credit data for instances on 30 day intervals. Information on Burst Credits can be found [here](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/burstable-performance-instances-monitoring-cpu-credits.html). This policy will then take the appropriate actions based on which check fails and resize the instance.
+This Policy Template gathers AWS CloudWatch CPU and Burst Credit data for instances on 30 day intervals. [Information on Burst Credits can be found in AWS's documentation](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/burstable-performance-instances-monitoring-cpu-credits.html). This policy will then take the appropriate actions based on which check fails and resize the instance.
 
 ## How It Works
 
