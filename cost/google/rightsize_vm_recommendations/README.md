@@ -13,7 +13,7 @@ This policy template uses the following Google recommenders:
 
 More information is available in Google's documentation:
 
-- [Viewing and applying machine type recommendations](https://cloud.google.com/compute/docs/instances/apply-machine-type-recommendations-for-instances)
+- [Viewing and applying machine type recommendations](https://cloud.google.com/compute/docs/instances/apply-machine-type-recommendations-for-instances?hl=en)
 - [Viewing and applying idle resources recommendations](https://cloud.google.com/compute/docs/viewing-and-applying-idle-resources-recommendations?hl=en)
 
 ### Policy Savings Details
