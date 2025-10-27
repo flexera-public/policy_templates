@@ -26,8 +26,8 @@ This policy template has the following input parameters:
 - *Exclusion Tag Key:Value* - Cloud native label to ignore instances. Format: Key:Value
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Resize Instances" action while applying the policy, all the identified instances will be resized.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Resize Instances" action while applying the policy template, all the identified instances will be resized.
 
 ## Policy Actions
 

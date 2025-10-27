@@ -18,8 +18,8 @@ This policy template reports on any repository branches under the user-specified
 - *Dismiss Stale Reviews* - When protecting branches, whether to dismiss stale reviews.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example, if a user selects the "Protect Branches" action while applying the policy, all the GitHub branches that do not have protection enabled will have it enabled.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example, if a user selects the "Protect Branches" action while applying the policy template, all the GitHub branches that do not have protection enabled will have it enabled.
 
 ## Policy Actions
 

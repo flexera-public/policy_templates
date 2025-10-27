@@ -47,8 +47,8 @@ This policy template has the following input parameters:
 - *Report Idle or Underutilized* - Whether to report on idle VM instances, underutilized VM instances, or both. If both are selected, VM instances raised in the idle VM instances incident will never appear in the underutilized VM instances incident.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s). The "Downsize VM Instances" option is only applies to underutilized instances, while the "Stop VM Instances" and "Delete VM Instances" options only apply to idle instances.
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example, if a user selects the "Delete VM Instances" action while applying the policy, all idle VM instances will be deleted.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example, if a user selects the "Delete VM Instances" action while applying the policy template, all idle VM instances will be deleted.
 
 ## Policy Actions
 

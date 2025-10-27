@@ -26,7 +26,7 @@ This policy template has the following input parameters:
 - *Exclusion Service Types* - Exclude the selected services (EC2 or RDS). If left blank, all services will be analyzed.
 - *Exclusion EC2 Snapshot Description* - Exclude EC2 snapshots with the provided descriptions. If left blank, all EC2 snapshots will be analyzed. This setting has no effect on RDS snapshots.
 - *Exclusion RDS Snapshot Types* - Exclude the selected RDS snapshot types. If left blank, all types will be analyzed. This setting has no effect on EC2 snapshots.
-- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+- *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.
   - `Key==Value` - Filter all resources with the specified tag key:value pair.
   - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
@@ -38,8 +38,8 @@ This policy template has the following input parameters:
 - *Include Snapshots with AMI* - Whether or not to produce recommendations for snapshots with an associated registered AMI (Amazon Machine Image).
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example, if a user selects the "Delete Snapshots" action while applying the policy, all the snapshots that didn't satisfy the policy condition will be deleted.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example, if a user selects the "Delete Snapshots" action while applying the policy template, all the snapshots that didn't satisfy the policy condition will be deleted.
 
 ## Policy Actions
 

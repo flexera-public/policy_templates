@@ -46,8 +46,8 @@ This policy template has the following input parameters:
 - *Create Final Snapshot* - Whether or not to take a final snapshot before deleting a disk.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example, if a user selects the "Delete Disks" action while applying the policy, all idle persistent disks will be deleted.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example, if a user selects the "Delete Disks" action while applying the policy template, all idle persistent disks will be deleted.
 
 ## Policy Actions
 

@@ -48,7 +48,7 @@ The policy estimates savings for underutilized volumes to be the difference base
 - *Threshold Statistic* - Statistic to use for the metric threshold
 - *Utilization Threshold* - The threshold (in percent) for the volume to be considered underutilized. For Provisioned IOPS volumes, this is the percentage of IOPS used.
 - *Volume Status* - Whether to include attached volumes, unattached, or both in the results.
-- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+- *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.
   - `Key==Value` - Filter all resources with the specified tag key:value pair.
   - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
@@ -59,8 +59,8 @@ The policy estimates savings for underutilized volumes to be the difference base
 - *Create Final Snapshot* - Whether or not to take a final snapshot before deleting a volume.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
-For example if a user selects the "Upgrade Volumes to GP3" action while applying the policy, all the volumes that appear in the raised incident will be upgraded to GP3.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
+For example if a user selects the "Upgrade Volumes to GP3" action while applying the policy template, all the volumes that appear in the raised incident will be upgraded to GP3.
 
 ## Policy Actions
 

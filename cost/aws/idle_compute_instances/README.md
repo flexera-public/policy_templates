@@ -6,7 +6,7 @@ This policy template is no longer being updated. The [AWS Rightsize EC2 Instance
 
 ## What It Does
 
-This Policy Template checks for idle instance in AWS EC2 and then terminates them upon approval.
+This policy template checks for idle instance in AWS EC2 and then terminates them upon approval.
 
 ## Prerequisites
 
@@ -76,7 +76,7 @@ To enable windows support you will need to add the following to your cloudwatch 
 
 ### Policy Savings Details
 
-The policy includes the estimated savings. The estimated savings is recognized if the resource is terminated. Optima is used to receive the estimated savings which is the product of the most recent full day's cost of the resource * 30. The savings is displayed in the Estimated Monthly Savings column. If the resource can not be found in Optima the value is 0.0. The incident detail message includes the sum of each resource Estimated Monthly Savings as Total Estimated Monthly Savings. The savings value is rounded off to 3 decimal places.
+The policy template includes the estimated savings. The estimated savings is recognized if the resource is terminated. Optima is used to receive the estimated savings which is the product of the most recent full day's cost of the resource * 30. The savings is displayed in the Estimated Monthly Savings column. If the resource can not be found in Optima the value is 0.0. The incident detail message includes the sum of each resource Estimated Monthly Savings as Total Estimated Monthly Savings. The savings value is rounded off to 3 decimal places.
 If the user is not having the minimum required role of `billing_center_viewer` or if there is no enough data received from Optima to calculate savings, appropriate message is displayed in the incident detail message along with the estimated monthly savings column value as 0.0 in the incident table.
 
 ## Input Parameters
@@ -95,8 +95,8 @@ This policy template has the following input parameters:
 - *CloudWatch API Wait Time* - The amount of time in seconds to wait between requests to the CloudWatch API to avoid being throttled by AWS. Default is recommended.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Terminate Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be terminated.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Terminate Instances" action while applying the policy template, all the resources that didn't satisfy the policy condition will be terminated.
 
 ## Policy Actions
 

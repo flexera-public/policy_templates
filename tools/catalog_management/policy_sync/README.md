@@ -31,8 +31,8 @@ __NOTE: It is recommended that this policy template be used alongside the [Hidde
   - **Example:** data/active_policy_list/active_policy_list.json
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Unpublish Defunct Policy Templates" action while applying the policy, all published templates not present in the active policy JSON file will be unpublished.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Unpublish Defunct Policy Templates" action while applying the policy template, all published templates not present in the active policy JSON file will be unpublished.
 
 ## Policy Actions
 

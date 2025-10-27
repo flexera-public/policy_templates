@@ -12,7 +12,7 @@ Recommendations are obtained via requests to the [AWS Reservation Purchase Recom
 
 ### Policy Savings Details
 
-The policy includes the estimated savings. The estimated savings is recognized if the recommended reserved instance is purchased. The savings values are provided directly by the [AWS Reservation Purchase Recommendation API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetReservationPurchaseRecommendation.html).
+The policy template includes the estimated savings. The estimated savings is recognized if the recommended reserved instance is purchased. The savings values are provided directly by the [AWS Reservation Purchase Recommendation API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetReservationPurchaseRecommendation.html).
 
 If the Flexera organization is configured to use a currency other than the one the [AWS Reservation Purchase Recommendation API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetReservationPurchaseRecommendation.html) returns, the savings values will be converted using the exchange rate at the time that the policy executes.
 

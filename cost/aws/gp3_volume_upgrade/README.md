@@ -14,7 +14,7 @@ Optionally, the user can specify one or more tags that if found on a volume will
 
 ### Policy Savings Details
 
-The policy includes the estimated savings. The estimated savings is recognized if the resource is Upgraded. It uses the AWS Pricing API to calculate the estimated savings along with the AWS Enterprise Discount Program percentage that is calculated from costs in Optima. You can also set the *AWS EDP Percentage* parameter to a non-negative number to use for the discount percentage instead. The savings are displayed in the *Estimated Monthly Savings* column. The incident detail message includes the sum of each resource *Estimated Monthly Savings* as *Total Estimated Monthly Savings*.
+The policy template includes the estimated savings. The estimated savings is recognized if the resource is Upgraded. It uses the AWS Pricing API to calculate the estimated savings along with the AWS Enterprise Discount Program percentage that is calculated from costs in Optima. You can also set the *AWS EDP Percentage* parameter to a non-negative number to use for the discount percentage instead. The savings are displayed in the *Estimated Monthly Savings* column. The incident detail message includes the sum of each resource *Estimated Monthly Savings* as *Total Estimated Monthly Savings*.
 
 If the AWS bill for the AWS account is registered in Optima in a different Flexera One org than the project where the policy template is applied, the *Flexera One Org ID for Optima* parameter can be set to the org where the AWS account is registered in Optima. Leaving this parameter set to `current` will result in using the same org as the project where the policy template is applied querying for Optima cost data.
 

@@ -31,8 +31,8 @@ This policy template has the following input parameters:
 - *Minimum Number of Resources* - The minimum number of resources using a specific tag key which should trigger an incident.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Add Tags" action while applying the policy, all the resources that didn't satisfy the policy condition will get tagged.
+Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Add Tags" action while applying the policy template, all the resources that didn't satisfy the policy condition will get tagged.
 
 ## Policy Actions
 

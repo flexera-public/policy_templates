@@ -10,7 +10,7 @@ Recommendations are obtained via requests to the [Azure Consumption API](https:/
 
 ### Policy Savings Details
 
-The policy includes the estimated savings. The estimated savings is recognized if the recommended reserved instance is purchased. The savings values are provided directly by the [Azure Consumption API](https://learn.microsoft.com/en-us/rest/api/consumption/reservation-recommendations/list?tabs=HTTP).
+The policy template includes the estimated savings. The estimated savings is recognized if the recommended reserved instance is purchased. The savings values are provided directly by the [Azure Consumption API](https://learn.microsoft.com/en-us/rest/api/consumption/reservation-recommendations/list?tabs=HTTP).
 
 If the Flexera organization is configured to use a currency other than the one the [Azure Billing API](https://learn.microsoft.com/en-us/rest/api/billing/2019-10-01-preview/billing-accounts/list?tabs=HTTP) returns, the savings values will be converted using the exchange rate at the time that the policy executes. If the policy is unable to obtain the currency code from the [Azure Billing API](https://learn.microsoft.com/en-us/rest/api/billing/2019-10-01-preview/billing-accounts/list?tabs=HTTP) due to the Azure credential lacking the `Microsoft.Billing/billingAccounts/read` permission, values will not be converted and will be presumed to already be in the currency the Flexera organization is configured to use.
 

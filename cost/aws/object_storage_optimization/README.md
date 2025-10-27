@@ -21,7 +21,7 @@ This policy template checks S3 buckets for objects to move to the 'Glacier' or '
 - *Deep Archive Age Threshold (Days)* - Time in days since object was last modified to change storage class to Deep Archive. Not applicable if 'Glacier' is selected for New Storage Class.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action. For example if a user selects the "Delete S3 Objects" action while applying the policy, all of the S3 objects that didn't satisfy the policy condition will be deleted.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action. For example if a user selects the "Delete S3 Objects" action while applying the policy template, all of the S3 objects that didn't satisfy the policy condition will be deleted.
 
 ## Policy Actions
 

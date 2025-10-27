@@ -45,8 +45,8 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Report Idle or Underutilized* - Whether to report on idle Cloud SQL instances, underutilized Cloud SQL instances, or both. If both are selected, Cloud SQL instances raised in the idle Cloud SQL instances incident will never appear in the underutilized Cloud SQL instances incident.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example, if a user selects the "Delete Cloud SQL Instances" action while applying the policy, all idle Cloud SQL instances will be deleted.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example, if a user selects the "Delete Cloud SQL Instances" action while applying the policy template, all idle Cloud SQL instances will be deleted.
 
 ## Policy Actions
 

@@ -44,7 +44,7 @@ This policy template has the following input parameters:
 - *Schedule Action Tag Key (Optional)* - Optional tag key to specify what action to use. Expected values are "startstop", "start", "stop". Default behavior is "startstop" if not specified.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
-- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+- *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.
   - `Key==Value` - Filter all resources with the specified tag key:value pair.
   - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
@@ -54,8 +54,8 @@ This policy template has the following input parameters:
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 - *Enforce Schedules* - Whether to enforce schedules on instances that are not in the correct state. If set to 'No', the policy will not action if the instance is not in the expected state when an action is to be taken.
 
-Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Schedule Instances" action while applying the policy, the identified resources will be stopped or started as per the schedule.
+Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Schedule Instances" action while applying the policy template, the identified resources will be stopped or started as per the schedule.
 
 ## Policy Actions
 

@@ -34,7 +34,7 @@ This policy template has the following input parameters:
 - *Unused Days* - The number of days a volume has been unused. The days should be greater than zero.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Volume Status* - Whether to include attached volumes, unattached, or both in the results.
-- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+- *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.
   - `Key==Value` - Filter all resources with the specified tag key:value pair.
   - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
@@ -44,8 +44,8 @@ This policy template has the following input parameters:
 - *Create Final Snapshot* - Boolean for whether or not to take a final snapshot before deleting
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Delete Volumes" action while applying the policy, all the volumes that didn't satisfy the policy condition will be deleted.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Delete Volumes" action while applying the policy template, all the volumes that didn't satisfy the policy condition will be deleted.
 
 ## Policy Actions
 
