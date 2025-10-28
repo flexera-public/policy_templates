@@ -1156,8 +1156,13 @@ def policy_ds_js_name_mismatch?(file, file_lines)
   end
 
   # Filter out mismatches where the javascript block is referenced by multiple datasources
-  js_name_counts = found_mismatches.each_with_object(Hash.new(0)) do |item, counts|
-    counts[item[:js_name]] += 1
+  js_name_counts = {}
+  found_mismatches.each { |item| js_name_counts[item[:js_name]] = 0 }
+
+  found_mismatches.each do |item|
+    file_lines.each do |line|
+      js_name_counts[item[:js_name]] += 1 if line.include?("js_" + item[:js_name]) && !line.start_with?("script ")
+    end
   end
 
   filtered_mismatches = found_mismatches.reject do |item|
