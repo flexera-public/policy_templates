@@ -22,7 +22,7 @@ You also need to [enable the Recommender API](https://console.cloud.google.com/f
 
 Check the following official GCP docs for more:
 
-- [How detection of idle VM instances works](https://cloud.google.com/compute/docs/instances/idle-vm-recommendations-overview#how_detection_of_idle_vm_instances_works)
+- [How detection of idle VM instances works](https://cloud.google.com/compute/docs/instances/idle-vm-recommendations-overview#how_detection_of_idle_vm_instances_works?hl=en)
 - [Viewing idle VM instance recommendations](https://cloud.google.com/compute/docs/instances/viewing-and-applying-idle-vm-recommendations#viewing_idle_vm_instance_recommendations?hl=en)
 
 ## Input Parameters
@@ -45,7 +45,7 @@ The following policy actions are taken on any resources found to be out of compl
 
 This policy template uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-The recommender API also needs to be [enabled.](https://cloud.google.com/recommender/docs/enabling#gcloud).
+The recommender API also needs to be [enabled.](https://cloud.google.com/recommender/docs/enabling?hl=en#gcloud).
 
 ### Credential configuration
 

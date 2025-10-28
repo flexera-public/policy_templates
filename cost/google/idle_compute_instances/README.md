@@ -13,7 +13,7 @@ This Policy Template checks for idle instance in Google Compute Engine and then 
 - If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
 - This policy identifies all instances reporting performance metrics to Google StackDriver and delivers a report, for instances whose CPU or Memory utilization is below the thresholds set in the **Average used memory percentage** and **Average used CPU percentage** parameters. These thresholds are what you would consider to be and idle instance.
 - This policy can terminate instances after approval for instances that match the criteria.
-- If you get an **N/A** in a field you will need to install the [StackDriver Agent](https://cloud.google.com/monitoring/agent/install-agent) on the instance to get those metrics.
+- If you get an **N/A** in a field you will need to install the [StackDriver Agent](https://cloud.google.com/monitoring/agent/install-agent?hl=en) on the instance to get those metrics.
 - This policy only pulls running instances, as it is unable to get correct monitoring metrics from instances in other states
 
 ## Input Parameters

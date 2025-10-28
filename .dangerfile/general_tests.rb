@@ -24,9 +24,10 @@ def general_textlint?(file)
       line.strip.empty? || line.include?('awebdomain.com') || line.include?('example.com') || line.include?('/settings/secrets/actions')
     end
 
-    filtered_list = filtered_list.join("\n\n")
-
-    fail_message = "Textlint errors found:\n\n#{filtered_list}" if !filtered_list.strip.empty?
+    if !filtered_list.empty?
+      filtered_list = filtered_list.join("\n\n")
+      fail_message = "Textlint errors found:\n\n#{filtered_list}"
+    end
   end
 
   return fail_message.strip if !fail_message.empty?
