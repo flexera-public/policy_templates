@@ -21,7 +21,7 @@ def general_textlint?(file)
 
     # Ignore known false positives
     filtered_list = error_list.reject do |line|
-      return line.include?('error file:///') || line.include?('://awebdomain.com') || line.include?('://example.com') || line.include?('/settings/secrets/actions')
+      line.include?('error file:///') || line.include?('://awebdomain.com') || line.include?('://example.com') || line.include?('/settings/secrets/actions')
     end
 
     filtered_list = filtered_list.join("\n\n")
