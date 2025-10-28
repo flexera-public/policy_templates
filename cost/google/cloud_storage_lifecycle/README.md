@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template reports all Google Cloud Storage Buckets that don't have a [lifecycle configuration](https://cloud.google.com/storage/docs/lifecycle#configuration) enabled. Optionally, this report can be emailed.
+This policy template reports all Google Cloud Storage Buckets that don't have a [lifecycle configuration](https://cloud.google.com/storage/docs/lifecycle?hl-en#configuration) enabled. Optionally, this report can be emailed.
 
 ## Input Parameters
 

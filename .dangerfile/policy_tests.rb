@@ -279,7 +279,7 @@ def policy_unpublished?(file, file_parsed)
 
   if !info[:publish].nil?
     if info[:publish].downcase == "false"
-      fail_message = "Policy will not be published in the public catalog. If this is not the intended behavior, remove the `publish` field from the policy's info metadata block."
+      fail_message = "Policy template will not be published in the public catalog. If this is not the intended behavior, remove the `publish` field from the policy's info metadata block."
     end
   end
 

@@ -23,7 +23,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Operating System Family* - Which operating system families to include. EC2 instances not running one of the specified operating system families will not be included in the results.
 - *Show Multiple Recommendations* - Whether or not to show multiple recommendations for a single instance or to only show the one with the most savings potential. Note that including multiple recommendations per instance may skew metrics around potential savings in the Flexera One platform and is not recommended in most cases.
 - *Allow/Deny Regions* - Whether to treat regions parameter as allow or deny list.
-- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.
   - `Key==Value` - Filter all resources with the specified tag key:value pair.

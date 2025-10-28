@@ -409,7 +409,11 @@ changed_pt_files.each do |file|
     # Raise warning if policy template is in this file, but datasources have been added.
     # Only raise the above warning if the more general warning about updating the README doesn't exist.
     test = policy_missing_master_permissions?(file, file_parsed, permissions_yaml); failures << test if test
-    ds_test = policy_new_datasource?(file, file_diff, permissions_yaml); warnings << ds_test if ds_test && !test && !rd_test
+
+    # Skip the new datasource test if this is a new policy template
+    unless new_pt_files.include?(file)
+      ds_test = policy_new_datasource?(file, file_diff, permissions_yaml); warnings << ds_test if ds_test && !test && !rd_test
+    end
 
     # Raise error if policy template filename/path contains any uppercase letters
     test = policy_bad_filename_casing?(file); failures << test if test
