@@ -16,7 +16,7 @@ This policy template uses the following Google recommenders:
 
 More information is available in Google's documentation:
 
-- [Identify idle Cloud SQL instances](https://cloud.google.com/sql/docs/mysql/recommender-sql-idle)
+- [Identify idle Cloud SQL instances](https://cloud.google.com/sql/docs/mysql/recommender-sql-idle?hl=en)
 
 ### Policy Savings Details
 

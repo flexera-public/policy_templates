@@ -25,7 +25,7 @@ This policy allows you to set up scheduled reports that will provide summaries o
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
-[![Example Report](example_report.png)](example_report.png)
+![Example Report](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/cost/flexera/cco/scheduled_report_unallocated/example.png)
 
 ### Credential configuration
 
