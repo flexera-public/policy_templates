@@ -22,8 +22,8 @@ You also need to [enable the Recommender API](https://console.cloud.google.com/f
 
 Check the following official GCP docs for more:
 
-- [How detection of idle VM instances works](https://cloud.google.com/compute/docs/instances/idle-vm-recommendations-overview#how_detection_of_idle_vm_instances_works?hl=en)
-- [Viewing idle VM instance recommendations](https://cloud.google.com/compute/docs/instances/viewing-and-applying-idle-vm-recommendations#viewing_idle_vm_instance_recommendations?hl=en)
+- [How detection of idle VM instances works](https://cloud.google.com/compute/docs/instances/idle-vm-recommendations-overview?hl=en#how_detection_of_idle_vm_instances_works)
+- [Viewing idle VM instance recommendations](https://cloud.google.com/compute/docs/instances/viewing-and-applying-idle-vm-recommendations?hl=en#viewing_idle_vm_instance_recommendations)
 
 ## Input Parameters
 

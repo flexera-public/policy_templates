@@ -16,15 +16,23 @@ def general_textlint?(file)
   `node_modules/.bin/textlint #{file} 1> textlint.log`
 
   if $?.exitstatus != 0
-    error_list = `cat textlint.log`.split("\n")
-    error_list.shift(2) # Remove first line since it just links to the filename in the local filesystem
+    # Read the combined output
+    raw = File.read("textlint.log")
+    ansi_stripped = raw.gsub(/\e\[[0-9;]*m/, "") # Strip ANSI color codes so emptiness checks work
+    error_list = ansi_stripped.split("\n")
 
-    # Ignore known false positives
+    # If textlint prints a header line with just the path, drop that line
+    error_list.shift if error_list.first&.include?(file)
+
+    # Ignore known false positives and empty lines
     filtered_list = error_list.reject do |line|
-      line.strip.empty? || line.include?('awebdomain.com') || line.include?('example.com') || line.include?('/settings/secrets/actions')
+      line.strip.empty? ||
+      line.include?('awebdomain.com') ||
+      line.include?('example.com') ||
+      line.include?('/settings/secrets/actions')
     end
 
-    if !filtered_list.empty?
+    unless filtered_list.empty?
       filtered_list = filtered_list.join("\n\n")
       fail_message = "Textlint errors found:\n\n#{filtered_list}"
     end
