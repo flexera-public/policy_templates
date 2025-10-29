@@ -15,7 +15,7 @@
 
 ## v2.13.4
 
-- Policy template metadata modified so that it is no longer published in the catalog.
+- Policy template metadata updated to no longer publish it in the catalog.
 
 ## v2.13.3
 

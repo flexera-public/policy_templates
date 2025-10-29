@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.5
+
+- Updated policy template description to clarify that it reports native Google recommendations.
+
 ## v3.2.4
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

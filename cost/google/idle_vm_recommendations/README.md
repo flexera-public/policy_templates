@@ -2,11 +2,11 @@
 
 ## Deprecated
 
-This policy template is no longer being updated. The [Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations) policy template now includes this functionality and is the recommended policy for getting idle VM recommendations.
+template is no longer being updated. The [Google Rightsize VM Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_instances) policy now includes this functionality and is the recommended policy for getting idle VM recommendations.
 
 ## What It Does
 
-This Policy finds Idle Virtual Machine Recommendations and reports when it finds them. You can then delete the idle instances
+This policy template finds Idle Virtual Machine Recommendations and reports when it finds them. You can then delete the idle instances
 
 ### How it works
 
@@ -22,7 +22,7 @@ You also need to [enable the Recommender API](https://console.cloud.google.com/f
 
 Check the following official GCP docs for more:
 
-- [How detection of idle VM instances works](https://cloud.google.com/compute/docs/instances/idle-vm-recommendations-overview?hl=en#how_detection_of_idle_vm_instances_works)
+- [How detection of idle VM instances works](https://cloud.google.com/compute/docs/instances/idle-vm-recommendations-overview#how_detection_of_idle_vm_instances_works?hl=en)
 - [Viewing idle VM instance recommendations](https://cloud.google.com/compute/docs/instances/viewing-and-applying-idle-vm-recommendations?hl=en#viewing_idle_vm_instance_recommendations)
 
 ## Input Parameters
@@ -82,4 +82,4 @@ This policy template does not incur any cloud costs.
 
 ### API Quotas
 
-The google api sets quotas on the recommender api, which will generate a `429 RESOURCE_EXHAUSTED`. See [Quotas & Limits](https://cloud.google.com/recommender/quotas?hl=en)
+Google sets quotas on the Recommender API; this will cause a `429 RESOURCE_EXHAUSTED` response when the quota is exceeded. See [Quotas & Limits](https://cloud.google.com/recommender/quotas?hl=en) for more information.
