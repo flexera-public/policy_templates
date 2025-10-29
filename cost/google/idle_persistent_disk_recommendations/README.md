@@ -8,7 +8,7 @@ NOTE: If you prefer to receive recommendations produced by Flexera rather than t
 
 ### How It Works
 
-This policy uses the following Google recommenders:
+This policy template uses the following Google recommenders:
 
 - `google.compute.disk.IdleResourceRecommender`: Checks if a persistent disk is idle and recommends deleting the idle disk.
 
@@ -27,7 +27,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Days Unattached* - The number of days since the disk was last attached to an instance to include it in the results. Cannot be set to less than 15 days because Google does not produce recommendations for disks that have been idle for < 15 days.
@@ -48,8 +48,8 @@ This policy has the following input parameters required when launching the polic
 - *Create Final Snapshot* - Whether or not to take a final snapshot before deleting a disk.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example, if a user selects the "Delete Disks" action while applying the policy, all idle persistent disks will be deleted.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example, if a user selects the "Delete Disks" action while applying the policy template, all idle persistent disks will be deleted.
 
 ## Policy Actions
 

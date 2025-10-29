@@ -6,15 +6,15 @@ This policy reports on any existing underutilized or idle Cloud SQL recommendati
 
 ### How It Works
 
-This policy uses the following Google recommenders:
+This policy template uses the following Google recommenders:
 
 - `google.cloudsql.instance.IdleRecommender`: Checks if a Cloud SQL instance is idle and recommends stopping the instance when appropriate.
 - `google.cloudsql.instance.OverprovisionedRecommender`: Checks if a Cloud SQL instance is idle and recommends stopping the instance when appropriate.
 
 More information is available in Google's documentation:
 
-- [Identify idle Cloud SQL instances](https://cloud.google.com/sql/docs/mysql/recommender-sql-idle)
-- [Reduce overprovisioned Cloud SQL instances](https://cloud.google.com/sql/docs/mysql/recommender-sql-overprovisioned)
+- [Identify idle Cloud SQL instances](https://cloud.google.com/sql/docs/mysql/recommender-sql-idle?hl=en)
+- [Reduce overprovisioned Cloud SQL instances](https://cloud.google.com/sql/docs/mysql/recommender-sql-overprovisioned?hl=en)
 
 ### Policy Savings Details
 
@@ -45,8 +45,8 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Report Idle or Underutilized* - Whether to report on idle Cloud SQL instances, underutilized Cloud SQL instances, or both. If both are selected, Cloud SQL instances raised in the idle Cloud SQL instances incident will never appear in the underutilized Cloud SQL instances incident.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example, if a user selects the "Delete Cloud SQL Instances" action while applying the policy, all idle Cloud SQL instances will be deleted.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example, if a user selects the "Delete Cloud SQL Instances" action while applying the policy template, all idle Cloud SQL instances will be deleted.
 
 ## Policy Actions
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.1
+
+- Updated Azure URL in policy template description. Functionality unchanged.
+
 ## v0.5.0
 
 - Improved Incident and Recommendation Details

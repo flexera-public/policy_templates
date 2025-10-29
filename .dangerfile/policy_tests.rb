@@ -91,7 +91,7 @@ def policy_missing_deprecated_field?(file, file_parsed)
   else
     if !info[:deprecated].nil?
       if info[:deprecated].downcase == "true"
-        fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Policy is deprecated does not mention this in the `short_description`. Please add the following to the `short_description`:\n\n`**Deprecated: This policy is no longer being updated.**`"
+        fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Policy is deprecated does not mention this in the `short_description`. Please add the following to the `short_description`:\n\n`**Deprecated: This policy template is no longer being updated.**`"
       end
     end
   end
@@ -279,7 +279,7 @@ def policy_unpublished?(file, file_parsed)
 
   if !info[:publish].nil?
     if info[:publish].downcase == "false"
-      fail_message = "Policy will not be published in the public catalog. If this is not the intended behavior, remove the `publish` field from the policy's info metadata block."
+      fail_message = "Policy template will not be published in the public catalog. If this is not the intended behavior, remove the `publish` field from the policy's info metadata block."
     end
   end
 
@@ -1156,8 +1156,13 @@ def policy_ds_js_name_mismatch?(file, file_lines)
   end
 
   # Filter out mismatches where the javascript block is referenced by multiple datasources
-  js_name_counts = found_mismatches.each_with_object(Hash.new(0)) do |item, counts|
-    counts[item[:js_name]] += 1
+  js_name_counts = {}
+  found_mismatches.each { |item| js_name_counts[item[:js_name]] = 0 }
+
+  found_mismatches.each do |item|
+    file_lines.each do |line|
+      js_name_counts[item[:js_name]] += 1 if line.include?("js_" + item[:js_name]) && !line.start_with?("script ")
+    end
   end
 
   filtered_mismatches = found_mismatches.reject do |item|
@@ -1425,6 +1430,9 @@ def policy_bad_comma_spacing?(file, file_lines)
     line = line.strip
     test_line = line
     parts = []
+
+    # Skip image charts stuff
+    next if line.include?("chxt=") || line.include?("chxs=") || line.include?("chco=") || line.include?("chdls=") || line.include?("chls=") || line.include?("chma=") || line.include?("chxr=") || line.include?("chg=")
 
     # Look for stuff quotations and remove those
     # This is to reduce false positives

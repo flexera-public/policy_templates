@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks all GP2 volumes on an AWS Account to see if the GP3 equivalent would be less expensive. An incident is raised with all volumes that would be less expensive if upgraded from GP2 to GP3.
+This policy template checks all GP2 volumes on an AWS Account to see if the GP3 equivalent would be less expensive. An incident is raised with all volumes that would be less expensive if upgraded from GP2 to GP3.
 
 ## How It Works
 
@@ -12,7 +12,7 @@ This policy checks all GP2 volumes on an AWS Account to see if the GP3 equivalen
 
 ### Policy Savings Details
 
-The policy includes the estimated savings. The estimated savings is recognized if the volume is upgraded from GP2 to GP3. The AWS Pricing API is used to retrieve and calculate the estimated savings which is the expected GP3 cost subtracted from the estimated current GP2 cost of the volume. The incident message detail includes the sum of each resource *Estimated Monthly Saving* as *Potential Monthly Savings*.
+The policy template includes the estimated savings. The estimated savings is recognized if the volume is upgraded from GP2 to GP3. The AWS Pricing API is used to retrieve and calculate the estimated savings which is the expected GP3 cost subtracted from the estimated current GP2 cost of the volume. The incident message detail includes the sum of each resource *Estimated Monthly Saving* as *Potential Monthly Savings*.
 
 If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
 
@@ -30,8 +30,8 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
-- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
-- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.
   - `Key==Value` - Filter all resources with the specified tag key:value pair.
   - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
@@ -42,8 +42,8 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *AWS Regional Pricing API* - The regional AWS Pricing API to use when retrieving pricing data. Pricing may vary based on region. More details on these endpoints and how functionality differs between them can be found in the [AWS Price List Query API documentation](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/using-price-list-query-api.html#price-list-query-api-endpoints).
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
-For example if a user selects the "Upgrade Volumes to GP3" action while applying the policy, all the volumes that appear in the raised incident will be upgraded to GP3.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
+For example if a user selects the "Upgrade Volumes to GP3" action while applying the policy template, all the volumes that appear in the raised incident will be upgraded to GP3.
 
 ## Policy Actions
 
@@ -52,7 +52,7 @@ For example if a user selects the "Upgrade Volumes to GP3" action while applying
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 ### Credential configuration
 

@@ -2,7 +2,11 @@
 
 ## Deprecated
 
+<<<<<<< HEAD
 This policy template is no longer being updated. The [Google Rightsize Cloud SQL Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_instances/) policy template should be used instead.
+=======
+This policy template is no longer being updated. The [Google Rightsize Cloud SQL Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_recommendations/) policy produces recommendations for both idle and underutilized Cloud SQL instances and should be used instead.
+>>>>>>> master
 
 ## What It Does
 
@@ -10,13 +14,13 @@ This policy reports on any idle Cloud SQL instances identified by the Google Rec
 
 ### How It Works
 
-This policy uses the following Google recommenders:
+This policy template uses the following Google recommenders:
 
 - `google.cloudsql.instance.IdleRecommender`: Checks if a Cloud SQL instance is idle and recommends stopping the instance when appropriate.
 
 More information is available in Google's documentation:
 
-- [Identify idle Cloud SQL instances](https://cloud.google.com/sql/docs/mysql/recommender-sql-idle)
+- [Identify idle Cloud SQL instances](https://cloud.google.com/sql/docs/mysql/recommender-sql-idle?hl=en)
 
 ### Policy Savings Details
 
@@ -35,7 +39,7 @@ This Policy Template requires that several APIs be enabled in your Google Cloud 
 - [Cloud SQL API](https://console.cloud.google.com/flows/enableapi?apiid=sqladmin.googleapis.com)
 - [Recommender API](https://console.cloud.google.com/flows/enableapi?apiid=recommender.googleapis.com)
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
   - Roles
@@ -58,7 +62,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
@@ -75,8 +79,8 @@ This policy has the following input parameters required when launching the polic
 - *Exclusion Labels: Any / All* - Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Labels` field.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example, if a user selects the "Delete Cloud SQL Instances" action while applying the policy, all idle VM instances will be deleted.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example, if a user selects the "Delete Cloud SQL Instances" action while applying the policy template, all idle VM instances will be deleted.
 
 ## Policy Actions
 

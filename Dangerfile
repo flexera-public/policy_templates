@@ -107,6 +107,7 @@ changed_files.each do |file|
 
   warnings = []
   failures = []
+  messages = []
 
   # Perform a basic text lint on all changed files
   test = general_textlint?(file); warnings << test if test
@@ -114,6 +115,7 @@ changed_files.each do |file|
   # Output final list of failures and warnings
   fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
   warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
 end
 
 ###############################################################################
@@ -128,6 +130,7 @@ changed_rb_files.each do |file|
 
   warnings = []
   failures = []
+  messages = []
 
   # Preread file to avoid reading it multiple times for each method
   file_text = File.read(file)
@@ -146,6 +149,7 @@ changed_rb_files.each do |file|
   # Output final list of failures and warnings
   fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
   warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
 end
 
 ###############################################################################
@@ -160,6 +164,7 @@ changed_py_files.each do |file|
 
   warnings = []
   failures = []
+  messages = []
 
   # Preread file to avoid reading it multiple times for each method
   file_text = File.read(file)
@@ -175,6 +180,7 @@ changed_py_files.each do |file|
   # Output final list of failures and warnings
   fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
   warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
 end
 
 ###############################################################################
@@ -188,6 +194,7 @@ changed_json_files.each do |file|
 
   warnings = []
   failures = []
+  messages = []
 
   # Preread file to avoid reading it multiple times for each method
   file_text = File.read(file)
@@ -206,6 +213,7 @@ changed_json_files.each do |file|
   # Output final list of failures and warnings
   fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
   warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
 end
 
 puts Time.now.strftime("%H:%M:%S.%L") + " * Testing all changed YAML files..."
@@ -215,6 +223,7 @@ changed_yaml_files.each do |file|
 
   warnings = []
   failures = []
+  messages = []
 
   # Preread file to avoid reading it multiple times for each method
   file_text = File.read(file)
@@ -233,6 +242,7 @@ changed_yaml_files.each do |file|
   # Output final list of failures and warnings
   fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
   warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
 end
 
 ###############################################################################
@@ -247,6 +257,7 @@ changed_readme_files.each do |file|
 
   warnings = []
   failures = []
+  messages = []
 
   # Preread file to avoid reading it multiple times for each method
   file_text = File.read(file)
@@ -280,6 +291,7 @@ changed_readme_files.each do |file|
   # Output final list of failures and warnings
   fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
   warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
 end
 
 ###############################################################################
@@ -294,6 +306,7 @@ changed_changelog_files.each do |file|
 
   warnings = []
   failures = []
+  messages = []
 
   # Preread file to avoid reading it multiple times for each method
   file_text = File.read(file)
@@ -315,6 +328,7 @@ changed_changelog_files.each do |file|
   # Output final list of failures and warnings
   fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
   warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
 end
 
 ###############################################################################
@@ -329,6 +343,7 @@ changed_misc_md_files.each do |file|
 
   warnings = []
   failures = []
+  messages = []
 
   # Preread file to avoid reading it multiple times for each method
   file_text = File.read(file)
@@ -350,6 +365,7 @@ changed_misc_md_files.each do |file|
   # Output final list of failures and warnings
   fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
   warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
 end
 
 ###############################################################################
@@ -364,9 +380,10 @@ changed_pt_files.each do |file|
 
   # Run policy through various methods that test for problems.
   # These methods will return false if no problems are found.
-  # Otherwise, they return the warning or error message that should be raised.
+  # Otherwise, they return the warning, error, or message that should be raised.
   warnings = []
   failures = []
+  messages = []
 
   # Preread file to avoid reading it multiple times for each method
   file_parsed = PolicyParser.new
@@ -410,7 +427,11 @@ changed_pt_files.each do |file|
     # Only raise the above warning if the more general warning about updating the README doesn't exist.
     test = policy_missing_master_permissions?(file, file_parsed, permissions_yaml); failures << test if test
 
+<<<<<<< HEAD
      # Skip the new datasource test if this is a new policy template
+=======
+    # Skip the new datasource test if this is a new policy template
+>>>>>>> master
     unless new_pt_files.include?(file)
       ds_test = policy_new_datasource?(file, file_diff, permissions_yaml); warnings << ds_test if ds_test && !test && !rd_test
     end
@@ -421,8 +442,8 @@ changed_pt_files.each do |file|
     # Raise error if policy template short_description is missing valid README link
     test = policy_bad_readme_link?(file, file_parsed); failures << test if test
 
-    # Raise warning if policy template won't be published
-    test = policy_unpublished?(file, file_parsed); warnings << test if test
+    # Raise message if policy template won't be published
+    test = policy_unpublished?(file, file_parsed); messages << test if test
 
     # Raise warning if policy template's name has changed
     test = policy_name_changed?(file, file_diff); warnings << test if test
@@ -581,6 +602,7 @@ changed_pt_files.each do |file|
   # Output final list of failures and warnings
   fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
   warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
 end
 
 ###############################################################################
@@ -598,6 +620,7 @@ changed_meta_pt_files.each do |file|
   # Otherwise, they return the warning or error message that should be raised.
   warnings = []
   failures = []
+  messages = []
 
   # Run policy template through fpt testing. Only raise error if there is a syntax error.
   test = policy_fpt_syntax_error?(file, "meta"); failures << test if test
@@ -605,4 +628,5 @@ changed_meta_pt_files.each do |file|
   # Output final list of failures and warnings
   fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
   warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
+  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
 end

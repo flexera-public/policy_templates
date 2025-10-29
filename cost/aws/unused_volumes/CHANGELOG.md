@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.3.9
+
+- Changed description to say "policy template" for clarity. Functionality unchanged.
+
 ## v8.3.8
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
@@ -39,7 +43,7 @@
 ## v8.2.0
 
 - Modified internal names for incident fields for more accurate scraping into Optimization dashboard
-- Deprecated: This policy is no longer being updated.
+- Deprecated: This policy template is no longer being updated.
 
 ## v8.1
 

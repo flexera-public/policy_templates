@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.5.6
+
+- Changed description to say "policy template" for clarity. Functionality unchanged.
+- Updated label of email parameter to "Email Addresses" to match other policy templates. Functionality unchanged.
+
 ## v2.5.5
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
@@ -18,7 +23,7 @@
 
 ## v2.5.1
 
-- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+- Deprecated: This policy template is no longer being updated. Please see policy README for more information.
 
 ## v2.5
 
