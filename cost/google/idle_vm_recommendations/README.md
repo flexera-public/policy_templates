@@ -82,4 +82,4 @@ This policy template does not incur any cloud costs.
 
 ### API Quotas
 
-The google api sets quotas on the recommender api, which will generate a `429 RESOURCE_EXHAUSTED`. See [Quotas & Limits](https://cloud.google.com/recommender/quotas)
+Google sets quotas on the Recommender API; this will cause a `429 RESOURCE_EXHAUSTED` response when the quota is exceeded. See [Quotas & Limits](https://cloud.google.com/recommender/quotas?hl=en) for more information.
