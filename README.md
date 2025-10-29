@@ -170,7 +170,9 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
   * [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
+  * [Google Rightsize Cloud SQL Instances](./cost/google/rightsize_cloudsql_instances)
   * [Google Rightsize Cloud SQL Recommender](./cost/google/rightsize_cloudsql_recommendations)
+  * [Google Rightsize VM Instances](./cost/google/rightsize_vm_instances)
   * [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
   * [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/google)
   * [Turbonomic Rightsize Virtual Machines Recommendations Google](./cost/turbonomics/scale_virtual_machines_recommendations/google)
@@ -179,6 +181,7 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
   * [Google Old Snapshots](./cost/google/old_snapshots)
+  * [Google Unused Disks](./cost/google/unused_disks)
   * [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/google)
 
 #### Kubecost
