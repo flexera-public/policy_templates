@@ -25,6 +25,7 @@ def general_textlint?(file)
     filtered_list = error_list.reject do |line|
       line.strip.empty? ||
       line.strip == file ||
+      line.start_with?("✖ ") ||
       line.include?('/home/runner/work/policy_templates/') ||
       line.include?('awebdomain.com') ||
       line.include?('example.com') ||
