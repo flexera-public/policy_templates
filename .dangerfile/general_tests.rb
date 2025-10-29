@@ -21,12 +21,11 @@ def general_textlint?(file)
     ansi_stripped = raw.gsub(/\e\[[0-9;]*m/, "") # Strip ANSI color codes so emptiness checks work
     error_list = ansi_stripped.split("\n")
 
-    # If textlint prints a header line with just the path, drop that line
-    error_list.shift if error_list.first&.include?(file)
-
-    # Ignore known false positives and empty lines
+    # Ignore known false positives and lines that don't report errors
     filtered_list = error_list.reject do |line|
       line.strip.empty? ||
+      line.strip == file ||
+      line.include?('/home/runner/work/policy_templates/') ||
       line.include?('awebdomain.com') ||
       line.include?('example.com') ||
       line.include?('/settings/secrets/actions')
