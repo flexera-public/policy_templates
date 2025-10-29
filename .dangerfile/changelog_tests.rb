@@ -11,7 +11,7 @@ def changelog_deprecated?(file, file_lines)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether CHANGELOG file is deprecated..."
 
   file_lines.each do |line|
-    return true if line.include?("Deprecated: This policy is no longer being updated")
+    return true if line.include?("Deprecated: This policy template is no longer being updated") || line.include?("Deprecated: This policy is no longer being updated")
   end
 
   return false

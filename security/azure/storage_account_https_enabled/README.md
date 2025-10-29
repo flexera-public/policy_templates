@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. The [Azure Storage Accounts Without Secure Transfer](https://github.com/flexera-public/policy_templates/tree/master/security/azure/secure_transfer_required/) policy now includes this functionality.
+This policy template is no longer being updated. The [Azure Storage Accounts Without Secure Transfer](https://github.com/flexera-public/policy_templates/tree/master/security/azure/secure_transfer_required/) policy template now includes this functionality.
 
 ## What It Does
 
@@ -14,15 +14,15 @@ This Policy checks for Azure Storage Accounts with HTTPs not enforced.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Azure Endpoint* - Azure Endpoint to access resources
 - *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This policy template uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
 ### Credential configuration
 

@@ -2,11 +2,11 @@
 
 ## Deprecated
 
-This policy is no longer being updated.
+This policy template is no longer being updated.
 
 ## What It Does
 
-This policy checks all the resources in the Azure Subscription with a public IP address, so that those IP's can be removed.
+This policy template checks all the resources in the Azure Subscription with a public IP address, so that those IP's can be removed.
 
 ## How It Works
 
@@ -20,7 +20,7 @@ The policy leverages the Azure API to identify the resources that have public IP
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This policy template uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
 ### Credential configuration
 

@@ -6,17 +6,17 @@ This Policy Template reports any Committed Use Discount Recommendations generate
 
 ## How It Works
 
-Recommendations are obtained via requests to the [Google Recommender API](https://cloud.google.com/docs/cuds-recommender).
+Recommendations are obtained via requests to the [Google Recommender API](https://cloud.google.com/docs/cuds-recommender?hl=en).
 
 ### Policy Savings Details
 
-The policy includes the estimated savings. The estimated savings is recognized if the recommended CUD is purchased. The savings values are provided directly by the [Google Recommender API](https://cloud.google.com/docs/cuds-recommender).
+The policy template includes the estimated savings. The estimated savings is recognized if the recommended CUD is purchased. The savings values are provided directly by the [Google Recommender API](https://cloud.google.com/docs/cuds-recommender?hl=en).
 
-If the Flexera organization is configured to use a currency other than the one the [Google Recommender API](https://cloud.google.com/docs/cuds-recommender) returns, the savings values will be converted using the exchange rate at the time that the policy executes.
+If the Flexera organization is configured to use a currency other than the one the [Google Recommender API](https://cloud.google.com/docs/cuds-recommender?hl=en) returns, the savings values will be converted using the exchange rate at the time that the policy executes.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
@@ -30,7 +30,7 @@ This policy has the following input parameters required when launching the polic
 - *Recommendation Algorithm* - The algorithm to use for generating recommendations. Can be set to either `Optimal` or `Stable Usage`.
   - `Stable Usage` covers minimum stable usage over time.
   - `Optimal` is are based on overall usage and might cover resources that are not active all the time.
-  - See [Google's documentation](https://cloud.google.com/docs/cuds-recommender#understanding-recommendations) for more information.
+  - See [Google's documentation](https://cloud.google.com/docs/cuds-recommender?hl=en#understanding-recommendations) for more information.
 
 ## Policy Actions
 
@@ -40,7 +40,7 @@ The following policy actions are taken for any recommendations:
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
   - `resourcemanager.projects.get`
@@ -71,4 +71,4 @@ This policy template does not incur any cloud costs.
 
 ### API Quotas
 
-The google api sets quotas on the recommender api, which will generate a `429 RESOURCE_EXHAUSTED`. See [Quotas & Limits](https://cloud.google.com/recommender/quotas)
+The google api sets quotas on the recommender api, which will generate a `429 RESOURCE_EXHAUSTED`. See [Quotas & Limits](https://cloud.google.com/recommender/quotas?hl=en)

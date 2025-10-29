@@ -2,9 +2,9 @@
 
 ## What It Does
 
-This policy checks all the EBS volumes in an AWS Account for Read and Write Operations and Provisioned IOPS metrics over a user-specified number of days.  If the volume is unattached, or has zero read or write operations for the lookback period, then the Volume is considered "Idle" and recommended for deletion (with option to create snapshot before).  For the volumes not considered Idle, if volume is a Provisioned IOPS volume and usage less than the user provided threshold for Provisioned IOPS % then it is considered "Underutilized" and recommended for rightsizing.
+This policy template checks all the EBS volumes in an AWS Account for Read and Write Operations and Provisioned IOPS metrics over a user-specified number of days.  If the volume is unattached, or has zero read or write operations for the lookback period, then the Volume is considered "Idle" and recommended for deletion (with option to create snapshot before).  For the volumes not considered Idle, if volume is a Provisioned IOPS volume and usage less than the user provided threshold for Provisioned IOPS % then it is considered "Underutilized" and recommended for rightsizing.
 
-This policy does not currently support Capacity Used % for identified Underutilized volumes because of complexity involved with mapping the volume device mount(s) to the OS mount points for each disk, which is required to map the volume to the `disk_used_percent` metric provided by the CloudWatch Agent on the EC2 Instance.  This device to mount point information is typically retrieved from the OS/Application layer (i.e. `df -h`):
+This policy template does not currently support Capacity Used % for identified Underutilized volumes because of complexity involved with mapping the volume device mount(s) to the OS mount points for each disk, which is required to map the volume to the `disk_used_percent` metric provided by the CloudWatch Agent on the EC2 Instance.  This device to mount point information is typically retrieved from the OS/Application layer (i.e. `df -h`):
 
 ```sh
 $ df -h
@@ -44,11 +44,11 @@ The policy estimates savings for underutilized volumes to be the difference base
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
-- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Threshold Statistic* - Statistic to use for the metric threshold
 - *Utilization Threshold* - The threshold (in percent) for the volume to be considered underutilized. For Provisioned IOPS volumes, this is the percentage of IOPS used.
 - *Volume Status* - Whether to include attached volumes, unattached, or both in the results.
-- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+- *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.
   - `Key==Value` - Filter all resources with the specified tag key:value pair.
   - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
@@ -59,8 +59,8 @@ The policy estimates savings for underutilized volumes to be the difference base
 - *Create Final Snapshot* - Whether or not to take a final snapshot before deleting a volume.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
-For example if a user selects the "Upgrade Volumes to GP3" action while applying the policy, all the volumes that appear in the raised incident will be upgraded to GP3.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
+For example if a user selects the "Upgrade Volumes to GP3" action while applying the policy template, all the volumes that appear in the raised incident will be upgraded to GP3.
 
 ## Policy Actions
 
@@ -70,7 +70,7 @@ For example if a user selects the "Upgrade Volumes to GP3" action while applying
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 ### Credential configuration
 

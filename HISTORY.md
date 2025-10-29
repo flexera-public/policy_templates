@@ -414,7 +414,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ---
 
-### PR [#3535](https://github.com/flexera-public/policy_templates/pull/3535): POL-1612 Update AWS policies using GetMetricData API to remove "Action" Query Parameter (POL-1618, POL-1619, POL-1620, POL-1621, POL-1622) 
+### PR [#3535](https://github.com/flexera-public/policy_templates/pull/3535): POL-1612 Update AWS policies using GetMetricData API to remove "Action" Query Parameter (POL-1618, POL-1619, POL-1620, POL-1621, POL-1622)
 
 *Bug Fix*
 
@@ -1577,7 +1577,7 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 #### Description
 
-> This policy checks various configurations in your Organization to ensure that it is set up correctly.  The checks and recommendations are opinionated, and align with recommended best practices for onboarding and productionizing your Organization.
+> This policy template checks various configurations in your Organization to ensure that it is set up correctly.  The checks and recommendations are opinionated, and align with recommended best practices for onboarding and productionizing your Organization.
 >
 > ### Issues Resolved
 >
