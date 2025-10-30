@@ -41,7 +41,7 @@ This policy template includes the estimated monthly savings. The estimated month
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
-- *Automatic Actions* - When this value is set, this policy template will automatically take the selected action(s).
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
 For example if a user selects the "Change Instance Type" action while applying the policy template, all the resources that didn't satisfy the policy condition will have their instance type changed.
