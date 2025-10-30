@@ -13,7 +13,7 @@ This policy template checks all the virtual machines in an Azure account to dete
 
 ### Policy Savings Details
 
-This policy template includes the estimated monthly savings. The estimated monthly savings is recognized if the instance type is changed to the recommended instance type.
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the instance type is changed to the recommended instance type.
 
 - The `Estimated Monthly Cost` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
 - Since the `Estimated Monthly Cost` of individual resources is obtained from Flexera CCO, it will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
