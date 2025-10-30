@@ -6,14 +6,14 @@ This policy template checks all the virtual machines in an Azure account to dete
 
 ## How It Works
 
-- The policy leverages the Azure API to retrieve all virtual machines and then checks them against our internal database to see if their instance type has been superseded.
-- The policy leverages the Azure API to ensure the suggested instance type could support the number of disks currently attached to superseded virtual machines.
+- The policy template leverages the Azure API to retrieve all virtual machines and then checks them against our internal database to see if their instance type has been superseded.
+- The policy template leverages the Azure API to ensure the suggested instance type could support the number of disks currently attached to superseded virtual machines.
 - Flexera Cloud Cost Optimization (CCO) billing data is pulled for these instances to assess the current cost of the instance as well as grab additional metadata about the instance, such as operating system, needed to calculate savings.
 - The recommendation provided for Superseded Instances is a Change Instance Type action; changing instance type can be performed in an automated manner or after approval.
 
 ### Policy Savings Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the instance type is changed to the recommended instance type.
+This policy template includes the estimated monthly savings. The estimated monthly savings is recognized if the instance type is changed to the recommended instance type.
 
 - The `Estimated Monthly Cost` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
 - Since the `Estimated Monthly Cost` of individual resources is obtained from Flexera CCO, it will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
@@ -41,7 +41,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
-- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+- *Automatic Actions* - When this value is set, this policy template will automatically take the selected action(s).
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
 For example if a user selects the "Change Instance Type" action while applying the policy template, all the resources that didn't satisfy the policy condition will have their instance type changed.
