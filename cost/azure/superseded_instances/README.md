@@ -7,7 +7,7 @@ This policy template checks all the virtual machines in an Azure account to dete
 ## How It Works
 
 - The policy template leverages the Azure API to retrieve all virtual machines and then checks them against our internal database to see if their instance type has been superseded.
-- The policy template leverages the Azure API to ensure the suggested instance type could support the number of disks currently attached to superseded virtual machines.
+- The policy template leverages the Azure API to ensure the suggested instance type can support the number of disks currently attached to the superseded virtual machine.
 - Flexera Cloud Cost Optimization (CCO) billing data is pulled for these instances to assess the current cost of the instance as well as grab additional metadata about the instance, such as operating system, needed to calculate savings.
 - The recommendation provided for Superseded Instances is a Change Instance Type action; changing instance type can be performed in an automated manner or after approval.
 
