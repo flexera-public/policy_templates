@@ -1,22 +1,22 @@
-# AWS RDS instances with support ending soon
+# AWS RDS Instances With Support Ending Soon
 
 ## What It Does
 
-This policy template finds AWS RDS Instances in the given account which are running MySQL or PostgreSQL, meet the list of currently supported instances that are coming to their end of standard support based on the notification period specified and provides an estimated on what extended support could cost you.
+This policy template identifies AWS RDS instances running MySQL or PostgreSQL that are approaching the end of standard support. It checks whether these instances match the list of currently supported versions and calculates an estimated cost for extended support, based on the notification period you specify.
 
 **Note:** Limitations
-- We are not reporting back on serverless deployments at this time as the calculation for vCPU requires cloudwatch metrics and calculations to understand the minimum, maximum and average vCPU being used. 
+- This policy template does not currently support serverless deployments. 
 - If you have a deployment not listed in a region in our list we will default to USD$0.10 per vCPU per running hour.
 
 ### Policy Savings Details
 
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized for RDS resources if the resource is approaching end of standard support within the predefined time frame.
 
-- The `Estimated Monthly Savings` is calculated by multiplying the amount of vCPU assigned to the resource, by the region the resource resides in (see Notes for links) which is the provided extended support cost for year one of MySQL and PostgreSQL RDS Instances. This is then multiplied by 720 hours which is the amount of running hours per month which is also estimated by AWS.
+- The `Estimated Monthly Savings` is calculated by multiplying the number of vCPUs assigned to the RDS instance by the extended support cost rate for MySQL or PostgreSQL in the instance’s region (refer to Notes for pricing links), and then multiplying that result by 720 hours, which represents AWS’s estimated monthly runtime.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
 
-**Note:** The *End of Support dates* list is manually maintained and updated based on the AWS Release calendars and the calculations for extended support costs are provided by AWS.  Refer to the links below for further information.
+**Note:** The *End of Support dates* list is manually maintained and updated based on the AWS Release calendars and the calculations for extended support costs are provided by AWS. Refer to the links below for further information.
 - [AWS PostgreSQL] (https://docs.aws.amazon.com/AmazonRDS/latest/PostgreSQLReleaseNotes/postgresql-release-calendar.html)
 - [AWS MySQL] (https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/MySQL.Concepts.VersionMgmt.html#MySQL.Concepts.VersionMgmt.ReleaseCalendar)
 - [AWS Aurora PostgreSQL] (https://docs.aws.amazon.com/AmazonRDS/latest/AuroraPostgreSQLReleaseNotes/aurorapostgresql-release-calendar.html#aurorapostgresql.minor.versions.supported)
@@ -29,7 +29,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
