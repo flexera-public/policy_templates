@@ -2,11 +2,12 @@
 
 ## What It Does
 
-This policy template checks all the virtual machines in an Azure account to determine if the instance type has been superseded. If it has, the virtual machine is recommended for resizing to a more modern instance type. An incident listing all of these superseded virtual machines is emailed to the user.
+This policy template checks all the virtual machines in an Azure account to determine if the instance type has been superseded. If it has, the virtual machine is recommended for resizing to a more modern instance type. Note that the policy will NOT make such recommendation if the current number of disks attached to the virtual machine is more than the maximum supported number of disks on the more modern instance type. An incident listing all of these recommendations is emailed to the user.
 
 ## How It Works
 
-- The policy leverages the Azure API to retrieve all virtual machines and then checks them against our internal database to see if their instance type has been superseded.
+- The policy template leverages the Azure API to retrieve all virtual machines and then checks them against our internal database to see if their instance type has been superseded.
+- The policy template leverages the Azure API to ensure the suggested instance type can support the number of disks currently attached to the superseded virtual machine.
 - Flexera Cloud Cost Optimization (CCO) billing data is pulled for these instances to assess the current cost of the instance as well as grab additional metadata about the instance, such as operating system, needed to calculate savings.
 - The recommendation provided for Superseded Instances is a Change Instance Type action; changing instance type can be performed in an automated manner or after approval.
 
@@ -59,6 +60,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.Compute/locations/vmSizes/read`
   - `Microsoft.Compute/virtualMachines/read`
   - `Microsoft.Compute/virtualMachines/write`*
 
