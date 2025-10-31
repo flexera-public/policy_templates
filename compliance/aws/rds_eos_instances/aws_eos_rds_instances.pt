@@ -1,7 +1,7 @@
-name "AWS RDS instances with support ending soon"
+name "AWS RDS Instances With Support Ending Soon"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report on AWS RDS Instances that are about to end support. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rds_eos_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report on AWS RDS Instances that are about to transition from standard support to more expensive extended support. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rds_eos_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rds_eos_instances"
 category "Cost"
@@ -10,7 +10,7 @@ default_frequency "weekly"
 info(
   version: "0.1.0",
   provider: "AWS",
-  service: "AmazonRDS",
+  service: "RDS",
   policy_set: "End Of Life",
   recommendation_type: "Usage Reduction",
   hide_skip_approvals: "true"
@@ -74,8 +74,8 @@ end
 parameter "param_eos_notification" do
   type "number"
   category "Policy Settings"
-  label "End of support notification time frame"
-  description "How far in advance do you want to be notified before support ends?"
+  label "Notification Time Frame"
+  description "Number of days in advance you wish to be notified prior to standard support ending."
   min_value 1
   default 90
 end
@@ -403,7 +403,7 @@ script "js_resource_tags", type: "javascript" do
   parameters "instanceArn", "region"
   result "request"
   code <<-EOS
-    var request = {
+  var request = {
     auth: "auth_aws",
     host: "rds." + region + ".amazonaws.com",
     path: "/",
@@ -416,8 +416,8 @@ script "js_resource_tags", type: "javascript" do
       "ResourceName": instanceArn,
       "Version": "2014-10-31"
     }
-    };
-  EOS
+  };
+EOS
 end
 
 datasource "ds_aws_db_instance_map" do
@@ -521,18 +521,19 @@ script "js_rds_instances", type: "javascript" do
 
     // Build tag map
     var tag_map = {};
-    for (var j = 0; j < ds_resource_tags.length; j++) {
-      var tag = ds_resource_tags[j];
-      var id = tag["instanceId"];
+    _.each(ds_resource_tags, function(tag) {
+      var id = tag.instanceId;
 
       if (!tag_map[id]) {
         tag_map[id] = [];
       }
-
-      if (tag["key"] && tag["key"] !== "" && tag["value"] && tag["value"] !== "") {
-        tag_map[id].push(tag["key"] + "=" + tag["value"]);
+   
+      if (!_.isEmpty(tag.key) && !_.isEmpty(tag.value)) {
+        tag_map[id].push(tag.key + "=" + tag.value);
       }
-    }
+
+    });
+
 
     function isExcluded(instanceId) {
       var instanceTags = tag_map[instanceId] || [];
@@ -557,12 +558,11 @@ script "js_rds_instances", type: "javascript" do
 
     // Build billing center lookup
     var billing_center_lookup = {};
-    for (var b = 0; b < ds_billing_centers.length; b++) {
-      var bc = ds_billing_centers[b];
-      if (bc["id"] && bc["name"]) {
-        billing_center_lookup[bc["id"]] = bc["name"];
+    _.each(ds_billing_centers, function(bc) {
+      if (bc.id && bc.name) {
+        billing_center_lookup[bc.id] = bc.name;
       }
-    }
+    });
 
     function getBillingCenter(instanceId) {
       var tagMatch = _.find(ds_resource_tags, function(tag) {
@@ -601,23 +601,21 @@ script "js_rds_instances", type: "javascript" do
 
         if (days_remaining <= Number(param_eos_notification) && days_remaining > 0) {
           var raw_tags = tag_map[instanceId] || [];
-          var clean_tags = [];
-          for (var t = 0; t < raw_tags.length; t++) {
-            if (raw_tags[t] && raw_tags[t] !== "") {
-              clean_tags.push(raw_tags[t]);
-            }
-          }
+          var clean_tags = _.isArray(raw_tags) ? _.filter(raw_tags, function(tag) {
+            return tag && tag !== "";
+          }) : [];
+      }
 
         var vcpu = ds_aws_db_size_map[db_class] ? Number(ds_aws_db_size_map[db_class]) : 0;
         var region = instance["region"];
         var EXTENDED_SUPPORT_COST = 0.10; // default fallback
 
-        for (var r = 0; r < ds_aws_db_support_cost_map.length; r++) {
-          var cost_entry = ds_aws_db_support_cost_map[r];
-          if (cost_entry["region"] === region && cost_entry["year1_cost_usd"]) {
-            EXTENDED_SUPPORT_COST = Number(cost_entry["year1_cost_usd"]);
-            break;
-          }
+        var cost_entry = _.find(ds_aws_db_support_cost_map, function(entry) {
+          return entry.region === region && entry.year1_cost_usd;
+        });
+
+        if (cost_entry) {
+          EXTENDED_SUPPORT_COST = Number(cost_entry.year1_cost_usd);
         }
 
         var estimated_cost = HOURS * vcpu * EXTENDED_SUPPORT_COST;
@@ -665,7 +663,6 @@ script "js_rds_instances", type: "javascript" do
         });
       }
     }
-  }
 EOS
 end
 
@@ -675,8 +672,8 @@ end
 
 policy "pol_eos_rds" do
   validate $ds_rds_instances do
-    summary_template "{{ len data }} RDS Instances Approaching End of Support"
-    check logic_or($ds_parent_policy_terminated, eq(0, 1))
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} RDS Instances Approaching End of Support"
+    check logic_or($ds_parent_policy_terminated, eq(size($ds_rds_instances), 0))
     escalate $esc_email
     hash_exclude "tags"
     export do
