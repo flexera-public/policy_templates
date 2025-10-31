@@ -1,0 +1,614 @@
+name "Google Rightsize Disks"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports on underutilized Google disks. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_disks/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_disks"
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Google",
+  service: "Storage",
+  policy_set: "Unused Volumes",
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_projects_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Projects"
+  description "Allow or Deny entered Projects. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_projects_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Projects List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_projects_ignore_sys" do
+  type "string"
+  category "Filters"
+  label "Ignore System Projects"
+  description "Whether or not to automatically ignore system projects e.g. projects whose id begins with 'sys-'"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_projects_ignore_app" do
+  type "string"
+  category "Filters"
+  label "Ignore Google Apps Script Projects"
+  description "Whether or not to automatically ignore Google Apps Script projects e.g. projects whose id begins with 'app-'"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_labels" do
+  type "list"
+  category "Filters"
+  label "Exclusion Labels"
+  description "Cloud native labels to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_labels_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Labels: Any / All"
+  description "Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Labels' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at CPU and/or memory data for instances. This value cannot be set higher than 42 because Google does not retain metrics for longer than 42 days (6 weeks)."
+  min_value 1
+  max_value 42
+  default 30
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_google" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_google_projects" do
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+    query "filter", "(lifecycleState:ACTIVE)"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "number", jmes_path(col_item, "projectNumber")
+      field "id", jmes_path(col_item, "projectId")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_google_projects_filtered" do
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list, $param_projects_ignore_sys, $param_projects_ignore_app
+end
+
+script "js_google_projects_filtered", type: "javascript" do
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
+  result "result"
+  code <<-EOS
+  if (param_projects_list.length > 0) {
+    filtered = _.filter(ds_google_projects, function(project) {
+      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
+
+      if (param_projects_allow_or_deny == "Deny") {
+        include_project = !include_project
+      }
+
+      return include_project
+    })
+  } else {
+    filtered = ds_google_projects
+  }
+
+  result = _.reject(filtered, function(project) {
+    return (project['id'].substring(0, 4) == "sys-" && param_projects_ignore_sys == "Yes") || (project['id'].substring(0, 4) == "app-" && param_projects_ignore_app == "Yes")
+  })
+EOS
+end
+
+datasource "ds_zones" do
+  iterate $ds_google_projects_filtered
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/", val(iter_item, "id"), "/zones"])
+    query "project", val(iter_item, "projectId")
+    ignore_status [403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "zone", jmes_path(col_item, "name")
+      field "region", last(split(jmes_path(col_item, "region"), '/'))
+      field "projectId", val(iter_item, "id")
+      field "projectName", val(iter_item, "name")
+      field "projectNumber", val(iter_item, "number")
+    end
+  end
+end
+
+datasource "ds_zones_filtered" do
+  run_script $js_zones_filtered, $ds_zones, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_zones_filtered", type: "javascript" do
+  parameters "ds_zones", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_regions, function(zone) {
+      include_zone = _.contains(param_regions_list, zone['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_zone = !include_zone
+      }
+
+      return include_zone
+    })
+  } else {
+    result = ds_zones
+  }
+EOS
+end
+
+datasource "ds_disks" do
+  iterate $ds_zones_filtered
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/", val(iter_item, "projectId"), "/zones/", val(iter_item, "zone"), "/disks"])
+    ignore_status [403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "kind", jmes_path(col_item, "kind")
+      field "creationTimestamp", jmes_path(col_item, "creationTimestamp")
+      field "sizeGb", jmes_path(col_item, "sizeGb")
+      field "status", jmes_path(col_item, "status")
+      field "options", jmes_path(col_item, "options")
+      field "selfLink", jmes_path(col_item, "selfLink")
+      field "type", jmes_path(col_item, "type")
+      field "labels", jmes_path(col_item, "labels")
+      field "users", jmes_path(col_item, "users")
+      field "attachDate", jmes_path(col_item, "lastAttachTimestamp")
+      field "detachDate", jmes_path(col_item, "lastDetachTimestamp")
+      field "sourceImage", jmes_path(col_item, "sourceImage")
+      field "sourceImageId", jmes_path(col_item, "sourceImageId")
+      field "sourceSnapshot", jmes_path(col_item, "sourceSnapshot")
+      field "sourceSnapshotId", jmes_path(col_item, "sourceSnapshotId")
+      field "sourceStorageObject", jmes_path(col_item, "sourceStorageObject")
+      field "zone", val(iter_item, "zone")
+      field "region", val(iter_item, "region")
+      field "projectId", val(iter_item, "projectId")
+      field "projectName", val(iter_item, "projectName")
+      field "projectNumber", val(iter_item, "projectNumber")
+    end
+  end
+end
+
+datasource "ds_disks_label_filtered" do
+  run_script $js_disks_label_filtered, $ds_disks, $param_exclusion_labels, $param_exclusion_labels_boolean
+end
+
+script "js_disks_label_filtered", type: "javascript" do
+  parameters "ds_disks", "param_exclusion_labels", "param_exclusion_labels_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_labels, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_labels.length > 0) {
+    result = _.reject(ds_disks, function(resource) {
+      resource_labels = {}
+      if (typeof(resource['labels']) == 'object') { resource_labels = resource['labels'] }
+
+      // Store a list of found labels
+      found_labels = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_label = resource_labels[comparator['key']]
+
+        if (comparison == 'key' && resource_label != undefined) { found_labels.push(string) }
+        if (comparison == '==' && resource_label == value) { found_labels.push(string) }
+        if (comparison == '!=' && resource_label != value) { found_labels.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_label != undefined && value.test(resource_label)) { found_labels.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_label == undefined) { found_labels.push(string) }
+          if (resource_label != undefined && value.test(resource_label)) { found_labels.push(string) }
+        }
+      })
+
+      all_labels_found = found_labels.length == comparators.length
+      any_labels_found = found_labels.length > 0 && param_exclusion_labels_boolean == 'Any'
+
+      return all_labels_found || any_labels_found
+    })
+  } else {
+    result = ds_unattached_disks
+  }
+EOS
+end
+
+datasource "ds_metrics_read_bytes_count" do
+  iterate $ds_google_projects_filtered
+  request do
+    run_script $js_metrics, val(iter_item, "id"), $param_stats_lookback, "compute.googleapis.com/instance/disk/read_bytes_count"
+  end
+end
+
+datasource "ds_metrics_write_bytes_count" do
+  iterate $ds_google_projects_filtered
+  request do
+    run_script $js_metrics, val(iter_item, "id"), $param_stats_lookback, "compute.googleapis.com/instance/disk/write_bytes_count"
+  end
+end
+
+datasource "ds_metrics_average_io_latency" do
+  iterate $ds_google_projects_filtered
+  request do
+    run_script $js_metrics, val(iter_item, "id"), $param_stats_lookback, "compute.googleapis.com/instance/disk/average_io_latency"
+  end
+end
+
+datasource "ds_metrics_average_io_queue_depth" do
+  iterate $ds_google_projects_filtered
+  request do
+    run_script $js_metrics, val(iter_item, "id"), $param_stats_lookback, "compute.googleapis.com/instance/disk/average_io_queue_depth"
+  end
+end
+
+script "js_metrics", type: "javascript" do
+  parameters "projectId", "param_stats_lookback", "metric"
+  result "request"
+  code <<-EOS
+  group_by = [
+    "group_by sliding(" + param_stats_lookback + "d), .mean",
+    "group_by sliding(" + param_stats_lookback + "d), .max",
+    "group_by sliding(" + param_stats_lookback + "d), .min",
+    "group_by sliding(" + param_stats_lookback + "d), .percentile(99)",
+    "group_by sliding(" + param_stats_lookback + "d), .percentile(95)",
+    "group_by sliding(" + param_stats_lookback + "d), .percentile(90)"
+  ].join(' ; ')
+
+  query = [
+    "fetch gce_instance",
+    "metric '" + metric + "'",
+    "within " + param_stats_lookback + "d",
+    "group_by [resource.instance_id, metric.device_name], [",
+    "  p95_iops: percentile(val(), 95),",
+    "  max_iops: max(val())",
+    "]"
+  ].join(" | ")
+
+  var request = {
+    auth: "auth_google",
+    verb: "POST",
+    host: "monitoring.googleapis.com",
+    path: [ "/v3/projects/", projectId, "/timeSeries:query" ].join(''),
+    header: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json"
+    },
+    body_fields: { "query": query },
+    ignore_status: [ 403, 404 ]
+  }
+EOS
+end
+
+datasource "ds_parsed_metrics" do
+  run_script $js_parsed_metrics, $ds_metrics_read_bytes_count, $ds_metrics_write_bytes_count, $ds_metrics_average_io_latency, $ds_metrics_average_io_queue_depth
+end
+
+script "js_parsed_metrics", type: "javascript" do
+  parameters "ds_metrics_read_bytes_count", "ds_metrics_write_bytes_count", "ds_metrics_average_io_latency", "ds_metrics_average_io_queue_depth"
+  result "result"
+  code <<-EOS
+  result = {}
+
+  function processMetrics(metrics_list, prefix) {
+    _.each(metrics_list, function(entry) {
+      descriptors = _.pluck(entry['timeSeriesDescriptor']['labelDescriptors'], 'key')
+
+      _.each(entry["timeSeriesData"], function(item) {
+        labels = {}
+
+        for (var i = 0; i < descriptors.length; i++) {
+          labels[descriptors[i]] = item['labelValues'][i]['stringValue']
+        }
+
+        instanceId = labels['resource.instance_id']
+
+        if (instanceId) {
+          if (result[instanceId] == undefined) { result[instanceId] = {} }
+
+          result[instanceId][prefix + 'Average'] = Number(item['pointData'][0]['values'][0]['doubleValue']) * 100
+          result[instanceId][prefix + 'Maximum'] = Number(item['pointData'][0]['values'][1]['doubleValue']) * 100
+          result[instanceId][prefix + 'Minimum'] = Number(item['pointData'][0]['values'][2]['doubleValue']) * 100
+          result[instanceId][prefix + 'P99'] = Number(item['pointData'][0]['values'][3]['doubleValue']) * 100
+          result[instanceId][prefix + 'P95'] = Number(item['pointData'][0]['values'][4]['doubleValue']) * 100
+          result[instanceId][prefix + 'P90'] = Number(item['pointData'][0]['values'][5]['doubleValue']) * 100
+        }
+      })
+    })
+  }
+
+  processMetrics(ds_metrics_read_bytes_count, "readBytes")
+  processMetrics(ds_metrics_write_bytes_count, "writeBytes")
+  processMetrics(ds_metrics_average_io_latency, "ioLatency")
+  processMetrics(ds_metrics_average_io_queue_depth, "ioQueueDepth")
+EOS
+end
