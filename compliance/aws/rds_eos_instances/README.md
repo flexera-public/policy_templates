@@ -5,7 +5,7 @@
 This policy template identifies AWS RDS instances running MySQL or PostgreSQL that are approaching the end of standard support. It checks whether these instances match the list of currently supported versions and calculates an estimated cost for extended support, based on the notification period you specify.
 
 **Note:** Limitations
-- This policy template does not currently support serverless deployments. 
+- This policy template does not currently support serverless deployments.
 - If you have a deployment not listed in a region in our list we will default to USD$0.10 per vCPU per running hour.
 
 ### Policy Savings Details
@@ -60,7 +60,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
       "Statement": [
           {
               "Effect": "Allow",
-              "Action": [                
+              "Action": [ 
                 "sts:GetCallerIdentity",
                 "ec2:DescribeRegions",
                 "rds:DescribeDBInstances",
