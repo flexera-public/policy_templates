@@ -19,13 +19,13 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 **Note:** The *End of Support dates* list is manually maintained and updated based on the AWS Release calendars and the calculations for extended support costs are provided by AWS. Refer to the links below for further information.
 
-- [AWS PostgreSQL] (https://docs.aws.amazon.com/AmazonRDS/latest/PostgreSQLReleaseNotes/postgresql-release-calendar.html)
-- [AWS MySQL] (https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/MySQL.Concepts.VersionMgmt.html#MySQL.Concepts.VersionMgmt.ReleaseCalendar)
-- [AWS Aurora PostgreSQL] (https://docs.aws.amazon.com/AmazonRDS/latest/AuroraPostgreSQLReleaseNotes/aurorapostgresql-release-calendar.html#aurorapostgresql.minor.versions.supported)
-- [AWS Aurora MySQL] (https://docs.aws.amazon.com/AmazonRDS/latest/AuroraMySQLReleaseNotes/AuroraMySQL.release-calendars.html#AuroraMySQL.release-calendars.minor)
-- [AWS Postgresql extended support pricing] (https://aws.amazon.com/rds/postgresql/pricing/#Amazon_RDS_Extended_Support_costs)
-- [AWS MySQL extended support pricing] (https://aws.amazon.com/rds/mysql/pricing/#Amazon_RDS_Extended_Support_costs)
-- [AWS Aurora extended support pricing] (https://aws.amazon.com/rds/aurora/pricing/#Amazon_RDS_Extended_Support_costs)
+- [AWS PostgreSQL] <https://docs.aws.amazon.com/AmazonRDS/latest/PostgreSQLReleaseNotes/postgresql-release-calendar.html>
+- [AWS MySQL] <https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/MySQL.Concepts.VersionMgmt.html#MySQL.Concepts.VersionMgmt.ReleaseCalendar>
+- [AWS Aurora PostgreSQL] <https://docs.aws.amazon.com/AmazonRDS/latest/AuroraPostgreSQLReleaseNotes/aurorapostgresql-release-calendar.html#aurorapostgresql.minor.versions.supported>
+- [AWS Aurora MySQL] <https://docs.aws.amazon.com/AmazonRDS/latest/AuroraMySQLReleaseNotes/AuroraMySQL.release-calendars.html#AuroraMySQL.release-calendars.minor>
+- [AWS Postgresql extended support pricing] <https://aws.amazon.com/rds/postgresql/pricing/#Amazon_RDS_Extended_Support_costs>
+- [AWS MySQL extended support pricing] <https://aws.amazon.com/rds/mysql/pricing/#Amazon_RDS_Extended_Support_costs>
+- [AWS Aurora extended support pricing] <https://aws.amazon.com/rds/aurora/pricing/#Amazon_RDS_Extended_Support_costs>
 
 ## Input Parameters
 
@@ -46,7 +46,7 @@ This policy has the following input parameters required when launching the polic
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `ec2:DescribeRegions`
