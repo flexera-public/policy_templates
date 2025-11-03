@@ -2,11 +2,11 @@
 
 ## What It Does
 
-This policy finds AWS snapshots in the given account which are older than the specified days and deletes them after user approval. Snapshots with an associated AMI can be included or excluded depending on the settings selected when applying the policy; if included, the AMI will be deleted along with the snapshot if the snapshot is deleted.
+This policy template finds AWS snapshots in the given account which are older than the specified days and deletes them after user approval. Snapshots with an associated AMI can be included or excluded depending on the settings selected when applying the policy; if included, the AMI will be deleted along with the snapshot if the snapshot is deleted.
 
 ### Policy Savings Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is terminated.
+The policy template includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is terminated.
 
 - The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
 - Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
