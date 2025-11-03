@@ -33,6 +33,8 @@ __NOTE: The most recent 3 days are ignored when performing the assessment. This 
 - *Look Back Period (Days)* - How many days back to look when assessing the amount of time a virtual machine is powered off for.
 - *Maximum Time Powered Off (%)* - Virtual machines that are powered off for more than the specified percentage will be included in the report. Set to `100` to not perform this assessment.
 - *Minimum Time Powered Off (%)* - Virtual machines that are powered off for less than the specified percentage will be included in the report. Set to `0` to not perform this assessment.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 - *Power Off Type* - Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances. Only applicable when taking action against instances.
 
