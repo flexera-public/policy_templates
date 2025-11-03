@@ -2,11 +2,11 @@
 
 ## Deprecated
 
-This policy is no longer being updated.
+This policy template is no longer being updated.
 
 ## What It Does
 
-This policy uses a FlexNet Manger Cloud and looks up all FlexNet Manager Licenses that has lower than user provided percentage.
+This policy template uses a FlexNet Manger Cloud and looks up all FlexNet Manager Licenses that has lower than user provided percentage.
 
 The report / Mail output looks like this:
 ![Alt text][emailoutput]
@@ -17,7 +17,7 @@ Current limitations:
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *FNMS Report URL* - Full FlexNet URL (e.g. `https://demo.flexnetmanager.com/Suite` or WStunnel tunnel URL `https://wstunnel1-1.rightscale.com/_token/<token>/`)
 - *FNMS Report ID* - FlexNet manager Custom View ID
@@ -32,7 +32,7 @@ This policy has the following input parameters required when launching the polic
 
 For On Premise If FlexNet Manager Suite is not accessible from the Internet, you will need to setup a wstunnel to provide a secure connection into the FlexNet manager system.For more details on wstunnel please refer to this: [https://github.com/rightscale/wstunnel](https://github.com/rightscale/wstunnel)
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This policy template uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
 ### Credential configuration
 

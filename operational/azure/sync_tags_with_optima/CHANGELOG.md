@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.7
+
+- Changed description to say "policy template" for clarity. Functionality unchanged.
+
 ## v3.3.6
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
@@ -22,7 +26,7 @@
 
 ## v3.3.1
 
-- Deprecated: This policy is no longer being updated.
+- Deprecated: This policy template is no longer being updated.
 
 ## v3.3
 

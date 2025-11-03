@@ -1,0 +1,1132 @@
+name "Google Unused Disks"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports on unused Google disks and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/unused_disks/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/google/unused_disks"
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Google",
+  service: "Storage",
+  policy_set: "Unused Volumes",
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_days_unattached" do
+  type "number"
+  category "Policy Settings"
+  label "Days Unattached"
+  description "The number of days a disk needs to be detached to be considered unused. If this value is set to 0, all unattached disks will be considered unused."
+  min_value 0
+  default 30
+end
+
+parameter "param_projects_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Projects"
+  description "Allow or Deny entered Projects. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_projects_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Projects List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_projects_ignore_sys" do
+  type "string"
+  category "Filters"
+  label "Ignore System Projects"
+  description "Whether or not to automatically ignore system projects e.g. projects whose id begins with 'sys-'"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_projects_ignore_app" do
+  type "string"
+  category "Filters"
+  label "Ignore Google Apps Script Projects"
+  description "Whether or not to automatically ignore Google Apps Script projects e.g. projects whose id begins with 'app-'"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_labels" do
+  type "list"
+  category "Filters"
+  label "Exclusion Labels"
+  description "Cloud native labels to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_labels_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Labels: Any / All"
+  description "Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Labels' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_take_snapshot" do
+  type "string"
+  category "Actions"
+  label "Create Final Snapshot"
+  description "Whether or not to take a final snapshot before deleting a disk."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete Unused Disks"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_google" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_google_projects" do
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+    query "filter", "(lifecycleState:ACTIVE)"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "number", jmes_path(col_item, "projectNumber")
+      field "id", jmes_path(col_item, "projectId")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_google_projects_filtered" do
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list, $param_projects_ignore_sys, $param_projects_ignore_app
+end
+
+script "js_google_projects_filtered", type: "javascript" do
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
+  result "result"
+  code <<-EOS
+  if (param_projects_list.length > 0) {
+    filtered = _.filter(ds_google_projects, function(project) {
+      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
+
+      if (param_projects_allow_or_deny == "Deny") {
+        include_project = !include_project
+      }
+
+      return include_project
+    })
+  } else {
+    filtered = ds_google_projects
+  }
+
+  result = _.reject(filtered, function(project) {
+    return (project['id'].substring(0, 4) == "sys-" && param_projects_ignore_sys == "Yes") || (project['id'].substring(0, 4) == "app-" && param_projects_ignore_app == "Yes")
+  })
+EOS
+end
+
+datasource "ds_zones" do
+  iterate $ds_google_projects_filtered
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/", val(iter_item, "id"), "/zones"])
+    query "project", val(iter_item, "projectId")
+    ignore_status [403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "zone", jmes_path(col_item, "name")
+      field "region", last(split(jmes_path(col_item, "region"), '/'))
+      field "projectId", val(iter_item, "id")
+      field "projectName", val(iter_item, "name")
+      field "projectNumber", val(iter_item, "number")
+    end
+  end
+end
+
+datasource "ds_zones_filtered" do
+  run_script $js_zones_filtered, $ds_zones, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_zones_filtered", type: "javascript" do
+  parameters "ds_zones", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_regions, function(zone) {
+      include_zone = _.contains(param_regions_list, zone['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_zone = !include_zone
+      }
+
+      return include_zone
+    })
+  } else {
+    result = ds_zones
+  }
+EOS
+end
+
+datasource "ds_disks" do
+  iterate $ds_zones_filtered
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/", val(iter_item, "projectId"), "/zones/", val(iter_item, "zone"), "/disks"])
+    ignore_status [403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "kind", jmes_path(col_item, "kind")
+      field "creationTimestamp", jmes_path(col_item, "creationTimestamp")
+      field "sizeGb", jmes_path(col_item, "sizeGb")
+      field "status", jmes_path(col_item, "status")
+      field "options", jmes_path(col_item, "options")
+      field "selfLink", jmes_path(col_item, "selfLink")
+      field "type", jmes_path(col_item, "type")
+      field "labels", jmes_path(col_item, "labels")
+      field "users", jmes_path(col_item, "users")
+      field "attachDate", jmes_path(col_item, "lastAttachTimestamp")
+      field "detachDate", jmes_path(col_item, "lastDetachTimestamp")
+      field "sourceImage", jmes_path(col_item, "sourceImage")
+      field "sourceImageId", jmes_path(col_item, "sourceImageId")
+      field "sourceSnapshot", jmes_path(col_item, "sourceSnapshot")
+      field "sourceSnapshotId", jmes_path(col_item, "sourceSnapshotId")
+      field "sourceStorageObject", jmes_path(col_item, "sourceStorageObject")
+      field "zone", val(iter_item, "zone")
+      field "region", val(iter_item, "region")
+      field "projectId", val(iter_item, "projectId")
+      field "projectName", val(iter_item, "projectName")
+      field "projectNumber", val(iter_item, "projectNumber")
+    end
+  end
+end
+
+datasource "ds_unattached_disks" do
+  run_script $js_unattached_disks, $ds_disks
+end
+
+script "js_unattached_disks", type: "javascript" do
+  parameters "ds_disks"
+  result "result"
+  code <<-EOS
+  result = _.reject(ds_disks, function(disk) {
+    return disk['users'] && disk['users'].length > 0
+  })
+EOS
+end
+
+datasource "ds_unattached_disks_label_filtered" do
+  run_script $js_unattached_disks_label_filtered, $ds_unattached_disks, $param_exclusion_labels, $param_exclusion_labels_boolean
+end
+
+script "js_unattached_disks_label_filtered", type: "javascript" do
+  parameters "ds_unattached_disks", "param_exclusion_labels", "param_exclusion_labels_boolean"
+  result "result"
+  code <<-EOS
+  comparators = _.map(param_exclusion_labels, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_labels.length > 0) {
+    result = _.reject(ds_unattached_disks, function(resource) {
+      resource_labels = {}
+      if (typeof(resource['labels']) == 'object') { resource_labels = resource['labels'] }
+
+      // Store a list of found labels
+      found_labels = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_label = resource_labels[comparator['key']]
+
+        if (comparison == 'key' && resource_label != undefined) { found_labels.push(string) }
+        if (comparison == '==' && resource_label == value) { found_labels.push(string) }
+        if (comparison == '!=' && resource_label != value) { found_labels.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_label != undefined && value.test(resource_label)) { found_labels.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_label == undefined) { found_labels.push(string) }
+          if (resource_label != undefined && value.test(resource_label)) { found_labels.push(string) }
+        }
+      })
+
+      all_labels_found = found_labels.length == comparators.length
+      any_labels_found = found_labels.length > 0 && param_exclusion_labels_boolean == 'Any'
+
+      return all_labels_found || any_labels_found
+    })
+  } else {
+    result = ds_unattached_disks
+  }
+EOS
+end
+
+datasource "ds_unused_disks" do
+  run_script $js_unused_disks, $ds_unattached_disks_label_filtered, $param_days_unattached
+end
+
+script "js_unused_disks", type: "javascript" do
+  parameters "ds_unattached_disks_label_filtered", "param_days_unattached"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(ds_unattached_disks_label_filtered, function(disk) {
+    new_disk = {}
+    _.each(_.keys(disk), function(key) { new_disk[key] = disk[key] })
+
+    if (new_disk['detachDate']) {
+      new_disk['detachDays'] = Math.floor((new Date() - new Date(new_disk['detachDate'])) / (1000 * 60 * 60 * 24))
+    }
+
+    if (new_disk['detachDays'] == undefined || new_disk['detachDays'] >= param_days_unattached || param_days_unattached == 0) {
+      result.push(new_disk)
+    }
+  })
+EOS
+end
+
+datasource "ds_disk_costs" do
+  iterate $ds_google_projects_filtered
+  request do
+    run_script $js_disk_costs, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceID", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_disk_costs", type: "javascript" do
+  parameters "project_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Compute Engine"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "compute engine"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor",
+            "type": "equal",
+            "value": "GCP"
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": project_id
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_disk_costs_grouped" do
+  run_script $js_disk_costs_grouped, $ds_disk_costs
+end
+
+script "js_disk_costs_grouped", type: "javascript" do
+  parameters "ds_disk_costs"
+  result "result"
+  code <<-'EOS'
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_disk_costs, function(item) {
+    id = item['resourceID'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_incident" do
+  run_script $js_incident, $ds_disks, $ds_unused_disks, $ds_disk_costs_grouped, $ds_currency, $ds_applied_policy, $param_min_savings, $param_days_unattached
+end
+
+script "js_incident", type: "javascript" do
+  parameters "ds_disks", "ds_unused_disks", "ds_disk_costs_grouped", "ds_currency", "ds_applied_policy", "param_min_savings", "param_days_unattached"
+  result "result"
+  code <<-'EOS'
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator) {
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  result = []
+  total_savings = 0.0
+
+  _.each(ds_unused_disks, function(disk) {
+    savings = 0.0
+
+    if (ds_disk_costs_grouped[disk['id'].toLowerCase()]) { savings = ds_disk_costs_grouped[disk['id'].toLowerCase()] }
+    if (ds_disk_costs_grouped[disk['name'].toLowerCase()]) { savings = ds_disk_costs_grouped[disk['name'].toLowerCase()] }
+
+    if (savings >= param_min_savings) {
+      total_savings += savings
+
+      tags = []
+
+      if (disk['labels']) {
+        tags = _.map(_.keys(disk['labels']), function(key) {
+          return [ key, disk['labels'][key] ].join('=')
+        })
+      }
+
+      recommendationDetails = [
+        "Delete Google persistent disk ", disk["name"], " ",
+        "in Google Project ", disk["projectName"], " ",
+        "(", disk["projectId"], ")"
+      ].join('')
+
+      result.push({
+        accountID: disk['projectId'],
+        accountName: disk['projectName'],
+        projectNumber: disk['projectNumber'],
+        resourceID: disk['id'],
+        resourceName: disk['name'],
+        description: disk['description'],
+        kind: disk['kind'],
+        created_at: disk['creationTimestamp'],
+        state: disk['status'],
+        selfLink: disk['selfLink'],
+        sizeGb: disk['sizeGb'],
+        type: disk['type'],
+        zone: disk['zone'],
+        region: disk['region'],
+        detachDate: disk['detachDate'],
+        detachDays: disk['detachDays'],
+        tags: tags.join(', '),
+        recommendationDetails: recommendationDetails,
+        service: "Compute Engine",
+        savings: Math.round(savings * 1000) / 1000,
+        savingsCurrency: ds_currency['symbol'],
+        lookbackPeriod: param_days_unattached,
+        policy_name: ds_applied_policy['name'],
+        total_savings: "",
+        message: ""
+      })
+    }
+  })
+
+  result = _.sortBy(result, "savings").reverse()
+
+  total_disks = ds_disks.length
+  total_unused_disks = result.length
+  unused_disks_percentage = (total_unused_disks / total_disks * 100).toFixed(2).toString() + '%'
+
+  noun = total_disks == 1 ? "disk" : "disks"
+  verb = total_unused_disks == 1 ? "is" : "are"
+
+  findings = [
+    "Out of ", total_disks, " persistent ", noun, " analyzed, ",
+    total_unused_disks, " (", unused_disks_percentage,
+    ") ", verb, " unused and recommended for deletion. "
+  ].join('')
+
+  if (param_days_unattached != 0) {
+    day_message = "day"
+    if (param_days_unattached.length > 1) { day_message += "s" }
+
+    idle_message = [
+      "An unattached persistent disk is considered unused if it has not been attached to an instance ",
+      "for at least ", param_days_unattached, " ", day_message, ".\n\n"
+    ].join('')
+  } else {
+    idle_message = "A persistent disk is considered unused if it is not attached to an instance regardless of how long it's been unattached for.\n\n"
+  }
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+  ].join('')
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    accountID: "",
+    accountName: "",
+    projectNumber: "",
+    resourceID: "",
+    resourceName: "",
+    description: "",
+    kind: "",
+    created_at: "",
+    state: "",
+    selfLink: "",
+    sizeGb: "",
+    type: "",
+    zone: "",
+    region: "",
+    detachDate: "",
+    detachDays: "",
+    tags: "",
+    recommendationDetails: "",
+    service: "",
+    savings: "",
+    savingsCurrency: "",
+    lookbackPeriod: "",
+    policy_name: "",
+    total_savings: "",
+    message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + idle_message + disclaimer
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_unused_disks" do
+  validate_each $ds_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Unused Disks Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_delete_ip_address
+    hash_exclude "total_savings", "message", "tags", "savings", "savingsCurrency", "detachDays"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Project ID"
+      end
+      field "accountName" do
+        label "Project Name"
+      end
+      field "projectNumber" do
+        label "Project Number"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "zone" do
+        label "Zone"
+      end
+      field "tags" do
+        label "Labels"
+      end
+      field "state" do
+        label "Status"
+      end
+      field "sizeGb" do
+        label "Size (GB)"
+      end
+      field "created_at" do
+        label "Created At"
+      end
+      field "detachDate" do
+        label "Detached At"
+      end
+      field "detachDays" do
+        label "Days Unattached"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Currency"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "selfLink" do
+        label "Resource Link"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_delete_ip_address" do
+  automatic contains($param_automatic_action, "Delete Unused Disks")
+  label "Delete Unused Disks"
+  description "Approval to delete all selected disks"
+  run "delete_disks", data, $param_take_snapshot
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_disks($data, $param_take_snapshot) return $all_responses do
+  $$all_responses = []
+
+  foreach $disk in $data do
+    sub on_error: handle_error() do
+      if ($param_take_snapshot == "Yes")
+        call snapshot_disk($disk) retrieve $snapshot_response
+      end
+
+      call delete_disk($disk) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define snapshot_disk($disk) return $response do
+  task_label("POST " + $disk['selfLink'] + '/createSnapshot')
+
+  $response = http_post(
+    url: $disk['selfLink'] + '/createSnapshot',
+    auth: $$auth_google,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: {
+      name: join([$disk["resourceName"], "-final-snapshot"])
+    }
+  )
+
+  task_label("Post Google disk response: " + $disk["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $disk['selfLink'] + '/createSnapshot', "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response posting Google disk: "+ $disk["resourceName"] + " " + to_json($response)
+  else
+    task_label("Post Google disk successful: " + $disk["resourceName"])
+
+    $operation = $response["body"]
+
+    sleep(5)
+    call get_operation_status($operation) retrieve $status_response, $current_status
+    sleep(5)
+
+    while $current_status != "DONE" do
+      call get_operation_status($operation) retrieve $status_response, $current_status
+      sleep(5)
+    end
+  end
+end
+
+define get_operation_status($operation) return $response, $operation_status do
+  task_label("GET " + $operation['selfLink'])
+
+  $response = http_get(
+    url: $operation['selfLink'],
+    auth: $$auth_google,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Get Google operation response: " + $operation["name"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $operation['selfLink'], "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response getting Google operation: "+ $operation["name"] + " " + to_json($response)
+  else
+    task_label("Get Google operation successful: " + $operation["name"])
+    $operation_status = $response["body"]["status"]
+  end
+end
+
+define delete_disk($disk) return $response do
+  task_label("DELETE " + $disk['selfLink'])
+
+  $response = http_delete(
+    url: $disk['selfLink'],
+    auth: $$auth_google,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Delete Google disk response: " + $disk["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $disk['selfLink'], "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Google disk: "+ $disk["resourceName"] + " " + to_json($response)
+  else
+    task_label("Delete Google disk successful: " + $disk["resourceName"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end

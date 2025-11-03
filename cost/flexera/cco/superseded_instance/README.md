@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. Please use the version of this policy specific to the cloud environment you need recommendations for.
+This policy template is no longer being updated. Please use the version of this policy specific to the cloud environment you need recommendations for.
 
 - [**AWS Superseded EC2 Instances**](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/superseded_instances)
 - [**Azure Superseded Compute Instances**](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/superseded_instances)
@@ -13,7 +13,7 @@ The Superseded Instances Policy Template is used to monitor an account a generat
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
@@ -26,7 +26,7 @@ This policy used Optima data to get a list of instances used in the month and th
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *Email addresses* - A list of email addresses to notify
 - *Billing Center Name* - List of Billing Center Names to check

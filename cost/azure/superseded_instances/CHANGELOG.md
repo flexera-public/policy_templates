@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.0.0
+
+- Recommendations now consider number of attached data disks. Sizes that would not support the current number of attached disks for an instance will not be recommended.
+- Azure credential now requires `Microsoft.Compute/locations/vmSizes/read` permission to support the above.
+
 ## v3.0.2
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

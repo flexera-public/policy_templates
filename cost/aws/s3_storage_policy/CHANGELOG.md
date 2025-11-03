@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.7
+
+- Updated label of email parameter to "Email Addresses" to match other policy templates. Functionality unchanged.
+
 ## v4.0.6
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

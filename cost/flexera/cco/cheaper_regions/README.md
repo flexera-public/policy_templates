@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. Cloud-specific policies now exist for this functionality and should be used instead:
+This policy template is no longer being updated. Cloud-specific policies now exist for this functionality and should be used instead:
 
 - [AWS Cheaper Regions](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/cheaper_regions/)
 - [Azure Cheaper Regions](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/cheaper_regions/)
@@ -14,7 +14,7 @@ This Policy Template determines which regions have cheaper alternatives by speci
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *Billing Center Name* - The list of Billing centers to check against
 - *Email Addresses* - A list of email addresses to notify
@@ -27,7 +27,7 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 ### Credential Configuration
 
@@ -41,7 +41,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## How It Works
 
-- This policy uses a hash to determine existing regions and newer compatible cheaper regions. It checks the billing center and reports on cheaper regions.
+- This policy template uses a hash to determine existing regions and newer compatible cheaper regions. It checks the billing center and reports on cheaper regions.
 
 ## Supported Clouds
 

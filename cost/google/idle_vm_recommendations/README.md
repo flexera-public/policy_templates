@@ -2,15 +2,15 @@
 
 ## Deprecated
 
-This policy is no longer being updated. The [Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations) policy now includes this functionality and is the recommended policy for getting idle VM recommendations.
+template is no longer being updated. The [Google Rightsize VM Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_instances) policy now includes this functionality and is the recommended policy for getting idle VM recommendations.
 
 ## What It Does
 
-This Policy finds Idle Virtual Machine Recommendations and reports when it finds them. You can then delete the idle instances
+This policy template finds Idle Virtual Machine Recommendations and reports when it finds them. You can then delete the idle instances
 
 ### How it works
 
-This policy uses the GCP recommender `google.compute.instance.IdleResourceRecommender`, which identifies instances (VM) that have not been used over the previous 1 to 14 days, or, for new VMs, starting one day after VM creation: the algorithm considers the CPU and network usage in the last observation period. If CPU and network usage are below predefined thresholds, the Recommender classifies the VM as idle.
+This policy template uses the GCP recommender `google.compute.instance.IdleResourceRecommender`, which identifies instances (VM) that have not been used over the previous 1 to 14 days, or, for new VMs, starting one day after VM creation: the algorithm considers the CPU and network usage in the last observation period. If CPU and network usage are below predefined thresholds, the Recommender classifies the VM as idle.
 
 After a VM is created and running for at least one day during the observation period, Compute Engine begins generating idle VM recommendations for it. New recommendations are generated once per day.
 
@@ -22,12 +22,12 @@ You also need to [enable the Recommender API](https://console.cloud.google.com/f
 
 Check the following official GCP docs for more:
 
-- [How detection of idle VM instances works](https://cloud.google.com/compute/docs/instances/idle-vm-recommendations-overview#how_detection_of_idle_vm_instances_works)
-- [Viewing idle VM instance recommendations](https://cloud.google.com/compute/docs/instances/viewing-and-applying-idle-vm-recommendations#viewing_idle_vm_instance_recommendations)
+- [How detection of idle VM instances works](https://cloud.google.com/compute/docs/instances/idle-vm-recommendations-overview#how_detection_of_idle_vm_instances_works?hl=en)
+- [Viewing idle VM instance recommendations](https://cloud.google.com/compute/docs/instances/viewing-and-applying-idle-vm-recommendations?hl=en#viewing_idle_vm_instance_recommendations)
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *Email addresses* - A list of email addresses to notify
 - *Zone* - Location to check, it is specifically Google zones
@@ -43,9 +43,9 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This policy template uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-The recommender API also needs to be [enabled.](https://cloud.google.com/recommender/docs/enabling#gcloud).
+The recommender API also needs to be [enabled.](https://cloud.google.com/recommender/docs/enabling?hl=en#gcloud).
 
 ### Credential configuration
 
@@ -82,4 +82,4 @@ This policy template does not incur any cloud costs.
 
 ### API Quotas
 
-The google api sets quotas on the recommender api, which will generate a `429 RESOURCE_EXHAUSTED`. See [Quotas & Limits](https://cloud.google.com/recommender/quotas)
+Google sets quotas on the Recommender API; this will cause a `429 RESOURCE_EXHAUSTED` response when the quota is exceeded. See [Quotas & Limits](https://cloud.google.com/recommender/quotas?hl=en) for more information.
