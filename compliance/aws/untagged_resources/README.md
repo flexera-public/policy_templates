@@ -17,6 +17,8 @@ This policy template checks for AWS resources missing the user-specified tags. A
 - *Include Savings* - Whether or not to include the total estimated savings opportunities for each resource in the results. Disabling this can speed up policy execution but will result in the relevant fields in the report being empty.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Resource Types* - A list of resource types to report on. Leave empty to report all taggable resources that aren't compliant. Entries must be in `service` or `service:type` format. The specific values for each service and resource type [can be found in the AWS documentation](https://docs.aws.amazon.com/service-authorization/latest/reference/reference.html). Examples:
   - ec2
   - ec2:instance

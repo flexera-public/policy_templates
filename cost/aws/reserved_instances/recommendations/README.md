@@ -29,6 +29,8 @@ This policy template has the following input parameters:
 - *Account Scope* - The account scope that you want your recommendations for. Select `Payer` to produce results aggregated across the entire AWS Organization (Master Payer and Linked accounts), or `Linked` to produce results for each linked account individually.
 - *Reservation Term* - Length of reservation term to provide recommendations for.
 - *Payment Option* - Reservation purchase option to provide recommendations for. Select `Everything` to produce recommendations for all three.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.0
+
+- Added support for attaching CSV files to incident emails.
+
 ## v0.2.8
 
 - Fixed issue where estimated savings would sometimes be reported as 0 inaccurately.

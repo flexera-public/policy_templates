@@ -56,6 +56,8 @@ The policy estimates savings for underutilized volumes to be the difference base
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Exclusion Types* - A list of volume types to always exclude from the results. Leave blank to consider all volume types when producing recommendations. Examples: sc1, gp2
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Create Final Snapshot* - Whether or not to take a final snapshot before deleting a volume.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
