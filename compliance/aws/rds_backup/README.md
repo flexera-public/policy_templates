@@ -22,6 +22,8 @@ This policy template has the following input parameters:
 - *Backup Settings* - Whether to report AWS RDS instances with invalid backup retention periods, invalid backup windows, or both.
 - *Backup Retention Period (Days)* - The backup retention period, in days, that AWS RDS instances should be configured with. Has no effect if `Backup Window` is selected for the Backup Settings parameter.
 - *Backup Window (HH:MM-HH:MM)* - The backup window, in HH:MM-HH:MM format, that AWS RDS instances should be configured with. Has no effect if `Backup Retention Period` is selected for the Backup Settings parameter. Example value: `08:00-08:30`
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 

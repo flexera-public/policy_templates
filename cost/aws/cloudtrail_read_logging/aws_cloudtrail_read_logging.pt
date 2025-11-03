@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.6",
+  version: "0.2.0",
   provider: "AWS",
   service: "CloudTrail",
   policy_set: "Logging",
@@ -60,6 +60,24 @@ parameter "param_automatic_action" do
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Disable Read Logging"]
   default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -258,13 +276,15 @@ datasource "ds_trail_list_with_selectors" do
 end
 
 datasource "ds_trails_incident" do
-  run_script $js_trails_incident, $ds_trail_list_with_selectors, $ds_aws_account, $ds_applied_policy
+  run_script $js_trails_incident, $ds_trail_list_with_selectors, $ds_aws_account, $ds_applied_policy, $param_incident_csv
 end
 
 script "js_trails_incident", type:"javascript" do
-  parameters "ds_trail_list_with_selectors", "ds_aws_account", "ds_applied_policy"
+  parameters "ds_trail_list_with_selectors", "ds_aws_account", "ds_applied_policy", "param_incident_csv"
   result "result"
   code <<-EOS
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   result = []
 
   _.each(ds_trail_list_with_selectors, function(trail) {
@@ -308,7 +328,8 @@ script "js_trails_incident", type:"javascript" do
         event_selectors: JSON.stringify(event_selectors),
         fixed_selectors: JSON.stringify(fixed_selectors),
         selectors_object: fixed_selectors,
-        policy_name: ds_applied_policy['name']
+        policy_name: ds_applied_policy['name'],
+        csv_message: csv_message
       })
     }
   })
@@ -322,6 +343,7 @@ end
 policy "pol_trails_incident" do
   validate_each $ds_trails_incident do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS CloudTrails With Read Logging Enabled Found"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     escalate $esc_email
     escalate $esc_disable_read_logging
@@ -372,7 +394,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_disable_read_logging" do

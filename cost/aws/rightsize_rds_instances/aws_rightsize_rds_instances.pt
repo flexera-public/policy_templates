@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.8.6",
+  version: "5.9.0",
   provider: "AWS",
   service: "RDS",
   policy_set: "Rightsize Database Instances",
@@ -143,6 +143,24 @@ parameter "param_automatic_action" do
   description "When this value is set, this policy will automatically take the selected action(s)."
   allowed_values ["Downsize Underutilized RDS Instances", "Terminate Unused RDS Instances"]
   default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -1616,13 +1634,15 @@ EOS
 end
 
 datasource "ds_rds_idle_incident" do
-  run_script $js_rds_idle_incident, $ds_rds_instances, $ds_rds_idle_instances, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_stats_lookback, $param_min_savings
+  run_script $js_rds_idle_incident, $ds_rds_instances, $ds_rds_idle_instances, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_stats_lookback, $param_min_savings, $param_incident_csv
 end
 
 script "js_rds_idle_incident", type: "javascript" do
-  parameters "ds_rds_instances", "ds_rds_idle_instances", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_stats_lookback", "param_min_savings"
+  parameters "ds_rds_instances", "ds_rds_idle_instances", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_stats_lookback", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -1721,7 +1741,7 @@ script "js_rds_idle_incident", type: "javascript" do
     "for at least ", param_stats_lookback, " ", day_noun, ".\n\n"
   ].join('')
 
-  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
   savings_message = [
     ds_currency['symbol'], ' ',
@@ -1742,18 +1762,20 @@ script "js_rds_idle_incident", type: "javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + idle_message + disclaimer
+  result[0]['message'] = findings + idle_message + disclaimer + csv_message
 EOS
 end
 
 datasource "ds_rds_underutil_incident" do
-  run_script $js_rds_underutil_incident, $ds_rds_instances, $ds_rds_underutil_instances_cleaned, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_stats_lookback, $param_min_savings, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value
+  run_script $js_rds_underutil_incident, $ds_rds_instances, $ds_rds_underutil_instances_cleaned, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_stats_lookback, $param_min_savings, $param_stats_threshold, $param_stats_underutil_threshold_cpu_value, $param_incident_csv
 end
 
 script "js_rds_underutil_incident", type: "javascript" do
-  parameters "ds_rds_instances", "ds_rds_underutil_instances_cleaned", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_stats_lookback", "param_min_savings", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value"
+  parameters "ds_rds_instances", "ds_rds_underutil_instances_cleaned", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_stats_lookback", "param_min_savings", "param_stats_threshold", "param_stats_underutil_threshold_cpu_value", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -1877,7 +1899,7 @@ script "js_rds_underutil_incident", type: "javascript" do
     param_stats_lookback.toString() + " days.\n\n"
   ].join('')
 
-  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
   savings_message = [
     ds_currency['symbol'], ' ',
@@ -1898,7 +1920,7 @@ script "js_rds_underutil_incident", type: "javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + underutil_message + lookback_message + disclaimer
+  result[0]['message'] = findings + underutil_message + lookback_message + disclaimer + csv_message
 EOS
 end
 
@@ -2143,7 +2165,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_downsize_rds_instances" do

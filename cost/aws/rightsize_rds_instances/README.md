@@ -48,6 +48,8 @@ This policy template has the following input parameters:
 - *Underutilized Instance CPU Threshold (%)* - The CPU threshold at which to consider an instance to be underutilized and therefore be flagged for downsizing.
 - *Statistic Lookback Period* - How many days back to look at statistical data for instances to determine if they are underutilized or unused. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days.
 - *Threshold Statistic* - CPU statistic to use when determining if an instance is underutilized.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Downsize Timeframe* - Whether to downsize underutilized RDS instances immediately or wait until the next maintenance window.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 

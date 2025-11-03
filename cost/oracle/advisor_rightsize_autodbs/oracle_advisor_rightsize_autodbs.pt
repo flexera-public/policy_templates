@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.0",
+  version: "0.2.0",
   provider: "Oracle",
   service: "Database",
   policy_set: "Rightsize Database Instances",
@@ -78,6 +78,24 @@ parameter "param_automatic_action" do
   description "When this value is set, this policy will automatically take the selected action."
   allowed_values ["Downsize Underutilized Instances"]
   default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -328,7 +346,7 @@ end
 script "js_oci_recommendation_actions_region_filtered", type: "javascript" do
   parameters "ds_oci_recommendation_actions", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_regions_list.length > 0) {
     result = _.filter(ds_oci_recommendation_actions, function(action) {
       include_action = _.contains(param_regions_list, action['region'])
@@ -342,13 +360,15 @@ EOS
 end
 
 datasource "ds_oci_filtered_recommendations_underutil" do
-  run_script $js_oci_filtered_recommendations_underutil, $ds_oci_recommendation_actions_region_filtered, $ds_currency, $ds_applied_policy, $param_min_savings
+  run_script $js_oci_filtered_recommendations_underutil, $ds_oci_recommendation_actions_region_filtered, $ds_currency, $ds_applied_policy, $param_min_savings, $param_incident_csv
 end
 
 script "js_oci_filtered_recommendations_underutil", type: "javascript" do
-  parameters "ds_oci_recommendation_actions_region_filtered", "ds_currency", "ds_applied_policy", "param_min_savings"
+  parameters "ds_oci_recommendation_actions_region_filtered", "ds_currency", "ds_applied_policy", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -445,7 +465,8 @@ script "js_oci_filtered_recommendations_underutil", type: "javascript" do
     result.length, " Cloud Advisor rightsizing ", noun, " found. ", phrase, " can be ",
     "adjusted by modifying your Cloud Advisor settings within your Oracle environment.\n\n",
     "Metrics and other data may be missing depending on whether ",
-    "Cloud Advisor has been configured to provide this information."
+    "Cloud Advisor has been configured to provide this information.",
+    csv_message
   ].join('')
 
   // Sort by descending order of savings value
@@ -556,7 +577,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_downsize_instances" do

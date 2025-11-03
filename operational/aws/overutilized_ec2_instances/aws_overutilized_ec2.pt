@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "weekly"
 info(
-  version: "0.1.6",
+  version: "0.2.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Overutilized Compute Instances",
@@ -125,6 +125,24 @@ parameter "param_automatic_action" do
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values [ "Upsize Instances" ]
   default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -1059,13 +1077,15 @@ EOS
 end
 
 datasource "ds_overutil_instances" do
-  run_script $js_overutil_instances, $ds_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_currency, $ds_applied_policy, $param_stats_threshold_cpu_value, $param_stats_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_stats_lookback
+  run_script $js_overutil_instances, $ds_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_currency, $ds_applied_policy, $param_stats_threshold_cpu_value, $param_stats_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_stats_lookback, $param_incident_csv
 end
 
 script "js_overutil_instances", type:"javascript" do
-  parameters "ds_instances", "ds_merged_metrics", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_currency", "ds_applied_policy", "param_stats_threshold_cpu_value", "param_stats_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_stats_lookback"
+  parameters "ds_instances", "ds_merged_metrics", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_currency", "ds_applied_policy", "param_stats_threshold_cpu_value", "param_stats_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_stats_lookback", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -1233,9 +1253,9 @@ script "js_overutil_instances", type:"javascript" do
       ].join('')
     }
 
-    disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+    disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
-    overutil_message = overutil_findings + overutil_analysis_message + lookback_message + disclaimer
+    overutil_message = overutil_findings + overutil_analysis_message + lookback_message + disclaimer + csv_message
   } else {
     overutil_message = "No results were found because all CPU and memory parameters were set to -1 when this policy was applied. Please terminate and reapply this policy with one of these settings enabled."
   }
@@ -1414,7 +1434,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_upsize_instances" do

@@ -17,6 +17,8 @@ This Policy Template leverages the [AWS Savings Plans Utilization API](https://d
 - *Look Back Period (Days)* - Specify the number of days of past usage to analyze.
 - *Utilization Threshold* - Specify the minimum Savings Plan Utilization threshold as a percentage that should result in an alert.
 - *Savings Plan ARNs* - The unique Amazon Resource Names (ARNs) for particular Savings Plans to report on. Leave blank to report on all Savings Plans.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 

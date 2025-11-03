@@ -8,7 +8,7 @@ severity "low"
 category "Compliance"
 default_frequency "weekly"
 info(
-  version: "6.0.7",
+  version: "6.1.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Long Stopped Instances",
@@ -87,6 +87,24 @@ parameter "param_automatic_action" do
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Terminate Instances"]
   default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -558,13 +576,15 @@ EOS
 end
 
 datasource "ds_long_stopped_instances" do
-  run_script $js_long_stopped_instances, $ds_instances, $ds_cloudwatch_data_sorted, $ds_aws_account, $ds_applied_policy, $param_stopped_days
+  run_script $js_long_stopped_instances, $ds_instances, $ds_cloudwatch_data_sorted, $ds_aws_account, $ds_applied_policy, $param_stopped_days, $param_incident_csv
 end
 
 script "js_long_stopped_instances", type: "javascript" do
-  parameters "ds_instances", "ds_cloudwatch_data_sorted", "ds_aws_account", "ds_applied_policy", "param_stopped_days"
+  parameters "ds_instances", "ds_cloudwatch_data_sorted", "ds_aws_account", "ds_applied_policy", "param_stopped_days", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   result = []
 
   _.each(ds_instances, function(instance) {
@@ -646,12 +666,12 @@ script "js_long_stopped_instances", type: "javascript" do
     "for at least ", param_stopped_days, " ", day_noun, ".\n\n"
   ].join('')
 
-  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
   // Dummy entry to ensure validation runs at least once
   result.push({ resourceID: "", policy_name: "", message: "", tags: "" })
 
-  result[0]['message'] = findings + analysis + disclaimer
+  result[0]['message'] = findings + analysis + disclaimer + csv_message
 EOS
 end
 
@@ -725,7 +745,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_terminate_instances" do

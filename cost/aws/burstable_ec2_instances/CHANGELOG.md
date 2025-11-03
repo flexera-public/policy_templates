@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.5.0
+
+- Added support for attaching CSV files to incident emails.
+
 ## v4.4.6
 
 - Updated label of email parameter to "Email Addresses" to match other policy templates. Functionality unchanged.

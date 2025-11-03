@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.8",
+  version: "0.2.0",
   provider: "AWS",
   service: "Database",
   policy_set: "Rightsize Database Instances",
@@ -116,6 +116,24 @@ parameter "param_automatic_action" do
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Downsize Redshift Nodes"]
   default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -877,13 +895,15 @@ EOS
 end
 
 datasource "ds_underutilized_redshift_clusters" do
-  run_script $js_underutilized_redshift_clusters, $ds_redshift_clusters_with_metrics, $ds_aws_redshift_size_map, $ds_cluster_costs_grouped, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_stats_threshold, $param_min_savings, $param_stats_cpu_target
+  run_script $js_underutilized_redshift_clusters, $ds_redshift_clusters_with_metrics, $ds_aws_redshift_size_map, $ds_cluster_costs_grouped, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_stats_threshold, $param_min_savings, $param_stats_cpu_target, $param_incident_csv
 end
 
 script "js_underutilized_redshift_clusters", type: "javascript" do
-  parameters "ds_redshift_clusters_with_metrics", "ds_aws_redshift_size_map", "ds_cluster_costs_grouped", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_stats_threshold", "param_min_savings", "param_stats_cpu_target"
+  parameters "ds_redshift_clusters_with_metrics", "ds_aws_redshift_size_map", "ds_cluster_costs_grouped", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_stats_threshold", "param_min_savings", "param_stats_cpu_target", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -1033,7 +1053,7 @@ script "js_underutilized_redshift_clusters", type: "javascript" do
     param_stats_threshold.toLowerCase(), " CPU usage would be below ", param_stats_cpu_target, "%.\n\n"
   ].join('')
 
-  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
   total_savings = ds_currency['symbol'] + ' ' + formatNumber(Math.round(total_savings * 100) / 100, ds_currency['separator'])
 
@@ -1077,7 +1097,7 @@ script "js_underutilized_redshift_clusters", type: "javascript" do
     total_savings: ""
   })
 
-  result[0]['message'] = findings + settings + disclaimer
+  result[0]['message'] = findings + settings + disclaimer + csv_message
   result[0]['total_savings'] = total_savings
 EOS
 end
@@ -1181,7 +1201,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_resize_clusters" do

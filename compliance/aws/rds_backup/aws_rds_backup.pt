@@ -8,7 +8,7 @@ category "Compliance"
 severity "medium"
 default_frequency "weekly"
 info(
-  version: "3.0.6",
+  version: "3.1.0",
   provider: "AWS",
   service: "RDS",
   policy_set: "",
@@ -95,6 +95,24 @@ parameter "param_backup_window" do
   description "The backup window, in HH:MM-HH:MM format, that AWS RDS instances should be configured with. Has no effect if 'Backup Retention Period' is selected for the Backup Settings parameter. Ex: '08:00-08:30'"
   allowed_pattern /^(\d{2}:\d{2}-\d{2}:\d{2})?$/
   # No default value, user input required
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -493,13 +511,15 @@ EOS
 end
 
 datasource "ds_unapproved_rds" do
-  run_script $js_unapproved_rds, $ds_rds_instances
+  run_script $js_unapproved_rds, $ds_rds_instances, $param_incident_csv
 end
 
 script "js_unapproved_rds", type: "javascript" do
-  parameters "ds_rds_instances"
+  parameters "ds_rds_instances", "param_incident_csv"
   result "result"
   code <<-EOS
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   bad_rds = _.filter(ds_rds_instances, function(db) {
     mismatched_retention = false
     mismatched_window = false
@@ -545,7 +565,8 @@ script "js_unapproved_rds", type: "javascript" do
       required_backup_settings: db['required_backup_settings'],
       required_retention_period: required_retention_period,
       required_backup_window: required_backup_window,
-      service: db['service']
+      service: db['service'],
+      csv_message: csv_message
     }
   })
 EOS
@@ -558,6 +579,7 @@ end
 policy "pol_unapproved_rds" do
   validate_each $ds_unapproved_rds do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS RDS Instances With Unapproved Backup Settings Found"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     hash_exclude "tags"
@@ -642,7 +664,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################

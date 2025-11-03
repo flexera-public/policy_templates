@@ -10,6 +10,8 @@ This policy template has the following input parameters:
 
 - *Email Addresses* - enter the number of days you want before the Savings Plan expires.
 - *Days Until Expiration* - The number of days until expiration to include a Savings Plan in the report. Set to '0' to only report expired Savings Plans.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 
