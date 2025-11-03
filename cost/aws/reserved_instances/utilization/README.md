@@ -10,6 +10,8 @@ This policy template generates a report of all AWS Reservations whose utilizatio
 - *Utilization Threshold (%)* - Reservations with utilization below this percentage will be included in the results.
 - *Allow/Deny Billing Centers* - Allow or Deny entered Billing Centers.
 - *Allow/Deny Billing Center List* - A list of allowed or denied Billing Center names/IDs. Leave blank to report on reservations in all Billing Centers.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 
