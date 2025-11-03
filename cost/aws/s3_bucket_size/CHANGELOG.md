@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.0
+
+- Added support for attaching CSV files to incident emails.
+
 ## v3.1.7
 
 - Fixed issue with `GetMetricData` API request when gathering CloudWatch metrics. Functionality unchanged.

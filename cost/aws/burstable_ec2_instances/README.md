@@ -27,6 +27,8 @@ This policy template has the following input parameters:
 - *CPU Surplus Credits* - Number of CPU Surplus Credits to report on. Set to -1 to ignore CPU burst credits.
 - *Check Burst Credit Balance* - Whether to check burst credit balance against max_earnable_credits
 - *Statistic Lookback Period* - How many days back to look at CloudWatch data for instances. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.

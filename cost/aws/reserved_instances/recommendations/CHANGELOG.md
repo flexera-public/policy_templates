@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.7.0
+
+- Added support for attaching CSV files to incident emails.
+
 ## v3.6.7
 
 - Updated description of `Account Scope` parameter for greater clarity. Functionality unchanged.
