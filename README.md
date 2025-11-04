@@ -341,7 +341,6 @@ These templates can generate savings estimates for your environment. The inciden
   * [Azure Expiring Savings Plans](./cost/azure/savings_plan/expiration)
   * [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
   * [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
-  * [Azure Reserved Instances Utilization MCA](./cost/azure/reserved_instances/utilization_mca)
   * [Azure Savings Plan Utilization](./cost/azure/savings_plan/utilization)
   * [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
   * [Azure Schedule Instance](./cost/azure/schedule_instance)
@@ -371,12 +370,6 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Azure Deprecated Storage Accounts](./compliance/azure/deprecated_storage_accounts)
   * [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management)
-
-#### Azure China
-
-* Common Bill Ingestion
-
-  * [Azure China Common Bill Ingestion](./cost/azure/azure_china_cbi)
 
 #### Flexera
 
