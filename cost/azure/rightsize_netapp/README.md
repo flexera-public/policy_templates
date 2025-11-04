@@ -32,6 +32,8 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Show Upsize Recommendations* - Whether or not to include upsize recommendations for pools and volumes
 - *Resource Types* - Whether to produce recommendations only for pools or for both pools and volumes
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 ## Policy Actions

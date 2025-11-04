@@ -34,6 +34,8 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Storage Usage Threshold (%)* - Report instances whose used storage space is below the specified percentage, indicating that they may be overprovisioned.
 - *Storage Downgrade Threshold (%)* - The percentage of free storage space that recommendations should always include. Recommendations will always be for a storage size that would result in at least this percentage of free space based on current usage.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 

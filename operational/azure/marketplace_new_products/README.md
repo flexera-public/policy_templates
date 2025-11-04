@@ -19,6 +19,8 @@ The policy includes the estimated monthly cost. Flexera Cloud Cost Optimization 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Look Back Period (Days)* - How far back, in days, to look at Marketplace product purchases to see if new items have been added.
 - *Minimum Cost Threshold* - Minimum monthly cost to report on new Marketplace products.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 

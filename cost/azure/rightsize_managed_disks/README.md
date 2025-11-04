@@ -43,6 +43,8 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Statistic Interval* - The interval to use when gathering Azure metrics data.
 - *Lookback Period* - How many days back to look at disk IOPS and throughput data. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
 - *Recommend HDD tier* - Sometimes the user does not want the policy to recommend changing a disk tier to HDD, with this parameter user can decide if he wants HDD tier recommendations.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 
