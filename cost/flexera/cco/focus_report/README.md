@@ -18,6 +18,8 @@ This policy template has the following input parameters:
 - *Billing Month* - Billing month to report on in YYYY-MM format. Leave blank to do current month.
 - *Amortization* - Whether to report costs amortized or unamortized.
 - *Billing Centers* - List of Billing Center names/IDs to report on. Leave empty to report on the entire organization without filtering by Billing Center.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 

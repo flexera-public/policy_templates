@@ -23,7 +23,9 @@ This policy template has the following input parameters:
 - *Metric Name* - The name of the metric to monitor for anomalies
 - *Threshold For Z-score* - The threshold for Z-scale, which is the number of consequent anomaly events to trigger an incident (i.e. 1, 2, 3)
 - *Threshold For Consecutive Anomalies* - Number of Consecutive Anomalies to trigger an incident
-- *Email addresses* - A list of email addresses to notify
+- *Email Addresses* - A list of email addresses to notify
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 

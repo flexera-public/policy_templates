@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.3.0",
+  version: "5.4.0",
   provider:"Google",
   service: "Storage",
   policy_set: "Old Snapshots",
@@ -105,6 +105,24 @@ parameter "param_automatic_action" do
   description "When this value is set, this policy will automatically take the selected action."
   allowed_values ["Delete Old Snapshots"]
   default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -927,13 +945,15 @@ EOS
 end
 
 datasource "ds_google_old_snapshots_incident" do
-  run_script $js_google_old_snapshots_incident, $ds_google_snapshots_label_filtered, $ds_google_old_snapshots_with_savings, $ds_applied_policy, $ds_currency, $param_snapshot_age
+  run_script $js_google_old_snapshots_incident, $ds_google_snapshots_label_filtered, $ds_google_old_snapshots_with_savings, $ds_applied_policy, $ds_currency, $param_snapshot_age, $param_incident_csv
 end
 
 script "js_google_old_snapshots_incident", type: "javascript" do
-  parameters "ds_google_snapshots_label_filtered", "ds_google_old_snapshots_with_savings", "ds_applied_policy", "ds_currency", "param_snapshot_age"
+  parameters "ds_google_snapshots_label_filtered", "ds_google_old_snapshots_with_savings", "ds_applied_policy", "ds_currency", "param_snapshot_age", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -977,7 +997,7 @@ script "js_google_old_snapshots_incident", type: "javascript" do
     "and are recommended for deletion.\n\n"
   ].join('')
 
-  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
   savings_list = _.pluck(result, 'savings_unrounded')
   total_savings = _.reduce(savings_list, function(memo, num) { return memo + num; }, 0)
@@ -999,7 +1019,7 @@ script "js_google_old_snapshots_incident", type: "javascript" do
     total_savings: ""
   })
 
-  result[0]['message'] = findings + disclaimer
+  result[0]['message'] = findings + disclaimer + csv_message
   result[0]['total_savings'] = savings_message
 EOS
 end
@@ -1092,7 +1112,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_delete_snapshots" do

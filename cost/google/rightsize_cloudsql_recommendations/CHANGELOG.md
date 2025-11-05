@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.0
+
+- Added support for attaching CSV files to incident emails.
+
 ## v0.3.0
 
 - Fixed escalation that erroneously referred to 'VM' instead of 'Cloud SQL'

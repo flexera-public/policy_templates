@@ -47,6 +47,8 @@ This policy template has the following input parameters:
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified label key.
 - *Exclusion Labels: Any / All* - Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Labels` field.
 - *Report Idle or Underutilized* - Whether to report on idle VM instances, underutilized VM instances, or both. If both are selected, VM instances raised in the idle VM instances incident will never appear in the underutilized VM instances incident.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s). The "Downsize VM Instances" option is only applies to underutilized instances, while the "Stop VM Instances" and "Delete VM Instances" options only apply to idle instances.
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.

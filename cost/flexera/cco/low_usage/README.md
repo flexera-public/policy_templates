@@ -16,6 +16,8 @@ The intended use of this policy template is to enable the user to quickly identi
 - *Low Account Spend Threshold* - Threshold to consider the user-specified dimension to be low spend. Only values with spend lower than this number will be reported.
 - *Minimum Spend Threshold* - Threshold to consider the user-specified dimension to be worth actioning on. Only values with spend higher than this number will be reported.
 - *Dimension* - The name or ID of the Flexera dimension whose values you want to check for low usage; for example, `Cloud Vendor Account Name`. Enter `Billing Center` to split costs by Billing Center.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 
