@@ -17,6 +17,8 @@ The policy includes the estimated monthly cost. Flexera's Cloud Cost Optimizatio
 - *Cost Metric* - The cost metric to use when assessing new usage spend.
 - *Allow/Deny Billing Centers* - Allow or Deny entered Billing Centers.
 - *Allow/Deny Billing Center List* - A list of allowed or denied Billing Center names/IDs. Leave blank to run report across entire Flexera organization.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 
