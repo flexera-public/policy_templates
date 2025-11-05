@@ -35,6 +35,7 @@ This policy template has the following input parameters:
 - *Look Back Period* - Number of days of prior usage to analyze.
 - *Savings Plan Term* - Length of reservation term to provide recommendations for. Can be set to either `1 Year` or `3 Year`
 - *Savings Plan Scope* - The scope to provide recommendations for. Select `Shared` to not have recommendations scoped to individual Subscriptions or Resource Groups.
+- *Payment Option* - Whether or not to report recommendations as 'No Upfront' or 'All Upfront'. Default value of 'No Upfront' recommended in most cases. Has no impact on the recommendations themselves; Azure does not offer discounts or differing options if you paying up front.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 

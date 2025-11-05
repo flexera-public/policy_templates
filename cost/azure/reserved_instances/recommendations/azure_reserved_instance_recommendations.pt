@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "4.3.0",
+  version: "4.4.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Reserved Instances",
@@ -141,6 +141,15 @@ parameter "param_incident_table_size" do
   description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
   allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
   default 100000
+end
+
+parameter "param_payment_option" do
+  type "string"
+  category "Reservation Settings"
+  label "Payment Option"
+  description "Whether or not to report recommendations as 'No Upfront' or 'All Upfront'. Default value of 'No Upfront' recommended in most cases. Has no impact on the recommendations themselves; Azure does not offer discounts or differing options if you paying up front."
+  allowed_values "No Upfront", "All Upfront"
+  default "No Upfront"
 end
 
 ###############################################################################
@@ -645,11 +654,11 @@ EOS
 end
 
 datasource "ds_ri_incident" do
-  run_script $js_ri_incident, $ds_ri_recommendations_region_filtered, $ds_currency, $ds_currency_conversion, $ds_azure_currency_code, $ds_azure_billing_accounts, $ds_applied_policy, $param_term, $param_days, $param_service, $param_scope, $param_min_savings, $param_incident_csv
+  run_script $js_ri_incident, $ds_ri_recommendations_region_filtered, $ds_currency, $ds_currency_conversion, $ds_azure_currency_code, $ds_azure_billing_accounts, $ds_applied_policy, $param_term, $param_days, $param_service, $param_scope, $param_min_savings, $param_incident_csv, $param_payment_option
 end
 
 script "js_ri_incident", type: "javascript" do
-  parameters "ds_ri_recommendations_region_filtered", "ds_currency", "ds_currency_conversion", "ds_azure_currency_code", "ds_azure_billing_accounts", "ds_applied_policy", "param_term", "param_days", "param_service", "param_scope", "param_min_savings", "param_incident_csv"
+  parameters "ds_ri_recommendations_region_filtered", "ds_currency", "ds_currency_conversion", "ds_azure_currency_code", "ds_azure_billing_accounts", "ds_applied_policy", "param_term", "param_days", "param_service", "param_scope", "param_min_savings", "param_incident_csv", "param_payment_option"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -738,6 +747,7 @@ script "js_ri_incident", type: "javascript" do
         savings: netSavings,
         savingsCurrency: ds_currency['symbol'],
         policy_name: ds_applied_policy['name'],
+        paymentOption: param_payment_option,
         total_savings: "",
         message: ""
       })
@@ -844,6 +854,9 @@ policy "pol_azure_ri_recommendations" do
       end
       field "savings" do
         label "Estimated Monthly Savings"
+      end
+      field "paymentOption" do
+        label "Payment Option"
       end
       field "firstUsageDate" do
         label "First Usage Date"
