@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy uses the SOAP version of the FlexNet Manager Cloud APIs, will run a FlexNet Manager report (Custom view), and send the result via email.
+This policy template uses the SOAP version of the FlexNet Manager Cloud APIs, will run a FlexNet Manager report (Custom view), and send the result via email.
 
 The policy is a report only policy, no action is taken during the Policy Escalation.
 
@@ -15,7 +15,7 @@ Current limitations:
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *FlexNet Manager host* - Flexera One FlexNet Manager host.  *Required*. *Allowed Values: [`slo.app.flexera.com`, `slo.app.flexera.eu`, `slo.app.flexera.au`, `slo-uat.app.flexera.com`, `slo-uat.app.flexera.eu`, `slo-uat.app.flexera.au`]*
 - *FlexNet Manager Report ID* - FlexNet Manager Report ID. *Required*.
@@ -28,7 +28,7 @@ This policy has the following input parameters required when launching the polic
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Flexera ITAM Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `Web Service` or equivalent role in IT Asset Accounts (for calling ITAM SOAP APIs)

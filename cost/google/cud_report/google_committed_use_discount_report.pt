@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.1.4",
+  version: "3.2.0",
   provider: "Google",
   service: "Compute",
   policy_set: "Committed Use Discount",
@@ -86,6 +86,24 @@ parameter "param_cud_status" do
   description "Whether to report on all CUDs or report only CUDs that are active or expired."
   allowed_values "All", "Active", "Expired"
   default "All"
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -269,13 +287,15 @@ EOS
 end
 
 datasource "ds_google_cuds_report" do
-  run_script $js_google_cuds_report, $ds_google_cuds_regions_filtered, $ds_applied_policy, $param_cud_status
+  run_script $js_google_cuds_report, $ds_google_cuds_regions_filtered, $ds_applied_policy, $param_cud_status, $param_incident_csv
 end
 
 script "js_google_cuds_report", type: "javascript" do
-  parameters "ds_google_cuds_regions_filtered", "ds_applied_policy", "param_cud_status"
+  parameters "ds_google_cuds_regions_filtered", "ds_applied_policy", "param_cud_status", "param_incident_csv"
   result "result"
   code <<-EOS
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   reported_cuds = _.filter(ds_google_cuds_regions_filtered, function(cud) {
     return cud["status"] == param_cud_status.toUpperCase() || param_cud_status == "All"
   })
@@ -292,7 +312,8 @@ script "js_google_cuds_report", type: "javascript" do
       accountID: cud["projectId"],
       accountName: cud["projectName"],
       projectNumber: cud["projectNumber"],
-      policy_name: ds_applied_policy["name"]
+      policy_name: ds_applied_policy["name"],
+      csv_message: csv_message
     }
   })
 
@@ -308,7 +329,8 @@ script "js_google_cuds_report", type: "javascript" do
     accountID: "",
     accountName: "",
     projectNumber: "",
-    policy_name: ""
+    policy_name: "",
+    csv_message: ""
   })
 EOS
 end
@@ -320,6 +342,7 @@ end
 policy "pol_google_cuds_report" do
   validate_each $ds_google_cuds_report do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Committed Use Discounts"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     export do
@@ -367,7 +390,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################

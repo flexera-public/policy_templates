@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.1.0
+
+- Added `Bring Adjustments Forward` parameter to automatically fill months with adjustments from previous month when applicable.
+
 ## v5.0.4
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

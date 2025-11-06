@@ -1,5 +1,17 @@
 # Changelog
 
+## v4.1.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v4.0.0
+
+- Policy template now supports both Azure EA and Azure MCA bill connections
+- Policy template has been reworked to use internal Flexera APIs instead of Azure APIs
+- Azure credential is no longer required
+- Report can now use either maximum or average utilization when assessing reservations
+- Normalized incident output for parity with other policy templates
+
 ## v3.1.5
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

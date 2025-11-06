@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.6",
+  version: "0.2.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Autoscaling",
@@ -513,13 +513,15 @@ end
 
 # Get region-specific Flexera API endpoints
 datasource "ds_eks_clusters_without_spot" do
-  run_script $js_eks_clusters_without_spot, $ds_eks_clusters_with_nodegroups, $ds_aws_account, $ds_applied_policy
+  run_script $js_eks_clusters_without_spot, $ds_eks_clusters_with_nodegroups, $ds_aws_account, $ds_applied_policy, $param_incident_csv
 end
 
 script "js_eks_clusters_without_spot", type: "javascript" do
-  parameters "ds_eks_clusters_with_nodegroups", "ds_aws_account", "ds_applied_policy"
+  parameters "ds_eks_clusters_with_nodegroups", "ds_aws_account", "ds_applied_policy", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   bad_clusters = _.reject(ds_eks_clusters_with_nodegroups, function(resource) {
     instance_types = _.pluck(resource['nodegroups'], 'capacityType')
     return _.contains(instance_types, 'SPOT') || resource['nodegroups'].length == 0 || resource['status'] == 'DELETING' || resource['status'] == 'FAILED'
@@ -527,7 +529,8 @@ script "js_eks_clusters_without_spot", type: "javascript" do
 
   result = _.map(bad_clusters, function(resource) {
     message = "The following AWS EKS clusters have no managed node groups configured to use spot instances. Having at least one node group configured to use spot instances can help with reducing cost.\n\n"
-    message += "Please note that this policy is not able to assess any unmanaged node groups or instances attached to these clusters. Please review all clusters carefully before making changes."
+    message += "Please note that this policy is not able to assess any unmanaged node groups or instances attached to these clusters. Please review all clusters carefully before making changes.\n\n"
+    message += csv_message
 
     createdAt = new Date(0)
     createdAt.setUTCSeconds(resource["createdAt"])
@@ -637,7 +640,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################

@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.3
+
+- Updated policy metadata to allow permissions to be scraped. Functionality unchanged.
+
 ## v3.3.2
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

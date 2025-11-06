@@ -8,7 +8,7 @@ category "Cost"
 severity "medium"
 default_frequency "weekly"
 info(
-  version: "0.1.5",
+  version: "0.2.0",
   provider: "AWS",
   service: "Storage",
   policy_set: "",
@@ -68,6 +68,24 @@ parameter "param_regions_list" do
   description "A list of allowed or denied regions. See the README for more details"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -462,13 +480,15 @@ EOS
 end
 
 datasource "ds_bad_buckets" do
-  run_script $js_bad_buckets, $ds_aws_buckets_with_lifecycles, $ds_aws_account, $ds_applied_policy
+  run_script $js_bad_buckets, $ds_aws_buckets_with_lifecycles, $ds_aws_account, $ds_applied_policy, $param_incident_csv
 end
 
 script "js_bad_buckets", type: "javascript" do
-  parameters "ds_aws_buckets_with_lifecycles", "ds_aws_account", "ds_applied_policy"
+  parameters "ds_aws_buckets_with_lifecycles", "ds_aws_account", "ds_applied_policy", "param_incident_csv"
   result "result"
   code <<-EOS
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   buckets_without_lifecycle = _.filter(ds_aws_buckets_with_lifecycles, function(bucket) {
     return bucket['lifecycles'].length == 0
   })
@@ -483,12 +503,13 @@ script "js_bad_buckets", type: "javascript" do
       accountID: ds_aws_account['id'],
       accountName: ds_aws_account['name'],
       policy_name: ds_applied_policy['name'],
-      service: "AmazonS3"
+      service: "AmazonS3",
+      csv_message: csv_message
     }
   })
 
   // Dummy entry to ensure validation always occurs
-  result.push({ resourceID: "", tags: "", policy_name: "" })
+  result.push({ resourceID: "", tags: "", policy_name: "", csv_message: "" })
 EOS
 end
 
@@ -499,6 +520,7 @@ end
 policy "pol_aws_bad_buckets" do
   validate_each $ds_bad_buckets do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS S3 Buckets Without Lifecycle Configurations Found"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
@@ -542,7 +564,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################

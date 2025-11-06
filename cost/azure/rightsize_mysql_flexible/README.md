@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks all the Azure MySQL Flexible Servers in Azure Subscriptions for the average CPU usage and number of connections over a user-specified number of days. If there were no connections to the server, the server is recommended for deletion. If there were connections but the average CPU usage was below a user-specified threshold, the server is recommended for downsizing. Both sets of servers returned from this policy are emailed to the user.
+This policy template checks all the Azure MySQL Flexible Servers in Azure Subscriptions for the average CPU usage and number of connections over a user-specified number of days. If there were no connections to the server, the server is recommended for deletion. If there were connections but the average CPU usage was below a user-specified threshold, the server is recommended for downsizing. Both sets of servers returned from this policy are emailed to the user.
 
 ## How It Works
 
@@ -33,7 +33,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
-- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+- *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.
   - `Key==Value` - Filter all resources with the specified tag key:value pair.
   - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
@@ -46,10 +46,12 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Report Unused or Underutilized* - Whether to report on unused servers, underutilized servers, or both. If both are selected, unused servers will not appear in the list of underutilized servers regardless of CPU usage.
 - *Underutilized Server CPU Threshold (%)* - The CPU threshold at which to consider an server to be underutilized and therefore be flagged for downsizing.
 - *Skip Instance Sizes* - Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Delete Unused Servers" action while applying the policy, all the resources that didn't satisfy the policy condition will be deleted.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Delete Unused Servers" action while applying the policy template, all the resources that didn't satisfy the policy condition will be deleted.
 
 ## Policy Actions
 
@@ -59,7 +61,7 @@ For example if a user selects the "Delete Unused Servers" action while applying 
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.DBforMySQL/flexibleServers/read`

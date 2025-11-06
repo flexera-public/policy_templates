@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "2.0.9",
+  version: "2.1.0",
   provider: "Azure",
   service: "NetApp Files",
   policy_set: "Rightsize Storage",
@@ -142,6 +142,24 @@ parameter "param_automatic_action" do
   description "When this value is set, this policy will automatically take the selected action."
   allowed_values ["Rightsize NetApp Resources"]
   default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -687,13 +705,15 @@ EOS
 end
 
 datasource "ds_naf_oversized_pools" do
-  run_script $js_naf_oversized_pools, $ds_naf_pool_metrics, $ds_naf_get_costs, $ds_currency, $ds_applied_policy, $param_stats_underutil_threshold_pool_value, $param_min_savings, $param_resource_types, $param_show_size_increment_recommendations
+  run_script $js_naf_oversized_pools, $ds_naf_pool_metrics, $ds_naf_get_costs, $ds_currency, $ds_applied_policy, $param_stats_underutil_threshold_pool_value, $param_min_savings, $param_resource_types, $param_show_size_increment_recommendations, $param_incident_csv
 end
 
 script "js_naf_oversized_pools", type: "javascript" do
-  parameters "ds_naf_pool_metrics", "ds_naf_get_costs", "ds_currency", "ds_applied_policy", "param_stats_underutil_threshold_pool_value", "param_min_savings", "param_resource_types", "param_show_size_increment_recommendations"
+  parameters "ds_naf_pool_metrics", "ds_naf_get_costs", "ds_currency", "ds_applied_policy", "param_stats_underutil_threshold_pool_value", "param_min_savings", "param_resource_types", "param_show_size_increment_recommendations", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Variables
   result = []
   var minPoolSize = 2048
@@ -837,7 +857,8 @@ script "js_naf_oversized_pools", type: "javascript" do
     result[0].savings_currency = "USD"
     result[0].message = "Pools shown here meet the following conditions:\n\n"
     result[0].message += "- A " + (param_show_size_increment_recommendations == "Yes" ? "different" : "lower") + " value than " + param_stats_underutil_threshold_pool_value + "% of used capacity.\n"
-    result[0].message += "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
+    result[0].message += "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+    result[0].message += csv_message
     result[0].policy_name = ds_applied_policy.name
   } else {
     result = [{
@@ -871,13 +892,15 @@ EOS
 end
 
 datasource "ds_naf_oversized_volumes" do
-  run_script $js_naf_oversized_volumes, $ds_naf_volume_metrics, $ds_naf_pool_metrics, $ds_naf_get_costs, $ds_currency, $ds_applied_policy, $param_stats_underutil_threshold_pool_value, $param_stats_underutil_threshold_volume_value, $param_min_savings, $param_resource_types, $param_show_size_increment_recommendations
+  run_script $js_naf_oversized_volumes, $ds_naf_volume_metrics, $ds_naf_pool_metrics, $ds_naf_get_costs, $ds_currency, $ds_applied_policy, $param_stats_underutil_threshold_pool_value, $param_stats_underutil_threshold_volume_value, $param_min_savings, $param_resource_types, $param_show_size_increment_recommendations, $param_incident_csv
 end
 
 script "js_naf_oversized_volumes", type: "javascript" do
-  parameters "ds_naf_volume_metrics", "ds_naf_pool_metrics", "ds_naf_get_costs", "ds_currency", "ds_applied_policy", "param_stats_underutil_threshold_pool_value", "param_stats_underutil_threshold_volume_value", "param_min_savings", "param_resource_types", "param_show_size_increment_recommendations"
+  parameters "ds_naf_volume_metrics", "ds_naf_pool_metrics", "ds_naf_get_costs", "ds_currency", "ds_applied_policy", "param_stats_underutil_threshold_pool_value", "param_stats_underutil_threshold_volume_value", "param_min_savings", "param_resource_types", "param_show_size_increment_recommendations", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Variables
   result = []
   var minPoolSize = 2048
@@ -1139,7 +1162,8 @@ script "js_naf_oversized_volumes", type: "javascript" do
     result[0].message = "Resources shown here meet the following conditions:\n\n"
     result[0].message += "- Pools that have a " + comparisonWord + " value than " + param_stats_underutil_threshold_pool_value + "% of used capacity.\n"
     result[0].message += "- Volumes that have a " + comparisonWord + " value than " + param_stats_underutil_threshold_volume_value + "% of used capacity.\n"
-    result[0].message += "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
+    result[0].message += "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+    result[0].message += csv_message
     result[0].policy_name = ds_applied_policy.name
   } else {
     result = [{
@@ -1349,7 +1373,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email."
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_rightsize_resources" do

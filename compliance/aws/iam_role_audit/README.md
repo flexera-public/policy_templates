@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy checks whether the user-specified AWS IAM roles exist in an account. An incident is raised with a list of all checked roles and whether or not they exist. Optionally, an email is sent with this information.
+This policy template checks whether the user-specified AWS IAM roles exist in an account. An incident is raised with a list of all checked roles and whether or not they exist. Optionally, an email is sent with this information.
 
 ## How It Works
 
@@ -21,7 +21,7 @@ This policy checks whether the user-specified AWS IAM roles exist in an account.
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 ### Credential configuration
 

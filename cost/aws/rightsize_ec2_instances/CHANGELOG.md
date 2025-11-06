@@ -1,5 +1,22 @@
 # Changelog
 
+## v5.5.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v5.4.7
+
+- Resolved issue where memory statistics for Windows instances specifically were not being captured.
+
+## v5.4.6
+
+- Resolved issue where memory statistics were not being captured.
+- Fixed issue where the policy would fail when only considering memory metrics for recommendations.
+
+## v5.4.5
+
+- Fixed issue with `GetMetricData` API request when gathering CloudWatch metrics. Functionality unchanged.
+
 ## v5.4.4
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

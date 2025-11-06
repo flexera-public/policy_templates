@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy is no longer being updated. Due to the scales involved, per-object analysis and recommendations are not useful in most situations. Instead, [lifecycle rules](https://cloud.google.com/storage/docs/lifecycle) should be utilized to manage object storage spend. The [Google Cloud Storage Without Lifecycle Configuration](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cloud_storage_lifecycle) policy template can be used to identify Cloud Storage Buckets that do not have lifecycle management configured.
+This policy template is no longer being updated. Due to the scales involved, per-object analysis and recommendations are not useful in most situations. Instead, [lifecycle rules](https://cloud.google.com/storage/docs/lifecycle?hl=en) should be utilized to manage object storage spend. The [Google Cloud Storage Without Lifecycle Configuration](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cloud_storage_lifecycle?hl=en) policy template can be used to identify Cloud Storage Buckets that do not have lifecycle management configured.
 
 ## What It Does
 
@@ -26,8 +26,8 @@ This policy template checks Google buckets for older objects and produces recomm
 - *Exclusion Labels: Any / All* - Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Labels` field.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Update Objects Storage Class" action while applying the policy, all the identified objects will be moved to `nearline` or `coldline`.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Update Objects Storage Class" action while applying the policy template, all the identified objects will be moved to `nearline` or `coldline`.
 
 ## Policy Actions
 
@@ -37,7 +37,7 @@ For example if a user selects the "Update Objects Storage Class" action while ap
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
   - `resourcemanager.projects.get`

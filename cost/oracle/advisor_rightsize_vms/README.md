@@ -8,7 +8,7 @@ This policy template reports on any existing idle and underutilized virtual mach
 
 This policy template reports the following Oracle Cloud Advisor recommendations:
 
-- `cost-management-compute-host-underutilized`: Checks if a virtual machine is underutilized and recommends a more appropriate machine type when appropriate.
+- `cost-management-compute-host-underutilized`: Checks if a virtual machine is underutilized and recommends a more appropriate machine type.
 - `cost-management-compute-host-idle`: Checks if a virtual machine is idle and recommends termination when appropriate.
 
 More information on Cloud Advisor is available in Oracle's documentation:
@@ -35,24 +35,36 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Report Idle or Underutilized* - Whether to report on idle VM instances, underutilized VM instances, or both. If both are selected, VM instances raised in the idle VM instances incident will never appear in the underutilized VM instances incident.
 - *Preserve Boot Volume* - Whether to preserve the boot volume when terminating virtual machines. Note that savings won't be fully realized unless the boot volume is also deleted.
 - *Preserve Data Volumes* - Whether to preserve the data volumes that were created at launch when terminating virtual machines.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Terminate Idle Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be terminated.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Terminate Idle Instances" action while applying the policy template, all the resources that didn't satisfy the policy condition will be terminated.
 
 ## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report
+- Terminate VM instances (if idle) after approval
+- Downsize VM instances (if underutilized but not idle) after approval
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Oracle Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_3335267112_1121578) (*provider=oracle*) which meets the below requirements:
-  - Allow group [Group] to read optimizer-api-family in tenancy
-    - [Group] should be replaced with a group that the user associated with the Oracle Cloud credential is a member of.
+  - `Allow group <group> to read optimizer-api-family in tenancy`
+  - `Allow group <group> to read optimizer-resource-metadata in tenancy`
+  - `Allow group <group> to use instance-family in tenancy`*
+  - `Allow group <group> to manage instance-family in tenancy`*
+  - `Allow group <group> to use virtual-network-family in tenancy`*
+  - `Allow group <group> to use volume-family in tenancy`*
+
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
+
+  Replace `<group>` with a group that the user associated with the Oracle Cloud credential is a member of.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`

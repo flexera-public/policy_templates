@@ -1,4 +1,4 @@
-name "Spot Ocean - Common Bill Ingest"
+name "Spot Ocean Common Bill Ingestion"
 rs_pt_ver 20180301
 type "policy"
 short_description "Ingests costs from [Spot Ocean Cluster Aggregated Detailed Costs API](https://docs.spot.io/api/#tag/Ocean-AWS/operation/oceanAwsK8sClusterAggregatedDetailedCosts) into Flexera using the [Flexera Bill Upload API](https://reference.rightscale.com/optima-bill-upload/#/). See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/spot/ocean_cbi/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -6,12 +6,12 @@ long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/spot/ocean_cbi/"
 category "Operational"
 severity "low"
-default_frequency "hourly"
+default_frequency "daily"
 info(
-  version: "0.2.1",
+  version: "0.2.3",
   provider: "Flexera",
   service: "Kubernetes",
-  policy_set: "Common Bill Ingest",
+  policy_set: "Common Bill Ingestion",
   hide_skip_approvals: "true"
 )
 
@@ -95,6 +95,91 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+# Get list of Cloud Vendor Account Names in Flexera Org
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    run_script $js_cloud_vendor_accounts, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "id", jmes_path(col_item, "dimensions.vendor_account")
+      field "name", jmes_path(col_item, "dimensions.vendor_account_name")
+    end
+  end
+end
+
+script "js_cloud_vendor_accounts", type: "javascript" do
+  parameters "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      dimensions: ["vendor_account", "vendor_account_name"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
 
 # https://api.spotinst.io/setup/account
 # Docs: https://docs.spot.io/api/#tag/Accounts/operation/OrganizationsAndAccountsGetAccounts
@@ -342,7 +427,7 @@ script "js_spotinst_cluster_aggregated_costs", type: "javascript" do
     if (spotinst_cluster.account.cloudProvider == "AZURE") {
       path = (["/ocean/azure/k8s/cluster/", spotinst_cluster.id, "/aggregatedCosts"]).join("")
     } else if (spotinst_cluster.account.cloudProvider == "GCP" ) {
-      path = (["/ocean/gcp/k8s/cluster/", spotinst_cluster.id, "/aggregatedCosts"]).join("")  
+      path = (["/ocean/gcp/k8s/cluster/", spotinst_cluster.id, "/aggregatedCosts"]).join("")
     }
 
     request = {
@@ -362,11 +447,11 @@ script "js_spotinst_cluster_aggregated_costs", type: "javascript" do
 end
 
 datasource "ds_calculated_proportions" do
-  run_script $js_calculated_proportions, $ds_spotinst_cluster_aggregated_costs
+  run_script $js_calculated_proportions, $ds_spotinst_cluster_aggregated_costs, $ds_cloud_vendor_accounts
 end
 
 script "js_calculated_proportions", type: "javascript" do
-  parameters "ds_spotinst_cluster_aggregated_costs"
+  parameters "ds_spotinst_cluster_aggregated_costs", "ds_cloud_vendor_accounts"
   result "result"
   code <<-EOS
   var result = []
@@ -382,11 +467,27 @@ script "js_calculated_proportions", type: "javascript" do
   }
 
   // Loop through ds_spotinst_cluster_aggregated_costs
-  _.each(ds_spotinst_cluster_aggregated_costs, function(cost){
+  _.each(ds_spotinst_cluster_aggregated_costs, function(cost) {
+
+    var cloudVendorAccountId = cost.spotinst_cluster.account.providerExternalId
+    var cloudVendorAccountName = ""
+
+    var cloudVendorAccount = _.find(ds_cloud_vendor_accounts, function(acc) {
+      vendorAccountLowerCase = cloudVendorAccountId.toLowerCase()
+
+      if (acc["id"]) {
+        return acc.id == vendorAccountLowerCase
+      }
+    })
+
+    if (cloudVendorAccount != undefined) {
+      cloudVendorAccountName = cloudVendorAccount["name"]
+    }
+
     // Check if we have any costs
     if (cost.detailedCosts) {
       // Loop through the aggregations{} object
-      _.each(cost.detailedCosts.aggregations, function(aggregation){
+      _.each(cost.detailedCosts.aggregations, function(aggregation) {
         // Loop through each resource in the aggregation
         _.each(aggregation.resources, function(resource) {
           // These fields in the resource object are not cost dimensions
@@ -398,8 +499,8 @@ script "js_calculated_proportions", type: "javascript" do
           _.each(usageCategories, function(usageCategory){
             // Values that are the same for all usage categories
             var obj = {
-              "CloudVendorAccountID": cost.spotinst_cluster.account.providerExternalId, // Should be the Cloud Account the K8S cluster resides in
-              "CloudVendorAccountName": "", // Should be the Cloud Account Name the K8S cluster resides in
+              "CloudVendorAccountID": cloudVendorAccountId, // Should be the Cloud Account the K8S cluster resides in
+              "CloudVendorAccountName": cloudVendorAccountName, // Should be the Cloud Account Name the K8S cluster resides in
               "Category": properCase(usageCategory), // Category can be the usage, with proper case (Networking, Storage, Compute)
               "InstanceType": "",
               "LineItemType": "Usage", // Static value used in other bills
@@ -407,7 +508,7 @@ script "js_calculated_proportions", type: "javascript" do
               "ResourceGroup": "", // Can be the namespace?  Or the K8S cluster name?
               "ResourceType": "", // Handled per usageCategory below
               "ResourceID": resource.metadata.type + "/" + resource.metadata.name,
-              "Service": "",
+              "Service": "Kubernetes",
               "UsageType": properCase(usageCategory),
               // Use lowercase tags and allow the common logic in next step to convert it from object to CSV string with escaped quotes
               "tags": {

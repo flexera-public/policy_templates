@@ -1,5 +1,13 @@
 # Changelog
 
+## v6.1.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v6.0.6
+
+- Fixed bug that was causing metrics for DTU database to be empty.
+
 ## v6.0.5
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

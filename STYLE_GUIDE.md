@@ -141,8 +141,8 @@ An additional paragraph should be included at the bottom if destructive actions 
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
-For example if a user selects the "Terminate Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be terminated.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
+For example if a user selects the "Terminate Instances" action while applying the policy template, all the resources that didn't satisfy the policy condition will be terminated.
 ```
 
 ### Policy Actions
@@ -163,7 +163,7 @@ This section should contain a list of all possible actions the policy template c
 This section outlines the requirements for using the policy template. This will always begin with information about credentials and should always start with the following paragraph:
 
 ```text
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 ```
 
 This should be followed by an itemized list of every credential required for the policy template. Each credential should include a link to Flexera documentation about the credential, a description of the expected provider tag for the credential, and a list of specific permissions the credential needs. Optional permissions for specific functionality should be indicated with a `*` character and a footnote.
@@ -537,6 +537,8 @@ The following guidelines should be used for the `policy` block:
 - For the `summary_template` field:
   - Should include the applied policy name and describe the thing the incident is reporting. If relevant, it should also indicate the number of resources being reported in the incident.
     - Example: "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Old Snapshots Found"
+  - Should _not_ contain escape characters, such as `\n` and `\t`. These will cause the incident email to render incorrectly as raw HTML code.
+  - Should _not_ make use of a heredoc, such as `<<-EOS`, for the same reason.
 
 - For the `detail_template` field:
   - Should contain useful information for contextualizing the contents of the incident table. For example, if the policy template is reporting unused disks, it should explain how we determined the disks were unused.

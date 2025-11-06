@@ -1,5 +1,13 @@
 # Changelog
 
+## v7.0.8
+
+- Added metadata specific to meta parent policies. Functionality unchanged.
+
+## v7.0.7
+
+- Updated "Last Start Status" and "Last Stop Status" values from `Unknown` to `No Action` to indicate when no Flexera start/stop action has been performed.
+
 ## v7.0.6
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

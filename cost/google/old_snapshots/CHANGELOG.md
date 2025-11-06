@@ -1,5 +1,13 @@
 # Changelog
 
+## v5.4.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v5.3.0
+
+- Estimated savings are now derived directly from Flexera Cloud Cost Optimization billing data.
+
 ## v5.2.4
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
