@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.5.0
+
+- Added new field to incident table to indicate the 'Payment Option' for recommendations.
+
 ## v4.4.0
 
 - Added support for attaching CSV files to incident emails.
