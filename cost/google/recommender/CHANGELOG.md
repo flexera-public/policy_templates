@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.1
+
+- Duplicate recommendationID fixed. Functionality unchanged.
+
 ## v3.2.0
 
 - Added support for attaching CSV files to incident emails.
