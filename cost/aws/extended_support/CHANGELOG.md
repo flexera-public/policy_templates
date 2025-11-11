@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.1
+
+- Fixed issue that was preventing the policy template from being updated in the catalog. Functionality unchanged.
+
 ## v0.3.0
 
 - Added support for attaching CSV files to incident emails.
