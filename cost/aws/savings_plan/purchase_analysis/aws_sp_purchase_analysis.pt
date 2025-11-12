@@ -1,0 +1,797 @@
+name "AWS Savings Plan Purchase Analysis"
+rs_pt_ver 20180301
+type "policy"
+short_description "Performs a Savings Plan analysis using AWS's Commitment Purchase Analysis tool and returns the result. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/purchase_analysis) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/purchase_analysis"
+severity "low"
+category "Cost"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "AWS",
+  service: "Compute",
+  policy_set: "Savings Plans",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
+parameter "param_scope" do
+  type "string"
+  category "Savings Plan Settings"
+  label "Account Scope"
+  description "The account scope that you want your recommendations for. Select Payer to produce results only for a Master Payer account, or Linked to produce results for all linked accounts as well."
+  allowed_values "Payer", "Linked"
+  default "Payer"
+end
+
+parameter "param_days" do
+  type "number"
+  category "Savings Plan Settings"
+  label "Look Back Period"
+  description "Number of days of prior usage to analyze."
+  min_value 7
+  max_value 60
+  default 30
+end
+
+parameter "param_term" do
+  type "string"
+  category "Savings Plan Settings"
+  label "Savings Plan Term"
+  description "Length of savings plan term to provide recommendations for."
+  allowed_values "1 Year", "3 Year"
+  default "1 Year"
+end
+
+parameter "param_savings_plan_type" do
+  type "string"
+  category "Savings Plan Settings"
+  label "Savings Plan Type"
+  description "Type of Savings Plan to provide recommendations for."
+  allowed_values "Compute Savings Plan", "EC2 Instance Savings Plan", "SageMaker Savings Plans"
+  default "Compute Savings Plan"
+end
+
+parameter "param_payment_option" do
+  type "string"
+  category "Savings Plan Settings"
+  label "Payment Option"
+  description "Savings Plan purchase option to provide recommendations for."
+  allowed_values "No Upfront", "Partial Upfront", "All Upfront"
+  default "No Upfront"
+end
+
+parameter "param_hourly_commitment" do
+  type "number"
+  category "Savings Plan Settings"
+  label "Hourly Purchase Commitment"
+  description "The amount of currency to commit to spending per hour on Savings Plans."
+  min_value 1
+  max_value 5000
+  default 5
+end
+
+parameter "param_region" do
+  type "string"
+  category "Savings Plan Settings"
+  label "Region"
+  description "The region to scope the results to. Leave blank to analyze all regions."
+  default ""
+end
+
+parameter "param_instance_family" do
+  type "string"
+  category "Savings Plan Settings"
+  label "Instance Family"
+  description "The instance family to scope the results to. Leave blank to analyze all instance families."
+  default ""
+end
+
+parameter "param_offering_id" do
+  type "string"
+  category "Savings Plan Settings"
+  label "Offering ID"
+  description "The offering ID to scope the results to. Leave blank to analyze all offering IDs."
+  default ""
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws" do
+  get_page_marker do
+    body_path "NextPageToken"
+  end
+  set_page_marker do
+    body_field "NextPageToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+end
+
+# Gather local currency info
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency_target" do
+  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency_target", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  // Default to USD if currency is not found
+  result = ds_currency_reference['USD']
+
+  if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
+    result = ds_currency_reference[ds_currency_code['value']]
+  }
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-'EOS'
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_start_analysis" do
+  request do
+    run_script $js_start_analysis, $ds_aws_account, $param_scope, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_hourly_commitment, $param_region, $param_instance_family, $param_offering_id
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "AnalysisId")
+    field "startTime", jmes_path(response, "AnalysisStartedTime")
+    field "estimatedCompletionTime", jmes_path(response, "EstimatedCompletionTime")
+  end
+end
+
+script "js_start_analysis", type: "javascript" do
+  parameters "ds_aws_account", "param_scope", "param_days", "param_payment_option", "param_term", "param_savings_plan_type", "param_hourly_commitment", "param_region", "param_instance_family", "param_offering_id"
+  result "request"
+  code <<-EOS
+  option_table = {
+    "No Upfront": "NO_UPFRONT",
+    "Partial Upfront": "PARTIAL_UPFRONT",
+    "All Upfront": "ALL_UPFRONT"
+  }
+
+  years_table = {
+    "1 Year": "ONE_YEAR",
+    "3 Year": "THREE_YEARS"
+  }
+
+  type_table = {
+    "Compute Savings Plan": "COMPUTE_SP",
+    "EC2 Instance Savings Plan": "EC2_INSTANCE_SP",
+    "SageMaker Savings Plans": "SAGEMAKER_SP"
+  }
+
+  end_time = new Date().toISOString().substring(0, 10)
+  start_time = new Date(end_time)
+  start_time.setDate(start_time.getDate() - param_days)
+  start_time = start_time.toISOString().substring(0, 10)
+
+  body_fields = {
+    "CommitmentPurchaseAnalysisConfiguration": {
+      "SavingsPlansPurchaseAnalysisConfiguration": {
+        "AccountId": ds_aws_account["id"].toString(),
+        "AccountScope": param_scope.toUpperCase(),
+        "AnalysisType": "MAX_SAVINGS",
+        "LookBackTimePeriod": {
+          "Start": start_time,
+          "End": end_time
+        },
+        "SavingsPlansToAdd": [
+          {
+            "PaymentOption": option_table[param_payment_option],
+            "SavingsPlansCommitment": param_hourly_commitment,
+            "SavingsPlansType": type_table[param_savings_plan_type],
+            "TermInYears": years_table[param_term]
+          }
+        ]
+      }
+    }
+  }
+
+  if (param_region) {
+    body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansToAdd"][0]["Region"] = param_region
+  }
+
+  if (param_instance_family) {
+    body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansToAdd"][0]["InstanceFamily"] = param_instance_family
+  }
+
+  if (param_offering_id) {
+    body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansToAdd"][0]["OfferingId"] = param_offering_id
+  }
+
+  var request = {
+    auth: "auth_aws",
+    pagination: "pagination_aws",
+    verb: "POST",
+    host: "ce.us-east-1.amazonaws.com",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "X-Amz-Target": "AWSInsightsIndexService.StartCommitmentPurchaseAnalysis",
+      "Content-Type": "application/x-amz-json-1.1"
+    },
+    body_fields: body_fields
+  }
+EOS
+end
+
+datasource "ds_collect_analysis" do
+  request do
+    run_script $js_collect_analysis, $ds_start_analysis
+  end
+  result do
+    encoding "json"
+    field "analysisCompletionTime", jmes_path(response, "AnalysisCompletionTime")
+    field "analysisId", jmes_path(response, "AnalysisId")
+    field "analysisStartedTime", jmes_path(response, "AnalysisStartedTime")
+    field "analysisStatus", jmes_path(response, "AnalysisStatus")
+    field "commitmentPurchaseAnalysisConfiguration", jmes_path(response, "CommitmentPurchaseAnalysisConfiguration")
+    field "errorCode", jmes_path(response, "ErrorCode")
+    field "estimatedCompletionTime", jmes_path(response, "EstimatedCompletionTime")
+    field "analysisDetails", jmes_path(response, "AnalysisDetails.SavingsPlansPurchaseAnalysisDetails")
+      # Contents of analysisDetails:
+      # "AdditionalMetadata": "string",
+      # "CurrencyCode": "string",
+      # "CurrentAverageCoverage": "string",
+      # "CurrentAverageHourlyOnDemandSpend": "string",
+      # "CurrentMaximumHourlyOnDemandSpend": "string",
+      # "CurrentMinimumHourlyOnDemandSpend": "string",
+      # "CurrentOnDemandSpend": "string",
+      # "EstimatedAverageCoverage": "string",
+      # "EstimatedAverageUtilization": "string",
+      # "EstimatedCommitmentCost": "string",
+      # "EstimatedMonthlySavingsAmount": "string",
+      # "EstimatedOnDemandCost": "string",
+      # "EstimatedOnDemandCostWithCurrentCommitment": "string",
+      # "EstimatedROI": "string",
+      # "EstimatedSavingsAmount": "string",
+      # "EstimatedSavingsPercentage": "string",
+      # "ExistingHourlyCommitment": "string",
+      # "HourlyCommitmentToPurchase": "string",
+      # "LatestUsageTimestamp": "string",
+      # "LookbackPeriodInHours": "string",
+      # "MetricsOverLookbackPeriod": [
+      #   {
+      #       "CurrentCoverage": "string",
+      #       "EstimatedCoverage": "string",
+      #       "EstimatedNewCommitmentUtilization": "string",
+      #       "EstimatedOnDemandCost": "string",
+      #       "StartTime": "string"
+      #   }
+      # ],
+      # "UpfrontCost": "string"
+  end
+end
+
+script "js_collect_analysis", type: "javascript" do
+  parameters "ds_start_analysis"
+  result "request"
+  code <<-EOS
+  function sleep(seconds) {
+    now = new Date().getTime()
+    while(new Date().getTime() < now + (seconds * 1000)) { /* Do nothing */ }
+    return now
+  }
+
+  // Wait until we reach the estimated completion time provided by AWS
+  estimatedCompletionTime = new Date(estimatedCompletionTime)
+  while(new Date() - estimatedCompletionTime < 0) { /* Do nothing */ }
+
+  // Wait a little bit extra just to be sure
+  sleep(60)
+
+  var request = {
+    auth: "auth_aws",
+    pagination: "pagination_aws",
+    verb: "POST",
+    host: "ce.us-east-1.amazonaws.com",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "X-Amz-Target": "AWSInsightsIndexService.GetCommitmentPurchaseAnalysis",
+      "Content-Type": "application/x-amz-json-1.1"
+    },
+    body_fields: {
+      "AnalysisId": ds_start_analysis["id"]
+    }
+  }
+EOS
+end
+
+# Branching logic:
+# This datasource returns an empty array if the target currency is USD.
+# This prevents ds_currency_conversion from running if it's not needed.
+datasource "ds_conditional_currency_conversion" do
+  run_script $js_conditional_currency_conversion, $ds_currency_target, $ds_collect_analysis
+end
+
+script "js_conditional_currency_conversion", type: "javascript" do
+  parameters "ds_currency_target", "ds_collect_analysis"
+  result "result"
+  code <<-EOS
+  result = []
+  from_currency = "USD"
+
+  if (ds_collect_analysis && ds_collect_analysis["analysisDetails"] && ds_collect_analysis["analysisDetails"]["CurrencyCode"]) {
+    from_currency = ds_collect_analysis["analysisDetails"]["CurrencyCode"]
+  }
+
+  // Make the request only if the target currency is not USD
+  if (ds_currency_target['code'] != from_currency) {
+    result = [{ from: from_currency }]
+  }
+EOS
+end
+
+datasource "ds_currency_conversion" do
+  # Only make a request if the target currency is not USD
+  iterate $ds_conditional_currency_conversion
+  request do
+    host "api.xe-auth.flexeraeng.com"
+    path "/prod/{proxy+}"
+    query "from", val(iter_item, 'from')
+    query "to", val($ds_currency_target, 'code')
+    query "amount", "1"
+    # Ignore currency conversion if API has issues
+    ignore_status [400, 404, 502]
+  end
+  result do
+    encoding "json"
+    field "from", jmes_path(response, "from")
+    field "to", jmes_path(response, "to")
+    field "amount", jmes_path(response, "amount")
+    field "year", jmes_path(response, "year")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_target", "ds_currency_conversion"
+  result "result"
+  code <<-EOS
+  result = ds_currency_target
+  result['exchange_rate'] = 1
+
+  if (ds_currency_conversion.length > 0) {
+    currency_code = ds_currency_target['code']
+    current_month = parseInt(new Date().toISOString().split('-')[1])
+
+    conversion_block = _.find(ds_currency_conversion[0]['to'][currency_code], function(item) {
+      return item['month'] == current_month
+    })
+
+    if (conversion_block != undefined) {
+      result['exchange_rate'] = conversion_block['monthlyAverage']
+    }
+  }
+EOS
+end
+
+datasource "ds_analysis_incident" do
+  run_script $js_analysis_incident, $ds_collect_analysis, $ds_currency, $ds_conditional_currency_conversion, $ds_aws_account, $ds_applied_policy, $param_scope, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_hourly_commitment, $param_region, $param_instance_family, $param_offering_id, $param_incident_csv
+end
+
+script "js_analysis_incident", type: "javascript" do
+  parameters "ds_collect_analysis", "ds_currency", "ds_conditional_currency_conversion", "ds_aws_account", "ds_applied_policy", "param_scope", "param_days", "param_payment_option", "param_term", "param_savings_plan_type", "param_hourly_commitment", "param_region", "param_instance_family", "param_offering_id", "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator) {
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  // Used for rounding and currency conversion
+  function convertCurrency(number) {
+    return number ? Math.round(number * ds_currency['exchange_rate'] * 1000) / 1000 : ""
+  }
+
+  // Messaging for currency conversion
+  currency = ds_currency['code']
+
+  if (ds_conditional_currency_conversion[0] != undefined) {
+    currency = ds_conditional_currency_conversion[0]['from']
+  }
+
+  conversion_message = ""
+
+  if (ds_currency['code'] != currency && ds_currency_conversion.length > 0 && exchange_rate != 1) {
+    conversion_message = [
+      "Currency values were converted from ", currency, " to ", ds_currency['code'],
+      " using an exchange rate of ", exchange_rate, ".\n\n"
+    ].join('')
+  }
+
+  if (ds_currency['code'] != currency && ds_currency_conversion.length == 0) {
+    conversion_message = "Currency values are in ", currency, " due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
+  }
+
+  message = [
+    conversion_message,
+    "The following settings were used for the commitment purchase analysis:\n",
+    "- Savings Plan Type: ", param_savings_plan_type, "\n",
+    "- Account Scope: ", param_scope, "\n",
+    "- Term: ", param_term, "\n",
+    "- Look Back Period: ", param_days, "\n",
+    "- Payment Option: ", param_payment_option, "\n",
+    "- Hourly Commitment: ", param_hourly_commitment, "\n"
+  ]
+
+  if (param_region) { message.push("- Region: ", param_region, "\n") }
+  if (param_instance_family) { message.push("- Instance Family: ", param_instance_family, "\n") }
+  if (param_offering_id) { message.push("- Offering ID: ", param_offering_id, "\n") }
+
+  message.push("\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n")
+  message.push("Empty fields indicate information that is not applicable to this analysis.\n\n")
+
+  service_table = {
+    "Compute Savings Plan": "Compute",
+    "EC2 Instance Savings Plan": "EC2",
+    "SageMaker Savings Plans": "SageMaker"
+  }
+
+  result = [{
+    additionalMetadata: ds_collect_analysis["analysisDetails"]["AdditionalMetadata"],
+    currentAverageCoverage: ds_collect_analysis["analysisDetails"]["CurrentAverageCoverage"],
+    currentAverageHourlyOnDemandSpend: convertCurrency(ds_collect_analysis["analysisDetails"]["CurrentAverageHourlyOnDemandSpend"]),
+    currentMaximumHourlyOnDemandSpend: convertCurrency(ds_collect_analysis["analysisDetails"]["CurrentMaximumHourlyOnDemandSpend"]),
+    currentMinimumHourlyOnDemandSpend: convertCurrency(ds_collect_analysis["analysisDetails"]["CurrentMinimumHourlyOnDemandSpend"]),
+    currentOnDemandSpend: convertCurrency(ds_collect_analysis["analysisDetails"]["CurrentOnDemandSpend"]),
+    estimatedAverageCoverage: ds_collect_analysis["analysisDetails"]["EstimatedAverageCoverage"],
+    estimatedAverageUtilization: ds_collect_analysis["analysisDetails"]["EstimatedAverageUtilization"],
+    estimatedCommitmentCost: convertCurrency(ds_collect_analysis["analysisDetails"]["EstimatedCommitmentCost"]),
+    estimatedOnDemandCost: convertCurrency(ds_collect_analysis["analysisDetails"]["EstimatedOnDemandCost"]),
+    estimatedOnDemandCostWithCurrentCommitment: convertCurrency(ds_collect_analysis["analysisDetails"]["EstimatedOnDemandCostWithCurrentCommitment"]),
+    estimatedROI: convertCurrency(ds_collect_analysis["analysisDetails"]["EstimatedROI"]),
+    estimatedSavingsAmount: convertCurrency(ds_collect_analysis["analysisDetails"]["EstimatedSavingsAmount"]),
+    estimatedSavingsPercentage: ds_collect_analysis["analysisDetails"]["EstimatedSavingsPercentage"],
+    existingHourlyCommitment: ds_collect_analysis["analysisDetails"]["ExistingHourlyCommitment"],
+    hourlyCommitmentToPurchase: ds_collect_analysis["analysisDetails"]["HourlyCommitmentToPurchase"],
+    latestUsageTimestamp: ds_collect_analysis["analysisDetails"]["LatestUsageTimestamp"],
+    lookbackPeriodInHours: ds_collect_analysis["analysisDetails"]["LookbackPeriodInHours"],
+    upfrontCost: convertCurrency(ds_collect_analysis["analysisDetails"]["UpfrontCost"]),
+    currency: ds_currency['symbol'],
+    accountID: ds_aws_account["id"],
+    accountName: ds_aws_account["name"],
+    term: param_term,
+    paymentOption: param_payment_option,
+    lookbackPeriod: param_days,
+    service: service_table[param_savings_plan_type],
+    scope: param_scope,
+    hourly_commitment: param_hourly_commitment,
+    region: param_region,
+    instance_family: param_instance_family,
+    offering_id: param_offering_id,
+    policy_name: ds_applied_policy['name'],
+    message: message.join('')
+  }]
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_aws_sp_recommendations" do
+  validate_each $ds_analysis_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }} - Analysis Results"
+    detail_template <<-'EOS'
+    **Potential Savings:** {{ with index data 0 }}{{ .estimatedSavingsAmount }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check lt(val(item, "estimatedSavingsAmount"), 0)
+    escalate $esc_email
+    export do
+      resource_level false
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "currency" do
+        label "Currency"
+      end
+      field "upfrontCost" do
+        label "Upfront Cost"
+      end
+      field "hourlyCommitmentToPurchase" do
+        label "Hourly Commitment To Purchase"
+      end
+      field "estimatedSavingsAmount" do
+        label "Estimated Savings Amount"
+      end
+      field "estimatedSavingsPercentage" do
+        label "Estimated Savings Percentage"
+      end
+      field "estimatedROI" do
+        label "Estimated ROI"
+      end
+      field "existingHourlyCommitment" do
+        label "Existing Hourly Commitment"
+      end
+      field "currentAverageCoverage" do
+        label "Current Average Coverage"
+      end
+      field "currentOnDemandSpend" do
+        label "Current On-Demand Spend"
+      end
+      field "currentAverageHourlyOnDemandSpend" do
+        label "Current Average Hourly On-Demand Spend"
+      end
+      field "currentMaximumHourlyOnDemandSpend" do
+        label "Current Maximum Hourly On-Demand Spend"
+      end
+      field "currentMinimumHourlyOnDemandSpend" do
+        label "Current Minimum Hourly On-Demand Spend"
+      end
+      field "estimatedAverageCoverage" do
+        label "Estimated Average Coverage"
+      end
+      field "estimatedAverageUtilization" do
+        label "Estimated Average Utilization"
+      end
+      field "estimatedCommitmentCost" do
+        label "Estimated Commitment Cost"
+      end
+      field "estimatedOnDemandCost" do
+        label "Estimated On-Demand Cost"
+      end
+      field "estimatedOnDemandCostWithCurrentCommitment" do
+        label "Estimated On-Demand Cost With Current Commitment"
+      end
+      field "latestUsageTimestamp" do
+        label "Latest Usage Timestamp"
+      end
+      field "lookbackPeriodInHours" do
+        label "Look Back Period (Hours)"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "term" do
+        label "Term"
+      end
+      field "paymentOption" do
+        label "Payment Option"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "scope" do
+        label "Scope"
+      end
+      field "hourly_commitment" do
+        label "Hourly Purchase Commitment"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "instance_family" do
+        label "Instance Family"
+      end
+      field "offering_id" do
+        label "Offering ID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows 100000
+  end
+end
