@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v0.1.5
+
+- Fixed issue where CPU stats would sometimes not be correctly calculated
+
 ## v0.1.4
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

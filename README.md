@@ -170,7 +170,9 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
   * [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
+  * [Google Rightsize Cloud SQL Instances](./cost/google/rightsize_cloudsql_instances)
   * [Google Rightsize Cloud SQL Recommender](./cost/google/rightsize_cloudsql_recommendations)
+  * [Google Rightsize VM Instances](./cost/google/rightsize_vm_instances)
   * [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
   * [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/google)
   * [Turbonomic Rightsize Virtual Machines Recommendations Google](./cost/turbonomics/scale_virtual_machines_recommendations/google)
@@ -179,6 +181,7 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
   * [Google Old Snapshots](./cost/google/old_snapshots)
+  * [Google Unused Disks](./cost/google/unused_disks)
   * [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/google)
 
 #### Kubecost
@@ -338,7 +341,6 @@ These templates can generate savings estimates for your environment. The inciden
   * [Azure Expiring Savings Plans](./cost/azure/savings_plan/expiration)
   * [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
   * [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
-  * [Azure Reserved Instances Utilization MCA](./cost/azure/reserved_instances/utilization_mca)
   * [Azure Savings Plan Utilization](./cost/azure/savings_plan/utilization)
   * [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
   * [Azure Schedule Instance](./cost/azure/schedule_instance)
@@ -366,13 +368,8 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Storage Accounts
 
+  * [Azure Deprecated Storage Accounts](./compliance/azure/deprecated_storage_accounts)
   * [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management)
-
-#### Azure China
-
-* Common Bill Ingestion
-
-  * [Azure China Common Bill Ingestion](./cost/azure/azure_china_cbi)
 
 #### Flexera
 
@@ -514,7 +511,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Kubernetes
 
-  * [Spot Ocean - Common Bill Ingest](./cost/flexera/spot/ocean_cbi)
+  * [Spot Ocean Common Bill Ingestion](./cost/flexera/spot/ocean_cbi)
 
 #### Google
 

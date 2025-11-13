@@ -44,7 +44,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Threshold Statistic* - Statistic to use when determining if an instance is idle/underutilized.
 - *Statistic Interval* - The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets. Does not affect the accuracy for 'Average' 'Maximum' 'Minimum', as these stats are aggregated directly by Azure.
 - *Statistic Lookback Period* - How many days back to look at CPU and/or memory data for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
-- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+- *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.
   - `Key==Value` - Filter all resources with the specified tag key:value pair.
   - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
@@ -52,11 +52,13 @@ The policy includes the estimated monthly savings. The estimated monthly savings
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Skip Instance Sizes* - Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 - *Power Off Type* - Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances. Only applicable when taking action against instances.
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Delete Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be deleted.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Delete Instances" action while applying the policy template, all the resources that didn't satisfy the policy condition will be deleted.
 
 ## Policy Actions
 
@@ -67,7 +69,7 @@ For example if a user selects the "Delete Instances" action while applying the p
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 ### Credential configuration
 

@@ -8,7 +8,7 @@ severity "medium"
 category "Compliance"
 default_frequency "weekly"
 info(
-  version: "4.2.4",
+  version: "4.3.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Instances not running FlexNet Inventory Agent",
@@ -22,7 +22,7 @@ info(
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses to notify"
+  label "Email Addresses"
   description "Email addresses of the recipients you wish to notify when new incidents are created."
   default []
 end
@@ -67,6 +67,24 @@ parameter "param_report_id" do
   label "FNMS Report ID"
   description "FlexNet manager Custom View ID."
   # No default value, user input required
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -209,13 +227,13 @@ datasource "ds_list_virtual_machines" do
     collect jmes_path(response, "value[*]") do
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
-      field "resourcename", get(4, split(jmes_path(col_item, "id"),"/"))
+      field "resourcename", get(4, split(jmes_path(col_item, "id"), "/"))
       field "location", jmes_path(col_item, "location")
       field "vmSize", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
       field "tags", jmes_path(col_item, "tags")
-      field "subscriptionId",val(iter_item, "subscriptionId")
-      field "subscriptionName",val(iter_item, "displayName")
+      field "subscriptionId", val(iter_item, "subscriptionId")
+      field "subscriptionName", val(iter_item, "displayName")
     end
   end
 end
@@ -264,27 +282,33 @@ datasource "ds_fnms_report" do
 end
 
 datasource "ds_formatted_instances", type: "javascript" do
-  run_script $js_formatted_instances, $ds_list_virtual_machines, $ds_fnms_report, $param_exclusion_tag_key
+  run_script $js_formatted_instances, $ds_list_virtual_machines, $ds_fnms_report, $param_exclusion_tag_key, $param_incident_csv
 end
 
 script "js_formatted_instances", type: "javascript" do
-  parameters "azure_VMs", "ds_fnms_report", "param_exclusion_tag_key"
+  parameters "ds_list_virtual_machines", "ds_fnms_report", "param_exclusion_tag_key", "param_incident_csv"
   result "result"
   code <<-EOS
-    var result = [];
-  fnms_instance_name=[];
-    _.each(ds_fnms_report, function(instance){
-      fnms_instance_name.push(instance["computerName"].toLowerCase())
-    })
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
-    _.each(azure_VMs, function(vm){
-      if((!_.has(vm.tags, param_exclusion_tag_key)) && fnms_instance_name.indexOf(vm["name"].toLowerCase()) === -1){
-        result.push(vm)
-      }
-    })
-    result = _.sortBy(result, 'location');
-    result = _.sortBy(result, 'subscriptionName');
-  EOS
+  var result = [];
+
+  fnms_instance_name=[];
+
+  _.each(ds_fnms_report, function(instance){
+    fnms_instance_name.push(instance["computerName"].toLowerCase())
+  })
+
+  _.each(ds_list_virtual_machines, function(vm){
+    if((!_.has(vm.tags, param_exclusion_tag_key)) && fnms_instance_name.indexOf(vm["name"].toLowerCase()) === -1){
+      vm["csv_message"] = csv_message
+      result.push(vm)
+    }
+  })
+
+  result = _.sortBy(result, 'location');
+  result = _.sortBy(result, 'subscriptionName');
+EOS
 end
 
 ###############################################################################
@@ -294,6 +318,7 @@ end
 policy "pol_long_running_instances" do
   validate $ds_formatted_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{len data }} is missing in FlexNet Manager."
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
     escalate $esc_email
@@ -333,7 +358,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################

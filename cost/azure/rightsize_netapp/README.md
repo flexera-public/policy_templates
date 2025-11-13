@@ -18,7 +18,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
 - *Pool Allocated to Volume Threshold (%)* - The allocation threshold at which to consider a NetApp pool to be 'oversized' and therefore be flagged for downsizing.
 - *Volume Consumed Capacity Threshold (%)* - The capacity usage threshold at which to consider a NetApp volume to be 'oversized' and therefore be flagged for downsizing.
-- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+- *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.
   - `Key==Value` - Filter all resources with the specified tag key:value pair.
   - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
@@ -32,6 +32,8 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Show Upsize Recommendations* - Whether or not to include upsize recommendations for pools and volumes
 - *Resource Types* - Whether to produce recommendations only for pools or for both pools and volumes
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 ## Policy Actions
@@ -44,7 +46,7 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.NetApp/netAppAccounts/capacityPools/read`

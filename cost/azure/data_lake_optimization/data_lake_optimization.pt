@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.1.4",
+  version: "0.2.0",
   provider: "Azure",
   service: "Storage Accounts",
   policy_set: "Data Lake Optimization",
@@ -139,6 +139,24 @@ parameter "param_hns" do
   description "Filter for the Azure Data Lake Storage Accounts where hierarchical namespace is enabled."
   allowed_values "Yes", "No"
   default "No"
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -693,13 +711,15 @@ datasource "ds_azure_pricing_per_region" do
 end
 
 datasource "ds_azure_blobs_incident" do
-  run_script $js_azure_blobs_incident, $ds_azure_blobs_with_tier, $ds_applied_policy, $ds_azure_pricing_per_region, $ds_currency_code, $ds_currency, $param_cool_tier_days, $param_archive_tier_days, $param_new_storage_tier
+  run_script $js_azure_blobs_incident, $ds_azure_blobs_with_tier, $ds_applied_policy, $ds_azure_pricing_per_region, $ds_currency_code, $ds_currency, $param_cool_tier_days, $param_archive_tier_days, $param_new_storage_tier, $param_incident_csv
 end
 
 script "js_azure_blobs_incident", type: "javascript" do
-  parameters "ds_azure_blobs_with_tier", "ds_applied_policy", "ds_azure_pricing_per_region", "ds_currency_code", "ds_currency", "param_cool_tier_days", "param_archive_tier_days", "param_new_storage_tier"
+  parameters "ds_azure_blobs_with_tier", "ds_applied_policy", "ds_azure_pricing_per_region", "ds_currency_code", "ds_currency", "param_cool_tier_days", "param_archive_tier_days", "param_new_storage_tier", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   blobs_to_change = _.reject(ds_azure_blobs_with_tier, function(blob) {
     return blob['new_storage_tier'] == null
   })
@@ -829,12 +849,12 @@ script "js_azure_blobs_incident", type: "javascript" do
 
   analysis += "\n\n"
 
-  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
   // Dummy entry to ensure validation runs at least once
   result.push({ resourceID: "", policy_name: "", message: "", tags: "" })
 
-  result[0]['message'] = findings + analysis + disclaimer
+  result[0]['message'] = findings + analysis + disclaimer + csv_message
   result[0]['total_savings'] = ds_currency['symbol'] + " " +total_savings.toFixed(5)
 EOS
 end
@@ -937,7 +957,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_update" do

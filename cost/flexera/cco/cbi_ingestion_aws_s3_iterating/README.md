@@ -2,7 +2,9 @@
 
 ## What It Does
 
-This policy template uploads a file containing cloud costs from AWS S3 Object Storage into the Flexera Cloud Cost Optimization (CCO) platform via [Common Bill Ingestion](https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBI.htm). Both [Common Bill Ingestion Format](https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBIDefaultFormat.htm) and [FOCUS Format](https://docs.flexera.com/flexera/EN/Optima/FOCUS.htm) are supported. An incident is raised on every execution of the policy to provide status information to the user.
+This policy template retrieves arbitrary cost data from AWS S3 Object Storage that is in either the [Common Bill Ingestion Format](https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBIDefaultFormat.htm) or [FOCUS Format](https://docs.flexera.com/flexera/EN/Optima/FOCUS.htm) and sends it into Flexera Cloud Cost Optimization (CCO). An incident is raised on every execution of the policy to provide status information to the user.
+
+NOTE: This policy template is not intended for ingesting costs for AWS itself; [Flexera's native AWS bill connection](https://docs.flexera.com/flexera/EN/Administration/BillConnectConfigs.htm#cloudsettings_4227273830_1189529) should be used for that. It is intended for ingesting arbitrary costs that just happen to be stored in AWS S3 Object Storage.
 
 NOTE: Because of the complexities involved in this policy template, it is recommended for use only in situations where the standard [Common Bill Ingestion from AWS S3 Object Storage](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cbi_ingestion_aws_s3) policy template is unable to handle the amount of data being processed for CBI.
 
@@ -15,7 +17,7 @@ NOTE: Because of the complexities involved in this policy template, it is recomm
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *Month To Ingest* - Whether to process bills for the current month, previous month, or a specific month.
 - *Billing Period* - The year and month to process bills for in YYYY-MM format. Only relevant if Specific Month is selected for the Month To Ingest parameter. Example: 2022-09
@@ -33,7 +35,7 @@ This policy has the following input parameters required when launching the polic
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `s3:ListBucket`*

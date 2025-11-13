@@ -1,5 +1,17 @@
 # Changelog
 
+## v6.1.1
+
+- Fixed an issue where in some scenarios the `Estimated Monthly Savings` amount would be reflected in the incorrect currency.
+
+## v6.1.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v6.0.5
+
+- Updated API request for gathering instance costs to only gather costs specific to virtual machines and their disks. Functionality unchanged but policy template is now less likely to fail to report costs.
+
 ## v6.0.4
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

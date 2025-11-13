@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.0
+
+- Added support for attaching CSV files to incident emails.
+
 ## v0.2.2
 
 - Fixed issue where estimated savings value had all fractional values rounded away

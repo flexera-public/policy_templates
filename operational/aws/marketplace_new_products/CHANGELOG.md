@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.0
+
+- Added support for attaching CSV files to incident emails.
+
 ## v0.3.7
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

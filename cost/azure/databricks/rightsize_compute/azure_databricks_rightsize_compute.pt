@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.5.0",
+  version: "0.6.0",
   provider: "Azure",
   service: "Databricks",
   policy_set: "Databricks",
@@ -109,7 +109,7 @@ parameter "param_stats_interval" do
   type "string"
   category "Statistics"
   label "Statistic Interval"
-  description "Interval to use for the time span. The time granularity value should be smaller than the selected time range to be useful, otherwise just one value is returned for the lookback period.  For more details please reference Azure Docs: https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/metrics-aggregation-explained"
+  description "Interval to use for the time span. The time granularity value should be smaller than the selected time range to be useful, otherwise just one value is returned for the lookback period.  For more details please reference Azure Docs: https://learn.microsoft.com/en-us/azure/azure-monitor/metrics/metrics-aggregation-explained"
   allowed_values "1 minute", "5 minutes", "15 minutes", "30 minutes", "1 hour", "6 hours", "12 hours", "1 day"
   default "15 minutes"
 end
@@ -162,6 +162,24 @@ parameter "param_stats_underutil_threshold_mem_value" do
   min_value -1
   max_value 100
   default 40
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -1226,13 +1244,15 @@ script "js_virtualmachines_from_bill", type: "javascript" do
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_param_stats_threshold, $ds_filtered_workspace_virtualmachines_with_costs, $ds_azure_instance_size_map, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $ds_param_stats_interval, $param_stats_check_both, $param_stats_idle_threshold_cpu_value, $param_stats_underutil_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_mem_value, $param_stats_lookback, rs_org_id, rs_project_id
+  run_script $js_idle_and_underutil_instances, $ds_param_stats_threshold, $ds_filtered_workspace_virtualmachines_with_costs, $ds_azure_instance_size_map, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $ds_param_stats_interval, $param_stats_check_both, $param_stats_idle_threshold_cpu_value, $param_stats_underutil_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_mem_value, $param_stats_lookback, $param_incident_csv, rs_org_id, rs_project_id
 end
 
 script "js_idle_and_underutil_instances", type: "javascript" do
-  parameters "ds_param_stats_threshold", "ds_filtered_workspace_virtualmachines_with_costs", "ds_azure_instance_size_map", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "ds_param_stats_interval", "param_stats_check_both", "param_stats_idle_threshold_cpu_value", "param_stats_underutil_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_mem_value", "param_stats_lookback", "rs_org_id", "rs_project_id"
+  parameters "ds_param_stats_threshold", "ds_filtered_workspace_virtualmachines_with_costs", "ds_azure_instance_size_map", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "ds_param_stats_interval", "param_stats_check_both", "param_stats_idle_threshold_cpu_value", "param_stats_underutil_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_mem_value", "param_stats_lookback", "param_incident_csv", "rs_org_id", "rs_project_id"
   result "result"
   code <<-EOS
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -1620,10 +1640,10 @@ script "js_idle_and_underutil_instances", type: "javascript" do
       applied_policy_url = applied_policy_url + "/orgs/" + rs_org_id + "/automation/applied-policies/projects/" + rs_project_id + "?policyId=" + ds_applied_policy['id'];
     }
 
-    disclaimer = "The above settings can be modified by editing the [" + applied_policy_name + "](" + applied_policy_url + ") applied policy and changing the appropriate parameters."
+    disclaimer = "The above settings can be modified by editing the [" + applied_policy_name + "](" + applied_policy_url + ") applied policy and changing the appropriate parameters.\\n\\n"
 
-    underutil_message = underutil_findings + underutil_analysis_message + lookback_message + disclaimer
-    idle_message = idle_findings + idle_analysis_message + lookback_message + disclaimer
+    underutil_message = underutil_findings + underutil_analysis_message + lookback_message + disclaimer + csv_message
+    idle_message = idle_findings + idle_analysis_message + lookback_message + disclaimer + csv_message
   } else {
     underutil_message = "No results were found because all CPU and memory parameters were set to -1 when this policy was applied. Please terminate and reapply this policy with one of these settings enabled."
     idle_message = underutil_message
@@ -2074,7 +2094,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################

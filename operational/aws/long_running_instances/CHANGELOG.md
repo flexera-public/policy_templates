@@ -1,5 +1,13 @@
 # Changelog
 
+## v5.2.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v5.1.7
+
+- Updated label of email parameter to "Email Addresses" to match other policy templates. Functionality unchanged.
+
 ## v5.1.6
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

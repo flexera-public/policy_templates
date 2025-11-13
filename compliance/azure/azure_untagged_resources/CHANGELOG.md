@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4.0
+
+- Added support for attaching CSV files to incident emails.
+
 ## v3.3.4
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

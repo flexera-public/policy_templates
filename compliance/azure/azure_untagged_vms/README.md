@@ -4,7 +4,7 @@
 
 This policy template checks for Azure virtual machines missing the user-specified tags. An incident is raised containing the untagged virtual machines, and the user has the option to power off, delete, or tag the virtual machines.
 
-NOTE: This policy is specific to virtual machines (Microsoft.Compute/virtualMachines). The [Azure Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources/) policy is recommended for finding untagged resources that are not virtual machines.
+NOTE: This policy template is specific to virtual machines (Microsoft.Compute/virtualMachines). The [Azure Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources/) policy is recommended for finding untagged resources that are not virtual machines.
 
 ## How It Works
 
@@ -14,7 +14,7 @@ NOTE: This policy is specific to virtual machines (Microsoft.Compute/virtualMach
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy:
+This policy template has the following input parameters required when launching the policy:
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
@@ -31,6 +31,8 @@ This policy has the following input parameters required when launching the polic
 - *Any / All* - Whether to report on instances missing any of the specified tags or all of them. Only applicable if more than one value is entered in the `Tags` field.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 - *Power Off Type* - Whether to perform a graceful shutdown or a forced shutdown when powering off instances.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 This policy has the following input parameters required when adding tags to resources from a raised incident:
 
@@ -47,7 +49,7 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 ### Credential Configuration
 

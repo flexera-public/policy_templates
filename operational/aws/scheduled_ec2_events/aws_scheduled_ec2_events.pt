@@ -8,7 +8,7 @@ category "Operational"
 severity "medium"
 default_frequency "weekly"
 info(
-  version: "4.0.6",
+  version: "4.1.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "",
@@ -86,6 +86,24 @@ parameter "param_regions_list" do
   description "A list of allowed or denied regions. See the README for more details"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -424,13 +442,15 @@ EOS
 end
 
 datasource "ds_instances_with_events" do
-  run_script $js_instances_with_events, $ds_instances, $ds_scheduled_events_filtered, $ds_aws_account, $ds_applied_policy, $param_days_until_event
+  run_script $js_instances_with_events, $ds_instances, $ds_scheduled_events_filtered, $ds_aws_account, $ds_applied_policy, $param_days_until_event, $param_incident_csv
 end
 
 script "js_instances_with_events", type: "javascript" do
-  parameters "ds_instances", "ds_scheduled_events_filtered", "ds_aws_account", "ds_applied_policy", "param_days_until_event"
+  parameters "ds_instances", "ds_scheduled_events_filtered", "ds_aws_account", "ds_applied_policy", "param_days_until_event", "param_incident_csv"
   result "result"
   code <<-EOS
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   result = []
   today = new Date()
 
@@ -498,7 +518,8 @@ script "js_instances_with_events", type: "javascript" do
             daysUntilEvent: daysUntilEvent,
             resourceName: name,
             tags: tags.join(', '),
-            service: "EC2"
+            service: "EC2",
+            csv_message: csv_message
           })
         }
       })
@@ -528,7 +549,8 @@ script "js_instances_with_events", type: "javascript" do
     daysUntilEvent: "",
     resourceName: "",
     tags: "",
-    service: ""
+    service: "",
+    csv_message: ""
   })
 EOS
 end
@@ -540,6 +562,7 @@ end
 policy "pol_instances_with_events" do
   validate_each $ds_instances_with_events do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Scheduled EC2 Events Found"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     hash_exclude "daysUntilEvent", "resourceName", "tags"
@@ -606,7 +629,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################
