@@ -6,11 +6,11 @@ This policy template
 
 ## How It Works
 
-Analysis is performed via the [AWS Savings Plans Purchase Analyzer](hhttps://aws.amazon.com/blogs/aws-cloud-financial-management/announcing-savings-plans-purchase-analyzer/) tool included in AWS Cost Explorer.
+Analysis is performed via the [AWS Savings Plans Purchase Analyzer](https://aws.amazon.com/blogs/aws-cloud-financial-management/announcing-savings-plans-purchase-analyzer/) tool included in AWS Cost Explorer.
 
 ### Currency Details
 
-If the Flexera organization is configured to use a currency other than the one the [AWS Savings Plans Purchase Analyzer](hhttps://aws.amazon.com/blogs/aws-cloud-financial-management/announcing-savings-plans-purchase-analyzer/) tool returns, currency values will be converted using the exchange rate at the time that the policy executes.
+If the Flexera organization is configured to use a currency other than the one the [AWS Savings Plans Purchase Analyzer](https://aws.amazon.com/blogs/aws-cloud-financial-management/announcing-savings-plans-purchase-analyzer/) tool returns, currency values will be converted using the exchange rate at the time that the policy executes.
 
 ## Input Parameters
 
@@ -78,4 +78,4 @@ Additionally, this policy template requires that [AWS Cost Explorer be enabled](
 
 ## Cost
 
-This policy template does not incur any cloud costs.
+This policy template makes use of AWS Cost Explorer APIs. Please review [AWS's documentation](https://aws.amazon.com/aws-cost-management/aws-cost-explorer/pricing/) on the cost of using these APIs.
