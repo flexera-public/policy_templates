@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.0
+
+- Policy now continues execution for accessible regions when some regions return permission errors
+- Added separate incident report to identify regions with access issues and provide remediation guidance
+
 ## v0.2.8
 
 - Fixed issue where estimated savings would sometimes be reported as 0 inaccurately.

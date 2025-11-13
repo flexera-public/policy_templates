@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.1.0
+
+- Policy now continues execution for accessible regions when some regions return permission errors
+- Added separate incident report to identify regions with access issues and provide remediation guidance
+
 ## v4.0.6
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
