@@ -41,6 +41,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 - AWS
 - Azure
 - Google
+- Oracle
 
 ## Cost
 
