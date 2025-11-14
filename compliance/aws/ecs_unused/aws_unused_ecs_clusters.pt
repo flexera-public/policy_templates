@@ -8,7 +8,7 @@ severity "low"
 category "Compliance"
 default_frequency "weekly"
 info(
-  version: "4.1.0",
+  version: "4.2.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Unused Containers",
@@ -253,6 +253,25 @@ datasource "ds_regions" do
   run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
 end
 
+datasource "ds_region_check" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    verb "POST"
+    host join(["ecs.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    header "X-Amz-Target", "AmazonEC2ContainerServiceV20141113.ListClusters"
+    header "Content-Type", "application/x-amz-json-1.1"
+    body_field "maxResults", 5
+    ignore_status [400, 403, 401]
+  end
+  result do
+    encoding "json"
+    field "region", val(iter_item, "region")
+    field "status", "OK"
+  end
+end
+
 script "js_regions", type:"javascript" do
   parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
   result "result"
@@ -279,6 +298,7 @@ datasource "ds_aws_ecs_cluster_lists" do
     header "X-Amz-Target", "AmazonEC2ContainerServiceV20141113.ListClusters"
     header "Content-Type", "application/x-amz-json-1.1"
     body_field "empty", "empty"
+    ignore_status [400, 403, 401]
   end
   result do
     encoding "json"
@@ -477,6 +497,75 @@ script "js_aws_unused_ecs_clusters", type: "javascript" do
 EOS
 end
 
+datasource "ds_identify_errors" do
+  run_script $js_identify_errors, $ds_regions, $ds_region_check, $ds_applied_policy, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_identify_errors", type: "javascript" do
+  parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
+  result "errors"
+  code <<-EOS
+  var errors = [];
+
+  // Build map of accessible regions
+  var region_responses = {};
+  _.each(ds_region_check, function(item) {
+    if (item.region) {
+      region_responses[item.region] = "OK"
+    }
+  });
+
+  var allowed_regions = _.keys(region_responses);
+  var forbidden_regions = [];
+
+  // Identify inaccessible regions
+  _.each(ds_regions, function(region_obj) {
+    if (!_.contains(allowed_regions, region_obj.region)) {
+      forbidden_regions.push(region_obj.region);
+    }
+  });
+
+  if (forbidden_regions.length > 0) {
+    var regions_string = forbidden_regions.sort().join(", ");
+    var successful_regions = allowed_regions.sort().join(", ");
+    var filter_guidance = "";
+
+    if (param_regions_list.length > 0) {
+      filter_guidance = " You are currently using the 'Allow/Deny Regions List' parameter. ";
+      filter_guidance += "You can update this list to exclude the inaccessible regions if appropriate.";
+    } else {
+      filter_guidance = " You can use the 'Allow/Deny Regions List' parameter to exclude these regions from the policy scope.";
+    }
+
+    errors.push(
+      "HTTP error received when attempting to list ECS clusters in some AWS region(s).\\n" +
+      "\\n - Failed Regions: " + regions_string +
+      "\\n - Successful Regions: " + successful_regions +
+      "\\n\\nThis typically indicates that the AWS credential does not have the required 'ecs:ListClusters' permission " +
+      "for these regions, or these regions may not be enabled in your AWS account. " +
+      "To resolve this issue: " +
+      "(1) Verify the AWS credential has 'ecs:ListClusters' permission for these regions, " +
+      "(2) Ensure these regions are enabled in your AWS account (some regions like opt-in regions require explicit enablement), or " +
+      "(3) Exclude these regions from policy evaluation using the region filter parameters." +
+      filter_guidance
+    );
+  }
+
+  errors = _.uniq(errors);
+  errors = _.map(errors, function(err) {
+    return { "error": err };
+  });
+
+  if (errors.length > 0) {
+    policy_name = "AWS Unused ECS Clusters";
+    if (ds_applied_policy && ds_applied_policy.policy_template && ds_applied_policy.policy_template.name) {
+      policy_name = ds_applied_policy.policy_template.name;
+    }
+    errors[0].policy_name = policy_name;
+  }
+EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
@@ -520,6 +609,19 @@ policy "pol_aws_unused_ecs_clusters" do
         path "resourceID"
       end
     end
+  end
+
+  validate $ds_identify_errors do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to retrieve ECS clusters from one or more AWS regions due to permission or configuration errors.
+
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end }}
+EOS
+    check eq(size(data), 0)
   end
 end
 
