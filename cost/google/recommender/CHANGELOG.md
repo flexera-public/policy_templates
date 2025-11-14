@@ -2,7 +2,7 @@
 
 ## v3.2.1
 
-- Fetching only ACTIVE recommendations from Google Cloud Recommender API. Functionality unchanged.
+- Policy now only fetches active recommendations from Google Cloud Recommender API.
 
 ## v3.2.0
 
