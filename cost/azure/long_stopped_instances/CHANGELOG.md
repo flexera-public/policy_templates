@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1.1
+
+- Fixed an issue where in some scenarios the `Estimated Monthly Savings` amount would be reflected in the incorrect currency.
+
 ## v6.1.0
 
 - Added support for attaching CSV files to incident emails.

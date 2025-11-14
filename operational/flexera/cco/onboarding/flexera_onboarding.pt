@@ -9,7 +9,7 @@ default_frequency "15 minutes"
 category "Operational"
 info(
   publish: "true",
-  version: "0.1.3",
+  version: "0.1.4",
   provider: "Flexera",
   service: "All",
   policy_set: "N/A"
@@ -225,26 +225,33 @@ script "js_result_bill_connects", type: "javascript" do
   result "check_results"
   code <<-EOS
   check_results = [];
+
   // Check to see if there is at least one Bill Connect
-  if (ds_bill_connect_validations.values.length == 0) {
+  if (ds_bill_connect_validations && ds_bill_connect_validations.values && ds_bill_connect_validations.values.length > 0) {
+    check_results.push({
+      "name": "First Bill Connect",
+      "severity": "high",
+      "result": "pass",
+      "details": ds_bill_connect_validations.values.length + " Bill Connect(s) found."
+    });
+  } else {
     check_results.push({
       "name": "First Bill Connect",
       "severity": "high",
       "result": "fail",
       "details": "No Bill Connect found."
     });
-  } else {
-    check_results.push({
-      "name": "First Bill Connect",
-      "severity": "high",
-      "result": "pass",
-      "details": ds_bill_connect_validations.values.length+" Bill Connect(s) found."
+  }
+
+  // Check to see if any Bill Connects have failed validations
+  var failed_validations = []
+
+  if (ds_bill_connect_validations && ds_bill_connect_validations.values) {
+    failed_validations = _.filter(ds_bill_connect_validations.values, function (bill_connect) {
+      return !bill_connect.valid;
     });
   }
-  // Check to see if any Bill Connects have failed validations
-  var failed_validations = _.filter(ds_bill_connect_validations.values, function (bill_connect) {
-    return !bill_connect.valid;
-  });
+
   if (failed_validations.length > 0) {
     check_results.push({
       "name": "Bill Connect Validation",
@@ -254,7 +261,7 @@ script "js_result_bill_connects", type: "javascript" do
         return "["+bill_connect.billId+"](https://"+ds_flexera_api_hosts.ui+"/orgs/"+rs_org_id+"/optima/cloud-settings/bill-processing?accountImportHistory="+bill_connect.billId+")";
       }).join(", ")
     });
-  } else {
+  } else if (ds_bill_connect_validations && ds_bill_connect_validations.values && ds_bill_connect_validations.values.length > 0) {
     check_results.push({
       "name": "Bill Connect Validation",
       "severity": "high",
@@ -262,6 +269,7 @@ script "js_result_bill_connects", type: "javascript" do
       "details": "All "+ds_bill_connect_validations.values.length+" Bill Connects have passed validations."
     });
   }
+
   // Check to see if there is an AWS, Azure, Google
   var checks = [
     {
@@ -293,37 +301,45 @@ script "js_result_bill_connects", type: "javascript" do
       "regex": /gcp|google|gce/
     }
   ];
+
   // for each check, filter the bill connects to see if there is at least one
   _.each(checks, function(check) {
     // Check for at least one bill connect that matches the regex
-    var bill_connect = _.filter(ds_bill_connect_validations.values, function (bill_connect) {
-      return check.regex.test(bill_connect.kind);
-    });
+    var bill_connect = []
+
+    if (ds_bill_connect_validations && ds_bill_connect_validations.values) {
+      bill_connect = _.filter(ds_bill_connect_validations.values, function (bill_connect) {
+        return check.regex.test(bill_connect.kind);
+      });
+    }
+
     if (bill_connect.length == 0) {
       check_results.push({
-        "name": check.name+" Bill Connect",
+        "name": check.name + " Bill Connect",
         "severity": "high",
         "result": "fail",
-        "details": "No "+check.name+" Bill Connect found.\\n\\n"+check.details.join("\\n\\n")
+        "details": "No " + check.name + " Bill Connect found.\\n\\n"+check.details.join("\\n\\n")
       });
     } else {
       check_results.push({
-        "name": check.name+" Bill Connect",
+        "name": check.name + " Bill Connect",
         "severity": "high",
         "result": "pass",
-        "details": bill_connect.length+" "+check.name+" Bill Connect(s) found."
+        "details": bill_connect.length + " " + check.name + " Bill Connect(s) found."
       });
+
       // If we have a Bill Connect, we recommend setting up an automation credential as well for that billing account
       // Check for at least one credential that matches the conditions
       var credential = _.filter(ds_credentials, function (c) {
         var provider_tag = _.find(c.tags, function (tag) {
           return tag.key == "provider";
         });
-        if (provider_tag == null) {
-          return false;
-        }
+
+        if (provider_tag == null) { return false; }
+
         return check.regex.test(provider_tag.value);
       });
+
       if (credential.length == 0) {
         check_results.push({
           "name": check.name+" Automation Credential",

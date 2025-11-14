@@ -4,7 +4,7 @@
 
 This policy template checks various configurations in your Organization to ensure that it is set up correctly. The checks and recommendations are opinionated, and align with recommended best practices for onboarding and productionize your Organization.
 
-## Functional Details
+## How It Works
 
 - This policy leverages the Flexera APIs to check various configurations in your Organization.
 - All logic related to checks and recommendation criteria is defined in the policy template.
@@ -16,6 +16,7 @@ This policy template checks various configurations in your Organization to ensur
 ## Input Parameters
 
 - *Email Addresses* - A list of email addresses to send results
+- *Exclude Checks* - A list of checks to exclude from the "To Do" incident results.
 
 ## Policy Actions
 
@@ -45,4 +46,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This policy template does not incur any cloud costs.
