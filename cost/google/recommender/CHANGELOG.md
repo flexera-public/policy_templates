@@ -2,7 +2,7 @@
 
 ## v3.2.1
 
-- Duplicate recommendationID fixed. Functionality unchanged.
+- Fetching only ACTIVE recommendations from Google Cloud Recommender API. Functionality unchanged.
 
 ## v3.2.0
 
