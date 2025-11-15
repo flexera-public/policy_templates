@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.1
+
+- Policy now only fetches active recommendations from Google Cloud Recommender API.
+
 ## v3.2.0
 
 - Added support for attaching CSV files to incident emails.
