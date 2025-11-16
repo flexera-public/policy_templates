@@ -2,7 +2,7 @@
 
 ## v3.3.1
 
-- Duplicate recommendationID fixed. Functionality unchanged.
+- Policy now only fetches active recommendations from Google Cloud Recommender API.
 
 ## v3.3.0
 
