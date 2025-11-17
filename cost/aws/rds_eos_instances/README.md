@@ -13,7 +13,7 @@ This policy template identifies AWS RDS instances running MySQL or PostgreSQL th
 
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized for RDS resources if the resource is approaching end of standard support within the predefined time frame.
 
-- The `Estimated Monthly Savings` is calculated by multiplying the number of vCPUs assigned to the RDS instance by the extended support cost rate for MySQL or PostgreSQL in the instance’s region (refer to Notes for pricing links), and then multiplying that result by 720 hours, which represents AWS’s estimated monthly runtime.
+- The `Estimated Monthly Savings` is calculated by multiplying the number of vCPUs assigned to the RDS instance by the extended support cost rate for MySQL or PostgreSQL in the instance’s region (refer to Notes for pricing links), and then multiplying that result by 720 hours, which represents AWS`s estimated monthly runtime.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
 
