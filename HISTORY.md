@@ -6,6 +6,135 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3748](https://github.com/flexera-public/policy_templates/pull/3748): Revert "FOAA-582 - Graceful error handling for inaccessible regions"
+
+#### Description
+
+> Reverts flexera-public/policy_templates#3742
+
+#### Metadata
+
+- **Policies**: [AWS Unused ECS Clusters](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/ecs_unused/README.md), [AWS Idle NAT Gateways](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/idle_nat_gateways/README.md), [AWS Rightsize ElastiCache](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_elasticache/README.md), [AWS Unused Application Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_albs/README.md), [AWS Unused Network Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_nlbs/README.md)
+- **Merged At**: 2025-11-14 15:57:44 UTC
+
+---
+
+### PR [#3742](https://github.com/flexera-public/policy_templates/pull/3742): FOAA-582 - Graceful error handling for inaccessible regions
+
+*Minor Update*
+
+#### Description
+
+> AWS policy templates can fail completely when encountering HTTP errors (403, 401, etc.) in any region due to permission issues, disabled regions, or SCPs.. This enhancement improves AWS Policy Templates from "all-or-nothing" to "best-effort" execution. This should improve user experience and minimize effort to generate recommendations.
+>
+> This is the second batch of policies for initial PR here: https://github.com/flexera-public/policy_templates/pull/3630
+>
+> ### Issues Resolved
+>
+> https://flexera.atlassian.net/browse/SQ-18272
+> https://flexera.atlassian.net/browse/FOAA-582
+>
+
+#### Metadata
+
+- **Policies**: [AWS Unused ECS Clusters](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/ecs_unused/README.md), [AWS Idle NAT Gateways](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/idle_nat_gateways/README.md), [AWS Rightsize ElastiCache](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_elasticache/README.md), [AWS Unused Application Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_albs/README.md), [AWS Unused Network Load Balancers](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_nlbs/README.md)
+- **Merged At**: 2025-11-14 13:55:13 UTC
+
+---
+
+### PR [#3738](https://github.com/flexera-public/policy_templates/pull/3738): POL-1668 Azure Long Stopped Instances - Fix for currency adjustments 
+
+*Bug Fix*
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+> When observing an applied policy for Azure Long Stopped Instances in a customer org, the policy produces savings amounts in DKK, where the expected behaviour is that it should show the savings amounts in EUR (the currency configuration for their Flexera org).
+>
+> This is a change to implement the fix for this. The savings amount now takes into account adjustments, such as currency conversion, while ignoring any shared cost related adjustments.
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+>
+
+#### Metadata
+
+- **Policies**: [Azure Long Stopped Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/long_stopped_instances/README.md)
+- **Merged At**: 2025-11-13 17:07:00 UTC
+
+---
+
+### PR [#3732](https://github.com/flexera-public/policy_templates/pull/3732): POL-1681 Email Cost Optimization Recommendations Update
+
+*Minor Update*
+
+#### Description
+
+> `Email Cost Optimization Recommendations`
+> - Added support for Oracle recommendations.
+> - Added support for additional recommendations for AWS, Azure, and Google.
+>
+
+#### Metadata
+
+- **Policies**: [Email Cost Optimization Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/email_recommendations/README.md)
+- **Merged At**: 2025-11-12 18:09:27 UTC
+
+---
+
+### PR [#3727](https://github.com/flexera-public/policy_templates/pull/3727): POL-1679 CSV Update Fixes
+
+*Minor Update*
+
+#### Description
+
+> A handful of policy templates were not updating in the catalog due to minor errors introduced with the recent CSV updates. This is the fix.
+>
+> Dangerfile warnings can be ignored; they are false positives for things unrelated to this fix.
+>
+
+#### Metadata
+
+- **Policies**: [AWS EKS Clusters Without Spot Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/eks_without_spot/README.md), [AWS Resources Under Extended Support](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/extended_support/README.md), [Azure Hybrid Use Benefit for Linux Server](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/hybrid_use_benefit_linux/README.md), [Azure Rightsize Synapse SQL Pools](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_synapse_sql_pools/README.md)
+- **Merged At**: 2025-11-11 21:25:15 UTC
+
+---
+
+### PR [#3723](https://github.com/flexera-public/policy_templates/pull/3723): POL-1678 AWS Savings Plan Policy Template Fix
+
+*Minor Update*
+
+#### Description
+
+> Fixes issue where policy template would error out instead of completing execution.
+>
+> Dangerfile warning can be ignored; no need to update README since this is just a bug fix.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Savings Plan Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/recommendations/README.md)
+- **Merged At**: 2025-11-11 20:50:55 UTC
+
+---
+
+### PR [#3711](https://github.com/flexera-public/policy_templates/pull/3711): POL-1675 Flexera Onboarding Fix 
+
+*Minor Update*
+
+#### Description
+
+> Fixes issue in the `Flexera Onboarding` policy template where policy execution would fail if no bill connects have been configured.
+>
+
+#### Metadata
+
+- **Policies**: [Flexera Onboarding](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/onboarding/README.md)
+- **Merged At**: 2025-11-10 14:07:24 UTC
+
+---
+
 ### PR [#3705](https://github.com/flexera-public/policy_templates/pull/3705): POL-1672 Payment Option for Azure/Google RI/SP Policy Templates
 
 *Minor Update*
@@ -1934,175 +2063,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3110) for these details.
 - **Merged At**: 2025-05-19 12:09:50 UTC
-
----
-
-### PR [#3157](https://github.com/flexera-public/policy_templates/pull/3157): POL-1525 Azure Untagged Resources Fix
-
-#### Description
-
-> Two fixes for the `Azure Untagged Resources` policy template:
->
-> - Fixed issue where prompt for adding tags incorrectly said to use "key:value" instead of "key=value" format.
-> - Fixed issue where tags would fail to apply to Azure subscriptions.
->
-
-#### Metadata
-
-- **Policies**: [Azure Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources/README.md), [Meta Parent: Azure Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources/README.md)
-- **Merged At**: 2025-05-16 19:48:36 UTC
-
----
-
-### PR [#3154](https://github.com/flexera-public/policy_templates/pull/3154): POL-1524 Currency Conversion Fix
-
-#### Description
-
-> This fixes an issue with the Currency Conversion policy template where execution would fail if the user built off of the adjustment created by this policy template.
->
-> The currency conversion adjustment is now always first in the list being sent into the API, ensuring no issues if later adjustment rules build off of it.
->
-
-#### Metadata
-
-- **Policies**: [Currency Conversion](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/currency_conversion/README.md)
-- **Merged At**: 2025-05-16 13:18:16 UTC
-
----
-
-### PR [#3138](https://github.com/flexera-public/policy_templates/pull/3138): FOPTS-9680 Correctly handle pagination in Azure Long Stopped Instances policy
-
-#### Description
-
-> 1. Fixed pagination for `datasource ds_azure_instances_with_logs`.
-> Previously, pagination would result multiple items for the same ResourceId. This fix ensures that multiple pages for the same ResourceId will be combined into one item.
->
-> Also confirmed that pagination will **not** cause error for other datasources in this policy.
->
-> 2. Safe guard for `state = powerstate.split('/')[1];`
-> `powerstate` is `undefined` sometime, causing JavaScript error
-> This error is hard to reproduce, and it is unclear when will it happen.
-> Snapshot of the DB document showing the error:
-> `"error": "Summary:\n  script execution failed\nDetail:\n  execution failed: TypeError: Cannot access member 'split' of undefined\nLocation:\n  datasource \"ds_azure_incident_results\"\n    script \"js_azure_incident_results\"\n",`
-> [policy db 680aa239ce13ed33750fdc2e.json](https://github.com/user-attachments/files/20190083/policy.db.680aa239ce13ed33750fdc2e.json)
-> [policy db 680aa60f1344d852b0392969.json](https://github.com/user-attachments/files/20190085/policy.db.680aa60f1344d852b0392969.json)
->
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/SQ-14979
-> https://flexera.atlassian.net/browse/FOPTS-9680
->
-
-#### Metadata
-
-- **Policies**: [Azure Long Stopped Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/long_stopped_instances/README.md), [Meta Parent: Azure Long Stopped Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/long_stopped_instances/README.md)
-- **Merged At**: 2025-05-15 13:17:18 UTC
-
----
-
-### PR [#3117](https://github.com/flexera-public/policy_templates/pull/3117): FOPTS-9434 Correctly include all RDS snapshots in policy evaluation
-
-#### Description
-
-> This PR addresses an issue in the policy template's RDS snapshot filtering logic that was causing some snapshots to be incorrectly excluded from policy evaluation.
->
->
-> The js_describe_db_snapshots script was incorrectly filtering RDS snapshots. It was grouping snapshots by ParentId (the RDS instance identifier), sorting them by StartTime, and then only retaining the most recent snapshot for each ParentId. This meant that older snapshots, even if they met other policy criteria (like age), were being ignored. This behavior could lead to:
->
-> * Data Governance Gaps: Older snapshots, which might be needed for compliance or audit purposes, were not being properly managed by the policy.
-> * Cost Optimization Inefficiencies: Opportunities to identify and manage older, potentially costly snapshots were being missed.
-> * Recovery Risks: In some disaster recovery scenarios, the policy might not be able to identify or take action on older snapshots that could be required.
->
->
->
-> ### Issues Resolved
->
-> This PR modifies the js_describe_db_snapshots script to correctly include all RDS snapshots in the policy's evaluation. The change involves iterating through all snapshots for each ParentId instead of just selecting the most recent one.
->
-> The following code snippet shows the key change in the js_describe_db_snapshots script:
->
-> ``` golang
-> --- a/path/to/your/policy/template.rb  # Replace with the actual path
-> +++ b/path/to/your/policy/template.rb  # Replace with the actual path
-> @@ -99,10 +99,12 @@
->      })
->      _.each(_.keys(sorted_by_parent), function(parent) {
->        sorted_parents = _.sortBy(sorted_by_parent[parent], "startTime").reverse()
-> -      result.push(sorted_parents[0])
-> +      sorted_parents.forEach(function(snapshot) {
-> +        result.push(snapshot);
-> +      });
->      })
-> ```
->
-
-#### Metadata
-
-- **Policies**: [AWS Old Snapshots](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/old_snapshots/README.md)
-- **Merged At**: 2025-05-14 17:10:22 UTC
-
----
-
-### PR [#2954](https://github.com/flexera-public/policy_templates/pull/2954): POL-1446 - New Policy - MSP Usage Audit
-
-*New Policy Template*
-
-#### Description
-
-> This policy generates a comprehensive report on the usage of MSP Customer Organizations. It provides operational capabilities related to managing MSP Customer Organizations, including cost analysis and user activity metrics.
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/POL-1446
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/2954) for details about unpublished policies.
-- **Merged At**: 2025-05-13 19:49:15 UTC
-
----
-
-### PR [#3081](https://github.com/flexera-public/policy_templates/pull/3081): POL-1507 New Policy Template: Rule-Based Dimension From Custom Tags
-
-*New Policy Template*
-
-#### Description
-
-> This unpublished policy template creates and updates custom Rule-Based Dimensions that duplicate Custom Tags that have been configured in the Flexera platform. The user can then add or remove rules above or below the generated rules, either through automation or the Flexera One UI, to further customize the dimension; rules added to these rule-based dimensions manually, or by other policy templates, will not be deleted.
->
-> The purpose of this policy template is to enable a user to easily make a Rule-Based Dimension that mirrors a Custom Tag but then add their own additional rules to address various resources, accounts, etc. that aren't tagged or are improperly tagged.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3081) for details about unpublished policies.
-- **Merged At**: 2025-05-13 12:09:21 UTC
-
----
-
-### PR [#3092](https://github.com/flexera-public/policy_templates/pull/3092): POL-1480 AWS instance_types.json Policy Template Updates
-
-#### Description
-
-> The following policy templates have been updated to use the new, generated `aws_ec2_instance_types.json` file instead of the old manually maintained `instance_types.json` file:
->
-> - AWS Burstable EC2 Instances
-> - AWS Cost Report - EC2 Instance Cost Per Hour
-> - AWS Rightsize ElastiCache
-> - AWS Rightsize RDS Instances
-> - AWS Superseded EC2 Instances
-> - AWS Usage Forecast - Instance Time Used
-> - AWS Usage Report - Instance Time Used
-> - AWS Publicly Accessible RDS Instances
-> - AWS Unencrypted RDS Instances
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3092) for these details.
-- **Merged At**: 2025-05-13 12:06:59 UTC
 
 ---
 
