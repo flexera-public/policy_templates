@@ -23,9 +23,9 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - [AWS MySQL] <https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/MySQL.Concepts.VersionMgmt.html#MySQL.Concepts.VersionMgmt.ReleaseCalendar>
 - [AWS Aurora PostgreSQL] <https://docs.aws.amazon.com/AmazonRDS/latest/AuroraPostgreSQLReleaseNotes/aurorapostgresql-release-calendar.html#aurorapostgresql.minor.versions.supported>
 - [AWS Aurora MySQL] <https://docs.aws.amazon.com/AmazonRDS/latest/AuroraMySQLReleaseNotes/AuroraMySQL.release-calendars.html#AuroraMySQL.release-calendars.minor>
-- [AWS Postgresql extended support pricing] <https://aws.amazon.com/rds/postgresql/pricing/#Amazon_RDS_Extended_Support_costs>
-- [AWS MySQL extended support pricing] <https://aws.amazon.com/rds/mysql/pricing/#Amazon_RDS_Extended_Support_costs>
-- [AWS Aurora extended support pricing] <https://aws.amazon.com/rds/aurora/pricing/#Amazon_RDS_Extended_Support_costs>
+- [AWS Postgresql Extended Support Pricing] <https://aws.amazon.com/rds/postgresql/pricing/#Amazon_RDS_Extended_Support_costs>
+- [AWS MySQL Extended Support Pricing] <https://aws.amazon.com/rds/mysql/pricing/#Amazon_RDS_Extended_Support_costs>
+- [AWS Aurora Extended Support Pricing] <https://aws.amazon.com/rds/aurora/pricing/#Amazon_RDS_Extended_Support_costs>
 
 ## Input Parameters
 
