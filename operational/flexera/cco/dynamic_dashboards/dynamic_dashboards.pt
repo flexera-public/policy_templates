@@ -19,6 +19,15 @@ info(
 # Parameters
 ###############################################################################
 
+parameter "param_cost_period" do
+  type "string"
+  category "Dashboard Settings"
+  label "Cost Metric"
+  description "Select the cost metric for your report"
+  allowed_values ["Last 12 Months", "Last 6 Months", "Last 3 Months", "Last 30 Days", "Last 7 Days"]
+  default "Last 12 Months"
+end
+
 parameter "param_cost_metric" do
   type "string"
   category "Dashboard Settings"
@@ -213,27 +222,72 @@ end
 
 # Calculate date range for previous 12 months
 datasource "ds_date_range" do
-  run_script $js_date_range
+  run_script $js_date_range, $param_cost_period
 end
 
 script "js_date_range", type: "javascript" do
+  parameters "param_cost_period"
   result "result"
   code <<-EOS
-  function getFormattedDate(date) {
-    var year = date.getFullYear();
-    var month = (1 + date.getMonth()).toString();
-    month = month.length > 1 ? month : '0' + month;
-    return year + '-' + month;
+  function getFormattedDate(date, granularity) {
+    if (granularity === "month") {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      return year + '-' + month;
+    } else {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
   }
 
   var now = new Date();
-  var end_at = getFormattedDate(now);
 
-  // Go back 12 months
-  var start_date = new Date(now.getFullYear(), now.getMonth() - 12, 1);
-  var start_at = getFormattedDate(start_date);
+  var param_cost_period = param_cost_period || "Last 12 Months";
+  var granularity = param_cost_period.indexOf("Day") >= 0 ? "day" : "month";
+  var start_at = "";
+  var end_at = "";
+
+  // Check if param_cost_period contains "Months" or "Days" and set months_back accordingly
+  if (granularity === "day") {
+    var days_back = 30;
+    switch(param_cost_period) {
+      case "Last 7 Days":
+        days_back = 7;
+        break;
+      case "Last 30 Days":
+      default:
+        days_back = 30;
+        break;
+    }
+    var start_date = new Date(now.getTime() - (days_back * 60 * 60 * 24 * 1000));
+    start_at = getFormattedDate(start_date, granularity);
+    end_at = getFormattedDate(now, granularity);
+  } else {
+    var months_back = 12;
+    switch(param_cost_period) {
+      case "Last 6 Months":
+        months_back = 6;
+        break;
+      case "Last 3 Months":
+        months_back = 3;
+        break;
+      case "Last 12 Months":
+      default:
+        months_back = 12;
+        break;
+    }
+    var start_date = new Date(now.getFullYear(), now.getMonth() - months_back, 1);
+    start_at = getFormattedDate(start_date, granularity);
+    end_at = getFormattedDate(now, granularity);
+  }
 
   result = {
+    granularity: granularity,
     start_at: start_at,
     end_at: end_at
   }
@@ -266,7 +320,7 @@ script "js_cost_response", type: "javascript" do
   var body = {
     "billing_center_ids": ds_top_level_bcs,
     "dimensions": [dimension_id, widget_dimension_id],
-    "granularity": "month",
+    "granularity": ds_date_range["granularity"],
     "start_at": ds_date_range["start_at"],
     "end_at": ds_date_range["end_at"],
     "metrics": [cost_metric],
@@ -456,6 +510,7 @@ script "js_dashboard_configs", type: "javascript" do
   var result = _.map(ds_processed_cost_data, function(data, index) {
     var dimension_value = data.dimension_value;
     var top_widgets = data.top_widgets;
+    var total_cost = data.total_cost;
 
     // Generate unique widget IDs
     var widget1_id = "widget-" + index + "-1";
@@ -790,6 +845,7 @@ script "js_dashboard_configs", type: "javascript" do
     }
 
     return {
+      total_cost: total_cost,
       name: dashboard_name,
       config: config,
       dimension_name: param_dashboard_group_dimension,
@@ -846,6 +902,9 @@ policy "pol_dynamic_dashboards" do
       field "dimension_value" do
         label "Dimension Value"
       end
+      field "total_cost" do
+        label "Total Cost"
+      end
       field "widget_dimension" do
         label "Widget Dimension"
       end
@@ -887,6 +946,7 @@ define upsert_dashboards($data, $rs_org_id, $rs_optima_host) do
 
   foreach $dashboard in $data do
     sub on_error: handle_error() do
+      log_error("Processing dashboard: " + $dashboard["name"] + " with verb: " + $dashboard["verb"])
       call modify_dashboard($dashboard, $rs_org_id, $rs_optima_host, false)
     end
   end
