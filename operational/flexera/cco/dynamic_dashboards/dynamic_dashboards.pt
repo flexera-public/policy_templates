@@ -105,6 +105,15 @@ parameter "param_include_marketplace_charges" do
   default "Exclude Marketplace Charges"
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Create/Update Dynamic Dashboards"]
+  default []
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -531,8 +540,7 @@ script "js_dashboard_configs", type: "javascript" do
             },
             {
               "id": "CalendarPeriodParam",
-              "source": "manual",
-              "value": "monthly"
+              "source": "default"
             },
             {
               "id": "SelectParam",
@@ -575,8 +583,7 @@ script "js_dashboard_configs", type: "javascript" do
             },
             {
               "id": "CalendarPeriodParam",
-              "source": "manual",
-              "value": "monthly"
+              "source": "default"
             },
             {
               "id": "SelectParam",
@@ -635,8 +642,7 @@ script "js_dashboard_configs", type: "javascript" do
           },
           {
             "id": "CalendarPeriodParam",
-            "source": "manual",
-            "value": "monthly"
+            "source": "default"
           }
         ],
         "id": widget_id,
@@ -771,6 +777,10 @@ script "js_dashboard_configs", type: "javascript" do
 
     var dashboard_name = dashboard_prefix + param_dashboard_group_dimension + ": " + dimension_value;
     // Check if dashboard already exists
+    var allDashboardNames = _.pluck(ds_get_dashboards, 'name');
+    var dashboard_exists = _.contains(allDashboardNames, dashboard_name);
+    console.log("bkdebug Dashboard Name: " + dashboard_name + " Exists: " + dashboard_exists);
+    console.log("bkdebug Existing Dashboards: " + JSON.stringify(allDashboardNames));
     var existing_dashboard = _.find(ds_get_dashboards, function(d) {
       return d.name == dashboard_name && d.visibility == "public";
     });
@@ -808,9 +818,9 @@ datasource "ds_get_dashboards" do
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
-      field "id", jmes_path(response, "id")
-      field "name", jmes_path(response, "name")
-      field "visibility", jmes_path(response, "visibility")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "visibility", jmes_path(col_item, "visibility")
     end
   end
 end
@@ -857,7 +867,7 @@ end
 ###############################################################################
 
 escalation "esc_upsert_dashboards" do
-  automatic false
+  automatic contains($param_automatic_action, "Create/Update Dynamic Dashboards")
   label "Create/Update Dynamic Dashboards"
   description "Approval to create/update the dynamic dashboards"
   run "upsert_dashboards", data, rs_org_id, rs_optima_host
@@ -950,9 +960,9 @@ define modify_dashboard($dashboard, $rs_org_id, $rs_optima_host, $delete) do
   })
   $$debug << $debug
   if $response["code"] < 200 || $response["code"] >= 300
-      call log_error("Error " + upcase($verb) + " dashboard: " + $dashboard["name"] + " - " + $response["body"])
+      call log_error("Error " + to_s(upcase($verb)) + " dashboard: " + to_s($dashboard["name"]) + " - " + to_json($response["body"]))
   end
-  task_label("Completed " + upcase($verb) + " Dashboard: " + $dashboard["name"])
+  task_label("Completed " + to_s(upcase($verb)) + " Dashboard: " + to_s($dashboard["name"]))
 end
 
 # CWF function to handle errors
