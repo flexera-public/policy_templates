@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "weekly"
 info(
-  version: "0.2.7",
+  version: "0.2.6",
   provider: "Flexera",
   service: "Automation",
   policy_set: "Automation",
@@ -281,40 +281,40 @@ script "js_outdated_policies", type: "javascript" do
     catalog_object[policy['name']] = policy
   })
 
-  // Create a filtered list of policies to include, excluding those that should not be reported on
   filtered_policies = _.reject(ds_applied_policies, function(policy) {
-    // Exclude this policy to stop it from terminating itself if the user actions it
-    // Check both by ID (exact match) and by name (catches duplicates during updates)
-    if (policy['id'] === policy_id || policy['name'] === ds_self_policy['name']) {
-      return true
-    }
+    reject_policy = false
+
+    // Exclude this policy to avoid the policy trying to terminate itself if the user actions on it
+    if (policy['id'] == policy_id) { reject_policy = true }
 
     // Exclude policies on the user-provided ignore list
     ignore_list = _.map(param_ignore_list, function(item) { return item.toLowerCase().trim() })
-    if (_.contains(ignore_list, policy['name'].toLowerCase()) || _.contains(ignore_list, policy['id'].toLowerCase())) {
-      return true
+
+    if (!reject_policy && (_.contains(ignore_list, policy['name'].toLowerCase()) || _.contains(ignore_list, policy['id'].toLowerCase()))) {
+      reject_policy = true
     }
 
     // Exclude policies that were not applied from the catalog
-    if (!policy['published_template']) {
-      return true
-    }
-    // Exclude policies where we did not find a corresponding entry in the active policy list
-    if (!catalog_object[policy['published_template']['name']]) {
-      return true
-    }
+    if (!reject_policy && policy['published_template'] == null) {
+      reject_policy = true
+    } else if (!reject_policy) {
+      // Exclude policies where we did not find a corresponding entry in the active policy list
+      if (catalog_object[policy['published_template']['name']] == undefined) {
+        reject_policy = true
+      }
 
-    // Exclude policies applied from a catalog other than the Flexera one
-    if (policy['published_template']['updatedBy']['email'] != 'support@flexera.com') {
-      return true
+      // Exclude policies applied from a catalog other than the Flexera one
+      if (!reject_policy && policy['published_template']['updatedBy']['email'] != 'support@flexera.com') {
+        reject_policy = true
+      }
     }
 
     // Exclude all policies if the user opted not to report on outdated policies
-    if (param_report_filter == "Report Deprecated Only") {
-      return true
+    if (!reject_policy && param_report_filter == "Report Deprecated Only") {
+      reject_policy = true
     }
 
-    return false
+    return reject_policy
   })
 
   combined_data = _.map(filtered_policies, function(policy) {
@@ -493,40 +493,39 @@ script "js_deprecated_policies", type: "javascript" do
     catalog_object[policy['name']] = policy
   })
 
-  // Create a filtered list of policies to include, excluding those that should not be reported on
   filtered_policies = _.reject(ds_applied_policies, function(policy) {
-  // Exclude all policies if the user opted not to report on deprecated policies
-  if (param_report_filter == "Report Outdated Only") { return true }
+    reject_policy = false
 
-  // Exclude policies that were not applied from the catalog
-  if (!policy['published_template']) { return true }
+    // Exclude all policies if the user opted not to report on deprecated policies
+    if (param_report_filter == "Report Outdated Only") { return true }
 
-  // Exclude this policy to stop the policy from terminating itself if the user actions it
-  // Check both by ID (exact match) and by name (catches duplicates during updates)
-  if (policy['id'] === policy_id || policy['name'] === ds_self_policy['name']) {
-    return true
-  }
+    // Exclude policies that were not applied from the catalog
+    if (!policy['published_template']) { return true }
 
-  // Exclude policies on the user-provided ignore list
-  ignore_list = _.map(param_ignore_list, function(item) { return item.toLowerCase().trim() })
-  if (_.contains(ignore_list, policy['name'].toLowerCase()) || _.contains(ignore_list, policy['id'].toLowerCase())) {
-    return true
-  }
+    // Exclude this policy to avoid the policy trying to terminate itself if the user actions on it
+    if (policy['id'] == policy_id) { return true }
 
-  // Exclude policies where we did not find a corresponding entry in the active policy list
-  if (!catalog_object[policy['published_template']['name']]) {
-    return true
-  }
+    // Exclude policies on the user-provided ignore list
+    ignore_list = _.map(param_ignore_list, function(item) { return item.toLowerCase().trim() })
 
-  // Exclude policies applied from a catalog other than the Flexera one
-  if (policy['published_template']['updatedBy']['email'] != 'support@flexera.com') {
-    return true
-  }
+    if (!reject_policy && (_.contains(ignore_list, policy['name'].toLowerCase()) || _.contains(ignore_list, policy['id'].toLowerCase()))) {
+      return true
+    }
 
-  // Exclude non-deprecated policies
-  if (!catalog_object[policy['published_template']['name']]['deprecated']) {
-    return true
-  }
+    // Exclude policies where we did not find a corresponding entry in the active policy list
+    if (!catalog_object[policy['published_template']['name']]) {
+      return true
+    }
+
+    // Exclude policies applied from a catalog other than the Flexera one
+    if (policy['published_template']['updatedBy']['email'] != 'support@flexera.com') {
+      return true
+    }
+
+    // Exclude non-deprecated policies
+    if (!catalog_object[policy['published_template']['name']]['deprecated']) {
+      return true
+    }
 
     return false
   })
