@@ -42,7 +42,7 @@ This policy has the following input parameters required when launching the polic
   - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
-- *End of support notification timeframe* - The number of days to check and notify on before the end of standard support date.
+- *Notification Time Frame* - Specify how many days in advance you want to be notified before the end of standard support.
 
 ## Policy Actions
 
