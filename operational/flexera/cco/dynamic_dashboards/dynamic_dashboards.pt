@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "daily"
 info(
-  version: "0.1.0",
+  version: "0.2.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -450,6 +450,9 @@ script "js_dashboard_configs", type: "javascript" do
     return d.name.toLowerCase() == param_widget_dimension.toLowerCase() || d.id.toLowerCase() == param_widget_dimension.toLowerCase();
   });
 
+  // Get all existing dashboard names for comparison later
+  var dashboards_indexed = _.groupBy(ds_get_dashboards, 'name');
+
   var result = _.map(ds_processed_cost_data, function(data, index) {
     var dimension_value = data.dimension_value;
     var top_widgets = data.top_widgets;
@@ -775,21 +778,15 @@ script "js_dashboard_configs", type: "javascript" do
       dashboard_prefix = param_dashboard_prefix.trim() + " ";
     }
 
+    var id = ""; // Default to empty
+    var verb = "create"; // Default to create
+    // Construct dashboard name
     var dashboard_name = dashboard_prefix + param_dashboard_group_dimension + ": " + dimension_value;
     // Check if dashboard already exists
-    var allDashboardNames = _.pluck(ds_get_dashboards, 'name');
-    var dashboard_exists = _.contains(allDashboardNames, dashboard_name);
-    console.log("bkdebug Dashboard Name: " + dashboard_name + " Exists: " + dashboard_exists);
-    console.log("bkdebug Existing Dashboards: " + JSON.stringify(allDashboardNames));
-    var existing_dashboard = _.find(ds_get_dashboards, function(d) {
-      return d.name == dashboard_name && d.visibility == "public";
-    });
-    var id = "";
-    var verb = "create"; // Default to create
-    if (existing_dashboard) {
-      // If it exists, update the config
-      id = existing_dashboard.id;
-      verb = "update"; // Set verb to update
+    if (dashboards_indexed.length > 0 && dashboards_indexed[dashboard_name]) {
+      var existing_dashboard = dashboards_indexed[dashboard_name][0]; // Get the first one (should only be one)
+      var id = existing_dashboard.id;
+      var verb = "update"; // Set verb to update
     }
 
     return {
