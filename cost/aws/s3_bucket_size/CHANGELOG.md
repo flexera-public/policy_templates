@@ -2,7 +2,7 @@
 
 ## v3.2.1
 
-- Fix issue where the policy would fail due to an undefined datasource.
+- Fixed issue where the policy would fail due to an undefined datasource.
 
 ## v3.2.0
 
