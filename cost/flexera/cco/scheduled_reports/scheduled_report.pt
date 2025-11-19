@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "4.0.1",
+  version: "4.0.4",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -168,6 +168,55 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+end
+
 # Misc. immutable data used by other parts of the policy
 datasource "ds_data_tables" do
   run_script $js_data_tables
@@ -304,16 +353,6 @@ script "js_graph_dimension", type: "javascript" do
     }
   }
 EOS
-end
-
-# Gather applied policy metadata for use later
-datasource "ds_applied_policy" do
-  request do
-    auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
-  end
 end
 
 datasource "ds_billing_centers" do
@@ -515,17 +554,15 @@ script "js_cost_request_list", type: "javascript" do
       result.push(request)
     }
   } else {
-    index = param_ignore_current_month == "Yes" ? 0 : 1
-
-    end_at = new Date().toISOString()
+    today = new Date().toISOString()
 
     if (param_ignore_current_month == "Yes") {
-      end_at = end_at.substring(0, 7)
-      start_at = move_month(end_at, -param_date_range - 1)
+      end_at = today.slice(0, 7) // Use YYYY-MM from today's date to end on the first of current month
     } else {
-      end_at = move_month(end_at, 1)
-      start_at = move_month(end_at, -param_date_range)
+      end_at = move_month(today, 1) // include entire current month, ending on the first of next month
     }
+    // Based on the end_at, use param_date_range to calculate start_at
+    start_at = move_month(end_at, -param_date_range)
 
     request = {
       "billing_center_ids": billing_center_ids,
@@ -534,7 +571,8 @@ script "js_cost_request_list", type: "javascript" do
       "filter": null,
       "granularity": "month",
       "start_at": start_at,
-      "end_at": end_at
+      "end_at": end_at,
+      "foo": new Date().toISOString()  // Placeholder to ensure the request is not empty
     }
 
     if (filter['type'] != undefined) { request['filter'] = filter }

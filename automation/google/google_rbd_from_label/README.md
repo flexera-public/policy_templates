@@ -10,10 +10,10 @@ NOTE: If updating from a version of this policy template prior to version 2.0, i
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *Effective Date* - The month and year in YYYY-MM format that you want the rules to apply. This should be left at its default value in most cases to ensure that the rules apply to all costs, including historical costs.
-- *Label Keys* - A list of Google Project label keys to create custom Rule-Based Dimensions for.
+- *Label Keys* - A list of Google Project label keys to create custom Rule-Based Dimensions for. Multiple labels can be specified for a single dimension by placing a single entry with each label key separated by a semicolon (;) character. For example, a value of `env;environment;environ` will create one Rule-Based Dimension that checks the keys "env", "environment", and "environ" for values.
 - *Dimension Names* - A list of names to give the Rule-Based Dimensions in the Flexera platform. Enter names in the same order as the label keys in the `Label Keys` field. Dimension names will be derived from label keys directly if this list is left empty.
 - *Lowercase Values* - Whether or not to normalize all values by converting them to lowercase. Note that, if the same value appears multiple times with different casing, and this option is disabled, the rule-based dimension will be rejected and this policy template will fail.
 
@@ -23,7 +23,7 @@ This policy has the following input parameters required when launching the polic
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
   - `resourcemanager.projects.get`

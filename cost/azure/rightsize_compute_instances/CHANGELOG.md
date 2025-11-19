@@ -1,5 +1,25 @@
 # Changelog
 
+## v6.3.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v6.2.5
+
+- Updated API request for gathering instance costs to only gather costs specific to virtual machines. Functionality unchanged but policy template is now less likely to fail to report costs.
+
+## v6.2.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v6.2.3
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v6.2.2
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v6.2.1
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.

@@ -23,6 +23,7 @@ Policy templates require the correct permissions configured for your [Flexera Cr
 * [PDF (AWS Policy Templates Only)](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list_aws.pdf)
 * [PDF (Azure Policy Templates Only)](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list_azure.pdf)
 * [PDF (Google Policy Templates Only)](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list_google.pdf)
+* [PDF (Oracle Policy Templates Only)](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list_oracle.pdf)
 
 ## Released Policy Templates
 
@@ -169,7 +170,9 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
   * [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
+  * [Google Rightsize Cloud SQL Instances](./cost/google/rightsize_cloudsql_instances)
   * [Google Rightsize Cloud SQL Recommender](./cost/google/rightsize_cloudsql_recommendations)
+  * [Google Rightsize VM Instances](./cost/google/rightsize_vm_instances)
   * [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
   * [Turbonomic Allocate Virtual Machine Recommendations Google](./cost/turbonomics/allocate_virtual_machines_recommendations/google)
   * [Turbonomic Rightsize Virtual Machines Recommendations Google](./cost/turbonomics/scale_virtual_machines_recommendations/google)
@@ -178,6 +181,7 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
   * [Google Old Snapshots](./cost/google/old_snapshots)
+  * [Google Unused Disks](./cost/google/unused_disks)
   * [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/google)
 
 #### Kubecost
@@ -186,6 +190,25 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Kubecost Cluster Rightsizing Recommendation](./cost/kubecost/cluster)
   * [Kubecost Container Request Rightsizing Recommendations](./cost/kubecost/sizing)
+
+#### Oracle
+
+* Compute
+
+  * [Oracle Cloud Advisor: Rightsize Virtual Machines](./cost/oracle/advisor_rightsize_vms)
+
+* Database
+
+  * [Oracle Cloud Advisor: Rightsize Autonomous Database Service](./cost/oracle/advisor_rightsize_autodbs)
+  * [Oracle Cloud Advisor: Rightsize Base Database Service](./cost/oracle/advisor_rightsize_basedbs)
+
+* Network
+
+  * [Oracle Cloud Advisor: Rightsize Load Balancers](./cost/oracle/advisor_rightsize_lbs)
+
+* Storage
+
+  * [Oracle Cloud Advisor: Unattached Volumes](./cost/oracle/advisor_unattached_volumes)
 
 ### Policy Templates for Compliance
 
@@ -318,7 +341,6 @@ These templates can generate savings estimates for your environment. The inciden
   * [Azure Expiring Savings Plans](./cost/azure/savings_plan/expiration)
   * [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
   * [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
-  * [Azure Reserved Instances Utilization MCA](./cost/azure/reserved_instances/utilization_mca)
   * [Azure Savings Plan Utilization](./cost/azure/savings_plan/utilization)
   * [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
   * [Azure Schedule Instance](./cost/azure/schedule_instance)
@@ -346,13 +368,8 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Storage Accounts
 
+  * [Azure Deprecated Storage Accounts](./compliance/azure/deprecated_storage_accounts)
   * [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management)
-
-#### Azure China
-
-* Common Bill Ingestion
-
-  * [Azure China Common Bill Ingestion](./cost/azure/azure_china_cbi)
 
 #### Flexera
 
@@ -377,6 +394,7 @@ These templates can generate savings estimates for your environment. The inciden
   * [Common Bill Ingestion from AWS S3 Object Storage](./cost/flexera/cco/cbi_ingestion_aws_s3)
   * [Common Bill Ingestion from Azure Blob Storage](./cost/flexera/cco/cbi_ingestion_azure_blob)
   * [Fixed Cost Common Bill Ingestion](./cost/flexera/cco/fixed_cost_cbi)
+  * [Percentage Cost Common Bill Ingestion](./cost/flexera/cco/percentage_cost_cbi)
 
 * Spot Eco
 
@@ -404,6 +422,10 @@ These templates can generate savings estimates for your environment. The inciden
 * Common Bill Ingestion
 
   * [Oracle Cloud Common Bill Ingestion](./cost/oracle/oracle_cbi)
+
+* Storage
+
+  * [Oracle Cloud Advisor: Object Storage Without Lifecycle Management](./cost/oracle/advisor_lifecycle_mgmt)
 
 ### Policy Templates for Operational
 
@@ -466,6 +488,7 @@ These templates can generate savings estimates for your environment. The inciden
 * Cloud Cost Optimization
 
   * [Cloud Bill Processing Error Notification](./operational/flexera/cco/bill_processing_errors_notification)
+  * [Dynamic Dashboards](./operational/flexera/cco/dynamic_dashboards)
   * [FinOps Dashboards](./operational/flexera/cco/finops_dashboards)
   * [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
 
@@ -488,7 +511,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Kubernetes
 
-  * [Spot Ocean - Common Bill Ingest](./cost/flexera/spot/ocean_cbi)
+  * [Spot Ocean Common Bill Ingestion](./cost/flexera/spot/ocean_cbi)
 
 #### Google
 

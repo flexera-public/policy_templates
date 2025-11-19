@@ -61,7 +61,7 @@ def create_instance_size_flexibility_ratio_table(url):
         for row in reader:
             key = row['ArmSkuName']
             value = row['Ratio']
-            isf_table[key] = float(value)
+            isf_table[key] = value
 
         return isf_table
 

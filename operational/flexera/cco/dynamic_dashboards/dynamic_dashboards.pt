@@ -1,0 +1,1045 @@
+name "Dynamic Dashboards"
+rs_pt_ver 20180301
+type "policy"
+short_description "Creates dynamic dashboards based on cost data aggregated by user-specified dimensions over the previous 12 months. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/dynamic_dashboards/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/dynamic_dashboards/"
+category "Operational"
+severity "low"
+default_frequency "daily"
+info(
+  version: "0.2.0",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: "Cloud Cost Optimization",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_cost_period" do
+  type "string"
+  category "Dashboard Settings"
+  label "Cost Metric"
+  description "Select the cost metric for your report"
+  allowed_values ["Last 12 Months", "Last 6 Months", "Last 3 Months", "Last 30 Days", "Last 7 Days"]
+  default "Last 12 Months"
+end
+
+parameter "param_cost_metric" do
+  type "string"
+  category "Dashboard Settings"
+  label "Cost Metric"
+  description "Select the cost metric for your report"
+  allowed_values ["Amortized", "Unamortized"]
+  default "Amortized"
+end
+
+parameter "param_dashboard_prefix" do
+  type "string"
+  category "Dashboard Settings"
+  label "Dashboard Prefix"
+  description "Prefix to use for dynamic dashboard names. Will have a space appended to end if not included."
+  default "Dynamic Dashboard for"
+end
+
+parameter "param_dashboard_group_dimension" do
+  type "string"
+  category "Dashboard Settings"
+  label "Dashboard Dimension"
+  description "The dimension to aggregate costs by for dashboard creation"
+  default "Cloud Vendor"
+end
+
+parameter "param_dashboard_group_dimension_filter" do
+  type "list"
+  category "Dashboard Settings"
+  label "Filter Dashboard Dimension Value List"
+  description "List of values to create a dashboard for the selected filter dimension. Leave blank to include all values."
+  default []
+end
+
+parameter "param_dashboard_group_dimension_filter_allow_or_deny" do
+  type "string"
+  category "Dashboard Settings"
+  label "Allow/Deny Filter Dashboard Dimension Value List"
+  description "Allow or Deny entered Filter Dashboard Dimension Value List. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_widget_dimension" do
+  type "string"
+  category "Dashboard Settings"
+  label "Widget Dimension"
+  description "The dimension to aggregate costs by for widget creation"
+  default "Service"
+end
+
+parameter "param_widget_dimension_count" do
+  type "number"
+  category "Dashboard Settings"
+  label "Widget Count"
+  description "Number of top widgets to display in each dashboard"
+  min_value 1
+  max_value 20
+  default 10
+end
+
+parameter "param_widget_dimension_filter" do
+  type "list"
+  category "Dashboard Settings"
+  label "Filter Widget Dimension Value List"
+  description "List of values to create a widget for the selected filter dimension. Leave blank to include all values."
+  default []
+end
+
+parameter "param_widget_dimension_filter_allow_or_deny" do
+  type "string"
+  category "Dashboard Settings"
+  label "Allow/Deny Filter Widget Dimension Value List"
+  description "Allow or Deny entered Filter Widget Dimension Value List. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_include_marketplace_charges" do
+  type "string"
+  category "Dashboard Settings"
+  label "Allow/Deny Include Marketplace Charges"
+  description "Allow or Deny inclusion of marketplace charges in the widget. See the README for more details"
+  allowed_values "Include Marketplace Charges", "Exclude Marketplace Charges"
+  default "Exclude Marketplace Charges"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Create/Update Dynamic Dashboards"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credential."
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_dimensions" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "dimensions") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+    end
+  end
+end
+
+# Immutable data tables
+datasource "ds_data_tables" do
+  run_script $js_data_tables, $ds_dimensions
+end
+
+script "js_data_tables", type: "javascript" do
+  parameters "ds_dimensions"
+  result "result"
+  code <<-EOS
+  result = {
+    cost_metrics: {
+      "Unamortized": "cost_nonamortized_unblended_adj",
+      "Amortized": "cost_amortized_unblended_adj",
+      "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+      "Amortized Unblended": "cost_amortized_unblended_adj",
+      "Unamortized Blended": "cost_nonamortized_blended_adj",
+      "Amortized Blended": "cost_amortized_blended_adj"
+    },
+    dimensions: {}
+  }
+  _.each(ds_dimensions, function(d) {
+    result.dimensions[d.name] = d.id;
+  })
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+# Calculate date range for previous 12 months
+datasource "ds_date_range" do
+  run_script $js_date_range, $param_cost_period
+end
+
+script "js_date_range", type: "javascript" do
+  parameters "param_cost_period"
+  result "result"
+  code <<-EOS
+  function getFormattedDate(date, granularity) {
+    if (granularity === "month") {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      return year + '-' + month;
+    } else {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+  }
+
+  var now = new Date();
+
+  var param_cost_period = param_cost_period || "Last 12 Months";
+  var granularity = param_cost_period.indexOf("Day") >= 0 ? "day" : "month";
+  var start_at = "";
+  var end_at = "";
+
+  // Check if param_cost_period contains "Months" or "Days" and set months_back accordingly
+  if (granularity === "day") {
+    var days_back = 30;
+    switch(param_cost_period) {
+      case "Last 7 Days":
+        days_back = 7;
+        break;
+      case "Last 30 Days":
+      default:
+        days_back = 30;
+        break;
+    }
+    var start_date = new Date(now.getTime() - (days_back * 60 * 60 * 24 * 1000));
+    start_at = getFormattedDate(start_date, granularity);
+    end_at = getFormattedDate(now, granularity);
+  } else {
+    var months_back = 12;
+    switch(param_cost_period) {
+      case "Last 6 Months":
+        months_back = 6;
+        break;
+      case "Last 3 Months":
+        months_back = 3;
+        break;
+      case "Last 12 Months":
+      default:
+        months_back = 12;
+        break;
+    }
+    var start_date = new Date(now.getFullYear(), now.getMonth() - months_back, 1);
+    start_at = getFormattedDate(start_date, granularity);
+    end_at = getFormattedDate(now, granularity);
+  }
+
+  result = {
+    granularity: granularity,
+    start_at: start_at,
+    end_at: end_at
+  }
+EOS
+end
+
+# Process cost response data
+datasource "ds_cost_response" do
+  request do
+    run_script $js_cost_response, $ds_top_level_bcs, $ds_data_tables, $ds_date_range, $param_dashboard_group_dimension, $param_widget_dimension, $param_cost_metric, $param_dashboard_group_dimension_filter, $param_dashboard_group_dimension_filter_allow_or_deny, $param_widget_dimension, $param_widget_dimension_filter, $param_widget_dimension_filter_allow_or_deny, $param_include_marketplace_charges, rs_optima_host, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "dimensions", jmes_path(col_item, "dimensions")
+      field "metrics", jmes_path(col_item, "metrics")
+      field "timestamp", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+script "js_cost_response", type: "javascript" do
+  parameters "ds_top_level_bcs", "ds_data_tables", "ds_date_range", "param_dashboard_group_dimension", "param_widget_dimension", "param_cost_metric", "param_dashboard_group_dimension_filter", "param_dashboard_group_dimension_filter_allow_or_deny", "param_widget_dimension", "param_widget_dimension_filter", "param_widget_dimension_filter_allow_or_deny", "param_include_marketplace_charges", "rs_optima_host", "rs_org_id"
+  result "request"
+  code <<-EOS
+  var dimension_id = ds_data_tables['dimensions'][param_dashboard_group_dimension];
+  var widget_dimension_id = ds_data_tables['dimensions'][param_widget_dimension];
+  var cost_metric = ds_data_tables['cost_metrics'][param_cost_metric];
+
+  var body = {
+    "billing_center_ids": ds_top_level_bcs,
+    "dimensions": [dimension_id, widget_dimension_id],
+    "granularity": ds_date_range["granularity"],
+    "start_at": ds_date_range["start_at"],
+    "end_at": ds_date_range["end_at"],
+    "metrics": [cost_metric],
+    "summarized": true
+  };
+
+  if (param_dashboard_group_dimension_filter.length > 0) {
+    var dashboard_filter = {
+      "type": "or",
+      "expressions": []
+    };
+    _.each(param_dashboard_group_dimension_filter, function(value) {
+      dashboard_filter.expressions.push({
+        "type": "equal",
+        "dimension": dimension_id,
+        "value": value
+      });
+    });
+    if (param_dashboard_group_dimension_filter_allow_or_deny == "Deny") {
+      dashboard_filter = {
+        "type": "not",
+        "expression": dashboard_filter
+      };
+    }
+  }
+  if (param_widget_dimension_filter.length > 0) {
+    var widget_filter = {
+      "type": "or",
+      "expressions": []
+    };
+    _.each(param_widget_dimension_filter, function(value) {
+      widget_filter.expressions.push({
+        "type": "equal",
+        "dimension": ds_data_tables['dimensions'][param_widget_dimension],
+        "value": value
+      });
+    });
+    if (param_widget_dimension_filter_allow_or_deny == "Deny") {
+      widget_filter = {
+        "type": "not",
+        "expression": widget_filter
+      };
+    }
+  }
+  if (param_include_marketplace_charges == "Exclude Marketplace Charges") {
+    var marketplace_filter = {
+      "type": "not",
+      "expression": {
+        "type": "or",
+        "expressions": [
+          {
+            "type": "equal",
+            "dimension": "bill_entity",
+            "value": "Marketplace"
+          },
+          {
+            "type": "equal",
+            "dimension": "bill_entity",
+            "value": "AWS Marketplace"
+          },
+          {
+            "type": "equal",
+            "dimension": "category",
+            "value": "Marketplace"
+          }
+        ]
+      }
+    };
+  }
+  // Check if we have any filters and if we do update filter body for request
+  if (typeof dashboard_filter !== 'undefined' || typeof widget_filter !== 'undefined' || typeof marketplace_filter !== 'undefined') {
+    body["filter"] = {
+      "type": "and",
+      "expressions": []
+    };
+    if (typeof dashboard_filter !== 'undefined' && _.isObject(dashboard_filter)) {
+      body["filter"].expressions.push(dashboard_filter);
+    }
+    if (typeof widget_filter !== 'undefined' && _.isObject(widget_filter)) {
+      body["filter"].expressions.push(widget_filter);
+    }
+    if (typeof marketplace_filter !== 'undefined' && _.isObject(marketplace_filter)) {
+      body["filter"].expressions.push(marketplace_filter);
+    }
+  }
+
+  var request = {
+    auth: 'auth_flexera',
+    host: rs_optima_host,
+    scheme: 'https',
+    verb: 'POST',
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    headers: {
+      "Api-Version": "1.0",
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  }
+EOS
+end
+
+# Process cost data to get top services by dimension value
+datasource "ds_processed_cost_data" do
+  run_script $js_processed_cost_data, $ds_cost_response, $ds_dimensions, $ds_data_tables, $param_widget_dimension_count, $param_cost_metric, $param_dashboard_group_dimension, $param_widget_dimension, $param_dashboard_prefix
+end
+
+script "js_processed_cost_data", type: "javascript" do
+  parameters "ds_cost_response", "ds_dimensions", "ds_data_tables", "param_widget_dimension_count", "param_cost_metric", "param_dashboard_group_dimension", "param_widget_dimension", "param_dashboard_prefix"
+  result "result"
+  code <<-EOS
+  // Group by dimension value and aggregate costs by service
+  var grouped_data = {};
+
+  var dashboard_dimension = _.find(ds_dimensions, function(d) {
+    return d.name.toLowerCase() == param_dashboard_group_dimension.toLowerCase() || d.id.toLowerCase() == param_dashboard_group_dimension.toLowerCase();
+  });
+  var widget_dimension = _.find(ds_dimensions, function(d) {
+    return d.name.toLowerCase() == param_widget_dimension.toLowerCase() || d.id.toLowerCase() == param_widget_dimension.toLowerCase();
+  });
+
+  _.each(ds_cost_response, function(row) {
+    var dimension_value = row.dimensions[dashboard_dimension.id] || "Unknown";
+    var widget_value = row.dimensions[widget_dimension.id] || "Unknown";
+    var cost = parseFloat(row.metrics[ ds_data_tables['cost_metrics'][param_cost_metric] ]) || 0;
+
+    if (!grouped_data[dimension_value]) {
+      grouped_data[dimension_value] = {};
+    }
+
+    if (!grouped_data[dimension_value][widget_value]) {
+      grouped_data[dimension_value][widget_value] = 0;
+    }
+
+    grouped_data[dimension_value][widget_value] += cost;
+  });
+
+  // For each dimension value, get top N widget_value
+  result = [];
+
+  _.each(grouped_data, function(widget_values, dimension_value) {
+    // Convert to array and sort by cost
+    var widget_array = _.map(widget_values, function(cost, widget) {
+      return { value: widget, cost: cost };
+    });
+
+    widget_array = _.sortBy(widget_array, 'cost').reverse();
+
+    // Take top N
+    var top_widgets = _.first(widget_array, param_widget_dimension_count);
+
+    result.push({
+      dimension: param_dashboard_group_dimension,
+      dimension_value: dimension_value,
+      top_widgets: top_widgets,
+      total_cost: _.reduce(widget_array, function(sum, item) { return sum + item.cost; }, 0)
+    });
+  });
+
+  // Sort by total cost descending
+  result = _.sortBy(result, 'total_cost').reverse();
+EOS
+end
+
+# Generate dashboard configurations
+datasource "ds_dashboard_configs" do
+  run_script $js_dashboard_configs, $ds_processed_cost_data, $ds_data_tables, $ds_dimensions, $ds_get_dashboards, $param_dashboard_group_dimension, $param_cost_metric, $param_widget_dimension, $param_widget_dimension_count, $param_dashboard_prefix
+end
+
+script "js_dashboard_configs", type: "javascript" do
+  parameters "ds_processed_cost_data", "ds_data_tables", "ds_dimensions", "ds_get_dashboards", "param_dashboard_group_dimension", "param_cost_metric", "param_widget_dimension", "param_widget_dimension_count", "param_dashboard_prefix"
+  result "result"
+  code <<-EOS
+  var cost_metric_id = ds_data_tables['cost_metrics'][param_cost_metric];
+  var dimension_id = ds_data_tables['dimensions'][param_dashboard_group_dimension];
+
+  var dashboard_dimension = _.find(ds_dimensions, function(d) {
+    return d.name.toLowerCase() == param_dashboard_group_dimension.toLowerCase() || d.id.toLowerCase() == param_dashboard_group_dimension.toLowerCase();
+  });
+  var widget_dimension = _.find(ds_dimensions, function(d) {
+    return d.name.toLowerCase() == param_widget_dimension.toLowerCase() || d.id.toLowerCase() == param_widget_dimension.toLowerCase();
+  });
+
+  // Get all existing dashboard names for comparison later
+  var dashboards_indexed = _.groupBy(ds_get_dashboards, 'name');
+
+  var result = _.map(ds_processed_cost_data, function(data, index) {
+    var dimension_value = data.dimension_value;
+    var top_widgets = data.top_widgets;
+    var total_cost = data.total_cost;
+
+    // Generate unique widget IDs
+    var widget1_id = "widget-" + index + "-1";
+    var widget2_id = "widget-" + index + "-2";
+    var widget3_id = "widget-" + index + "-3";
+    var widget4_id = "widget-" + index + "-4";
+
+    // Create filter for the specific dimension value
+    var dimension_filter = {};
+    dimension_filter[dimension_id] = [{"id": dimension_value}];
+
+    var now = new Date();
+
+    // Generate dashboard configuration based on the example format
+    var config = {
+      "description": "Top cost for " + param_dashboard_group_dimension + ": " + dimension_value + ". This dashboard was dynamically generated based on the Top " + param_widget_dimension_count + " " + widget_dimension.name + " based on spend.  Generated at: " + now.toISOString(),
+      "layouts": {
+        "md": [
+          {
+            "h": 6,
+            "i": widget1_id,
+            "minH": 4,
+            "minW": 6,
+            "moved": false,
+            "static": false,
+            "w": 6,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "h": 6,
+            "i": widget2_id,
+            "minH": 4,
+            "minW": 6,
+            "moved": false,
+            "static": false,
+            "w": 6,
+            "x": 6,
+            "y": 0
+          },
+        ],
+        "sm": [
+          {
+            "h": 6,
+            "i": widget1_id,
+            "minH": 4,
+            "minW": 2,
+            "w": 2,
+            "x": 0,
+            "y": 0
+          },
+          {
+            "h": 6,
+            "i": widget2_id,
+            "minH": 4,
+            "minW": 2,
+            "w": 2,
+            "x": 0,
+            "y": 6 // +6 for new row (row height is 6)
+          },
+        ]
+      },
+      "version": 2,
+      "widgets": [
+        {
+          "component": "bar-chart",
+          "description": "",
+          "filters": [
+            {
+              "id": "DimensionParam",
+              "source": "manual",
+              "value": [widget_dimension.id]
+            },
+            {
+              "id": "GroupByParam",
+              "source": "inline"
+            },
+            {
+              "id": "CostTypeParam",
+              "source": "default"
+            },
+            {
+              "id": "DateRangeParam",
+              "source": "default"
+            },
+            {
+              "id": "CalendarPeriodParam",
+              "source": "default"
+            },
+            {
+              "id": "SelectParam",
+              "scope": "global",
+              "source": "manual",
+              "value": dimension_filter
+            }
+          ],
+          "id": widget1_id,
+          "isPercentageBased": "off",
+          "metrics": [
+            {
+              "id": cost_metric_id,
+              "name": param_cost_metric,
+              "type": "Cost"
+            }
+          ],
+          "name": "Total Costs by " + widget_dimension.name + " - " + dashboard_dimension.name + ": " + dimension_value
+        },
+        {
+          "component": "bar-chart",
+          "description": "",
+          "filters": [
+            {
+              "id": "DimensionParam",
+              "source": "manual",
+              "value": [widget_dimension.id]
+            },
+            {
+              "id": "GroupByParam",
+              "source": "inline"
+            },
+            {
+              "id": "CostTypeParam",
+              "source": "default"
+            },
+            {
+              "id": "DateRangeParam",
+              "source": "default"
+            },
+            {
+              "id": "CalendarPeriodParam",
+              "source": "default"
+            },
+            {
+              "id": "SelectParam",
+              "scope": "global",
+              "source": "manual",
+              "value": dimension_filter
+            }
+          ],
+          "id": widget2_id,
+          "isPercentageBased": "on",
+          "metrics": [
+            {
+              "id": cost_metric_id,
+              "name": param_cost_metric,
+              "type": "Cost"
+            }
+          ],
+          "name": "% of Total Costs by " + widget_dimension.name + " - " + dashboard_dimension.name + ": " + dimension_value
+        }
+      ]
+    };
+
+    // For each top_widget, add a widget to the dashboard config
+    var row_index = 1; // Row 0 is first row which is added above, so start at 1 for second row
+    _.each(data.top_widgets, function(widget) {
+      var widget_id = "widget-" + widget.value.replace(/\s+/g, "-").toLowerCase();
+      var widget_filter = _.clone(dimension_filter);
+      widget_filter[widget_dimension.id] = [{ "id": widget.value }]; // Update the filter to include this specific widget value
+
+      var widget_obj = {
+        "component": "bar-chart",
+        "description": "",
+        "filters": [
+          {
+            "id": "SelectParam",
+            "scope": "global",
+            "source": "manual",
+            "value": widget_filter
+          },
+          {
+            "id": "DimensionParam",
+            "source": "manual",
+            "value": ["usage_type"]
+          },
+          {
+            "id": "GroupByParam",
+            "source": "inline"
+          },
+          {
+            "id": "CostTypeParam",
+            "source": "default"
+          },
+          {
+            "id": "DateRangeParam",
+            "source": "default"
+          },
+          {
+            "id": "CalendarPeriodParam",
+            "source": "default"
+          }
+        ],
+        "id": widget_id,
+        "isPercentageBased": "off",
+        "metrics": [
+          {
+            "id": cost_metric_id,
+            "name": param_cost_metric,
+            "type": "Cost"
+          }
+        ],
+        "name": "Total Costs for " + widget_dimension.name + ": " + widget.value + " - " + dashboard_dimension.name + ": " + dimension_value
+      };
+      config.widgets.push(widget_obj);
+      // Add to sm and md layouts
+      config.layouts.md.push({
+        "h": 6,
+        "i": widget_id,
+        "minH": 4,
+        "minW": 6,
+        "moved": false,
+        "static": false,
+        "w": 6,
+        "x": 0, // 0 for left column, 6 for right
+        "y": Math.floor(row_index * 6) // Increment row every two widgets
+      });
+      config.layouts.sm.push({
+        "h": 6,
+        "i": widget_id,
+        "minH": 4,
+        "minW": 2,
+        "w": 2,
+        "x": 0, // 0 for left column, 2 for right
+        "y": Math.floor(row_index * 2) // Increment row every two widgets
+      });
+      // Update name and isPercentageBased based on widget type
+      var widget_percent_obj = _.clone(widget_obj);
+      widget_percent_obj.isPercentageBased = "on";
+      widget_percent_obj.name = "% of " + widget_percent_obj.name;
+      widget_percent_obj.id = widget_id + "-percent";
+      config.widgets.push(widget_percent_obj);
+      config.layouts.md.push({
+        "h": 6,
+        "i": widget_id + "-percent",
+        "minH": 4,
+        "minW": 6,
+        "moved": false,
+        "static": false,
+        "w": 6,
+        "x": 6, // 0 for left column, 6 for right
+        "y": Math.floor(row_index * 6)
+      });
+      config.layouts.sm.push({
+        "h": 6,
+        "i": widget_id + "-percent",
+        "minH": 4,
+        "minW": 2,
+        "w": 2,
+        "x": 2, // 0 for left column, 2 for right
+        "y": Math.floor(row_index * 6)
+      });
+      row_index += 1; // Increment row index for next widget
+    });
+
+    // Last append a table widget which can be used for drilldown
+    var table_widget_id = "widget-drilldown-table";
+    var table_widget_obj = {
+      "name": "Tabular View for Drilldown into " + param_dashboard_group_dimension + ": " + dimension_value,
+      "component": "table",
+      "description": "",
+      "filters": [
+        {
+          "id": "DimensionParam",
+          "source": "inline"
+        },
+        {
+          "id": "GroupByParam",
+          "source": "inline"
+        },
+        {
+          "id": "CostTypeParam",
+          "source": "default"
+        },
+        {
+          "id": "DateRangeParam",
+          "source": "default"
+        },
+        {
+          "id": "CalendarPeriodParam",
+          "source": "default"
+        },
+        {
+          "id": "SelectParam",
+          "source": "manual",
+          "value": dimension_filter
+        }
+      ],
+      "id": "widget-drilldown-table",
+      "isPercentageBased": "off",
+      "metrics": [
+        {
+          "id": cost_metric_id,
+          "name": param_cost_metric,
+          "type": "Cost"
+        }
+      ]
+    };
+    config.widgets.push(table_widget_obj);
+    config.layouts.md.push({
+      "i": table_widget_id,
+      "minH": 12,
+      "minW": 12,
+      "h": 12,
+      "w": 12,
+      "x": 0, // 0 for left column, 2 for right
+      "y": Math.floor(row_index * 6) // rows are 6 high
+    });
+    config.layouts.sm.push({
+      "i": table_widget_id,
+      "minH": 12,
+      "minW": 2,
+      "h": 12,
+      "w": 2,
+      "x": 0, // 0 for left column, 2 for right
+      "y": Math.floor(row_index * 6) // rows are 6 high
+    });
+
+    var dashboard_prefix = ""
+    if (param_dashboard_prefix && param_dashboard_prefix.trim().length > 0) {
+      dashboard_prefix = param_dashboard_prefix.trim() + " ";
+    }
+
+    var id = ""; // Default to empty
+    var verb = "create"; // Default to create
+    // Construct dashboard name
+    var dashboard_name = dashboard_prefix + param_dashboard_group_dimension + ": " + dimension_value;
+    // Check if dashboard already exists
+    if (dashboards_indexed.length > 0 && dashboards_indexed[dashboard_name]) {
+      var existing_dashboard = dashboards_indexed[dashboard_name][0]; // Get the first one (should only be one)
+      var id = existing_dashboard.id;
+      var verb = "update"; // Set verb to update
+    }
+
+    return {
+      total_cost: total_cost,
+      name: dashboard_name,
+      config: config,
+      dimension_name: param_dashboard_group_dimension,
+      dimension_value: dimension_value,
+      widget_dimension: param_widget_dimension,
+      widget_dimension_values: _.pluck(data.top_widgets, 'value').join(", "),
+      verb: verb,
+      dashboard_id: id,
+      id: dashboard_name, // Use Dashboard Name as unique ID for this dashboard resource
+    };
+  });
+EOS
+end
+
+# Get existing dashboards
+datasource "ds_get_dashboards" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/dashboards"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "visibility", jmes_path(col_item, "visibility")
+    end
+  end
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_dynamic_dashboards" do
+  validate $ds_dashboard_configs do
+    summary_template "Dynamic Dashboards: {{ len data }} Dashboards for {{ parameters.param_dashboard_group_dimension }}"
+    check eq(size(data), 0 ) # Trigger incident if there are any results
+    escalate $esc_upsert_dashboards
+    escalate $esc_delete_dashboards
+    export do
+      resource_level true
+      field "dashboard_id" do
+        label "Existing Dashboard ID"
+      end
+      field "name" do
+        label "Dashboard Name"
+      end
+      field "dimension_name" do
+        label "Dimension Name"
+      end
+      field "dimension_value" do
+        label "Dimension Value"
+      end
+      field "total_cost" do
+        label "Total Cost"
+      end
+      field "widget_dimension" do
+        label "Widget Dimension"
+      end
+      field "widget_dimension_values" do
+        label "Widget Dimension Values"
+      end
+      field "config" do
+        label "Dashboard JSON"
+      end
+      field "id" do
+        label "Dashboard Identifier"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_upsert_dashboards" do
+  automatic contains($param_automatic_action, "Create/Update Dynamic Dashboards")
+  label "Create/Update Dynamic Dashboards"
+  description "Approval to create/update the dynamic dashboards"
+  run "upsert_dashboards", data, rs_org_id, rs_optima_host
+end
+
+escalation "esc_delete_dashboards" do
+  automatic false
+  label "Delete Dynamic Dashboards"
+  description "Approval to delete the dynamic dashboards"
+  run "delete_dashboards", data, rs_org_id, rs_optima_host
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define upsert_dashboards($data, $rs_org_id, $rs_optima_host) do
+  $$all_responses = []
+  $$debug = []
+
+  foreach $dashboard in $data do
+    sub on_error: handle_error() do
+      log_error("Processing dashboard: " + $dashboard["name"] + " with verb: " + $dashboard["verb"])
+      call modify_dashboard($dashboard, $rs_org_id, $rs_optima_host, false)
+    end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+
+  # If we made it here, all actions completed successfully
+  # Celebrate Success!
+  task_label("Process completed successfully!")
+end
+
+define delete_dashboards($data, $rs_org_id, $rs_optima_host) do
+  $$all_responses = []
+  $$debug = []
+
+  foreach $dashboard in $data do
+    sub on_error: handle_error() do
+      call modify_dashboard($dashboard, $rs_org_id, $rs_optima_host, true) # Pass true to delete
+    end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+
+  # If we made it here, all actions completed successfully
+  # Celebrate Success!
+  task_label("Process completed successfully!")
+end
+
+define modify_dashboard($dashboard, $rs_org_id, $rs_optima_host, $delete) do
+  # Default to create
+  $dashboard_id = ""
+  $verb = "post"
+  # If we have a valid Dashboard ID, we will update it and use PUT
+  if size($dashboard["dashboard_id"]) != 0 && $dashboard["dashboard_id"] != "" && $dashboard["dashboard_id"] != "null"
+    $dashboard_id = "/"+$dashboard["dashboard_id"]
+    $verb = "put"
+    # If delete is true, we will delete the dashboard instead of modify
+    if $delete == true
+      $verb = "delete"
+    end
+  end
+  task_label(upcase($verb)+" Dashboard: " + $dashboard["name"])
+  $response = http_request(
+    auth: $$auth_flexera,
+    verb: $verb,
+    https: true,
+    host: $rs_optima_host,
+    href: join(["/bill-analysis/orgs/", $rs_org_id, "/dashboards", $dashboard_id]),
+    headers: { "Api-Version": "0.1" },
+    body: {
+      "Area": "OrgDashboard",
+      "Name": $dashboard["name"],
+      "Config": $dashboard["config"],
+      "Visibility": "public"
+    }
+  )
+  $$all_responses << $response
+  $debug = to_json({
+    "response": $response,
+    "item": $item,
+    "governance_host": $governance_host
+  })
+  $$debug << $debug
+  if $response["code"] < 200 || $response["code"] >= 300
+      call log_error("Error " + to_s(upcase($verb)) + " dashboard: " + to_s($dashboard["name"]) + " - " + to_json($response["body"]))
+  end
+  task_label("Completed " + to_s(upcase($verb)) + " Dashboard: " + to_s($dashboard["name"]))
+end
+
+# CWF function to handle errors
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+# CWF function to handle errors
+define log_error($err) do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $err
+end

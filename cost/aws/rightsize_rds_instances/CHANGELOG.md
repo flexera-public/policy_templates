@@ -1,5 +1,25 @@
 # Changelog
 
+## v5.9.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v5.8.6
+
+- Fixed issue with `GetMetricData` API request when gathering CloudWatch metrics. Functionality unchanged.
+
+## v5.8.5
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v5.8.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v5.8.3
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
 ## v5.8.2
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.

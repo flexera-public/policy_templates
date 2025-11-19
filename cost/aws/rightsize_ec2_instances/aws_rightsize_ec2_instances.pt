@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.4.1",
+  version: "5.5.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -166,6 +166,24 @@ parameter "param_automatic_action" do
   default []
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -202,16 +220,6 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-# Get applied policy metadata for use later
-datasource "ds_applied_policy" do
-  request do
-    auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
-  end
-end
-
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -223,25 +231,42 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-EOS
   host_table = {
     "api.optima.flexeraeng.com": {
-      api: "api.flexera.com",
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
       ui: "app.flexera.com",
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-      api: "api.flexera.eu",
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
       ui: "app.flexera.eu",
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-      api: "api.flexera.au",
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
     }
   }
-  result = host_table[rs_optima_host]
 
   result = host_table[rs_optima_host]
 EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
 end
 
 # Get AWS account info
@@ -436,6 +461,104 @@ script "js_regions", type:"javascript" do
 EOS
 end
 
+# List Metrics
+datasource "ds_cloudwatch_metric_names" do
+  run_script $js_cloudwatch_metric_names, $ds_regions
+end
+
+script "js_cloudwatch_metric_names", type: "javascript" do
+  parameters "ds_regions"
+  result "result"
+  code <<-EOS
+
+  result = []
+
+  _.each(ds_regions, function(reg) {
+    // Memory Utilization Metric Name for Linux instances
+    result.push({
+      "metricName": "mem_used_percent",
+      "region": reg["region"]
+    })
+
+    // Memory Utilization Metric Name for Windows instances
+    result.push({
+      "metricName": "Memory % Committed Bytes In Use",
+      "region": reg["region"]
+    })
+  })
+EOS
+end
+
+datasource "ds_cloudwatch_metrics" do
+  iterate $ds_cloudwatch_metric_names
+  request do
+    run_script $js_cloudwatch_metrics, val(iter_item, "metricName"), val(iter_item, "region")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListMetricsResult/Metrics/member", "array") do
+      field "namespace", xpath(col_item, "Namespace")
+      field "metricName", xpath(col_item, "MetricName")
+      field "dimensions" do
+        collect xpath(col_item, "Dimensions/member", "array") do
+          field "name", xpath(col_item, "Name")
+          field "value", xpath(col_item, "Value")
+        end
+      end
+      field "region", val(iter_item, "region")
+    end
+  end
+end
+
+script "js_cloudwatch_metrics", type: "javascript" do
+  parameters "metric_name", "region"
+  result "request"
+  code <<-EOS
+  query_params = {
+    "Action": "ListMetrics",
+    "Version": "2010-08-01",
+    "Namespace": "CWAgent",
+    "MetricName": metric_name
+  }
+
+  var request = {
+    auth: "auth_aws",
+    host: "monitoring." + region + ".amazonaws.com",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+    },
+    query_params: query_params
+  }
+EOS
+end
+
+datasource "ds_cloudwatch_metrics_by_instance" do
+  run_script $js_cloudwatch_metrics_by_instance, $ds_cloudwatch_metrics
+end
+
+script "js_cloudwatch_metrics_by_instance", type: "javascript" do
+  parameters "ds_cloudwatch_metrics"
+  result "result"
+  code <<-EOS
+  result = {}
+
+  _.each(ds_cloudwatch_metrics, function(metric) {
+    dims = metric.dimensions || []
+    inst = _.find(dims, function(dim) { return dim.name == "InstanceId" })
+    if (!inst || !inst.value) return
+
+    inst_id = inst.value
+
+    result[inst_id] = {
+      namespace: metric.namespace,
+      metricName: metric.metricName,
+      dimensions: metric.dimensions
+    }
+  })
+EOS
+end
+
 datasource "ds_instance_sets" do
   iterate $ds_regions
   request do
@@ -562,11 +685,11 @@ EOS
 end
 
 datasource "ds_cloudwatch_queries" do
-  run_script $js_cloudwatch_queries, $ds_instances, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_lookback
+  run_script $js_cloudwatch_queries, $ds_instances, $ds_cloudwatch_metrics_by_instance, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_lookback
 end
 
 script "js_cloudwatch_queries", type: "javascript" do
-  parameters "ds_instances", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_lookback"
+  parameters "ds_instances", "ds_cloudwatch_metrics_by_instance", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_lookback"
   result "result"
   code <<-EOS
   // Set CPU threshold for CloudWatch call
@@ -637,8 +760,24 @@ script "js_cloudwatch_queries", type: "javascript" do
 
     // Only query for MEM usage if we're actually checking it
     if (param_avg_mem != -1) {
-      if (instance['platform'] == "Windows") {
-        // If platform is Windows, we need to use the Windows custom metric
+
+      // Find dimensions
+      metric_details = ds_cloudwatch_metrics_by_instance[ instance['instanceId'] ]
+
+      if (metric_details != null) {
+        // Custom metric taken from ListMetrics API response
+        mem_metricname = metric_details["metricName"]
+
+        dimensions = []
+        _.each(metric_details['dimensions'], function (dim) {
+          dimensions.push({
+            "Name": dim["name"],
+            "Value": dim["value"]
+          })
+        })
+
+      } else if (instance['platform'] == "Windows") {
+        // Fallback - If platform is Windows, we need to use the Windows custom metric
         mem_metricname = "Memory % Committed Bytes In Use"
 
         dimensions = [
@@ -647,8 +786,9 @@ script "js_cloudwatch_queries", type: "javascript" do
           { "Name": "InstanceType", "Value": instance['resourceType'] },
           { "Name": "objectname", "Value": "Memory" }
         ]
+
       } else {
-        // Else assume Platform is Linux, and use the Linux custom metric
+        // Fallback - Else assume Platform is Linux, and use the Linux custom metric
         mem_metricname = "mem_used_percent"
 
         dimensions = [
@@ -772,7 +912,6 @@ script "js_cloudwatch_data", type: "javascript" do
       "Content-Encoding": "amz-1.0"
     }
     query_params: {
-      'Action': 'GetMetricData',
       'Version': '2010-08-01'
     },
     body: JSON.stringify(body)
@@ -985,7 +1124,12 @@ script "js_merged_metrics", type: "javascript" do
     // Limit number of data points to avoid URL length issues
     // Using cpu to determine max points and all the timestamps we have data for
     var maxPoints = 60;
-    var step = Math.max(1, Math.floor(cpu_stats.length / maxPoints));
+    var step = 60
+    if (cpu_stats && cpu_stats.length > 0 ) {
+      step = Math.max(1, Math.floor(cpu_stats.length / maxPoints));
+    } else if (mem_stats && mem_stats.length > 0) {
+      step = Math.max(1, Math.floor(mem_stats.length / maxPoints));
+    }
 
     // Gather the data points
     if (cpu_stats && cpu_stats.length > 0) {
@@ -1127,11 +1271,11 @@ EOS
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_downsize_multiple, rs_org_id, rs_project_id
+  run_script $js_idle_and_underutil_instances, $ds_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_downsize_multiple, $param_incident_csv, rs_org_id, rs_project_id
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_instances", "ds_merged_metrics", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_downsize_multiple", "rs_org_id", "rs_project_id"
+  parameters "ds_instances", "ds_merged_metrics", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_downsize_multiple", "param_incident_csv", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -1329,6 +1473,8 @@ script "js_idle_and_underutil_instances", type:"javascript" do
   }
 
   // Build out the detail_template for the incidents
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   if (checking_cpu || checking_mem) {
     instances_total = ds_instances.length.toString()
     underutil_instances_total = underutil_list.length.toString()
@@ -1435,10 +1581,10 @@ script "js_idle_and_underutil_instances", type:"javascript" do
       applied_policy_url = applied_policy_url + "/orgs/" + rs_org_id + "/automation/applied-policies/projects/" + rs_project_id + "?policyId=" + ds_applied_policy['id'];
     }
 
-    disclaimer = "The above settings can be modified by editing the [" + ds_applied_policy['name'] + "](" + applied_policy_url + ") applied policy and changing the appropriate parameters."
+    disclaimer = "The above settings can be modified by editing the [" + ds_applied_policy['name'] + "](" + applied_policy_url + ") applied policy and changing the appropriate parameters.\n\n"
 
-    underutil_message = underutil_findings + underutil_analysis_message + lookback_message + disclaimer
-    idle_message = idle_findings + idle_analysis_message + lookback_message + disclaimer
+    underutil_message = underutil_findings + underutil_analysis_message + lookback_message + disclaimer + csv_message
+    idle_message = idle_findings + idle_analysis_message + lookback_message + disclaimer + csv_message
   } else {
     underutil_message = "No results were found because all CPU and memory parameters were set to -1 when this policy was applied. Please terminate and reapply this policy with one of these settings enabled."
     idle_message = underutil_message
@@ -1488,7 +1634,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     idle_list[0]['idle_total_savings'] = idle_total_savings
     idle_list[0]['policy_name'] = ds_applied_policy['name']
   }
-  
+
   if (underutil_list.length > 0) {
     // Append the policy metadata to the recommendationDetails which is surfaced in UI and referenced by the Engineering/App Owner personas
     // This helps them understand what thresholds, metrics, and statistics were used to determine if the resource is "idle" or "underutilized"
@@ -1800,7 +1946,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_downsize_instances" do
@@ -2071,13 +2220,12 @@ end
 
 # If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
 # if it is set we will look for the parent policy.
-datasource "ds_get_policy" do
+datasource "ds_get_parent_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
   end
   result do
     encoding "json"
@@ -2085,59 +2233,42 @@ datasource "ds_get_policy" do
   end
 end
 
-datasource "ds_parent_policy_terminated" do
-  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
-end
-
 # If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
 # This information is used in two places:
 # - determining whether or not we make a delete call
 # - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
-script "js_decide_if_self_terminate", type: "javascript" do
-  parameters "found", "self_policy_id", "meta_parent_policy_id"
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
   result "result"
-  code <<-EOS
-  var result
-  if (meta_parent_policy_id != "" && found.id == undefined) {
-    result = true
-  } else {
-    result = false
-  }
-  EOS
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
 end
 
 # Two potentials ways to set this up:
 # - this way and make a unneeded 'get' request when not deleting
 # - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
-script "js_make_terminate_request", type: "javascript" do
-  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
-  result "request"
-  code <<-EOS
-
-  var request = {
-    auth:  'auth_flexera',
-    host: rs_governance_host,
-    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
-    headers: {
-      "API-Version": "1.0",
-      "Content-Type":"application/json"
-    },
-  }
-
-  if (should_delete) {
-    request.verb = 'DELETE'
-  }
-  EOS
-end
-
 datasource "ds_terminate_self" do
   request do
-    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
   end
 end
 
-datasource "ds_is_deleted" do
-  run_script $js_check_deleted, $ds_terminate_self
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-EOS
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
 end
 
 # This is just a way to have the check delete request connect to the farthest leaf from policy.
@@ -2146,10 +2277,12 @@ end
 # The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
 # would not have access to self-terminate
 # It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
-script "js_check_deleted", type: "javascript" do
-  parameters "response"
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
   result "result"
-  code <<-EOS
-  result = {"path":"/"}
-  EOS
+  code 'result = { path: "/"}'
 end

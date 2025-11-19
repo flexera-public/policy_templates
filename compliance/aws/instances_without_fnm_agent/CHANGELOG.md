@@ -1,5 +1,21 @@
 # Changelog
 
+## v4.4.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v4.3.7
+
+- Updated label of email parameter to "Email Addresses" to match other policy templates. Functionality unchanged.
+
+## v4.3.6
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v4.3.5
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
 ## v4.3.4
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.

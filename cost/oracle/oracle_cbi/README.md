@@ -4,6 +4,8 @@
 
 This policy template automatically takes Cost Reports from Oracle Cloud (OCI) and sends them to Flexera CBI so that Oracle Cloud costs are visible in Flexera One. An incident is raised on every execution of the policy template to provide status information to the user.
 
+More information on Oracle Cost Reports and the configuration required in Oracle is [available in their documentation](https://docs.oracle.com/en-us/iaas/Content/Billing/Concepts/costusagereportsoverview.htm).
+
 ## How It Works
 
 - The policy template uses the Oracle Cloud Object Storage API to connect to the bucket containing the Cost & Usage Reports and obtain the relevant reports for the specified month (or current month if none is specified.)
@@ -30,17 +32,18 @@ This policy template automatically takes Cost Reports from Oracle Cloud (OCI) an
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `org_owner`
 
 - [**Oracle Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_3335267112_1121578) (*provider=oracle*) which meets the below requirements:
-  - define tenancy usage-report as [OCID]
-    - [OCID] should be replaced with the OCID shown on the Cost & Usage Reports page in Oracle Cloud's web UI. [Group] should be replaced with a group that the user associated with the Oracle Cloud credential is a member of.
-  - endorse group [Group] to read objects in tenancy usage-report
+  - `define tenancy usage-report as <ocid>`
+  - `endorse group <group> to read objects in tenancy usage-report`
 
-Note: Oracle Cloud credentials cannot be added in Flexera One; the [Flexera Credential Management API](https://reference.rightscale.com/cred-management/#/Credentials/Credentials_create_oracle) must be used to create the credential.
+  Replace `<ocid>` with the OCID of the object storage bucket that stores the Cost & Usage Reports. In most cases, this will be the same as the OCID of the Tenancy itself. Replace `<group>` with a group that the user associated with the Oracle Cloud credential is a member of. The user should be in the `Default` domain to ensure it has full access.
+
+Note: Oracle Cloud credentials cannot be added in Flexera One; the [Flexera Credential Management API](https://reference.rightscale.com/cred-management/#/Credentials/Credentials_create_oracle) must be used to create the credential. More information is [available in Oracle's documentation](https://docs.oracle.com/en-us/iaas/Content/Billing/Concepts/costusagereportsoverview.htm#policy).
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 

@@ -12,9 +12,17 @@ This policy template checks all the EC2 instances in an AWS Account to determine
 
 ### Policy Savings Details
 
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the instance type is changed to the recommended instance type. The savings is calculated by taking the difference in the hourly list price between the current instance type and the recommended instance type. This value is then multiplied by 24 to get the daily savings, and then by 30.44 (the average number of days in a month) to get the monthly savings. The savings value is 0 if no cost information for the resource type was found in our internal database.
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the instance type is changed to the recommended instance type.
 
-The savings is displayed in the Estimated Monthly Savings column. The incident message detail includes the sum of each resource *Estimated Monthly Savings* as *Potential Monthly Savings*. If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
+- The `Estimated Monthly Cost` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
+- Since the `Estimated Monthly Cost` of individual resources is obtained from Flexera CCO, it will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
+- The `Estimated Monthly Savings` is calculated as the percentage differences between either the ["AWS VM listed price"](https://github.com/flexera-public/policy_templates/blob/master/data/aws/aws_ec2_pricing.json) or ["NFUs (Normal Form Units)"](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/apply_ri.html) between current instance type and the recommended instance type. More specifically:
+  - If the "listed price" of both instance types is available, the `Estimated Monthly Savings` is calculated as ("actual cost" * (1 - "list price of recommended instance type" / "list price of current instance type"))
+  - If the "listed price" is unavailable but the "NFU" is available, the `Estimated Monthly Savings` is calculated as ("actual cost" * (1 - "NFU of recommended instance type" - "NFU of current instance type"))
+  - If neither the "listed price" nor the "NFU" is available, the `Estimated Monthly Savings` will be 0.
+- If no cost information for the resource type was found in our internal database, the `Estimated Monthly Savings` will also be 0.
+- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
+- If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
 
 ## Input Parameters
 
@@ -27,7 +35,7 @@ The savings is displayed in the Estimated Monthly Savings column. The incident m
   - AMD: Recommend AMD-based latest generation upgrade. May provide additional savings.
 - *Fallback Instance Type Category* - Instance Type Category to pick from for recommended instance types if there are no valid recommendations for the primary category. Set to `None` to have no fallback.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
-- *Exclusion Tags* - The policy will filter resources containing the specified tags from the results. The following formats are supported:
+- *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.
   - `Key==Value` - Filter all resources with the specified tag key:value pair.
   - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
@@ -35,11 +43,13 @@ The savings is displayed in the Estimated Monthly Savings column. The incident m
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
-- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
-For example if a user selects the "Change Instance Type" action while applying the policy, all the resources that didn't satisfy the policy condition will have their instance type changed.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
+For example if a user selects the "Change Instance Type" action while applying the policy template, all the resources that didn't satisfy the policy condition will have their instance type changed.
 
 ## Policy Actions
 
@@ -48,7 +58,7 @@ For example if a user selects the "Change Instance Type" action while applying t
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
   - `ec2:DescribeRegions`

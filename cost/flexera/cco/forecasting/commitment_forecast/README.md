@@ -8,6 +8,10 @@ The purpose of this policy template is to assist in tracking and projecting tota
 
 **NOTE: This policy template is for cloud vendor spend commitments, not Reserved Instances, Savings Plans, Committed Use Discounts, or similar rate reduction purchasing constructs.**
 
+## Example Incident
+
+![Example Incident](example.png "Example Incident")
+
 ## How It Works
 
 Projected spend is extrapolated from the spend of whatever portion of the specified time period is in the past. Future spend is assumed to be straight-forwardly commensurate with past spend. For example, if the time period specified is for 1 year, and 1 month has passed, then the projected spend will be the spend for that month multiplied by 12.
@@ -27,7 +31,7 @@ Projected spend is extrapolated from the spend of whatever portion of the specif
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`

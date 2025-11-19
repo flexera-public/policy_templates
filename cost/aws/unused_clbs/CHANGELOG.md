@@ -1,5 +1,26 @@
 # Changelog
 
+## v6.5.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v6.4.8
+
+- Fixed issue where estimated savings would sometimes be reported as 0 inaccurately.
+- Fixed issue where `Resource ARN` field was malformed.
+
+## v6.4.7
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v6.4.6
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v6.4.5
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v6.4.4
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.

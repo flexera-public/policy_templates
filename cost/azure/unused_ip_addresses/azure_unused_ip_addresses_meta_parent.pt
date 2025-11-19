@@ -9,7 +9,7 @@ category "Meta"
 default_frequency "hourly"
 info(
   provider: "Azure",
-  version: "7.3.3", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "7.4.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "true",
   deprecated: "false",
   hide_skip_approvals: "true"
@@ -86,7 +86,7 @@ parameter "param_policy_schedule" do
   label "Child Policy Schedule"
   description "The interval at which the child policy checks for conditions and generates incidents."
   default "weekly"
-  allowed_values "15 minutes", "hourly", "daily", "weekly", "monthly"
+  allowed_values "daily", "weekly", "monthly"
 end
 
 parameter "param_template_source" do
@@ -95,6 +95,24 @@ parameter "param_template_source" do
   description "By default, will use the \"Azure Unused IP Addresses\" Policy Template from Catalog.  Optionally, you can use the \"Azure Unused IP Addresses\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
+end
+
+parameter "param_combined_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Consolidated Incident Email"
+  description "Whether or not to attach the results as a CSV file to the consolidated incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_combined_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Consolidated Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the consolidated incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ## Child Policy Parameters
@@ -240,7 +258,7 @@ script "js_child_policy_options", type: "javascript" do
   // Filter Options that are not appropriate for Child Policy
   var options = _.map(ds_self_policy_information.options, function(option){
     // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes", param_policy_schedule are exclusion to Meta Parent Policy Parameters
-    if (!_.contains(["param_combined_incident_email", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
+    if (!_.contains(["param_combined_incident_email", "param_combined_incident_csv", "param_combined_incident_table_size", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
       return { "name": option.name, "value": option.value };
     }
   });
@@ -1449,7 +1467,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_combined_incident_email
+  email $param_combined_incident_email do
+    attach_export_table $param_combined_incident_csv
+    body_table_max_rows $param_combined_incident_table_size
+  end
 end
 
 escalation "create_policies" do

@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "4.0.3",
+  version: "4.1.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Savings Plans",
@@ -22,7 +22,7 @@ info(
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses to notify"
+  label "Email Addresses"
   description "A list of email addresses to notify."
   default []
 end
@@ -52,6 +52,24 @@ parameter "param_savings_plan_arns" do
   description "The unique Amazon Resource Names (ARNs) for particular Savings Plans to report on. Leave blank to report on all Savings Plans."
   allowed_pattern /(arn:aws:savingsplans::[a-zA-Z0-9]*|^$)/
   default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -90,13 +108,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -252,13 +309,15 @@ EOS
 end
 
 datasource "ds_chart_data" do
-  run_script $js_chart_data, $ds_savings_plans_utilization, $ds_currency, $ds_applied_policy, $param_savings_threshold, $param_lookback
+  run_script $js_chart_data, $ds_savings_plans_utilization, $ds_currency, $ds_applied_policy, $param_savings_threshold, $param_lookback, $param_incident_csv
 end
 
 script "js_chart_data", type: "javascript" do
-  parameters "ds_savings_plans_utilization", "ds_currency", "ds_applied_policy", "param_savings_threshold", "param_lookback"
+  parameters "ds_savings_plans_utilization", "ds_currency", "ds_applied_policy", "param_savings_threshold", "param_lookback", "param_incident_csv"
   result "result"
   code <<-EOS
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -316,7 +375,8 @@ script "js_chart_data", type: "javascript" do
         chart_data_label: encodeURI("chl=" + ds_currency['symbol'] + formatNumber(util['unused_commitment'], ds_currency['separator']) + "|" + ds_currency['symbol'] + formatNumber(util['used_commitment'], ds_currency['separator'])),
         start_date: start_date,
         end_date: end_date,
-        policy_name: ds_applied_policy['name']
+        policy_name: ds_applied_policy['name'],
+        csv_message: csv_message
       })
     }
   })
@@ -339,7 +399,8 @@ ___
 \n
 ![Spending Overview Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{.chart_type}}&{{.chart_size}}&{{.chart_data}}&{{.chart_image}}&{{.chart_scale}}&{{.chart_label}}&{{.chart_inside_label}}&{{.chart_data_label}})
 ___
-{{ end }}
+{{ end }}\n\n
+{{ with index data 0 }}{{ .csv_message }}{{ end }}
 EOS
     check eq(0, 1)
     escalate $esc_email
@@ -372,5 +433,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

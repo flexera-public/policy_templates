@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.2.2",
+  version: "0.3.2",
   provider: "Flexera",
   service: "Common Bill Ingestion",
   policy_set: "Common Bill Ingestion",
@@ -22,7 +22,7 @@ info(
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses to notify"
+  label "Email Addresses"
   description "Email addresses of the recipients you wish to notify when billing data is uploaded"
   default []
 end
@@ -53,12 +53,21 @@ parameter "param_month_specific" do
   default "2020-01"
 end
 
+parameter "param_amortization" do
+  type "string"
+  category "Policy Settings"
+  label "Amortization"
+  description "Whether or not to amortize the fixed cost across the month. See the README for more details."
+  allowed_values "Amortize", "Do Not Amortize"
+  default "Amortize"
+end
+
 parameter "param_cbi_endpoint" do
   type "string"
   category "Policy Settings"
   label "CBI (Common Bill Ingestion) Endpoint ID"
   description "The ID of CBI endpoint to create/use when injecting the fixed cost. Leave blank to have this generated and managed automatically. Ex: cbi-oi-optima-laborcosts"
-  allowed_pattern /^(cbi-oi-optima-[a-z]+|)$/
+  allowed_pattern /^(?:cbi-oi-optima-[a-z_-]+)?$/
   default ""
 end
 
@@ -159,16 +168,6 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-# Get applied policy metadata for use later
-datasource "ds_applied_policy" do
-  request do
-    auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
-  end
-end
-
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -180,21 +179,42 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-EOS
   host_table = {
     "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
       flexera: "api.flexera.com",
-      fsm: "api.fsm.flexeraeng.com"
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
       flexera: "api.flexera.eu",
-      fsm: "api.fsm-eu.flexeraeng.com"
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
       flexera: "api.flexera.au",
-      fsm: "api.fsm-apac.flexeraeng.com"
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
     }
   }
 
   result = host_table[rs_optima_host]
 EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
 end
 
 datasource "ds_dates" do
@@ -281,11 +301,11 @@ EOS
 end
 
 datasource "ds_cost_csv" do
-  run_script $js_cost_csv, $ds_dates, $ds_currency, $param_cost_amount, $param_metadata_cloud_vendor_account_id, $param_metadata_cloud_vendor_account_name, $param_metadata_category, $param_metadata_service, $param_metadata_region, $param_metadata_resourcetype, $param_metadata_instancetype, $param_metadata_lineitemtype, $param_metadata_tags
+  run_script $js_cost_csv, $ds_dates, $ds_currency, $param_cost_amount, $param_metadata_cloud_vendor_account_id, $param_metadata_cloud_vendor_account_name, $param_metadata_category, $param_metadata_service, $param_metadata_region, $param_metadata_resourcetype, $param_metadata_instancetype, $param_metadata_lineitemtype, $param_metadata_tags, $param_amortization
 end
 
 script "js_cost_csv", type: "javascript" do
-  parameters "ds_dates", "ds_currency", "param_cost_amount", "param_metadata_cloud_vendor_account_id", "param_metadata_cloud_vendor_account_name", "param_metadata_category", "param_metadata_service", "param_metadata_region", "param_metadata_resourcetype", "param_metadata_instancetype", "param_metadata_lineitemtype", "param_metadata_tags"
+  parameters "ds_dates", "ds_currency", "param_cost_amount", "param_metadata_cloud_vendor_account_id", "param_metadata_cloud_vendor_account_name", "param_metadata_category", "param_metadata_service", "param_metadata_region", "param_metadata_resourcetype", "param_metadata_instancetype", "param_metadata_lineitemtype", "param_metadata_tags", "param_amortization"
   result "result"
   code <<-'EOS'
   // Set static field values. These will be the same for every entry in the CSV file
@@ -328,17 +348,23 @@ script "js_cost_csv", type: "javascript" do
   future_date.setDate(future_date.getDate() - 1)
   total_days_in_month = Number(future_date.toISOString().substring(8, 10))
 
-  // Calculate daily cost from monthly cost.
-  // Round it to avoid causing problems with extremely small numbers in scientific notation.
-  Cost = Math.round(param_cost_amount / total_days_in_month * 10000) / 10000
+  if (param_amortization == "Amortize") {
+    // Calculate daily cost from monthly cost.
+    // Round it to avoid causing problems with extremely small numbers in scientific notation.
+    Cost = Math.round(param_cost_amount / total_days_in_month * 1000000) / 1000000
 
-  // Determine the number of days we need to insert billing data for
-  // Simply use the number of days in the entire month if not current month
-  days_in_month = total_days_in_month
+    // Determine the number of days we need to insert billing data for
+    // Simply use the number of days in the entire month if not current month
+    days_in_month = total_days_in_month
 
-  // Otherwise, figure out how far into the current month we are and use that
-  if (ds_dates['period'] == new Date().toISOString().substring(0, 7)) {
-    days_in_month = Number(new Date().toISOString().substring(8, 10))
+    // Otherwise, figure out how far into the current month we are and use that
+    if (ds_dates['period'] == new Date().toISOString().substring(0, 7)) {
+      days_in_month = Number(new Date().toISOString().substring(8, 10))
+    }
+  } else {
+    // If we're not amortizing, just do the flat cost on the 1st of the month
+    Cost = param_cost_amount
+    days_in_month = 1
   }
 
   // Create header row

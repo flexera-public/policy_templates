@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.1.0
+
+- Policy template now supports multiple tag keys for a single dimension. See README for details.
+
+## v3.0.3
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v3.0.2
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v3.0.1
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.

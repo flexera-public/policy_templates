@@ -1,5 +1,25 @@
 # Changelog
 
+## v9.3.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v9.2.8
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v9.2.7
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v9.2.6
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v9.2.5
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v9.2.4
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.

@@ -8,7 +8,7 @@ category "Cost"
 severity "medium"
 default_frequency "daily"
 info(
-  version: "3.0.2",
+  version: "3.1.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Savings Plans",
@@ -34,6 +34,24 @@ parameter "param_days_expiration" do
   description "The number of days until expiration to include a Savings Plan in the report. Set to '0' to only report expired Savings Plans."
   min_value 0
   default 15
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -72,13 +90,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -114,13 +171,15 @@ datasource "ds_savings_plans" do
 end
 
 datasource "ds_expiring_savings_plans" do
-  run_script $js_expiring_savings_plans, $ds_savings_plans, $ds_applied_policy, $param_days_expiration
+  run_script $js_expiring_savings_plans, $ds_savings_plans, $ds_applied_policy, $param_days_expiration, $param_incident_csv
 end
 
 script "js_expiring_savings_plans", type: "javascript" do
-  parameters "ds_savings_plans", "ds_applied_policy", "param_days_expiration"
+  parameters "ds_savings_plans", "ds_applied_policy", "param_days_expiration", "param_incident_csv"
   result "result"
   code <<-EOS
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   result = []
   today = new Date()
 
@@ -155,7 +214,8 @@ script "js_expiring_savings_plans", type: "javascript" do
         term: Math.round(plan["termDurationInSeconds"] / 31536000 * 100) / 100,
         days_until_expiry: Math.round(days_until_expiry),
         tags: tags.join(", "),
-        policy_name: ds_applied_policy["name"]
+        policy_name: ds_applied_policy["name"],
+        csv_message: csv_message
       })
     }
   })
@@ -169,6 +229,7 @@ end
 policy "pol_expiring_savings_plans" do
   validate_each $ds_expiring_savings_plans do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Expiring AWS Savings Plans Found"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check eq(val(item, "resourceID"), "")
     escalate $esc_email
     hash_exclude "tags", "days_until_expiry"
@@ -232,5 +293,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

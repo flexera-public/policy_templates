@@ -9,7 +9,7 @@ category "Cost"
 default_frequency "daily"
 info(
   publish: "false",
-  version: "0.2.1",
+  version: "0.3.0",
   provider: "Google",
   service: "Cloud Run",
   policy_set: "Anomaly Detection"
@@ -22,7 +22,7 @@ info(
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses to notify"
+  label "Email Addresses"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
   default []
 end
@@ -122,6 +122,24 @@ parameter "param_threshold_consequtive_anomalies" do
   description "Number of Consecutive Anomalies to trigger an incident"
   min_value 0
   default 0
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -386,13 +404,15 @@ datasource "ds_cloud_run_utilization" do
 end
 
 datasource "ds_cloud_run_utilization_anomalies" do
-  run_script $js_cloud_run_utilization_anomalies, $ds_cloud_run_utilization, $param_threshold_zscore, $param_threshold_consequtive_anomalies, $param_metric_aggregation
+  run_script $js_cloud_run_utilization_anomalies, $ds_cloud_run_utilization, $param_threshold_zscore, $param_threshold_consequtive_anomalies, $param_metric_aggregation, $param_incident_csv
 end
 
 script "js_cloud_run_utilization_anomalies", type: "javascript" do
-  parameters "ds_cloud_run_utilization", "param_threshold_zscore", "param_threshold_consequtive_anomalies", "param_metric_aggregation"
+  parameters "ds_cloud_run_utilization", "param_threshold_zscore", "param_threshold_consequtive_anomalies", "param_metric_aggregation", "param_incident_csv"
   result "result"
   code <<-EOS
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   result = []
   _.each(ds_cloud_run_utilization, function(resource_utilization) {
     // Reverse the points so that we can iterate through them in order of timestamp increasing
@@ -444,6 +464,8 @@ script "js_cloud_run_utilization_anomalies", type: "javascript" do
       result = result.concat(resource_utilization['anomalies'])
     }
   })
+
+  if (result.length > 0) { result[0]["csv_message"] = csv_message }
 EOS
 end
 
@@ -454,7 +476,7 @@ end
 policy "pol_utilization" do
   validate_each $ds_cloud_run_utilization_anomalies do
     summary_template "Google Cloud Run Anomaly Detection: {{ len data }} Anomalies In {{ parameters.param_metric_lookback_time }} For {{ parameters.param_threshold_metric_name }} Metric"
-    detail_template " "
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check lt(val(val(item, "value"), "consequtiveAnomalyIndex"), $param_threshold_consequtive_anomalies) # Check that the consequtiveAnomalyIndex is less than the param_consequtiveAnomaly_threshold
     escalate $esc_email
     export do
@@ -518,5 +540,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

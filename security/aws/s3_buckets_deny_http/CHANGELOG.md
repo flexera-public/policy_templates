@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.0.7
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v3.0.6
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v3.0.5
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
 ## v3.0.4
 
 - Fixed an issue where applied policy would fail in certain scenarios due to an undefined field.
