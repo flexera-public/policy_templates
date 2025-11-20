@@ -2,8 +2,8 @@
 
 ## v0.2.7
 
-- Use 201 response code if a policy is created
-- Set new template `update_body` for minutely `frequency`to persistent value
+- Corrected issue where policy actions would create duplicate applied policies
+- Corrected issue where applied policies with a frequency of "15 minutes" were handled improperly
 
 ## v0.2.6
 
