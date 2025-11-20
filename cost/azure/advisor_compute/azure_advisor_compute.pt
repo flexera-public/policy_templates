@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.5",
+  version: "0.2.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -122,6 +122,24 @@ parameter "param_automatic_action" do
   description "When this value is set, this policy will automatically take the selected action."
   allowed_values ["Resize Instances"]
   default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -669,13 +687,15 @@ EOS
 end
 
 datasource "ds_recommendations_merged" do
-  run_script $js_recommendations_merged, $ds_azure_advisor_recs_vm, $ds_azure_instances_status_filtered, $ds_currency, $ds_applied_policy, $param_min_savings
+  run_script $js_recommendations_merged, $ds_azure_advisor_recs_vm, $ds_azure_instances_status_filtered, $ds_currency, $ds_applied_policy, $param_min_savings, $param_incident_csv
 end
 
 script "js_recommendations_merged", type: "javascript" do
-  parameters "ds_azure_advisor_recs_vm", "ds_azure_instances_status_filtered", "ds_currency", "ds_applied_policy", "param_min_savings"
+  parameters "ds_azure_advisor_recs_vm", "ds_azure_instances_status_filtered", "ds_currency", "ds_applied_policy", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -786,7 +806,7 @@ script "js_recommendations_merged", type: "javascript" do
     result.length, " ", rec_noun, " found. "
   ].join('')
 
-  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
   // Add dummy entry to ensure validation occurs at least once
   result.push({
@@ -824,7 +844,7 @@ script "js_recommendations_merged", type: "javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + disclaimer
+  result[0]['message'] = findings + disclaimer + csv_message
 EOS
 end
 
@@ -938,7 +958,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_resize_instances" do

@@ -1,9 +1,13 @@
 # Changelog
 
-## v6.4.0
+## v6.5.0
 
 - Policy now continues execution for accessible regions when some regions return permission errors
 - Added separate incident report to identify regions with access issues and provide remediation guidance
+
+## v6.4.0
+
+- Added support for attaching CSV files to incident emails.
 
 ## v6.3.10
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.4.1
+
+- Fixed issue where policy would never complete execution and would fail with an error.
+
+## v3.4.0
+
+- Added support for attaching CSV files to incident emails.
+
 ## v3.3.7
 
 - Changed incident field "Recommendeded Quantity to Purchase" to "Recommended Hourly Commitment" to both correct a spelling error and make the field clearer.

@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.3.1
+
+- Fixed issue that was preventing the policy template from being updated in the catalog. Functionality unchanged.
+
+## v0.3.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v0.2.7
+
+- Updated label of email parameter to "Email Addresses" to match other policy templates. Functionality unchanged.
+
 ## v0.2.6
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

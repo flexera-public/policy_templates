@@ -143,6 +143,24 @@ parameter "param_automatic_action" do
   default []
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -1177,13 +1195,15 @@ EOS
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_idle_volumes, $ds_underutilized_volumes, $ds_volumes_tag_filtered, $ds_volume_costs_grouped, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_unused_days, $param_include_status, $param_min_savings
+  run_script $js_volume_cost_mapping, $ds_idle_volumes, $ds_underutilized_volumes, $ds_volumes_tag_filtered, $ds_volume_costs_grouped, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_unused_days, $param_include_status, $param_min_savings, $param_incident_csv
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters "ds_idle_volumes", "ds_underutilized_volumes", "ds_volumes_tag_filtered", "ds_volume_costs_grouped", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_unused_days", "param_include_status", "param_min_savings"
+  parameters "ds_idle_volumes", "ds_underutilized_volumes", "ds_volumes_tag_filtered", "ds_volume_costs_grouped", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_unused_days", "param_include_status", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -1362,7 +1382,7 @@ script "js_volume_cost_mapping", type:"javascript" do
         ].join('')
       }
 
-      disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+      disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
       summary_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
 
@@ -1371,7 +1391,7 @@ script "js_volume_cost_mapping", type:"javascript" do
       //
       // For now, using the first object in the list to store this,
       // and these values are only used in the reports, not the exported data
-      result[key][0]['summary_message'] = findings + settings + disclaimer
+      result[key][0]['summary_message'] = findings + settings + disclaimer + csv_message
       result[key][0]['summary_total_savings'] = summary_total_savings
       result[key][0]['total_savings'] = total_savings
       result[key][0]['summary_policy_name'] = ds_applied_policy['name']
@@ -1635,7 +1655,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_delete_volumes" do

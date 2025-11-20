@@ -8,7 +8,7 @@ severity "medium"
 category "Compliance"
 default_frequency "weekly"
 info(
-  version: "4.3.6",
+  version: "4.4.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Instances not running FlexNet Inventory Agent",
@@ -57,7 +57,7 @@ end
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses to notify"
+  label "Email Addresses"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
   default []
 end
@@ -76,6 +76,24 @@ parameter "param_aws_account_number" do
   label "Account Number"
   description "Leave blank; this is for automated use with Meta Policies. See README for more details."
   default ""
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -271,54 +289,58 @@ datasource "ds_fnms_report" do
 end
 
 datasource "ds_formatted_instances", type: "javascript" do
-  run_script $js_formatted_instances, $ds_aws_ec2_instances_list, $ds_fnms_report, $param_exclude_tags
+  run_script $js_formatted_instances, $ds_aws_ec2_instances_list, $ds_fnms_report, $param_exclude_tags, $param_incident_csv
 end
 
 #Formatter script for the Instance data
 script "js_formatted_instances", type: "javascript" do
-  parameters "ds_aws_ec2_instances_list", "ds_fnms_report", "param_exclude_tags"
+  parameters "ds_aws_ec2_instances_list", "ds_fnms_report", "param_exclude_tags", "param_incident_csv"
   result "result"
   code <<-EOS
-    var result = [];
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
-    fnms_instance_cloud_id=[];
-    _.each(ds_fnms_report, function(instance){
-      fnms_instance_cloud_id.push(instance["instanceCloudID"]);
-    })
+  var result = [];
 
-    var param_exclude_tags_lower=[];
-    for(var i=0; i < param_exclude_tags.length; i++){
-      param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
+  fnms_instance_cloud_id=[];
+  _.each(ds_fnms_report, function(instance){
+    fnms_instance_cloud_id.push(instance["instanceCloudID"]);
+  })
+
+  var param_exclude_tags_lower=[];
+  for(var i=0; i < param_exclude_tags.length; i++){
+    param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
+  }
+
+  _.each(ds_aws_ec2_instances_list, function(instance){
+    var tags = instance['tags'];
+    var isTagMatched=false
+    var tagKeyValue=""
+    for(var k=0; k < tags.length; k++){
+      tag = tags[k]
+      //Check, if the tag present in entered param_exclude_tags, ignore the EC2 instance if the tag matches/present.
+      if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
+        isTagMatched = true;
+      }
+      if((tag['tagValue']).length > 0){
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }else{
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
+      }
     }
+    if(!isTagMatched && fnms_instance_cloud_id.indexOf(instance["instance_id"]) === -1){
+      result.push({
+        id: instance['instance_id'],
+        instance_type: instance['instance_type'],
+        region: instance['zone'][0]['availability_zone'],
+        instance_state: instance['instance_state'],
+        tags: (tagKeyValue.slice(2)),
+        csv_message: csv_message
+      })
+    }
+  })
 
-    _.each(ds_aws_ec2_instances_list, function(instance){
-      var tags = instance['tags'];
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var k=0; k < tags.length; k++){
-        tag = tags[k]
-        //Check, if the tag present in entered param_exclude_tags, ignore the EC2 instance if the tag matches/present.
-        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-          isTagMatched = true;
-        }
-        if((tag['tagValue']).length > 0){
-          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-        }else{
-          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
-        }
-      }
-      if(!isTagMatched && fnms_instance_cloud_id.indexOf(instance["instance_id"]) === -1){
-        result.push({
-          id: instance['instance_id'],
-          instance_type: instance['instance_type'],
-          region: instance['zone'][0]['availability_zone'],
-          instance_state: instance['instance_state'],
-          tags: (tagKeyValue.slice(2))
-        })
-      }
-    })
-    result =  _.sortBy(result, 'region');
-  EOS
+  result =  _.sortBy(result, 'region');
+EOS
 end
 
 ###############################################################################
@@ -328,6 +350,7 @@ end
 policy "pol_long_running_instances" do
   validate $ds_formatted_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} EC2 instances missing in FlexNet Manager."
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
     escalate $esc_email
@@ -360,7 +383,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send Incident Email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################

@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.1.6",
+  version: "3.3.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Savings Plans",
@@ -88,6 +88,33 @@ parameter "param_scope" do
   description "The scope to provide recommendations for. Select 'Shared' to not have recommendations scoped to individual Subscriptions or Resource Groups."
   allowed_values "Subscription", "Resource Group", "Shared"
   default "Subscription"
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+parameter "param_payment_option" do
+  type "string"
+  category "Savings Plan Settings"
+  label "Payment Option"
+  description "Whether or not to report recommendations as 'No Upfront' or 'All Upfront'. Default value of 'No Upfront' recommended in most cases. Has no impact on the recommendations themselves; Azure does not offer discounts or differing options if you paying up front."
+  allowed_values "No Upfront", "All Upfront"
+  default "No Upfront"
 end
 
 ###############################################################################
@@ -462,13 +489,15 @@ EOS
 end
 
 datasource "ds_sp_incident" do
-  run_script $js_sp_incident, $ds_sp_recommendations, $ds_currency, $ds_currency_conversion, $ds_conditional_currency_conversion, $ds_applied_policy, $param_term, $param_days, $param_scope, $param_min_savings
+  run_script $js_sp_incident, $ds_sp_recommendations, $ds_currency, $ds_currency_conversion, $ds_conditional_currency_conversion, $ds_applied_policy, $param_term, $param_days, $param_scope, $param_min_savings, $param_incident_csv, $param_payment_option
 end
 
 script "js_sp_incident", type: "javascript" do
-  parameters "ds_sp_recommendations", "ds_currency", "ds_currency_conversion", "ds_conditional_currency_conversion", "ds_applied_policy", "param_term", "param_days", "param_scope", "param_min_savings"
+  parameters "ds_sp_recommendations", "ds_currency", "ds_currency_conversion", "ds_conditional_currency_conversion", "ds_applied_policy", "param_term", "param_days", "param_scope", "param_min_savings", "param_incident_csv", "param_payment_option"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -547,6 +576,7 @@ script "js_sp_incident", type: "javascript" do
         wastageCost: wastageCost,
         savings: savingsAmount,
         savingsCurrency: ds_currency['symbol'],
+        paymentOption: param_payment_option,
         policy_name: ds_applied_policy['name'],
         total_savings: "",
         message: "",
@@ -585,7 +615,7 @@ script "js_sp_incident", type: "javascript" do
   ].join('')
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
-  empty_fields = "Empty fields indicate information that is not applicable to that particular recommendation."
+  empty_fields = "Empty fields indicate information that is not applicable to that particular recommendation.\n\n"
 
   savings_message = [
     ds_currency['symbol'], ' ',
@@ -597,7 +627,7 @@ script "js_sp_incident", type: "javascript" do
 
   if (result.length > 0) {
     result[0]['total_savings'] = savings_message
-    result[0]['message'] = conversion_message + message + disclaimer + empty_fields
+    result[0]['message'] = conversion_message + message + disclaimer + empty_fields + csv_message
   }
 EOS
 end
@@ -635,6 +665,9 @@ policy "pol_azure_sp_recommendations" do
       end
       field "term" do
         label "Term"
+      end
+      field "paymentOption" do
+        label "Payment Option"
       end
       field "recommendedQuantity" do
         label "Recommended Quantity to Purchase"
@@ -696,7 +729,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################

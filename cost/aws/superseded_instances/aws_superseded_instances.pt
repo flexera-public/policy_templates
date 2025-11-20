@@ -107,6 +107,24 @@ parameter "param_automatic_action" do
   default []
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -716,13 +734,15 @@ EOS
 end
 
 datasource "ds_superseded_instances" do
-  run_script $js_superseded_instances, $ds_instances, $ds_instance_costs_grouped, $ds_aws_instance_type_map, $ds_aws_instance_cost_map, $ds_currency_conversion, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_instance_type, $param_fallback_instance_type, $param_min_savings
+  run_script $js_superseded_instances, $ds_instances, $ds_instance_costs_grouped, $ds_aws_instance_type_map, $ds_aws_instance_cost_map, $ds_currency_conversion, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_instance_type, $param_fallback_instance_type, $param_min_savings, $param_incident_csv
 end
 
 script "js_superseded_instances", type: "javascript" do
-  parameters "ds_instances", "ds_instance_costs_grouped", "ds_aws_instance_type_map", "ds_aws_instance_cost_map", "ds_currency_conversion", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_instance_type", "param_fallback_instance_type", "param_min_savings"
+  parameters "ds_instances", "ds_instance_costs_grouped", "ds_aws_instance_type_map", "ds_aws_instance_cost_map", "ds_currency_conversion", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_instance_type", "param_fallback_instance_type", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -960,10 +980,10 @@ script "js_superseded_instances", type: "javascript" do
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
-  api_disclaimer = ""
+  api_disclaimer = "\n\n"
 
   if (ds_currency_conversion['to'] == undefined && ds_currency['code'] != 'USD') {
-    api_disclaimer = "\n\nSavings values are in USD due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
+    api_disclaimer = "\n\nSavings values are in USD due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue.\n\n"
   }
 
   savings_disclaimer = "Savings are estimated based on list price and may not reflect credits or discounts. "
@@ -1006,7 +1026,7 @@ script "js_superseded_instances", type: "javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + disclaimer + savings_disclaimer + api_disclaimer
+  result[0]['message'] = findings + disclaimer + savings_disclaimer + api_disclaimer + csv_message
 EOS
 end
 
@@ -1201,7 +1221,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_change_type" do

@@ -4,6 +4,11 @@
 
 - Policy now continues execution for accessible regions when some regions return permission errors
 - Added separate incident report to identify regions with access issues and provide remediation guidance
+- Added support for attaching CSV files to incident emails.
+
+## v8.4.10
+
+- Updated label of email parameter to "Email Addresses" to match other policy templates. Functionality unchanged.
 
 ## v8.4.9
 
