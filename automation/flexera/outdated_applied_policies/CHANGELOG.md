@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.7
+
+- Use 201 response code if a policy is created
+- Set new template `update_body` for minutely `frequency`to persistent value
+
 ## v0.2.6
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
