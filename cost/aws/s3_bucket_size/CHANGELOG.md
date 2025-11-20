@@ -1,5 +1,7 @@
 # Changelog
 
+## v3.2.2
+
 - Resolved issue where bucket size statistics for some S3 buckets were not being captured.
 
 ## v3.2.1
