@@ -22,9 +22,9 @@ This extension provides syntax highlighting for Flexera Policy Template (`.pt`) 
 This is a workspace-local extension. To use it:
 
 1. Open the command palette (Cmd+Shift+P on macOS, Ctrl+Shift+P on Windows/Linux)
-2. Type "Developer: Install Extension from Location..."
-3. Navigate to this folder (`tools/flexera-policy-template-vscode-extension`)
-4. Select the folder
+1. Type "Developer: Install Extension from Location..."
+1. Navigate to this folder (`tools/flexera-policy-template-vscode-extension`)
+1. Select the folder
 
 ## Usage
 
@@ -32,6 +32,6 @@ Once installed, you can select the "Flexera Policy Template (flexera-pt)" as the
 
 [![Selecting "Flexera Policy Template" Language in VS Code](flexera-pt-vscode.png)](flexera-pt-vscode.png)
 
-## How Does It Work?
+## How Does It Work
 
 This extension uses TextMate grammars to provide syntax highlighting based on the Flexera Policy Template DSL structure, which combines Ruby-like syntax with embedded JavaScript and template expressions.
