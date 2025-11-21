@@ -538,75 +538,6 @@ datasource "ds_aws_bucket_policies" do
   end
 end
 
-datasource "ds_combined_bucket_info" do
-  run_script $js_combined_bucket_info, $ds_aws_bucket_policies, $ds_aws_account, $ds_applied_policy, $ds_costs_grouped_by_resource_id, $ds_identify_errors, $ds_currency, $param_incident_csv
-end
-
-script "js_combined_bucket_info", type: "javascript" do
-  parameters "ds_aws_bucket_policies", "ds_aws_account", "ds_applied_policy", "ds_costs_grouped_by_resource_id", "ds_identify_errors", "ds_currency", "param_incident_csv"
-  result "result"
-  code <<-'EOS'
-  buckets_without_it = _.filter(ds_aws_bucket_policies, function(bucket) {
-    return bucket['it_configuration'] == "" || bucket['it_configuration'] == null || bucket['it_configuration'] == undefined
-  })
-
-  var total_savings = 0;
-  result = _.map(buckets_without_it, function(bucket) {
-    tags = []
-
-    if (bucket['tags'] != undefined && bucket['tags'] != null) {
-      tags = _.map(bucket['tags'], function(tag) { return [tag['key'], tag['value']].join('=') })
-    }
-
-    var savings = null;
-    if (_.isNumber(ds_costs_grouped_by_resource_id[ bucket['name'] ])) {
-      // These figures come from AWS’s official page
-      // https://aws.amazon.com/s3/storage-classes/intelligent-tiering/
-      //     40% savings for infrequent access
-      //     68% savings for archive access
-      // If 40% lowest percent savings, lets be conservative and use 30% savings if they move to Intelligent Tiering
-      savings = ds_costs_grouped_by_resource_id[ bucket['name'] ] * 0.30;
-      total_savings += savings;
-    }
-
-    csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
-
-    return {
-      resourceID: bucket['name'],
-      name: bucket['name'],
-      region: bucket['region'],
-      tags: tags.join(", "),
-      creation_date: new Date(bucket['creation_date']).toISOString(),
-      accountID: ds_aws_account['id'],
-      accountName: ds_aws_account['name'],
-      policy_name: ds_applied_policy['name'],
-      service: "AmazonS3",
-      csv_message: csv_message,
-      recommendationDetails: [
-        "S3 Intelligent-Tiering delivers automatic cost savings by moving data on a granular object level between access tiers when access patterns change.  Recommendation is to add a Bucket Lifecycle Policy to transition objects to Intelligent Tiering storage class after a specified period (). Full details and instructions available on [AWS Documentation > Amazon S3 > Using S3 Intelligent-Tiering](https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-intelligent-tiering.html) and [Setting an S3 Lifecycle configuration on a bucket](https://docs.aws.amazon.com/AmazonS3/latest/userguide/how-to-set-lifecycle-configuration-intro.html)",
-        "",
-        "Example AWS CLI command to add lifecycle policy to transition all objects to Intelligent Tiering storage class immediately:"
-        "```",
-        JSON.stringify(`aws s3api put-bucket-lifecycle-configuration --region `+bucket['region']+` --bucket "`+bucket['name']+`" --lifecycle-configuration '{"Rules":[{"ID":"TransitionToIntelligentTiering","Status":"Enabled","Filter":{"Prefix":""},"Transitions":[{"Days":0,"StorageClass":"INTELLIGENT_TIERING"}]}]}'`),
-        "```"
-    ].join("\n"),
-      savings: savings,
-      savingsCurrency: ds_currency['symbol']
-    }
-  })
-
-  // Dummy entry to ensure validation always occurs
-  result.push({ resourceID: "", tags: "", policy_name: "", csv_message: "" })
-
-  // Push metadata used in incident template
-  result[0].metadata = {
-      "policy_name": ds_applied_policy.name,
-      "total_savings": total_savings.toFixed(2),
-      "errors": ds_identify_errors || [],
-  }
-EOS
-end
-
 datasource "ds_billing_centers" do
   request do
     auth $auth_flexera
@@ -857,6 +788,74 @@ script "js_identify_errors", type: "javascript" do
 EOS
 end
 
+datasource "ds_combined_bucket_info" do
+  run_script $js_combined_bucket_info, $ds_aws_bucket_policies, $ds_aws_account, $ds_applied_policy, $ds_costs_grouped_by_resource_id, $ds_identify_errors, $ds_currency, $param_incident_csv
+end
+
+script "js_combined_bucket_info", type: "javascript" do
+  parameters "ds_aws_bucket_policies", "ds_aws_account", "ds_applied_policy", "ds_costs_grouped_by_resource_id", "ds_identify_errors", "ds_currency", "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  buckets_without_it = _.filter(ds_aws_bucket_policies, function(bucket) {
+    return bucket['it_configuration'] == "" || bucket['it_configuration'] == null || bucket['it_configuration'] == undefined
+  })
+
+  var total_savings = 0;
+  result = _.map(buckets_without_it, function(bucket) {
+    tags = []
+
+    if (bucket['tags'] != undefined && bucket['tags'] != null) {
+      tags = _.map(bucket['tags'], function(tag) { return [tag['key'], tag['value']].join('=') })
+    }
+
+    var savings = null;
+    if (_.isNumber(ds_costs_grouped_by_resource_id[ bucket['name'] ])) {
+      // These figures come from AWS’s official page
+      // https://aws.amazon.com/s3/storage-classes/intelligent-tiering/
+      //     40% savings for infrequent access
+      //     68% savings for archive access
+      // If 40% lowest percent savings, lets be conservative and use 30% savings if they move to Intelligent Tiering
+      savings = ds_costs_grouped_by_resource_id[ bucket['name'] ] * 0.30;
+      total_savings += savings;
+    }
+
+    var recommendationDetails = [
+        "S3 Intelligent-Tiering delivers automatic cost savings by moving data on a granular object level between access tiers when access patterns change.  Recommendation is to add a Bucket Lifecycle Policy to transition objects to Intelligent Tiering storage class after a specified period (). Full details and instructions available on [AWS Documentation > Amazon S3 > Using S3 Intelligent-Tiering](https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-intelligent-tiering.html) and [Setting an S3 Lifecycle configuration on a bucket](https://docs.aws.amazon.com/AmazonS3/latest/userguide/how-to-set-lifecycle-configuration-intro.html)",
+        " ",
+        "Example AWS CLI command to add lifecycle policy to transition all objects to Intelligent Tiering storage class immediately:",
+        "```",
+        'aws s3api put-bucket-lifecycle-configuration --region '+bucket['region']+' --bucket "'+bucket['name']+'" --lifecycle-configuration \'{"Rules":[{"ID":"TransitionToIntelligentTiering","Status":"Enabled","Filter":{"Prefix":""},"Transitions":[{"Days":0,"StorageClass":"INTELLIGENT_TIERING"}]}]}\'',
+        "```",
+      ]
+
+    return {
+      resourceID: bucket['name'],
+      name: bucket['name'],
+      region: bucket['region'],
+      tags: tags.join(", "),
+      creation_date: new Date(bucket['creation_date']).toISOString(),
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      policy_name: ds_applied_policy['name'],
+      service: "AmazonS3",
+      recommendationDetails: recommendationDetails.join("\n"),
+      savings: savings,
+      savingsCurrency: ds_currency['symbol']
+    }
+  })
+
+  // Dummy entry to ensure validation always occurs
+  result.push({ resourceID: "", tags: "", policy_name: "AWS S3 Buckets Without Intelligent Tiering" })
+
+  // Push metadata used in incident template
+  result[0].metadata = {
+      "policy_name": ds_applied_policy.name,
+      "total_savings": total_savings.toFixed(2),
+      "errors": ds_identify_errors || [],
+  }
+EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
@@ -885,7 +884,10 @@ If all buckets had Intelligent Tiering enabled we estimate approximately **${{ w
 {{- end }}
 {{- end }}
 
-{{ with index data 0 }}{{ .csv_message }}{{ end }}
+{{- if eq parameters.param_incident_csv "true" }}
+
+The incident table CSV file has been attached to emails for this incident.
+{{- end }}
 EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
@@ -951,9 +953,23 @@ EOS
 
     **Additional Information:**
     If certain regions should be excluded from this policy's scope, you can configure the region filter parameters to prevent these errors from appearing in future policy runs.
+
+    {{- if eq parameters.param_incident_csv "true" }}
+
+    The incident table CSV file has been attached to emails for this incident.
+    {{- end }}
     EOS
     check eq(size(data), 0)
     escalate $esc_email
+    export do
+      resource_level false
+      field "error" do
+        label "Error Message"
+      end
+      field "policy_name" do
+        label "Policy Name"
+      end
+    end
   end
 end
 
