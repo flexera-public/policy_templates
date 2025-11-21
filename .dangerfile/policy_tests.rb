@@ -1419,7 +1419,7 @@ def policy_missing_recommendation_fields?(file, file_lines, file_parsed, field_t
     file_lines.each_with_index do |line, index|
       line_number = index + 1
 
-      if line.strip.start_with?("export do")
+      if line.strip.start_with?("export do") && !line.strip.include?("# Exclude from recommendation fields test")
         export_block = true
         export_line = line_number
       end
