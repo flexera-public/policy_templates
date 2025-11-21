@@ -1766,7 +1766,7 @@ def policy_invalid_heredoc_syntax?(file, file_lines)
     if line.include?("\\\\n")
       # Match exactly two backslashes before n (avoid flagging triple/quadruple which may be intentional)
       line.scan(/\\\\n/).each do
-        fail_message += "Line #{line_number}: Found \\\\n which should be \\n\n"
+        fail_message += "Line #{line_number}: Found `\\\\n` which should be `\\n`\n"
       end
     end
   end
