@@ -1730,3 +1730,49 @@ def policy_summary_escape_character?(file, file_lines)
   return fail_message.strip if !fail_message.empty?
   return false
 end
+
+### Heredoc Syntax Test
+# Verify that heredocs use single quotes (<<-'EOS') instead of no quotes or double quotes
+# Also check for incorrect escape sequences like \\n instead of \n
+def policy_invalid_heredoc_syntax?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has invalid heredoc syntax or escape sequences..."
+
+  # Message to return of test fails
+  fail_message = ""
+
+  file_lines.each_with_index do |line, index|
+    break if line.strip.start_with?('# Meta Policy [alpha]') # Break out of definition when enounter meta policy code at the bottom
+    next if line.strip.start_with?('#') # Skip comment lines
+
+    line_number = index + 1
+
+    # Heredoc pattern: <<-EOS, <<-'EOS', <<-"EOS", same for EOF
+    # We want ONLY <<-'EOS' or <<-'EOF'
+    heredoc_regex = /<<-(?<quote>["']?)(?<tag>EOS|EOF)\k<quote>/
+    line.scan(heredoc_regex).each do |match|
+      quote, tag = match
+      # Good form is single quote
+      if quote == "'"
+        # OK
+      elsif quote == '"'
+        fail_message += "Line #{line_number}: Found <<-\"#{tag}\" which should be <<-'#{tag}'\n"
+      elsif quote == ''
+        fail_message += "Line #{line_number}: Found <<-#{tag} which should be <<-'#{tag}'\n"
+      end
+    end
+
+    # Detect improper double-escaped newlines (\\n). We want to allow single \n and disallow \\n
+    # A literal sequence of two backslashes followed by n in the source line appears as \\\\n in Ruby string.
+    if line.include?("\\\\n")
+      # Match exactly two backslashes before n (avoid flagging triple/quadruple which may be intentional)
+      line.scan(/\\\\n/).each do
+        fail_message += "Line #{line_number}: Found \\\\n which should be \\n\n"
+      end
+    end
+  end
+
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#scripts)] Policy Template has invalid heredoc syntax or escape sequences. Heredocs should use single quotes (e.g., <<-'EOS') to prevent variable interpolation, and newline escapes should use a single backslash (e.g., \n not \\n):\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
