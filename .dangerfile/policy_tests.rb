@@ -82,7 +82,7 @@ def policy_missing_deprecated_field?(file, file_parsed)
 
   fail_message = ""
 
-  if short_description.downcase.include?("deprecated")
+  if short_description.downcase.include?("deprecated: this policy")
     if info[:deprecated].nil?
       fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Policy is deprecated but has no `deprecated` field in the info() block. Please add the following line to the info() block: deprecated: \"true\""
     elsif info[:deprecated].downcase != "true"
@@ -91,7 +91,7 @@ def policy_missing_deprecated_field?(file, file_parsed)
   else
     if !info[:deprecated].nil?
       if info[:deprecated].downcase == "true"
-        fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Policy is deprecated does not mention this in the `short_description`. Please add the following to the `short_description`:\n\n`**Deprecated: This policy is no longer being updated.**`"
+        fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Policy is deprecated does not mention this in the `short_description`. Please add the following to the `short_description`:\n\n`**Deprecated: This policy template is no longer being updated.**`"
       end
     end
   end
@@ -279,7 +279,7 @@ def policy_unpublished?(file, file_parsed)
 
   if !info[:publish].nil?
     if info[:publish].downcase == "false"
-      fail_message = "Policy will not be published in the public catalog. If this is not the intended behavior, remove the `publish` field from the policy's info metadata block."
+      fail_message = "Policy template will not be published in the public catalog. If this is not the intended behavior, remove the `publish` field from the policy's info metadata block."
     end
   end
 
@@ -1156,8 +1156,13 @@ def policy_ds_js_name_mismatch?(file, file_lines)
   end
 
   # Filter out mismatches where the javascript block is referenced by multiple datasources
-  js_name_counts = found_mismatches.each_with_object(Hash.new(0)) do |item, counts|
-    counts[item[:js_name]] += 1
+  js_name_counts = {}
+  found_mismatches.each { |item| js_name_counts[item[:js_name]] = 0 }
+
+  found_mismatches.each do |item|
+    file_lines.each do |line|
+      js_name_counts[item[:js_name]] += 1 if line.include?("js_" + item[:js_name]) && !line.start_with?("script ")
+    end
   end
 
   filtered_mismatches = found_mismatches.reject do |item|
@@ -1272,7 +1277,7 @@ def policy_block_fields_incorrect_order?(file, file_lines, block_type)
     correct_order = [ "parameters", "result", "code" ]
   when "policy"
     correct_order = [ "summary_template", "detail_template", "check", "escalate", "hash_include", "hash_exclude", "export" ]
-    block_names = [ "  validate", "  validate_each" ]
+    block_names = [ "policy" ]
   when "escalation"
     correct_order = [ "automatic", "label", "description", "email", "run" ]
   end
@@ -1286,46 +1291,87 @@ def policy_block_fields_incorrect_order?(file, file_lines, block_type)
 
         policy_id = line.split('"')[1] if line.start_with?("policy ")
 
-        if testing_block && !sub_block && !export_block && !line.strip.start_with?("end") && !line.strip.start_with?("request do") && !line.strip.start_with?("result do")
-          sub_block = true if line.strip.end_with?(" do") || line.include?("<<-")
-          export_block = true if line.strip == "export do"
-          field_list << line.strip.split(" ")[0]
-        elsif !sub_block && !export_block && line.strip.start_with?("end")
-          filtered_list = field_list.select { |item| correct_order.include?(item) }
-          order_indices = filtered_list.map { |item| correct_order.index(item) }
-
-          if order_indices != order_indices.sort
-            # Print debug logging information
-            puts "[debug] Filtered list: #{filtered_list.inspect}"
-            puts "[debug] Order indices: #{order_indices.inspect}"
-            puts "[debug] Order indices sorted: #{order_indices.sort.inspect}"
-            if policy_id && block_type == "policy"
-              fail_message += "Line #{block_line_number.to_s}: policy \"#{policy_id}\" #{block_name.strip}\n"
-            else
-              fail_message += "Line #{block_line_number.to_s}: #{block_name} \"#{block_id}\"\n"
+        # Special handling for policy blocks: fields are inside validate/validate_each
+        if block_type == "policy"
+          # Track when we enter/exit validate or validate_each blocks within a policy
+          if testing_block && line.strip.match?(/^\s*validate(_each)?\s+\$\w+\s+do$/)
+            # Entering a validate/validate_each block
+            sub_block = true
+            validate_line = line_number
+          elsif testing_block && sub_block && !export_block && !line.strip.start_with?("end") && !line.strip.start_with?("request do") && !line.strip.start_with?("result do")
+            # Inside validate/validate_each, collect fields
+            if line.strip.end_with?(" do")
+              export_block = true if line.strip == "export do"
+            elsif !line.include?("<<-")
+              field_list << line.strip.split(" ")[0]
             end
+          elsif testing_block && sub_block && line.strip == "end" && !export_block
+            # Exiting validate/validate_each, check field order
+            filtered_list = field_list.select { |item| correct_order.include?(item) }
+            order_indices = filtered_list.map { |item| correct_order.index(item) }
+
+            if order_indices != order_indices.sort
+              fail_message += "Line #{validate_line.to_s}: policy \"#{policy_id}\" validate block\n"
+            end
+
+            sub_block = false
+            field_list = []
+          elsif export_block
+            export_block = false if line.strip == "end" && !field_block
+            field_block = true if line.strip.start_with?("field") && line.strip.end_with?(" do")
+            field_block = false if line.strip  == "end" && field_block
+          elsif testing_block && !sub_block && line.strip == "end"
+            # Exiting the policy block
+            testing_block = false
           end
 
-          testing_block = false
-          sub_block = false
-          export_block = false
-          field_list = []
-        elsif sub_block && !export_block && (line.strip == "end" || line.include?("EOS") || line.include?("EOF"))
-          sub_block = false
-        elsif export_block
-          export_block = false if line.strip == "end" && !field_block
-          field_block = true if line.strip.start_with?("field") && line.strip.end_with?(" do")
-          field_block = false if line.strip  == "end" && field_block
-        end
+          if line.start_with?(block_name + " ") && line.strip.end_with?(" do")
+            testing_block = true
+            sub_block = false
+            export_block = false
+            field_list = []
+            block_line_number = line_number
+            block_id = line.split('"')[1]
+          end
+        else
+          # Original logic for non-policy blocks
+          if testing_block && !sub_block && !export_block && !line.strip.start_with?("end") && !line.strip.start_with?("request do") && !line.strip.start_with?("result do")
+            sub_block = true if line.strip.end_with?(" do") || line.include?("<<-")
+            export_block = true if line.strip == "export do"
+            field_list << line.strip.split(" ")[0]
+          elsif !sub_block && !export_block && line.strip.start_with?("end")
+            filtered_list = field_list.select { |item| correct_order.include?(item) }
+            order_indices = filtered_list.map { |item| correct_order.index(item) }
 
-        if line.start_with?(block_name + " ") && line.strip.end_with?(" do")
-          testing_block = true
-          sub_block = false
-          export_block = false
-          field_list = []
+            if order_indices != order_indices.sort
+              if policy_id && block_type == "policy"
+                fail_message += "Line #{block_line_number.to_s}: policy \"#{policy_id}\" #{block_name.strip}\n"
+              else
+                fail_message += "Line #{block_line_number.to_s}: #{block_name} \"#{block_id}\"\n"
+              end
+            end
 
-          block_line_number = line_number
-          block_id = line.split('"')[1]
+            testing_block = false
+            sub_block = false
+            export_block = false
+            field_list = []
+          elsif sub_block && !export_block && (line.strip == "end" || line.include?("EOS") || line.include?("EOF"))
+            sub_block = false
+          elsif export_block
+            export_block = false if line.strip == "end" && !field_block
+            field_block = true if line.strip.start_with?("field") && line.strip.end_with?(" do")
+            field_block = false if line.strip  == "end" && field_block
+          end
+
+          if line.start_with?(block_name + " ") && line.strip.end_with?(" do")
+            testing_block = true
+            sub_block = false
+            export_block = false
+            field_list = []
+
+            block_line_number = line_number
+            block_id = line.split('"')[1]
+          end
         end
       end
     end
@@ -1429,6 +1475,9 @@ def policy_bad_comma_spacing?(file, file_lines)
     line = line.strip
     test_line = line
     parts = []
+
+    # Skip image charts stuff
+    next if line.include?("chxt=") || line.include?("chxs=") || line.include?("chco=") || line.include?("chdls=") || line.include?("chls=") || line.include?("chma=") || line.include?("chxr=") || line.include?("chg=")
 
     # Look for stuff quotations and remove those
     # This is to reduce false positives
@@ -1649,6 +1698,80 @@ def policy_verb_get?(file, file_lines)
   end
 
   fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#datasources)] Policy Template has verb \"GET\" statements. The verb field defaults to this value and should only be specified for other values, such as PATCH or POST:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Summary Template Escape Character Test
+# Verify that summary_template does not contain invalid escape characters like \b
+def policy_summary_escape_character?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template summary_template has invalid escape characters..."
+
+  # Message to return of test fails
+  fail_message = ""
+
+  file_lines.each_with_index do |line, index|
+    break if line.strip.start_with?('# Meta Policy [alpha]') # Break out of definition when enounter meta policy code at the bottom
+    next if line.strip.start_with?('#') # Skip comment lines
+
+    line_number = index + 1
+
+    if line.include?("summary_template")
+      fail_message += "Line #{line_number.to_s}: Heredoc Found\n" if line.include?("<<-")
+      fail_message += "Line #{line_number.to_s}: \\n Found\n" if line.include?('\n')
+      fail_message += "Line #{line_number.to_s}: \\t Found\n" if line.include?('\t')
+      fail_message += "Line #{line_number.to_s}: \\r Found\n" if line.include?('\r')
+    end
+  end
+
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#policy)] Policy Template summary_template contains line breaks, heredocs, or escape characters. Please remove these to avoid causing incident emails to present as raw HTML instead of as intended:\n\n" + fail_message if !fail_message.empty?
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
+### Heredoc Syntax Test
+# Verify that heredocs use single quotes (<<-'EOS') instead of no quotes or double quotes
+# Also check for incorrect escape sequences like \\n instead of \n
+def policy_invalid_heredoc_syntax?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has invalid heredoc syntax or escape sequences..."
+
+  # Message to return of test fails
+  fail_message = ""
+
+  file_lines.each_with_index do |line, index|
+    break if line.strip.start_with?('# Meta Policy [alpha]') # Break out of definition when enounter meta policy code at the bottom
+    next if line.strip.start_with?('#') # Skip comment lines
+
+    line_number = index + 1
+
+    # Heredoc pattern: <<-EOS, <<-'EOS', <<-"EOS", same for EOF
+    # We want ONLY <<-'EOS' or <<-'EOF'
+    heredoc_regex = /<<-(?<quote>["']?)(?<tag>EOS|EOF)\k<quote>/
+    line.scan(heredoc_regex).each do |match|
+      quote, tag = match
+      # Good form is single quote
+      if quote == "'"
+        # OK
+      elsif quote == '"'
+        fail_message += "Line #{line_number}: Found <<-\"#{tag}\" which should be <<-'#{tag}'\n"
+      elsif quote == ''
+        fail_message += "Line #{line_number}: Found <<-#{tag} which should be <<-'#{tag}'\n"
+      end
+    end
+
+    # Detect improper double-escaped newlines (\\n). We want to allow single \n and disallow \\n
+    # A literal sequence of two backslashes followed by n in the source line appears as \\\\n in Ruby string.
+    if line.include?("\\\\n")
+      # Match exactly two backslashes before n (avoid flagging triple/quadruple which may be intentional)
+      line.scan(/\\\\n/).each do
+        fail_message += "Line #{line_number}: Found \\\\n which should be \\n\n"
+      end
+    end
+  end
+
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#scripts)] Policy Template has invalid heredoc syntax or escape sequences. Heredocs should use single quotes (e.g., <<-'EOS') to prevent variable interpolation, and newline escapes should use a single backslash (e.g., \n not \\n):\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
