@@ -1766,12 +1766,12 @@ def policy_invalid_heredoc_syntax?(file, file_lines)
     if line.include?("\\\\n")
       # Match exactly two backslashes before n (avoid flagging triple/quadruple which may be intentional)
       line.scan(/\\\\n/).each do
-        fail_message += "Line #{line_number}: Found \\\\n which should be \\n\n"
+        fail_message += "Line #{line_number}: Found `\\\\n` which should be `\\n`\n"
       end
     end
   end
 
-  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#scripts)] Policy Template has invalid heredoc syntax or escape sequences. Heredocs should use single quotes (e.g., <<-'EOS') to prevent variable interpolation, and newline escapes should use a single backslash (e.g., \n not \\n):\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#scripts)] Policy Template has invalid heredoc syntax or escape sequences.\n\nHeredocs should use single quotes (e.g., `<<-'EOS'`) to prevent variable interpolation\n\nNewline escapes should use a single backslash (e.g., `\\n` not `\\\\n`)\n\n" + fail_message if !fail_message.empty?
 
   return fail_message.strip if !fail_message.empty?
   return false
