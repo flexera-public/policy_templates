@@ -26,18 +26,18 @@ This policy calculates estimated monthly savings based on your actual storage co
 
 ## Input Parameters
 
-- **Email Addresses** - Email addresses to receive incident notifications when non-compliant buckets are found.
-- **Account Number** - AWS account number for cross-account role access. Leave blank when using standard AWS IAM credentials. Only needed when scanning an AWS account different from the one associated with your Flexera credential. [More details](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
-- **Allow/Deny Regions** - Choose whether the region list below should include or exclude specific regions from scanning.
-- **Allow/Deny Regions List** - Specific AWS regions to include or exclude. Use region codes (e.g., us-east-1, eu-west-1). Leave empty to scan all regions. Note: If using Service Control Policies (SCPs), enter only enabled regions to avoid policy failures.
-- **Exclusion Tags** - Skip buckets with specific tags. Useful for excluding buckets that shouldn't use Intelligent Tiering (e.g., high-frequency access buckets). Supported formats:
+- *Email Addresses* - Email addresses to receive incident notifications when non-compliant buckets are found.
+- *Account Number* - AWS account number for cross-account role access. Leave blank when using standard AWS IAM credentials. Only needed when scanning an AWS account different from the one associated with your Flexera credential. [More details](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Allow/Deny Regions* - Choose whether the region list below should include or exclude specific regions from scanning.
+- *Allow/Deny Regions List* - Specific AWS regions to include or exclude. Use region codes (e.g., us-east-1, eu-west-1). Leave empty to scan all regions. Note: If using Service Control Policies (SCPs), enter only enabled regions to avoid policy failures.
+- *Exclusion Tags* - Skip buckets with specific tags. Useful for excluding buckets that shouldn't use Intelligent Tiering (e.g., high-frequency access buckets). Supported formats:
   - `Environment` - Exclude all buckets with this tag key (any value)
   - `Environment==Production` - Exclude buckets with this exact tag key and value
   - `Environment!=Production` - Exclude buckets that don't have this tag or have different values
   - `Environment=~/Prod.*/` - Exclude buckets where the tag value matches this pattern
   - `Environment!~/Prod.*/` - Exclude buckets where the tag value doesn't match this pattern
-- **Exclusion Tags: Any / All** - When multiple exclusion tags are specified, choose whether a bucket needs to match ANY tag (more restrictive) or ALL tags (less restrictive) to be excluded.
-- **Automatic Actions** - When set to "Enable Intelligent Tiering", the policy will automatically implement Intelligent Tiering on all identified buckets without requiring manual approval for each action.
+- *Exclusion Tags: Any / All* - When multiple exclusion tags are specified, choose whether a bucket needs to match ANY tag (more restrictive) or ALL tags (less restrictive) to be excluded.
+- *Automatic Actions* - When set to "Enable Intelligent Tiering", the policy will automatically implement Intelligent Tiering on all identified buckets without requiring manual approval for each action.
 
 **Note about Automatic Actions:** When "Enable Intelligent Tiering" is selected, the policy will automatically configure lifecycle rules on all non-compliant buckets immediately after the incident is created. Leave this blank if you prefer to review and manually approve each action.
 
