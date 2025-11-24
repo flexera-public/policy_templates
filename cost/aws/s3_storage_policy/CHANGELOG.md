@@ -1,5 +1,12 @@
 # Changelog
 
+## v4.2.0
+
+- Estimated Monthly Savings is now provided for each S3 bucket that we have cost data for in Flexera
+- Added "Enable Intelligent Tiering" policy action
+- Policy now continues execution for accessible regions when some regions return permission errors
+- Added separate incident report to identify regions with access issues and provide remediation guidance
+
 ## v4.1.0
 
 - Added support for attaching CSV files to incident emails.
