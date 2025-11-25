@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7.1
+
+- Fixed issue where incident would never include results.
+
 ## v2.7.0
 
 - Added support for attaching CSV files to incident emails.
