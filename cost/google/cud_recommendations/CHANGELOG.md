@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.5.1
+
+- Policy now only fetches active recommendations from Google Cloud Recommender API.
+
 ## v4.5.0
 
 - Added new field to incident table to indicate the 'Payment Option' for recommendations.
