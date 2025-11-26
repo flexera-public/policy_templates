@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.1
+
+- Updated email escalation declaration for new "Errors Identified" incident to prevent error `failed make a CSV attachment with data: unable to collect csv data from nil export`
+
 ## v4.2.0
 
 - Estimated Monthly Savings is now provided for each S3 bucket that we have cost data for in Flexera
