@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.5.1
+
+- Updated email escalation declaration for new "Errors Identified" incident to prevent error `failed make a CSV attachment with data: unable to collect csv data from nil export`
+
 ## v6.5.0
 
 - Policy now continues execution for accessible regions when some regions return permission errors
