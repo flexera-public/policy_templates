@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.7
+
+- Corrected issue where policy actions would create duplicate applied policies
+- Corrected issue where applied policies with a frequency of "15 minutes" were handled improperly
+
 ## v0.2.6
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
