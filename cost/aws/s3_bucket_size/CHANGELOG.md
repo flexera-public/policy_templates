@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.2
+
+- Resolved issue where bucket size statistics for some S3 buckets were not being captured.
+
 ## v3.2.1
 
 - Fixed issue where the policy would fail due to an undefined datasource.
