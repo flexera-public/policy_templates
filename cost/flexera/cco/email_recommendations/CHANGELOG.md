@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v0.8.0
 
 - Added support for Oracle recommendations.
