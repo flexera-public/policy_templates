@@ -197,7 +197,7 @@ end
   script "js___PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_DATASOURCE___combined_incidents", type: "javascript" do
     parameters "ds_child_incident_details"
     result "result"
-    code <<-EOS
+    code <<-'EOS'
     result = []
     _.each(ds_child_incident_details, function(incident) {
       s = incident["summary"];
