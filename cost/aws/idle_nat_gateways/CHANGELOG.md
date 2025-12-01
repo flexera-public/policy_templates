@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v0.3.1
 
 - Updated email escalation declaration for new "Errors Identified" incident to prevent error `failed make a CSV attachment with data: unable to collect csv data from nil export`

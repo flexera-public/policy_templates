@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.7
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v4.0.6
 
 - Changed description to say "policy template" for clarity. Functionality unchanged.
