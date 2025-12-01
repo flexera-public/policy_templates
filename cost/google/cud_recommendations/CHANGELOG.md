@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.5.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v4.5.1
 
 - Policy now only fetches active recommendations from Google Cloud Recommender API.
