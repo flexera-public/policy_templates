@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.8
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v0.2.7
 
 - Corrected issue where policy actions would create duplicate applied policies

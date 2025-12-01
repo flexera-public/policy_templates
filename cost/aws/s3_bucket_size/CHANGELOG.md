@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.3
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v3.2.2
 
 - Resolved issue where bucket size statistics for some S3 buckets were not being captured.

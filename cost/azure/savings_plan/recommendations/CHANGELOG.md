@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v3.3.0
 
 - Added new parameter and field to incident table to indicate the 'Payment Option' for recommendations.

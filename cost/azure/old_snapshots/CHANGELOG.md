@@ -1,5 +1,9 @@
 # Changelog
 
+## v7.3.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v7.3.0
 
 - Added support for attaching CSV files to incident emails.

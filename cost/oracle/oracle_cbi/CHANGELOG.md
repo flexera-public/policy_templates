@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.4
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v3.3.3
 
 - Updated policy metadata to allow permissions to be scraped. Functionality unchanged.

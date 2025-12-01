@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v6.1.1
 
 - Fixed an issue where in some scenarios the `Estimated Monthly Savings` amount would be reflected in the incorrect currency.
