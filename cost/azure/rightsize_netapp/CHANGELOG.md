@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1.2
+
+- Fixed an issue where applied policy would fail due to an undefined variable.
+
 ## v2.1.1
 
 - Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
