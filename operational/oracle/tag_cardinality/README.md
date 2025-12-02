@@ -39,8 +39,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-Additionally, this Policy Template requires that [Oracle Cloud Advisor be enabled](https://docs.oracle.com/en-us/iaas/Content/CloudAdvisor/Tasks/cloudadvisor-getting_started.htm) in your Oracle Cloud environment.
-
 ## Supported Clouds
 
 - Oracle
