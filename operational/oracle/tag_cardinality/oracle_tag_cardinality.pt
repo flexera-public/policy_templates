@@ -44,6 +44,15 @@ parameter "param_primary_region" do
   # No default value, user input required
 end
 
+parameter "param_restrict_resource" do
+  type "string"
+  category "Policy Settings"
+  label "Restrict Resource Types"
+  description "Whether or not to gather tags only for important resource types, such as VMs, volumes, databases, etc. Can significantly reduce policy execution time at the cost of missing tags for more minor resource types."
+  allowed_values "true", "false"
+  default "false"
+end
+
 parameter "param_incident_csv" do
   type "string"
   category "Incident Settings"
@@ -209,7 +218,7 @@ end
 
 datasource "ds_oci_resources" do
   request do
-    run_script $js_oci_resources, $ds_oci_tag_namespaces_filtered, $param_primary_region
+    run_script $js_oci_resources, $ds_oci_tag_namespaces_filtered, $param_primary_region, $param_restrict_resource
   end
   result do
     encoding "json"
@@ -226,12 +235,14 @@ datasource "ds_oci_resources" do
 end
 
 script "js_oci_resources", type: "javascript" do
-  parameters "ds_oci_tag_namespaces_filtered", "param_primary_region"
+  parameters "ds_oci_tag_namespaces_filtered", "param_primary_region", "param_restrict_resource"
   result "request"
   code <<-'EOS'
   namespaces = _.map(ds_oci_tag_namespaces_filtered, function(ns) { return "'" + ns + "'" }).join(",")
 
-  query = "query all resources where lifeCycleState != 'TERMINATED' && lifeCycleState != 'DELETED' "
+  resource = param_restrict_resource == "false" ? "all" : "instance, volume, bootvolume, loadbalancer, networkloadbalancer, database, autonomousdatabase, bucket"
+
+  query = "query " + resource + " resources where lifeCycleState != 'TERMINATED' && lifeCycleState != 'DELETED' "
   query += "&& definedTags.namespace IN (" + namespaces + ")"
 
   var request = {
