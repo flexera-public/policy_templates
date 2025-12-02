@@ -4,6 +4,8 @@
 
 This policy template reports running Google VM instances that have been running longer than the `Minimum Age (Days)` parameter. Optionally, this report can be emailed and the offending VM instances can be deleted.
 
+Note: Estimated VM costs will only appear if you are using [Google Detailed Billing](https://docs.flexera.com/flexera/EN/Administration/BillConnectConfigsGoogleDetailedBilling.htm) to ingest Google Cloud costs into Flexera CCO.
+
 ### Policy Cost Details
 
 The policy includes the estimated monthly cost of long running VM instances.
