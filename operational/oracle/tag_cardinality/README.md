@@ -6,10 +6,12 @@ This policy template is used to generate a tag cardinality (how many unique valu
 
 ## How It Works
 
-This policy performs the following action:
+This policy template performs the following actions:
 
 - Connect to the Oracle Cloud Identity API to get a list of Oracle Compartments along with their tags.
 - Connect to the Oracle Cloud Query API to get a list of Oracle Resources along with their tags.
+
+The resource's "definedTags" field is used for tag data, and tag keys are presented with their namespace included.
 
 ## Input Parameters
 

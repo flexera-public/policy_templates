@@ -173,17 +173,43 @@ datasource "ds_oci_compartments" do
   end
 end
 
-datasource "ds_oci_resources" do
+datasource "ds_oci_tag_namespaces" do
   request do
     auth $auth_oracle
-    pagination $pagination_oracle_query
-    verb "POST"
-    host join(["query.", $param_primary_region, ".oci.oraclecloud.com"])
-    path "/20180409/resources"
-    body_field "type", "Structured"
-    body_field "query", "query all resources where lifeCycleState != 'TERMINATED' && lifeCycleState != 'DELETED'"
-    body_field "matchingContextType", "NONE"
+    pagination $pagination_oracle_identity
+    host join(["identity.", $param_primary_region, ".oci.oraclecloud.com"])
+    path "/20160918/tagNamespaces"
+    query "compartmentId", $param_root_compartment
+    query "compartmentIdInSubtree", "true"
+    query "limit", "1000"
     header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_oci_tag_namespaces_filtered" do
+  run_script $js_oci_tag_namespaces_filtered, $ds_oci_tag_namespaces
+end
+
+script "js_oci_tag_namespaces_filtered", type: "javascript" do
+  parameters "ds_oci_tag_namespaces"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(_.pluck(ds_oci_tag_namespaces, 'name'), function(namespace) {
+    return namespace != "Oracle-Tags"
+  })
+EOS
+end
+
+datasource "ds_oci_resources" do
+  request do
+    run_script $js_oci_resources, $ds_oci_tag_namespaces_filtered, $param_primary_region
   end
   result do
     encoding "json"
@@ -197,6 +223,30 @@ datasource "ds_oci_resources" do
       field "freeformTags", jmes_path(col_item, "freeformTags")
     end
   end
+end
+
+script "js_oci_resources", type: "javascript" do
+  parameters "ds_oci_tag_namespaces_filtered", "param_primary_region"
+  result "request"
+  code <<-'EOS'
+  namespaces = _.map(ds_oci_tag_namespaces_filtered, function(ns) { return "'" + ns + "'" }).join(",")
+
+  query = "query all resources where lifeCycleState != 'TERMINATED' && lifeCycleState != 'DELETED' "
+  query += "&& definedTags.namespace IN (" + namespaces + ")"
+
+  var request = {
+    auth: "auth_oracle",
+    pagination: "pagination_oracle_query",
+    verb: "POST",
+    host: [ "query.", param_primary_region, ".oci.oraclecloud.com" ].join(''),
+    path: "/20180409/resources",
+    body_fields: {
+      "type": "Structured",
+      "matchingContextType": "NONE",
+      "query": query
+    }
+  }
+EOS
 end
 
 datasource "ds_oci_compartments_tag_list" do
@@ -230,7 +280,7 @@ script "js_tag_lister", type: "javascript" do
     }
   })
 
-  _.each(Object.keys(tags), function(key) {
+  _.each(_.keys(tags), function(key) {
     result.push({
       'type': tag_type,
       'key': key,
@@ -261,7 +311,7 @@ end
 ###############################################################################
 
 policy "pol_oci_tag_cardinality_report" do
-  validate $ds_oci_resources do
+  validate $ds_tag_report do
     summary_template "Oracle Tag Cardinality Report"
     detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check eq(1, 0)
