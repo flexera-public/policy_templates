@@ -168,7 +168,7 @@ datasource "ds_oci_compartments" do
       field "timeCreated", jmes_path(col_item, "timeCreated")
       field "isAccessible", jmes_path(col_item, "isAccessible")
       field "definedTags", jmes_path(col_item, "definedTags")
-      field "tags", jmes_path(col_item, "freeformTags")
+      field "freeformTags", jmes_path(col_item, "freeformTags")
     end
   end
 end
@@ -187,14 +187,14 @@ datasource "ds_oci_resources" do
   end
   result do
     encoding "json"
-    collect jmes_path(response, "data.items[*]") do
+    collect jmes_path(response, "items[*]") do
       field "id", jmes_path(col_item, "identifier")
       field "compartmentId", jmes_path(col_item, "compartmentId")
       field "name", jmes_path(col_item, "displayName")
       field "resourceType", jmes_path(col_item, "resourceType")
       field "lifecycleState", jmes_path(col_item, "lifecycleState")
       field "definedTags", jmes_path(col_item, "definedTags")
-      field "tags", jmes_path(col_item, "freeformTags")
+      field "freeformTags", jmes_path(col_item, "freeformTags")
     end
   end
 end
@@ -217,13 +217,15 @@ script "js_tag_lister", type: "javascript" do
   result = []
 
   _.each(tagged_list, function(item) {
-    if (item['tags'] != undefined && item['tags'] != null) {
-      _.each(Object.keys(item['tags']), function(key) {
-        if (tags[key] == undefined || tags[key] == null) {
-          tags[key] = []
+    if (item['definedTags'] != undefined && item['definedTags'] != null) {
+      _.each(_.keys(item['definedTags']), function(namespace) {
+        if (namespace != "Oracle-Tags") {
+          _.each(_.keys(item['definedTags'][namespace]), function(key) {
+            full_key = [ namespace, key ].join('.')
+            if (tags[full_key] == undefined || tags[full_key] == null) { tags[full_key] = [] }
+            tags[full_key].push(item['definedTags'][namespace][key])
+          })
         }
-
-        tags[key].push(item['tags'][key])
       })
     }
   })
@@ -259,7 +261,7 @@ end
 ###############################################################################
 
 policy "pol_oci_tag_cardinality_report" do
-  validate $ds_tag_report do
+  validate $ds_oci_resources do
     summary_template "Oracle Tag Cardinality Report"
     detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check eq(1, 0)
