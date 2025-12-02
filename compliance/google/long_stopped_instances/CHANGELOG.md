@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.2
+
+- Fixed issue where incident would refer to VMs as "underutilized" instead of "long stopped".
+
 ## v4.2.1
 
 - Updated heredocs in policy template code to conform to best practices. Functionality unchanged.

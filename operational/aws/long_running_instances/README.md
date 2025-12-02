@@ -2,11 +2,16 @@
 
 ## What It Does
 
-This policy template checks for running instances that have been running longer than the `Minimum Age (Days)` parameter. It will then take the appropriate action (Stop/Terminate) on the instance.
+This policy template reports running AWS EC2 instances that have been running longer than the `Minimum Age (Days)` parameter. Optionally, this report can be emailed and the offending EC2 instances can be deleted.
 
-## Functional Description
+### Policy Cost Details
 
-- This policy identifies all instances that have been running longer than the `Minimum Age (Days)` parameter.
+The policy includes the estimated monthly cost of long running instances.
+
+- The `Estimated Monthly Cost` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
+- Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
+- If the resource cannot be found in Flexera CCO, the `Estimated Monthly Cost` is 0.
+- `Estimated Monthly Cost` will be reported in the currency of the Flexera organization the policy is applied in.
 
 ## Input Parameters
 

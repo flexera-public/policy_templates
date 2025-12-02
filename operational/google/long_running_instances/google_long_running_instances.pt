@@ -1,17 +1,17 @@
-name "Google Long Stopped VM Instances"
+name "Google Long Running VM Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report on any Google VM instances that have been stopped for a long time with the option to delete them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/google/long_stopped_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Checks for Google VM instances that have been running longer than the `Minimum Age (Days)` parameter. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/google/long_running_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-doc_link "https://github.com/flexera-public/policy_templates/tree/master/compliance/google/long_stopped_instances"
-category "Compliance"
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/operational/google/long_running_instances"
+category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.2.2",
+  version: "0.1.0",
   provider: "Google",
   service: "Compute",
-  policy_set: "Long Stopped Instances",
+  policy_set: "Long Running Instances",
   hide_skip_approvals: "true"
 )
 
@@ -96,14 +96,13 @@ parameter "param_exclusion_labels_boolean" do
   default "Any"
 end
 
-parameter "param_stopped_days" do
+parameter "param_minimum_age" do
   type "number"
   category "Policy Settings"
-  label "Stopped Days"
-  description "The number of days a Google VM needs to be stopped to include it in the incident report."
-  min_value 1
-  max_value 90
-  default 7
+  label "Minimum Age (Days)"
+  description "The minimum age, in days, to consider an instance to be long running."
+  min_value 0
+  default 180
 end
 
 parameter "param_automatic_action" do
@@ -327,6 +326,98 @@ datasource "ds_applied_policy" do
   end
 end
 
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
 datasource "ds_google_projects" do
   request do
     auth $auth_google
@@ -388,7 +479,7 @@ datasource "ds_get_instances" do
   end
   result do
     encoding "json"
-    field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind,hostname,cpuPlatform,labels,description,machineType}]")
+    field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind,hostname,cpuPlatform,labels,description,machineType,lastStartTimestamp}]")
     field "projectId", val(iter_item, "id")
     field "projectName", val(iter_item, "name")
     field "projectNumber", val(iter_item, "number")
@@ -423,6 +514,7 @@ script "js_instances", type: "javascript" do
         projectId: response['projectId'],
         projectName: response['projectName'],
         projectNumber: response['projectNumber'],
+        lastStartTimestamp: response['lastStartTimestamp'],
         zone: zone,
         region: region
       })
@@ -465,7 +557,7 @@ script "js_instances_label_filtered", type: "javascript" do
       return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
     }
 
-    // Assume we're just testing for a key if none of the comparators are found
+    // Just testing for a key if none of the comparators are found
     return { comparison: 'key', key: item, value: null, string: item }
   })
 
@@ -532,84 +624,152 @@ script "js_instances_region_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_stopped_instances" do
-  run_script $js_stopped_instances, $ds_instances_region_filtered
+datasource "ds_running_instances" do
+  run_script $js_running_instances, $ds_instances_region_filtered
 end
 
-script "js_stopped_instances", type: "javascript" do
+script "js_running_instances", type: "javascript" do
   parameters "ds_instances_region_filtered"
   result "result"
   code <<-'EOS'
   result = _.filter(ds_instances_region_filtered, function(instance) {
-    return instance['status'] == "STOPPED" || instance['status'] == "TERMINATED"
+    return instance['status'] == "RUNNING"
   })
 EOS
 end
 
-datasource "ds_instances_with_uptime" do
-  iterate $ds_stopped_instances
+datasource "ds_vm_costs" do
+  iterate $ds_google_projects_filtered
   request do
-    run_script $js_instances_with_uptime, val(iter_item, 'name'), val(iter_item, 'projectId'), $param_stopped_days
+    run_script $js_vm_costs, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
-    collect jmes_path(response, "timeSeries[*]") do
-      field "name", val(iter_item, "name")
-      field "id", jmes_path(col_item, "resource.labels.instance_id")
-      field "zone", jmes_path(col_item, "resource.labels.zone")
+    collect jmes_path(response, "rows[*]") do
+      field "resourceID", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
     end
   end
 end
 
-script "js_instances_with_uptime", type: "javascript" do
-  parameters "name", "project_id", "param_stopped_days"
+script "js_vm_costs", type: "javascript" do
+  parameters "project_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
-  filter = [
-    'metric.type = "compute.googleapis.com/instance/uptime" AND ',
-    'metric.labels.instance_name = ', name
-  ].join('')
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
 
-  end_time = new Date().toISOString()
-  start_time = new Date(new Date() - (param_stopped_days * 1000 * 60 * 60 * 24)).toISOString()
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
 
   var request = {
-    auth: "auth_google",
-    pagination: "pagination_google",
-    host: "monitoring.googleapis.com",
-    path: "/v3/projects/" + project_id + "/timeSeries/",
-    query_params: {
-      "interval.endTime": end_time,
-      "interval.startTime": start_time,
-      "filter": filter
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Compute Engine"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "compute engine"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor",
+            "type": "equal",
+            "value": "GCP"
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": project_id
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
     },
-    ignore_status: [ 403, 404 ]
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
   }
 EOS
 end
 
-datasource "ds_long_stopped_instances" do
-  run_script $js_long_stopped_instances, $ds_stopped_instances, $ds_instances_with_uptime, $ds_applied_policy, $param_stopped_days, $param_incident_csv
+datasource "ds_vm_costs_grouped" do
+  run_script $js_vm_costs_grouped, $ds_vm_costs
 end
 
-script "js_long_stopped_instances", type: "javascript" do
-  parameters "ds_stopped_instances", "ds_instances_with_uptime", "ds_applied_policy", "param_stopped_days", "param_incident_csv"
+script "js_vm_costs_grouped", type: "javascript" do
+  parameters "ds_vm_costs"
+  result "result"
+  code <<-'EOS'
+  // Multiple single day cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_vm_costs, function(item) {
+    id = item['resourceID'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_long_running_instances" do
+  run_script $js_long_running_instances, $ds_running_instances, $ds_applied_policy, $ds_vm_costs_grouped, $ds_currency, $param_minimum_age, $param_incident_csv
+end
+
+script "js_long_running_instances", type: "javascript" do
+  parameters "ds_running_instances", "ds_applied_policy", "ds_vm_costs_grouped", "ds_currency", "param_minimum_age", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
-  unstopped_instance_ids = _.pluck(ds_instances_with_uptime, 'id')
+  now = new Date()
 
-  stopped_instances = _.reject(ds_stopped_instances, function(instance) {
-    return _.contains(unstopped_instance_ids, instance['id'])
+  long_running_instances = _.reject(ds_running_instances, function(instance) {
+    running_days = (now - new Date(instance['lastStartTimestamp'])) / 1000 / 60 / 60 / 24
+    return running_days >= param_minimum_age
   })
 
-  result = _.map(stopped_instances, function(instance) {
-    recommendationDetails = [
-      "Delete Google VM ", instance["name"], " ",
-      "in Project ", instance['projectName'], " ",
-      "(", instance['projectId'], ")"
-    ].join('')
+  result = _.map(long_running_instances, function(instance) {
+    cost = 0.0
+    if (ds_vm_costs_grouped[instance['id'].toLowerCase()]) { cost = ds_vm_costs_grouped[instance['id'].toLowerCase()] }
+    if (ds_vm_costs_grouped[instance['name'].toLowerCase()]) { cost = ds_vm_costs_grouped[instance['name'].toLowerCase()] }
 
     labels = []
 
@@ -633,16 +793,19 @@ script "js_long_stopped_instances", type: "javascript" do
       projectNumber: instance['projectNumber'],
       zone: instance['zone'],
       region: instance['region'],
+      lastStartTimestamp: instance['lastStartTimestamp'],
+      daysRunning: Math.round((now - new Date(instance['lastStartTimestamp'])) / 1000 / 60 / 60 / 24 * 10) / 10,
+      costCurrency: ds_currency['symbol'],
+      cost: Math.round(cost * 1000) / 1000,
       policy_name: ds_applied_policy['name'],
       tags: labels.join(', '),
-      lookbackPeriod: param_stopped_days,
-      recommendationDetails: recommendationDetails,
+      lookbackPeriod: param_minimum_age,
       service: 'Compute Engine',
       message: ''
     }
   })
 
-  instances_total = ds_stopped_instances.length.toString()
+  instances_total = ds_running_instances.length.toString()
   long_instances_total = result.length.toString()
   long_instances_percentage = (long_instances_total / instances_total * 100).toFixed(2).toString() + '%'
 
@@ -650,7 +813,7 @@ script "js_long_stopped_instances", type: "javascript" do
   if (instances_total > 1) { instance_noun = "VMs" }
 
   day_noun = "day"
-  if (param_stopped_days > 1) { day_noun = "days" }
+  if (param_minimum_age > 1) { day_noun = "days" }
 
   has_verb = "has"
   if (long_instances_total > 1) { has_verb = "have" }
@@ -658,13 +821,13 @@ script "js_long_stopped_instances", type: "javascript" do
   findings = [
     "Out of ", instances_total, " Google ", instance_noun, " analyzed, ",
     long_instances_total, " (", long_instances_percentage,
-    ") ", has_verb, " been stopped for longer than ", param_stopped_days,
+    ") ", has_verb, " been running for longer than ", param_minimum_age,
     " ", day_noun, ".\n\n"
   ].join('')
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
-  // Add a dummy entry to ensure that the policy's check statement executes at least once
+  // Add a dummy entry to ensure that the policy check statement executes at least once
   result.push({
     resourceID: "",
     resourceName: "",
@@ -680,10 +843,13 @@ script "js_long_stopped_instances", type: "javascript" do
     projectNumber: "",
     zone: "",
     region: "",
+    lastStartTimestamp: "",
+    daysRunning: "",
+    costCurrency: "",
+    cost: "",
     policy_name: "",
     tags: "",
     service: "",
-    recommendationDetails: "",
     message: ""
   })
 
@@ -695,14 +861,14 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_long_stopped_instances" do
-  validate_each $ds_long_stopped_instances do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Long Stopped VM Instances Found"
+policy "pol_long_running_instances" do
+  validate_each $ds_long_running_instances do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Long Running VM Instances Found"
     detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_delete_instances
-    hash_exclude "tags", "message"
+    hash_exclude "tags", "message", "cost"
     export do
       resource_level true
       field "accountID" do
@@ -726,6 +892,15 @@ policy "pol_long_stopped_instances" do
       field "region" do
         label "Region"
       end
+      field "daysRunning" do
+        label "Days Running"
+      end
+      field "cost" do
+        label "Estimated Monthly Cost"
+      end
+      field "costCurrency" do
+        label "Cost Currency"
+      end
       field "platform" do
         label "Platform"
       end
@@ -734,9 +909,6 @@ policy "pol_long_stopped_instances" do
       end
       field "service" do
         label "Service"
-      end
-      field "recommendationDetails" do
-        label "Recommendation"
       end
       field "status" do
         label "Status"
