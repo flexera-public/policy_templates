@@ -517,6 +517,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Compute
 
+  * [Google Long Running VM Instances](./operational/google/long_running_instances)
   * [Google Overutilized VM Instances](./operational/google/overutilized_vms)
 
 * Tags
