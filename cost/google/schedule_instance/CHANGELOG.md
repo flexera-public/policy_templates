@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0.7
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v6.0.6
 
 - Added metadata specific to meta parent policies. Functionality unchanged.

@@ -505,7 +505,7 @@ The following guidelines should be used for `script` blocks:
 script "js_aws_account", type:"javascript" do
   parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.find(ds_cloud_vendor_accounts, function(account) {
     return account['id'] == ds_get_caller_identity[0]['account']
   })

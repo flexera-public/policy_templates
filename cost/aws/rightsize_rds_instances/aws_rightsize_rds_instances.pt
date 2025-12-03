@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.9.0",
+  version: "5.10.2",
   provider: "AWS",
   service: "RDS",
   policy_set: "Rightsize Database Instances",
@@ -207,7 +207,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -383,7 +383,7 @@ end
 script "js_aws_account", type:"javascript" do
   parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.find(ds_cloud_vendor_accounts, function(account) {
     return account['id'] == ds_get_caller_identity[0]['account']
   })
@@ -428,7 +428,7 @@ end
 script "js_top_level_bcs", type: "javascript" do
   parameters "ds_billing_centers"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   filtered_bcs = _.filter(ds_billing_centers, function(bc) {
     return bc['parent_id'] == null || bc['parent_id'] == undefined
   })
@@ -468,7 +468,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   symbol = "$"
   separator = ","
 
@@ -520,7 +520,7 @@ end
 script "js_instance_costs", type:"javascript" do
   parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host", "instanceusage_filter"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   start_date = new Date()
   start_date.setDate(start_date.getDate() - 3)
   start_date = start_date.toISOString().split('T')[0]
@@ -586,7 +586,7 @@ end
 script "js_instance_costs_grouped", type: "javascript" do
   parameters "ds_instance_costs", "ds_instance_costs_instanceusage"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Multiple a single day's cost by the average number of days in a month.
   // The 0.25 is to account for leap years for extra precision.
   cost_multiplier = 365.25 / 12
@@ -650,7 +650,7 @@ end
 script "js_regions", type:"javascript" do
   parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_regions_list.length > 0) {
@@ -661,6 +661,26 @@ script "js_regions", type:"javascript" do
     result = ds_describe_regions
   }
 EOS
+end
+
+datasource "ds_region_check" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    host join(['rds.', val(iter_item, 'region'), '.amazonaws.com'])
+    path '/'
+    query 'Action', 'DescribeDBInstances'
+    query 'Version', '2014-10-31'
+    query 'MaxResults', '5'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
+    ignore_status [403, 401]
+  end
+  result do
+    encoding "xml"
+    field "region", val(iter_item, "region")
+    field "status", "OK"
+  end
 end
 
 datasource "ds_rds_instances_set" do
@@ -696,7 +716,7 @@ end
 script "js_rds_instances_set", type: "javascript" do
   parameters "region"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   end_date = new Date()
   end_date = end_date.toISOString()
 
@@ -708,10 +728,11 @@ script "js_rds_instances_set", type: "javascript" do
     auth: "auth_aws",
     host: "rds." + region + ".amazonaws.com",
     path: "/",
+    ignore_status: [403, 401],
     headers: {
       "User-Agent": "RS Policies",
       "Content-Type": "text/xml"
-    }
+    },
     query_params: {
       "Action": "DescribeDBInstances",
       "Version": "2014-10-31"
@@ -738,7 +759,7 @@ end
 script "js_resource_tags", type: "javascript" do
   parameters "instanceArn", "region"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   end_date = new Date()
   end_date = end_date.toISOString()
 
@@ -770,7 +791,7 @@ end
 script "js_rds_instances", type: "javascript" do
   parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_instance_type_map", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -907,7 +928,7 @@ end
 script "js_rds_instances_to_check", type: "javascript" do
   parameters "ds_rds_instances", "param_unused_or_underutilized"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
   if (param_unused_or_underutilized != "Underutilized") { result = ds_rds_instances }
 EOS
@@ -920,7 +941,7 @@ end
 script "js_cloudwatch_idle_queries", type: "javascript" do
   parameters "ds_rds_instances_to_check", "param_stats_lookback"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   queries = {}
   metric = "DatabaseConnections"
   statistic = "Sum"
@@ -995,7 +1016,7 @@ end
 script "js_cloudwatch_idle_data", type: "javascript" do
   parameters "region", "MetricDataQueries"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // Slow down rate of requests to prevent throttling
   api_wait = 5
   var now = new Date().getTime()
@@ -1036,7 +1057,7 @@ end
 script "js_rds_instances_with_connections", type: "javascript" do
   parameters "ds_rds_instances_to_check", "ds_cloudwatch_idle_data", "param_stats_lookback"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   cloudwatch_activity = {}
 
   _.each(ds_cloudwatch_idle_data, function(item) {
@@ -1072,7 +1093,7 @@ end
 script "js_rds_idle_instances", type: "javascript" do
   parameters "ds_rds_instances_with_connections", "ds_instance_costs_grouped"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   idle_instances = _.filter(ds_rds_instances_with_connections, function(instance) {
     return instance['connectionsTotal'] == 0
   })
@@ -1101,7 +1122,7 @@ end
 script "js_rds_nonidle_instances", type: "javascript" do
   parameters "ds_rds_instances", "ds_rds_instances_with_connections", "ds_rds_idle_instances", "param_unused_or_underutilized"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   if (param_unused_or_underutilized == "Underutilized") {
@@ -1217,7 +1238,7 @@ end
 script "js_create_cloudwatch_underutil_queries", type: "javascript" do
   parameters "ds_rds_nonidle_instances", "param_stats_lookback", "metric", "stat_set"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   queries = {}
   statistics = [ "Average", "Minimum", "Maximum" ]
   if (stat_set == "extended") { statistics = [ "Average", "Minimum", "Maximum", "p99", "p95", "p90" ] }
@@ -1279,7 +1300,7 @@ end
 script "js_get_cloudwatch_underutil_data", type: "javascript" do
   parameters "region", "MetricDataQueries"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // Slow down rate of requests to prevent throttling
   api_wait = 5
   var now = new Date().getTime()
@@ -1302,7 +1323,6 @@ script "js_get_cloudwatch_underutil_data", type: "javascript" do
       "Content-Encoding": "amz-1.0"
     }
     query_params: {
-      "Action": "GetMetricData",
       "Version": "2010-08-01"
     },
     body: JSON.stringify({
@@ -1317,7 +1337,7 @@ end
 script "js_sort_cloudwatch_underutil_data", type: "javascript" do
   parameters "gathered_data"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Sort the CloudWatch data into an object with keys for regions and instance names.
   // This eliminates the need to "double loop" later on to match it with our instances list.
   result = {}
@@ -1351,7 +1371,7 @@ end
 script "js_rds_nonidle_instances_with_metrics", type: "javascript" do
   parameters "ds_rds_nonidle_instances", "ds_cloudwatch_underutil_cpu_sorted", "ds_cloudwatch_underutil_mem_sorted", "ds_cloudwatch_underutil_netin_sorted", "ds_cloudwatch_underutil_netout_sorted"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Merge original instance list with cloudwatch data into a single list
   result = []
 
@@ -1563,7 +1583,7 @@ end
 script "js_rds_underutil_instance_options", type: "javascript" do
   parameters "databaseEngine", "region"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_aws",
     host: "rds." + region + ".amazonaws.com",
@@ -1924,6 +1944,78 @@ script "js_rds_underutil_incident", type: "javascript" do
 EOS
 end
 
+datasource "ds_identify_errors" do
+  run_script $js_identify_errors, $ds_regions, $ds_region_check, $ds_applied_policy, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_identify_errors", type: "javascript" do
+  parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
+  result "errors"
+  code <<-'EOS'
+  var errors = [];
+
+  // Build a map of regions to their response status
+  var region_responses = {};
+  _.each(ds_region_check, function(item) {
+    if (item.region) {
+      region_responses[item.region] = "OK"
+    }
+  });
+
+  // Allowed regions are the keys from region_responses
+  var allowed_regions = _.keys(region_responses);
+
+  // Identify forbidden regions (expected but not in region_responses)
+  var forbidden_regions = [];
+  _.each(ds_regions, function(region_obj) {
+    if (!_.contains(allowed_regions, region_obj.region)) {
+      forbidden_regions.push(region_obj.region);
+    }
+  });
+
+  if (forbidden_regions.length > 0) {
+    var regions_string = forbidden_regions.sort().join(", ");
+    var successful_regions = allowed_regions.sort().join(", ");
+    var filter_guidance = "";
+
+    if (param_regions_list.length > 0) {
+      filter_guidance = " You are currently using the 'Allow/Deny Regions List' parameter. ";
+      filter_guidance += "You can update this list to exclude the inaccessible regions if appropriate.";
+    } else {
+      filter_guidance = " You can use the 'Allow/Deny Regions List' parameter to exclude these regions from the policy scope.";
+    }
+
+    errors.push(
+      "HTTP error received when attempting to describe RDS instances in some AWS region(s).\n" +
+      "\n - Failed Regions: " + regions_string +
+      "\n - Successful Regions: " + successful_regions +
+      "\n\nThis typically indicates that the AWS credential does not have the required 'rds:DescribeDBInstances' permission " +
+      "for these regions, or these regions may not be enabled in your AWS account. " +
+      "To resolve this issue: " +
+      "(1) Verify the AWS credential has 'rds:DescribeDBInstances' permission for these regions, " +
+      "(2) Ensure these regions are enabled in your AWS account (some regions like opt-in regions require explicit enablement), or " +
+      "(3) Exclude these regions from policy evaluation using the region filter parameters." +
+      filter_guidance
+    );
+  }
+
+  errors = _.uniq(errors);
+
+  // Convert array of strings to array of objects for incident creation
+  errors = _.map(errors, function(err) {
+    return { "error": err };
+  });
+
+  if (errors.length > 0) {
+    policy_name = "AWS Rightsize RDS Instances";
+    if (ds_applied_policy && ds_applied_policy.policy_template && ds_applied_policy.policy_template.name) {
+      policy_name = ds_applied_policy.policy_template.name;
+    }
+    errors[0].policy_name = policy_name;
+  }
+EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
@@ -2155,11 +2247,40 @@ policy "pol_rightsize_rds" do
       end
     end
   end
+
+  validate $ds_identify_errors do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to retrieve RDS instance data from one or more AWS regions due to permission or configuration errors.
+
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end -}}
+
+    **Recommended Actions:**
+    1. Verify that the AWS credential has the 'rds:DescribeDBInstances' permission for all regions where the policy should execute
+    2. Ensure that the required AWS regions are enabled in your AWS account (some regions require explicit opt-in)
+    3. Consider updating the 'Allow/Deny Regions List' parameter to exclude regions that are not accessible or not relevant to your use case
+
+    **Additional Information:**
+    If certain regions should be excluded from this policy's scope, you can configure the region filter parameters to prevent these errors from appearing in future policy runs.
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
 end
 
 ###############################################################################
 # Escalations
 ###############################################################################
+
+escalation "esc_email_errors_identified" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
 
 escalation "esc_email" do
   automatic true
@@ -2347,7 +2468,7 @@ end
 script "js_make_terminate_request", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],

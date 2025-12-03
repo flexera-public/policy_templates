@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.4.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v3.4.1
+
+- Fixed issue where policy would never complete execution and would fail with an error.
+
 ## v3.4.0
 
 - Added support for attaching CSV files to incident emails.

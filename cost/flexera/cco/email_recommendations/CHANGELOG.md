@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.8.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v0.8.0
+
+- Added support for Oracle recommendations.
+- Added support for additional recommendations for AWS, Azure, and Google.
+
 ## v0.7.0
 
 - Added support for attaching CSV files to incident emails.

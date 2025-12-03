@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1.5
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v0.1.4
+
+- Fixed issue where policy execution would fail with error if no bill connects have been configured.
+
 ## v0.1.3
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

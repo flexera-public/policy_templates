@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "8.5.0",
+  version: "8.6.2",
   provider: "AWS",
   service: "Storage",
   policy_set: "Old Snapshots",
@@ -455,6 +455,26 @@ script "js_regions", type:"javascript" do
 EOS
 end
 
+datasource "ds_region_check" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
+    path '/'
+    query 'Action', 'DescribeSnapshots'
+    query 'Version', '2016-11-15'
+    query 'MaxResults', '5'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
+    ignore_status [403, 401]
+  end
+  result do
+    encoding "xml"
+    field "region", val(iter_item, "region")
+    field "status", "OK"
+  end
+end
+
 datasource "ds_describe_snapshots" do
   iterate $ds_regions
   request do
@@ -492,6 +512,7 @@ script "js_describe_snapshots", type: "javascript" do
     host: "ec2." + region + ".amazonaws.com",
     path: "/",
     pagination: "aws_pagination_describesnapshots_xml",
+    ignore_status: [403, 401],
     headers: {
       "User-Agent": "RS Policies",
       "Content-Type": "text/xml"
@@ -1084,6 +1105,78 @@ script "js_snapshots_cost_mapping", type: "javascript" do
 EOS
 end
 
+datasource "ds_identify_errors" do
+  run_script $js_identify_errors, $ds_regions, $ds_region_check, $ds_applied_policy, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_identify_errors", type: "javascript" do
+  parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
+  result "errors"
+  code <<-'EOS'
+  var errors = [];
+
+  // Build a map of regions to their response status
+  var region_responses = {};
+  _.each(ds_region_check, function(item) {
+    if (item.region) {
+      region_responses[item.region] = "OK"
+    }
+  });
+
+  // Allowed regions are the keys from region_responses
+  var allowed_regions = _.keys(region_responses);
+
+  // Identify forbidden regions (expected but not in region_responses)
+  var forbidden_regions = [];
+  _.each(ds_regions, function(region_obj) {
+    if (!_.contains(allowed_regions, region_obj.region)) {
+      forbidden_regions.push(region_obj.region);
+    }
+  });
+
+  if (forbidden_regions.length > 0) {
+    var regions_string = forbidden_regions.sort().join(", ");
+    var successful_regions = allowed_regions.sort().join(", ");
+    var filter_guidance = "";
+
+    if (param_regions_list.length > 0) {
+      filter_guidance = " You are currently using the 'Allow/Deny Regions List' parameter. ";
+      filter_guidance += "You can update this list to exclude the inaccessible regions if appropriate.";
+    } else {
+      filter_guidance = " You can use the 'Allow/Deny Regions List' parameter to exclude these regions from the policy scope.";
+    }
+
+    errors.push(
+      "HTTP error received when attempting to describe snapshots in some AWS region(s).\n" +
+      "\n - Failed Regions: " + regions_string +
+      "\n - Successful Regions: " + successful_regions +
+      "\n\nThis typically indicates that the AWS credential does not have the required 'ec2:DescribeSnapshots' permission " +
+      "for these regions, or these regions may not be enabled in your AWS account. " +
+      "To resolve this issue: " +
+      "(1) Verify the AWS credential has 'ec2:DescribeSnapshots' permission for these regions, " +
+      "(2) Ensure these regions are enabled in your AWS account (some regions like opt-in regions require explicit enablement), or " +
+      "(3) Exclude these regions from policy evaluation using the region filter parameters." +
+      filter_guidance
+    );
+  }
+
+  errors = _.uniq(errors);
+
+  // Convert array of strings to array of objects for incident creation
+  errors = _.map(errors, function(err) {
+    return { "error": err };
+  });
+
+  if (errors.length > 0) {
+    policy_name = "AWS Old Snapshots";
+    if (ds_applied_policy && ds_applied_policy.policy_template && ds_applied_policy.policy_template.name) {
+      policy_name = ds_applied_policy.policy_template.name;
+    }
+    errors[0].policy_name = policy_name;
+  }
+EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
@@ -1096,8 +1189,7 @@ policy "pol_utilization" do
 
     {{ with index data 0 }}{{ .message }}{{ end }}
     EOS
-    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), "")) # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     escalate $esc_email
     escalate $esc_delete_snapshot
     hash_exclude "total_savings", "message", "tags", "age", "savings", "savingsCurrency"
@@ -1169,11 +1261,40 @@ policy "pol_utilization" do
       end
     end
   end
+
+  validate $ds_identify_errors do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to retrieve snapshot data from one or more AWS regions due to permission or configuration errors.
+
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end -}}
+
+    **Recommended Actions:**
+    1. Verify that the AWS credential has the 'ec2:DescribeSnapshots' permission for all regions where the policy should execute
+    2. Ensure that the required AWS regions are enabled in your AWS account (some regions require explicit opt-in)
+    3. Consider updating the 'Allow/Deny Regions List' parameter to exclude regions that are not accessible or not relevant to your use case
+
+    **Additional Information:**
+    If certain regions should be excluded from this policy's scope, you can configure the region filter parameters to prevent these errors from appearing in future policy runs.
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
 end
 
 ###############################################################################
 # Escalations
 ###############################################################################
+
+escalation "esc_email_errors_identified" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
 
 escalation "esc_email" do
   automatic true
