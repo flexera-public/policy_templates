@@ -1,14 +1,14 @@
 name "Google Rightsize VM Recommender"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy finds underutilized and idle Google VM instances and downsizes, stops, or deletes them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This policy template reports native Google recommendations for idle and underutilized VMs and downsizes, stops, or deletes them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations"
 category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.2.4",
+  version: "3.3.2",
   provider: "Google",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -124,6 +124,24 @@ parameter "param_automatic_action" do
   default []
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -167,7 +185,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -206,7 +224,7 @@ end
 
 script "js_zone_to_region", type:"javascript" do
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = {
     "us-east1-b": "us-east1",
     "us-east1-c": "us-east1",
@@ -350,7 +368,7 @@ end
 script "js_currency_target", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Default to USD if currency is not found
   result = ds_currency_reference['USD']
 
@@ -388,7 +406,7 @@ end
 script "js_google_projects_filtered", type: "javascript" do
   parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_projects_list.length > 0) {
     filtered = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
@@ -461,7 +479,7 @@ end
 script "js_instances", type: "javascript" do
   parameters "ds_get_instances", "ds_calculated_utilization", "ds_zone_to_region"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   stats_by_resource = {}
 
   _.each(ds_calculated_utilization, function(item) {
@@ -522,7 +540,7 @@ end
 script "js_instances_label_filtered", type: "javascript" do
   parameters "ds_instances", "param_exclusion_labels", "param_exclusion_labels_boolean"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   comparators = _.map(param_exclusion_labels, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -599,7 +617,7 @@ end
 script "js_instances_region_filtered", type: "javascript" do
   parameters "ds_instances_label_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_regions_list.length > 0) {
     result = _.filter(ds_instances_label_filtered, function(instance) {
       include_instance = _.contains(param_regions_list, instance['region'])
@@ -623,7 +641,7 @@ end
 script "js_idle_recommender_requests", type: "javascript" do
   parameters "ds_instances_region_filtered", "param_idle_or_underutilized"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   // Skip gathering recommendations for idle instances if the user opted not to
@@ -650,7 +668,7 @@ end
 script "js_underutil_recommender_requests", type: "javascript" do
   parameters "ds_instances_region_filtered", "param_idle_or_underutilized"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   // Skip gathering recommendations for underutilized instances if the user opted not to
@@ -731,7 +749,7 @@ end
 script "js_recommendations", type: "javascript" do
   parameters "projectId", "zone", "number", "type"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // If 100 requests have been made, wait 1 minute to avoid throttling
   if (number % 100 === 0) {
     now = new Date().getTime()
@@ -745,7 +763,8 @@ script "js_recommendations", type: "javascript" do
     host: "recommender.googleapis.com",
     ignore_status: 403,
     path: "/v1/projects/" + projectId + "/locations/" + zone + "/recommenders/google.compute.instance." + type + "/recommendations",
-    query_strings: { alt: "json" }
+    query_strings: { alt: "json" },
+    query_params: { filter: "stateInfo.state=ACTIVE" }
   }
 EOS
 end
@@ -760,7 +779,7 @@ end
 script "js_conditional_currency_conversion", type: "javascript" do
   parameters "ds_currency_target", "ds_idle_recommendations", "ds_underutil_recommendations"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
   from_currency = "USD"
 
@@ -807,7 +826,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_target", "ds_currency_conversion"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = ds_currency_target
   result['exchange_rate'] = 1
 
@@ -1034,13 +1053,15 @@ EOS
 end
 
 datasource "ds_idle_incident" do
-  run_script $js_idle_incident, $ds_sorted_recommendations, $ds_instances_region_filtered, $ds_currency, $param_idle_or_underutilized
+  run_script $js_idle_incident, $ds_sorted_recommendations, $ds_instances_region_filtered, $ds_currency, $param_idle_or_underutilized, $param_incident_csv
 end
 
 script "js_idle_incident", type:"javascript" do
-  parameters "ds_sorted_recommendations", "ds_instances_region_filtered", "ds_currency", "param_idle_or_underutilized"
+  parameters "ds_sorted_recommendations", "ds_instances_region_filtered", "ds_currency", "param_idle_or_underutilized", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -1098,7 +1119,7 @@ script "js_idle_incident", type:"javascript" do
     type_disclaimer = "Policy has been configured to report both idle and underutilized instances. This setting can be modified by editing the applied policy and changing the 'Report Idle or Underutilized' parameter.\n\n"
   }
 
-  disclaimer = "Recommendations are generated by Google Cloud. Please refer to Google's documentation if different recommendations are desired."
+  disclaimer = "Recommendations are generated by Google Cloud. Please refer to Google's documentation if different recommendations are desired.\n\n"
 
   // Dummy item to ensure that the check statement in the policy executes at least once
   result.push({
@@ -1138,18 +1159,20 @@ script "js_idle_incident", type:"javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + type_disclaimer + disclaimer
+  result[0]['message'] = findings + type_disclaimer + disclaimer + csv_message
 EOS
 end
 
 datasource "ds_underutil_incident" do
-  run_script $js_underutil_incident, $ds_sorted_recommendations, $ds_instances_region_filtered, $ds_currency, $param_idle_or_underutilized
+  run_script $js_underutil_incident, $ds_sorted_recommendations, $ds_instances_region_filtered, $ds_currency, $param_idle_or_underutilized, $param_incident_csv
 end
 
 script "js_underutil_incident", type:"javascript" do
-  parameters "ds_sorted_recommendations", "ds_instances_region_filtered", "ds_currency", "param_idle_or_underutilized"
+  parameters "ds_sorted_recommendations", "ds_instances_region_filtered", "ds_currency", "param_idle_or_underutilized", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -1207,7 +1230,7 @@ script "js_underutil_incident", type:"javascript" do
     type_disclaimer = "Policy has been configured to report both idle and underutilized instances. This setting can be modified by editing the applied policy and changing the 'Report Idle or Underutilized' parameter.\n\n"
   }
 
-  disclaimer = "Recommendations are generated by Google Cloud. Please refer to Google's documentation if different recommendations are desired."
+  disclaimer = "Recommendations are generated by Google Cloud. Please refer to Google's documentation if different recommendations are desired.\n\n"
 
   // Dummy item to ensure that the check statement in the policy executes at least once
   result.push({
@@ -1247,7 +1270,7 @@ script "js_underutil_incident", type:"javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + type_disclaimer + disclaimer
+  result[0]['message'] = findings + type_disclaimer + disclaimer + csv_message
 EOS
 end
 
@@ -1455,7 +1478,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_downsize_instances" do
@@ -1720,7 +1746,7 @@ end
 script "js_make_terminate_request", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],

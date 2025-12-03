@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.3.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v3.3.0
+
+- Added new parameter and field to incident table to indicate the 'Payment Option' for recommendations.
+
+## v3.2.0
+
+- Added support for attaching CSV files to incident emails.
+
 ## v3.1.6
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

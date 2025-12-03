@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.8",
+  version: "0.4.2",
   provider: "AWS",
   service: "Network",
   policy_set: "Unused Load Balancers",
@@ -98,6 +98,24 @@ parameter "param_automatic_action" do
   default []
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -129,7 +147,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -346,6 +364,26 @@ datasource "ds_regions" do
   run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
 end
 
+datasource "ds_region_check" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    host join(["elasticloadbalancing.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeLoadBalancers"
+    query "Version", "2015-12-01"
+    query "PageSize", "1"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
+    ignore_status [403, 401]
+  end
+  result do
+    encoding "xml"
+    field "region", val(iter_item, "region")
+    field "status", "OK"
+  end
+end
+
 script "js_regions", type:"javascript" do
   parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
   result "result"
@@ -371,6 +409,7 @@ datasource "ds_elbs_without_tags" do
     query "Action", "DescribeLoadBalancers"
     query "Version", "2015-12-01"
     header "Accept", "application/json"
+    ignore_status [403, 401]
   end
   result do
     encoding "json"
@@ -435,7 +474,7 @@ end
 script "js_nlbs", type: "javascript" do
   parameters "region", "arn"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_aws",
     host: "elasticloadbalancing." + region + ".amazonaws.com",
@@ -627,7 +666,7 @@ end
 script "js_nlb_target_groups_health", type: "javascript" do
   parameters "region", "targetGroupArn"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_aws",
     host: "elasticloadbalancing." + region + ".amazonaws.com",
@@ -814,13 +853,15 @@ EOS
 end
 
 datasource "ds_bad_nlbs" do
-  run_script $js_bad_nlbs, $ds_nlbs_combined, $ds_nlb_costs_grouped, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_loadbalancer_age, $param_min_savings
+  run_script $js_bad_nlbs, $ds_nlbs_combined, $ds_nlb_costs_grouped, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_loadbalancer_age, $param_min_savings, $param_incident_csv
 end
 
 script "js_bad_nlbs", type: "javascript" do
-  parameters "ds_nlbs_combined", "ds_nlb_costs_grouped", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_loadbalancer_age", "param_min_savings"
+  parameters "ds_nlbs_combined", "ds_nlb_costs_grouped", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_loadbalancer_age", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -927,7 +968,7 @@ script "js_bad_nlbs", type: "javascript" do
     ].join('')
   }
 
-  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
   total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
 
@@ -941,8 +982,77 @@ script "js_bad_nlbs", type: "javascript" do
     savingsCurrency: ""
   })
 
-  result[0]['message'] = findings + settings + disclaimer
+  result[0]['message'] = findings + settings + disclaimer + csv_message
   result[0]['total_savings'] = total_savings
+EOS
+end
+
+datasource "ds_identify_errors" do
+  run_script $js_identify_errors, $ds_regions, $ds_region_check, $ds_applied_policy, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_identify_errors", type: "javascript" do
+  parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
+  result "errors"
+  code <<-'EOS'
+  var errors = [];
+
+  // Build map of accessible regions
+  var region_responses = {};
+  _.each(ds_region_check, function(item) {
+    if (item.region) {
+      region_responses[item.region] = "OK"
+    }
+  });
+
+  var allowed_regions = _.keys(region_responses);
+  var forbidden_regions = [];
+
+  // Identify inaccessible regions
+  _.each(ds_regions, function(region_obj) {
+    if (!_.contains(allowed_regions, region_obj.region)) {
+      forbidden_regions.push(region_obj.region);
+    }
+  });
+
+  if (forbidden_regions.length > 0) {
+    var regions_string = forbidden_regions.sort().join(", ");
+    var successful_regions = allowed_regions.sort().join(", ");
+    var filter_guidance = "";
+
+    if (param_regions_list.length > 0) {
+      filter_guidance = " You are currently using the 'Allow/Deny Regions List' parameter. ";
+      filter_guidance += "You can update this list to exclude the inaccessible regions if appropriate.";
+    } else {
+      filter_guidance = " You can use the 'Allow/Deny Regions List' parameter to exclude these regions from the policy scope.";
+    }
+
+    errors.push(
+      "HTTP error received when attempting to describe Network Load Balancers in some AWS region(s).\n" +
+      "\n - Failed Regions: " + regions_string +
+      "\n - Successful Regions: " + successful_regions +
+      "\n\nThis typically indicates that the AWS credential does not have the required 'elasticloadbalancing:DescribeLoadBalancers' permission " +
+      "for these regions, or these regions may not be enabled in your AWS account. " +
+      "To resolve this issue: " +
+      "(1) Verify the AWS credential has 'elasticloadbalancing:DescribeLoadBalancers' permission for these regions, " +
+      "(2) Ensure these regions are enabled in your AWS account (some regions like opt-in regions require explicit enablement), or " +
+      "(3) Exclude these regions from policy evaluation using the region filter parameters." +
+      filter_guidance
+    );
+  }
+
+  errors = _.uniq(errors);
+  errors = _.map(errors, function(err) {
+    return { "error": err };
+  });
+
+  if (errors.length > 0) {
+    policy_name = "AWS Unused Network Load Balancers";
+    if (ds_applied_policy && ds_applied_policy.policy_template && ds_applied_policy.policy_template.name) {
+      policy_name = ds_applied_policy.policy_template.name;
+    }
+    errors[0].policy_name = policy_name;
+  }
 EOS
 end
 
@@ -1027,17 +1137,41 @@ policy "pol_unused_nlbs" do
       end
     end
   end
+
+  validate $ds_identify_errors do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to retrieve Network Load Balancers from one or more AWS regions due to permission or configuration errors.
+
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end }}
+EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
 end
 
 ###############################################################################
 # Escalations
 ###############################################################################
 
-escalation "esc_email" do
+escalation "esc_email_errors_identified" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
+end
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_delete_nlbs" do
@@ -1153,7 +1287,7 @@ end
 script "js_make_terminate_request", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],

@@ -1,5 +1,22 @@
 # Changelog
 
+## v3.2.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v3.2.1
+
+- Updated email escalation declaration for new "Errors Identified" incident to prevent error `failed make a CSV attachment with data: unable to collect csv data from nil export`
+
+## v3.2.0
+
+- Policy now continues execution for accessible regions when some regions return permission errors
+- Added separate incident report to identify regions with access issues and provide remediation guidance
+
+## v3.1.0
+
+- Added support for attaching CSV files to incident emails.
+
 ## v3.0.1
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

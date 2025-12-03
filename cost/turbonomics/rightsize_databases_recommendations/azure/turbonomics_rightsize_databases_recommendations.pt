@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.5.4",
+  version: "0.5.6",
   source: "Turbonomic",
   service: "Usage Discount",
   provider: "Azure",
@@ -51,7 +51,7 @@ end
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses to notify"
+  label "Email Addresses"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
   # No default value, user input required
 end
@@ -99,7 +99,7 @@ end
 script "js_get_turbonomic_token", type: "javascript" do
   parameters "turbonomic_endpoint", "audience"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
     var request = {
       verb: "POST",
       auth: "auth_turbonomic"
@@ -144,7 +144,7 @@ end
 script "js_get_turbonomic_recommendations", type: "javascript" do
   parameters "access_token", "turbonomic_endpoint"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
     request = {
       verb: "POST",
       host: turbonomic_endpoint,
@@ -186,7 +186,7 @@ end
 script "js_get_business_units", type: "javascript" do
   parameters "access_token", "turbonomic_endpoint", "provider"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
     query_params = {"type": "DISCOVERED"}
 
     // Since /api/v3/businessunits only support "AWS", "Azure Subscription" and "GCP Project", in case
@@ -220,7 +220,7 @@ end
 script "js_filtered_turbonomic_recommendations", type: "javascript" do
   parameters "ds_get_turbonomic_recommendations", "ds_get_business_units", "param_provider", "turbonomic_endpoint"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
     instances = []
     monthlySavings = 0.0
 
@@ -307,13 +307,13 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
 end
 
 datasource "ds_filtered_recommendations" do
-  run_script $js_only_recommendations, $ds_filtered_turbonomic_recommendations
+  run_script $js_filtered_recommendations, $ds_filtered_turbonomic_recommendations
 end
 
-script "js_only_recommendations", type: "javascript" do
+script "js_filtered_recommendations", type: "javascript" do
   parameters "arg"
   result "results"
-  code <<-EOS
+  code <<-'EOS'
     results = arg.instances
   EOS
 end
@@ -325,7 +325,7 @@ end
 script "js_only_uuids", type: "javascript" do
   parameters "arg"
   result "results"
-  code <<-EOS
+  code <<-'EOS'
     results  = []
     _.each(arg, function (db) {
       if (db.className == "Database") {
@@ -341,7 +341,7 @@ datasource "ds_get_pricing_model" do
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
+    collect jmes_path(response, "[*]") do
       field "uuid", jmes_path(col_item, "uuid")
       field "pricingModel", jmes_path(col_item, "aspects.dbAspect.pricingModel")
     end
@@ -351,7 +351,7 @@ end
 script "js_get_pricing_model", type: "javascript" do
   parameters "access_token", "ds_only_uuids", "turbonomic_endpoint"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
     body_fields = {"criteriaList":[], "logicalOperator":"AND", "className":"Database", "environmentType":"CLOUD", "scope":ds_only_uuids}
 
     request = {
@@ -377,15 +377,15 @@ datasource "ds_get_projected_statistics" do
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[-1]") do
+    collect jmes_path(response, "[-1]") do
       field "uuid", val(iter_item, "uuid")
       field "size", jmes_path(col_item, "statistics[?name == 'StorageAmount'].[ capacity.total, value][0]")
-      field "iops", jmes_path(col_item, "statistics[?name == 'StorageAccess'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
-      field "vmem", jmes_path(col_item, "statistics[?name == 'VMem'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
-      field "vcpu", jmes_path(col_item, "statistics[?name == 'VCPU'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
-      field "iOThroughput", jmes_path(col_item, "statistics[?name == 'IOThroughput'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "iops", jmes_path(col_item, "statistics[?name == 'StorageAccess'].[histUtilizations[?type == 'percentile'].[capacity, usage][]][][]")
+      field "vmem", jmes_path(col_item, "statistics[?name == 'VMem'].[histUtilizations[?type == 'percentile'].[capacity, usage][]][][]")
+      field "vcpu", jmes_path(col_item, "statistics[?name == 'VCPU'].[histUtilizations[?type == 'percentile'].[capacity, usage][]][][]")
+      field "iOThroughput", jmes_path(col_item, "statistics[?name == 'IOThroughput'].[histUtilizations[?type == 'percentile'].[capacity, usage][]][][]")
       field "connection", jmes_path(col_item, "statistics[?name == 'Connection'].[ capacity.total][0]")
-      field "dtu", jmes_path(col_item, "statistics[?name == 'DTU'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "dtu", jmes_path(col_item, "statistics[?name == 'DTU'].[histUtilizations[?type == 'percentile'].[capacity, usage][]][][]")
     end
   end
 end
@@ -397,15 +397,15 @@ datasource "ds_get_current_statistics" do
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[-2]") do
+    collect jmes_path(response, "[-2]") do
       field "uuid", val(iter_item, "uuid")
       field "size", jmes_path(col_item, "statistics[?name == 'StorageAmount'].[ capacity.total, value][-1]")
-      field "iops", jmes_path(col_item, "statistics[?name == 'StorageAccess'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
-      field "vmem", jmes_path(col_item, "statistics[?name == 'VMem'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
-      field "vcpu", jmes_path(col_item, "statistics[?name == 'VCPU'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
-      field "iOThroughput", jmes_path(col_item, "statistics[?name == 'IOThroughput'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "iops", jmes_path(col_item, "statistics[?name == 'StorageAccess'].[histUtilizations[?type == 'percentile'].[capacity, usage][]][][]")
+      field "vmem", jmes_path(col_item, "statistics[?name == 'VMem'].[histUtilizations[?type == 'percentile'].[capacity, usage][]][][]")
+      field "vcpu", jmes_path(col_item, "statistics[?name == 'VCPU'].[histUtilizations[?type == 'percentile'].[capacity, usage][]][][]")
+      field "iOThroughput", jmes_path(col_item, "statistics[?name == 'IOThroughput'].[histUtilizations[?type == 'percentile'].[capacity, usage][]][][]")
       field "connection", jmes_path(col_item, "statistics[?name == 'Connection'].[ capacity.total][0]")
-      field "dtu", jmes_path(col_item, "statistics[?name == 'DTU'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "dtu", jmes_path(col_item, "statistics[?name == 'DTU'].[histUtilizations[?type == 'percentile'].[capacity, usage][]][][]")
     end
   end
 end
@@ -413,7 +413,7 @@ end
 script "js_get_projected_statistics", type: "javascript" do
   parameters "access_token", "instance", "ds_get_pricing_model", "turbonomic_endpoint"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
     nineHours = 1000 * 60 * 60 * 9
     nowDay = new Date(Date.now())
     pastDay = new Date(Date.now() + nineHours)
@@ -455,7 +455,7 @@ end
 script "js_combined_data", type: "javascript" do
   parameters "ds_get_turbonomic_recommendations", "ds_get_projected_statistics", "ds_get_current_statistics", "ds_get_pricing_model"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
     _.each(ds_get_projected_statistics, function (projectedStatistic, ii) {
       _.each(ds_get_turbonomic_recommendations.instances, function (db, index) {
           if (db.uuid === projectedStatistic.uuid) {
@@ -532,7 +532,7 @@ end
 policy "pol_turbonomic_rightsize_databases" do
   validate $ds_combined_data do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Azure Databases & Database Servers to Rightsize found"
-    detail_template <<-EOS
+    detail_template <<-'EOS'
       ## Turbonomic Rightsize Databases & Database Servers Azure Recommendations
       {{data.message}}
     EOS
@@ -680,4 +680,3 @@ escalation "esc_email" do
   description "Send incident email"
   email $param_email
 end
-

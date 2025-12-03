@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "7.2.6",
+  version: "7.3.1",
   provider: "Azure",
   service: "Storage",
   policy_set: "Old Snapshots",
@@ -115,6 +115,24 @@ parameter "param_automatic_action" do
   default []
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -158,7 +176,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -228,7 +246,7 @@ end
 script "js_top_level_bcs", type: "javascript" do
   parameters "ds_billing_centers"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   filtered_bcs = _.filter(ds_billing_centers, function(bc) {
     return bc['parent_id'] == null || bc['parent_id'] == undefined
   })
@@ -268,7 +286,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   symbol = "$"
   separator = ","
 
@@ -322,7 +340,7 @@ end
 script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -374,7 +392,7 @@ end
 script "js_azure_snapshots_tag_filtered", type: "javascript" do
   parameters "ds_azure_snapshots", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -451,7 +469,7 @@ end
 script "js_azure_snapshots_region_filtered", type: "javascript" do
   parameters "ds_azure_snapshots_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_snapshots_tag_filtered, function(snapshot) {
       include_snapshot = _.contains(param_regions_list, snapshot['region'])
@@ -475,7 +493,7 @@ end
 script "js_azure_old_snapshots", type: "javascript" do
   parameters "ds_azure_snapshots_region_filtered", "param_snapshot_age"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   _.each(ds_azure_snapshots_region_filtered, function(snapshot) {
@@ -520,7 +538,7 @@ end
 script "js_azure_old_snapshots_subscriptions", type: "javascript" do
   parameters "ds_azure_old_snapshots"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.compact(_.uniq(_.pluck(ds_azure_old_snapshots, 'subscriptionID')))
 EOS
 end
@@ -542,7 +560,7 @@ end
 script "js_azure_snapshot_costs", type:"javascript" do
   parameters "subscription_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   //Get Start and End dates
   start_date = new Date()
   start_date.setDate(start_date.getDate() - 3)
@@ -607,7 +625,7 @@ end
 script "js_azure_snapshot_costs_grouped", type: "javascript" do
   parameters "ds_azure_snapshot_costs"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Multiple a single day's cost by the average number of days in a month.
   // The 0.25 is to account for leap years for extra precision.
   cost_multiplier = 365.25 / 12
@@ -625,13 +643,15 @@ EOS
 end
 
 datasource "ds_azure_snapshots_incident" do
-  run_script $js_azure_snapshots_incident, $ds_azure_old_snapshots, $ds_azure_snapshots_region_filtered, $ds_azure_snapshot_costs_grouped, $ds_applied_policy, $ds_currency, $param_min_savings, $param_snapshot_age
+  run_script $js_azure_snapshots_incident, $ds_azure_old_snapshots, $ds_azure_snapshots_region_filtered, $ds_azure_snapshot_costs_grouped, $ds_applied_policy, $ds_currency, $param_min_savings, $param_snapshot_age, $param_incident_csv
 end
 
 script "js_azure_snapshots_incident", type:"javascript" do
-  parameters "ds_azure_old_snapshots", "ds_azure_snapshots_region_filtered", "ds_azure_snapshot_costs_grouped", "ds_applied_policy", "ds_currency", "param_min_savings", "param_snapshot_age"
+  parameters "ds_azure_old_snapshots", "ds_azure_snapshots_region_filtered", "ds_azure_snapshot_costs_grouped", "ds_applied_policy", "ds_currency", "param_min_savings", "param_snapshot_age", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -738,7 +758,7 @@ script "js_azure_snapshots_incident", type:"javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + disclaimer
+  result[0]['message'] = findings + disclaimer + csv_message
   result[0]['policy_name'] = ds_applied_policy['name']
 EOS
 end
@@ -822,7 +842,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_delete_snapshot" do
@@ -934,7 +957,7 @@ end
 script "js_make_terminate_request", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],

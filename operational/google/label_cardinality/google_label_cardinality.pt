@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.4",
+  version: "0.3.1",
   provider: "Google",
   service: "Tags",
   policy_set: "Tag Cardinality",
@@ -62,6 +62,24 @@ parameter "param_projects_ignore_app" do
   default "No"
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -105,7 +123,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -175,7 +193,7 @@ end
 script "js_google_projects_filtered", type: "javascript" do
   parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_projects_list.length > 0) {
     filtered = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
@@ -203,7 +221,7 @@ end
 script "js_google_global_compute_resource_types", type: "javascript" do
   parameters "ds_google_projects_filtered"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   types = [
     "images",
     "snapshots"
@@ -307,7 +325,7 @@ end
 script "js_google_compute_resources", type: "javascript" do
   parameters "aggregated_resources", "global_resources"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   _.each(aggregated_resources, function(response) {
@@ -440,23 +458,25 @@ end
 script "js_google_resources_combined", type: "javascript" do
   parameters "ds_google_compute_resources", "ds_google_sqladmin_resources", "ds_google_storage_resources", "ds_google_bigquery_datasets", "ds_google_bigquery_tables"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = ds_google_compute_resources.concat(ds_google_sqladmin_resources, ds_google_storage_resources, ds_google_bigquery_datasets, ds_google_bigquery_tables)
 EOS
 end
 
 datasource "ds_google_projects_label_list" do
-  run_script $js_label_lister, $ds_google_projects_filtered, $ds_applied_policy, "Project"
+  run_script $js_label_lister, $ds_google_projects_filtered, $ds_applied_policy, $param_incident_csv, "Project"
 end
 
 datasource "ds_google_resources_label_list" do
-  run_script $js_label_lister, $ds_google_resources_combined, $ds_applied_policy, "Resource"
+  run_script $js_label_lister, $ds_google_resources_combined, $ds_applied_policy, $param_incident_csv, "Resource"
 end
 
 script "js_label_lister", type: "javascript" do
-  parameters "labeled_list", "ds_applied_policy", "label_type"
+  parameters "labeled_list", "ds_applied_policy", "param_incident_csv", "label_type"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   labels = {}
   result = []
 
@@ -475,7 +495,8 @@ script "js_label_lister", type: "javascript" do
       key: key,
       cardinality: _.uniq(labels[key]).length,
       value_list: _.uniq(labels[key]).join(', '),
-      policy_name: ds_applied_policy['name']
+      policy_name: ds_applied_policy['name'],
+      csv_message: csv_message
     })
   })
 
@@ -490,7 +511,7 @@ end
 script "js_label_report", type: "javascript" do
   parameters "ds_google_projects_label_list", "ds_google_resources_label_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = ds_google_projects_label_list.concat(ds_google_resources_label_list)
 EOS
 end
@@ -502,6 +523,7 @@ end
 policy "pol_google_label_cardinality_report" do
   validate_each $ds_label_report do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Label Keys Found"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "key"), ""))
     escalate $esc_email
     export do
@@ -530,7 +552,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################
@@ -581,7 +606,7 @@ end
 script "js_make_terminate_request", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],

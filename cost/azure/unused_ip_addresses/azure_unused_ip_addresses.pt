@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "7.3.6",
+  version: "7.4.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Unused IP Addresses",
@@ -125,6 +125,24 @@ parameter "param_automatic_action" do
   default []
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -168,7 +186,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -238,7 +256,7 @@ end
 script "js_top_level_bcs", type: "javascript" do
   parameters "ds_billing_centers"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   filtered_bcs = _.filter(ds_billing_centers, function(bc) {
     return bc['parent_id'] == null || bc['parent_id'] == undefined
   })
@@ -278,7 +296,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   symbol = "$"
   separator = ","
 
@@ -332,7 +350,7 @@ end
 script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -382,7 +400,7 @@ end
 script "js_ip_addresses_alloc_filtered", type: "javascript" do
   parameters "ds_ip_addresses", "param_allocation_type"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_allocation_type != "Both") {
     result = _.filter(ds_ip_addresses, function(ip) {
       return ip['properties']['publicIPAllocationMethod'] == param_allocation_type
@@ -400,7 +418,7 @@ end
 script "js_ip_addresses_tag_filtered", type: "javascript" do
   parameters "ds_ip_addresses_alloc_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -477,7 +495,7 @@ end
 script "js_ip_addresses_region_filtered", type: "javascript" do
   parameters "ds_ip_addresses_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_regions_list.length > 0) {
     result = _.filter(ds_ip_addresses_tag_filtered, function(ip) {
       include_ip = _.contains(param_regions_list, ip['region'])
@@ -501,7 +519,7 @@ end
 script "js_unattached_ip_addresses", type: "javascript" do
   parameters "ds_ip_addresses_region_filtered"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.filter(ds_ip_addresses_region_filtered, function(ip) {
     return typeof(ip['properties']['ipConfiguration']) != 'object' && typeof(ip['properties']['natGateway']) != 'object'
   })
@@ -531,7 +549,7 @@ end
 script "js_event_logs", type:"javascript" do
   parameters "subscription_id", "param_azure_endpoint"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // Go back 90 days, which is the maximum supported by Azure Activity Logs
   start_time = new Date()
   start_time.setDate(start_time.getDate() - 90)
@@ -562,7 +580,7 @@ end
 script "js_unused_ip_addresses", type: "javascript" do
   parameters "ds_unattached_ip_addresses", "ds_event_logs", "param_days_unattached"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   // Create object containing the most recent event for each resource
@@ -635,7 +653,7 @@ end
 script "js_ip_costs", type:"javascript" do
   parameters "subscription_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   //Get Start and End dates
   start_date = new Date()
   start_date.setDate(start_date.getDate() - 3)
@@ -723,7 +741,7 @@ end
 script "js_ip_costs_grouped", type: "javascript" do
   parameters "ds_ip_costs"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Multiple a single day's cost by the average number of days in a month.
   // The 0.25 is to account for leap years for extra precision.
   cost_multiplier = 365.25 / 12
@@ -741,13 +759,15 @@ EOS
 end
 
 datasource "ds_ip_cost_mapping" do
-  run_script $js_ip_cost_mapping, $ds_unused_ip_addresses, $ds_ip_addresses_region_filtered, $ds_ip_costs_grouped, $ds_applied_policy, $ds_currency, $param_days_unattached, $param_min_savings
+  run_script $js_ip_cost_mapping, $ds_unused_ip_addresses, $ds_ip_addresses_region_filtered, $ds_ip_costs_grouped, $ds_applied_policy, $ds_currency, $param_days_unattached, $param_min_savings, $param_incident_csv
 end
 
 script "js_ip_cost_mapping", type:"javascript" do
-  parameters "ds_unused_ip_addresses", "ds_ip_addresses_region_filtered", "ds_ip_costs_grouped", "ds_applied_policy", "ds_currency", "param_days_unattached", "param_min_savings"
+  parameters "ds_unused_ip_addresses", "ds_ip_addresses_region_filtered", "ds_ip_costs_grouped", "ds_applied_policy", "ds_currency", "param_days_unattached", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -867,7 +887,7 @@ script "js_ip_cost_mapping", type:"javascript" do
     "The IP Address field will be blank for some Public IP Address resources that are set ",
     "to 'dynamic' and are not attached to another resource. The Days Unattached ",
     "field will be empty for any Public IP Address resources that have been unattached for ",
-    "over 90 days due to Azure only retaining 90 days of log data."
+    "over 90 days due to Azure only retaining 90 days of log data.\n\n"
   ].join('')
 
   // Sort by descending order of savings value
@@ -884,7 +904,7 @@ script "js_ip_cost_mapping", type:"javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + idle_message + disclaimer + age_disclaimer
+  result[0]['message'] = findings + idle_message + disclaimer + age_disclaimer + csv_message
   result[0]['policy_name'] = ds_applied_policy['name']
 EOS
 end
@@ -971,7 +991,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_delete_ip_address" do
@@ -1098,7 +1121,7 @@ end
 script "js_make_terminate_request", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],

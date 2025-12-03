@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.6.7",
+  version: "3.7.1",
   provider: "AWS",
   service: "Compute",
   policy_set: "Reserved Instances",
@@ -99,6 +99,24 @@ parameter "param_payment_option" do
   default "No Upfront"
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -143,7 +161,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -216,7 +234,7 @@ end
 script "js_currency_target", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Default to USD if currency is not found
   result = ds_currency_reference['USD']
 
@@ -251,7 +269,7 @@ end
 script "js_vendor_account_table", type:"javascript" do
   parameters "ds_cloud_vendor_accounts"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = {}
 
   _.each(ds_cloud_vendor_accounts, function(account) {
@@ -267,7 +285,7 @@ end
 script "js_ri_types", type: "javascript" do
   parameters "param_service"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_service.length == 0) {
     services = [
       "ElastiCache",
@@ -354,7 +372,7 @@ end
 script "js_ri_recommendations", type: "javascript" do
   parameters "service", "param_days", "param_payment_option", "param_service_spec", "param_term", "param_scope"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // Tables to convert human-readable parameter values to their API equivalents
   period_table = {
     "Last 7 Days": "SEVEN_DAYS",
@@ -424,7 +442,7 @@ end
 script "js_conditional_currency_conversion", type: "javascript" do
   parameters "ds_currency_target", "ds_ri_recommendations"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
   from_currency = "USD"
 
@@ -471,7 +489,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_target", "ds_currency_conversion"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = ds_currency_target
   result['exchange_rate'] = 1
 
@@ -491,13 +509,15 @@ EOS
 end
 
 datasource "ds_ri_normalization" do
-  run_script $js_ri_normalization, $ds_ri_recommendations, $ds_applied_policy, $ds_vendor_account_table, $ds_currency, $ds_currency_conversion, $ds_conditional_currency_conversion, $param_days, $param_service, $param_service_spec, $param_scope, $param_term, $param_payment_option, $param_min_savings
+  run_script $js_ri_normalization, $ds_ri_recommendations, $ds_applied_policy, $ds_vendor_account_table, $ds_currency, $ds_currency_conversion, $ds_conditional_currency_conversion, $param_days, $param_service, $param_service_spec, $param_scope, $param_term, $param_payment_option, $param_min_savings, $param_incident_csv
 end
 
 script "js_ri_normalization", type: "javascript" do
-  parameters "ds_ri_recommendations", "ds_applied_policy", "ds_vendor_account_table", "ds_currency", "ds_currency_conversion", "ds_conditional_currency_conversion", "param_days", "param_service", "param_service_spec", "param_scope", "param_term", "param_payment_option", "param_min_savings"
+  parameters "ds_ri_recommendations", "ds_applied_policy", "ds_vendor_account_table", "ds_currency", "ds_currency_conversion", "ds_conditional_currency_conversion", "param_days", "param_service", "param_service_spec", "param_scope", "param_term", "param_payment_option", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -658,7 +678,7 @@ script "js_ri_normalization", type: "javascript" do
   ].join('')
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
-  empty_fields = "Empty fields indicate information that is not applicable to that particular recommendation."
+  empty_fields = "Empty fields indicate information that is not applicable to that particular recommendation.\n\n"
 
   savings_message = [
     ds_currency['symbol'], ' ',
@@ -670,7 +690,7 @@ script "js_ri_normalization", type: "javascript" do
 
   if (result.length > 0) {
     result[0]['total_savings'] = savings_message
-    result[0]['message'] = conversion_message + message + disclaimer + empty_fields
+    result[0]['message'] = conversion_message + message + disclaimer + empty_fields + csv_message
   }
 EOS
 end
@@ -820,5 +840,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

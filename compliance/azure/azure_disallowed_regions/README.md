@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy finds all Azure virtual machines within a user-specified list of disallowed regions or outside of a user-specified list of allowed regions. An incident is raised and a report emailed containing all of the non-compliant instances, with the option to power off or delete offending instances.
+This policy template finds all Azure virtual machines within a user-specified list of disallowed regions or outside of a user-specified list of allowed regions. An incident is raised and a report emailed containing all of the non-compliant instances, with the option to power off or delete offending instances.
 
 ## Input Parameters
 
@@ -16,8 +16,8 @@ This policy finds all Azure virtual machines within a user-specified list of dis
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 - *Power Off Type* - Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances. Only applicable when taking action against instances.
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Delete Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be deleted.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Delete Instances" action while applying the policy template, all the resources that didn't satisfy the policy condition will be deleted.
 
 ## Policy Actions
 
@@ -27,7 +27,7 @@ For example if a user selects the "Delete Instances" action while applying the p
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Compute/virtualMachines/read`

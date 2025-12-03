@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.3.4",
+  version: "4.5.2",
   provider: "Google",
   service: "Compute",
   recommendation_type: "Rate Reduction",
@@ -107,6 +107,24 @@ parameter "param_algorithm" do
   default "Optimal"
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -150,7 +168,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -223,7 +241,7 @@ end
 script "js_currency_target", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Default to USD if currency is not found
   result = ds_currency_reference['USD']
 
@@ -261,7 +279,7 @@ end
 script "js_google_projects_filtered", type: "javascript" do
   parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_projects_list.length > 0) {
     filtered = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
@@ -309,7 +327,7 @@ end
 script "js_google_regions_filtered", type: "javascript" do
   parameters "ds_google_regions", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_regions_list.length > 0) {
     result = _.filter(ds_google_regions, function(region) {
       include_region = _.contains(param_regions_list, region['region'])
@@ -333,7 +351,7 @@ end
 script "js_recommender_requests", type: "javascript" do
   parameters "ds_google_regions_filtered"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   _.each(ds_google_regions_filtered, function(region) {
@@ -380,7 +398,7 @@ end
 script "js_recommendations", type: "javascript" do
   parameters "projectId", "region", "number"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // If 100 requests have been made, wait 1 minute to avoid throttling
   if (number % 100 === 0) {
     now = new Date().getTime()
@@ -394,6 +412,7 @@ script "js_recommendations", type: "javascript" do
     host: "recommender.googleapis.com",
     ignore_status: [400, 401, 403],
     path: "/v1/projects/"+ projectId + "/locations/" + region + "/recommenders/google.compute.commitment.UsageCommitmentRecommender/recommendations",
+    query_params: { filter: "stateInfo.state=ACTIVE" },
     query_strings: { alt: "json" }
   }
 EOS
@@ -409,7 +428,7 @@ end
 script "js_conditional_currency_conversion", type: "javascript" do
   parameters "ds_currency_target", "ds_recommendations"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
   from_currency = "USD"
 
@@ -452,7 +471,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_target", "ds_currency_conversion"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = ds_currency_target
   result['exchange_rate'] = 1
 
@@ -472,13 +491,15 @@ EOS
 end
 
 datasource "ds_recommendations_incident" do
-  run_script $js_recommendations_incident, $ds_recommendations, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings, $param_term, $param_algorithm
+  run_script $js_recommendations_incident, $ds_recommendations, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings, $param_term, $param_algorithm, $param_incident_csv
 end
 
 script "js_recommendations_incident", type:"javascript" do
-  parameters "ds_recommendations", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings", "param_term", "param_algorithm"
+  parameters "ds_recommendations", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings", "param_term", "param_algorithm", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -585,6 +606,7 @@ script "js_recommendations_incident", type:"javascript" do
         resourcesToPurchase: resourcesToPurchase,
         term: term,
         service: "Compute Engine",
+        paymentOption: "No Upfront",
         policy_name: ds_applied_policy['name'],
         total_savings: "",
         message: ""
@@ -614,7 +636,7 @@ script "js_recommendations_incident", type:"javascript" do
   ].join('')
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
-  empty_fields = "Empty fields indicate information that is not applicable to that particular recommendation."
+  empty_fields = "Empty fields indicate information that is not applicable to that particular recommendation.\n\n"
 
   savings_message = [
     ds_currency['symbol'], ' ',
@@ -643,13 +665,14 @@ script "js_recommendations_incident", type:"javascript" do
     resourcesToPurchase: "",
     term: "",
     service: "",
+    paymentOption: "",
     policy_name: "",
     total_savings: "",
     message: ""
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = conversion_message + message + disclaimer + empty_fields
+  result[0]['message'] = conversion_message + message + disclaimer + empty_fields + csv_message
 EOS
 end
 
@@ -700,6 +723,9 @@ policy "pol_recommendations" do
       field "algorithm" do
         label "Algorithm"
       end
+      field "paymentOption" do
+        label "Payment Option"
+      end
       field "recommendationDetails" do
         label "Recommendation"
       end
@@ -737,7 +763,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################
@@ -788,7 +817,7 @@ end
 script "js_make_terminate_request", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],

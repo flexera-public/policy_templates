@@ -1,5 +1,17 @@
 # Changelog
 
+## v4.5.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v4.5.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v4.4.6
+
+- Updated label of email parameter to "Email Addresses" to match other policy templates. Functionality unchanged.
+
 ## v4.4.5
 
 - Fixed issue with `GetMetricData` API request when gathering CloudWatch metrics. Functionality unchanged.

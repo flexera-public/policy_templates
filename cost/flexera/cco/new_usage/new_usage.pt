@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "3.0.6",
+  version: "3.1.1",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -79,6 +79,24 @@ parameter "param_bc_list" do
   default []
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -102,7 +120,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -169,7 +187,7 @@ end
 script "js_billing_centers_filtered", type: "javascript" do
   parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_bc_list.length > 0) {
@@ -219,7 +237,7 @@ end
 script "js_dimension", type: "javascript" do
   parameters "ds_dimensions_list", "param_dimension"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.find(ds_dimensions_list, function(item) { return item['id'] == param_dimension })
 
   // If user-specified dimension isn't a valid dimension ID, check for name instead
@@ -268,7 +286,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   symbol = "$"
   separator = ","
 
@@ -319,7 +337,7 @@ end
 script "js_get_bill", type: "javascript" do
   parameters "ds_billing_centers_filtered", "ds_dimension", "param_cost_metric", "param_lookback", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   cost_metric_table = {
     "Unamortized Unblended": "cost_nonamortized_unblended_adj",
     "Amortized Unblended": "cost_amortized_unblended_adj",
@@ -356,13 +374,15 @@ EOS
 end
 
 datasource "ds_new_usage" do
-  run_script $js_new_usage, $ds_current_bill, $ds_previous_bill, $ds_billing_centers, $ds_dimension, $ds_currency, $ds_applied_policy, $param_min_cost, $param_lookback, $param_cost_metric
+  run_script $js_new_usage, $ds_current_bill, $ds_previous_bill, $ds_billing_centers, $ds_dimension, $ds_currency, $ds_applied_policy, $param_min_cost, $param_lookback, $param_cost_metric, $param_incident_csv
 end
 
 script "js_new_usage", type: "javascript" do
-  parameters "ds_current_bill", "ds_previous_bill", "ds_billing_centers", "ds_dimension", "ds_currency", "ds_applied_policy", "param_min_cost", "param_lookback", "param_cost_metric"
+  parameters "ds_current_bill", "ds_previous_bill", "ds_billing_centers", "ds_dimension", "ds_currency", "ds_applied_policy", "param_min_cost", "param_lookback", "param_cost_metric", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -470,10 +490,10 @@ script "js_new_usage", type: "javascript" do
       message += "New usage types with an estimated monthly cost below " + ds_currency['symbol'] + param_min_cost + " were not included in the results. "
     }
 
-    disclaimer = "\n\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
+    disclaimer = "\n\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
     result[0]['total_cost'] = cost_message
-    result[0]['message'] = message + disclaimer
+    result[0]['message'] = message + disclaimer + csv_message
   }
 EOS
 end
@@ -534,5 +554,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

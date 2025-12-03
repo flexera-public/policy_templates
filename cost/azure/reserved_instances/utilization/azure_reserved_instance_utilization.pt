@@ -8,7 +8,7 @@ category "Cost"
 severity "high"
 default_frequency "daily"
 info(
-  version: "4.0.0",
+  version: "4.1.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Reserved Instances",
@@ -63,6 +63,24 @@ parameter "param_billing_centers" do
   default []
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -114,7 +132,7 @@ end
 script "js_billing_centers_filtered", type: "javascript" do
   parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_billing_centers"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_billing_centers.length > 0) {
@@ -161,7 +179,7 @@ end
 script "js_accounts_by_billing_center", type: "javascript" do
   parameters "ds_billing_centers_filtered", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   start_date = new Date().toISOString()
   start_date = start_date.split('-')[0] + '-' + start_date.split('-')[1]
 
@@ -240,7 +258,7 @@ end
 script "js_filtered_azure_reservations", type: "javascript" do
   parameters "ds_accounts_by_billing_center", "ds_azure_reservations"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   bc_account_ids = _.uniq(_.pluck(ds_accounts_by_billing_center, "vendor_account_id"))
 
   result = _.filter(ds_azure_reservations, function(ri) {
@@ -256,7 +274,7 @@ end
 script "js_account_list", type: "javascript" do
   parameters "ds_accounts_by_billing_center", "ds_billing_centers"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   bc_object = {}
 
   _.each(ds_billing_centers, function(bc) { bc_object[bc['id']] = bc['name'] })
@@ -274,13 +292,15 @@ EOS
 end
 
 datasource "ds_underutil_reservations" do
-  run_script $js_underutil_reservations, $ds_filtered_azure_reservations, $ds_account_list, $ds_applied_policy, $param_utilization, $param_util_metric
+  run_script $js_underutil_reservations, $ds_filtered_azure_reservations, $ds_account_list, $ds_applied_policy, $param_utilization, $param_util_metric, $param_incident_csv
 end
 
 script "js_underutil_reservations", type: "javascript" do
-  parameters "ds_filtered_azure_reservations", "ds_account_list", "ds_applied_policy", "param_utilization", "param_util_metric"
+  parameters "ds_filtered_azure_reservations", "ds_account_list", "ds_applied_policy", "param_utilization", "param_util_metric", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   underutil_ris = _.filter(ds_filtered_azure_reservations, function(ri) {
     utilization = ri['util_max_percentage']
     if (param_util_metric == "Average") { utilization = ri['util_avg_percentage'] }
@@ -360,7 +380,8 @@ script "js_underutil_reservations", type: "javascript" do
       ") ", ri_verb, " less than ", param_utilization, "% ",
       param_util_metric.toLowerCase(), " utilization.\n\n",
       "The above settings can be modified by editing the applied policy and ",
-      "changing the appropriate parameters."
+      "changing the appropriate parameters.\n\n",
+      csv_message
     ].join('')
   }
 EOS
@@ -438,5 +459,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

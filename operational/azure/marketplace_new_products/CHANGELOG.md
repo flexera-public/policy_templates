@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.6.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v0.6.0
+
+- Added support for attaching CSV files to incident emails.
+
 ## v0.5.3
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

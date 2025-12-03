@@ -16,6 +16,8 @@ The intended use of this policy template is to enable the user to quickly identi
 - *Low Account Spend Threshold* - Threshold to consider the user-specified dimension to be low spend. Only values with spend lower than this number will be reported.
 - *Minimum Spend Threshold* - Threshold to consider the user-specified dimension to be worth actioning on. Only values with spend higher than this number will be reported.
 - *Dimension* - The name or ID of the Flexera dimension whose values you want to check for low usage; for example, `Cloud Vendor Account Name`. Enter `Billing Center` to split costs by Billing Center.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 
@@ -23,7 +25,7 @@ The intended use of this policy template is to enable the user to quickly identi
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`

@@ -8,7 +8,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.2.4",
+  version: "3.3.1",
   provider: "Google",
   service: "Compute",
   policy_set: "Untagged Resources",
@@ -88,6 +88,24 @@ parameter "param_resource_types" do
   default ["Persistent Disks", "VPN Gateways (Internal)", "VPN Gateways (External)", "Images", "Virtual Machines", "Snapshots", "Storage Buckets"]
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -131,7 +149,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -170,7 +188,7 @@ end
 
 script "js_zone_to_region", type:"javascript" do
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = {
     "us-east1-b": "us-east1",
     "us-east1-c": "us-east1",
@@ -311,7 +329,7 @@ end
 script "js_google_projects_filtered", type: "javascript" do
   parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_projects_list.length > 0) {
     filtered = _.filter(ds_google_projects, function(project) {
       include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
@@ -359,7 +377,7 @@ end
 script "js_generate_uris", type: "javascript" do
   parameters "ds_google_projects_filtered", "param_resource_types", "endpoint"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   param_mapping = {
     "/aggregated/disks": "Persistent Disks"
     "/aggregated/vpnGateways": "VPN Gateways (Internal)"
@@ -392,7 +410,7 @@ end
 script "js_bucket_uris", type: "javascript" do
   parameters "ds_google_projects_filtered", "param_resource_types"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   if (_.contains(param_resource_types, "Storage Buckets")) {
@@ -436,7 +454,7 @@ end
 script "js_disks", type: "javascript" do
   parameters "ds_get_disks", "ds_zone_to_region"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   _.each(ds_get_disks, function(response) {
@@ -509,7 +527,7 @@ end
 script "js_vpn_gateways", type: "javascript" do
   parameters "ds_get_vpn_gateways"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   _.each(ds_get_vpn_gateways, function(response) {
@@ -632,7 +650,7 @@ end
 script "js_instances", type: "javascript" do
   parameters "ds_get_instances", "ds_zone_to_region"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   _.each(ds_get_instances, function(response) {
@@ -838,13 +856,15 @@ EOS
 end
 
 datasource "ds_missing_labels_incident" do
-  run_script $js_missing_labels_incident, $ds_google_resources_missing_labels, $ds_applied_policy, $param_labels, $param_labels_boolean
+  run_script $js_missing_labels_incident, $ds_google_resources_missing_labels, $ds_applied_policy, $param_labels, $param_labels_boolean, $param_incident_csv
 end
 
 script "js_missing_labels_incident", type: "javascript" do
-  parameters "ds_google_resources_missing_labels", "ds_applied_policy", "param_labels", "param_labels_boolean"
+  parameters "ds_google_resources_missing_labels", "ds_applied_policy", "param_labels", "param_labels_boolean", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   resource_mapping = {
     "Persistent Disks": "Persistent Disk",
     "VPN Gateways (Internal)": "VPN Gateway (Internal)",
@@ -910,9 +930,9 @@ script "js_missing_labels_incident", type: "javascript" do
 
   message = ["The following Google resources are missing ", phrase, " of the following labels:\n\n"].join('')
   label_list = _.map(param_labels, function(label) { return ["- ", label, "\n"].join('') }).join('')
-  disclaimer = "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
+  disclaimer = "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
-  result[0]['message'] = message + label_list + disclaimer
+  result[0]['message'] = message + label_list + disclaimer + csv_message
 EOS
 end
 
@@ -985,7 +1005,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_label_resources" do
@@ -1200,7 +1223,7 @@ end
 script "js_make_terminate_request", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],

@@ -1,5 +1,13 @@
 # Changelog
 
+## v6.1.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v6.1.0
+
+- Added support for attaching CSV files to incident emails.
+
 ## v6.0.6
 
 - Fixed bug that was causing metrics for DTU database to be empty.

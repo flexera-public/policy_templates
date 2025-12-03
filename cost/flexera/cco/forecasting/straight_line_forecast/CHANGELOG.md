@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.0.6
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v4.0.5
+
+- Changed description to say "policy template" for clarity. Functionality unchanged.
+
 ## v4.0.4
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.

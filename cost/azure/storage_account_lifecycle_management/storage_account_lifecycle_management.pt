@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.0.6",
+  version: "4.1.1",
   provider: "Azure",
   service: "Storage Accounts",
   policy_set: "Lifecycle Management",
@@ -87,6 +87,24 @@ parameter "param_regions_list" do
   default []
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -130,7 +148,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -202,7 +220,7 @@ end
 script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -241,7 +259,7 @@ end
 script "js_storage_accounts", type: "javascript" do
   parameters "subscriptionId", "param_azure_endpoint"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // Slow down rate of requests to prevent throttling
   api_wait = 1
   var now = new Date().getTime()
@@ -266,7 +284,7 @@ end
 script "js_storage_accounts_tag_filtered", type: "javascript" do
   parameters "ds_storage_accounts", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -343,7 +361,7 @@ end
 script "js_storage_accounts_region_filtered", type: "javascript" do
   parameters "ds_storage_accounts_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_regions_list.length > 0) {
     result = _.filter(ds_storage_accounts_tag_filtered, function(resource) {
       include_resource = _.contains(param_regions_list, resource['region'])
@@ -380,7 +398,7 @@ end
 script "js_management_policies", type: "javascript" do
   parameters "storage_id", "param_azure_endpoint"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // Slow down rate of requests to prevent throttling
   api_wait = 1
   var now = new Date().getTime()
@@ -399,13 +417,15 @@ EOS
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_storage_accounts_region_filtered, $ds_management_policies, $ds_applied_policy
+  run_script $js_merged_metrics, $ds_storage_accounts_region_filtered, $ds_management_policies, $ds_applied_policy, $param_incident_csv
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_storage_accounts_region_filtered", "ds_management_policies", "ds_applied_policy"
+  parameters "ds_storage_accounts_region_filtered", "ds_management_policies", "ds_applied_policy", "param_incident_csv"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   mp_object = {}
 
   _.each(ds_management_policies, function(mp) {
@@ -434,7 +454,8 @@ script "js_merged_metrics", type: "javascript" do
       region: account['region'],
       tags: tags.join(', '),
       policy_name: ds_applied_policy['name'],
-      service: "Microsoft.Storage"
+      service: "Microsoft.Storage",
+      csv_message: csv_message
     }
   })
 EOS
@@ -447,6 +468,7 @@ end
 policy "pol_azure_storage_account_lifecycle" do
   validate_each $ds_merged_metrics do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Storage Accounts Without Lifecycle Management Policies Found"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
@@ -490,7 +512,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################
@@ -541,7 +566,7 @@ end
 script "js_make_terminate_request", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],

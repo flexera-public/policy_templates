@@ -1,5 +1,13 @@
 # Changelog
 
+## v6.5.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v6.5.0
+
+- Added support for attaching CSV files to incident emails.
+
 ## v6.4.8
 
 - Fixed issue where estimated savings would sometimes be reported as 0 inaccurately.

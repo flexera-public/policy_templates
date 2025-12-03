@@ -1,5 +1,9 @@
 # Changelog
 
+## v7.0.9
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v7.0.8
 
 - Added metadata specific to meta parent policies. Functionality unchanged.

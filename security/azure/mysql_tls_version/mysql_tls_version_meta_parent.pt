@@ -9,7 +9,7 @@ category "Meta"
 default_frequency "hourly"
 info(
   provider: "Azure",
-  version: "3.0.5", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "3.0.6", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "true",
   deprecated: "false",
   hide_skip_approvals: "true"
@@ -26,7 +26,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
       flexera: "api.flexera.com",
@@ -95,6 +95,24 @@ parameter "param_template_source" do
   description "By default, will use the \"Azure MySQL Flexible Servers Without Secure TLS\" Policy Template from Catalog.  Optionally, you can use the \"Azure MySQL Flexible Servers Without Secure TLS\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
+end
+
+parameter "param_combined_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Consolidated Incident Email"
+  description "Whether or not to attach the results as a CSV file to the consolidated incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_combined_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Consolidated Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the consolidated incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ## Child Policy Parameters
@@ -199,11 +217,11 @@ end
 script "js_child_policy_options", type: "javascript" do
   parameters "ds_self_policy_information"
   result "options"
-  code <<-EOS
+  code <<-'EOS'
   // Filter Options that are not appropriate for Child Policy
   var options = _.map(ds_self_policy_information.options, function(option){
     // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes", param_policy_schedule are exclusion to Meta Parent Policy Parameters
-    if (!_.contains(["param_combined_incident_email", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
+    if (!_.contains(["param_combined_incident_email", "param_combined_incident_csv", "param_combined_incident_table_size", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
       return { "name": option.name, "value": option.value };
     }
   });
@@ -222,7 +240,7 @@ end
 script "js_child_policy_options_map", type: "javascript" do
   parameters "ds_child_policy_options"
   result "options"
-  code <<-EOS
+  code <<-'EOS'
   function format_options_keyvalue(options) {
     var options_keyvalue_map = {};
     _.each(options, function(option) {
@@ -241,7 +259,7 @@ end
 script "js_format_self", type: "javascript" do
   parameters "ds_self_policy_information", "ds_child_policy_options_map"
   result "formatted"
-  code <<-EOS
+  code <<-'EOS'
   var formatted = {
     "name": ds_self_policy_information["name"],
     "creator_id": ds_self_policy_information["creator_id"],
@@ -278,7 +296,7 @@ end
 script "js_published_child_policy_information", type: "javascript" do
   parameters "ds_get_published_child_policy_information"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.filter(ds_get_published_child_policy_information, function(item) {
     return item['name'] == "Azure MySQL Flexible Servers Without Secure TLS" && item['created_by'] == "support@flexera.com"
   })
@@ -311,7 +329,7 @@ end
 script "js_project_child_policy_information", type: "javascript" do
   parameters "ds_get_project_child_policy_information"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.filter(ds_get_project_child_policy_information, function(item) {
     return item['name'] == "Azure MySQL Flexible Servers Without Secure TLS"
   })
@@ -357,7 +375,7 @@ end
 script "js_make_billing_center_request", type: "javascript" do
   parameters "rs_org_id", "rs_optima_host", "billing_centers_unformatted", "param_dimension_filter_includes", "param_dimension_filter_excludes"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
 
   billing_centers_formatted = []
 
@@ -509,7 +527,7 @@ end
 script "js_format_existing_policies_incidents", type: "javascript" do
   parameters "unformatted"
   result "formatted"
-  code <<-EOS
+  code <<-'EOS'
   formatted={}
 
   _.each(unformatted, function(incident) {
@@ -533,7 +551,7 @@ end
 script "js_format_existing_policies", type: "javascript" do
   parameters "ds_get_existing_policies", "ds_format_incidents"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   function format_options_keyvalue(options) {
     var options_keyvalue_map = {};
     _.each(options, function(option) {
@@ -555,11 +573,13 @@ script "js_format_existing_policies", type: "javascript" do
 
     incident = null
     incident2 = null
+    incident3 = null
     incidents = ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]]
 
     if (incidents != undefined) {
       incident = ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]][0]
       incident2 = ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]][1]
+      incident3 = ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]][2]
     }
 
     if (formatted[subscriptionID] == undefined) {
@@ -571,6 +591,7 @@ script "js_format_existing_policies", type: "javascript" do
         "updated_at": ds_get_existing_policies[x]["updated_at"],
         "incident": incident,
         "incident2": incident2,
+        "incident3": incident3,
         "options": options
       }
       tracking[subscriptionID] = false
@@ -588,7 +609,8 @@ script "js_format_existing_policies", type: "javascript" do
           "status": ds_get_existing_policies[x]["status"],
           "updated_at": ds_get_existing_policies[x]["updated_at"],
           "incident": incident,
-          "incident2": incident2
+          "incident2": incident2,
+          "incident3": incident3
         })
       } else {
         duplicates.push({
@@ -598,7 +620,8 @@ script "js_format_existing_policies", type: "javascript" do
           "status": current["status"],
           "updated_at": current["updated_at"],
           "incident": current["incident"],
-          "incident2": current["incident2"]
+          "incident2": current["incident2"],
+          "incident3": current["incident3"]
         })
         formatted[subscriptionID] = {
           "accountID": subscriptionID,
@@ -608,6 +631,7 @@ script "js_format_existing_policies", type: "javascript" do
           "updated_at": ds_get_existing_policies[x]["updated_at"],
           "incident": incident,
           "incident2": incident2,
+          "incident3": incident3,
           "options": options
         }
 
@@ -637,7 +661,7 @@ end
 script "js_take_in_parameters", type: "javascript" do
   parameters "ds_get_azure_subscriptions", "ds_format_self", "ds_published_child_policy_information", "ds_project_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "param_template_source", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
   result "grid_and_cwf"
-  code <<-EOS
+  code <<-'EOS'
 
   // Set Child Policy Information based on param_template_source value
   if (param_template_source == "Published Catalog Template") {
@@ -683,10 +707,21 @@ script "js_take_in_parameters", type: "javascript" do
       summary_parts = ep.incident2.summary.split(':')
       summary = summary_parts[summary_parts.length - 1].trim()
 
-      policy_status["incident_summary"] = summary + '||' + incident_url_prefix + ep.incident2.incident_id;
-      policy_status["incident_state"] = ep.incident2.state;
+      policy_status["incident2_summary"] = summary + '||' + incident_url_prefix + ep.incident2.incident_id;
+      policy_status["incident2_state"] = ep.incident2.state;
       policy_status["incident2_violation_data_count"] = ep.incident2.violation_data_count;
       policy_status["incident2_last_update"] = ep.incident2.updated_at;
+    }
+
+    if (ep.incident3 != null && ep.incident3 != undefined) {
+      // Remove policy name from summary when applicable
+      summary_parts = ep.incident3.summary.split(':')
+      summary = summary_parts[summary_parts.length - 1].trim()
+
+      policy_status["incident3_summary"] = summary + '||' + incident_url_prefix + ep.incident3.incident_id;
+      policy_status["incident3_state"] = ep.incident3.state;
+      policy_status["incident3_violation_data_count"] = ep.incident3.violation_data_count;
+      policy_status["incident3_last_update"] = ep.incident3.updated_at;
     }
 
     grid_and_cwf.grid.push(policy_status);
@@ -836,7 +871,7 @@ end
 script "js_children_in_error", type: "javascript" do
   parameters "ds_take_in_parameters"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.filter(ds_take_in_parameters["grid"], function(item) {
     return item["policy_status"] == "error"
   })
@@ -919,7 +954,7 @@ end
 script "js_only_grid", type: "javascript" do
   parameters "results"
   result "only_grid"
-  code <<-EOS
+  code <<-'EOS'
     only_grid = results.grid
   EOS
 end
@@ -931,7 +966,7 @@ end
 script "js_only_create", type: "javascript" do
   parameters "results"
   result "only_create"
-  code <<-EOS
+  code <<-'EOS'
     only_create = results.to_create
   EOS
 end
@@ -943,7 +978,7 @@ end
 script "js_only_update", type: "javascript" do
   parameters "results"
   result "only_update"
-  code <<-EOS
+  code <<-'EOS'
     only_update = results.to_update
   EOS
 end
@@ -955,7 +990,7 @@ end
 script "js_only_delete", type: "javascript" do
   parameters "results"
   result "only_delete"
-  code <<-EOS
+  code <<-'EOS'
     only_delete = results.to_delete
   EOS
 end
@@ -981,7 +1016,7 @@ end
 script "js_ds_bad_mysql_servers_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
@@ -1104,6 +1139,19 @@ EOS
       end
       field "incident2_last_update" do
         label "Incident 2 Last Update"
+      end
+      field "incident3_summary" do
+        label "Incident 3 Summary"
+        format "link-external"
+      end
+      field "incident3_state" do
+        label "Incident 3 State"
+      end
+      field "incident3_violation_data_count" do
+        label "Incident 3 Violation Count"
+      end
+      field "incident3_last_update" do
+        label "Incident 3 Last Update"
       end
     end
   end
@@ -1378,7 +1426,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_combined_incident_email
+  email $param_combined_incident_email do
+    attach_export_table $param_combined_incident_csv
+    body_table_max_rows $param_combined_incident_table_size
+  end
 end
 
 escalation "create_policies" do

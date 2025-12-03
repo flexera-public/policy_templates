@@ -1,5 +1,13 @@
 # Changelog
 
+## v6.3.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v6.3.0
+
+- Added support for attaching CSV files to incident emails.
+
 ## v6.2.5
 
 - Updated API request for gathering instance costs to only gather costs specific to virtual machines. Functionality unchanged but policy template is now less likely to fail to report costs.

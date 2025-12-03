@@ -1,0 +1,2127 @@
+name "Google Rightsize Cloud SQL Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy template finds underutilized and idle Google Cloud SQL instances and downsizes, stops, or deletes them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_instances"
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.2.1",
+  provider: "Google",
+  service: "Compute",
+  policy_set: "Rightsize Database Instances",
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_cross_family" do
+  type "string"
+  category "Policy Settings"
+  label "Enable Cross-Family Recommendations"
+  description "Whether to recommend downsizing instances to machine types outside of their current machine type family"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_projects_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Projects"
+  description "Allow or Deny entered Projects. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_projects_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Projects List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_projects_ignore_sys" do
+  type "string"
+  category "Filters"
+  label "Ignore System Projects"
+  description "Whether or not to automatically ignore system projects e.g. projects whose id begins with 'sys-'"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_projects_ignore_app" do
+  type "string"
+  category "Filters"
+  label "Ignore Google Apps Script Projects"
+  description "Whether or not to automatically ignore Google Apps Script projects e.g. projects whose id begins with 'app-'"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_labels" do
+  type "list"
+  category "Filters"
+  label "Exclusion Labels"
+  description "Cloud native labels to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_labels_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Labels: Any / All"
+  description "Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Labels' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_stats_idle_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore CPU utilization"
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_idle_threshold_mem_value" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance Memory Threshold (%)"
+  description "The Memory threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore memory utilization"
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_underutil_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization"
+  min_value -1
+  max_value 100
+  default 40
+end
+
+parameter "param_stats_underutil_threshold_mem_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance Memory Threshold (%)"
+  description "The Memory threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore memory utilization"
+  min_value -1
+  max_value 100
+  default 40
+end
+
+parameter "param_stats_check_both" do
+  type "string"
+  category "Statistics"
+  label "Both CPU and Memory or Either"
+  description "Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1"
+  allowed_values "Both CPU and Memory", "Either CPU or Memory"
+  default "Either CPU or Memory"
+end
+
+parameter "param_stats_threshold" do
+  type "string"
+  category "Statistics"
+  label "Threshold Statistic"
+  description "Statistic to use when determining if an instance is idle/underutilized."
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
+  default "Average"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at CPU and/or memory data for instances. This value cannot be set higher than 42 because Google does not retain metrics for longer than 42 days (6 weeks)."
+  min_value 1
+  max_value 42
+  default 30
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Downsize Underutilized Cloud SQL Instances", "Stop Idle Cloud SQL Instances", "Delete Idle Cloud SQL Instances"]
+  default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_google" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_google_projects" do
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+    query "filter", "(lifecycleState:ACTIVE)"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "number", jmes_path(col_item, "projectNumber")
+      field "id", jmes_path(col_item, "projectId")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_google_projects_filtered" do
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list, $param_projects_ignore_sys, $param_projects_ignore_app
+end
+
+script "js_google_projects_filtered", type: "javascript" do
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
+  result "result"
+  code <<-'EOS'
+  if (param_projects_list.length > 0) {
+    filtered = _.filter(ds_google_projects, function(project) {
+      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
+
+      if (param_projects_allow_or_deny == "Deny") {
+        include_project = !include_project
+      }
+
+      return include_project
+    })
+  } else {
+    filtered = ds_google_projects
+  }
+
+  result = _.reject(filtered, function(project) {
+    return (project['id'].substring(0, 4) == "sys-" && param_projects_ignore_sys == "Yes") || (project['id'].substring(0, 4) == "app-" && param_projects_ignore_app == "Yes")
+  })
+EOS
+end
+
+datasource "ds_cloudsql_instances" do
+  iterate $ds_google_projects_filtered
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "sqladmin.googleapis.com"
+    path join(["/v1/projects/", val(iter_item, "id"), "/instances"])
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
+    ignore_status [403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "resourceID", jmes_path(col_item, "name")
+      field "resourceName", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "region")
+      field "state", jmes_path(col_item, "state")
+      field "selfLink", jmes_path(col_item, "selfLink")
+      field "instanceType", jmes_path(col_item, "instanceType")
+      field "backendType", jmes_path(col_item, "backendType")
+      field "platform", jmes_path(col_item, "databaseVersion")
+      field "createTime", jmes_path(col_item, "createTime")
+      field "size", jmes_path(col_item, "settings.dataDiskSizeGb")
+      field "resourceType", jmes_path(col_item, "settings.tier")
+      field "labels", jmes_path(col_item, "settings.userLabels")
+      field "diskType", jmes_path(col_item, "settings.dataDiskType")
+      field "edition", jmes_path(col_item, "settings.edition")
+      field "availabilityType", jmes_path(col_item, "settings.availabilityType")
+      field "replicationType", jmes_path(col_item, "settings.replicationType")
+      field "pricingPlan", jmes_path(col_item, "settings.pricingPlan")
+      field "projectId", val(iter_item, "id")
+      field "projectName", val(iter_item, "name")
+      field "projectNumber", val(iter_item, "number")
+    end
+  end
+end
+
+datasource "ds_cloudsql_instances_label_filtered" do
+  run_script $js_cloudsql_instances_label_filtered, $ds_cloudsql_instances, $param_exclusion_labels, $param_exclusion_labels_boolean
+end
+
+script "js_cloudsql_instances_label_filtered", type: "javascript" do
+  parameters "ds_cloudsql_instances", "param_exclusion_labels", "param_exclusion_labels_boolean"
+  result "result"
+  code <<-'EOS'
+  comparators = _.map(param_exclusion_labels, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_labels.length > 0) {
+    result = _.reject(ds_cloudsql_instances, function(resource) {
+      resource_labels = {}
+      if (typeof(resource['labels']) == 'object') { resource_labels = resource['labels'] }
+
+      // Store a list of found labels
+      found_labels = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_label = resource_labels[comparator['key']]
+
+        if (comparison == 'key' && resource_label != undefined) { found_labels.push(string) }
+        if (comparison == '==' && resource_label == value) { found_labels.push(string) }
+        if (comparison == '!=' && resource_label != value) { found_labels.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_label != undefined && value.test(resource_label)) { found_labels.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_label == undefined) { found_labels.push(string) }
+          if (resource_label != undefined && value.test(resource_label)) { found_labels.push(string) }
+        }
+      })
+
+      all_labels_found = found_labels.length == comparators.length
+      any_labels_found = found_labels.length > 0 && param_exclusion_labels_boolean == 'Any'
+
+      return all_labels_found || any_labels_found
+    })
+  } else {
+    result = ds_cloudsql_instances
+  }
+EOS
+end
+
+datasource "ds_cloudsql_instances_region_filtered" do
+  run_script $js_cloudsql_instances_region_filtered, $ds_cloudsql_instances_label_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_cloudsql_instances_region_filtered", type: "javascript" do
+  parameters "ds_cloudsql_instances_label_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-'EOS'
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_cloudsql_instances_label_filtered, function(instance) {
+      include_instance = _.contains(param_regions_list, instance['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_instance = !include_instance
+      }
+
+      return include_instance
+    })
+  } else {
+    result = ds_cloudsql_instances_label_filtered
+  }
+EOS
+end
+
+datasource "ds_cpu_stats" do
+  iterate $ds_google_projects_filtered
+  request do
+    run_script $js_stats, val(iter_item, "id"), $param_stats_lookback, "cloudsql.googleapis.com/database/cpu/utilization"
+  end
+end
+
+datasource "ds_mem_stats" do
+  iterate $ds_google_projects_filtered
+  request do
+    run_script $js_stats, val(iter_item, "id"), $param_stats_lookback, "cloudsql.googleapis.com/database/memory/utilization"
+  end
+end
+
+script "js_stats", type: "javascript" do
+  parameters "projectId", "param_stats_lookback", "metric"
+  result "request"
+  code <<-'EOS'
+  group_by = [
+    "group_by sliding(" + param_stats_lookback + "d), .mean",
+    "group_by sliding(" + param_stats_lookback + "d), .max",
+    "group_by sliding(" + param_stats_lookback + "d), .min",
+    "group_by sliding(" + param_stats_lookback + "d), .percentile(99)",
+    "group_by sliding(" + param_stats_lookback + "d), .percentile(95)",
+    "group_by sliding(" + param_stats_lookback + "d), .percentile(90)"
+  ].join(' ; ')
+
+  query = [
+    "fetch cloudsql_database",
+    "metric " + metric,
+    "within " + param_stats_lookback + "d",
+    "{ " + group_by + " }",
+    "join"
+  ].join(" | ")
+
+  var request = {
+    auth: "auth_google",
+    verb: "POST",
+    host: "monitoring.googleapis.com",
+    path: [ "/v3/projects/", projectId, "/timeSeries:query" ].join(''),
+    header: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json"
+    },
+    body_fields: { "query": query },
+    ignore_status: [ 403, 404 ]
+  }
+EOS
+end
+
+datasource "ds_parsed_stats" do
+  run_script $js_parsed_stats, $ds_cpu_stats, $ds_mem_stats
+end
+
+script "js_parsed_stats", type: "javascript" do
+  parameters "ds_cpu_stats", "ds_mem_stats"
+  result "result"
+  code <<-'EOS'
+  result = {}
+
+  _.each(ds_cpu_stats, function(entry) {
+    cpu_descriptors = _.pluck(entry['timeSeriesDescriptor']['labelDescriptors'], 'key')
+
+    _.each(entry["timeSeriesData"], function(item) {
+      labels = {}
+
+      for (var i = 0; i < cpu_descriptors.length; i++) {
+        labels[cpu_descriptors[i]] = item['labelValues'][i]['stringValue']
+      }
+
+      instanceId = labels['resource.database_id']
+
+      if (instanceId) {
+        if (result[instanceId] == undefined) { result[instanceId] = {} }
+
+        result[instanceId]['cpuAverage'] = Number(item['pointData'][0]['values'][0]['doubleValue']) * 100
+        result[instanceId]['cpuMaximum'] = Number(item['pointData'][0]['values'][1]['doubleValue']) * 100
+        result[instanceId]['cpuMinimum'] = Number(item['pointData'][0]['values'][2]['doubleValue']) * 100
+        result[instanceId]['cpuP99'] = Number(item['pointData'][0]['values'][3]['doubleValue']) * 100
+        result[instanceId]['cpuP95'] = Number(item['pointData'][0]['values'][4]['doubleValue']) * 100
+        result[instanceId]['cpuP90'] = Number(item['pointData'][0]['values'][5]['doubleValue']) * 100
+      }
+    })
+  })
+
+  _.each(ds_mem_stats, function(entry) {
+    mem_descriptors = _.pluck(entry['timeSeriesDescriptor']['labelDescriptors'], 'key')
+
+    _.each(entry["timeSeriesData"], function(item) {
+      labels = {}
+
+      for (var i = 0; i < mem_descriptors.length; i++) {
+        labels[mem_descriptors[i]] = item['labelValues'][i]['stringValue']
+      }
+
+      instanceId = labels['resource.database_id']
+
+      if (instanceId) {
+        if (result[instanceId] == undefined) { result[instanceId] = {} }
+
+        result[instanceId]['memAverage'] = Number(item['pointData'][0]['values'][0]['doubleValue']) * 100
+        result[instanceId]['memMaximum'] = Number(item['pointData'][0]['values'][1]['doubleValue']) * 100
+        result[instanceId]['memMinimum'] = Number(item['pointData'][0]['values'][2]['doubleValue']) * 100
+        result[instanceId]['memP99'] = Number(item['pointData'][0]['values'][3]['doubleValue']) * 100
+        result[instanceId]['memP95'] = Number(item['pointData'][0]['values'][4]['doubleValue']) * 100
+        result[instanceId]['memP90'] = Number(item['pointData'][0]['values'][5]['doubleValue']) * 100
+      }
+    })
+  })
+EOS
+end
+
+datasource "ds_cloudsql_instances_with_stats" do
+  run_script $js_cloudsql_instances_with_stats, $ds_cloudsql_instances_region_filtered, $ds_parsed_stats
+end
+
+script "js_cloudsql_instances_with_stats", type: "javascript" do
+  parameters "ds_cloudsql_instances_region_filtered", "ds_parsed_stats"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_cloudsql_instances_region_filtered, function(instance) {
+    id = [ instance['projectId'], instance['resourceID'] ].join(':')
+
+    new_instance = {}
+    _.each(_.keys(instance), function(key) { new_instance[key] = instance[key] })
+
+    new_instance['cpuAverage'] = null
+    new_instance['cpuMaximum'] = null
+    new_instance['cpuMinimum'] = null
+    new_instance['cpuP99'] = null
+    new_instance['cpuP95'] = null
+    new_instance['cpuP90'] = null
+    new_instance['memAverage'] = null
+    new_instance['memMaximum'] = null
+    new_instance['memMinimum'] = null
+    new_instance['memP99'] = null
+    new_instance['memP95'] = null
+    new_instance['memP90'] = null
+
+    if (ds_parsed_stats[id]) {
+      new_instance['cpuAverage'] = ds_parsed_stats[id]['cpuAverage'] ? ds_parsed_stats[id]['cpuAverage'] : null
+      new_instance['cpuMaximum'] = ds_parsed_stats[id]['cpuMaximum'] ? ds_parsed_stats[id]['cpuMaximum'] : null
+      new_instance['cpuMinimum'] = ds_parsed_stats[id]['cpuMinimum'] ? ds_parsed_stats[id]['cpuMinimum'] : null
+      new_instance['cpuP99'] = ds_parsed_stats[id]['cpuP99'] ? ds_parsed_stats[id]['cpuP99'] : null
+      new_instance['cpuP95'] = ds_parsed_stats[id]['cpuP95'] ? ds_parsed_stats[id]['cpuP95'] : null
+      new_instance['cpuP90'] = ds_parsed_stats[id]['cpuP90'] ? ds_parsed_stats[id]['cpuP90'] : null
+      new_instance['memAverage'] = ds_parsed_stats[id]['memAverage'] ? ds_parsed_stats[id]['memAverage'] : null
+      new_instance['memMaximum'] = ds_parsed_stats[id]['memMaximum'] ? ds_parsed_stats[id]['memMaximum'] : null
+      new_instance['memMinimum'] = ds_parsed_stats[id]['memMinimum'] ? ds_parsed_stats[id]['memMinimum'] : null
+      new_instance['memP99'] = ds_parsed_stats[id]['memP99'] ? ds_parsed_stats[id]['memP99'] : null
+      new_instance['memP95'] = ds_parsed_stats[id]['memP95'] ? ds_parsed_stats[id]['memP95'] : null
+      new_instance['memP90'] = ds_parsed_stats[id]['memP90'] ? ds_parsed_stats[id]['memP90'] : null
+    }
+
+    return new_instance
+  })
+EOS
+end
+
+datasource "ds_cloudsql_costs" do
+  iterate $ds_google_projects_filtered
+  request do
+    run_script $js_cloudsql_costs, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceID", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_cloudsql_costs", type: "javascript" do
+  parameters "project_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Cloud SQL"
+              },
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "cloud sql"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor",
+            "type": "equal",
+            "value": "GCP"
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": project_id
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_cloudsql_costs_grouped" do
+  run_script $js_cloudsql_costs_grouped, $ds_cloudsql_costs
+end
+
+script "js_cloudsql_costs_grouped", type: "javascript" do
+  parameters "ds_cloudsql_costs"
+  result "result"
+  code <<-'EOS'
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_cloudsql_costs, function(item) {
+    id = item['resourceID'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_google_instance_sizes" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/google/google_compute_instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_google_instance_prices" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/google/google_vm_pricing.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_idle_cloudsql" do
+  run_script $js_idle_cloudsql, $ds_cloudsql_instances_with_stats, $ds_cloudsql_costs_grouped, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_stats_lookback, $param_min_savings, $param_incident_csv
+end
+
+script "js_idle_cloudsql", type:"javascript" do
+  parameters "ds_cloudsql_instances_with_stats", "ds_cloudsql_costs_grouped", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_stats_lookback", "param_min_savings", "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator) {
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  checking_cpu = param_stats_idle_threshold_cpu_value != -1
+  checking_mem = param_stats_idle_threshold_mem_value != -1
+
+  // Find idle Cloud SQL instances
+  idle_cloudsql = _.filter(ds_cloudsql_instances_with_stats, function(instance) {
+    idle = false
+    idle_cpu = false
+    idle_mem = false
+    cpu_test_stat = null
+    mem_test_stat = null
+
+    if (checking_cpu) {
+      if (param_stats_threshold == "Average" && instance['cpuAverage']) {
+        cpu_test_stat = instance['cpuAverage']
+      } else if (param_stats_threshold == "Maximum" && instance['cpuMaximum']) {
+        cpu_test_stat = instance['cpuMaximum']
+      } else if (param_stats_threshold == "p99" && instance['cpuP99']) {
+        cpu_test_stat = instance['cpuP99']
+      } else if (param_stats_threshold == "p95" && instance['cpuP95']) {
+        cpu_test_stat = instance['cpuP95']
+      } else if (param_stats_threshold == "p90" && instance['cpuP90']) {
+        cpu_test_stat = instance['cpuP90']
+      }
+    }
+
+    if (checking_mem) {
+      if (param_stats_threshold == "Average" && instance['memAverage']) {
+        mem_test_stat = instance['memAverage']
+      } else if (param_stats_threshold == "Maximum" && instance['memMaximum']) {
+        mem_test_stat = instance['memMaximum']
+      } else if (param_stats_threshold == "p99" && instance['memP99']) {
+        mem_test_stat = instance['memP99']
+      } else if (param_stats_threshold == "p95" && instance['memP95']) {
+        mem_test_stat = instance['memP95']
+      } else if (param_stats_threshold == "p90" && instance['memP90']) {
+        mem_test_stat = instance['memP90']
+      }
+    }
+
+    if (checking_cpu && cpu_test_stat && cpu_test_stat <= param_stats_idle_threshold_cpu_value) {
+      idle_cpu = true
+    }
+
+    if (checking_mem && mem_test_stat && mem_test_stat <= param_stats_idle_threshold_mem_value) {
+      idle_mem = true
+    }
+
+    if (checking_cpu && !checking_mem) {
+      idle = idle_cpu
+    } else if (!checking_cpu && checking_mem) {
+      idle = idle_mem
+    } else if (checking_cpu && checking_mem) {
+      if (param_stats_check_both == "Both CPU and Memory") {
+        idle = idle_cpu && idle_mem
+      } else {
+        idle = idle_cpu || idle_mem
+      }
+    }
+
+    return idle
+  })
+
+  result = []
+  total_savings = 0.0
+
+  _.each(idle_cloudsql, function(instance) {
+    savings = 0.0
+    if (ds_cloudsql_costs_grouped[instance['resourceID'].toLowerCase()]) { savings = ds_cloudsql_costs_grouped[instance['resourceID'].toLowerCase()] }
+    if (ds_cloudsql_costs_grouped[instance['resourceName'].toLowerCase()]) { savings = ds_cloudsql_costs_grouped[instance['resourceName'].toLowerCase()] }
+
+    if (savings >= param_min_savings) {
+      total_savings += savings
+
+      tags = []
+
+      if (instance['labels']) {
+        tags = _.map(_.keys(instance['labels']), function(key) {
+          return [ key, instance['labels'][key] ].join('=')
+        })
+      }
+
+      recommendationDetails = [
+        "Stop Google Cloud SQL instance ", instance["resourceName"], " ",
+        "in Google Project ", instance["projectName"], " ",
+        "(", instance["projectId"], ")"
+      ].join('')
+
+      result.push({
+        accountID: instance['projectId'],
+        accountName: instance['projectName'],
+        projectNumber: instance['projectNumber'],
+        resourceID: instance['resourceID'],
+        resourceName: instance['resourceName'],
+        family: instance['resourceType'].split('-')[0],
+        resourceType: instance['resourceType'],
+        newResourceType: "Stop Cloud SQL Instance",
+        region: instance['region'],
+        platform: instance['platform'],
+        created_at: instance['createTime'],
+        diskSize: instance['size'],
+        edition: instance['edition'],
+        availabilityType: instance['availabilityType'],
+        replicationType: instance['replicationType'],
+        cpuMaximum: instance['cpuMaximum'],
+        cpuMinimum: instance['cpuMinimum'],
+        cpuAverage: instance['cpuAverage'],
+        cpuP99: instance['cpuP99'],
+        cpuP95: instance['cpuP95'],
+        cpuP90: instance['cpuP90'],
+        memMaximum: instance['memMaximum'],
+        memMinimum: instance['memMinimum'],
+        memAverage: instance['memAverage'],
+        memP99: instance['memP99'],
+        memP95: instance['memP95'],
+        memP90: instance['memP90'],
+        tags: tags.join(', '),
+        service: "Cloud SQL",
+        savings: Math.round(savings * 1000) / 1000,
+        savingsCurrency: ds_currency['symbol'],
+        recommendationDetails: recommendationDetails,
+        state: instance['state'],
+        selfLink: instance['selfLink'],
+        thresholdType: param_stats_threshold,
+        threshold: param_stats_idle_threshold_cpu_value,
+        memoryThreshold: param_stats_idle_threshold_mem_value,
+        lookbackPeriod: param_stats_lookback,
+        policy_name: ds_applied_policy['name'],
+        total_savings: "",
+        message: ""
+      })
+    }
+  })
+
+  result = _.sortBy(result, "savings").reverse()
+
+  instances_total = ds_cloudsql_instances_with_stats.length
+  idle_total = result.length
+  idle_percentage = (idle_total / instances_total * 100).toFixed(2).toString() + '%'
+
+  noun = instances_total == 1 ? "instance" : "instances"
+  verb = idle_total == 1 ? "is" : "are"
+
+  findings = [
+    "Out of ", instances_total, " Google Cloud SQL ", noun, " analyzed, ",
+    idle_total, " (", idle_percentage,
+    ") ", verb, " idle and recommended for stopping. "
+  ].join('')
+
+  message_boolean = param_stats_check_both == "Both CPU and Memory" ? "and" : "or"
+
+  if (param_stats_idle_threshold_cpu_value != -1 && param_stats_idle_threshold_mem_value != -1) {
+    analysis = [
+      "A Cloud SQL instance is considered idle if its CPU usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_idle_threshold_cpu_value, "% ", message_boolean,
+      " its memory usage (", param_stats_threshold.toLowerCase(),
+      ") is below ", param_stats_idle_threshold_mem_value, "%. "
+    ].join('')
+
+    lookback = [
+      "CPU and memory usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  } else if (param_stats_idle_threshold_cpu_value != -1 && param_stats_idle_threshold_mem_value == -1) {
+    analysis = [
+      "A Cloud SQL instance is considered idle if its CPU usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_idle_threshold_cpu_value, "%. "
+    ].join('')
+
+    lookback = [
+      "CPU usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  } else if (param_stats_idle_threshold_cpu_value == -1 && param_stats_idle_threshold_mem_value != -1) {
+    analysis = [
+      "A Cloud SQL instance is considered idle if its memory usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_idle_threshold_mem_value, "%. "
+    ].join('')
+
+    lookback = [
+      "Memory usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  } else {
+    analysis = "No idle Cloud SQL instances were reported because neither CPU nor Memory metrics were configured for analysis. "
+    lookback = "\n\n"
+  }
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+
+  result.push({
+    accountID: "",
+    accountName: "",
+    projectNumber: "",
+    resourceID: "",
+    resourceName: "",
+    family: "",
+    resourceType: "",
+    newResourceType: "",
+    region: "",
+    platform: "",
+    created_at: "",
+    diskSize: "",
+    edition: "",
+    availabilityType: "",
+    replicationType: "",
+    cpuMaximum: "",
+    cpuMinimum: "",
+    cpuAverage: "",
+    cpuP99: "",
+    cpuP95: "",
+    cpuP90: "",
+    memMaximum: "",
+    memMinimum: "",
+    memAverage: "",
+    memP99: "",
+    memP95: "",
+    memP90: "",
+    tags: "",
+    service: "",
+    savings: "",
+    savingsCurrency: "",
+    recommendationDetails: "",
+    state: "",
+    selfLink: "",
+    thresholdType: "",
+    threshold: "",
+    memoryThreshold: "",
+    lookbackPeriod: "",
+    policy_name: "",
+    total_savings: "",
+    message: ""
+  })
+
+  result[0]["message"] = findings + analysis + lookback + disclaimer + csv_message
+  result[0]["total_savings"] = ds_currency['symbol'] + ' ' + formatNumber(Math.round(total_savings * 100) / 100, ds_currency['separator'])
+EOS
+end
+
+datasource "ds_underutil_cloudsql" do
+  run_script $js_underutil_cloudsql, $ds_idle_cloudsql, $ds_cloudsql_instances_with_stats, $ds_cloudsql_costs_grouped, $ds_google_instance_sizes, $ds_google_instance_prices, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_stats_lookback, $param_min_savings, $param_cross_family, $param_incident_csv
+end
+
+script "js_underutil_cloudsql", type:"javascript" do
+  parameters "ds_idle_cloudsql", "ds_cloudsql_instances_with_stats", "ds_cloudsql_costs_grouped", "ds_google_instance_sizes", "ds_google_instance_prices", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_stats_lookback", "param_min_savings", "param_cross_family", "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator) {
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  types_by_machinetype = {}
+  types_by_family = {}
+
+  _.each(ds_google_instance_sizes, function(size) {
+    types_by_machinetype[size['name']] = size
+
+    if (types_by_family[size['family']] == undefined) { types_by_family[size['family']] = [] }
+    types_by_family[size['family']].push(size)
+  })
+
+  checking_cpu = param_stats_underutil_threshold_cpu_value != -1
+  checking_mem = param_stats_underutil_threshold_mem_value != -1
+
+  // Find underutilized instances. Purposely exclude anything we've already determined is idle
+  idle_instance_ids = _.compact(_.pluck(ds_idle_cloudsql, "resourceID"))
+
+  non_idle_instances = _.reject(ds_cloudsql_instances_with_stats, function(instance) {
+    return _.contains(idle_instance_ids, instance['resourceID'])
+  })
+
+  underutil_instances = _.filter(non_idle_instances, function(instance) {
+    underutil = false
+    underutil_cpu = false
+    underutil_mem = false
+    cpu_test_stat = null
+    mem_test_stat = null
+
+    if (checking_cpu) {
+      if (param_stats_threshold == "Average" && instance['cpuAverage']) {
+        cpu_test_stat = instance['cpuAverage']
+      } else if (param_stats_threshold == "Maximum" && instance['cpuMaximum']) {
+        cpu_test_stat = instance['cpuMaximum']
+      } else if (param_stats_threshold == "p99" && instance['cpuP99']) {
+        cpu_test_stat = instance['cpuP99']
+      } else if (param_stats_threshold == "p95" && instance['cpuP95']) {
+        cpu_test_stat = instance['cpuP95']
+      } else if (param_stats_threshold == "p90" && instance['cpuP90']) {
+        cpu_test_stat = instance['cpuP90']
+      }
+    }
+
+    if (checking_mem) {
+      if (param_stats_threshold == "Average" && instance['memAverage']) {
+        mem_test_stat = instance['memAverage']
+      } else if (param_stats_threshold == "Maximum" && instance['memMaximum']) {
+        mem_test_stat = instance['memMaximum']
+      } else if (param_stats_threshold == "p99" && instance['memP99']) {
+        mem_test_stat = instance['memP99']
+      } else if (param_stats_threshold == "p95" && instance['memP95']) {
+        mem_test_stat = instance['memP95']
+      } else if (param_stats_threshold == "p90" && instance['memP90']) {
+        mem_test_stat = instance['memP90']
+      }
+    }
+
+    if (checking_cpu && cpu_test_stat && cpu_test_stat <= param_stats_underutil_threshold_cpu_value) {
+      underutil_cpu = true
+    }
+
+    if (checking_mem && mem_test_stat && mem_test_stat <= param_stats_underutil_threshold_mem_value) {
+      underutil_mem = true
+    }
+
+    if (checking_cpu && !checking_mem) {
+      underutil = underutil_cpu
+    } else if (!checking_cpu && checking_mem) {
+      underutil = underutil_mem
+    } else if (checking_cpu && checking_mem) {
+      if (param_stats_check_both == "Both CPU and Memory") {
+        underutil = underutil_cpu && underutil_mem
+      } else {
+        underutil = underutil_cpu || underutil_mem
+      }
+    }
+
+    return underutil
+  })
+
+  result = []
+  total_savings = 0.0
+
+  _.each(underutil_instances, function(instance) {
+    resourceType = instance['resourceType']
+    newResourceType = instance['resourceType']
+    family = resourceType.split('-')[0]
+    savings = 0.0
+
+    if (checking_cpu) {
+      if (param_stats_threshold == "Average" && instance['cpuAverage']) {
+        cpu_test_stat = instance['cpuAverage']
+      } else if (param_stats_threshold == "Maximum" && instance['cpuMaximum']) {
+        cpu_test_stat = instance['cpuMaximum']
+      } else if (param_stats_threshold == "p99" && instance['cpuP99']) {
+        cpu_test_stat = instance['cpuP99']
+      } else if (param_stats_threshold == "p95" && instance['cpuP95']) {
+        cpu_test_stat = instance['cpuP95']
+      } else if (param_stats_threshold == "p90" && instance['cpuP90']) {
+        cpu_test_stat = instance['cpuP90']
+      }
+    }
+
+    if (checking_mem) {
+      if (param_stats_threshold == "Average" && instance['memAverage']) {
+        mem_test_stat = instance['memAverage']
+      } else if (param_stats_threshold == "Maximum" && instance['memMaximum']) {
+        mem_test_stat = instance['memMaximum']
+      } else if (param_stats_threshold == "p99" && instance['memP99']) {
+        mem_test_stat = instance['memP99']
+      } else if (param_stats_threshold == "p95" && instance['memP95']) {
+        mem_test_stat = instance['memP95']
+      } else if (param_stats_threshold == "p90" && instance['memP90']) {
+        mem_test_stat = instance['memP90']
+      }
+    }
+
+    if (types_by_family[family] && types_by_machinetype[instance['resourceType']]) {
+      current_type = types_by_machinetype[instance['resourceType']]
+      current_cores = types_by_machinetype[instance['resourceType']]['specs']['guestCpus']
+      current_mem = types_by_machinetype[instance['resourceType']]['specs']['memoryGb']
+      optimal_cores = current_cores
+      optimal_mem = current_mem
+
+      // Calculate the optimal number of cores to get CPU usage above user-specified threshold
+      if (checking_cpu) {
+        temp_stat = cpu_test_stat
+
+        while (optimal_cores > 1 && temp_stat <= param_stats_underutil_threshold_cpu_value) {
+          temp_stat = temp_stat * (optimal_cores / (optimal_cores - 1))
+          optimal_cores = optimal_cores - 1
+        }
+      }
+
+      // Calculate the optimal GB of memory to get memory usage above user-specified threshold
+      if (checking_mem) {
+        temp_stat = mem_test_stat
+
+        while (optimal_mem > 1 && temp_stat <= param_stats_underutil_threshold_mem_value) {
+          temp_stat = temp_stat * (optimal_mem / (optimal_mem - 1))
+          optimal_mem = optimal_mem - 1
+        }
+      }
+
+      // Create a list of resource types that meet the criteria
+      possible_types = []
+      possible_type_list = param_cross_family == "Yes" ? ds_google_instance_sizes : types_by_family[family]
+
+      _.each(possible_type_list, function(type) {
+        new_type = {
+          name: type['name'],
+          cores: type['specs']['guestCpus'],
+          memory: type['specs']['memoryGb'],
+          price: Number(ds_google_instance_prices[type['name']])
+        }
+
+        if (checking_cpu && !checking_mem && new_type['cores'] >= optimal_cores && new_type['cores'] < current_type['specs']['guestCpus']) {
+          possible_types.push(new_type)
+        }
+
+        if (!checking_cpu && checking_mem && new_type['memory'] >= optimal_mem && new_type['memory'] < current_type['specs']['memoryGb']) {
+          possible_types.push(new_type)
+        }
+
+        if (checking_cpu && checking_mem && new_type['cores'] >= optimal_cores && new_type['memory'] >= optimal_mem && (new_type['cores'] < current_type['specs']['guestCpus'] || new_type['memory'] < current_type['specs']['memoryGb'])) {
+          possible_types.push(new_type)
+        }
+      })
+
+      // Filter out any types that don't have a price or would be more expensive than current type
+      currentPrice = ds_google_instance_prices[resourceType]
+
+      possible_types_with_costs = _.filter(possible_types, function(type) {
+        return type['price'] && currentPrice && type['price'] < currentPrice
+      })
+
+      // Sort the list to grab the cheapest resource type from the list
+      if (possible_types_with_costs.length > 0) {
+        sorted_types = _.sortBy(possible_types, 'price')
+        newResourceType = sorted_types[0]['name']
+      }
+
+      newPrice = ds_google_instance_prices[newResourceType]
+
+      // Get current monthly cost of instance and calculate savings
+      if (newResourceType != resourceType) {
+        monthly_cost = 0.0
+        if (ds_cloudsql_costs_grouped[instance['resourceID'].toLowerCase()]) { monthly_cost = ds_cloudsql_costs_grouped[instance['resourceID'].toLowerCase()] }
+        if (ds_cloudsql_costs_grouped[instance['resourceName'].toLowerCase()]) { monthly_cost = ds_cloudsql_costs_grouped[instance['resourceName'].toLowerCase()] }
+
+        // Estimate change in cost based on percentage difference of list prices
+        new_cost = monthly_cost * (newPrice / currentPrice)
+        savings = monthly_cost - new_cost
+      }
+    }
+
+    if (newResourceType != resourceType && savings >= param_min_savings && savings >= 0) {
+      total_savings += savings
+
+      tags = []
+
+      if (instance['labels']) {
+        tags = _.map(_.keys(instance['labels']), function(key) {
+          return [ key, instance['labels'][key] ].join('=')
+        })
+      }
+
+      recommendationDetails = [
+        "Resize Google Cloud SQL instance ", instance["resourceName"], " ",
+        "in Google Project ", instance["projectName"], " ",
+        "(", instance["projectId"], ") ",
+        "from ", resourceType, " ",
+        "to ", newResourceType
+      ].join('')
+
+      result.push({
+        accountID: instance['projectId'],
+        accountName: instance['projectName'],
+        projectNumber: instance['projectNumber'],
+        resourceID: instance['resourceID'],
+        resourceName: instance['resourceName'],
+        family: family,
+        resourceType: resourceType,
+        newResourceType: newResourceType,
+        region: instance['region'],
+        platform: instance['platform'],
+        created_at: instance['createTime'],
+        diskSize: instance['size'],
+        edition: instance['edition'],
+        availabilityType: instance['availabilityType'],
+        replicationType: instance['replicationType'],
+        cpuMaximum: instance['cpuMaximum'],
+        cpuMinimum: instance['cpuMinimum'],
+        cpuAverage: instance['cpuAverage'],
+        cpuP99: instance['cpuP99'],
+        cpuP95: instance['cpuP95'],
+        cpuP90: instance['cpuP90'],
+        memMaximum: instance['memMaximum'],
+        memMinimum: instance['memMinimum'],
+        memAverage: instance['memAverage'],
+        memP99: instance['memP99'],
+        memP95: instance['memP95'],
+        memP90: instance['memP90'],
+        tags: tags.join(', '),
+        service: "Cloud SQL",
+        savings: Math.round(savings * 1000) / 1000,
+        savingsCurrency: ds_currency['symbol'],
+        recommendationDetails: recommendationDetails,
+        state: instance['state'],
+        selfLink: instance['selfLink'],
+        thresholdType: param_stats_threshold,
+        threshold: param_stats_underutil_threshold_cpu_value,
+        memoryThreshold: param_stats_underutil_threshold_mem_value,
+        lookbackPeriod: param_stats_lookback,
+        policy_name: ds_applied_policy['name'],
+        total_savings: "",
+        message: ""
+      })
+    }
+  })
+
+  result = _.sortBy(result, "savings").reverse()
+
+  instances_total = ds_cloudsql_instances_with_stats.length
+  underutil_total = result.length
+  underutil_percentage = (underutil_total / instances_total * 100).toFixed(2).toString() + '%'
+
+  noun = instances_total == 1 ? "Cloud SQL instance" : "Cloud SQL instances"
+  verb = underutil_total == 1 ? "is" : "are"
+
+  findings = [
+    "Out of ", instances_total, " Google ", noun, " analyzed, ",
+    underutil_total, " (", underutil_percentage,
+    ") ", verb, " underutilized and recommended for downsizing. "
+  ].join('')
+
+  message_boolean = param_stats_check_both == "Both CPU and Memory" ? "and" : "or"
+
+  testing_idle_cpu = param_stats_idle_threshold_cpu_value != -1
+  testing_idle_mem = param_stats_idle_threshold_mem_value != -1
+  testing_idle_both = testing_idle_cpu && testing_idle_mem
+  testing_idle = testing_idle_cpu || testing_idle_mem
+
+  testing_underutil_cpu = param_stats_underutil_threshold_cpu_value != -1
+  testing_underutil_mem = param_stats_underutil_threshold_mem_value != -1
+  testing_underutil_both = testing_underutil_cpu && testing_underutil_mem
+  testing_underutil = testing_underutil_cpu || testing_underutil_mem
+
+  analysis = "No underutilized Cloud SQL instances were reported because neither CPU nor Memory metrics were configured for analysis. "
+  lookback = "\n\n"
+
+  if (testing_idle_both && testing_underutil_both) {
+    analysis = [
+      "A Cloud SQL instance is considered underutilized if its CPU usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_underutil_threshold_cpu_value, "% ", message_boolean,
+      " its memory usage (", param_stats_threshold.toLowerCase(),
+      ") is below ", param_stats_underutil_threshold_mem_value,
+      "% but its CPU usage is still above or equal to ",
+      param_stats_idle_threshold_cpu_value, "% ", message_boolean,
+      " its memory usage is still above or equal to ",
+      param_stats_idle_threshold_mem_value, "%. "
+    ].join('')
+
+    lookback = [
+      "CPU and memory usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  }
+
+  if (testing_idle_cpu && testing_underutil_cpu && !testing_underutil_mem) {
+    analysis = [
+      "A Cloud SQL instance is considered underutilized if its CPU usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_underutil_threshold_cpu_value,
+      "% but its CPU usage is still above or equal to ",
+      param_stats_idle_threshold_cpu_value, "%. "
+    ].join('')
+
+    lookback = [
+      "CPU usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  }
+
+  if (testing_idle_mem && testing_underutil_mem && !testing_underutil_cpu) {
+    analysis  = [
+      "A Cloud SQL instance is considered underutilized if its memory usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_underutil_threshold_mem_value,
+      "% but its memory usage is still above or equal to ",
+      param_stats_idle_threshold_mem_value, "%. "
+    ].join('')
+
+    lookback = [
+      "Memory usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  }
+
+  if (!testing_idle && testing_underutil_both) {
+    analysis = [
+      "A Cloud SQL instance is considered underutilized if its CPU usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_underutil_threshold_cpu_value, "% ", message_boolean,
+      " its memory usage (", param_stats_threshold.toLowerCase(),
+      ") is below ", param_stats_underutil_threshold_mem_value,
+      "%. "
+    ].join('')
+
+    lookback = [
+      "CPU and memory usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  }
+
+  if (!testing_idle && testing_underutil_cpu && !testing_underutil_mem) {
+    analysis = [
+      "A Cloud SQL instance is considered underutilized if its CPU usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_underutil_threshold_cpu_value, "%. "
+    ].join('')
+
+    lookback = [
+      "CPU and memory usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  }
+
+  if (!testing_idle && !testing_underutil_cpu && testing_underutil_mem) {
+    analysis = [
+      "A Cloud SQL instance is considered underutilized if its memory usage (",
+      param_stats_threshold.toLowerCase(), ") is below ",
+      param_stats_underutil_threshold_mem_value, "%. "
+    ].join('')
+
+    lookback = [
+      "CPU and memory usage was analyzed over the last ",
+      param_stats_lookback.toString(), " days.\n\n"
+    ].join('')
+  }
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+
+  result.push({
+    accountID: "",
+    accountName: "",
+    projectNumber: "",
+    resourceID: "",
+    resourceName: "",
+    family: "",
+    resourceType: "",
+    newResourceType: "",
+    region: "",
+    platform: "",
+    created_at: "",
+    diskSize: "",
+    edition: "",
+    availabilityType: "",
+    replicationType: "",
+    cpuMaximum: "",
+    cpuMinimum: "",
+    cpuAverage: "",
+    cpuP99: "",
+    cpuP95: "",
+    cpuP90: "",
+    memMaximum: "",
+    memMinimum: "",
+    memAverage: "",
+    memP99: "",
+    memP95: "",
+    memP90: "",
+    tags: "",
+    service: "",
+    savings: "",
+    savingsCurrency: "",
+    recommendationDetails: "",
+    state: "",
+    selfLink: "",
+    thresholdType: "",
+    threshold: "",
+    memoryThreshold: "",
+    lookbackPeriod: "",
+    policy_name: "",
+    total_savings: "",
+    message: ""
+  })
+
+  result[0]["message"] = findings + analysis + lookback + disclaimer + csv_message
+  result[0]["total_savings"] = ds_currency['symbol'] + ' ' + formatNumber(Math.round(total_savings * 100) / 100, ds_currency['separator'])
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_cloudsql_recommendations" do
+  validate_each $ds_underutil_cloudsql do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Underutilized Cloud SQL Instances Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_downsize_instances
+    hash_exclude "tags", "savings", "savingsCurrency", "total_savings", "message"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Project ID"
+      end
+      field "accountName" do
+        label "Project Name"
+      end
+      field "projectNumber" do
+        label "Project Number"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceType" do
+        label "Resource Tier"
+      end
+      field "newResourceType" do
+        label "Recommended Resource Tier"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "created_at" do
+        label "Created At"
+      end
+      field "tags" do
+        label "Labels"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Currency"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "availabilityType" do
+        label "Availability"
+      end
+      field "replicationType" do
+        label "Replication"
+      end
+      field "state" do
+        label "Status"
+      end
+      field "diskSize" do
+        label "Disk Size (GB)"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "cpuP90" do
+        label "CPU p90"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+      end
+      field "cpuP99" do
+        label "CPU p99"
+      end
+      field "memMaximum" do
+        label "Memory Maximum %"
+      end
+      field "memMinimum" do
+        label "Memory Minimum %"
+      end
+      field "memAverage" do
+        label "Memory Average %"
+      end
+      field "memP90" do
+        label "Memory p90"
+      end
+      field "memP95" do
+        label "Memory p95"
+      end
+      field "memP99" do
+        label "Memory p99"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "threshold" do
+        label "CPU Threshold"
+      end
+      field "memoryThreshold" do
+        label "Memory Threshold"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "selfLink" do
+        label "Resource Link"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+  validate_each $ds_idle_cloudsql do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Idle Cloud SQL Instances Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_stop_instances
+    escalate $esc_delete_instances
+    hash_exclude "tags", "savings", "savingsCurrency", "total_savings", "message"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Project ID"
+      end
+      field "accountName" do
+        label "Project Name"
+      end
+      field "projectNumber" do
+        label "Project Number"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceType" do
+        label "Resource Tier"
+      end
+      field "newResourceType" do
+        label "Recommended Resource Tier"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "created_at" do
+        label "Created At"
+      end
+      field "tags" do
+        label "Labels"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Currency"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "availabilityType" do
+        label "Availability"
+      end
+      field "replicationType" do
+        label "Replication"
+      end
+      field "state" do
+        label "Status"
+      end
+      field "diskSize" do
+        label "Disk Size (GB)"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "cpuP90" do
+        label "CPU p90"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+      end
+      field "cpuP99" do
+        label "CPU p99"
+      end
+      field "memMaximum" do
+        label "Memory Maximum %"
+      end
+      field "memMinimum" do
+        label "Memory Minimum %"
+      end
+      field "memAverage" do
+        label "Memory Average %"
+      end
+      field "memP90" do
+        label "Memory p90"
+      end
+      field "memP95" do
+        label "Memory p95"
+      end
+      field "memP99" do
+        label "Memory p99"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "threshold" do
+        label "CPU Threshold"
+      end
+      field "memoryThreshold" do
+        label "Memory Threshold"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "selfLink" do
+        label "Resource Link"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
+end
+
+escalation "esc_downsize_instances" do
+  automatic contains($param_automatic_action, "Downsize Underutilized Cloud SQL Instances")
+  label "Downsize Underutilized Cloud SQL Instances"
+  description "Approval to downsize all selected Cloud SQL instances"
+  run "downsize_instances", data
+end
+
+escalation "esc_stop_instances" do
+  automatic contains($param_automatic_action, "Stop Idle Cloud SQL Instances")
+  label "Stop Idle Cloud SQL Instances"
+  description "Approval to stop all selected Cloud SQL instances"
+  run "stop_instances", data
+end
+
+escalation "esc_delete_instances" do
+  automatic contains($param_automatic_action, "Delete Idle Cloud SQL Instances")
+  label "Delete Idle Cloud SQL Instances"
+  description "Approval to delete all selected Cloud SQL instances"
+  run "delete_instances", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define downsize_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call resize_instance($instance) retrieve $resize_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define stop_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call stop_instance($instance) retrieve $stop_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_instances($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_instance($instance) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define resize_instance($instance) return $response do
+  # Update with appropriate code for a Cloud SQL Instance
+  task_label("POST " + $instance['selfLink'] + '/setMachineType')
+
+  $body = '{ machineType: "zones/' + $instance['zone'] + '/machineTypes/' + $instance['newResourceType'] + '" }'
+
+  $response = http_post(
+    url: $instance['selfLink'] + '/setMachineType',
+    auth: $$auth_google,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: $body
+  )
+
+  task_label("Post Google Cloud SQL instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $instance['selfLink'] + '/setMachineType', "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response posting Google Cloud SQL instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("Post Google Cloud SQL instance successful: " + $instance["resourceName"])
+  end
+
+  sleep(5)
+  call get_instance_state($instance) retrieve $state_response, $current_state
+  sleep(5)
+
+  while $current_state != "STOPPED" && $current_state != "TERMINATED" do
+    call get_instance_state($instance) retrieve $state_response, $current_state
+    sleep(5)
+  end
+end
+
+define stop_instance($instance) return $response do
+  task_label("PATCH " + $instance['selfLink'])
+
+  $body = '{ "settings": { "activationPolicy": "NEVER" } }'
+
+  $response = http_patch(
+    url: $instance['selfLink'],
+    auth: $$auth_google,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    },
+    body: $body
+  )
+
+  task_label("Patch Google Cloud SQL instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $instance['selfLink'], "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response patching Google Cloud SQL instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("Patch Google Cloud SQL instance successful: " + $instance["resourceName"])
+  end
+end
+
+define delete_instance($instance) return $response do
+  task_label("DELETE " + $instance['selfLink'])
+
+  $response = http_delete(
+    url: $instance['selfLink'],
+    auth: $$auth_google,
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }
+  )
+
+  task_label("Delete Google Cloud SQL instance response: " + $instance["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $instance['selfLink'], "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Google Cloud SQL instance: "+ $instance["resourceName"] + " " + to_json($response)
+  else
+    task_label("Delete Google Cloud SQL instance successful: " + $instance["resourceName"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-'EOS'
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-'EOS'
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-'EOS'
+  result = {"path":"/"}
+  EOS
+end

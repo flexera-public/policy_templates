@@ -8,7 +8,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.4.4",
+  version: "5.5.1",
   provider: "AWS",
   service: "Compute",
   policy_set: "Untagged Resources",
@@ -105,6 +105,24 @@ parameter "param_include_account" do
   default "Do Not Include Account"
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -149,7 +167,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -239,7 +257,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   symbol = "$"
   separator = ","
 
@@ -290,7 +308,7 @@ end
 script "js_include_savings", type: "javascript" do
   parameters "param_include_savings"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
   if (param_include_savings == "Include Savings") { result = [1] }
 EOS
@@ -326,7 +344,7 @@ end
 script "js_recommendation_resources_total_savings", type: "javascript" do
   parameters "ds_recommendations_all", "ds_regions"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   region_list = _.pluck(ds_regions, 'region')
 
   recs_in_region = _.filter(ds_recommendations_all, function(rec) {
@@ -408,7 +426,7 @@ end
 script "js_aws_account", type:"javascript" do
   parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.find(ds_cloud_vendor_accounts, function(account) {
     return account['id'] == ds_get_caller_identity[0]['account']
   })
@@ -458,7 +476,7 @@ end
 script "js_regions", type:"javascript" do
   parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_regions_list.length > 0) {
@@ -495,7 +513,7 @@ end
 script "js_aws_resources", type:"javascript" do
   parameters "region", "param_resource_types"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_aws",
     pagination: "pagination_aws_tagging",
@@ -525,7 +543,7 @@ end
 script "js_aws_resources_missing_tags", type:"javascript" do
   parameters "ds_aws_resources", "ds_aws_account", "ds_tag_dimensions", "param_tags", "param_tags_boolean", "param_consider_tag_dimensions", "param_include_account"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   comparators = _.map(param_tags, function(item) {
@@ -645,13 +663,15 @@ EOS
 end
 
 datasource "ds_missing_tags_incident" do
-  run_script $js_missing_tags_incident, $ds_aws_resources_missing_tags, $ds_aws_account, $ds_applied_policy, $ds_recommendation_resources_total_savings, $ds_currency, $param_tags, $param_tags_boolean, $param_include_savings
+  run_script $js_missing_tags_incident, $ds_aws_resources_missing_tags, $ds_aws_account, $ds_applied_policy, $ds_recommendation_resources_total_savings, $ds_currency, $param_tags, $param_tags_boolean, $param_include_savings, $param_incident_csv
 end
 
 script "js_missing_tags_incident", type:"javascript" do
-  parameters "ds_aws_resources_missing_tags", "ds_aws_account", "ds_applied_policy", "ds_recommendation_resources_total_savings", "ds_currency", "param_tags", "param_tags_boolean", "param_include_savings"
+  parameters "ds_aws_resources_missing_tags", "ds_aws_account", "ds_applied_policy", "ds_recommendation_resources_total_savings", "ds_currency", "param_tags", "param_tags_boolean", "param_include_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   recommendations_id = {}
   recommendations_resourceid = {}
   recommendations_arn = {}
@@ -751,9 +771,9 @@ script "js_missing_tags_incident", type:"javascript" do
 
   message = ["The following AWS resources are missing ", phrase, " of the following tags:\n\n"].join('')
   tag_list = _.map(param_tags, function(tag) { return ["- ", tag, "\n"].join('') }).join('')
-  disclaimer = "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
+  disclaimer = "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
-  result[0]['message'] = message + tag_list + disclaimer
+  result[0]['message'] = message + tag_list + disclaimer + csv_message
 EOS
 end
 
@@ -824,7 +844,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_tag_resources" do
@@ -1005,7 +1028,7 @@ end
 script "js_make_terminate_request", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],

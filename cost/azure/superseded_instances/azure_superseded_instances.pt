@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.0.2",
+  version: "4.1.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Superseded Compute Instances",
@@ -106,6 +106,24 @@ parameter "param_automatic_action" do
   default []
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -149,7 +167,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -217,7 +235,7 @@ end
 
 script "js_region_table", type:"javascript" do
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = {
     "ukwest": "UK West",
     "usgovvirginia": "US Gov Virginia",
@@ -313,7 +331,7 @@ end
 script "js_top_level_bcs", type: "javascript" do
   parameters "ds_billing_centers"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   filtered_bcs = _.filter(ds_billing_centers, function(bc) {
     return bc['parent_id'] == null || bc['parent_id'] == undefined
   })
@@ -354,7 +372,7 @@ end
 script "js_currency_target", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Default to USD if currency is not found
   result = ds_currency_reference['USD']
 
@@ -374,7 +392,7 @@ end
 script "js_conditional_currency_conversion", type: "javascript" do
   parameters "ds_currency_target"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
   // Make the request only if the target currency is not USD
   if (ds_currency_target['code'] != 'USD') {
@@ -411,7 +429,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_target", "ds_currency_conversion"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = ds_currency_target
   result['exchange_rate'] = 1
 
@@ -461,7 +479,7 @@ end
 script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -485,7 +503,7 @@ datasource "ds_azure_instances" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
-    query "api-version", "2019-03-01"
+    query "api-version", "2024-07-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
@@ -499,6 +517,7 @@ datasource "ds_azure_instances" do
       field "name", jmes_path(col_item, "name")
       field "region", jmes_path(col_item, "location")
       field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "dataDisks", jmes_path(col_item, "properties.storageProfile.dataDisks")
       field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "tags", jmes_path(col_item, "tags")
       field "subscriptionId", val(iter_item, "id")
@@ -514,7 +533,7 @@ end
 script "js_azure_instances_tag_filtered", type: "javascript" do
   parameters "ds_azure_instances", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -591,7 +610,7 @@ end
 script "js_azure_instances_region_filtered", type: "javascript" do
   parameters "ds_azure_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_instances_tag_filtered, function(vm) {
       include_vm = _.contains(param_regions_list, vm['region'])
@@ -615,7 +634,7 @@ end
 script "js_azure_instances_subscriptions", type: "javascript" do
   parameters "ds_azure_instances_region_filtered"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.compact(_.uniq(_.pluck(ds_azure_instances_region_filtered, 'subscriptionId')))
 EOS
 end
@@ -641,7 +660,7 @@ end
 script "js_instance_costs", type: "javascript" do
   parameters "subscription_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   end_date = new Date()
   end_date.setDate(end_date.getDate() - 2)
   end_date = end_date.toISOString().split('T')[0]
@@ -713,7 +732,7 @@ end
 script "js_instance_costs_grouped", type: "javascript" do
   parameters "ds_instance_costs", "ds_billing_centers"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   bc_object = {}
 
   _.each(ds_billing_centers, function(bc) {
@@ -739,14 +758,73 @@ script "js_instance_costs_grouped", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_regions_for_instance_sizes" do
+  run_script $js_azure_regions_for_instance_sizes, $ds_azure_instances_region_filtered
+end
+
+script "js_azure_regions_for_instance_sizes", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (ds_azure_instances_region_filtered.length > 0) {
+    regions = _.uniq(_.compact(_.pluck(ds_azure_instances_region_filtered, "region")))
+
+    result = _.map(regions, function(region) {
+      return {
+        subscriptionId: ds_azure_instances_region_filtered[0]['subscriptionId'],
+        region: region
+      }
+    })
+  }
+EOS
+end
+
+datasource "ds_azure_instance_size_details" do
+  iterate $ds_azure_regions_for_instance_sizes
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.Compute/locations/", val(iter_item, "region"), "/vmSizes"])
+    query "api-version", "2024-07-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "maxDataDiskCount", jmes_path(col_item, "maxDataDiskCount")
+    end
+  end
+end
+
+datasource "ds_azure_disk_count_table" do
+  run_script $js_azure_disk_count_table, $ds_azure_instance_size_details
+end
+
+script "js_azure_disk_count_table", type: "javascript" do
+  parameters "ds_azure_instance_size_details"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  _.each(ds_azure_instance_size_details, function(size) { result[size['name']] = size['maxDataDiskCount'] })
+EOS
+end
+
 datasource "ds_superseded_instances" do
-  run_script $js_superseded_instances, $ds_azure_instances_region_filtered, $ds_instance_costs_grouped, $ds_azure_instance_type_map, $ds_azure_instance_cost_map, $ds_region_table, $ds_currency_conversion, $ds_currency, $ds_applied_policy, $param_min_savings
+  run_script $js_superseded_instances, $ds_azure_instances_region_filtered, $ds_instance_costs_grouped, $ds_azure_instance_type_map, $ds_azure_instance_cost_map, $ds_region_table, $ds_azure_disk_count_table, $ds_currency_conversion, $ds_currency, $ds_applied_policy, $param_min_savings, $param_incident_csv
 end
 
 script "js_superseded_instances", type: "javascript" do
-  parameters "ds_azure_instances_region_filtered", "ds_instance_costs_grouped", "ds_azure_instance_type_map", "ds_azure_instance_cost_map", "ds_region_table", "ds_currency_conversion", "ds_currency", "ds_applied_policy", "param_min_savings"
+  parameters "ds_azure_instances_region_filtered", "ds_instance_costs_grouped", "ds_azure_instance_type_map", "ds_azure_instance_cost_map", "ds_region_table", "ds_azure_disk_count_table", "ds_currency_conversion", "ds_currency", "ds_applied_policy", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -788,6 +866,7 @@ script "js_superseded_instances", type: "javascript" do
     superseded_nfu = 0
     savings = 0.0
     hourly_cost_multiplier = 365.25 / 12 * 24
+    dataDiskCount = instance['dataDisks'] ? instance['dataDisks'].length : 0
 
     cost = null
     billing_center = null
@@ -840,7 +919,7 @@ script "js_superseded_instances", type: "javascript" do
       superseded_nfu = Number(ds_azure_instance_type_map[superseded_type]['specs']['nfu'])
     }
 
-    if (typeof(cost) == 'number') {
+    if (typeof(cost) == 'number' && ds_azure_disk_count_table[superseded_type] && ds_azure_disk_count_table[superseded_type] >= dataDiskCount) {
       if (typeof(instance_type_price) == 'number' && typeof(superseded_type_price) == 'number') {
         // Calculate savings based on proportion of listed prices
         savings = cost - cost * superseded_type_price / instance_type_price
@@ -850,6 +929,7 @@ script "js_superseded_instances", type: "javascript" do
         current_nfu > 0 &&
         superseded_nfu > 0 // avoid NaN and 0 by using greater than
       ) {
+        // Calculate savings based on proportion of NFU
         savings = cost - cost * superseded_nfu / current_nfu
       }
     }
@@ -897,6 +977,7 @@ script "js_superseded_instances", type: "javascript" do
         resourceKind: instance['resourceKind'],
         region: instance['region'],
         osType: instance['osType'],
+        dataDiskCount: dataDiskCount,
         service: "Microsoft.Compute",
         cost: cost,
         billing_center: billing_center,
@@ -940,10 +1021,10 @@ script "js_superseded_instances", type: "javascript" do
     ") ", superseded_verb, " superseded and recommended for an instance type change.\n\n"
   ].join('')
 
-  api_disclaimer = ""
+  api_disclaimer = "\n\n"
 
   if (ds_currency_conversion['to'] == undefined && ds_currency['code'] != 'USD') {
-    api_disclaimer = "\n\nSavings values are in USD due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
+    api_disclaimer = "\n\nSavings values are in USD due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue.\n\n"
   }
 
   savings_disclaimer = "Savings are estimated based on list price and may not reflect credits or discounts. "
@@ -980,7 +1061,7 @@ script "js_superseded_instances", type: "javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + savings_disclaimer + api_disclaimer
+  result[0]['message'] = findings + savings_disclaimer + api_disclaimer + csv_message
 EOS
 end
 
@@ -1038,6 +1119,9 @@ policy "pol_superseded_instances" do
       field "osType" do
         label "Operating System"
       end
+      field "dataDiskCount" do
+        label "Attached Disks (#)"
+      end
       field "cost" do
         label "Estimated Monthly Cost"
       end
@@ -1072,7 +1156,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_change_type" do
@@ -1189,7 +1276,7 @@ end
 script "js_make_terminate_request", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],

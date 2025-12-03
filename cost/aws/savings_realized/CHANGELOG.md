@@ -1,8 +1,16 @@
 # Changelog
 
+## v4.0.7
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v4.0.6
+
+- Changed description to say "policy template" for clarity. Functionality unchanged.
+
 ## v4.0.5
 
-- Deprecated: This policy is no longer being updated. Please see policy README for more information.
+- Deprecated: This policy template is no longer being updated. Please see policy README for more information.
 
 ## v4.0.4
 

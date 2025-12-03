@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "6.2.5",
+  version: "6.3.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -219,6 +219,24 @@ parameter "param_skipshutdown" do
   default "Graceful"
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -262,7 +280,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -331,7 +349,7 @@ end
 script "js_top_level_bcs", type: "javascript" do
   parameters "ds_billing_centers"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   filtered_bcs = _.filter(ds_billing_centers, function(bc) {
     return bc['parent_id'] == null || bc['parent_id'] == undefined
   })
@@ -371,7 +389,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   symbol = "$"
   separator = ","
 
@@ -401,7 +419,7 @@ end
 script "js_stats_interval", type: "javascript" do
   parameters "param_stats_interval"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Tables to convert human-readable parameter values to their API equivalents
   interval_table = {
     "1 Minute": "PT1M",
@@ -452,7 +470,7 @@ end
 script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -531,7 +549,7 @@ end
 script "js_azure_instances_with_status", type: "javascript" do
   parameters "ds_azure_instances", "ds_azure_instance_statuses"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   status_object = {}
 
   _.each(ds_azure_instance_statuses, function(item) {
@@ -570,7 +588,7 @@ end
 script "js_azure_instances_tag_filtered", type: "javascript" do
   parameters "ds_azure_instances_with_status", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -647,7 +665,7 @@ end
 script "js_azure_instances_region_filtered", type: "javascript" do
   parameters "ds_azure_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_instances_tag_filtered, function(vm) {
       include_vm = _.contains(param_regions_list, vm['region'])
@@ -667,7 +685,7 @@ end
 script "js_azure_instances_databricks_filtered", type: "javascript" do
   parameters "ds_azure_instances_region_filtered", "param_exclude_databricks"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_exclude_databricks == "Yes") {
     result = _.filter(ds_azure_instances_region_filtered, function(vm) {
       imageOffer = ""
@@ -691,7 +709,7 @@ end
 script "js_azure_instances_status_filtered", type: "javascript" do
   parameters "ds_azure_instances_databricks_filtered", "param_exclude_stopped"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_exclude_stopped == "Yes") {
     result = _.filter(ds_azure_instances_databricks_filtered, function(vm) {
       status_codes = _.pluck(vm['statuses'], 'code')
@@ -710,7 +728,7 @@ end
 script "js_azure_instances_batch", type: "javascript" do
   parameters "ds_azure_instances_status_filtered"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
 
   // group by subscription
   var instances_by_subscription = _.values(_.groupBy(ds_azure_instances_status_filtered, function(instance) {
@@ -764,7 +782,7 @@ end
 script "js_azure_metrics_batch", type: "javascript" do
   parameters "ds_azure_instances_batch", "ds_stats_interval", "param_azure_endpoint", "param_stats_lookback"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   end_date = new Date()
   end_date.setMilliseconds(999)
   end_date.setSeconds(59)
@@ -822,7 +840,7 @@ end
 script "js_azure_instances_metrics", type: "javascript" do
   parameters "ds_azure_metrics_batch", "ds_azure_instances_status_filtered"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
 
   var instances_map = {};
   _.each(ds_azure_instances_status_filtered, function(instance) {
@@ -860,7 +878,7 @@ end
 script "js_azure_instances_metrics_organized", type: "javascript" do
   parameters "ds_azure_instances_metrics", "param_stats_lookback", "param_stats_threshold", "rs_org_id", "rs_project_id"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Function to calculate percentiles from metrics
   function percentile(arr, p) {
     // array needs to be sorted to select based on percentile
@@ -1136,7 +1154,7 @@ end
 script "js_instance_costs", type: "javascript" do
   parameters "subscription_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   end_date = new Date()
   end_date.setDate(end_date.getDate() - 2)
   end_date = end_date.toISOString().split('T')[0]
@@ -1208,7 +1226,7 @@ end
 script "js_instance_costs_grouped", type: "javascript" do
   parameters "ds_instance_costs"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Multiple a single day's cost by the average number of days in a month.
   // The 0.25 is to account for leap years for extra precision.
   cost_multiplier = 365.25 / 12
@@ -1240,7 +1258,7 @@ end
 script "js_azure_regions_for_instance_sizes", type: "javascript" do
   parameters "ds_azure_instances_metrics_organized"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   if (ds_azure_instances_metrics_organized.length > 0) {
@@ -1284,20 +1302,22 @@ end
 script "js_azure_disk_count_table", type: "javascript" do
   parameters "ds_azure_instance_size_details"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = {}
   _.each(ds_azure_instance_size_details, function(size) { result[size['name']] = size['maxDataDiskCount'] })
 EOS
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_stats_interval, $ds_azure_disk_count_table, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_exclude_databricks, $param_downsize_multiple, rs_org_id, rs_project_id
+  run_script $js_idle_and_underutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_stats_interval, $ds_azure_disk_count_table, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_exclude_databricks, $param_downsize_multiple, $param_incident_csv, rs_org_id, rs_project_id
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_stats_interval", "ds_azure_disk_count_table", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_exclude_databricks", "param_downsize_multiple", "rs_org_id", "rs_project_id"
+  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_stats_interval", "ds_azure_disk_count_table", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_exclude_databricks", "param_downsize_multiple", "param_incident_csv", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -1617,14 +1637,14 @@ script "js_idle_and_underutil_instances", type:"javascript" do
       applied_policy_url = applied_policy_url + "/orgs/" + rs_org_id + "/automation/applied-policies/projects/" + rs_project_id + "?policyId=" + ds_applied_policy['id'];
     }
 
-    disclaimer = "The above settings can be modified by editing the [" + ds_applied_policy['name'] + "](" + applied_policy_url + ") applied policy and changing the appropriate parameters."
+    disclaimer = "The above settings can be modified by editing the [" + ds_applied_policy['name'] + "](" + applied_policy_url + ") applied policy and changing the appropriate parameters.\n\n"
 
     if (param_exclude_databricks == "No") {
-      disclaimer += "\n\nNote: Recommendations for Azure Databricks VMs may be invalid because not all instance sizes are available for Databricks. Please set the \"Exclude Databricks\" to \"Yes\" to exclude these VMs if desired."
+      disclaimer += "Note: Recommendations for Azure Databricks VMs may be invalid because not all instance sizes are available for Databricks. Please set the \"Exclude Databricks\" to \"Yes\" to exclude these VMs if desired.\n\n"
     }
 
-    underutil_message = underutil_findings + underutil_analysis_message + lookback_message + disclaimer
-    idle_message = idle_findings + idle_analysis_message + lookback_message + disclaimer
+    underutil_message = underutil_findings + underutil_analysis_message + lookback_message + disclaimer + csv_message
+    idle_message = idle_findings + idle_analysis_message + lookback_message + disclaimer + csv_message
   } else {
     underutil_message = "No results were found because all CPU and memory parameters were set to -1 when this policy was applied. Please terminate and reapply this policy with one of these settings enabled."
     idle_message = underutil_message
@@ -1674,7 +1694,7 @@ end
 script "js_underutilized_instances", type: "javascript" do
   parameters "ds_idle_and_underutil_instances"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = [{
     "resourceID": "",
     "recommendationType": "",
@@ -1704,7 +1724,7 @@ end
 script "js_idle_instances", type: "javascript" do
   parameters "ds_idle_and_underutil_instances"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = [{
     "resourceID": "",
     "recommendationType": "",
@@ -2031,7 +2051,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_downsize_instances" do
@@ -2253,7 +2276,7 @@ end
 script "js_make_terminate_request", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],

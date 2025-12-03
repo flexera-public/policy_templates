@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.4.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v0.4.1
+
+- Updated email escalation declaration for new "Errors Identified" incident to prevent error `failed make a CSV attachment with data: unable to collect csv data from nil export`
+
+## v0.4.0
+
+- Policy now continues execution for accessible regions when some regions return permission errors
+- Added separate incident report to identify regions with access issues and provide remediation guidance
+
+## v0.3.0
+
+- Added support for attaching CSV files to incident emails.
+
 ## v0.2.8
 
 - Fixed issue where estimated savings would sometimes be reported as 0 inaccurately.
