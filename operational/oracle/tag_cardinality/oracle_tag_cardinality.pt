@@ -49,8 +49,8 @@ parameter "param_resource_types" do
   category "Policy Settings"
   label "Resource Types"
   description "The types of resources to include in the tag cardinality report. Leave blank to include all resource types."
-  allowed_values [ "instance", "volume", "bootvolume", "loadbalancer", "networkloadbalancer", "database", "autonomousdatabase", "bucket" ]
-  default [ "instance", "volume", "bootvolume", "loadbalancer", "networkloadbalancer", "database", "autonomousdatabase", "bucket" ]
+  allowed_values [ "compartment", "instance", "volume", "bootvolume", "loadbalancer", "networkloadbalancer", "database", "autonomousdatabase", "bucket" ]
+  default [ "compartment", "instance", "volume", "bootvolume", "loadbalancer", "networkloadbalancer", "database", "autonomousdatabase", "bucket" ]
 end
 
 parameter "param_incident_csv" do
@@ -260,7 +260,8 @@ script "js_oci_resources", type: "javascript" do
   code <<-'EOS'
   namespaces = _.map(ds_oci_tag_namespaces_filtered, function(ns) { return "'" + ns + "'" }).join(",")
 
-  resource = param_resource_types.length == 0 ? "all" : param_resource_types.join(", ")
+  resource_types = _.filter(param_resource_types, function(type) { return type != "compartment" })
+  resource = resource_types.length == 0 ? "all" : resource_types.join(", ")
 
   query = "query " + resource + " resources where lifeCycleState != 'TERMINATED' && lifeCycleState != 'DELETED' "
   query += "&& definedTags.namespace IN (" + namespaces + ")"
@@ -292,38 +293,40 @@ script "js_tag_lister", type: "javascript" do
   parameters "tagged_list", "param_incident_csv", "param_resource_types", "tag_type"
   result "result"
   code <<-'EOS'
-  resource_types = param_resource_types.length == 0 ? "all" : "compartment, " + param_resource_types.join(", ")
+  resource_types = param_resource_types.length == 0 ? "all" : param_resource_types.join(", ")
   message = "The following resource types were included in the report: " + resource_types + ".\n\n"
   message += param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   tags = {}
   result = []
 
-  _.each(tagged_list, function(item) {
-    if (item['definedTags'] != undefined && item['definedTags'] != null) {
-      _.each(_.keys(item['definedTags']), function(namespace) {
-        if (namespace != "Oracle-Tags") {
-          _.each(_.keys(item['definedTags'][namespace]), function(key) {
-            full_key = [ namespace, key ].join('.')
-            if (tags[full_key] == undefined || tags[full_key] == null) { tags[full_key] = [] }
-            tags[full_key].push(item['definedTags'][namespace][key])
-          })
-        }
-      })
-    }
-  })
-
-  _.each(_.keys(tags), function(key) {
-    result.push({
-      'type': tag_type,
-      'key': key,
-      'cardinality': _.uniq(tags[key]).length,
-      'value_list': _.uniq(tags[key]).join(', '),
-      'message': message
+  if (tag_type != "Compartment" || _.contains(param_resource_types, "compartment")) {
+    _.each(tagged_list, function(item) {
+      if (item['definedTags'] != undefined && item['definedTags'] != null) {
+        _.each(_.keys(item['definedTags']), function(namespace) {
+          if (namespace != "Oracle-Tags") {
+            _.each(_.keys(item['definedTags'][namespace]), function(key) {
+              full_key = [ namespace, key ].join('.')
+              if (tags[full_key] == undefined || tags[full_key] == null) { tags[full_key] = [] }
+              tags[full_key].push(item['definedTags'][namespace][key])
+            })
+          }
+        })
+      }
     })
-  })
 
-  result = _.sortBy(result, 'cardinality').reverse()
+    _.each(_.keys(tags), function(key) {
+      result.push({
+        'type': tag_type,
+        'key': key,
+        'cardinality': _.uniq(tags[key]).length,
+        'value_list': _.uniq(tags[key]).join(', '),
+        'message': message
+      })
+    })
+
+    result = _.sortBy(result, 'cardinality').reverse()
+  }
 EOS
 end
 
