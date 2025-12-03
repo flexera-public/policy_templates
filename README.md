@@ -524,6 +524,12 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Google Label Cardinality Report](./operational/google/label_cardinality)
 
+#### Oracle
+
+* Tags
+
+  * [Oracle Tag Cardinality Report](./operational/oracle/tag_cardinality)
+
 ### Policy Templates for SaaS Management
 
 #### Flexera
