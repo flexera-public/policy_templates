@@ -37,11 +37,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
   Replace `<group>` with a group that the user associated with the Oracle Cloud credential is a member of.
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `billing_center_viewer`
-
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
-
 ## Supported Clouds
 
 - Oracle
