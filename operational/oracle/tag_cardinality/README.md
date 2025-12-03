@@ -20,7 +20,7 @@ This policy has the following input parameter required when launching the policy
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Oracle Cloud Root Compartment OCID* - The OCID of the Oracle Cloud root compartment.
 - *Primary Oracle Cloud Region* - Primary Oracle Cloud region. Example: us-phoenix-1
-- *Restrict Resource Types* - Whether or not to gather tags only for important resource types. Can significantly reduce policy execution time at the cost of missing tags for more minor resource types. If set to 'true', only the following resource types will be included: instance, volume, bootvolume, loadbalancer, networkloadbalancer, database, autonomousdatabase, bucket.
+- *Resource Types* - The types of resources to include in the tag cardinality report. Leave blank to include all resource types.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
