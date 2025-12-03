@@ -1,7 +1,7 @@
-name "Meta Parent: Google Long Stopped VM Instances"
+name "Meta Parent: Google Long Running VM Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Google Long Stopped VM Instances](https://github.com/flexera-public/policy_templates/tree/master/compliance/google/long_stopped_instances) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Google Long Running VM Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/google/long_running_instances) Policies."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md"
 severity "low"
@@ -9,7 +9,7 @@ category "Meta"
 default_frequency "hourly"
 info(
   provider: "Google",
-  version: "4.2.2", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "0.1.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "true",
   deprecated: "false",
   hide_skip_approvals: "true"
@@ -92,7 +92,7 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"Google Long Stopped VM Instances\" Policy Template from Catalog.  Optionally, you can use the \"Google Long Stopped VM Instances\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"Google Long Running VM Instances\" Policy Template from Catalog.  Optionally, you can use the \"Google Long Running VM Instances\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
@@ -150,14 +150,13 @@ parameter "param_exclusion_labels_boolean" do
   default "Any"
 end
 
-parameter "param_stopped_days" do
+parameter "param_minimum_age" do
   type "number"
   category "Policy Settings"
-  label "Stopped Days"
-  description "The number of days a Google VM needs to be stopped to include it in the incident report."
-  min_value 1
-  max_value 90
-  default 7
+  label "Minimum Age (Days)"
+  description "The minimum age, in days, to consider an instance to be long running."
+  min_value 0
+  default 180
 end
 
 parameter "param_automatic_action" do
@@ -308,7 +307,7 @@ script "js_published_child_policy_information", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = _.filter(ds_get_published_child_policy_information, function(item) {
-    return item['name'] == "Google Long Stopped VM Instances" && item['created_by'] == "support@flexera.com"
+    return item['name'] == "Google Long Running VM Instances" && item['created_by'] == "support@flexera.com"
   })
 EOS
 end
@@ -341,7 +340,7 @@ script "js_project_child_policy_information", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = _.filter(ds_get_project_child_policy_information, function(item) {
-    return item['name'] == "Google Long Stopped VM Instances"
+    return item['name'] == "Google Long Running VM Instances"
   })
 EOS
 end
@@ -1019,19 +1018,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_long_stopped_instances_combined_incidents" do
-  run_script $js_ds_long_stopped_instances_combined_incidents, $ds_child_incident_details
+datasource "ds_long_running_instances_combined_incidents" do
+  run_script $js_ds_long_running_instances_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_long_stopped_instances_combined_incidents", type: "javascript" do
+script "js_ds_long_running_instances_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-'EOS'
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Google Long Stopped VM Instances Found" then include it in the filter result
-    if (s.indexOf("Google Long Stopped VM Instances Found") > -1) {
+    // If the incident summary contains "Google Long Running VM Instances Found" then include it in the filter result
+    if (s.indexOf("Google Long Running VM Instances Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -1063,9 +1062,9 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Google Long Stopped VM Instances Found
-  validate $ds_long_stopped_instances_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Google Long Stopped VM Instances Found"
+    # Consolidated incident for Google Long Running VM Instances Found
+  validate $ds_long_running_instances_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Google Long Running VM Instances Found"
     escalate $esc_email
     escalate $esc_delete_instances
     check eq(size(data), 0)
@@ -1092,6 +1091,15 @@ policy "policy_scheduled_report" do
       field "region" do
         label "Region"
       end
+      field "daysRunning" do
+        label "Days Running"
+      end
+      field "cost" do
+        label "Estimated Monthly Cost"
+      end
+      field "costCurrency" do
+        label "Cost Currency"
+      end
       field "platform" do
         label "Platform"
       end
@@ -1100,9 +1108,6 @@ policy "policy_scheduled_report" do
       end
       field "service" do
         label "Service"
-      end
-      field "recommendationDetails" do
-        label "Recommendation"
       end
       field "status" do
         label "Status"
