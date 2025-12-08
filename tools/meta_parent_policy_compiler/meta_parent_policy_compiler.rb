@@ -197,7 +197,7 @@ end
   script "js___PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_DATASOURCE___combined_incidents", type: "javascript" do
     parameters "ds_child_incident_details"
     result "result"
-    code <<-EOS
+    code <<-'EOS'
     result = []
     _.each(ds_child_incident_details, function(incident) {
       s = incident["summary"];
@@ -255,7 +255,7 @@ end
     fields = [] # Provide a default value, which is no fields declared
     # Check if export_block is length > 0
     if export_block.length > 0
-      fields = export_block[0].scan(/(^.*field\s+\".*?\".*?end)/m).flatten
+      fields = export_block[0].scan(/([^\\S\\n]+field\s+"[^"]*"\s+do.*?\n\s*end[\\S\\n]*)/m).flatten
     end
     fields.each do |field|
       # Remove path from the field output in the meta parent
@@ -264,6 +264,8 @@ end
       # A better solution would be a better regex above to capture only the field statements
       field.gsub!(/ *?export.*?do\n *resource_level true\n *field/, "field")
       field.gsub!(/ *?export.*?do\n *resource_level false\n *field/, "field")
+      # Remove any trailing newlines and spaces
+      field.strip!
       # Add 6 spaces to the beginning of each field to make it align with the policy.validate.export.<field> in the meta parent
       field = "      " + field
       # print("Field: \n")

@@ -8,7 +8,7 @@ category "Cost"
 severity "medium"
 default_frequency "weekly"
 info(
-  version: "3.2.0",
+  version: "3.2.3",
   provider: "AWS",
   service: "Storage",
   policy_set: "",
@@ -128,7 +128,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -211,7 +211,7 @@ end
 script "js_aws_account", type:"javascript" do
   parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.find(ds_cloud_vendor_accounts, function(account) {
     return account['id'] == ds_get_caller_identity[0]['account']
   })
@@ -299,9 +299,9 @@ end
 script "js_aws_buckets_region_filtered", type: "javascript" do
   parameters "ds_aws_buckets_sanitized", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_regions_list.length > 0) {
-    result = _.filter(ds_aws_buckets_with_region, function(bucket) {
+    result = _.filter(ds_aws_buckets_sanitized, function(bucket) {
       include_bucket = _.contains(param_regions_list, bucket['region'])
 
       if (param_regions_allow_or_deny == "Deny") {
@@ -347,7 +347,7 @@ end
 script "js_aws_buckets_tag_filtered", type: "javascript" do
   parameters "ds_aws_buckets_with_tags", "ds_aws_buckets_region_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Logic to ensure any buckets skipped because of a 404 response due to no tags
   // are still included in the final result
   tagged_bucket_list = _.map(ds_aws_buckets_with_tags, function(bucket) {
@@ -434,12 +434,106 @@ script "js_aws_buckets_tag_filtered", type: "javascript" do
 EOS
 end
 
+# List Metrics
+datasource "ds_cloudwatch_metric_names" do
+  run_script $js_cloudwatch_metric_names, $ds_aws_buckets_region_filtered
+end
+
+script "js_cloudwatch_metric_names", type: "javascript" do
+  parameters "ds_aws_buckets_region_filtered"
+  result "result"
+  code <<-'EOS'
+  regions = _.uniq(_.pluck(ds_aws_buckets_region_filtered, "region"))
+
+  result = []
+
+  _.each(regions, function(reg) {
+    // Bucket Size in Bytes Metric Name
+    result.push({
+      "metricName": "BucketSizeBytes",
+      "region": reg
+    })
+  })
+EOS
+end
+
+datasource "ds_cloudwatch_metrics" do
+  iterate $ds_cloudwatch_metric_names
+  request do
+    run_script $js_cloudwatch_metrics, val(iter_item, "metricName"), val(iter_item, "region")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListMetricsResult/Metrics/member", "array") do
+      field "namespace", xpath(col_item, "Namespace")
+      field "metricName", xpath(col_item, "MetricName")
+      field "dimensions" do
+        collect xpath(col_item, "Dimensions/member", "array") do
+          field "name", xpath(col_item, "Name")
+          field "value", xpath(col_item, "Value")
+        end
+      end
+      field "region", val(iter_item, "region")
+    end
+  end
+end
+
+script "js_cloudwatch_metrics", type: "javascript" do
+  parameters "metric_name", "region"
+  result "request"
+  code <<-'EOS'
+  query_params = {
+    "Action": "ListMetrics",
+    "Version": "2010-08-01",
+    "Namespace": "AWS/S3",
+    "MetricName": metric_name
+  }
+
+  var request = {
+    auth: "auth_aws",
+    host: "monitoring." + region + ".amazonaws.com",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+    },
+    query_params: query_params,
+    ignore_status: [ 403 ]
+  }
+EOS
+end
+
+datasource "ds_cloudwatch_metrics_by_bucket" do
+  run_script $js_cloudwatch_metrics_by_bucket, $ds_cloudwatch_metrics
+end
+
+script "js_cloudwatch_metrics_by_bucket", type: "javascript" do
+  parameters "ds_cloudwatch_metrics"
+  result "result"
+  code <<-'EOS'
+  result = {}
+
+  _.each(ds_cloudwatch_metrics, function(metric) {
+    dims = metric.dimensions || []
+    bucket = _.find(dims, function(dim) { return dim.name == "BucketName" })
+    if (!bucket || !bucket.value) return
+
+    bucket_name = bucket.value
+
+    result[bucket_name] = {
+      namespace: metric.namespace,
+      metricName: metric.metricName,
+      dimensions: metric.dimensions
+    }
+  })
+EOS
+end
+
 datasource "ds_cloudwatch_queries" do
-  run_script $js_cloudwatch_queries, $ds_aws_buckets_tag_filtered
+  run_script $js_cloudwatch_queries, $ds_aws_buckets_tag_filtered, $ds_cloudwatch_metrics_by_bucket
 end
 
 script "js_cloudwatch_queries", type: "javascript" do
-  parameters "ds_aws_buckets_tag_filtered"
+  parameters "ds_aws_buckets_tag_filtered", "ds_cloudwatch_metrics_by_bucket"
   result "result"
   code <<-'EOS'
   // Create the various queries we're going to send to CloudWatch for each instance
@@ -451,16 +545,38 @@ script "js_cloudwatch_queries", type: "javascript" do
       result[bucket['region']] = []
     }
 
+    // Find dimensions
+    metric_details = ds_cloudwatch_metrics_by_bucket[ bucket['name'] ]
+
+    if (metric_details != null) {
+      // Custom metric taken from ListMetrics API response
+      metric_name = metric_details["metricName"]
+
+      dimensions = []
+      _.each(metric_details['dimensions'], function (dim) {
+        dimensions.push({
+          "Name": dim["name"],
+          "Value": dim["value"]
+        })
+      })
+
+    } else {
+      // Fallback - Else assume these are the dimensions
+      metric_name = "BucketSizeBytes"
+
+      dimensions = [
+        { "Name": "BucketName", "Value": bucket['name'] },
+        { "Name": "StorageType", "Value": "StandardStorage" }
+      ]
+    }
+
     result[bucket['region']].push({
       "Id": bucket['name'].replace(/-/g, "_"),
       "MetricStat": {
         "Metric": {
           "Namespace": "AWS/S3",
-          "MetricName": "BucketSizeBytes",
-          "Dimensions": [
-            { "Name": "BucketName", "Value": bucket['name'] },
-            { "Name": "StorageType", "Value": "StandardStorage" }
-          ]
+          "MetricName": metric_name,
+          "Dimensions": dimensions
         },
         "Period": 2592000,
         "Stat": "Average",
@@ -480,7 +596,7 @@ end
 script "js_cloudwatch_requests", type: "javascript" do
   parameters "ds_cloudwatch_queries"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Organize the queries into discrete requests to send in.
   // Queries are first sorted by region and then split into 500 item blocks.
   result = []
@@ -533,7 +649,7 @@ end
 script "js_cloudwatch_data", type: "javascript" do
   parameters "region", "body"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // Slow down rate of requests to prevent
   api_wait = 5
   var now = new Date().getTime()
@@ -594,7 +710,7 @@ end
 script "js_aws_oversized_buckets", type: "javascript" do
   parameters "ds_aws_buckets_tag_filtered", "ds_cloudwatch_data_sorted", "ds_aws_account", "ds_applied_policy", "param_size_threshold", "param_incident_csv"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Convert user-specified threshold to bytes
@@ -755,7 +871,7 @@ end
 script "js_make_terminate_request", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],

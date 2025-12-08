@@ -82,6 +82,7 @@ These templates can generate savings estimates for your environment. The inciden
 * Storage
 
   * [AWS Old Snapshots](./cost/aws/old_snapshots)
+  * [AWS S3 Buckets Without Intelligent Tiering](./cost/aws/s3_storage_policy)
   * [Turbonomic Delete Unattached Volumes Recommendations AWS](./cost/turbonomics/delete_unattached_volumes/aws)
 
 * Usage Discount
@@ -324,7 +325,6 @@ These templates can generate savings estimates for your environment. The inciden
 * Storage
 
   * [AWS Oversized S3 Buckets](./cost/aws/s3_bucket_size)
-  * [AWS S3 Buckets Without Intelligent Tiering](./cost/aws/s3_storage_policy)
   * [AWS S3 Buckets Without Lifecycle Configuration](./cost/aws/s3_lifecycle)
   * [AWS S3 Incomplete Multi-Part Uploads](./cost/aws/s3_multipart_uploads)
 
@@ -517,11 +517,18 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Compute
 
+  * [Google Long Running VM Instances](./operational/google/long_running_instances)
   * [Google Overutilized VM Instances](./operational/google/overutilized_vms)
 
 * Tags
 
   * [Google Label Cardinality Report](./operational/google/label_cardinality)
+
+#### Oracle
+
+* Tags
+
+  * [Oracle Tag Cardinality Report](./operational/oracle/tag_cardinality)
 
 ### Policy Templates for SaaS Management
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.3
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v4.0.2
 
 - Fixed a bug where incident emails were rendering as plain text instead of HTML. Functionality unchanged.

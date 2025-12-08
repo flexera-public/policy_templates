@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.3.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v3.3.1
+
+- Policy now only fetches active recommendations from Google Cloud Recommender API.
+
 ## v3.3.0
 
 - Added support for attaching CSV files to incident emails.

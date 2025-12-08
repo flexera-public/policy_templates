@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v3.1.0
 
 - Policy template now supports multiple tag keys for a single dimension. See README for details.
