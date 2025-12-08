@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4.3
+
+- Policy now supports the new Database Savings Plan Type.
+
 ## v3.4.2
 
 - Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
