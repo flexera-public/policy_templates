@@ -6,6 +6,111 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3831](https://github.com/flexera-public/policy_templates/pull/3831): POL-1673 New Policy: Oracle Tag Cardinality 
+
+*New Policy Template*
+
+#### Description
+
+> Adds a new Oracle Tag Cardinality Report policy template that is similar to the ones for other cloud providers.
+>
+
+#### Metadata
+
+- **Policies**: [Oracle Tag Cardinality Report](https://github.com/flexera-public/policy_templates/tree/master/operational/oracle/tag_cardinality/README.md)
+- **Merged At**: 2025-12-03 14:30:12 UTC
+
+---
+
+### PR [#3830](https://github.com/flexera-public/policy_templates/pull/3830): POL-1697 Google Long Running VM Instances Policy
+
+*New Policy Template*
+
+#### Description
+
+> New Policy: Google Long Running VM Instances. Functions similarly to the AWS/Azure counterparts.
+>
+> Also fixed a minor issue in the Google Long Stopped VM Instances policy and did some work on the Long Running policy READMEs for consistency.
+>
+
+#### Metadata
+
+- **Policies**: [Google Long Stopped VM Instances](https://github.com/flexera-public/policy_templates/tree/master/compliance/google/long_stopped_instances/README.md), [Google Long Running VM Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/google/long_running_instances/README.md)
+- **Merged At**: 2025-12-03 13:59:42 UTC
+
+---
+
+### PR [#3826](https://github.com/flexera-public/policy_templates/pull/3826): POL-1698 Azure Rightsize NetApp Resources - Undefined variable fix
+
+*Bug Fix*
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+> The Azure Rightsize NetApp Resources applied policy fails to run with `ReferenceError: 'endpool' is not defined`
+>
+> This is due to the incorrect naming of a variable and/or the code referencing a variable that does not exist.
+>
+> This change adds a fix to mitigate the non-instantiated variable
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize NetApp Resources](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_netapp/README.md)
+- **Merged At**: 2025-12-02 14:00:09 UTC
+
+---
+
+### PR [#3823](https://github.com/flexera-public/policy_templates/pull/3823): POL-1696 Heredoc Improvements
+
+*Unpublished, Minor Update*
+
+#### Description
+
+> Updates all heredocs to use the `<<-'EOS'` format (instead of `<<-EOS` without single quotes) to conform with new Dangerfile testing and code standards.
+>
+> Dangerfile warnings/errors are false positives that are not related to this change.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3823) for these details.
+- **Merged At**: 2025-12-01 21:12:47 UTC
+
+---
+
+### PR [#3806](https://github.com/flexera-public/policy_templates/pull/3806): FOPTS-16932 Fetch only ACTIVE recommendations from Google Recommender API
+
+*Minor Update*
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+>
+> Usage of google recommenders API. The Google Recommenders API returns duplicate recommendations for the same resource ID in different states i.e active, claimed, dismissed, succeeded, failed. "ACTIVE" includes recommendations that haven't been claimed, dismissed, succeeded, or failed yet in google cloud.
+>
+>
+> https://[raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/cost/google/cud_recommendations/google_committed_use_discount_recommendations.pt](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/cost/google/cud_recommendations/google_committed_use_discount_recommendations.pt)
+>
+> ### Google Recommenders API Docs
+> https://docs.cloud.google.com/recommender/docs/reference/rest/v1/projects.locations.recommenders.recommendations/list#query-parameters
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+> https://flexera.atlassian.net/browse/FOPTS-16932
+
+#### Metadata
+
+- **Policies**: [Google Committed Use Discount Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_recommendations/README.md), [Meta Parent: Google Committed Use Discount Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_recommendations/README.md)
+- **Merged At**: 2025-12-01 14:04:10 UTC
+
+---
+
 ### PR [#3781](https://github.com/flexera-public/policy_templates/pull/3781): POL-1688 AWS Oversized S3 Buckets - Capture Missing Buckets in Incident
 
 *Bug Fix*
@@ -1976,116 +2081,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Common Bill Ingestion from AWS S3 Object Storage](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cbi_ingestion_aws_s3/README.md), [Common Bill Ingestion from Azure Blob Storage](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cbi_ingestion_azure_blob/README.md)
 - **Merged At**: 2025-07-09 12:18:25 UTC
-
----
-
-### PR [#3111](https://github.com/flexera-public/policy_templates/pull/3111): POL-1514 - Add resource utilization charts to Azure + AWS Rightsize Compute PTs
-
-*Minor Update*
-
-#### Description
-
-> Adds resource utilization chart URLs to the resulting incidents for AWS+Azure Rightsize Compute Policy Templates.  This mitigates/prevents need to use cloud vendor console or another observability tool outside Flexera to validate the recommendation is true.
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/POL-1514
->
-
-#### Metadata
-
-- **Policies**: [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/README.md), [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/README.md)
-- **Merged At**: 2025-07-08 01:20:58 UTC
-
----
-
-### PR [#3280](https://github.com/flexera-public/policy_templates/pull/3280): SQ-16235 | Bill Processing Errors Notification | Add support for Azure CSP and Azure MCA Enterprise
-
-*Minor Update*
-
-#### Description
-
-> Add support for Azure CSP and Azure MCA Enterprise accounts to Bill Processing Errors Notification policy.
->
-> ### Issues Resolved
->
-> - https://flexera.atlassian.net/browse/SQ-16235
->
-
-#### Metadata
-
-- **Policies**: [Cloud Bill Processing Error Notification](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/bill_processing_errors_notification/README.md)
-- **Merged At**: 2025-07-07 17:55:14 UTC
-
----
-
-### PR [#3272](https://github.com/flexera-public/policy_templates/pull/3272): POL-1553 AWS Untagged Resources Resource Type Filtering
-
-*Minor Update*
-
-#### Description
-
-> AWS Untagged Resources
-> - New `Resource Types` parameter allows policy template to only report on specific services or resource types.
-> - Small code changes made to improve the speed of policy template execution.*
->
-> (Basically just amounts to changing IncludeComplianceDetails to false since we don't use this data in the policy template anyway)
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3272) for these details.
-- **Merged At**: 2025-07-07 14:04:48 UTC
-
----
-
-### PR [#3275](https://github.com/flexera-public/policy_templates/pull/3275): POL-1542 feat: Update tag resource action to use Tags API and enable Tag Contributor role
-
-*Minor Update*
-
-#### Description
-
-> Update tag resource action to use Azure Tags API, which enables `Tag Contributor` role to be used for enabling action capabilities with minimum scope.
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/POL-1542
->
-
-#### Metadata
-
-- **Policies**: [Azure Untagged Resources](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources/README.md)
-- **Merged At**: 2025-07-07 12:31:41 UTC
-
----
-
-### PR [#3276](https://github.com/flexera-public/policy_templates/pull/3276): SQ-15559 Azure Superseded Compute Instances Reference Error
-
-*Minor Update, Bug Fix*
-
-#### Description
-
-> A ReferenceError is being caused:
->
-> ```
-> ReferenceError: 'instance_type_price_map' is not defined\nLocation:\n datasource \"ds_superseded_instances\"\n script \"js_superseded_instances\
-> ```
->
-> This is caused because the variable instance_type_price_map is not always declared, so instead of being undefined it's causing a reference error.
->
-> ![image](https://github.com/user-attachments/assets/0de1be8b-9889-4042-b7e4-04f4b8b871e1)
->
-> To fix this we declare the variable before accessing it.
->
-> ### Issues Resolved
->
-> There's a support question related to this PR: https://flexera.atlassian.net/browse/SQ-15559
->
-
-#### Metadata
-
-- **Policies**: [Azure Superseded Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/superseded_instances/README.md), [Meta Parent: Azure Superseded Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/superseded_instances/README.md)
-- **Merged At**: 2025-07-04 19:41:59 UTC
 
 ---
 
