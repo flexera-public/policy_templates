@@ -2,8 +2,7 @@
 
 ## v1.0.1
 
-- Added `META` for Azure.
-- Added `META` for Google.
+- Replaced Azure and Google policy templates with their `META` policy template equivalents.
 - Added tag cardinality for AWS, Azure, and Google.
 
 ## v1.0.0
