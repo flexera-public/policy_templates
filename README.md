@@ -314,6 +314,7 @@ These templates can generate savings estimates for your environment. The inciden
   * [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
   * [AWS Reserved Instances Coverage](./cost/aws/reserved_instances/coverage)
   * [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
+  * [AWS Savings Plan Purchase Analysis](./cost/aws/savings_plan/purchase_analysis)
   * [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
   * [AWS Savings Realized From Rate Reduction Purchases](./cost/aws/savings_realized)
   * [AWS Schedule Instance](./cost/aws/schedule_instance)
