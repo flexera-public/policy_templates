@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.1.0",
+  version: "0.2.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Savings Plans",
@@ -33,6 +33,15 @@ parameter "param_aws_account_number" do
   label "Account Number"
   description "Leave blank; this is for automated use with Meta Policies. See README for more details."
   default ""
+end
+
+parameter "param_exclude_existing_sps" do
+  type "string"
+  category "Savings Plan Settings"
+  label "Exclude Purchased Savings Plans"
+  description "Whether or not to exclude already-purchased Savings Plans from the analysis."
+  allowed_values "true", "false"
+  default "false"
 end
 
 parameter "param_scope" do
@@ -309,9 +318,45 @@ script "js_aws_account", type:"javascript" do
 EOS
 end
 
+datasource "ds_savings_plans" do
+  request do
+    auth $auth_aws
+    pagination $pagination_aws
+    verb "POST"
+    host "savingsplans.us-east-1.amazonaws.com"
+    path "/DescribeSavingsPlans"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "savingsPlans[*]") do
+      field "commitment", jmes_path(col_item, "commitment")
+      field "currency", jmes_path(col_item, "currency")
+      field "description", jmes_path(col_item, "description")
+      field "ec2InstanceFamily", jmes_path(col_item, "ec2InstanceFamily")
+      field "end", jmes_path(col_item, "end")
+      field "offeringId", jmes_path(col_item, "offeringId")
+      field "paymentOption", jmes_path(col_item, "paymentOption")
+      field "productTypes", jmes_path(col_item, "productTypes")
+      field "recurringPaymentAmount", jmes_path(col_item, "recurringPaymentAmount")
+      field "region", jmes_path(col_item, "region")
+      field "returnableUntil", jmes_path(col_item, "returnableUntil")
+      field "savingsPlanArn", jmes_path(col_item, "savingsPlanArn")
+      field "savingsPlanId", jmes_path(col_item, "savingsPlanId")
+      field "savingsPlanType", jmes_path(col_item, "savingsPlanType")
+      field "start", jmes_path(col_item, "start")
+      field "state", jmes_path(col_item, "state")
+      field "tags", jmes_path(col_item, "tags")
+      field "termDurationInSeconds", jmes_path(col_item, "termDurationInSeconds")
+      field "upfrontPaymentAmount", jmes_path(col_item, "upfrontPaymentAmount")
+    end
+  end
+end
+
 datasource "ds_start_analysis" do
   request do
-    run_script $js_start_analysis, $ds_aws_account, $param_scope, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_hourly_commitment, $param_region, $param_instance_family, $param_offering_id
+    run_script $js_start_analysis, $ds_aws_account, $ds_savings_plans, $param_scope, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_hourly_commitment, $param_region, $param_instance_family, $param_offering_id, $param_exclude_existing_sps
   end
   result do
     encoding "json"
@@ -322,7 +367,7 @@ datasource "ds_start_analysis" do
 end
 
 script "js_start_analysis", type: "javascript" do
-  parameters "ds_aws_account", "param_scope", "param_days", "param_payment_option", "param_term", "param_savings_plan_type", "param_hourly_commitment", "param_region", "param_instance_family", "param_offering_id"
+  parameters "ds_aws_account", "ds_savings_plans", "param_scope", "param_days", "param_payment_option", "param_term", "param_savings_plan_type", "param_hourly_commitment", "param_region", "param_instance_family", "param_offering_id", "param_exclude_existing_sps"
   result "request"
   code <<-'EOS'
   option_table = {
@@ -379,6 +424,10 @@ script "js_start_analysis", type: "javascript" do
 
   if (param_offering_id) {
     body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansToAdd"][0]["OfferingId"] = param_offering_id
+  }
+
+  if (param_exclude_existing_sps == "true" && ds_savings_plans.length > 0) {
+    body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansToExclude"] = _.pluck(ds_savings_plans, "savingsPlanId")
   }
 
   var request = {
