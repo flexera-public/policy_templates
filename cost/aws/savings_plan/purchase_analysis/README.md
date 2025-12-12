@@ -15,7 +15,7 @@ This policy template has the following input parameters:
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Account Scope* - The account scope that you want your recommendations for. Select Payer to produce results only for a Master Payer account, or Linked to produce results for all linked accounts as well.
-- *Exclude Purchased Savings Plans* - Whether or not to exclude already-purchased Savings Plans from the analysis.
+- *Exclude Active Savings Plans* - Whether or not to exclude active Savings Plans from the analysis.
 - *Look Back Period* - Number of days of prior usage to analyze
 - *Savings Plan Term* - Length of savings plan term to provide recommendations for.
 - *Savings Plan Type* - Type of Savings Plan to provide recommendations for.
