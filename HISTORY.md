@@ -6,6 +6,43 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#3848](https://github.com/flexera-public/policy_templates/pull/3848): POL-1682 New Policy Template: AWS Savings Plan Purchase Analysis
+
+*New Policy Template*
+
+#### Description
+
+> Adds a new policy template `AWS Savings Plan Purchase Analysis`:
+>
+> This policy template performs a purchase analysis via the [AWS Savings Plans Purchase Analyzer](https://aws.amazon.com/blogs/aws-cloud-financial-management/announcing-savings-plans-purchase-analyzer/) tool included in AWS Cost Explorer and reports the results. Optionally, this report can be emailed.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Savings Plan Purchase Analysis](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/purchase_analysis/README.md)
+- **Merged At**: 2025-12-12 13:57:18 UTC
+
+---
+
+### PR [#3849](https://github.com/flexera-public/policy_templates/pull/3849): POL-1700 AWS Savings Plan Recommendations - Add Support for Database Savings Plan Type
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+> This change adds support for the new Database Savings Plan Type in AWS - https://aws.amazon.com/blogs/aws/introducing-database-savings-plans-for-aws-databases/
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+>
+
+#### Metadata
+
+- **Policies**: [AWS Savings Plan Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/recommendations/README.md)
+- **Merged At**: 2025-12-09 16:45:09 UTC
+
+---
+
 ### PR [#3831](https://github.com/flexera-public/policy_templates/pull/3831): POL-1673 New Policy: Oracle Tag Cardinality 
 
 *New Policy Template*
@@ -2040,47 +2077,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md)
 - **Merged At**: 2025-07-11 12:05:29 UTC
-
----
-
-### PR [#3210](https://github.com/flexera-public/policy_templates/pull/3210): FOPTS-10413 Add validation for tag tag_azure_databricks_clusterid
-
-*Minor Update*
-
-#### Description
-
-> This PR introduces a validation mechanism in the Azure Databricks Rightsize Compute Instances policy template to ensure accurate cost allocation. Specifically, it verifies the presence of the tag_azure_databricks_clusterid dimension by validating the required tag.
->
-> ### Issues Resolved
-> * Prevents policies from failing by checking for the required tag in advance.
->
->
->
-
-#### Metadata
-
-- **Policies**: [Azure Databricks Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/databricks/rightsize_compute/README.md)
-- **Merged At**: 2025-07-09 17:10:06 UTC
-
----
-
-### PR [#3296](https://github.com/flexera-public/policy_templates/pull/3296): POL-1557 CBI Policy Daily Granularity Support
-
-*Minor Update*
-
-#### Description
-
-> Updates the "Common Bill Ingestion from AWS S3 Object Storage" and "Common Bill Ingestion from Azure Blob Storage" policy templates to support billing data stored at a daily, rather than a monthly, granularity. From the READMEs:
->
-> - *Granularity* - Whether there will be one file per month of billing data, or one file per day of billing data.
->   - If set to "Daily", file names will be expected to end with a full date like "2024-10-03.csv". The policy template will grab all of the files for a given month to upload to Flexera.
->   - If set to "Monthly", file names will be expected to end with a year and month like "2024-10.csv". The policy template will grab one file for the month to upload to Flexera.
->
-
-#### Metadata
-
-- **Policies**: [Common Bill Ingestion from AWS S3 Object Storage](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cbi_ingestion_aws_s3/README.md), [Common Bill Ingestion from Azure Blob Storage](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cbi_ingestion_azure_blob/README.md)
-- **Merged At**: 2025-07-09 12:18:25 UTC
 
 ---
 
