@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.0
+
+- Policy incidents now list each bucket's size broken down by storage type (e.g., `StandardStorage`, `StandardIAStorage`, `StandardIASizeOverhead`, `GlacierStorage`).
+
 ## v3.2.3
 
 - Updated heredocs in policy template code to conform to best practices. Functionality unchanged.

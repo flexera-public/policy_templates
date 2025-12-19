@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This Policy Template scans all S3 buckets in the given account and checks if the bucket exceeds a user-specified size in GiB. Bucket size is obtained via AWS CloudWatch queries. An incident is raised with any buckets exceeding the user-specified size and, optionally, and email is sent.
+This Policy Template scans all S3 buckets in the given account and checks if the bucket exceeds a user-specified size in GiB. Bucket size is obtained via AWS CloudWatch queries. An incident is raised with any buckets exceeding the user-specified size, broken down by storage type/class. Optionally, this incident can be emailed.
 
 ## Input Parameters
 
