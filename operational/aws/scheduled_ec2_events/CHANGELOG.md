@@ -1,6 +1,6 @@
 # Changelog
 
-## v4.1.1
+## v4.1.2
 
 - Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
 
