@@ -2,7 +2,7 @@
 
 ## v5.6.5
 
-- Fixed a potential 'undefined' error when "Skip Instance Sizes" is set to "Yes".
+- Fixed an 'undefined' error when "Skip Instance Sizes" is set to "Yes" and certain type of VM is encountered.
 
 ## v5.6.4
 
