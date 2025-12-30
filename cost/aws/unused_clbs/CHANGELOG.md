@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.5.3
+
+- Fixed a bug introduced in v6.5.2 that would cause "Cannot access member 'result' of undefined", if the AWS account info does not exist in Flexera.
+
 ## v6.5.2
 
 - Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
