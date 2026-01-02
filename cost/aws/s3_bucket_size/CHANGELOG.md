@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.1
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
 ## v4.0.0
 
 - Policy incidents now list each bucket's size broken down by storage type (e.g., `StandardStorage`, `StandardIAStorage`, `StandardIASizeOverhead`, `GlacierStorage`).
