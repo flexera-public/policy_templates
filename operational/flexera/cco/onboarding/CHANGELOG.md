@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.6
+
+- Fix issue where Google Policies are ignored.
+
 ## v0.1.5
 
 - Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
