@@ -2,7 +2,7 @@
 
 ## v0.1.6
 
-- Fixed the issue where no google policies were listed even when a GCP bill connect was present due to reassigning of the variable vendor from `google` to `gcp`
+- Fixed issue where no Google policies were listed even when a GCP bill connect was present.
 
 ## v0.1.5
 
