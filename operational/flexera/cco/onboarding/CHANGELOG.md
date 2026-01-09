@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.6
+
+- Fixed issue where no Google policies were listed even when a GCP bill connect was present.
+
 ## v0.1.5
 
 - Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
