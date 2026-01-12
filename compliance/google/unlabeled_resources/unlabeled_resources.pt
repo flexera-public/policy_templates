@@ -8,7 +8,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.3.1",
+  version: "3.3.2",
   provider: "Google",
   service: "Compute",
   policy_set: "Untagged Resources",
@@ -302,19 +302,11 @@ end
 
 datasource "ds_google_projects" do
   request do
-    auth $auth_google
-    pagination $pagination_google
-    host "cloudresourcemanager.googleapis.com"
-    path "/v1/projects/"
-    query "filter", "(lifecycleState:ACTIVE)"
-    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
-    # Forces `ds_is_deleted` datasource to run first during policy execution
-    header "Meta-Flexera", val($ds_is_deleted, "path")
+    run_script $js_google_projects, $ds_is_deleted, $param_projects_ignore_sys, $param_projects_ignore_app
   end
   result do
     encoding "json"
     collect jmes_path(response, "projects[*]") do
-      field "number", jmes_path(col_item, "projectNumber")
       field "id", jmes_path(col_item, "projectId")
       field "name", jmes_path(col_item, "name")
       field "labels", jmes_path(col_item, "labels")
@@ -322,17 +314,41 @@ datasource "ds_google_projects" do
   end
 end
 
+script "js_google_projects", type: "javascript" do
+  parameters "ds_is_deleted", "param_projects_ignore_sys", "param_projects_ignore_app"
+  result "request"
+  code <<-'EOS'
+  query = []
+  if (param_projects_ignore_sys == "Yes") { query.push("-projectId:sys-") }
+  if (param_projects_ignore_app == "Yes") { query.push("-projectId:app-") }
+
+  var request = {
+    auth: "auth_google",
+    pagination: "pagination_google",
+    host: "cloudresourcemanager.googleapis.com",
+    verb: "GET",
+    path: "/v3/projects:search",
+    query_params: { "query": query.join(" ") },
+    // Header Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    // Forces `ds_is_deleted` datasource to run first during policy execution
+    headers: {
+      "Meta-Flexera": ds_is_deleted["path"]
+    }
+  }
+EOS
+end
+
 datasource "ds_google_projects_filtered" do
-  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list, $param_projects_ignore_sys, $param_projects_ignore_app
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
 end
 
 script "js_google_projects_filtered", type: "javascript" do
-  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
   result "result"
   code <<-'EOS'
   if (param_projects_list.length > 0) {
-    filtered = _.filter(ds_google_projects, function(project) {
-      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
+    result = _.filter(ds_google_projects, function(project) {
+      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name'])
 
       if (param_projects_allow_or_deny == "Deny") {
         include_project = !include_project
@@ -341,12 +357,8 @@ script "js_google_projects_filtered", type: "javascript" do
       return include_project
     })
   } else {
-    filtered = ds_google_projects
+    result = ds_google_projects
   }
-
-  result = _.reject(filtered, function(project) {
-    return (project['id'].substring(0, 4) == "sys-" && param_projects_ignore_sys == "Yes") || (project['id'].substring(0, 4) == "app-" && param_projects_ignore_app == "Yes")
-  })
 EOS
 end
 
@@ -394,7 +406,6 @@ script "js_generate_uris", type: "javascript" do
       return {
         projectId: project['id'],
         projectName: project['name'],
-        projectNumber: project['number'],
         requestType: param_mapping[endpoint],
         uri: '/compute/v1/projects/' + project['id'] + endpoint
       }
@@ -418,7 +429,6 @@ script "js_bucket_uris", type: "javascript" do
       return {
         projectId: project['id'],
         projectName: project['name'],
-        projectNumber: project['number'],
         requestType: "Storage Buckets"
       }
     })
@@ -442,7 +452,6 @@ datasource "ds_get_disks" do
     field "disks", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"disks\"))) | .[].disks | .[] | { id,name,kind,type,description,labels,status,sizeGb,selfLink,zone,creationTimestamp,labelFingerprint }]")
     field "projectId", val(iter_item, "projectId")
     field "projectName", val(iter_item, "projectName")
-    field "projectNumber", val(iter_item, "projectNumber")
     field "requestType", val(iter_item, "requestType")
   end
 end
@@ -487,7 +496,6 @@ script "js_disks", type: "javascript" do
           creationTime: resource['creationTimestamp'],
           projectId: response['projectId'],
           projectName: response['projectName'],
-          projectNumber: response['projectNumber'],
           requestType: response['requestType'],
           zone: zone,
           region: region,
@@ -515,7 +523,6 @@ datasource "ds_get_vpn_gateways" do
     field "vpnGateways", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"vpnGateways\"))) | .[].vpnGateways | .[] | { id,name,kind,description,labels,selfLink,region,gatewayIpVersion,labelFingerprint }]")
     field "projectId", val(iter_item, "projectId")
     field "projectName", val(iter_item, "projectName")
-    field "projectNumber", val(iter_item, "projectNumber")
     field "requestType", val(iter_item, "requestType")
   end
 end
@@ -544,7 +551,6 @@ script "js_vpn_gateways", type: "javascript" do
         gatewayIpVersion: resource['gatewayIpVersion'],
         projectId: response['projectId'],
         projectName: response['projectName'],
-        projectNumber: response['projectNumber'],
         requestType: response['requestType']
       })
     })
@@ -577,7 +583,6 @@ datasource "ds_external_vpn_gateways" do
       field "redundancyType", jmes_path(col_item, "redundancyType")
       field "projectId", val(iter_item, "projectId")
       field "projectName", val(iter_item, "projectName")
-      field "projectNumber", val(iter_item, "projectNumber")
       field "requestType", val(iter_item, "requestType")
     end
   end
@@ -617,7 +622,6 @@ datasource "ds_images" do
       field "family", jmes_path(col_item, "family")
       field "projectId", val(iter_item, "projectId")
       field "projectName", val(iter_item, "projectName")
-      field "projectNumber", val(iter_item, "projectNumber")
       field "requestType", val(iter_item, "requestType")
     end
   end
@@ -638,7 +642,6 @@ datasource "ds_get_instances" do
     field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind,hostname,cpuPlatform,labels,description,machineType,labelFingerprint}]")
     field "projectId", val(iter_item, "projectId")
     field "projectName", val(iter_item, "projectName")
-    field "projectNumber", val(iter_item, "projectNumber")
     field "requestType", val(iter_item, "requestType")
   end
 end
@@ -672,7 +675,6 @@ script "js_instances", type: "javascript" do
         labelFingerprint: resource['labelFingerprint'],
         projectId: response['projectId'],
         projectName: response['projectName'],
-        projectNumber: response['projectNumber'],
         requestType: response['requestType'],
         zone: zone,
         region: region
@@ -711,7 +713,6 @@ datasource "ds_snapshots" do
       field "sourceDiskId", jmes_path(col_item, "sourceDiskId")
       field "projectId", val(iter_item, "projectId")
       field "projectName", val(iter_item, "projectName")
-      field "projectNumber", val(iter_item, "projectNumber")
       field "requestType", val(iter_item, "requestType")
     end
   end
@@ -739,7 +740,6 @@ datasource "ds_storage_buckets" do
       field "location", jmes_path(col_item, "location")
       field "projectId", val(iter_item, "projectId")
       field "projectName", val(iter_item, "projectName")
-      field "projectNumber", val(iter_item, "projectNumber")
       field "requestType", val(iter_item, "requestType")
     end
   end
@@ -763,7 +763,6 @@ script "js_google_resources", type: "javascript" do
         labels: project['labels'],
         projectId: project['id'],
         projectName: project['name'],
-        projectNumber: project['number'],
         selfLink: "https://cloudresourcemanager.googleapis.com/v3/projects/" + project['name'],
         kind: "project",
         requestType: "Projects",
@@ -888,7 +887,6 @@ script "js_missing_labels_incident", type: "javascript" do
     return {
       accountID: resource['projectId'],
       accountName: resource['projectName'],
-      projectNumber: resource['projectNumber'],
       resourceName: resource['name'],
       resourceID: resource['id'],
       resourceType: resource_mapping[resource['requestType']],
@@ -909,7 +907,6 @@ script "js_missing_labels_incident", type: "javascript" do
   result.push({
     accountID: "",
     accountName: "",
-    projectNumber: "",
     resourceName: "",
     resourceID: "",
     resourceType: "",
@@ -955,9 +952,6 @@ policy "pol_unlabeled_resources" do
       end
       field "accountName" do
         label "Project Name"
-      end
-      field "projectNumber" do
-        label "Project Number"
       end
       field "resourceName" do
         label "Resource Name"
