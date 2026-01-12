@@ -76,7 +76,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
-  - `Microsoft.Insights/metrics/read`
+  - `Microsoft.Insights/*/read`
   - `Microsoft.Compute/skus/read`
   - `Microsoft.Compute/locations/vmSizes/read`
   - `Microsoft.Compute/virtualMachines/read`
