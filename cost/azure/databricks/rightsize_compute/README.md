@@ -58,7 +58,9 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Compute/virtualMachines/read`
   - `Microsoft.Compute/skus/read`
-  - `Microsoft.Insights/metrics/read`
+  - `Microsoft.Insights/*/read`†
+
+  † Currently, Microsoft Azure does not support more granular permissions for making batch requests to the metrics API.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
