@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.2
+
+- Updated API call for listing Google Projects to speed up policy execution and reduce the number of paginated requests.
+
 ## v0.3.1
 
 - Updated heredocs in policy template code to conform to best practices. Functionality unchanged.

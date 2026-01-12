@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.2.3
+
+- Updated API call for listing Google Projects to speed up policy execution and reduce the number of paginated requests.
+- Incident table no longer includes Project Number. This is not supported by the above API and only has limited utility.
+
 ## v4.2.2
 
 - Fixed issue where incident would refer to VMs as "underutilized" instead of "long stopped".

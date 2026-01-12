@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.3.2
+
+- Updated API call for listing Google Projects to speed up policy execution and reduce the number of paginated requests.
+- Incident table no longer includes Project Number. This is not supported by the above API and only has limited utility.
+
 ## v3.3.1
 
 - Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
