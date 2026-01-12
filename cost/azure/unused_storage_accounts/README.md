@@ -41,11 +41,13 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Resources/subscriptions/read`
-  - `Microsoft.Insights/metrics/read`
+  - `Microsoft.Insights/*/read`†
   - `Microsoft.Storage/storageAccounts/read`
   - `Microsoft.Storage/storageAccounts/delete`*
 
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
+
+  † Currently, Microsoft Azure does not support more granular permissions for making batch requests to the metrics API.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
