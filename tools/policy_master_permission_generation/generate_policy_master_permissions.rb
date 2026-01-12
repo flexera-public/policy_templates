@@ -262,14 +262,22 @@ def extract_permissions_from_readme(readme_content)
             description = nil
             notes_for_symbols.each do |note|
               next if note[:detail].strip.empty?
+
               description = note[:detail]
               required = false
+
               if note[:detail].include?("taking action")
                 read_only_permission = false
               end
+
               if note[:detail].include?("These permissions enable taking actions against cloud resources.")
                 required = true
               end
+
+              if note[:detail].include?("does not support more granular permissions")
+                required = true
+              end
+
               # Only use the first note with a detail for required/read_only logic
               break
             end
