@@ -333,7 +333,7 @@ def readme_invalid_credentials?(file, file_lines)
       fail_message += "```- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:```\n\n"
     end
 
-    azure_perm_tester = /^`Microsoft\.[a-zA-Z]+\/[a-zA-Z]+\/[a-zA-Z]+(?:\/[a-zA-Z]+)*`(?:[\*\u2020\u2021\u00a7\u2016\u00b6]+)?$/
+    azure_perm_tester = /^`Microsoft\.(?:[a-zA-Z]+|\*)\/(?:[a-zA-Z]+|\*)\/(?:[a-zA-Z]+|\*)(?:\/(?:[a-zA-Z]+|\*))*`(?:[\*\u2020\u2021\u00a7\u2016\u00b6]+)?$/
 
     # Hash to track the presence of each footnote symbol in the permission list
     footnote_symbols = { "*" => false,  "†" => false, "‡" => false, "§" => false, "‖" => false, "¶" => false }
