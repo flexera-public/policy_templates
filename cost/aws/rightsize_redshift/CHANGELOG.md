@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.4
+
+- Fixed a bug caused by an order of magnitude error which resulted in recommendations not being returned for valid Redshift instances.
+
 ## v0.2.3
 
 - Fixed a bug introduced in v0.2.2 that would cause "Cannot access member 'result' of undefined", if the AWS account info does not exist in Flexera.
