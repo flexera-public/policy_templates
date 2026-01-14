@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "This Policy Template scans all AWS S3 buckets in the given account and checks if the bucket exceeds a specified byte size. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_bucket_size) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_bucket_size"
 category "Cost"
 severity "medium"
 default_frequency "weekly"
 info(
-  version: "3.1.2",
+  version: "4.0.1",
   provider: "AWS",
   service: "Storage",
   policy_set: "",
@@ -78,6 +79,24 @@ parameter "param_regions_list" do
   default []
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -101,17 +120,7 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-## Get applied policy metadata for use later
-datasource "ds_applied_policy" do
-  request do
-    auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
-  end
-end
-
-# Get region-specific Flexera API endpoints
+## Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
 end
@@ -119,24 +128,45 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
       flexera: "api.flexera.com",
-      fsm: "api.fsm.flexeraeng.com"
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
       flexera: "api.flexera.eu",
-      fsm: "api.fsm-eu.flexeraeng.com"
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
       flexera: "api.flexera.au",
-      fsm: "api.fsm-apac.flexeraeng.com"
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
     }
   }
 
   result = host_table[rs_optima_host]
 EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
 end
 
 # Get AWS account info
@@ -157,6 +187,92 @@ datasource "ds_cloud_vendor_accounts" do
   end
 end
 
+# Get AWS account info fallback
+datasource "ds_billing_centers_aws_acc" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs_aws_acc" do
+  run_script $js_top_level_bcs_aws_acc, $ds_billing_centers_aws_acc
+end
+
+script "js_top_level_bcs_aws_acc", type: "javascript" do
+  parameters "ds_billing_centers_aws_acc"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers_aws_acc, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_cloud_vendor_accounts_fallback" do
+  request do
+    run_script $js_cloud_vendor_accounts_fallback, $ds_top_level_bcs_aws_acc, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "id", jmes_path(col_item, "dimensions.vendor_account")
+      field "name", jmes_path(col_item, "dimensions.vendor_account_name")
+    end
+  end
+end
+
+script "js_cloud_vendor_accounts_fallback", type: "javascript" do
+  parameters "ds_top_level_bcs_aws_acc", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      dimensions: ["vendor_account", "vendor_account_name"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs_aws_acc
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
@@ -175,18 +291,29 @@ datasource "ds_get_caller_identity" do
 end
 
 datasource "ds_aws_account" do
-  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_cloud_vendor_accounts_fallback, $ds_get_caller_identity
 end
 
 script "js_aws_account", type:"javascript" do
-  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  parameters "ds_cloud_vendor_accounts", "ds_cloud_vendor_accounts_fallback", "ds_get_caller_identity"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.find(ds_cloud_vendor_accounts, function(account) {
     return account['id'] == ds_get_caller_identity[0]['account']
   })
 
-  // This is in case the API does not return the relevant account info
+  // This is in case the Flexera List Cloud Accounts API does not return the relevant account info
+  if (result == undefined) {
+    result = _.find(ds_cloud_vendor_accounts_fallback, function(account) {
+      return account['id'] == ds_get_caller_identity[0]['account']
+    })
+
+    if (result) {
+      result["tags"] = {}
+    }
+  }
+
+  // This is in case both the Flexera List Cloud Accounts API and the Flexera Cost data do not return the relevant account info
   if (result == undefined) {
     result = {
       id: ds_get_caller_identity[0]['account'],
@@ -269,9 +396,9 @@ end
 script "js_aws_buckets_region_filtered", type: "javascript" do
   parameters "ds_aws_buckets_sanitized", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_regions_list.length > 0) {
-    result = _.filter(ds_aws_buckets_with_region, function(bucket) {
+    result = _.filter(ds_aws_buckets_sanitized, function(bucket) {
       include_bucket = _.contains(param_regions_list, bucket['region'])
 
       if (param_regions_allow_or_deny == "Deny") {
@@ -317,7 +444,7 @@ end
 script "js_aws_buckets_tag_filtered", type: "javascript" do
   parameters "ds_aws_buckets_with_tags", "ds_aws_buckets_region_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Logic to ensure any buckets skipped because of a 404 response due to no tags
   // are still included in the final result
   tagged_bucket_list = _.map(ds_aws_buckets_with_tags, function(bucket) {
@@ -404,12 +531,111 @@ script "js_aws_buckets_tag_filtered", type: "javascript" do
 EOS
 end
 
+# List Metrics
+datasource "ds_cloudwatch_metric_names" do
+  run_script $js_cloudwatch_metric_names, $ds_aws_buckets_region_filtered
+end
+
+script "js_cloudwatch_metric_names", type: "javascript" do
+  parameters "ds_aws_buckets_region_filtered"
+  result "result"
+  code <<-'EOS'
+  regions = _.uniq(_.pluck(ds_aws_buckets_region_filtered, "region"))
+
+  result = []
+
+  _.each(regions, function(reg) {
+    // Bucket Size in Bytes Metric Name
+    result.push({
+      "metricName": "BucketSizeBytes",
+      "region": reg
+    })
+  })
+EOS
+end
+
+datasource "ds_cloudwatch_metrics" do
+  iterate $ds_cloudwatch_metric_names
+  request do
+    run_script $js_cloudwatch_metrics, val(iter_item, "metricName"), val(iter_item, "region")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListMetricsResult/Metrics/member", "array") do
+      field "namespace", xpath(col_item, "Namespace")
+      field "metricName", xpath(col_item, "MetricName")
+      field "dimensions" do
+        collect xpath(col_item, "Dimensions/member", "array") do
+          field "name", xpath(col_item, "Name")
+          field "value", xpath(col_item, "Value")
+        end
+      end
+      field "region", val(iter_item, "region")
+    end
+  end
+end
+
+script "js_cloudwatch_metrics", type: "javascript" do
+  parameters "metric_name", "region"
+  result "request"
+  code <<-'EOS'
+  query_params = {
+    "Action": "ListMetrics",
+    "Version": "2010-08-01",
+    "Namespace": "AWS/S3",
+    "MetricName": metric_name
+  }
+
+  var request = {
+    auth: "auth_aws",
+    host: "monitoring." + region + ".amazonaws.com",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+    },
+    query_params: query_params,
+    ignore_status: [ 403 ]
+  }
+EOS
+end
+
+datasource "ds_cloudwatch_metrics_by_bucket" do
+  run_script $js_cloudwatch_metrics_by_bucket, $ds_cloudwatch_metrics
+end
+
+script "js_cloudwatch_metrics_by_bucket", type: "javascript" do
+  parameters "ds_cloudwatch_metrics"
+  result "result"
+  code <<-'EOS'
+  result = {}
+
+  _.each(ds_cloudwatch_metrics, function(metric) {
+    dims = metric.dimensions || []
+
+    bucket = _.find(dims, function(dim) { return dim.name == "BucketName" })
+    if (!bucket || !bucket.value) return
+    bucket_name = bucket.value
+
+    storage_type = _.find(dims, function(dim) { return dim.name == "StorageType" })
+    if (!storage_type || !storage_type.value) return
+    storage_type_name = storage_type.value
+
+    // Composite Key of Bucket Name and Storage Type (as one bucket can have multiple associated storage types)
+    result[bucket_name + "::" + storage_type_name] = {
+      namespace: metric.namespace,
+      metricName: metric.metricName,
+      dimensions: metric.dimensions
+    }
+  })
+EOS
+end
+
 datasource "ds_cloudwatch_queries" do
-  run_script $js_cloudwatch_queries, $ds_aws_buckets_tag_filtered
+  run_script $js_cloudwatch_queries, $ds_aws_buckets_tag_filtered, $ds_cloudwatch_metrics_by_bucket
 end
 
 script "js_cloudwatch_queries", type: "javascript" do
-  parameters "ds_aws_buckets_tag_filtered"
+  parameters "ds_aws_buckets_tag_filtered", "ds_cloudwatch_metrics_by_bucket"
   result "result"
   code <<-'EOS'
   // Create the various queries we're going to send to CloudWatch for each instance
@@ -421,23 +647,77 @@ script "js_cloudwatch_queries", type: "javascript" do
       result[bucket['region']] = []
     }
 
-    result[bucket['region']].push({
-      "Id": bucket['name'].replace(/-/g, "_"),
-      "MetricStat": {
-        "Metric": {
-          "Namespace": "AWS/S3",
-          "MetricName": "BucketSizeBytes",
-          "Dimensions": [
-            { "Name": "BucketName", "Value": bucket['name'] },
-            { "Name": "StorageType", "Value": "StandardStorage" }
-          ]
-        },
-        "Period": 2592000,
-        "Stat": "Average",
-        "Unit": "Bytes"
-      },
-      "ReturnData": true
+    // Find dimensions
+    metric_details = []
+
+    matched_keys = _.filter( _.keys(ds_cloudwatch_metrics_by_bucket), function(key) {
+      return key.indexOf(bucket['name']) !== -1
     })
+
+    if (matched_keys) {
+      _.each(matched_keys, function(key) {
+        metric_details.push(
+          ds_cloudwatch_metrics_by_bucket[key]
+        )
+      })
+    }
+
+    if (metric_details != null) {
+      _.each(metric_details, function(metric_detail) {
+
+        // Custom metric taken from ListMetrics API response
+        metric_name = metric_detail["metricName"]
+
+        dimensions = _.map(metric_detail['dimensions'], function (dim) {
+          return {
+            "Name": dim["name"],
+            "Value": dim["value"]
+          }
+        })
+
+        storage_type_found = _.find(dimensions, function(dim) { return dim["Name"] == "StorageType" })
+        storage_type_name = (typeof storage_type_found === "undefined") ? "" : storage_type_found["Value"]
+
+        result[bucket['region']].push({
+          "Id": bucket['name'].replace(/-/g, "_") + "_" + storage_type_name
+          "MetricStat": {
+            "Metric": {
+              "Namespace": "AWS/S3",
+              "MetricName": metric_name,
+              "Dimensions": dimensions
+            },
+            "Period": 2592000,
+            "Stat": "Average",
+            "Unit": "Bytes"
+          },
+          "ReturnData": true
+        })
+      })
+
+    } else {
+      // Fallback - Else assume these are the dimensions
+      metric_name = "BucketSizeBytes"
+
+      dimensions = [
+        { "Name": "BucketName", "Value": bucket['name'] },
+        { "Name": "StorageType", "Value": "StandardStorage" }
+      ]
+
+      result[bucket['region']].push({
+        "Id": bucket['name'].replace(/-/g, "_") + "_" + "StandardStorage",
+        "MetricStat": {
+          "Metric": {
+            "Namespace": "AWS/S3",
+            "MetricName": metric_name,
+            "Dimensions": dimensions
+          },
+          "Period": 2592000,
+          "Stat": "Average",
+          "Unit": "Bytes"
+        },
+        "ReturnData": true
+      })
+    }
   })
 EOS
 end
@@ -450,7 +730,7 @@ end
 script "js_cloudwatch_requests", type: "javascript" do
   parameters "ds_cloudwatch_queries"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Organize the queries into discrete requests to send in.
   // Queries are first sorted by region and then split into 500 item blocks.
   result = []
@@ -503,7 +783,7 @@ end
 script "js_cloudwatch_data", type: "javascript" do
   parameters "region", "body"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // Slow down rate of requests to prevent
   api_wait = 5
   var now = new Date().getTime()
@@ -523,7 +803,6 @@ script "js_cloudwatch_data", type: "javascript" do
       "Content-Encoding": "amz-1.0"
     }
     query_params: {
-      'Action': 'GetMetricData',
       'Version': '2010-08-01'
     },
     body: JSON.stringify(body)
@@ -545,7 +824,7 @@ script "js_cloudwatch_data_sorted", type: "javascript" do
 
   _.each(ds_cloudwatch_data, function(item) {
     region = item['region']
-    name = item['id'].replace(/_/g, "-")
+    name = item['label']
 
     // Grabbing index 0 SHOULD be safe because we should only get one result.
     // Just in case AWS slices the data weirdly and returns 2 results, we make
@@ -559,26 +838,46 @@ EOS
 end
 
 datasource "ds_aws_oversized_buckets" do
-  run_script $js_aws_oversized_buckets, $ds_aws_buckets_tag_filtered, $ds_cloudwatch_data_sorted, $ds_aws_account, $ds_applied_policy, $param_size_threshold
+  run_script $js_aws_oversized_buckets, $ds_aws_buckets_tag_filtered, $ds_cloudwatch_data_sorted, $ds_aws_account, $ds_applied_policy, $param_size_threshold, $param_incident_csv
 end
 
 script "js_aws_oversized_buckets", type: "javascript" do
-  parameters "ds_aws_buckets_tag_filtered", "ds_cloudwatch_data_sorted", "ds_aws_account", "ds_applied_policy", "param_size_threshold"
+  parameters "ds_aws_buckets_tag_filtered", "ds_cloudwatch_data_sorted", "ds_aws_account", "ds_applied_policy", "param_size_threshold", "param_incident_csv"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Convert user-specified threshold to bytes
   size_threshold = param_size_threshold * 1073741824
 
-  oversized_buckets = _.filter(ds_aws_buckets_tag_filtered, function(bucket) {
+  oversized_buckets = []
+  _.each(ds_aws_buckets_tag_filtered, function(bucket) {
     oversized = false
     name = bucket['name']
     region = bucket['region']
 
-    if (ds_cloudwatch_data_sorted[region] && ds_cloudwatch_data_sorted[region][name]) {
-      oversized = ds_cloudwatch_data_sorted[region][name] > size_threshold
-    }
+    if (ds_cloudwatch_data_sorted[region]) {
 
-    return oversized
+      matched_keys = _.filter( _.keys(ds_cloudwatch_data_sorted[region]), function(key) {
+        return key.indexOf(name) !== -1
+      })
+
+      if (_.size(matched_keys) > 0) {
+        _.each(matched_keys, function(key) {
+          current_bucket = _.clone(bucket)
+          oversized = ds_cloudwatch_data_sorted[region][key] > size_threshold
+
+          if (oversized) {
+            storage_type = key.split(" ")[1]
+            label = key
+
+            current_bucket["storage_type"] = storage_type
+            current_bucket["label"] = label
+            oversized_buckets.push(current_bucket)
+          }
+        })
+      }
+    }
   })
 
   result = _.map(oversized_buckets, function(bucket) {
@@ -590,6 +889,8 @@ script "js_aws_oversized_buckets", type: "javascript" do
 
     name = bucket['name']
     region = bucket['region']
+    bucket_storage_type = bucket['storage_type']
+    bucket_label = bucket['label']
 
     return {
       resourceID: name,
@@ -599,16 +900,18 @@ script "js_aws_oversized_buckets", type: "javascript" do
       creation_date: new Date(bucket['creation_date']).toISOString(),
       threshold: param_size_threshold,
       // Convert size from bytes to GiB
-      size: Math.round(ds_cloudwatch_data_sorted[region][name] / 1073741824 * 100) / 100,
+      size: Math.round(ds_cloudwatch_data_sorted[region][bucket_label] / 1073741824 * 100) / 100,
+      storageType: bucket_storage_type,
       accountID: ds_aws_account['id'],
       accountName: ds_aws_account['name'],
       policy_name: ds_applied_policy['name'],
-      service: "AmazonS3"
+      service: "AmazonS3",
+      csv_message: csv_message
     }
   })
 
   // Dummy entry to ensure validation always occurs
-  result.push({ resourceID: "", tags: "", policy_name: "" })
+  result.push({ resourceID: "", tags: "", policy_name: "", csv_message: "" })
 EOS
 end
 
@@ -619,6 +922,7 @@ end
 policy "pol_aws_oversized_buckets" do
   validate_each $ds_aws_oversized_buckets do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Oversized S3 Buckets Found"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
@@ -649,6 +953,9 @@ policy "pol_aws_oversized_buckets" do
       field "service" do
         label "Service"
       end
+      field "storageType" do
+        label "Storage Type"
+      end
       field "threshold" do
         label "Size Threshold (GiB)"
       end
@@ -668,7 +975,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################
@@ -678,13 +988,12 @@ end
 
 # If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
 # if it is set we will look for the parent policy.
-datasource "ds_get_policy" do
+datasource "ds_get_parent_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
   end
   result do
     encoding "json"
@@ -692,59 +1001,42 @@ datasource "ds_get_policy" do
   end
 end
 
-datasource "ds_parent_policy_terminated" do
-  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
-end
-
 # If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
 # This information is used in two places:
 # - determining whether or not we make a delete call
 # - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
-script "js_decide_if_self_terminate", type: "javascript" do
-  parameters "found", "self_policy_id", "meta_parent_policy_id"
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
   result "result"
-  code <<-EOS
-  var result
-  if (meta_parent_policy_id != "" && found.id == undefined) {
-    result = true
-  } else {
-    result = false
-  }
-  EOS
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
 end
 
 # Two potentials ways to set this up:
 # - this way and make a unneeded 'get' request when not deleting
 # - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
-script "js_make_terminate_request", type: "javascript" do
-  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
-  result "request"
-  code <<-EOS
-
-  var request = {
-    auth:  'auth_flexera',
-    host: rs_governance_host,
-    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
-    headers: {
-      "API-Version": "1.0",
-      "Content-Type":"application/json"
-    },
-  }
-
-  if (should_delete) {
-    request.verb = 'DELETE'
-  }
-  EOS
-end
-
 datasource "ds_terminate_self" do
   request do
-    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
   end
 end
 
-datasource "ds_is_deleted" do
-  run_script $js_check_deleted, $ds_terminate_self
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
 end
 
 # This is just a way to have the check delete request connect to the farthest leaf from policy.
@@ -753,10 +1045,12 @@ end
 # The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
 # would not have access to self-terminate
 # It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
-script "js_check_deleted", type: "javascript" do
-  parameters "response"
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
   result "result"
-  code <<-EOS
-  result = {"path":"/"}
-  EOS
+  code 'result = { path: "/"}'
 end

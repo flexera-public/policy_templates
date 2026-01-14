@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "This policy calculates savings realized by Reserved Instance purchases for Azure. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/savings_realized/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/azure/savings_realized/"
 category "Cost"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "3.9.3",
+  version: "3.9.7",
   provider: "Azure",
   service: "Compute",
   policy_set: "Savings Realized",
@@ -85,13 +86,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -102,7 +142,7 @@ end
 
 script "js_region_table", type: "javascript" do
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = {
     "AE Central": "UAE Central",
     "AE North": "UAE North",
@@ -187,7 +227,7 @@ end
 script "js_filtered_bcs", type: "javascript" do
   parameters "ds_billing_centers", "param_billing_centers"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_billing_centers.length == 0) {
     filtered_bcs = _.filter(ds_billing_centers, function(bc) {
       return bc['parent_id'] == null || bc['parent_id'] == undefined
@@ -218,7 +258,7 @@ end
 script "js_bill_connections", type: "javascript" do
   parameters "ds_filtered_bcs", "start_date", "end_date", "org_id", "optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   payload = {
     "billing_center_ids": ds_filtered_bcs,
     "dimensions": [ "bill_source" ],
@@ -257,7 +297,7 @@ end
 script "js_bill_connections_filter", type:"javascript" do
   parameters "bill_connections", "type"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   switch (type) {
     case "ea_old":
       bill_sources = _.filter(bill_connections, function(connection) {
@@ -390,7 +430,7 @@ end
 script "js_empty_aggregated_costs_if_no_bill_connections", type: "javascript" do
   parameters "bill_connections", "aggregated_costs"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
   if (bill_connections.length > 0) {
     result = aggregated_costs
@@ -401,7 +441,7 @@ end
 script "js_get_aggregated_costs", type: "javascript" do
   parameters "bill_sources", "ds_filtered_bcs", "start_date", "end_date", "org_id", "optima_host", "connection_type"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // Set filters based on the type of request
   if (connection_type == 'old_base') {
     filter = {

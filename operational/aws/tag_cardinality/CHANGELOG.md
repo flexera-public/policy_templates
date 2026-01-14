@@ -1,5 +1,25 @@
 # Changelog
 
+## v3.2.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v3.2.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v3.1.7
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v3.1.6
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v3.1.5
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v3.1.4
 
 - Added batch processing for large datasources as a performance enhancement (reduces memory usage) with no changes to logic or functionality.

@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Find all taggable Azure resources missing any of the user provided tags with the option to update the tags. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources"
 category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.2.2",
+  version: "3.4.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Untagged Resources",
@@ -112,6 +113,24 @@ parameter "param_include_account" do
   default "Do Not Include Subscription/Resource Group"
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -147,13 +166,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -440,7 +498,7 @@ end
 script "js_azure_providers", type: "javascript" do
   parameters "ds_azure_subscriptions_filtered", "param_azure_endpoint"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   request = {
     auth: "auth_azure",
     pagination: "pagination_azure",
@@ -471,13 +529,15 @@ EOS
 end
 
 datasource "ds_missing_tags_incident" do
-  run_script $js_missing_tags_incident, $ds_azure_resources_missing_tags, $ds_applied_policy, $ds_azure_api_versions, $param_tags, $param_tags_boolean
+  run_script $js_missing_tags_incident, $ds_azure_resources_missing_tags, $ds_applied_policy, $ds_azure_api_versions, $param_tags, $param_tags_boolean, $param_incident_csv
 end
 
 script "js_missing_tags_incident", type: "javascript" do
-  parameters "ds_azure_resources_missing_tags", "ds_applied_policy", "ds_azure_api_versions", "param_tags", "param_tags_boolean"
+  parameters "ds_azure_resources_missing_tags", "ds_applied_policy", "ds_azure_api_versions", "param_tags", "param_tags_boolean", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   result = _.map(ds_azure_resources_missing_tags, function(resource) {
     resource_tags = []
 
@@ -541,9 +601,9 @@ script "js_missing_tags_incident", type: "javascript" do
 
   message = ["The following Azure resources are missing ", phrase, " of the following tags:\n\n"].join('')
   tag_list = _.map(param_tags, function(tag) { return ["- ", tag, "\n"].join('') }).join('')
-  disclaimer = "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters."
+  disclaimer = "\nThe above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
-  result[0]['message'] = message + tag_list + disclaimer
+  result[0]['message'] = message + tag_list + disclaimer + csv_message
 EOS
 end
 
@@ -614,7 +674,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_tag_resources" do
@@ -641,17 +704,7 @@ define tag_resources($data, $param_azure_endpoint, $param_tags_to_add) return $a
 
   foreach $resource in $data do
     sub on_error: handle_error() do
-      if $resource["type"] == "Resource"
-        call tag_instance($resource, $param_azure_endpoint, $param_tags_to_add) retrieve $tag_response
-      end
-
-      if $resource["type"] == "Resource Group"
-        call tag_resource_group($resource, $param_azure_endpoint, $param_tags_to_add) retrieve $tag_response
-      end
-
-      if $resource["type"] == "Subscription"
-        call tag_subscription($resource, $param_azure_endpoint, $param_tags_to_add) retrieve $tag_response
-      end
+      call tag_resource($resource, $param_azure_endpoint, $param_tags_to_add)
     end
   end
 
@@ -660,85 +713,8 @@ define tag_resources($data, $param_azure_endpoint, $param_tags_to_add) return $a
   end
 end
 
-define tag_instance($resource, $param_azure_endpoint, $param_tags_to_add) return $response do
-  $tags = $resource["tags_object"]
-
-  if $tags == null
-    $tags = {}
-  end
-
-  foreach $tag in $param_tags_to_add do
-    $key = first(split($tag, "="))
-    $value = last(split($tag, "="))
-    $tags[$key] = $value
-  end
-
-  $host = $param_azure_endpoint
-  $href = $resource["id"]
-  $params = "?api-version=" + $resource["api_version"]
-  $url = $host + $href + $params
-  task_label("PATCH " + $url)
-
-  $response = http_request(
-    auth: $$auth_azure,
-    https: true,
-    verb: "patch",
-    host: $host,
-    href: $href,
-    query_strings: { "api-version": $resource["api_version"] },
-    body: { "tags": $tags }
-  )
-
-  task_label("Patch Azure Resource response: " + $resource["id"] + " " + to_json($response))
-  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
-
-  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response patching Azure Resource: "+ $resource["id"] + " " + to_json($response)
-  else
-    task_label("Patch Azure Resource successful: " + $resource["id"])
-  end
-end
-
-define tag_resource_group($resource, $param_azure_endpoint, $param_tags_to_add) return $response do
-  $tags = $resource["tags_object"]
-
-  if $tags == null
-    $tags = {}
-  end
-
-  foreach $tag in $param_tags_to_add do
-    $key = first(split($tag, "="))
-    $value = last(split($tag, "="))
-    $tags[$key] = $value
-  end
-
-  $host = $param_azure_endpoint
-  $href = $resource["id"]
-  $params = "?api-version=" + $resource["api_version"]
-  $url = $host + $href + $params
-  task_label("PATCH " + $url)
-
-  $response = http_request(
-    auth: $$auth_azure,
-    https: true,
-    verb: "patch",
-    host: $host,
-    href: $href,
-    query_strings: { "api-version": $resource["api_version"] },
-    body: { "tags": $tags }
-  )
-
-  task_label("Patch Azure Resource Group response: " + $resource["id"] + " " + to_json($response))
-  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
-
-  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response patching Azure Resource Group: "+ $resource["id"] + " " + to_json($response)
-  else
-    task_label("Patch Azure Resource Group successful: " + $resource["id"])
-  end
-end
-
-define tag_subscription($resource, $param_azure_endpoint, $param_tags_to_add) return $response do
+# https://learn.microsoft.com/en-us/rest/api/resources/tags/create-or-update-at-scope?view=rest-resources-2025-04-01
+define tag_resource($resource, $param_azure_endpoint, $param_tags_to_add) do
   $tags = $resource["tags_object"]
 
   if $tags == null
@@ -753,8 +729,7 @@ define tag_subscription($resource, $param_azure_endpoint, $param_tags_to_add) re
 
   $host = $param_azure_endpoint
   $href = $resource["id"] + "/providers/Microsoft.Resources/tags/default"
-  $params = "?api-version=2021-04-01"
-  $url = $host + $href + $params
+  $url = $host + $href
   task_label("PUT " + $url)
 
   $response = http_request(
@@ -763,17 +738,21 @@ define tag_subscription($resource, $param_azure_endpoint, $param_tags_to_add) re
     verb: "put",
     host: $host,
     href: $href,
-    query_strings: { "api-version": "2021-04-01" },
-    body: { "properties": { "tags": $tags } }
+    query_strings: { "api-version": "2025-04-01" },
+    body: {
+        "properties": {
+          "tags": $tags
+        }
+      }
   )
 
-  task_label("Put Azure Subscription response: " + $resource["id"] + " " + to_json($response))
+  task_label("Tag Azure Resource response: " + $resource["id"] + " " + to_json($response))
   $$all_responses << to_json({"req": "PUT " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response putting Azure Subscription: "+ $resource["id"] + " " + to_json($response)
+    raise "Unexpected response from Tag Azure Resource: "+ $resource["id"] + " " + to_json($response)
   else
-    task_label("Put Azure Subscription successful: " + $resource["id"])
+    task_label("Tag Azure Resource successful: " + $resource["id"])
   end
 end
 
@@ -794,13 +773,12 @@ end
 
 # If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
 # if it is set we will look for the parent policy.
-datasource "ds_get_policy" do
+datasource "ds_get_parent_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
   end
   result do
     encoding "json"
@@ -808,59 +786,42 @@ datasource "ds_get_policy" do
   end
 end
 
-datasource "ds_parent_policy_terminated" do
-  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
-end
-
 # If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
 # This information is used in two places:
 # - determining whether or not we make a delete call
 # - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
-script "js_decide_if_self_terminate", type: "javascript" do
-  parameters "found", "self_policy_id", "meta_parent_policy_id"
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
   result "result"
-  code <<-EOS
-  var result
-  if (meta_parent_policy_id != "" && found.id == undefined) {
-    result = true
-  } else {
-    result = false
-  }
-  EOS
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
 end
 
 # Two potentials ways to set this up:
 # - this way and make a unneeded 'get' request when not deleting
 # - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
-script "js_make_terminate_request", type: "javascript" do
-  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
-  result "request"
-  code <<-EOS
-
-  var request = {
-    auth:  'auth_flexera',
-    host: rs_governance_host,
-    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
-    headers: {
-      "API-Version": "1.0",
-      "Content-Type":"application/json"
-    },
-  }
-
-  if (should_delete) {
-    request.verb = 'DELETE'
-  }
-  EOS
-end
-
 datasource "ds_terminate_self" do
   request do
-    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
   end
 end
 
-datasource "ds_is_deleted" do
-  run_script $js_check_deleted, $ds_terminate_self
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
 end
 
 # This is just a way to have the check delete request connect to the farthest leaf from policy.
@@ -869,10 +830,12 @@ end
 # The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
 # would not have access to self-terminate
 # It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
-script "js_check_deleted", type: "javascript" do
-  parameters "response"
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
   result "result"
-  code <<-EOS
-  result = {"path":"/"}
-  EOS
+  code 'result = { path: "/"}'
 end

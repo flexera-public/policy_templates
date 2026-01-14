@@ -29,9 +29,11 @@ For more details on Flexera Cloud Cost Anomaly Detection, please see the [docume
   - Both dimension names, such as `Cloud Vendor Account`, and dimension IDs, such as `vendor_account`, can be used.
   - Dimension=Value formatting can be used to filter the results. For example, a value of `Cloud Vendor=AWS` will filter results to just AWS spend.
   - Filters are also automatically included as dimensions. For example, there is no need to specify both `Cloud Vendor` and `Cloud Vendor=AWS` in this parameter because the latter will automatically include the functionality of the former.
+- *Excluded Cost Anomalies* - Dimension values to not report cost anomalies for in Dimension=Value format. The link in the incident to Flexera One will not include these filters. Example: `Service=AmazonEC2`
 - *Cost Anomaly Limit* - Number of anomalies to include in the incident
 - *Window Size* - Window size to use for [Bollinger Bands](https://en.wikipedia.org/wiki/Bollinger_Bands)
 - *Standard Deviations* - Number of [standard deviations](https://en.wikipedia.org/wiki/Standard_deviation) for the [Bollinger Band](https://en.wikipedia.org/wiki/Bollinger_Bands)
+- *Sort Anomalies By* - Sort the anomalies by cost or variance before applying the limit. Default is Cost.
 
 ## Policy Actions
 
@@ -39,7 +41,7 @@ For more details on Flexera Cloud Cost Anomaly Detection, please see the [docume
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 ### Credential Configuration
 

@@ -1,5 +1,38 @@
 # Changelog
 
+## v5.5.2
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
+## v5.5.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v5.5.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v5.4.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v5.4.3
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v5.4.2
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v5.4.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v5.4.0
+
+- New `Resource Types` parameter allows policy template to only report on specific services or resource types.
+- Small code changes made to improve the speed of policy template execution.
+
 ## v5.3.2
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.

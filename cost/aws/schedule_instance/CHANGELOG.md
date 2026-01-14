@@ -1,5 +1,37 @@
 # Changelog
 
+## v8.0.8
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
+## v8.0.7
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v8.0.6
+
+- Added metadata specific to meta parent policies. Functionality unchanged.
+
+## v8.0.5
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v8.0.4
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v8.0.3
+
+- Fixed mapping in datasource `ds_flexera_api_hosts` which as causing error during evaluation: "invalid request host", "host must be a string"
+
+## v8.0.2
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v8.0.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v8.0.0
 
 - Remove `next_stop`, `next_start` label requirements

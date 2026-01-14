@@ -6,13 +6,13 @@ This policy template reports any Reserved Instance Purchase Recommendations gene
 
 ## How It Works
 
-Recommendations are obtained via requests to the [Azure Consumption API](https://learn.microsoft.com/en-us/rest/api/consumption/reservation-recommendations/list?tabs=HTTP).
+Recommendations are obtained via requests to the [Azure Consumption API](https://learn.microsoft.com/en-us/rest/api/consumption/reservation-recommendations/list?view=rest-consumption-2024-08-01&tabs=HTTP).
 
 ### Policy Savings Details
 
-The policy includes the estimated savings. The estimated savings is recognized if the recommended reserved instance is purchased. The savings values are provided directly by the [Azure Consumption API](https://learn.microsoft.com/en-us/rest/api/consumption/reservation-recommendations/list?tabs=HTTP).
+The policy template includes the estimated savings. The estimated savings is recognized if the recommended reserved instance is purchased. The savings values are provided directly by the [Azure Consumption API](https://learn.microsoft.com/en-us/rest/api/consumption/reservation-recommendations/list?view=rest-consumption-2024-08-01&tabs=HTTP).
 
-If the Flexera organization is configured to use a currency other than the one the [Azure Billing API](https://learn.microsoft.com/en-us/rest/api/billing/2019-10-01-preview/billing-accounts/list?tabs=HTTP) returns, the savings values will be converted using the exchange rate at the time that the policy executes. If the policy is unable to obtain the currency code from the [Azure Billing API](https://learn.microsoft.com/en-us/rest/api/billing/2019-10-01-preview/billing-accounts/list?tabs=HTTP) due to the Azure credential lacking the `Microsoft.Billing/billingAccounts/read` permission, values will not be converted and will be presumed to already be in the currency the Flexera organization is configured to use.
+If the Flexera organization is configured to use a currency other than the one the [Azure Billing API](https://learn.microsoft.com/en-us/rest/api/billing/billing-accounts/list?view=rest-billing-2024-04-01&tabs=HTTP) returns, the savings values will be converted using the exchange rate at the time that the policy executes. If the policy is unable to obtain the currency code from the [Azure Billing API](https://learn.microsoft.com/en-us/rest/api/billing/billing-accounts/list?view=rest-billing-2024-04-01&tabs=HTTP) due to the Azure credential lacking the `Microsoft.Billing/billingAccounts/read` permission, values will not be converted and will be presumed to already be in the currency the Flexera organization is configured to use.
 
 ## Input Parameters
 
@@ -28,6 +28,9 @@ If the Flexera organization is configured to use a currency other than the one t
   - Note: For large cloud estates, it is recommended that this policy be applied once for each resource type recommendations are desired for rather than attempting to gather all recommendations with a single applied policy.
 - *Reservation Term* - Length of reservation term to provide recommendations for. Can be set to either `1 Year` or `3 Year`
 - *Reservation Scope* - The scope to provide recommendations for. Select `Shared` to not have recommendations scoped to individual Subscriptions or Resource Groups.
+- *Payment Option* - Whether or not to report recommendations as 'No Upfront' or 'All Upfront'. Default value of 'No Upfront' recommended in most cases. Has no impact on the recommendations themselves; Azure does not offer discounts or differing options if you paying up front.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 
@@ -35,7 +38,7 @@ If the Flexera organization is configured to use a currency other than the one t
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Billing/billingAccounts/read`*

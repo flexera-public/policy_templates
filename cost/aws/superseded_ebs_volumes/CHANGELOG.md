@@ -1,5 +1,46 @@
 # Changelog
 
+## v6.5.4
+
+- Fixed a bug introduced in v6.5.3 that would cause "Cannot access member 'result' of undefined", if the AWS account info does not exist in Flexera.
+
+## v6.5.3
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
+## v6.5.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v6.5.1
+
+- Updated email escalation declaration for new "Errors Identified" incident to prevent error `failed make a CSV attachment with data: unable to collect csv data from nil export`
+
+## v6.5.0
+
+- Policy now continues execution for accessible regions when some regions return permission errors
+- Added separate incident report to identify regions with access issues and provide remediation guidance
+
+## v6.4.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v6.3.10
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v6.3.9
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v6.3.8
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v6.3.7
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v6.3.6
 
 - Fixed issue where Currency Conversion messaging in policy incident would stop policy execution because of an error. Functionality unchanged.

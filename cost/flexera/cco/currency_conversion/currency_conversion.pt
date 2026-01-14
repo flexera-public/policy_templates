@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "A policy that creates an adjustment rule that converts the currency of the cost of the Cloud Vendor of choice. It utilizes xe.com to retrieve the latest exchange rates. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/currency_conversion/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/currency_conversion/"
 severity "low"
 default_frequency "monthly"
 category "Cost"
 info(
-  version: "5.0.2",
+  version: "5.1.1",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -61,6 +62,15 @@ parameter "param_backfill_exchange_rate" do
   description "Whether or not to use the current exchange rate, or the exchange rate at the time, when applying currency conversion to previous months. Only applicable if \"Backfill Previous Months\" is selected."
   allowed_values "Current Exchange Rate", "Backdated Exchange Rate"
   default "Backdated Exchange Rate"
+end
+
+parameter "param_adj_bring_forward" do
+  type "string"
+  category "Policy Settings"
+  label "Bring Adjustments Forward"
+  description "Whether to automatically fill months with no adjustments with the adjustments from the previous month. See the README for more details."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_currency_from" do
@@ -316,13 +326,38 @@ datasource "ds_current_adjustments" do
 end
 
 datasource "ds_updated_adjustments" do
-  run_script $js_updated_adjustments, $ds_exchange_rates, $ds_current_adjustments, $ds_month_list, $ds_filter_dimensions, $param_currency_from, $param_currency_to, $param_backfill_exchange_rate, $param_backfill, $param_backfill_start_date, $param_dimensions_boolean
+  run_script $js_updated_adjustments, $ds_exchange_rates, $ds_current_adjustments, $ds_month_list, $ds_filter_dimensions, $param_currency_from, $param_currency_to, $param_backfill_exchange_rate, $param_backfill, $param_backfill_start_date, $param_dimensions_boolean, $param_adj_bring_forward
 end
 
 script "js_updated_adjustments", type: "javascript" do
-  parameters "ds_exchange_rates", "ds_current_adjustments", "ds_month_list", "ds_filter_dimensions", "param_currency_from", "param_currency_to", "param_backfill_exchange_rate", "param_backfill", "param_backfill_start_date", "param_dimensions_boolean"
+  parameters "ds_exchange_rates", "ds_current_adjustments", "ds_month_list", "ds_filter_dimensions", "param_currency_from", "param_currency_to", "param_backfill_exchange_rate", "param_backfill", "param_backfill_start_date", "param_dimensions_boolean", "param_adj_bring_forward"
   result "result"
   code <<-'EOS'
+  function generateMonths(startMonth) {
+    month_list = []
+
+    year = Number(startMonth.split("-")[0])
+    month = Number(startMonth.split("-")[1])
+
+    // Current year/month
+    currentYear = Number(new Date().toISOString().split('-')[0])
+    currentMonth = Number(new Date().toISOString().split('-')[1])
+
+    // Loop until we reach the current year/month
+    while (year < currentYear || (year == currentYear && month <= currentMonth)) {
+      formattedMonth = month
+      if (month < 10) { formattedMonth = "0" + month.toString() }
+      formattedDate = [ year.toString(), formattedMonth.toString() ].join('-')
+
+      month_list.push(formattedDate)
+
+      month++
+      if (month > 12) { month = 1; year++ }
+    }
+
+    return month_list
+  }
+
   // Get most recent exchange rate
   current_conversion_rate = ds_exchange_rates[ds_month_list[ds_month_list.length - 1]['previous']]
 
@@ -332,6 +367,22 @@ script "js_updated_adjustments", type: "javascript" do
   _.each(ds_current_adjustments['dated_adjustment_lists'], function(list) {
     existing_adjustment_lists[list['effective_at']] = list['adjustment_list']
   })
+
+  // Bring previous adjustments forward if the user opted to do this
+  if (param_backfill == "Backfill Previous Months" && param_adj_bring_forward == "Yes") {
+    month_list = generateMonths(param_backfill_start_date)
+    previous_month_adj = null
+
+    _.each(month_list, function(month) {
+      if (existing_adjustment_lists[month] == undefined && previous_month_adj) {
+        existing_adjustment_lists[month] = previous_month_adj
+      }
+
+      if (existing_adjustment_lists[month]) {
+        previous_month_adj = existing_adjustment_lists[month]
+      }
+    })
+  }
 
   // Include any existing rules for months we don't intend to modify
   new_adjustments = _.reject(ds_current_adjustments['dated_adjustment_lists'], function(list) {

@@ -1,5 +1,41 @@
 # Changelog
 
+## v4.5.2
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
+## v4.5.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v4.5.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v4.4.6
+
+- Updated label of email parameter to "Email Addresses" to match other policy templates. Functionality unchanged.
+
+## v4.4.5
+
+- Fixed issue with `GetMetricData` API request when gathering CloudWatch metrics. Functionality unchanged.
+
+## v4.4.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v4.4.3
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v4.4.2
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v4.4.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v4.4.0
 
 - Policy template now uses dynamically updated list of instance types.

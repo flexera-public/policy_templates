@@ -1,5 +1,50 @@
 # Changelog
 
+## v3.2.4
+
+- Fixed a bug introduced in v3.2.3 that would cause "Cannot access member 'result' of undefined", if the AWS account info does not exist in Flexera.
+
+## v3.2.3
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
+## v3.2.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v3.2.1
+
+- Updated email escalation declaration for new "Errors Identified" incident to prevent error `failed make a CSV attachment with data: unable to collect csv data from nil export`
+
+## v3.2.0
+
+- Policy now continues execution for accessible regions when some regions return permission errors
+- Added separate incident report to identify regions with access issues and provide remediation guidance
+
+## v3.1.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v3.0.1
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v3.0.0
+
+- Changed savings calculation to improve accuracy. See README for more details.
+
+## v2.4.3
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v2.4.2
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v2.4.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v2.4.0
 
 - Policy template now uses dynamically updated list of instance types.

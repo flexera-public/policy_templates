@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.4.6
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v2.4.5
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v2.4.4
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v2.4.3
 
 - Minor code improvements to bring template in line with current standards. Functionality unchanged.

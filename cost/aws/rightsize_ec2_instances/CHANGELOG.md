@@ -1,5 +1,67 @@
 # Changelog
 
+## v5.6.5
+
+- Fixed an 'undefined' error when "Skip Instance Sizes" is set to "Yes" and certain type of VM is encountered.
+
+## v5.6.4
+
+- Fixed a bug introduced in v5.6.3 that would cause "Cannot access member 'result' of undefined", if the AWS account info does not exist in Flexera.
+
+## v5.6.3
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
+## v5.6.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v5.6.1
+
+- Updated email escalation declaration for new "Errors Identified" incident to prevent error `failed make a CSV attachment with data: unable to collect csv data from nil export`
+
+## v5.6.0
+
+- Policy now continues execution for accessible regions when some regions return permission errors
+- Added separate incident report to identify regions with access issues and provide remediation guidance
+
+## v5.5.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v5.4.7
+
+- Resolved issue where memory statistics for Windows instances specifically were not being captured.
+
+## v5.4.6
+
+- Resolved issue where memory statistics were not being captured.
+- Fixed issue where the policy would fail when only considering memory metrics for recommendations.
+
+## v5.4.5
+
+- Fixed issue with `GetMetricData` API request when gathering CloudWatch metrics. Functionality unchanged.
+
+## v5.4.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v5.4.3
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v5.4.2
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v5.4.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v5.4.0
+
+- Adds utilization chart for each resource to the result if metrics are available
+
 ## v5.3.2
 
 - Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators

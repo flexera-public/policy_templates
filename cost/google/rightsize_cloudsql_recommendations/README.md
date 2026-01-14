@@ -6,15 +6,15 @@ This policy reports on any existing underutilized or idle Cloud SQL recommendati
 
 ### How It Works
 
-This policy uses the following Google recommenders:
+This policy template uses the following Google recommenders:
 
 - `google.cloudsql.instance.IdleRecommender`: Checks if a Cloud SQL instance is idle and recommends stopping the instance when appropriate.
 - `google.cloudsql.instance.OverprovisionedRecommender`: Checks if a Cloud SQL instance is idle and recommends stopping the instance when appropriate.
 
 More information is available in Google's documentation:
 
-- [Identify idle Cloud SQL instances](https://cloud.google.com/sql/docs/mysql/recommender-sql-idle)
-- [Reduce overprovisioned Cloud SQL instances](https://cloud.google.com/sql/docs/mysql/recommender-sql-overprovisioned)
+- [Identify idle Cloud SQL instances](https://cloud.google.com/sql/docs/mysql/recommender-sql-idle?hl=en)
+- [Reduce overprovisioned Cloud SQL instances](https://cloud.google.com/sql/docs/mysql/recommender-sql-overprovisioned?hl=en)
 
 ### Policy Savings Details
 
@@ -43,10 +43,12 @@ The policy includes the estimated monthly savings. The estimated monthly savings
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified label key.
 - *Exclusion Labels: Any / All* - Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Labels` field.
 - *Report Idle or Underutilized* - Whether to report on idle Cloud SQL instances, underutilized Cloud SQL instances, or both. If both are selected, Cloud SQL instances raised in the idle Cloud SQL instances incident will never appear in the underutilized Cloud SQL instances incident.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example, if a user selects the "Delete Cloud SQL Instances" action while applying the policy, all idle Cloud SQL instances will be deleted.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example, if a user selects the "Delete Cloud SQL Instances" action while applying the policy template, all idle Cloud SQL instances will be deleted.
 
 ## Policy Actions
 
@@ -57,7 +59,7 @@ For example, if a user selects the "Delete Cloud SQL Instances" action while app
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
   - `recommender.cloudsqlIdleInstanceRecommendations.list`
@@ -90,4 +92,4 @@ This policy template does not incur any cloud costs.
 
 ## API Quotas
 
-Google sets quotas on the Recommender API; this will cause a `429 RESOURCE_EXHAUSTED` response when the quota is exceeded. See [Quotas & Limits](https://cloud.google.com/recommender/quotas) for more information.
+Google sets quotas on the Recommender API; this will cause a `429 RESOURCE_EXHAUSTED` response when the quota is exceeded. See [Quotas & Limits](https://cloud.google.com/recommender/quotas?hl=en) for more information.

@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Turbonomic policy that gives recommendations to rightsize Virtual Volumes [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/rightsize_virtual_volumes_recommendations/google) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/rightsize_virtual_volumes_recommendations/google"
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.4.1",
+  version: "0.4.5",
   source: "Turbonomic",
   service: "Usage Discount",
   provider: "Google",
@@ -50,7 +51,7 @@ end
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses to notify"
+  label "Email Addresses"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
   # No default value, user input required
 end
@@ -96,7 +97,7 @@ end
 
 datasource "ds_get_turbonomic_recommendations" do
   request do
-    run_script $js_get_turbonomic_recommendations, $param_turbonomic_endpoint, val($ds_get_turbonomic_token, "access_token")
+    run_script $js_get_turbonomic_recommendations, val($ds_get_turbonomic_token, "access_token"), $param_turbonomic_endpoint
   end
   result do
     encoding "json"
@@ -120,7 +121,7 @@ end
 
 datasource "ds_get_business_units" do
   request do
-    run_script $js_get_business_units, $param_turbonomic_endpoint, $param_provider, val($ds_get_turbonomic_token, "access_token")
+    run_script $js_get_business_units, val($ds_get_turbonomic_token, "access_token"), $param_turbonomic_endpoint, $param_provider
   end
   result do
     encoding "json"
@@ -140,7 +141,7 @@ end
 script "js_get_turbonomic_token", type: "javascript" do
   parameters "turbonomic_endpoint", "audience"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
     var request = {
       verb: "POST",
       auth: "auth_turbonomic"
@@ -156,9 +157,9 @@ EOS
 end
 
 script "js_get_turbonomic_recommendations", type: "javascript" do
-  parameters "turbonomic_endpoint", "access_token"
+  parameters "access_token", "turbonomic_endpoint"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
     request = {
       verb: "POST",
       host: turbonomic_endpoint,
@@ -184,9 +185,9 @@ script "js_get_turbonomic_recommendations", type: "javascript" do
 end
 
 script "js_get_business_units", type: "javascript" do
-  parameters "turbonomic_endpoint", "provider", "access_token"
+  parameters "access_token", "turbonomic_endpoint", "provider"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
     query_params = {"type": "DISCOVERED"}
 
     // Since /api/v3/businessunits only support "AWS", "Azure Subscription" and "GCP Project", in case
@@ -202,7 +203,6 @@ script "js_get_business_units", type: "javascript" do
     }
 
     request = {
-      verb: "GET",
       host: turbonomic_endpoint,
       path: "/api/v3/businessunits",
       query_params: query_params,
@@ -217,7 +217,7 @@ end
 script "js_filtered_turbonomic_recommendations", type: "javascript" do
   parameters "ds_get_turbonomic_recommendations", "ds_get_business_units", "param_provider"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
     instances = []
     monthlySavings = 0.0
     function formatNumber(number, separator) {
@@ -307,7 +307,7 @@ end
 policy "pol_turbonomic_rightsize_volumes" do
   validate $ds_filtered_turbonomic_recommendations do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Virtual Volumes to Rightsize found"
-    detail_template <<-EOS
+    detail_template <<-'EOS'
       ## Turbonomic Rightsize Virtual Volumes Recommendations
       {{data.message}}
     EOS

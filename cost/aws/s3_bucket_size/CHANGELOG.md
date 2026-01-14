@@ -1,5 +1,49 @@
 # Changelog
 
+## v4.0.1
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
+## v4.0.0
+
+- Policy incidents now list each bucket's size broken down by storage type (e.g., `StandardStorage`, `StandardIAStorage`, `StandardIASizeOverhead`, `GlacierStorage`).
+
+## v3.2.3
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v3.2.2
+
+- Resolved issue where bucket size statistics for some S3 buckets were not being captured.
+
+## v3.2.1
+
+- Fixed issue where the policy would fail due to an undefined datasource.
+
+## v3.2.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v3.1.7
+
+- Fixed issue with `GetMetricData` API request when gathering CloudWatch metrics. Functionality unchanged.
+
+## v3.1.6
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v3.1.5
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v3.1.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v3.1.3
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v3.1.2
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.

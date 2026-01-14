@@ -4,9 +4,10 @@ require 'fileutils'
 require 'yaml'
 require 'csv'
 require 'pdfkit'
+require 'base64'
 
 # Code for generating HTML for a PDF
-def generate_pdf_html?(values)
+def generate_pdf_html(values)
   html_content = ""
 
   values.sort_by { |v| v["name"] }.each do |value|
@@ -49,7 +50,7 @@ def generate_pdf_html?(values)
         html_content += "<p><b>#{provider_name} Required Permissions:</b><br>"
 
         required.sort_by { |v| v["name"] }.each do |permission|
-          read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:75%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:75%;\">Write</span></i>"
+          read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:65%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:65%;\">Write</span></i>"
           html_content += "#{permission["name"]}  #{read_only}<br>"
         end
       end
@@ -58,7 +59,7 @@ def generate_pdf_html?(values)
         html_content += "<p><b>#{provider_name} Optional Permissions:</b><br>"
 
         not_required.sort_by { |v| v["name"] }.each do |permission|
-          read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:75%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:75%;\">Write</span></i>"
+          read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:65%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:65%;\">Write</span></i>"
           html_content += "#{permission["name"]}  #{read_only}<br>"
         end
       end
@@ -68,6 +69,45 @@ def generate_pdf_html?(values)
   end
 
   return html_content
+end
+
+# Code for generating a PDF
+def generate_pdf(data, cloud_provider, filename, permissions_list_dir, logo_svg, font)
+  template_type = ""
+  template_type = cloud_provider + " " if cloud_provider != "Master"
+
+  html_header = <<~EOS
+<html>
+  <head>
+    <meta charset='utf-8'>
+    <title>Flexera Cloud Cost Optimization - #{cloud_provider} Policy Permissions List</title>
+    <style>
+      body {
+        font-family: 'Source Sans Pro';
+        src: url("data:font/truetype;charset=utf-8;base64,#{font}") format('truetype');
+        font-size: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <center><img src="data:image/svg+xml;base64,#{logo_svg}" width="50%"></center>
+    <h1><center>Policy Catalog #{cloud_provider} Permissions List</center></h1>
+    <p>This document contains a list of cloud provider permissions required by each #{template_type}policy template in the Flexera Cloud Cost Optimization Policy Catalog.<br>
+    <ul>
+      <li>Required permissions may change as policy templates in the catalog are updated. An up-to-date version of this PDF file is <a href="https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/#{filename}.pdf">available in the Flexera Policy Template Github Repository</a>.</li>
+      <li><i>Required</i> permissions are required for the policy template in question to work correctly; <i>optional</i> permissions enable additional functionality.</li>
+      <li>Permissions with a green <i><span style="color:green;font-size:65%;">Read Only</span></i> label are read-only, while those with a red <i><span style="color:red;font-size:65%;">Write</span></i> label can potentially make changes to your cloud environment.</li>
+    </ul>
+    <hr>
+EOS
+
+  html_footer = <<~EOS
+  </body>
+</html>
+EOS
+
+  pdf = PDFKit.new(html_header + generate_pdf_html(data) + html_footer)
+  pdf.to_file("#{permissions_list_dir}/#{filename}.pdf")
 end
 
 # List of Policy Templates
@@ -95,6 +135,7 @@ class PolicyTemplate
 end
 
 readme_files = []
+
 pt_files.each do |pt|
   # Get the README file for each Policy Template
   readme_files += Dir.glob("#{File.dirname(pt)}/[Rr][Ee][Aa][Dd][Mm][Ee]*")
@@ -128,6 +169,7 @@ def extract_permissions_from_readme(readme_content)
     "[**Azure China Enterprise Agreement Credential**]",
     "[**Microsoft Graph Credential**]",
     "[**Google Cloud Credential**]",
+    "[**Oracle Credential**]",
     "[**Flexera Credential**]",
     "[**Turbonomic Credential**]",
     "[**GitHub Credential**]",
@@ -149,6 +191,8 @@ def extract_permissions_from_readme(readme_content)
       provider = "azure_graph"
     when "[**Google Cloud Credential**]"
       provider = "gce"
+    when "[**Oracle Credential**]"
+      provider = "oracle"
     when "[**Flexera Credential**]"
       provider = "flexera"
     when "[**Turbonomic Credential**]"
@@ -168,6 +212,7 @@ def extract_permissions_from_readme(readme_content)
 
       # Find the line starting with '/*', '†', '‡', '§', '‖' or '¶' to get any specific notes around permissions from the README
       list_of_notes = []
+
       section_text.each_line do |line|
         break if line.strip.start_with?( "##", "###", "- [**") && !line.strip.start_with?(section)
 
@@ -194,6 +239,7 @@ def extract_permissions_from_readme(readme_content)
 
       # For each line within the Section get the list of permissions and roles and push to 'policy_credentials' object
       credentials_section = ""
+
       section_text.each_line do |line|
         break if line.strip.start_with?( "##", "###", "- [**") && !line.strip.start_with?(section)
 
@@ -202,49 +248,57 @@ def extract_permissions_from_readme(readme_content)
         elsif line.strip == "- Permissions" || line.strip == "Permission"
           credentials_section = "permissions"
         else
-          line.scan(/-\s*`([^`]+)`\*?/) do |match|
-            permission = match.first
+          line.scan(/-\s*`([^`]+)`([\*†‡§‖¶]*)/) do |match|
+            permission = match[0]
+            trailing_symbols = match[1]
 
-            # Set whether permission is read-only, required, and/or has a description (and depending on the symbol)
             read_only_permission = true
             required = true
 
-            # Checks for a symbol (which would denote that the permission has an accompanying description)
-            symbol_if_exists = list_of_notes.find { |note| permission.end_with?(note[:symbol]) == true || line.include?(note[:symbol]) == true }
+            # Gather all notes for trailing symbols, in order
+            notes_for_symbols = trailing_symbols.chars.map { |sym| list_of_notes.find { |note| note[:symbol] == sym } }.compact
 
-            if symbol_if_exists != nil && !symbol_if_exists[:detail].strip.empty?
+            # If there are any notes, process them in order (first note with detail wins for required/read_only logic)
+            description = nil
+            notes_for_symbols.each do |note|
+              next if note[:detail].strip.empty?
+
+              description = note[:detail]
               required = false
 
-              if symbol_if_exists[:detail].include?("taking action")
+              if note[:detail].include?("taking action")
                 read_only_permission = false
               end
 
-              if symbol_if_exists[:detail].include?("These permissions enable taking actions against cloud resources.")
+              if note[:detail].include?("These permissions enable taking actions against cloud resources.")
                 required = true
               end
 
-              permission = permission.chomp(symbol_if_exists[:symbol])
-
-              # Failsafe to ensure that write permissions are not marked as read-only due to README errors
-              if permission.downcase().include?("write") || permission.downcase().include?("create") || permission.downcase().include?("delete") || permission.downcase().include?("start") || permission.downcase().include?("stop") || permission.downcase().include?("modify") || permission.downcase().include?("update") || permission.downcase().include?("change")
-                read_only_permission = false
+              if note[:detail].include?("does not support more granular permissions")
+                required = true
               end
 
-              if credentials_section == "roles"
-                policy_credentials << { role: permission, provider: provider, read_only: read_only_permission, required: required, description: symbol_if_exists[:detail] }
-              elsif credentials_section == "permissions"
-                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required, description: symbol_if_exists[:detail] }
-              else
-                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required, description: symbol_if_exists[:detail] }
-              end
+              # Only use the first note with a detail for required/read_only logic
+              break
+            end
+
+            # Failsafe to ensure that write permissions are not marked as read-only due to README errors
+            if permission.downcase().include?("write") || permission.downcase().include?("create") || permission.downcase().include?("delete") || permission.downcase().include?("start") || permission.downcase().include?("stop") || permission.downcase().include?("modify") || permission.downcase().include?("update") || permission.downcase().include?("change")
+              read_only_permission = false
+            end
+
+            if credentials_section == "roles"
+              entry = { role: permission, provider: provider, read_only: read_only_permission, required: required }
+              entry[:description] = description if description
+              policy_credentials << entry
+            elsif credentials_section == "permissions"
+              entry = { permission: permission, provider: provider, read_only: read_only_permission, required: required }
+              entry[:description] = description if description
+              policy_credentials << entry
             else
-              if credentials_section == "roles"
-                policy_credentials << { role: permission, provider: provider, read_only: read_only_permission, required: required }
-              elsif credentials_section == "permissions"
-                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required }
-              else
-                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required }
-              end
+              entry = { permission: permission, provider: provider, read_only: read_only_permission, required: required }
+              entry[:description] = description if description
+              policy_credentials << entry
             end
           end
         end
@@ -265,7 +319,7 @@ readme_files.each do |path|
 
     policy_credentials = extract_permissions_from_readme(readme_content)
 
-    readmes <<Readme.new(path, credentials: policy_credentials)
+    readmes << Readme.new(path, credentials: policy_credentials)
   rescue => e
     puts "Error processing file: #{path}"
     puts e.message
@@ -279,8 +333,8 @@ values = []
 readmes.each do |readme|
   # Match READMEs with Policy Templates based on paths
   matching_template = policy_templates.find { |template| readme.path.gsub("/README.md", "") == File.dirname(template.path) }
-  if matching_template
 
+  if matching_template
     policy_template_details = {
       "id" => matching_template.path,
       "name" => matching_template.name,
@@ -288,11 +342,12 @@ readmes.each do |readme|
     }
 
     if readme.credentials
-
       cred_providers = []
+
       readme.credentials.each do |cred|
         cred_providers.push({ name: cred[:provider] })
       end
+
       cred_providers = cred_providers.uniq
 
       cred_providers.each do |provider|
@@ -310,28 +365,25 @@ readmes.each do |readme|
               "read_only" => credential[:read_only],
               "required" => credential[:required]
             }
+
             permission_list["description"] = credential[:description] if credential[:description]
 
             cred_permissions.push(permission_list)
           elsif credential[:role]
-
             role_list = {
               "name" => credential[:role],
               "read_only" => credential[:read_only],
               "required" => credential[:required]
             }
+
             role_list["description"] = credential[:description] if credential[:description]
 
             cred_roles.push(role_list)
           end
         end
 
-        if cred_permissions.any?
-          provider[:permissions] = cred_permissions
-        end
-        if cred_roles.any?
-          provider[:roles] = cred_roles
-        end
+        provider[:permissions] = cred_permissions if cred_permissions.any?
+        provider[:roles] = cred_roles if cred_roles.any?
       end
 
       policy_template_details[:providers] = cred_providers if cred_providers.any?
@@ -405,6 +457,8 @@ CSV.open("#{permissions_list_dir}/master_policy_permissions_list.csv", "w") do |
         provider_name = "Microsoft Graph"
       when "gce"
         provider_name = "Google Cloud"
+      when "oracle"
+        provider_name = "Oracle Cloud"
       when "flexera"
         provider_name = "Flexera"
       when "turbonomic"
@@ -424,64 +478,17 @@ CSV.open("#{permissions_list_dir}/master_policy_permissions_list.csv", "w") do |
   end
 end
 
-# Create PDF document in '.data/policy_permissions_list' directory
-html_content = "<html><head><meta charset='utf-8'><title>Flexera Cloud Cost Optimization - Master Policy Permissions List</title></head><body>"
-html_content += "<h1>Flexera Policy Catalog Permissions List</h1>"
-html_content += "<p>This document contains a list of cloud provider permissions required by each policy template in the Flexera Cloud Cost Optimization Policy Catalog.<br><ul>"
-html_content += "<li>Required permissions may change as policy templates in the catalog are updated. An up-to-date version of this PDF file is <a href=\"https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list.pdf\">available in the Flexera Policy Template Github Repository</a>.</li>"
-html_content += "<li><i>Required</i> permissions are required for the policy template in question to work correctly; <i>optional</i> permissions enable additional functionality.</li>"
-html_content += "<li>Permissions with a green <i><span style=\"color:green;font-size:75%;\">Read Only</span></i> label are read-only, while those with a red <i><span style=\"color:red;font-size:75%;\">Write</span></i> label can potentially make changes to your cloud environment.</li>"
-html_content += "</ul><hr>"
-html_content += generate_pdf_html?(values)
-html_content += "</table></body></html>"
+# Create PDF documents in '.data/policy_permissions_list' directory
+logo_svg = Base64.strict_encode64(File.read('tools/policy_master_permission_generation/flexera_logo.svg'))
+font = Base64.strict_encode64(File.binread('tools/policy_master_permission_generation/source-sans-pro-regular.ttf'))
 
-pdf = PDFKit.new(html_content)
-pdf.to_file("#{permissions_list_dir}/master_policy_permissions_list.pdf")
-
-# AWS Specific PDF
 aws_values = values.select { |v| v["name"].include?("AWS") || v["name"].include?("Amazon") }
-
-html_content = "<html><head><meta charset='utf-8'><title>Flexera Cloud Cost Optimization - AWS Policy Permissions List</title></head><body>"
-html_content += "<h1>Flexera Policy Catalog AWS Permissions List</h1>"
-html_content += "<p>This document contains a list of cloud provider permissions required by each AWS policy template in the Flexera Cloud Cost Optimization Policy Catalog.<br><ul>"
-html_content += "<li>Required permissions may change as policy templates in the catalog are updated. An up-to-date version of this PDF file is <a href=\"https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list_aws.pdf\">available in the Flexera Policy Template Github Repository</a>.</li>"
-html_content += "<li><i>Required</i> permissions are required for the policy template in question to work correctly; <i>optional</i> permissions enable additional functionality.</li>"
-html_content += "<li>Permissions with a green <i><span style=\"color:green;font-size:75%;\">Read Only</span></i> label are read-only, while those with a red <i><span style=\"color:red;font-size:75%;\">Write</span></i> label can potentially make changes to your cloud environment.</li>"
-html_content += "</ul><hr>"
-html_content += generate_pdf_html?(aws_values)
-html_content += "</table></body></html>"
-
-pdf = PDFKit.new(html_content)
-pdf.to_file("#{permissions_list_dir}/master_policy_permissions_list_aws.pdf")
-
-# Azure Specific PDF
-azure_values = values.select { |v| v["name"].include?("Azure") || v["name"].include?("Microsoft") }
-
-html_content = "<html><head><meta charset='utf-8'><title>Flexera Cloud Cost Optimization - Azure Policy Permissions List</title></head><body>"
-html_content += "<h1>Flexera Policy Catalog Azure Permissions List</h1>"
-html_content += "<p>This document contains a list of cloud provider permissions required by each Azure policy template in the Flexera Cloud Cost Optimization Policy Catalog.<br><ul>"
-html_content += "<li>Required permissions may change as policy templates in the catalog are updated. An up-to-date version of this PDF file is <a href=\"https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list_azure.pdf\">available in the Flexera Policy Template Github Repository</a>.</li>"
-html_content += "<li><i>Required</i> permissions are required for the policy template in question to work correctly; <i>optional</i> permissions enable additional functionality.</li>"
-html_content += "<li>Permissions with a green <i><span style=\"color:green;font-size:75%;\">Read Only</span></i> label are read-only, while those with a red <i><span style=\"color:red;font-size:75%;\">Write</span></i> label can potentially make changes to your cloud environment.</li>"
-html_content += "</ul><hr>"
-html_content += generate_pdf_html?(azure_values)
-html_content += "</table></body></html>"
-
-pdf = PDFKit.new(html_content)
-pdf.to_file("#{permissions_list_dir}/master_policy_permissions_list_azure.pdf")
-
-# Google Specific PDF
+azure_values = values.select { |v| v["name"].include?("Azure") || v["name"].include?("AKS") || v["name"].include?("Microsoft") }
 google_values = values.select { |v| v["name"].include?("Google") || v["name"].include?("GCP") || v["name"].include?("GCE") }
+oracle_values = values.select { |v| v["name"].include?("Oracle") || v["name"].include?("OCI") }
 
-html_content = "<html><head><meta charset='utf-8'><title>Flexera Cloud Cost Optimization - Google Policy Permissions List</title></head><body>"
-html_content += "<h1>Flexera Policy Catalog Google Permissions List</h1>"
-html_content += "<p>This document contains a list of cloud provider permissions required by each Google policy template in the Flexera Cloud Cost Optimization Policy Catalog.<br><ul>"
-html_content += "<li>Required permissions may change as policy templates in the catalog are updated. An up-to-date version of this PDF file is <a href=\"https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/data/policy_permissions_list/master_policy_permissions_list_google.pdf\">available in the Flexera Policy Template Github Repository</a>.</li>"
-html_content += "<li><i>Required</i> permissions are required for the policy template in question to work correctly; <i>optional</i> permissions enable additional functionality.</li>"
-html_content += "<li>Permissions with a green <i><span style=\"color:green;font-size:75%;\">Read Only</span></i> label are read-only, while those with a red <i><span style=\"color:red;font-size:75%;\">Write</span></i> label can potentially make changes to your cloud environment.</li>"
-html_content += "</ul><hr>"
-html_content += generate_pdf_html?(google_values)
-html_content += "</table></body></html>"
-
-pdf = PDFKit.new(html_content)
-pdf.to_file("#{permissions_list_dir}/master_policy_permissions_list_google.pdf")
+generate_pdf(values, "Master", "master_policy_permissions_list", permissions_list_dir, logo_svg, font)
+generate_pdf(aws_values, "AWS", "master_policy_permissions_list_aws", permissions_list_dir, logo_svg, font)
+generate_pdf(azure_values, "Azure", "master_policy_permissions_list_azure", permissions_list_dir, logo_svg, font)
+generate_pdf(google_values, "Google", "master_policy_permissions_list_google", permissions_list_dir, logo_svg, font)
+generate_pdf(oracle_values, "Oracle", "master_policy_permissions_list_oracle", permissions_list_dir, logo_svg, font)

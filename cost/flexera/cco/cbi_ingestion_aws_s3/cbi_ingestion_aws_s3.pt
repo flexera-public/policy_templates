@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Downloads cost reports stored in the Flexera Common Bill Ingestion format from AWS S3 Object Storage and then uploads them to a Flexera CBI endpoint. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cbi_ingestion_aws_s3) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cbi_ingestion_aws_s3"
 category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "0.1.1",
+  version: "0.2.4",
   provider: "Flexera",
   service: "Common Bill Ingestion",
   policy_set: "Common Bill Ingestion",
@@ -87,6 +88,15 @@ parameter "param_s3_prefix" do
   # No default value, user input required
 end
 
+parameter "param_granularity" do
+  type "string"
+  category "Policy Settings"
+  label "Granularity"
+  description "Whether there will be one file per month of billing data, or one file per day of billing data. See README for more details."
+  allowed_values "Monthly", "Daily"
+  default "Monthly"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -110,16 +120,6 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-# Get applied policy metadata for use later
-datasource "ds_applied_policy" do
-  request do
-    auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
-  end
-end
-
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -128,24 +128,45 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
       flexera: "api.flexera.com",
-      fsm: "api.fsm.flexeraeng.com"
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
       flexera: "api.flexera.eu",
-      fsm: "api.fsm-eu.flexeraeng.com"
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
       flexera: "api.flexera.au",
-      fsm: "api.fsm-apac.flexeraeng.com"
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
     }
   }
 
   result = host_table[rs_optima_host]
 EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
 end
 
 datasource "ds_dates" do
@@ -155,7 +176,7 @@ end
 script "js_dates", type: "javascript" do
   parameters "param_month_billing", "param_month_specific"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = { period: param_month_specific }
 
   if (param_month_billing != 'Specific Month') {
@@ -183,7 +204,7 @@ end
 script "js_cbi_endpoint_id", type: "javascript" do
   parameters "param_cbi_endpoint", "param_cbi_cloud_vendor", "param_cbi_type"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = param_cbi_endpoint
 
   if (param_cbi_endpoint == "") {
@@ -228,7 +249,7 @@ end
 script "js_to_create_bill_connect", type: "javascript" do
   parameters "ds_existing_bill_connects", "ds_cbi_endpoint_id", "param_cbi_cloud_vendor", "param_cbi_type"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   existing_bill_connect = _.find(ds_existing_bill_connects, function(connect) {
@@ -287,7 +308,7 @@ end
 script "js_cbi_endpoint", type: "javascript" do
   parameters "ds_create_bill_connect", "ds_existing_bill_connects", "ds_cbi_endpoint_id"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.find(ds_existing_bill_connects, function(connect) { return connect["id"] == ds_cbi_endpoint_id })
   if (ds_create_bill_connect.length > 0) { result = ds_create_bill_connect[0] }
 EOS
@@ -322,7 +343,7 @@ end
 script "js_pending_bill_uploads", type: "javascript" do
   parameters "ds_existing_bill_uploads"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.filter(ds_existing_bill_uploads, function(item) {
     return item["status"] != "complete" && item["status"] != "aborted"
   })
@@ -351,31 +372,9 @@ datasource "ds_abort_pending_bill_uploads" do
   end
 end
 
-# Branching logic: This exists purely to be referenced later to ensure policy execution aborts
-# any pending bill uploads before attempting to create a new one.
-datasource "ds_aborted_pending_bill_uploads_done" do
-  run_script $js_aborted_pending_bill_uploads_done, $ds_abort_pending_bill_uploads
-end
-
-script "js_aborted_pending_bill_uploads_done", type: "javascript" do
-  parameters "ds_abort_pending_bill_uploads"
-  result "result"
-  code <<-EOS
-  result = { abortedUploads: (ds_abort_pending_bill_uploads.length != 0).toString() }
-EOS
-end
-
 datasource "ds_cbi_create_bill_upload" do
   request do
-    auth $auth_flexera
-    verb "POST"
-    host rs_optima_host
-    path join(["/optima/orgs/", rs_org_id, "/billUploads"])
-    header "User-Agent", "RS Policies"
-    # This is to ensure that any pending bill uploads were aborted prior to creating a new one
-    header "AbortedUploads", val($ds_aborted_pending_bill_uploads_done, "abortedUploads")
-    body_field "billConnectId", val($ds_cbi_endpoint, "id")
-    body_field "billingPeriod", val($ds_dates, "period")
+    run_script $js_cbi_create_bill_upload, val($ds_cbi_endpoint, "id"), val($ds_dates, "period"), $ds_abort_pending_bill_uploads, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -388,42 +387,78 @@ datasource "ds_cbi_create_bill_upload" do
   end
 end
 
-datasource "ds_cost_file" do
+script "js_cbi_create_bill_upload", type: "javascript" do
+  parameters "cbi_endpoint", "period", "ds_abort_pending_bill_uploads", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  function sleep(seconds) {
+    now = new Date().getTime()
+    while(new Date().getTime() < now + (seconds * 1000)) { /* Do nothing */ }
+    return now
+  }
+
+  // Slow down rate of requests to prevent throttling
+  sleep(3)
+
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/optima/orgs/" + rs_org_id + "/billUploads",
+    headers: { "Api-Version": "1.0", "User-Agent": "RS Policies" },
+    body_fields: {
+      "billConnectId": cbi_endpoint,
+      "billingPeriod": period
+    }
+  }
+EOS
+end
+
+datasource "ds_cost_object_names" do
+  run_script $js_cost_object_names, $ds_dates, $param_s3_prefix, $param_granularity
+end
+
+script "js_cost_object_names", type: "javascript" do
+  parameters "ds_dates", "param_s3_prefix", "param_granularity"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (param_granularity == "Monthly") {
+    result.push({
+      object: [ param_s3_prefix, ds_dates["period"], ".csv" ].join('')
+    })
+  } else {
+    for (var i = 1; i <= 31; i++) {
+      day = i.toString()
+      if (i < 10) { day = "0" + day }
+
+      result.push({
+        object: [ param_s3_prefix, ds_dates["period"], "-", day, ".csv" ].join('')
+      })
+    }
+  }
+EOS
+end
+
+datasource "ds_cost_objects" do
+  iterate $ds_cost_object_names
   request do
     auth $auth_aws
     host $param_s3_hostname
-    path join([$param_s3_prefix, val($ds_dates, "period"), ".csv"])
+    path val(iter_item, "object")
     header "User-Agent", "RS Policies"
+    ignore_status [404] # Ignore dates that have no associated file instead of failing completely
   end
   result do
     encoding "text"
   end
 end
 
-datasource "ds_cost_file_data" do
-  run_script $js_cost_file_data, $ds_cost_file
-end
-
-script "js_cost_file_data", type: "javascript" do
-  parameters "ds_cost_file"
-  result "result"
-  code <<-EOS
-  if (typeof(ds_cost_file) == 'string') {
-    result = { data: ds_cost_file }
-  } else {
-    result = { data: ds_cost_file[0] }
-  }
-EOS
-end
-
-datasource "ds_cbi_upload_file" do
+datasource "ds_cbi_upload_files" do
+  iterate $ds_cost_objects
   request do
-    auth $auth_flexera
-    verb "POST"
-    host rs_optima_host
-    path join(["/optima/orgs/", rs_org_id, "/billUploads/", val($ds_cbi_create_bill_upload, "id"), "/files/cost-", val($ds_dates, "period"), ".csv"])
-    header "User-Agent", "RS Policies"
-    body val($ds_cost_file_data, "data")
+    run_script $js_cbi_upload_files, val($ds_cbi_create_bill_upload, "id"), iter_item, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -437,9 +472,33 @@ datasource "ds_cbi_upload_file" do
   end
 end
 
+script "js_cbi_upload_files", type: "javascript" do
+  parameters "bill_upload_id", "object", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  function sleep(seconds) {
+    now = new Date().getTime()
+    while(new Date().getTime() < now + (seconds * 1000)) { /* Do nothing */ }
+    return now
+  }
+
+  // Slow down rate of requests to prevent throttling
+  sleep(3)
+
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/optima/orgs/" + rs_org_id + "/billUploads/" + bill_upload_id + "/files/cost-" + Math.random().toString().split('.')[1] + ".csv",
+    headers: { "Api-Version": "1.0", "User-Agent": "RS Policies" },
+    body: object
+  }
+EOS
+end
+
 datasource "ds_cbi_commit_bill_upload" do
   request do
-    run_script $js_cbi_commit_bill_upload, $ds_cbi_upload_file, $ds_cbi_create_bill_upload, rs_org_id, rs_optima_host
+    run_script $js_cbi_commit_bill_upload, $ds_cbi_upload_files, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -453,14 +512,25 @@ datasource "ds_cbi_commit_bill_upload" do
 end
 
 script "js_cbi_commit_bill_upload", type: "javascript" do
-  parameters "ds_cbi_upload_file", "ds_cbi_create_bill_upload", "rs_org_id", "rs_optima_host"
+  parameters "ds_cbi_upload_files", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
+  function sleep(seconds) {
+    now = new Date().getTime()
+    while(new Date().getTime() < now + (seconds * 1000)) { /* Do nothing */ }
+    return now
+  }
+
+  // Slow down rate of requests to prevent throttling
+  sleep(3)
+
+  bill_upload_id = ds_cbi_upload_files.length > 0 ? ds_cbi_upload_files[0]["billUploadId"] : ""
+
   var request = {
     auth: "auth_flexera",
     verb: "POST",
     host: rs_optima_host,
-    path: ["/optima/orgs/", rs_org_id, "/billUploads/", ds_cbi_create_bill_upload["id"], "/operations"].join(''),
+    path: ["/optima/orgs/", rs_org_id, "/billUploads/", bill_upload_id, "/operations"].join(''),
     headers: { "User-Agent": "RS Policies" },
     body_fields: {"operation": "commit" }
   }
@@ -468,13 +538,13 @@ EOS
 end
 
 datasource "ds_incident" do
-  run_script $js_incident, $ds_cbi_commit_bill_upload, $ds_applied_policy, $ds_dates, $param_s3_hostname, $param_s3_prefix
+  run_script $js_incident, $ds_cbi_commit_bill_upload, $ds_applied_policy, $ds_dates, $ds_cost_object_names, $param_s3_hostname, $param_s3_prefix
 end
 
 script "js_incident", type: "javascript" do
-  parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_dates", "param_s3_hostname", "param_s3_prefix"
+  parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "ds_dates", "ds_cost_object_names", "param_s3_hostname", "param_s3_prefix"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = [{
     policy_name: ds_applied_policy['name'],
     id: ds_cbi_commit_bill_upload['id'],
@@ -483,8 +553,7 @@ script "js_incident", type: "javascript" do
     updatedAt: ds_cbi_commit_bill_upload['updatedAt'],
     billConnectId: ds_cbi_commit_bill_upload['billConnectId'],
     billingPeriod: ds_cbi_commit_bill_upload['billingPeriod'],
-    s3_hostname: param_s3_hostname,
-    filename: param_s3_prefix + ds_dates["period"] + ".csv"
+    s3_hostname: param_s3_hostname
   }]
 EOS
 end
@@ -505,9 +574,6 @@ policy "pol_fixed_cost" do
       end
       field "s3_hostname" do
         label "Amazon S3 Host"
-      end
-      field "filename" do
-        label "Amazon S3 Object"
       end
       field "id" do
         label "Bill Upload ID"

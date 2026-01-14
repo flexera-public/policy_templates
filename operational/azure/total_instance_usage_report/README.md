@@ -4,6 +4,10 @@
 
 This Policy Template leverages Flexera CCO APIs to produce a stacked bar chart showing Total Instance Time for Azure Virtual Machine Families used per month for the last 12 months. The user can specify which unit of time and which instance spec to use to normalize time against; for example, a chart can be produced for total instance vCPU hours. The data feeding this chart can be filtered by Azure region or Flexera Billing Center if desired. Optionally, the result can be emailed.
 
+## Example Incident
+
+![Example Incident](example.png "Example Incident")
+
 ## How It Works
 
 - This policy supports a single Azure region or the entire Organization.
@@ -36,7 +40,7 @@ This Policy Template leverages Flexera CCO APIs to produce a stacked bar chart s
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 ### Credential configuration
 

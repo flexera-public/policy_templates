@@ -1,5 +1,59 @@
 # Changelog
 
+## v5.10.4
+
+- Fixed a bug introduced in v5.10.3 that would cause "Cannot access member 'result' of undefined", if the AWS account info does not exist in Flexera.
+
+## v5.10.3
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
+## v5.10.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v5.10.1
+
+- Updated email escalation declaration for new "Errors Identified" incident to prevent error `failed make a CSV attachment with data: unable to collect csv data from nil export`
+
+## v5.10.0
+
+- Policy now continues execution for accessible regions when some regions return permission errors
+- Added separate incident report to identify regions with access issues and provide remediation guidance
+
+## v5.9.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v5.8.6
+
+- Fixed issue with `GetMetricData` API request when gathering CloudWatch metrics. Functionality unchanged.
+
+## v5.8.5
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v5.8.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v5.8.3
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v5.8.2
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v5.8.1
+
+- Improved accuracy of savings calculation for underutilized RDS instances recommending to be resized. We now consider only the "InstanceUsage" usage type costs when estimating potential savings from resize.
+
+## v5.8.0
+
+- Savings calculation now incorporates list prices to improve accuracy of savings estimates.
+- Fixed issue where policy template would sometimes fail to produce results for underutilized instances.
+
 ## v5.7.0
 
 - Policy template now uses dynamically updated list of instance types.

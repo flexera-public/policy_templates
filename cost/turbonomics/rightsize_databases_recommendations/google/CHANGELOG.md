@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.5.5
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v0.5.4
+
+- Updated label of email parameter to "Email Addresses" to match other policy templates. Functionality unchanged.
+
+## v0.5.3
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v0.5.2
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v0.5.1
 
 - Switched from cookie-based authentication to token-based authentication

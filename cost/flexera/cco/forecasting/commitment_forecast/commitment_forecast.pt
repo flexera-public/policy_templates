@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Reports whether spend for the specified cloud provider is projected to meet a spend commitment target for the specified time period. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/forecasting/commitment_forecast/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/forecasting/commitment_forecast/"
 category "Cost"
 severity "medium"
 default_frequency "monthly"
 info(
-  version: "4.0.2",
+  version: "4.0.6",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Forecasting",
@@ -84,13 +85,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -101,7 +141,7 @@ end
 script "js_cost_metric", type:"javascript" do
   parameters "param_cost_metric"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   cost_metric_table = {
     "Unamortized Unblended": "cost_nonamortized_unblended_adj",
     "Amortized Unblended": "cost_amortized_unblended_adj",
@@ -120,7 +160,7 @@ end
 script "js_cloud_vendor", type:"javascript" do
   parameters "param_cloud_vendor"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   vendor_table = {
     "aws": "AWS",
     "amazon web services": "AWS",
@@ -176,7 +216,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   code = "USD"
   symbol = "$"
   separator = ","
@@ -223,7 +263,7 @@ end
 script "js_top_level_bcs", type: "javascript" do
   parameters "ds_billing_centers"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   filtered_bcs = _.filter(ds_billing_centers, function(bc) {
     return bc['parent_id'] == null || bc['parent_id'] == undefined
   })
@@ -249,7 +289,7 @@ end
 script "js_aggregated_costs", type: "javascript" do
   parameters "ds_top_level_bcs", "ds_cloud_vendor", "ds_cost_metric", "param_start_date", "param_end_date", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     host: rs_optima_host,
@@ -280,7 +320,7 @@ end
 script "js_forecasted_spend", type: "javascript" do
   parameters "ds_aggregated_costs", "ds_cost_metric", "ds_cloud_vendor", "ds_currency", "ds_applied_policy", "param_start_date", "param_end_date", "param_commitment_target"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   totals = []
   _.each(ds_aggregated_costs, function(entry) { totals.push(entry['metrics'][ds_cost_metric['id']]) })
   total_cost = _.reduce(totals, function(memo, num) { return memo + num }, 0)
@@ -415,7 +455,7 @@ end
 policy "pol_commitment_forecast" do
   validate $ds_chart_data do
     summary_template "{{ data.policy_name }}"
-    detail_template <<-EOS
+    detail_template <<-'EOS'
 # Spend Commitment Forecast Report for {{ data.cloud_vendor }}
 ## Commitment Target {{ data.target_status }}
 ### Cost Metric: {{ data.cost_metric }}

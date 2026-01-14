@@ -1,5 +1,21 @@
 # Changelog
 
+## v5.1.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v5.1.0
+
+- Added `Bring Adjustments Forward` parameter to automatically fill months with adjustments from previous month when applicable.
+
+## v5.0.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v5.0.3
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v5.0.2
 
 - Fixed issue where policy template execution would fail if the user builds off of the currency conversion adjustment created by this policy template.

@@ -1,5 +1,48 @@
 # Changelog
 
+## v4.2.3
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
+## v4.2.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v4.2.1
+
+- Updated email escalation declaration for new "Errors Identified" incident to prevent error `failed make a CSV attachment with data: unable to collect csv data from nil export`
+
+## v4.2.0
+
+- Estimated Monthly Savings is now provided for each S3 bucket that we have cost data for in Flexera
+- Added "Enable Intelligent Tiering" policy action
+- Policy now continues execution for accessible regions when some regions return permission errors
+- Added separate incident report to identify regions with access issues and provide remediation guidance
+
+## v4.1.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v4.0.7
+
+- Updated label of email parameter to "Email Addresses" to match other policy templates. Functionality unchanged.
+
+## v4.0.6
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v4.0.5
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v4.0.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v4.0.3
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v4.0.2
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.

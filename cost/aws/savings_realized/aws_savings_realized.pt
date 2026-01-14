@@ -1,16 +1,18 @@
 name "AWS Savings Realized From Rate Reduction Purchases"
 rs_pt_ver 20180301
 type "policy"
-short_description "Reports savings realized from AWS rate reduction purchases, such as Reserved Instances, Savings Plan, and Spot Instance purchases. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_realized/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "**Deprecated: This policy template is no longer being updated. Please see [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_realized/) for more details.** Reports savings realized from AWS rate reduction purchases, such as Reserved Instances, Savings Plan, and Spot Instance purchases. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_realized/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_realized/"
 severity "low"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "4.0.1",
+  version: "4.0.7",
   provider: "AWS",
   service: "Compute",
   policy_set: "Reserved Instance",
+  deprecated: "true",
   hide_skip_approvals: "true"
 )
 
@@ -77,13 +79,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -113,7 +154,7 @@ end
 script "js_billing_centers_filtered", type: "javascript" do
   parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_bc_list.length > 0) {
@@ -159,7 +200,7 @@ end
 script "js_aggregated_costs", type: "javascript" do
   parameters "ds_billing_centers_filtered", "param_months_back", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // Get Start and End dates
   start_date = new Date()
   start_date.setMonth(start_date.getMonth() - param_months_back)
@@ -271,7 +312,7 @@ end
 script "js_chart_data", type: "javascript" do
   parameters "ds_savings_realized", "ds_applied_policy", "param_chart_type"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   // Get months
@@ -373,7 +414,7 @@ end
 policy "pol_savings_realized" do
   validate_each $ds_chart_data do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}"
-    detail_template <<-EOS
+    detail_template <<-'EOS'
 # Rate Reduction Savings Report
 ![Rate Reduction Savings Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_y_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_position }}{{ end }})
 EOS

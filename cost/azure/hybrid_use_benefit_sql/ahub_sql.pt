@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Identifies SQL instances eligible for Azure Hybrid Use Benefit. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/hybrid_use_benefit_sql) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/azure/hybrid_use_benefit_sql"
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "4.2.1",
+  version: "4.4.1",
   provider: "Azure",
   service: "SQL",
   policy_set: "Hybrid Use Benefit",
@@ -113,6 +114,24 @@ parameter "param_automatic_action" do
   default []
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -148,13 +167,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -189,7 +247,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   symbol = "$"
   separator = ","
 
@@ -218,7 +276,7 @@ datasource "ds_azure_subscriptions" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version", "2020-01-01"
+    query "api-version", "2022-12-01"
     header "User-Agent", "RS Policies"
     # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
     # Forces `ds_is_deleted` datasource to run first during policy execution
@@ -243,7 +301,7 @@ end
 script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -267,7 +325,7 @@ datasource "ds_sql_virtualmachines" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.SqlVirtualMachine/sqlVirtualMachines"])
-    query "api-version", "2017-03-01-preview"
+    query "api-version", "2023-10-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
   end
@@ -297,7 +355,7 @@ end
 script "js_sql_virtualmachines_type_filtered", type: "javascript" do
   parameters "ds_sql_virtualmachines", "param_vm_imageskus", "param_resource_types"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.filter(ds_sql_virtualmachines, function(vm) {
     return vm['licenseType'] != 'AHUB' && _.contains(param_vm_imageskus, vm['imageSku']) && _.contains(param_resource_types, "SQL Virtual Machines")
   })
@@ -312,7 +370,7 @@ datasource "ds_sql_dbserver" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Sql/servers"])
-    query "api-version", "2019-06-01-preview"
+    query "api-version", "2023-08-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
   end
@@ -323,6 +381,7 @@ datasource "ds_sql_dbserver" do
       field "dbserverName", jmes_path(col_item, "name")
       field "type", jmes_path(col_item, "type")
       field "tags", jmes_path(col_item, "tags")
+      field "version", jmes_path(col_item, "properties.version")
       field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
       field "subscriptionName", val(iter_item, "name")
       field "subscriptionId", val(iter_item, "id")
@@ -337,7 +396,7 @@ datasource "ds_sql_elastic_pools" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join([val(iter_item, "dbserverId"), "/elasticPools"])
-    query "api-version", "2021-11-01"
+    query "api-version", "2023-08-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
   end
@@ -354,6 +413,7 @@ datasource "ds_sql_elastic_pools" do
       field "skuTier", jmes_path(col_item, "sku.tier")
       field "skuCapacity", jmes_path(col_item, "sku.capacity")
       field "licenseType", jmes_path(col_item, "properties.licenseType")
+      field "version", val(iter_item, "version")
       field "resourceGroup", val(iter_item, "resourceGroup")
       field "subscriptionName", val(iter_item, "subscriptionName")
       field "subscriptionId", val(iter_item, "subscriptionId")
@@ -368,7 +428,7 @@ end
 script "js_sql_elastic_pools_type_filtered", type: "javascript" do
   parameters "ds_sql_elastic_pools", "param_resource_types"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.filter(ds_sql_elastic_pools, function(pool) {
     return pool['licenseType'] != "BasePrice" && _.contains(param_resource_types, "SQL Elastic Pools")
   })
@@ -382,7 +442,7 @@ datasource "ds_sql_databases" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join([val(iter_item, "dbserverId"), "/databases"])
-    query "api-version", "2020-08-01-preview"
+    query "api-version", "2023-08-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
   end
@@ -400,6 +460,7 @@ datasource "ds_sql_databases" do
       field "skuCapacity", jmes_path(col_item, "properties.currentSku.capacity")
       field "elasticPoolId", jmes_path(col_item, "properties.elasticPoolId")
       field "licenseType", jmes_path(col_item, "properties.licenseType")
+      field "version", val(iter_item, "version")
       field "resourceGroup", val(iter_item, "resourceGroup")
       field "subscriptionName", val(iter_item, "subscriptionName")
       field "subscriptionId", val(iter_item, "subscriptionId")
@@ -414,7 +475,7 @@ end
 script "js_sql_databases_type_filtered", type: "javascript" do
   parameters "ds_sql_databases", "param_resource_types"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.filter(ds_sql_databases, function(db) {
     not_system = db['kind'].split(',')[3] != "serverless" && db['skuTier'] != "System"
     not_elastic = db['elasticPoolId'] == null || db['elasticPoolId'] == undefined || db['elasticPoolId'] == ""
@@ -430,7 +491,7 @@ datasource "ds_sql_managed_instances" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Sql/managedInstances"])
-    query "api-version", "2020-11-01-preview"
+    query "api-version", "2023-08-01"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400, 403, 404]
   end
@@ -446,6 +507,7 @@ datasource "ds_sql_managed_instances" do
       field "skuTier", jmes_path(col_item, "sku.tier")
       field "skuCapacity", jmes_path(col_item, "sku.capacity")
       field "skuFamily", jmes_path(col_item, "sku.family")
+      field "databaseFormat", jmes_path(col_item, "properties.databaseFormat")
       field "licenseType", jmes_path(col_item, "properties.licenseType")
       field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
       field "subscriptionName", val(iter_item, "name")
@@ -461,7 +523,7 @@ end
 script "js_sql_managed_instances_type_filtered", type: "javascript" do
   parameters "ds_sql_managed_instances", "param_resource_types"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.filter(ds_sql_managed_instances, function(db) {
     return db['licenseType'] != "BasePrice" && _.contains(param_resource_types, "SQL Managed Instances")
   })
@@ -475,7 +537,7 @@ end
 script "js_resources_tag_filtered", type: "javascript" do
   parameters "ds_sql_virtualmachines_type_filtered", "ds_sql_elastic_pools_type_filtered", "ds_sql_databases_type_filtered", "ds_sql_managed_instances_type_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -566,7 +628,7 @@ end
 script "js_resources_region_filtered", type: "javascript" do
   parameters "ds_resources_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   function region_filter_resources(resource_list, regions_allow_or_deny, regions_list) {
     return _.filter(resource_list, function(resource) {
       include_resource = _.contains(regions_list, resource['region'])
@@ -625,7 +687,7 @@ end
 script "js_top_level_bcs", type: "javascript" do
   parameters "ds_billing_centers"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   filtered_bcs = _.filter(ds_billing_centers, function(bc) {
     return bc['parent_id'] == null || bc['parent_id'] == undefined
   })
@@ -653,7 +715,7 @@ end
 script "js_instance_costs", type: "javascript" do
   parameters "subscription_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   end_date = new Date()
   end_date.setDate(end_date.getDate() - 2)
   end_date = end_date.toISOString().split('T')[0]
@@ -733,7 +795,7 @@ end
 script "js_instance_costs_grouped", type: "javascript" do
   parameters "ds_instance_costs"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Group cost data by resourceId for later use
   result = {}
 
@@ -757,13 +819,15 @@ EOS
 end
 
 datasource "ds_ahub_recommendations" do
-  run_script $js_ahub_recommendations, $ds_instance_costs_grouped, $ds_resources_region_filtered, $ds_currency, $ds_applied_policy, $param_resource_types
+  run_script $js_ahub_recommendations, $ds_instance_costs_grouped, $ds_resources_region_filtered, $ds_currency, $ds_applied_policy, $param_resource_types, $param_incident_csv
 end
 
 script "js_ahub_recommendations", type: "javascript" do
-  parameters "ds_instance_costs_grouped", "ds_resources_region_filtered", "ds_currency", "ds_applied_policy", "param_resource_types"
+  parameters "ds_instance_costs_grouped", "ds_resources_region_filtered", "ds_currency", "ds_applied_policy", "param_resource_types", "param_incident_csv"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   function incident_map(resource_list) {
     return _.map(resource_list, function(resource) {
       tags = []
@@ -781,7 +845,9 @@ script "js_ahub_recommendations", type: "javascript" do
         " (", resource["subscriptionId"], ")"
       ].join('')
 
-      message = "Note: This policy does not track licenses or license availability. Please verify that you have a valid license for each resource AHUB is enabled for."
+      message = "Note: This policy does not track licenses or license availability. Please verify that you have a valid license for each resource AHUB is enabled for.\n\n"
+      message += "Some fields may be empty, such as \"Version\" and \"Database Format\", if they are not applicable to the type of SQL resource being reported. For resources without a \"Version\" field, the version can usually be inferred from either the \"Image Offer\" or \"Database Format\" fields; more detailed version information can be obtained with the following SQL query: SELECT @@VERSION;\n\n"
+      message += csv_message
 
       hourly_cost = null
       savingsCurrency = null
@@ -819,6 +885,8 @@ script "js_ahub_recommendations", type: "javascript" do
         skuTier: resource["skuTier"],
         skuCapacity: resource["skuCapacity"],
         skuFamily: resource["skuFamily"],
+        databaseFormat: resource["databaseFormat"],
+        version: resource["version"],
         resourceGroup: resource["resourceGroup"],
         accountID: resource["subscriptionId"],
         accountName: resource["subscriptionName"],
@@ -853,6 +921,8 @@ script "js_ahub_recommendations", type: "javascript" do
     skuTier: "",
     skuCapacity: "",
     skuFamily: "",
+    databaseFormat: "",
+    version: "",
     resourceGroup: "",
     accountID: "",
     accountName: "",
@@ -908,6 +978,12 @@ policy "pol_azure_sql_ahub_recommendations" do
       field "recommendationDetails" do
         label "Recommendation"
       end
+      field "version" do
+        label "Version"
+      end
+      field "databaseFormat" do
+        label "Database Format"
+      end
       field "imageOffer" do
         label "Image Offer"
       end
@@ -957,7 +1033,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_license_instances" do
@@ -996,7 +1075,7 @@ end
 define license_vm($instance, $param_azure_endpoint) return $response do
   $host = $param_azure_endpoint
   $href = $instance["id"]
-  $params = "?api-version=2017-03-01-preview"
+  $params = "?api-version=2023-10-01"
   $url = $host + $href + $params
   task_label("PUT " + $url)
 
@@ -1007,7 +1086,7 @@ define license_vm($instance, $param_azure_endpoint) return $response do
     https: true,
     href: $href,
     query_strings: {
-      "api-version": "2017-03-01-preview"
+      "api-version": "2023-10-01"
     },
     headers: {
       "cache-control": "no-cache",
@@ -1035,7 +1114,7 @@ end
 define license_elastic_pool($instance, $param_azure_endpoint) return $response do
   $host = $param_azure_endpoint
   $href = $instance["id"]
-  $params = "?api-version=2021-11-01"
+  $params = "?api-version=2023-08-01"
   $url = $host + $href + $params
   task_label("PATCH " + $url)
 
@@ -1046,7 +1125,7 @@ define license_elastic_pool($instance, $param_azure_endpoint) return $response d
     https: true,
     href: $href,
     query_strings: {
-      "api-version": "2021-11-01"
+      "api-version": "2023-08-01"
     },
     headers: {
       "cache-control": "no-cache",
@@ -1072,7 +1151,7 @@ end
 define license_db($instance, $param_azure_endpoint) return $response do
   $host = $param_azure_endpoint
   $href = $instance["id"]
-  $params = "?api-version=2020-11-01-preview"
+  $params = "?api-version=2023-08-01"
   $url = $host + $href + $params
   task_label("PATCH " + $url)
 
@@ -1083,7 +1162,7 @@ define license_db($instance, $param_azure_endpoint) return $response do
     https: true,
     href: $href,
     query_strings: {
-      "api-version": "2020-11-01-preview"
+      "api-version": "2023-08-01"
     },
     headers: {
       "cache-control": "no-cache",
@@ -1109,7 +1188,7 @@ end
 define license_managed_instance($instance, $param_azure_endpoint) return $response do
   $host = $param_azure_endpoint
   $href = $instance["id"]
-  $params = "?api-version=2020-11-01-preview"
+  $params = "?api-version=2023-08-01"
   $url = $host + $href + $params
   task_label("PATCH " + $url)
 
@@ -1120,7 +1199,7 @@ define license_managed_instance($instance, $param_azure_endpoint) return $respon
     https: true,
     href: $href,
     query_strings: {
-      "api-version": "2020-11-01-preview"
+      "api-version": "2023-08-01"
     },
     headers: {
       "cache-control": "no-cache",
@@ -1160,13 +1239,12 @@ end
 
 # If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
 # if it is set we will look for the parent policy.
-datasource "ds_get_policy" do
+datasource "ds_get_parent_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
   end
   result do
     encoding "json"
@@ -1174,59 +1252,42 @@ datasource "ds_get_policy" do
   end
 end
 
-datasource "ds_parent_policy_terminated" do
-  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
-end
-
 # If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
 # This information is used in two places:
 # - determining whether or not we make a delete call
 # - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
-script "js_decide_if_self_terminate", type: "javascript" do
-  parameters "found", "self_policy_id", "meta_parent_policy_id"
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
   result "result"
-  code <<-EOS
-  var result
-  if (meta_parent_policy_id != "" && found.id == undefined) {
-    result = true
-  } else {
-    result = false
-  }
-  EOS
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
 end
 
 # Two potentials ways to set this up:
 # - this way and make a unneeded 'get' request when not deleting
 # - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
-script "js_make_terminate_request", type: "javascript" do
-  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
-  result "request"
-  code <<-EOS
-
-  var request = {
-    auth:  'auth_flexera',
-    host: rs_governance_host,
-    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
-    headers: {
-      "API-Version": "1.0",
-      "Content-Type":"application/json"
-    },
-  }
-
-  if (should_delete) {
-    request.verb = 'DELETE'
-  }
-  EOS
-end
-
 datasource "ds_terminate_self" do
   request do
-    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
   end
 end
 
-datasource "ds_is_deleted" do
-  run_script $js_check_deleted, $ds_terminate_self
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
 end
 
 # This is just a way to have the check delete request connect to the farthest leaf from policy.
@@ -1235,10 +1296,12 @@ end
 # The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
 # would not have access to self-terminate
 # It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
-script "js_check_deleted", type: "javascript" do
-  parameters "response"
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
   result "result"
-  code <<-EOS
-  result = {"path":"/"}
-  EOS
+  code 'result = { path: "/"}'
 end

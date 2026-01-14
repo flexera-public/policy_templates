@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Report on segments of cost whose spend is below a user-specified threshold. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/low_usage/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/low_usage/"
 category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "3.1.1",
+  version: "3.2.1",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -87,6 +88,24 @@ parameter "param_dimension" do
   default ""
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -102,13 +121,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-# Gather applied policy metadata for use later
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -195,7 +253,7 @@ end
 script "js_billing_centers_filtered", type: "javascript" do
   parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_bc_list.length > 0) {
@@ -245,7 +303,7 @@ end
 script "js_dimension", type: "javascript" do
   parameters "ds_dimensions_list", "param_dimension"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_dimension == "Billing Center") {
     result = { id: "billing_center_id", name: "Billing Center" }
   } else {
@@ -283,7 +341,7 @@ end
 script "js_costs", type: "javascript" do
   parameters "ds_billing_centers_filtered", "ds_dimension", "param_cost_metric", "param_usage_days", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   cost_metric_table = {
     "Unamortized Unblended": "cost_nonamortized_unblended_adj",
     "Amortized Unblended": "cost_amortized_unblended_adj",
@@ -320,13 +378,15 @@ EOS
 end
 
 datasource "ds_costs_sorted" do
-  run_script $js_costs_sorted, $ds_costs, $ds_dimension, $ds_billing_centers, $ds_currency, $ds_applied_policy, $param_cost_metric, $param_usage_days, $param_threshold, rs_org_id, rs_optima_host
+  run_script $js_costs_sorted, $ds_costs, $ds_dimension, $ds_billing_centers, $ds_currency, $ds_applied_policy, $param_cost_metric, $param_usage_days, $param_threshold, $param_incident_csv, rs_org_id, rs_optima_host
 end
 
 script "js_costs_sorted", type: "javascript" do
-  parameters "ds_costs", "ds_dimension", "ds_billing_centers", "ds_currency", "ds_applied_policy", "param_cost_metric", "param_usage_days", "param_threshold", "rs_org_id", "rs_optima_host"
+  parameters "ds_costs", "ds_dimension", "ds_billing_centers", "ds_currency", "ds_applied_policy", "param_cost_metric", "param_usage_days", "param_threshold", "param_incident_csv", "rs_org_id", "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   cost_metric_table = {
     "Unamortized Unblended": "cost_nonamortized_unblended_adj",
     "Amortized Unblended": "cost_amortized_unblended_adj",
@@ -390,7 +450,8 @@ script "js_costs_sorted", type: "javascript" do
       policy_name: ds_applied_policy['name'],
       currency: ds_currency['symbol'],
       threshold: param_threshold,
-      resource_list: resource_list
+      resource_list: resource_list,
+      csv_message: csv_message
     }
   })
 EOS
@@ -403,7 +464,7 @@ end
 script "js_low_usage", type: "javascript" do
   parameters "ds_costs_sorted", "param_minimum_spend", "param_threshold"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.filter(ds_costs_sorted, function(item) {
     return item['spend'] >= param_minimum_spend && item['spend'] < param_threshold
   })
@@ -419,6 +480,7 @@ end
 policy "pol_low_usage" do
   validate_each $ds_low_usage do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} {{ with index data 0 }}{{ .dimension }}{{ end }} Dimension Values With Low Spend Found"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check eq(val(item, "id"), "")
     escalate $esc_email
     export do
@@ -466,5 +528,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

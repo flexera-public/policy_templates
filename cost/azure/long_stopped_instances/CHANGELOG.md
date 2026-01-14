@@ -1,5 +1,34 @@
 # Changelog
 
+## v6.1.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v6.1.1
+
+- Fixed an issue where in some scenarios the `Estimated Monthly Savings` amount would be reflected in the incorrect currency.
+
+## v6.1.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v6.0.5
+
+- Updated API request for gathering instance costs to only gather costs specific to virtual machines and their disks. Functionality unchanged but policy template is now less likely to fail to report costs.
+
+## v6.0.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v6.0.3
+
+- Updated meta policy code to use newer Flexera API.
+- Updated incident table to ensure Account ID is properly scraped for Optimization dashboard.
+
+## v6.0.2
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v6.0.1
 
 - Fixed an error where multiple violations would be generated from the same instance.

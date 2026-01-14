@@ -1,5 +1,25 @@
 # Changelog
 
+## v3.1.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v3.1.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v3.0.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v3.0.3
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v3.0.2
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v3.0.1
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
@@ -17,7 +37,7 @@
 
 ## v2.2
 
-- Deprecated: This policy is no longer being updated.
+- Deprecated: This policy template is no longer being updated.
 
 ## v2.1
 

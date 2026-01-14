@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Checks to see if the specified service control policies are applied across all accounts in an AWS Organization. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/missing_scps) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/missing_scps"
 category "Compliance"
 severity "medium"
 default_frequency "daily"
 info(
-  version: "3.0.2",
+  version: "3.1.1",
   provider: "AWS",
   service: "Organization",
   policy_set: "",
@@ -40,6 +41,24 @@ parameter "param_policy_names" do
   label "Service Control Policy Names"
   description "The names of the Service Control Policies to check."
   # No default value, user input required
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -78,13 +97,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -174,7 +232,7 @@ end
 script "js_org_accounts_with_policies", type: "javascript" do
   parameters "ds_org_accounts", "ds_account_policies"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   policy_table = _.groupBy(ds_account_policies, "accountId")
 
   accounts_with_policies = _.map(ds_org_accounts, function(account) {
@@ -200,13 +258,15 @@ EOS
 end
 
 datasource "ds_filter_accounts" do
-  run_script $js_filter_accounts, $ds_org_accounts_with_policies, $ds_service_control_policies, $ds_applied_policy, $param_policy_names
+  run_script $js_filter_accounts, $ds_org_accounts_with_policies, $ds_service_control_policies, $ds_applied_policy, $param_policy_names, $param_incident_csv
 end
 
 script "js_filter_accounts", type: "javascript" do
-  parameters "ds_org_accounts_with_policies", "ds_service_control_policies", "ds_applied_policy", "param_policy_names"
+  parameters "ds_org_accounts_with_policies", "ds_service_control_policies", "ds_applied_policy", "param_policy_names", "param_incident_csv"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   policies_to_check = _.filter(ds_service_control_policies, function(policy) {
     return _.contains(param_policy_names, policy["name"])
   })
@@ -242,7 +302,8 @@ script "js_filter_accounts", type: "javascript" do
         policies: account["policies"],
         applied_policies: applied_policies,
         missing_policies: policy_names_to_check.join(", "),
-        policy_name: ds_applied_policy["name"]
+        policy_name: ds_applied_policy["name"],
+        csv_message: csv_message
       }
     })
   }
@@ -256,6 +317,7 @@ end
 policy "pol_scp_audit" do
   validate_each $ds_filter_accounts do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Accounts Missing Service Control Policies"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check eq(val(item, "accountID"), "")
     escalate $esc_email
     hash_exclude "applied_policies"
@@ -304,5 +366,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

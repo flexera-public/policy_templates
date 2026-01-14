@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Check instances that are not running the FlexNet Inventory Agent. This template uses the SOAP version of the FlexNet Manager APIs. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/instances_without_fnm_agent) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/instances_without_fnm_agent"
 severity "medium"
 category "Compliance"
 default_frequency "weekly"
 info(
-  version: "4.2.1",
+  version: "4.3.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Instances not running FlexNet Inventory Agent",
@@ -21,7 +22,7 @@ info(
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses to notify"
+  label "Email Addresses"
   description "Email addresses of the recipients you wish to notify when new incidents are created."
   default []
 end
@@ -57,7 +58,7 @@ parameter "param_fnms_host" do
   label "FlexNet Manager host"
   description "Flexera One FlexNet Manager host"
   allowed_values "slo.app.flexera.com", "slo.app.flexera.eu", "slo.app.flexera.au", "slo-uat.app.flexera.com", "slo-uat.app.flexera.eu", "slo-uat.app.flexera.au"
-  # No default value because parameter is required
+  # No default value, user input required
 end
 
 parameter "param_report_id" do
@@ -65,6 +66,25 @@ parameter "param_report_id" do
   category "Policy Settings"
   label "FNMS Report ID"
   description "FlexNet manager Custom View ID."
+  # No default value, user input required
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -103,6 +123,46 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 datasource "ds_subscriptions" do
   request do
     auth $auth_azure
@@ -120,9 +180,9 @@ datasource "ds_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "displayName", jmes_path(col_item,"displayName")
-      field "state", jmes_path(col_item,"state")
+      field "subscriptionId", jmes_path(col_item, "subscriptionId")
+      field "displayName", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
@@ -134,7 +194,7 @@ end
 script "js_filtered_subscriptions", type: "javascript" do
   parameters "ds_subscriptions", "param_subscriptions_list"
   result "results"
-  code <<-EOS
+  code <<-'EOS'
   var results = []
   if ( param_subscriptions_list.length != 0){
     results = []
@@ -156,7 +216,7 @@ datasource "ds_list_virtual_machines" do
     auth $auth_azure
     pagination $pagination_azure
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version", "2018-06-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
@@ -165,17 +225,40 @@ datasource "ds_list_virtual_machines" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-        field "id", jmes_path(col_item,"id")
-        field "name", jmes_path(col_item,"name")
-        field "resourcename", get(4, split(jmes_path(col_item, "id"),"/"))
-        field "location", jmes_path(col_item,"location")
-        field "vmSize", jmes_path(col_item,"properties.hardwareProfile.vmSize")
-        field "osType", jmes_path(col_item,"properties.storageProfile.osDisk.osType")
-        field "tags", jmes_path(col_item,"tags")
-        field "subscriptionId",val(iter_item,"subscriptionId")
-        field "subscriptionName",val(iter_item,"displayName")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "resourcename", get(4, split(jmes_path(col_item, "id"), "/"))
+      field "location", jmes_path(col_item, "location")
+      field "vmSize", jmes_path(col_item, "properties.hardwareProfile.vmSize")
+      field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "tags", jmes_path(col_item, "tags")
+      field "subscriptionId", val(iter_item, "subscriptionId")
+      field "subscriptionName", val(iter_item, "displayName")
     end
   end
+end
+
+datasource "ds_fnms_report_api_body" do
+  run_script $js_fnms_report_api_body, $param_report_id
+end
+
+script "js_fnms_report_api_body", type: "javascript" do
+  parameters "param_report_id"
+  result "result"
+  code <<-'EOS'
+  body = [
+    "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n",
+    "  <soap:Body>\n",
+    "    <tem:GetCustomView>\n",
+    "      <tem:customViewID>", param_report_id, "</tem:customViewID>\n",
+    "      <tem:rowLimit>100000</tem:rowLimit>\n",
+    "   </tem:GetCustomView>\n",
+    "  </soap:Body>\n",
+    "</soap:Envelope>"
+  ].join('')
+
+  result = { body: body }
+EOS
 end
 
 # Make API call and get the report data
@@ -188,46 +271,44 @@ datasource "ds_fnms_report" do
     path "/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx"
     query "orgid", to_s(rs_org_id) # Must convert rs_org_id to string otherwise query param does not get set
     header "Content-Type", "text/xml;charset=utf-8"
-    body join(['<?xml version="1.0" encoding="utf-8"?>',
-                '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">',
-                '  <soap:Body>',
-                '    <tem:GetCustomView>',
-                '      <tem:customViewID>', $param_report_id, '</tem:customViewID>',
-                '      <tem:rowLimit>100000</tem:rowLimit>',
-                '   </tem:GetCustomView>',
-                '  </soap:Body>',
-                '</soap:Envelope>'])
+    body val($ds_fnms_report_api_body, "body")
   end
   result do
     encoding "xml"
-    collect xpath(response,"//NewDataSet/SearchResults") do
+    collect xpath(response, "//NewDataSet/SearchResults") do
       field "computerName", xpath(col_item, "ComputerName")
     end
   end
 end
 
 datasource "ds_formatted_instances", type: "javascript" do
-  run_script $js_format_instances, $ds_list_virtual_machines, $ds_fnms_report, $param_exclusion_tag_key
+  run_script $js_formatted_instances, $ds_list_virtual_machines, $ds_fnms_report, $param_exclusion_tag_key, $param_incident_csv
 end
 
-script "js_format_instances", type: "javascript" do
-  parameters "azure_VMs","ds_fnms_report", "param_exclusion_tag_key"
+script "js_formatted_instances", type: "javascript" do
+  parameters "ds_list_virtual_machines", "ds_fnms_report", "param_exclusion_tag_key", "param_incident_csv"
   result "result"
-  code <<-EOS
-    var result = [];
-  fnms_instance_name=[];
-    _.each(ds_fnms_report, function(instance){
-      fnms_instance_name.push(instance["computerName"].toLowerCase())
-    })
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
-    _.each(azure_VMs, function(vm){
-      if((!_.has(vm.tags, param_exclusion_tag_key)) && fnms_instance_name.indexOf(vm["name"].toLowerCase()) === -1){
-        result.push(vm)
-      }
-    })
-    result = _.sortBy(result, 'location');
-    result = _.sortBy(result, 'subscriptionName');
-  EOS
+  var result = [];
+
+  fnms_instance_name=[];
+
+  _.each(ds_fnms_report, function(instance){
+    fnms_instance_name.push(instance["computerName"].toLowerCase())
+  })
+
+  _.each(ds_list_virtual_machines, function(vm){
+    if((!_.has(vm.tags, param_exclusion_tag_key)) && fnms_instance_name.indexOf(vm["name"].toLowerCase()) === -1){
+      vm["csv_message"] = csv_message
+      result.push(vm)
+    }
+  })
+
+  result = _.sortBy(result, 'location');
+  result = _.sortBy(result, 'subscriptionName');
+EOS
 end
 
 ###############################################################################
@@ -237,6 +318,7 @@ end
 policy "pol_long_running_instances" do
   validate $ds_formatted_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{len data }} is missing in FlexNet Manager."
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
     escalate $esc_email
@@ -276,7 +358,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################
@@ -286,13 +371,12 @@ end
 
 # If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
 # if it is set we will look for the parent policy.
-datasource "ds_get_policy" do
+datasource "ds_get_parent_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
   end
   result do
     encoding "json"
@@ -300,59 +384,42 @@ datasource "ds_get_policy" do
   end
 end
 
-datasource "ds_parent_policy_terminated" do
-  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
-end
-
 # If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
 # This information is used in two places:
 # - determining whether or not we make a delete call
 # - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
-script "js_decide_if_self_terminate", type: "javascript" do
-  parameters "found", "self_policy_id", "meta_parent_policy_id"
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
   result "result"
-  code <<-EOS
-  var result
-  if (meta_parent_policy_id != "" && found.id == undefined) {
-    result = true
-  } else {
-    result = false
-  }
-  EOS
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
 end
 
 # Two potentials ways to set this up:
 # - this way and make a unneeded 'get' request when not deleting
 # - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
-script "js_make_terminate_request", type: "javascript" do
-  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
-  result "request"
-  code <<-EOS
-
-  var request = {
-    auth:  'auth_flexera',
-    host: rs_governance_host,
-    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
-    headers: {
-      "API-Version": "1.0",
-      "Content-Type":"application/json"
-    },
-  }
-
-  if (should_delete) {
-    request.verb = 'DELETE'
-  }
-  EOS
-end
-
 datasource "ds_terminate_self" do
   request do
-    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
   end
 end
 
-datasource "ds_is_deleted" do
-  run_script $js_check_deleted, $ds_terminate_self
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
 end
 
 # This is just a way to have the check delete request connect to the farthest leaf from policy.
@@ -361,10 +428,12 @@ end
 # The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
 # would not have access to self-terminate
 # It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
-script "js_check_deleted", type: "javascript" do
-  parameters "response"
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
   result "result"
-  code <<-EOS
-  result = {"path":"/"}
-  EOS
+  code 'result = { path: "/"}'
 end

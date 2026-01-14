@@ -1,0 +1,338 @@
+name "Oracle Tag Cardinality Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Generates a tag cardinality report for Oracle Cloud Compartments and Resources. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/oracle/tag_cardinality) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/operational/oracle/tag_cardinality"
+severity "low"
+category "Operational"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Oracle",
+  service: "Tags",
+  policy_set: "Tag Cardinality",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_root_compartment" do
+  type "string"
+  category "Policy Settings"
+  label "Oracle Cloud Root Compartment OCID"
+  description "The OCID of the Oracle Cloud root compartment."
+  # No default value, user input required
+end
+
+parameter "param_primary_region" do
+  type "string"
+  category "Policy Settings"
+  label "Primary Oracle Cloud Region"
+  description "Primary Oracle Cloud region. Example: us-phoenix-1"
+  min_length 1
+  # No default value, user input required
+end
+
+parameter "param_resource_types" do
+  type "list"
+  category "Policy Settings"
+  label "Resource Types"
+  description "The types of resources to include in the tag cardinality report. Leave blank to include all resource types."
+  allowed_values [ "compartment", "instance", "volume", "bootvolume", "loadbalancer", "networkloadbalancer", "database", "autonomousdatabase", "bucket" ]
+  default [ "compartment", "instance", "volume", "bootvolume", "loadbalancer", "networkloadbalancer", "database", "autonomousdatabase", "bucket" ]
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_oracle" do
+  schemes "oracle"
+  label "Oracle"
+  description "Select the Oracle Cloud (OCI) Credential from the list."
+  tags "provider=oracle"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_oracle_identity" do
+  get_page_marker do
+    header "opc-next-page"
+  end
+  set_page_marker do
+    query "page"
+  end
+end
+
+pagination "pagination_oracle_query" do
+  get_page_marker do
+    header "opc-next-page"
+  end
+  set_page_marker do
+    body_field "page"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_oci_compartments" do
+  request do
+    auth $auth_oracle
+    pagination $pagination_oracle_identity
+    host join(["identity.", $param_primary_region, ".oci.oraclecloud.com"])
+    path "/20160918/compartments"
+    query "compartmentId", $param_root_compartment
+    query "compartmentIdInSubtree", "true"
+    query "limit", "1000"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "compartmentId", jmes_path(col_item, "compartmentId")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "lifecycleState", jmes_path(col_item, "lifecycleState")
+      field "timeCreated", jmes_path(col_item, "timeCreated")
+      field "isAccessible", jmes_path(col_item, "isAccessible")
+      field "definedTags", jmes_path(col_item, "definedTags")
+      field "freeformTags", jmes_path(col_item, "freeformTags")
+    end
+  end
+end
+
+datasource "ds_oci_tag_namespaces" do
+  request do
+    auth $auth_oracle
+    pagination $pagination_oracle_identity
+    host join(["identity.", $param_primary_region, ".oci.oraclecloud.com"])
+    path "/20160918/tagNamespaces"
+    query "compartmentId", $param_root_compartment
+    query "compartmentIdInSubtree", "true"
+    query "limit", "1000"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_oci_tag_namespaces_filtered" do
+  run_script $js_oci_tag_namespaces_filtered, $ds_oci_tag_namespaces
+end
+
+script "js_oci_tag_namespaces_filtered", type: "javascript" do
+  parameters "ds_oci_tag_namespaces"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(_.pluck(ds_oci_tag_namespaces, 'name'), function(namespace) {
+    return namespace != "Oracle-Tags"
+  })
+EOS
+end
+
+datasource "ds_oci_regions" do
+  request do
+    auth $auth_oracle
+    pagination $pagination_oracle_identity
+    host join(["identity.", $param_primary_region, ".oci.oraclecloud.com"])
+    path join(["/20160918/tenancies/", $param_root_compartment, "/regionSubscriptions"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "isHomeRegion", jmes_path(col_item, "isHomeRegion")
+      field "regionKey", jmes_path(col_item, "regionKey")
+      field "regionName", jmes_path(col_item, "regionName")
+      field "status", jmes_path(col_item, "status")
+    end
+  end
+end
+
+datasource "ds_oci_resources" do
+  iterate $ds_oci_regions
+  request do
+    run_script $js_oci_resources, val(iter_item, "regionName"), $ds_oci_tag_namespaces_filtered, $param_resource_types
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "id", jmes_path(col_item, "identifier")
+      field "compartmentId", jmes_path(col_item, "compartmentId")
+      field "name", jmes_path(col_item, "displayName")
+      field "resourceType", jmes_path(col_item, "resourceType")
+      field "lifecycleState", jmes_path(col_item, "lifecycleState")
+      field "definedTags", jmes_path(col_item, "definedTags")
+      field "freeformTags", jmes_path(col_item, "freeformTags")
+    end
+  end
+end
+
+script "js_oci_resources", type: "javascript" do
+  parameters "region", "ds_oci_tag_namespaces_filtered", "param_resource_types"
+  result "request"
+  code <<-'EOS'
+  namespaces = _.map(ds_oci_tag_namespaces_filtered, function(ns) { return "'" + ns + "'" }).join(",")
+
+  resource_types = _.filter(param_resource_types, function(type) { return type != "compartment" })
+  resource = resource_types.length == 0 ? "all" : resource_types.join(", ")
+
+  query = "query " + resource + " resources where lifeCycleState != 'TERMINATED' && lifeCycleState != 'DELETED' "
+  query += "&& definedTags.namespace IN (" + namespaces + ")"
+
+  var request = {
+    auth: "auth_oracle",
+    pagination: "pagination_oracle_query",
+    verb: "POST",
+    host: [ "query.", region, ".oci.oraclecloud.com" ].join(''),
+    path: "/20180409/resources",
+    body_fields: {
+      "type": "Structured",
+      "matchingContextType": "NONE",
+      "query": query
+    }
+  }
+EOS
+end
+
+datasource "ds_oci_compartments_tag_list" do
+  run_script $js_tag_lister, $ds_oci_compartments, $param_incident_csv, $param_resource_types, "Compartment"
+end
+
+datasource "ds_oci_resources_tag_list" do
+  run_script $js_tag_lister, $ds_oci_resources, $param_incident_csv, $param_resource_types, "Resource"
+end
+
+script "js_tag_lister", type: "javascript" do
+  parameters "tagged_list", "param_incident_csv", "param_resource_types", "tag_type"
+  result "result"
+  code <<-'EOS'
+  resource_types = param_resource_types.length == 0 ? "all" : param_resource_types.join(", ")
+  message = "The following resource types were included in the report: " + resource_types + ".\n\n"
+  message += param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
+  tags = {}
+  result = []
+
+  if (tag_type != "Compartment" || _.contains(param_resource_types, "compartment")) {
+    _.each(tagged_list, function(item) {
+      if (item['definedTags'] != undefined && item['definedTags'] != null) {
+        _.each(_.keys(item['definedTags']), function(namespace) {
+          if (namespace != "Oracle-Tags") {
+            _.each(_.keys(item['definedTags'][namespace]), function(key) {
+              full_key = [ namespace, key ].join('.')
+              if (tags[full_key] == undefined || tags[full_key] == null) { tags[full_key] = [] }
+              tags[full_key].push(item['definedTags'][namespace][key])
+            })
+          }
+        })
+      }
+    })
+
+    _.each(_.keys(tags), function(key) {
+      result.push({
+        'type': tag_type,
+        'key': key,
+        'cardinality': _.uniq(tags[key]).length,
+        'value_list': _.uniq(tags[key]).join(', '),
+        'message': message
+      })
+    })
+
+    result = _.sortBy(result, 'cardinality').reverse()
+  }
+EOS
+end
+
+datasource "ds_tag_report" do
+  run_script $js_tag_report, $ds_oci_compartments_tag_list, $ds_oci_resources_tag_list
+end
+
+script "js_tag_report", type: "javascript" do
+  parameters "ds_oci_compartments_tag_list", "ds_oci_resources_tag_list"
+  result "result"
+  code <<-'EOS'
+  result = ds_oci_compartments_tag_list.concat(ds_oci_resources_tag_list)
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_oci_tag_cardinality_report" do
+  validate $ds_tag_report do
+    summary_template "Oracle Tag Cardinality Report"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    check eq(1, 0)
+    escalate $esc_email
+    export do
+      resource_level false
+      field "type" do
+        label "Type"
+      end
+      field "key" do
+        label "Key"
+      end
+      field "cardinality" do
+        label "Cardinality"
+      end
+      field "value_list" do
+        label "Unique Values"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
+end

@@ -1,5 +1,29 @@
 # Changelog
 
+## v4.0.10
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v4.0.9
+
+- Changed description to say "policy template" for clarity. Functionality unchanged.
+
+## v4.0.8
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v4.0.7
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v4.0.6
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v4.0.5
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v4.0.4
 
 - Policy template metadata modified so that it is no longer published in the catalog.
@@ -10,7 +34,7 @@
 
 ## v4.0.2
 
-- Deprecated: This policy is no longer being updated. See README for more details.
+- Deprecated: This policy template is no longer being updated. See README for more details.
 
 ## v4.0.1
 

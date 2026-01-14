@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Retrieves and reports on compliance findings from Spot Security.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/spot/security_report/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/spot/security_report/"
 severity "low"
 category "Security"
 default_frequency "daily"
 info(
-  version: "0.1.0",
+  version: "0.1.4",
   provider: "Flexera",
   service: "Spot Security",
   policy_set: "Spot Security",
@@ -19,13 +20,13 @@ info(
 # Parameters
 ###############################################################################
 
-parameter "param_email" do  
-  type "list"  
-  category "Policy Settings"  
-  label "Email addresses"  
-  description "Email addresses to notify"  
-  default []  
-end  
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email addresses"
+  description "Email addresses to notify"
+  default []
+end
 
 parameter "param_spotinst_accounts_allow_or_deny" do
   type "string"
@@ -80,13 +81,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -114,7 +154,7 @@ end
 script "js_spotinst_accounts_filtered", type: "javascript" do
   parameters "ds_spotinst_accounts", "param_spotinst_accounts_allow_or_deny", "param_spotinst_accounts_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_spotinst_accounts_list.length > 0) {
     result = _.filter(ds_spotinst_accounts, function(subscription) {
       include = _.contains(param_spotinst_accounts_list, subscription['account']['accountId']) || _.contains(param_spotinst_accounts_list, subscription['account']['name'])
@@ -244,7 +284,7 @@ end
 script "js_report", type: "javascript" do
   parameters "ds_spot_misconfigurations_aws", "ds_spot_misconfigurations_azure", "ds_applied_policy"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
 
   var misconfigurations = [];
   misconfigurations = misconfigurations.concat(ds_spot_misconfigurations_aws);
@@ -269,54 +309,54 @@ script "js_report", type: "javascript" do
     return finding.misconfiguration.where.service;
   });
 
-  var report = "# Spot Security Compliance Report\\n\\n";
+  var report = "# Spot Security Compliance Report\n\n";
 
   // Executive Summary
-  report += "## Executive Summary\\n\\n";
-  report += "Total findings: "+totalFindings+"\\n\\n";
+  report += "## Executive Summary\n\n";
+  report += "Total findings: "+totalFindings+"\n\n";
 
   // Severity Distribution
-  report += "### Severity Distribution\\n\\n";
+  report += "### Severity Distribution\n\n";
   _.each(_.keys(severityGroups), function(severity){
     var count = severityGroups[severity].length;
     var percentage = ((count / totalFindings) * 100).toFixed(1);
-    report += "- "+severity+": "+count+" ("+percentage+"%)\\n";
+    report += "- "+severity+": "+count+" ("+percentage+"%)\n";
   })
-  report += "\\n";
+  report += "\n";
 
   // Cloud Provider Distribution
-  report += "### Cloud Provider Distribution\\n\\n";
+  report += "### Cloud Provider Distribution\n\n";
   _.each(_.keys(cloudGroups), function(cloud) {
     var count = cloudGroups[cloud].length;
     var percentage = ((count / totalFindings) * 100).toFixed(1);
-    report += "- "+cloud+": "+count+" ("+percentage+"%)\\n";
+    report += "- "+cloud+": "+count+" ("+percentage+"%)\n";
   })
-  report += "\\n";
+  report += "\n";
 
   // Service Distribution
-  report += "### Service Distribution\\n\\n";
+  report += "### Service Distribution\n\n";
   _.each(_.keys(serviceGroups), function(service) {
     var count = serviceGroups[service].length;
     var percentage = ((count / totalFindings) * 100).toFixed(1);
-    report += "- "+service.toUpperCase()+": "+count+" ("+percentage+"%)\\n";
+    report += "- "+service.toUpperCase()+": "+count+" ("+percentage+"%)\n";
   })
-  report += "\\n";
+  report += "\n";
 
   // Detailed Findings
-  report += "## Detailed Findings\\n\\n";
+  report += "## Detailed Findings\n\n";
 
   // Group by severity for detailed listing
   _.each(_.keys(severityGroups), function(severity){
-    report += "### "+severity+" Severity Findings\\n\\n";
+    report += "### "+severity+" Severity Findings\n\n";
     _.each(severityGroups[severity], function(finding){
       var f = finding.misconfiguration;
-      report += "#### "+f.what.ruleTitle+"\\n\\n";
-      report += "- **Service**: "+f.where.service.toUpperCase()+"\\n";
-      report += "- **Region**: "+f.where.region+"\\n";
-      report += "- **Asset**: "+f.where.assetName+" ("+f.where.assetType+")\\n";
-      report += "- **Account**: "+finding.account.name+"\\n";
-      report += "- **Description**: "+f.what.ruleDescription+"\\n";
-      report += "- **Last Seen**: "+f.when.lastSeen+"\\n\\n";
+      report += "#### "+f.what.ruleTitle+"\n\n";
+      report += "- **Service**: "+f.where.service.toUpperCase()+"\n";
+      report += "- **Region**: "+f.where.region+"\n";
+      report += "- **Asset**: "+f.where.assetName+" ("+f.where.assetType+")\n";
+      report += "- **Account**: "+finding.account.name+"\n";
+      report += "- **Description**: "+f.what.ruleDescription+"\n";
+      report += "- **Last Seen**: "+f.when.lastSeen+"\n\n";
     });
   })
 
@@ -332,7 +372,7 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_spot_security_compliance_report" do  
+policy "pol_spot_security_compliance_report" do
   validate $ds_report do
     summary_template '{{ data.ds_applied_policy.name }}: Report'
     detail_template "{{ data.markdown }}"

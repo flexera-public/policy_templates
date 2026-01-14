@@ -1,5 +1,29 @@
 # Changelog
 
+## v3.3.4
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v3.3.3
+
+- Updated policy metadata to allow permissions to be scraped. Functionality unchanged.
+
+## v3.3.2
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v3.3.1
+
+- Fixed issue that would prevent policy template from completing execution.
+
+## v3.3.0
+
+- Added additional parameters to allow user to gather cost reports from custom buckets.
+
+## v3.2.4
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v3.2.3
 
 - Minor code improvements to bring template in line with current standards. Functionality unchanged.

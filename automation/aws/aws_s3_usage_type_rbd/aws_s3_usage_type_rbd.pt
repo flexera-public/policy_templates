@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Creates and/or updates a single Rule-Based Dimension for S3 usage types. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/aws/aws_s3_usage_type_rbd) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/automation/aws/aws_s3_usage_type_rbd"
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.1.0",
+  version: "0.1.5",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Automation",
@@ -67,19 +68,31 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
       flexera: "api.flexera.com",
-      fsm: "api.fsm.flexeraeng.com"
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
       flexera: "api.flexera.eu",
-      fsm: "api.fsm-eu.flexeraeng.com"
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
       flexera: "api.flexera.au",
-      fsm: "api.fsm-apac.flexeraeng.com"
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
     }
   }
 
@@ -116,7 +129,7 @@ end
 script "js_top_level_bcs", type: "javascript" do
   parameters "ds_billing_centers"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   filtered_bcs = _.filter(ds_billing_centers, function(bc) {
     return bc['parent_id'] == null || bc['parent_id'] == undefined
   })
@@ -140,7 +153,7 @@ end
 script "js_flexera_s3_costs", type:"javascript" do
   parameters "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   year = Number(new Date().toISOString().substring(0, 4))
   month = Number(new Date().toISOString().substring(5, 7))
   month += 1
@@ -182,7 +195,7 @@ end
 script "js_s3_usage_types", type: "javascript" do
   parameters "ds_flexera_s3_costs"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Function to check for presence of substring in a string in a case-insensitive way
   function strContains(string, value) { return string.toLowerCase().indexOf(value.toLowerCase()) != -1 }
 
@@ -282,17 +295,14 @@ end
 datasource "ds_existing_rbds" do
   request do
     auth $auth_flexera
-    host rs_optima_host
-    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/rule_based_dimensions"])
-    header "Api-Version", "1.0"
-    header "content-type", "application/json"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions"])
   end
   result do
     encoding "json"
-    collect jmes_path(response, "rule_based_dimensions") do
+    collect jmes_path(response, "values[*]") do
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
-      field "dated_rules", jmes_path(col_item, "dated_rules")
     end
   end
 end
@@ -349,7 +359,7 @@ end
 script "js_create_rbds", type: "javascript" do
   parameters "rbd_id", "verb", "name", "api_host", "rs_org_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     verb: verb,
@@ -374,7 +384,7 @@ end
 script "js_apply_rbds", type: "javascript" do
   parameters "rbd_id", "effective_at", "rules", "api_host", "ds_create_rbds", "rs_org_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     verb: "PUT",

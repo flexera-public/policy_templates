@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.3.3
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v0.3.2
+
+- Updated label of email parameter to "Email Addresses" to match other policy templates. Functionality unchanged.
+
+## v0.3.1
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v0.3.0
+
+- Added option to either amortize or not amortize the fixed cost.
+- Fixed issue where valid CBI Endpoint IDs were not being accepted when applying the policy template.
+- Increased precision of daily cost calculation to avoid rounding errors producing slightly incorrect results.
+
+## v0.2.3
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v0.2.2
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v0.2.1
 
 - Minor code improvements to bring template in line with current standards. Functionality unchanged.

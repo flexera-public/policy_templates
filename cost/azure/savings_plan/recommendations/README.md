@@ -6,11 +6,11 @@ This policy template reports any Savings Plan Purchase Recommendations generated
 
 ## How It Works
 
-Recommendations are obtained via requests to the [Azure Cost Management API](https://learn.microsoft.com/en-us/rest/api/cost-management/benefit-recommendations/list?tabs=HTTP).
+Recommendations are obtained via requests to the [Azure Cost Management API](https://learn.microsoft.com/en-us/rest/api/cost-management/benefit-recommendations/list?view=rest-cost-management-2025-03-01&tabs=HTTP).
 
 ### Policy Savings Details
 
-The policy includes several cost and savings metrics provided directly by the [Azure Cost Management API](https://learn.microsoft.com/en-us/rest/api/cost-management/benefit-recommendations/list?tabs=HTTP):
+The policy includes several cost and savings metrics provided directly by the [Azure Cost Management API](https://learn.microsoft.com/en-us/rest/api/cost-management/benefit-recommendations/list?view=rest-cost-management-2025-03-01&tabs=HTTP):
 
 - *Current Monthly Cost* - Total monthly cost for the covered resources before any Savings Plans are purchased.
 - *New Monthly Cost with Savings Plan* - New monthly cost for the covered resources after any Savings Plans are purchased. Should always be lower than the `Current Monthly Cost`
@@ -21,11 +21,11 @@ The policy includes several cost and savings metrics provided directly by the [A
 - *Wastage Cost (Hours)* - Estimated unused portion of `Benefit Cost (Hours)`.
 - *Overage Cost (Hours)* - The difference between `New Monthly Cost with Savings Plan` and `Benefit Cost (Hours)` across `Total Hours`
 
-If the Flexera organization is configured to use a currency other than the one the [Azure Cost Management API](https://learn.microsoft.com/en-us/rest/api/cost-management/benefit-recommendations/list?tabs=HTTP) returns, the savings values will be converted using the exchange rate at the time that the policy executes.
+If the Flexera organization is configured to use a currency other than the one the [Azure Cost Management API](https://learn.microsoft.com/en-us/rest/api/cost-management/benefit-recommendations/list?view=rest-cost-management-2025-03-01&tabs=HTTP) returns, the savings values will be converted using the exchange rate at the time that the policy executes.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
@@ -35,6 +35,9 @@ This policy has the following input parameters required when launching the polic
 - *Look Back Period* - Number of days of prior usage to analyze.
 - *Savings Plan Term* - Length of reservation term to provide recommendations for. Can be set to either `1 Year` or `3 Year`
 - *Savings Plan Scope* - The scope to provide recommendations for. Select `Shared` to not have recommendations scoped to individual Subscriptions or Resource Groups.
+- *Payment Option* - Whether or not to report recommendations as 'No Upfront' or 'All Upfront'. Default value of 'No Upfront' recommended in most cases. Has no impact on the recommendations themselves; Azure does not offer discounts or differing options if you paying up front.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 
@@ -44,7 +47,7 @@ The following policy actions are taken for any recommendations:
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.CostManagement/benefitRecommendations/read`

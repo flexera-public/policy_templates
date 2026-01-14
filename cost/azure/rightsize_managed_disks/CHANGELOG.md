@@ -1,5 +1,38 @@
 # Changelog
 
+## v2.7.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v2.7.1
+
+- Fixed issue where incident would never include results.
+
+## v2.7.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v2.6.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v2.6.3
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v2.6.2
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v2.6.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v2.6.0
+
+- Policy template no longer raises an incident if user does not set any thresholds for determining underutilization.
+- Defaults changed for `IOPS Threshold (%)` and `Throughput Threshold (%)` parameters to something a typical user would expect.
+
 ## v2.5.1
 
 - Added batch processing for large datasources as a performance enhancement (reduces memory usage) with no changes to logic or functionality.

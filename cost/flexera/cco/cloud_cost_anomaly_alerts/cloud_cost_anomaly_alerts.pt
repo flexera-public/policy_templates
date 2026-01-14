@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Report any cloud cost anomalies detected by Flexera CCO. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cloud_cost_anomaly_alerts/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cloud_cost_anomaly_alerts/"
 category "Cost"
 severity "high"
 default_frequency "daily"
 info(
-  version: "3.7.2",
+  version: "4.0.3",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -60,7 +61,7 @@ parameter "param_anomaly_types" do
   label "Anomalies To Report"
   description "Whether to report on anomalies above the upper limit, below the lower limit, or both."
   allowed_values "All Anomalies", "Anomalies Above Upper Limit", "Anomalies Below Lower Limit"
-  default "All Anomalies"
+  default "Anomalies Above Upper Limit"
 end
 
 parameter "param_cost_metric" do
@@ -74,10 +75,18 @@ end
 
 parameter "param_dimensions" do
   type "list"
-  category "Policy Settings"
+  category "Filters"
   label "Cost Anomaly Dimensions"
   description "Dimension names/IDs to report anomalies for. Use Dimension=Value to filter by a dimension. See the README for more details"
-  default ["Cloud Vendor Account Name", "Cloud Vendor", "Service"]
+  default ["Cloud Vendor Account Name","Service"]
+end
+
+parameter "param_dimensions_excluded" do
+  type "list"
+  category "Filters"
+  label "Excluded Cost Anomalies"
+  description "Dimension values to not report cost anomalies for in Dimension=Value format. Example: Service=AmazonEC2"
+  default []
 end
 
 parameter "param_anomaly_limit" do
@@ -94,8 +103,8 @@ parameter "param_window_size" do
   category "Anomaly Settings"
   label "Window Size"
   description "Window size to use for Bollinger Bands"
-  min_value 0
-  default 10
+  min_value 1
+  default 1
 end
 
 parameter "param_standard_deviations" do
@@ -105,6 +114,15 @@ parameter "param_standard_deviations" do
   description "Number of standard deviations for the Bollinger Band"
   min_value 0
   default 2
+end
+
+parameter "param_anomaly_sort" do
+  type "string"
+  category "Policy Settings"
+  label "Sort Anomalies By"
+  description "Sort the anomalies by cost or variance before applying the limit."
+  allowed_values "Cost", "Variance"
+  default "Variance"
 end
 
 ###############################################################################
@@ -122,13 +140,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -163,7 +220,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   symbol = "$"
   separator = ","
 
@@ -215,7 +272,7 @@ end
 script "js_top_level_bcs", type: "javascript" do
   parameters "ds_billing_centers"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   filtered_bcs = _.filter(ds_billing_centers, function(bc) {
     return bc['parent_id'] == null || bc['parent_id'] == undefined
   })
@@ -249,28 +306,28 @@ end
 script "js_dimensions", type: "javascript" do
   parameters "ds_dimensions_incomplete"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = [{ id: "billing_center_id", name: "Billing Centers", type: "Billing Centers" }]
   result = result.concat(ds_dimensions_incomplete)
 EOS
 end
 
 datasource "ds_filter_dimensions" do
-  run_script $js_filter_dimensions, $ds_dimensions, $ds_billing_centers, $param_dimensions
+  run_script $js_filter_dimensions, $ds_dimensions, $ds_billing_centers, $param_dimensions, $param_dimensions_excluded
 end
 
 script "js_filter_dimensions", type: "javascript" do
-  parameters "ds_dimensions", "ds_billing_centers", "param_dimensions"
+  parameters "ds_dimensions", "ds_billing_centers", "param_dimensions", "param_dimensions_excluded"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = { ids: [], names: [], filters: [], bc_filters: [], invalid_ids: [] }
 
   _.each(param_dimensions, function(user_input_dimension, index) {
-    dimension_filter_name = user_input_dimension.split('=')[0]
-    dimension_filter_value = user_input_dimension.split('=')[1]
+    filter_name = user_input_dimension.split('=')[0]
+    filter_value = user_input_dimension.split('=')[1]
 
     dimensions = _.filter(ds_dimensions, function(dimension) {
-      return dimension_filter_name == dimension['name'] || dimension_filter_name == dimension['id']
+      return filter_name == dimension['name'] || filter_name == dimension['id']
     })
 
     if (dimensions.length == 0) { result['invalid_ids'].push(user_input_dimension) }
@@ -279,12 +336,12 @@ script "js_filter_dimensions", type: "javascript" do
       result['ids'].push(dimension['id'])
       result['names'].push(dimension['name'])
 
-      if (dimension_filter_value != undefined) {
+      if (filter_value != undefined) {
         filter = {
           id: dimension['id'],
           name: dimension['name'],
-          type: "equal",
-          value: dimension_filter_value
+          type: "=",
+          value: filter_value
         }
 
         if (dimension['id'] == "billing_center_id") {
@@ -303,6 +360,30 @@ script "js_filter_dimensions", type: "javascript" do
       }
     })
   })
+
+  _.each(param_dimensions_excluded, function(filter) {
+    filter_name = filter.split('=')[0]
+    filter_value = filter.split('=')[1]
+
+    dimension = _.find(ds_dimensions, function(dimension) {
+      return filter_name == dimension['name'] || filter_name == dimension['id']
+    })
+
+    if (dimension) {
+      if (filter_value) {
+        result['filters'].push({
+          id: dimension['id'],
+          name: dimension['name'],
+          type: "!=",
+          value: filter_value
+        })
+      }
+    } else {
+      result['invalid_ids'].push(filter_name)
+    }
+  })
+
+  result['invalid_ids'] = _.compact(_.uniq(result['invalid_ids']))
 EOS
 end
 
@@ -313,7 +394,7 @@ end
 script "js_request_variables", type: "javascript" do
   parameters "param_cost_metric", "param_days"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   cost_metric = {
     "Unamortized Unblended": "cost_nonamortized_unblended_adj",
     "Amortized Unblended": "cost_amortized_unblended_adj",
@@ -321,12 +402,15 @@ script "js_request_variables", type: "javascript" do
     "Amortized Blended": "cost_amortized_blended_adj"
   }
 
+  // End at should be at least 24 hours in past
+  // This is the earliest we can have bill data for a period of time (even if not fully accurate)
   endAt = new Date()
-  endAt.setHours(-48)
+  endAt.setHours(-24)
   endAt = endAt.toISOString().split('T')[0]
 
+  // End at should be day that is number of days in param_days before endAt (which is 24hours in past)
   startAt = new Date()
-  startAt.setHours(-24 * (2 + param_days))
+  startAt.setHours(-24 * (1 + param_days))
   startAt = startAt.toISOString().split('T')[0]
 
   result = {
@@ -339,7 +423,7 @@ end
 
 datasource "ds_get_anomalies" do
   request do
-    run_script $js_get_anomalies, $ds_filter_dimensions, $ds_top_level_bcs, $ds_request_variables, $param_dimensions, $param_window_size, $param_standard_deviations, $param_anomaly_limit, rs_org_id, rs_optima_host
+    run_script $js_get_anomalies, $ds_filter_dimensions, $ds_top_level_bcs, $ds_request_variables, $param_window_size, $param_standard_deviations, $param_anomaly_limit, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -350,14 +434,28 @@ datasource "ds_get_anomalies" do
 end
 
 script "js_get_anomalies", type: "javascript" do
-  parameters "ds_filter_dimensions", "ds_top_level_bcs", "ds_request_variables", "param_dimensions", "param_window_size", "param_standard_deviations", "param_anomaly_limit", "rs_org_id", "rs_optima_host"
+  parameters "ds_filter_dimensions", "ds_top_level_bcs", "ds_request_variables", "param_window_size", "param_standard_deviations", "param_anomaly_limit", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   bc_filters = ds_filter_dimensions['bc_filters']
-  other_filters = ds_filter_dimensions['filters']
 
   billingCenterIds = ds_top_level_bcs
   if (bc_filters.length > 0) { billingCenterIds = _.pluck(bc_filters, 'value') }
+
+  other_filters = _.map(ds_filter_dimensions['filters'], function(filter) {
+    if (filter['type'] == "=") {
+      return { type: "equal", dimension: filter['id'], value: filter['value'] }
+    }
+
+    if (filter['type'] == "!=") {
+      return {
+        type: "not",
+        expression: { type: "equal", dimension: filter['id'], value: filter['value'] }
+      }
+    }
+
+    return null
+  })
 
   body_fields = {
     startAt: ds_request_variables['startAt'],
@@ -367,24 +465,16 @@ script "js_get_anomalies", type: "javascript" do
     billingCenterIds: billingCenterIds,
     windowSize: param_window_size,
     standardDeviations: param_standard_deviations,
-    limit: param_anomaly_limit,
+    // No limit, we need to filter post-response based on variance amount
     granularity: "day"
   }
 
-  if (other_filters.length == 1) {
-    body_fields['filter'] = {
-      type: other_filters[0]['type'],
-      dimension: other_filters[0]['id'],
-      value: other_filters[0]['value']
-    }
+  if (_.compact(other_filters).length == 1) {
+    body_fields['filter'] = _.compact(other_filters)[0]
   }
 
-  if (other_filters.length > 1) {
-    expressions = _.map(other_filters, function(filter) {
-      return { type: filter['type'], dimension: filter['id'], value: filter['value'] }
-    })
-
-    body_fields['filter'] = { type: "and", expressions: expressions }
+  if (_.compact(other_filters).length > 1) {
+    body_fields['filter'] = { type: "and", expressions: _.compact(other_filters) }
   }
 
   var request = {
@@ -402,15 +492,51 @@ EOS
 end
 
 datasource "ds_filter_anomalies" do
-  run_script $js_filter_anomalies, $ds_get_anomalies, $ds_dimensions, $ds_filter_dimensions, $ds_request_variables, $ds_billing_centers, $ds_currency, $ds_applied_policy, $param_min_spend, $param_min_spend_variance, $param_anomaly_types, $param_days, $param_dimensions, $param_cost_metric, $param_anomaly_limit, rs_org_id, f1_app_host
+  run_script $js_filter_anomalies, $ds_get_anomalies, $ds_dimensions, $ds_filter_dimensions, $ds_request_variables, $ds_billing_centers, $ds_currency, $ds_applied_policy, $param_min_spend, $param_min_spend_variance, $param_anomaly_types, $param_days, $param_dimensions, $param_cost_metric, $param_anomaly_limit, $param_anomaly_sort, rs_org_id, rs_project_id, f1_app_host
 end
 
 script "js_filter_anomalies", type: "javascript" do
-  parameters "ds_get_anomalies", "ds_dimensions", "ds_filter_dimensions", "ds_request_variables", "ds_billing_centers", "ds_currency", "ds_applied_policy", "param_min_spend", "param_min_spend_variance", "param_anomaly_types", "param_days", "param_dimensions", "param_cost_metric", "param_anomaly_limit", "rs_org_id", "f1_app_host"
+  parameters "ds_get_anomalies", "ds_dimensions", "ds_filter_dimensions", "ds_request_variables", "ds_billing_centers", "ds_currency", "ds_applied_policy", "param_min_spend", "param_min_spend_variance", "param_anomaly_types", "param_days", "param_dimensions", "param_cost_metric", "param_anomaly_limit", "param_anomaly_sort", "rs_org_id", "rs_project_id", "f1_app_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
+  // Helper to generate a chart URL for the moving average timeseries only
+  function generateChartUrl(timeseries) {
+    if (!timeseries || !timeseries.moving_average) return '';
+    var ma = timeseries.moving_average;
+    if (!Array.isArray(ma) || ma.length === 0) return '';
+    var labels = ma.map(function(point) { return point[0]; });
+    var values = ma.map(function(point) { return point[1]; });
+    var chartConfig = {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Moving Average',
+          data: values,
+          fill: false,
+          borderColor: '#0072ce',
+          borderWidth: 2,
+          pointRadius: 0
+        }]
+      },
+      options: {
+        legend: { display: false },
+        title: { display: false },
+        scales: {
+          xAxes: [{ display: false }],
+          yAxes: [{ display: true, ticks: { beginAtZero: true } }]
+        },
+        elements: { line: { tension: 0.2 } },
+        layout: { padding: 0 }
+      }
+    };
+    var chartUrl = 'https://quickchart.io/chart?c=' + encodeURIComponent(JSON.stringify(chartConfig));
+    return chartUrl;
+  }
+
   dimensions = ds_filter_dimensions['ids']
-  filters = ds_filter_dimensions['filters'].concat(ds_filter_dimensions['bc_filters'])
+  inclusion_filters = _.filter(ds_filter_dimensions['filters'], function(filter) { return filter['type'] == "=" })
+  filters = inclusion_filters.concat(ds_filter_dimensions['bc_filters'])
 
   dimensions_groupby_string = _.map(dimensions, function(id) {
     value = "&groupBy=" + id
@@ -465,39 +591,69 @@ script "js_filter_anomalies", type: "javascript" do
     })
 
     if (anomalous.length > 0) {
-      dimension_key = _.map(ds_filter_dimensions['ids'], function(id) {
-        var dimensionValue = timeSeries['dimensions'][id]
+      var dimension_key = _.map(ds_filter_dimensions['ids'], function(id) {
+        var dimensionValue = timeSeries['dimensions'][id];
         if (id == "billing_center_id") {
           var billing_center = _.find(ds_billing_centers, function(bc) {
-            return bc['id'] == dimensionValue
-          })
-          return billing_center['name']
+            return bc['id'] == dimensionValue;
+          });
+          return billing_center['name'];
         } else {
-          return dimensionValue
+          return dimensionValue;
         }
-      }).join('; ')
-
+      }).join('; ');
       _.each(anomalous, function(data){
         variance = data['value'] - data['annotations']['movingAverage']
         if (variance < 0) { variance = variance * -1 }
 
+        // https://app.flexera.com/orgs/41032/optima/anomalies?granularity=month&startDate=2025-01&endDate=2025-08&costType=cost_amortized_unblended_adj&groupBy=vendor_account_name&groupBy=service&filterBy=anomaly.vendor_account&filterBy=anomaly.service&filterBy=anomaly.vendor_account.210418826726&filterBy=anomaly.service.AmazonEC2
+        var anomaly_link = link;
+        var anomaly_link_label = [];
+        for (var i = 0; i < ds_filter_dimensions['ids'].length; i++) {
+          var filter = ds_filter_dimensions['ids'][i];
+          var label = ds_filter_dimensions['names'][i];
+          anomaly_link += "&filterBy=anomaly." + filter + "." + encodeURIComponent(timeSeries['dimensions'][filter]);
+          anomaly_link_label.push(label + "=" + timeSeries['dimensions'][filter]);
+        }
+        anomaly_link_label_string = anomaly_link_label.join('; ');
+        // Generate chart URL for this anomaly
+        var chartUrl = generateChartUrl(timeSeries);
+        var chartUrlField = chartUrl ? (anomaly_link_label_string + " Anomaly Chart||" + chartUrl + "&from_pt=true") : "";
         anomalies.push({
           id: dimension_key,
           cost: Math.round(data['value'] * 1000) / 1000,
           date: data['date'].split('T')[0],
-          variance: Math.round(variance * 1000) / 1000,
+          variance: Math.round((data['value'] - data['annotations']['movingAverage']) * 1000) / 1000,
           movingAverage: Math.round(data['annotations']['movingAverage'] * 100) / 100,
           upperLimit: Math.round(data['annotations']['upperLimit'] * 100) / 100,
           lowerLimit: Math.round(data['annotations']['lowerLimit'] * 100) / 100,
           metric: param_cost_metric,
           anomaly_types: param_anomaly_types,
-          currency: ds_currency['symbol']
-        })
-      })
+          anomaly_link: anomaly_link,
+          anomaly_link_field: anomaly_link_label.join('; ') + "||" + anomaly_link,
+          currency: ds_currency['symbol'],
+          chartUrl: chartUrl,
+          chartUrlField: chartUrlField
+        });
+      });
     }
   })
 
-  anomalies = _.sortBy(anomalies, 'cost').reverse().slice(0, param_anomaly_limit)
+  exclusion_disclaimer = ""
+
+  if (param_anomaly_limit < 1) { param_anomaly_limit = 10 }
+  var sortField = param_anomaly_sort === "Variance" ? "variance" : "cost";
+  anomalies = _.sortBy(anomalies, sortField).reverse()
+  // Limit the number of anomalies in the final report based on param_anomaly_limit
+  if (anomalies.length > param_anomaly_limit) {
+    anomalies = anomalies.slice(0, param_anomaly_limit);
+  } else if (anomalies.length < param_anomaly_limit) {
+    exclusion_disclaimer += "\n\nNote: Fewer than " + param_anomaly_limit + " anomalies detected matching thresholds and exclusions, so all anomalies included."
+  }
+
+  if (_.some(ds_filter_dimensions['filters'], function(filter) { return filter["type"] == "!=" })) {
+    exclusion_disclaimer += "\n\nNote: Exclusion filters not included in above link."
+  }
 
   result = {
     anomalies: anomalies,
@@ -507,7 +663,29 @@ script "js_filter_anomalies", type: "javascript" do
     used_filters: used_filters,
     used_dimensions: ds_filter_dimensions['names'],
     currency: ds_currency['symbol'],
-    policy_name: ds_applied_policy['name']
+    policy_name: ds_applied_policy['name'] || "Cloud Cost Anomaly Alerts",
+    exclusion_disclaimer: exclusion_disclaimer
+  }
+EOS
+end
+
+datasource "ds_filter_anomalies_result" do
+  run_script $js_filter_anomalies_result, $ds_filter_anomalies, $ds_currency, $ds_applied_policy
+end
+
+script "js_filter_anomalies_result", type: "javascript" do
+  parameters "ds_filter_anomalies", "ds_currency", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  var result = ds_filter_anomalies['anomalies']
+  // Append the result metadata to the first result item so we can access it later
+  if (result.length > 0) {
+    result[0]['metadata'] = {
+      "policy_name": ds_filter_anomalies['policy_name']
+      "used_dimensions": ds_filter_anomalies['used_dimensions'],
+      "used_filters": ds_filter_anomalies['used_filters'],
+      "exclusion_disclaimer": ds_filter_anomalies['exclusion_disclaimer']
+    }
   }
 EOS
 end
@@ -517,47 +695,57 @@ end
 ###############################################################################
 
 policy "pol_anomaly_alert" do
-  validate $ds_filter_anomalies do
-    summary_template "{{ data.policy_name }}: {{ len data.anomalies}} Cloud Cost Anomalies Detected"
-    detail_template <<-EOS
-      ### [View Detailed Report]({{ data.link }})
-      \n
-      #### Dimension(s):
-      {{ range data.used_dimensions }}
-      \n   + {{ . }}
-      {{ end }}
+  validate $ds_filter_anomalies_result do
+    summary_template "{{ with index data 0 }}{{ .metadata.policy_name }}{{ end }}: {{ len data }} Cloud Cost Anomalies Detected{{ if gt (len data) 0 }}Top Anomaly: {{ (index data 0).id }} ({{ (index data 0).cost }} {{ (index data 0).currency }}, Variance: {{ (index data 0).variance }}){{ end }}"
+    detail_template <<-'EOS'
+{{- with index data 0 }}
+## Dimension(s)
+{{- range .metadata.used_dimensions }}
+- {{ . }}
+{{- end }}
+{{ if .metadata.used_filters }}
+## Filter(s)
+{{- range .metadata.used_filters }}
+- {{ .name }} {{ .type }} {{ .value }}
+{{- end }}
+{{ end }}
+{{ if .metadata.exclusion_disclaimer }}
+## Exclusion Disclaimer
+{{ .metadata.exclusion_disclaimer }}
+{{ end }}
+{{ end }}
 
-      {{ if data.used_filters }}
-        #### Filter(s):
-        {{ range data.used_filters }}
-        \n   + {{ .name }} = {{ .value }}
-        {{ end }}
-      {{ end }}
-    EOS
-    check eq(size(val(data, "anomalies")), 0)
+{{ if gt (len data) 0 }}
+## Recommendations
+- Review the top anomaly above for potential root causes.
+- Use the anomaly chart link to visualize the cost spike and compare to moving average and limits.
+- Click the anomaly link to open the full anomaly dashboard in Flexera One for further investigation.
+{{ end }}
+EOS
+    check eq(size(data), 0)
     escalate $esc_email
-    export "anomalies" do
+    hash_exclude "movingAverage", "variance", "cost", "upperLimit", "lowerLimit"
+    export do
       resource_level true
-      field "id" do
-        label "Grouping Dimensions"
+      field "anomaly_link_field" do
+        label "Anomaly Link"
+        format "link-external"
       end
-      field "cost" do
-        label "Cost"
-      end
-      field "variance" do
-        label "Variance From Average"
-      end
-      field "currency" do
-        label "Currency"
+      field "chartUrlField" do
+        label "Anomaly Chart"
+        format "link-external"
       end
       field "date" do
         label "Date"
       end
-      field "metric" do
-        label "Cost Metric"
-      end
       field "movingAverage" do
         label "Moving Average"
+      end
+      field "variance" do
+        label "Variance From Average"
+      end
+      field "cost" do
+        label "Cost"
       end
       field "upperLimit" do
         label "Upper Limit"
@@ -565,19 +753,28 @@ policy "pol_anomaly_alert" do
       field "lowerLimit" do
         label "Lower Limit"
       end
+      field "metric" do
+        label "Cost Metric"
+      end
+      field "currency" do
+        label "Currency"
+      end
+      field "id" do
+        label "Grouping Dimensions"
+      end
     end
   end
   validate $ds_filter_anomalies do
     summary_template "{{ data.policy_name }}: {{ len data.invalid_ids }} Invalid Dimension(s)"
-    detail_template <<-EOS
-      The following provided dimensions are invalid. Please reapply the policy with valid dimensions.
-      \n
-      #### Invalid dimension(s):
-      {{ range data.invalid_ids }}
-      \n + {{ . }}
-      {{ end }}
+    detail_template <<-'EOS'
+The following provided dimensions are invalid. Please reapply the policy with valid dimensions.
 
-      The below table includes a full list of valid dimensions. Dimensions can be referenced by ID or name in the *Cost Anomaly Dimensions* parameter.
+#### Invalid dimension(s):
+{{- range data.invalid_ids }}
+- {{ . }}
+{{- end }}
+
+The below table includes a full list of valid dimensions. Dimensions can be referenced by ID or name in the *Cost Anomaly Dimensions* parameter.
     EOS
     check eq(size(val(data, "invalid_ids")), 0)
     escalate $esc_email

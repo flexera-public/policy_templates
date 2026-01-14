@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.0.9
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v1.0.8
+
+- Fixed bug that caused all Azure resource families to be displayed as "undefined"
+
+## v1.0.7
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v1.0.6
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v1.0.5
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v1.0.4
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.

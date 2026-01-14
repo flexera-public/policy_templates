@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Reports any AWS resources that are under extended support. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/extended_support) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/extended_support"
 category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.3",
+  version: "0.3.2",
   provider: "AWS",
   service: "All",
   policy_set: "Deprecated Resources",
@@ -22,7 +23,7 @@ info(
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses to notify"
+  label "Email Addresses"
   description "A list of email addresses to notify."
   default []
 end
@@ -78,6 +79,24 @@ parameter "param_regions_list" do
   default []
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -93,13 +112,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -131,7 +189,7 @@ end
 script "js_filtered_bcs", type: "javascript" do
   parameters "ds_billing_centers", "param_billing_centers"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_billing_centers.length == 0) {
     result = _.filter(ds_billing_centers, function(bc) {
       return bc['parent_id'] == null || bc['parent_id'] == undefined
@@ -159,7 +217,7 @@ end
 script "js_regions_table", type:"javascript" do
   parameters "ds_regions_reference"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = {}
 
   _.each(ds_regions_reference, function(region) {
@@ -199,7 +257,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   symbol = "$"
   separator = ","
 
@@ -322,13 +380,15 @@ EOS
 end
 
 datasource "ds_extended_support_resources" do
-  run_script $js_extended_support_resources, $ds_flexera_cco_data_filtered, $ds_applied_policy, $ds_currency, $ds_billing_centers, $param_min_savings
+  run_script $js_extended_support_resources, $ds_flexera_cco_data_filtered, $ds_applied_policy, $ds_currency, $ds_billing_centers, $param_min_savings, $param_incident_csv
 end
 
 script "js_extended_support_resources", type: "javascript" do
-  parameters "ds_flexera_cco_data_filtered", "ds_applied_policy", "ds_currency", "ds_billing_centers", "param_min_savings"
+  parameters "ds_flexera_cco_data_filtered", "ds_applied_policy", "ds_currency", "ds_billing_centers", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -405,7 +465,8 @@ script "js_extended_support_resources", type: "javascript" do
         savings: savings,
         savingsCurrency: ds_currency['symbol'],
         policy_name: ds_applied_policy['name'],
-        total_savings: 0
+        total_savings: 0,
+        csv_message: csv_message
       })
     }
   })
@@ -423,7 +484,10 @@ end
 policy "pol_extended_support_resources" do
   validate_each $ds_extended_support_resources do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Resources Under Extended Support Found"
-    detail_template "**Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}"
+    detail_template <<-'EOS'
+**Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}\n\n
+{{ with index data 0 }}{{ .csv_message }}{{ end }}
+    EOS
     check eq(val(item, "resourceID"), "")
     escalate $esc_email
     hash_exclude "savings", "savingsCurrency"
@@ -472,5 +536,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

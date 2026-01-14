@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy generates a billing center structure based on specified dimensions. It allows users to create a hierarchical billing center structure that reflects their organizational needs by using existing dimensions -- including custom Rule-Based Dimensions, Tag Dimensions, or Cloud Bill Dimensions like Vendor, Cloud Vendor Account Name.
+This policy generates a billing center structure based on specified dimensions. It allows users to create a hierarchical billing center structure that reflects their organizational needs by using existing dimensions. Custom Rule-Based Dimensions, Tag Dimensions, or Cloud Bill Dimensions like Vendor, Cloud Vendor Account Name can be used.
 
 Billing Centers are required for granular access to cost data in Flexera and this Policy Template can help create the Billing Centers which are used to grant access to User Groups and Users.
 
@@ -19,12 +19,12 @@ Even without a requirement for granular access, the hierarchy view approach Bill
 Consider a scenario where the default `Dimension List` parameter value is used: "Vendor" and "Cloud Vendor Account Name". The policy will generate a hierarchical billing center structure based on these dimensions. Here are the vendor values and some example cloud accounts:
 
 |Vendor|AWS|Azure|Google|Oracle|
-|-|-|-|-|-|
-|**Cloud Vendor Account Names**|*aws-account1*, *aws-account2*, *aws-account3*, etc..|*azure-sub-A*, *azure-sub-B*, *azure-sub-C*, etc..|*gcp-project-alpha*, *gcp-project-beta*, etc..|*oci-account1*, *oci-account2*, etc..|
+|---|---|---|---|---|
+|**Cloud Vendor Account Names**|*aws-account1*, *aws-account2*, *aws-account3*, etc..|*azure-sub-A*, *azure-sub-B*, *azure-sub-C*, etc..|*gcp-project-alpha*, *gcp-project-beta*, etc..|*oci-account1*, *oci-account2*, etc.|
 
 The resulting Billing Centers hierarchy would look like this:
 
-```
+```text
 ├── AWS
 |   |
 |   ├── aws-account1
@@ -69,7 +69,7 @@ The following policy actions are taken based on the specified dimensions:
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 ### Credential configuration
 
@@ -84,4 +84,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This policy does not incur any additional costs as it only generates a billing center structure based on the specified dimensions.
+This policy template does not incur any additional costs as it only generates a billing center structure based on the specified dimensions.

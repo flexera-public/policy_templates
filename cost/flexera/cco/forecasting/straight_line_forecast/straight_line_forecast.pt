@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Pulls the cost data for lookback period then generates a Straight-Line Forecast for the specified months. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/forecasting/straight_line_forecast/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/forecasting/straight_line_forecast/"
 severity "low"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "4.0.1",
+  version: "4.0.6",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Forecasting",
@@ -102,13 +103,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-# Gather applied policy metadata for use later
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -195,7 +235,7 @@ end
 script "js_billing_centers_filtered", type: "javascript" do
   parameters "ds_billing_centers", "param_bc_allow_or_deny", "param_bc_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_bc_list.length > 0) {
@@ -245,7 +285,7 @@ end
 script "js_dimension", type: "javascript" do
   parameters "ds_dimensions_list", "param_dimension"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_dimension == "Billing Center") {
     result = { id: "billing_center_name", name: "Billing Center" }
   } else {
@@ -276,7 +316,7 @@ end
 script "js_past_month_list", type: "javascript" do
   parameters "param_lookback"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Simple function to advance date in YYYY-MM format ahead or behind one month
   // Avoids issues caused by using setMonth() functionality
   function change_month(date, change) {
@@ -320,7 +360,7 @@ end
 script "js_costs", type: "javascript" do
   parameters "start_date", "end_date", "ds_billing_centers_filtered", "ds_dimension", "param_cost_metric", "rs_optima_host", "rs_org_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   cost_metric_table = {
     "Unamortized Unblended": "cost_nonamortized_unblended_adj",
     "Amortized Unblended": "cost_amortized_unblended_adj",
@@ -359,7 +399,7 @@ end
 script "js_past_costs", type: "javascript" do
   parameters "ds_costs", "ds_billing_centers", "ds_dimension", "param_cost_metric", "param_forecasted"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   cost_metric_table = {
     "Unamortized Unblended": "cost_nonamortized_unblended_adj",
     "Amortized Unblended": "cost_amortized_unblended_adj",
@@ -447,7 +487,7 @@ end
 script "js_forecasted_costs", type: "javascript" do
   parameters "ds_past_costs", "ds_dimension", "param_forecasted", "param_formula"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Simple function to advance date in YYYY-MM format ahead or behind one month
   // Avoids issues caused by using setMonth() functionality
   function change_month(date, change) {
@@ -616,7 +656,7 @@ end
 policy "pol_straight_line_forecast" do
   validate $ds_chart_creation do
     summary_template "{{ data.policy_name }}"
-    detail_template <<-EOS
+    detail_template <<-'EOS'
 # Forecast Report for {{ rs_org_name }} - {{ data.current_month_name }}
 ### Model: {{ data.model }}
 ![Forecast Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ data.chart_options }})

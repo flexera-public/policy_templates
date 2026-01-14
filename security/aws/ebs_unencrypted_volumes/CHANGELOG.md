@@ -1,5 +1,29 @@
 # Changelog
 
+## v5.0.8
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
+## v5.0.7
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v5.0.6
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v5.0.5
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v5.0.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v5.0.3
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v5.0.2
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.

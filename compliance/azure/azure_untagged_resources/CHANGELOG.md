@@ -1,5 +1,33 @@
 # Changelog
 
+## v3.4.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v3.4.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v3.3.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v3.3.3
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v3.3.2
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v3.3.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v3.3.0
+
+- Update tag resource action to use Azure Tags API, which enables `Tag Contributor` role to be used for enabling action capabilities with minimum scope.
+
 ## v3.2.2
 
 - Fixed issue where prompt for adding tags incorrectly said to use "key:value" instead of "key=value" format.

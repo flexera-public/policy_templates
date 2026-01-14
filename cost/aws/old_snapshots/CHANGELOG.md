@@ -1,5 +1,54 @@
 # Changelog
 
+## v8.6.4
+
+- Fixed a bug introduced in v8.6.3 that would cause "Cannot access member 'result' of undefined", if the AWS account info does not exist in Flexera.
+
+## v8.6.3
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
+## v8.6.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v8.6.1
+
+- Updated email escalation declaration for new "Errors Identified" incident to prevent error `failed make a CSV attachment with data: unable to collect csv data from nil export`
+
+## v8.6.0
+
+- Policy now continues execution for accessible regions when some regions return permission errors
+- Added separate incident report to identify regions with access issues and provide remediation guidance
+
+## v8.5.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v8.4.10
+
+- Updated label of email parameter to "Email Addresses" to match other policy templates. Functionality unchanged.
+
+## v8.4.9
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v8.4.8
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v8.4.7
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v8.4.6
+
+- Fixed issue that caused RDS DB snapshots to be reported with overinflated estimated savings. Added additional context around these snapshots to the incident description.
+
+## v8.4.5
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v8.4.4
 
 - Corrected incorrect filtering of RDS DB snapshots. The policy was previously only considering the most recent snapshot for each DB instance, leading to missed older snapshots. The logic has been updated to include all snapshots.

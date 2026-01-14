@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Reports Security Alerts that have been raised in Office 365. See the [README](https://github.com/flexera-public/policy_templates/tree/master/saas/office365/security_alerts/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/saas/office365/security_alerts/"
 category "SaaS Management"
 severity "medium"
 default_frequency "weekly"
 info(
-  version: "3.0.1",
+  version: "3.0.5",
   provider: "Microsoft",
   service: "Office 365",
   policy_set: "",
@@ -57,13 +58,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-# Gather applied policy metadata for use later
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -91,7 +131,7 @@ end
 script "js_alerts", type: "javascript" do
   parameters "param_alert_severity"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   vendors = [ "Office 365 Security and Compliance", "Office 365" ]
   vendor_filter = _.map(vendors, function(item) { return "vendorInformation/provider eq '" + item + "'"})
   sev_filter = _.map(param_alert_severity, function(item) { return "Severity eq '" + item.toLowerCase() + "'"})
@@ -114,7 +154,7 @@ end
 script "js_alerts_incident", type: "javascript" do
   parameters "ds_alerts", "ds_applied_policy"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.map(ds_alerts, function(alert) {
     return {
       id: alert['id'],

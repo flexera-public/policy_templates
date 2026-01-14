@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Reports on AWS Reserved Instances coverage. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/coverage) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/coverage"
 severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.0.1",
+  version: "3.0.5",
   provider: "AWS",
   service: "Compute",
   policy_set: "Reserved Instances",
@@ -67,13 +68,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -93,7 +133,7 @@ end
 script "js_reservations_coverage", type: "javascript" do
   parameters "param_lookback"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   end_date = new Date().toISOString().split('T')[0]
 
   start_date = new Date()
@@ -121,7 +161,7 @@ end
 script "js_coverage_report", type: "javascript" do
   parameters "ds_reservations_coverage", "ds_applied_policy", "param_lookback"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   end_date = new Date().toISOString().split('T')[0]
 
   start_date = new Date()
@@ -148,7 +188,7 @@ end
 policy "pol_coverage_report" do
   validate_each $ds_coverage_report do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}"
-    detail_template <<-EOS
+    detail_template <<-'EOS'
 # AWS Reserved Instances Coverage Report
 ## Date Range: {{ with index data 0 }}{{ .start_date }}{{ end }} -> {{ with index data 0 }}{{ .end_date }}{{ end }}
 

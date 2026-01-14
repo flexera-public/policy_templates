@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Check instances that are not running the FlexNet Inventory Agent. This template uses the SOAP version of the FlexNet Manager APIs. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/instances_without_fnm_agent) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/instances_without_fnm_agent"
 severity "medium"
 category "Compliance"
 default_frequency "weekly"
 info(
-  version: "4.3.3",
+  version: "4.4.1",
   provider: "AWS",
   service: "Compute",
   policy_set: "Instances not running FlexNet Inventory Agent",
@@ -56,7 +57,7 @@ end
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses to notify"
+  label "Email Addresses"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
   default []
 end
@@ -75,6 +76,24 @@ parameter "param_aws_account_number" do
   label "Account Number"
   description "Leave blank; this is for automated use with Meta Policies. See README for more details."
   default ""
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -100,6 +119,46 @@ end
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
 
 # ds_region_list is a list of regions that are opted-in or opt-in-not-required
 datasource "ds_regions_list" do
@@ -133,7 +192,7 @@ end
 script "js_regions", type:"javascript" do
   parameters "all_regions", "user_entered_regions", "regions_allow_or_deny"
   result "regions"
-  code <<-EOS
+  code <<-'EOS'
     if(_.isEmpty(user_entered_regions)){
       regions = all_regions;
     }else{
@@ -230,54 +289,58 @@ datasource "ds_fnms_report" do
 end
 
 datasource "ds_formatted_instances", type: "javascript" do
-  run_script $js_formatted_instances, $ds_aws_ec2_instances_list, $ds_fnms_report, $param_exclude_tags
+  run_script $js_formatted_instances, $ds_aws_ec2_instances_list, $ds_fnms_report, $param_exclude_tags, $param_incident_csv
 end
 
 #Formatter script for the Instance data
 script "js_formatted_instances", type: "javascript" do
-  parameters "ds_aws_ec2_instances_list", "ds_fnms_report", "param_exclude_tags"
+  parameters "ds_aws_ec2_instances_list", "ds_fnms_report", "param_exclude_tags", "param_incident_csv"
   result "result"
-  code <<-EOS
-    var result = [];
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
-    fnms_instance_cloud_id=[];
-    _.each(ds_fnms_report, function(instance){
-      fnms_instance_cloud_id.push(instance["instanceCloudID"]);
-    })
+  var result = [];
 
-    var param_exclude_tags_lower=[];
-    for(var i=0; i < param_exclude_tags.length; i++){
-      param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
+  fnms_instance_cloud_id=[];
+  _.each(ds_fnms_report, function(instance){
+    fnms_instance_cloud_id.push(instance["instanceCloudID"]);
+  })
+
+  var param_exclude_tags_lower=[];
+  for(var i=0; i < param_exclude_tags.length; i++){
+    param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
+  }
+
+  _.each(ds_aws_ec2_instances_list, function(instance){
+    var tags = instance['tags'];
+    var isTagMatched=false
+    var tagKeyValue=""
+    for(var k=0; k < tags.length; k++){
+      tag = tags[k]
+      //Check, if the tag present in entered param_exclude_tags, ignore the EC2 instance if the tag matches/present.
+      if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
+        isTagMatched = true;
+      }
+      if((tag['tagValue']).length > 0){
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }else{
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
+      }
     }
+    if(!isTagMatched && fnms_instance_cloud_id.indexOf(instance["instance_id"]) === -1){
+      result.push({
+        id: instance['instance_id'],
+        instance_type: instance['instance_type'],
+        region: instance['zone'][0]['availability_zone'],
+        instance_state: instance['instance_state'],
+        tags: (tagKeyValue.slice(2)),
+        csv_message: csv_message
+      })
+    }
+  })
 
-    _.each(ds_aws_ec2_instances_list, function(instance){
-      var tags = instance['tags'];
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var k=0; k < tags.length; k++){
-        tag = tags[k]
-        //Check, if the tag present in entered param_exclude_tags, ignore the EC2 instance if the tag matches/present.
-        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-          isTagMatched = true;
-        }
-        if((tag['tagValue']).length > 0){
-          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-        }else{
-          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
-        }
-      }
-      if(!isTagMatched && fnms_instance_cloud_id.indexOf(instance["instance_id"]) === -1){
-        result.push({
-          id: instance['instance_id'],
-          instance_type: instance['instance_type'],
-          region: instance['zone'][0]['availability_zone'],
-          instance_state: instance['instance_state'],
-          tags: (tagKeyValue.slice(2))
-        })
-      }
-    })
-    result =  _.sortBy(result, 'region');
-  EOS
+  result =  _.sortBy(result, 'region');
+EOS
 end
 
 ###############################################################################
@@ -287,6 +350,7 @@ end
 policy "pol_long_running_instances" do
   validate $ds_formatted_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} EC2 instances missing in FlexNet Manager."
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
     escalate $esc_email
@@ -319,7 +383,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send Incident Email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################
@@ -329,13 +396,12 @@ end
 
 # If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
 # if it is set we will look for the parent policy.
-datasource "ds_get_policy" do
+datasource "ds_get_parent_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
   end
   result do
     encoding "json"
@@ -343,59 +409,42 @@ datasource "ds_get_policy" do
   end
 end
 
-datasource "ds_parent_policy_terminated" do
-  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
-end
-
 # If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
 # This information is used in two places:
 # - determining whether or not we make a delete call
 # - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
-script "js_decide_if_self_terminate", type: "javascript" do
-  parameters "found", "self_policy_id", "meta_parent_policy_id"
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
   result "result"
-  code <<-EOS
-  var result
-  if (meta_parent_policy_id != "" && found.id == undefined) {
-    result = true
-  } else {
-    result = false
-  }
-  EOS
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
 end
 
 # Two potentials ways to set this up:
 # - this way and make a unneeded 'get' request when not deleting
 # - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
-script "js_make_terminate_request", type: "javascript" do
-  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
-  result "request"
-  code <<-EOS
-
-  var request = {
-    auth:  'auth_flexera',
-    host: rs_governance_host,
-    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
-    headers: {
-      "API-Version": "1.0",
-      "Content-Type":"application/json"
-    },
-  }
-
-  if (should_delete) {
-    request.verb = 'DELETE'
-  }
-  EOS
-end
-
 datasource "ds_terminate_self" do
   request do
-    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
   end
 end
 
-datasource "ds_is_deleted" do
-  run_script $js_check_deleted, $ds_terminate_self
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
 end
 
 # This is just a way to have the check delete request connect to the farthest leaf from policy.
@@ -404,10 +453,12 @@ end
 # The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
 # would not have access to self-terminate
 # It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
-script "js_check_deleted", type: "javascript" do
-  parameters "response"
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
   result "result"
-  code <<-EOS
-  result = {"path":"/"}
-  EOS
+  code 'result = { path: "/"}'
 end

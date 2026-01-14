@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Reports on SQL Database instances that have high maximum storage space relative to their storage usage. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_storage/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_storage/"
 category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.3",
+  version: "0.2.1",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Database Instances",
@@ -125,6 +126,24 @@ parameter "param_recommendation_threshold" do
   default 20
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -160,13 +179,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -202,7 +260,7 @@ end
 script "js_currency_target", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Default to USD if currency is not found
   result = ds_currency_reference['USD']
 
@@ -222,7 +280,7 @@ end
 script "js_conditional_currency_conversion", type: "javascript" do
   parameters "ds_currency_target"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
   // Make the request only if the target currency is not USD
   if (ds_currency_target['code'] != 'USD') {
@@ -259,7 +317,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_target", "ds_currency_conversion"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = ds_currency_target
   result['exchange_rate'] = 1
 
@@ -309,7 +367,7 @@ end
 script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -399,7 +457,7 @@ end
 script "js_azure_sql_databases_vcpu_filtered", type: "javascript" do
   parameters "ds_azure_sql_databases"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.filter(ds_azure_sql_databases, function(db) {
     return db['sku']['tier'] == "GeneralPurpose" || db['sku']['tier'] == "BusinessCritical" || db['sku']['tier'] == "Hyperscale"
   })
@@ -413,7 +471,7 @@ end
 script "js_azure_sql_databases_age_filtered", type: "javascript" do
   parameters "ds_azure_sql_databases_vcpu_filtered", "param_minimum_age"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_minimum_age > 0) {
     today = new Date()
 
@@ -436,7 +494,7 @@ end
 script "js_azure_sql_databases_system_filtered", type: "javascript" do
   parameters "ds_azure_sql_databases_age_filtered"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.reject(ds_azure_sql_databases_age_filtered, function(db) {
     sku_name = null
     if (typeof(db['sku']) == 'object') { sku_name = db['sku']['name'] }
@@ -453,7 +511,7 @@ end
 script "js_azure_sql_databases_tag_filtered", type: "javascript" do
   parameters "ds_azure_sql_databases_system_filtered", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -530,7 +588,7 @@ end
 script "js_azure_sql_databases_region_filtered", type: "javascript" do
   parameters "ds_azure_sql_databases_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_sql_databases_tag_filtered, function(ip) {
       include_db = _.contains(param_regions_list, db['region'])
@@ -580,7 +638,7 @@ end
 script "js_azure_sql_database_metrics", type: "javascript" do
   parameters "resource_id", "param_azure_endpoint"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   end_date = new Date()
   end_date.setSeconds(0)
   end_date.setMilliseconds(0)
@@ -620,7 +678,7 @@ end
 script "js_azure_sql_databases_with_used_space", type: "javascript" do
   parameters "ds_azure_sql_database_metrics", "param_threshold"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   _.each(ds_azure_sql_database_metrics, function(db) {
@@ -678,7 +736,7 @@ end
 script "js_azure_sql_capabilities_queries", type: "javascript" do
   parameters "ds_azure_sql_databases_with_used_space"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   _.each(ds_azure_sql_databases_with_used_space, function(db) {
@@ -721,7 +779,7 @@ end
 script "js_azure_sql_capabilities_table", type: "javascript" do
   parameters "ds_azure_sql_capabilities"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Build a table with several layers of keys to quickly find size tables for specific DB instances
   result = {}
 
@@ -789,13 +847,15 @@ datasource "ds_azure_db_storage_cost_map" do
 end
 
 datasource "ds_azure_sql_storage_incident" do
-  run_script $js_azure_sql_storage_incident, $ds_azure_sql_databases_region_filtered, $ds_azure_sql_databases_with_used_space, $ds_azure_sql_capabilities_table, $ds_azure_db_storage_cost_map, $ds_currency, $ds_applied_policy, $param_recommendation_threshold, $param_min_savings, $param_threshold
+  run_script $js_azure_sql_storage_incident, $ds_azure_sql_databases_region_filtered, $ds_azure_sql_databases_with_used_space, $ds_azure_sql_capabilities_table, $ds_azure_db_storage_cost_map, $ds_currency, $ds_applied_policy, $param_recommendation_threshold, $param_min_savings, $param_threshold, $param_incident_csv
 end
 
 script "js_azure_sql_storage_incident", type: "javascript" do
-  parameters "ds_azure_sql_databases_region_filtered", "ds_azure_sql_databases_with_used_space", "ds_azure_sql_capabilities_table", "ds_azure_db_storage_cost_map", "ds_currency", "ds_applied_policy", "param_recommendation_threshold", "param_min_savings", "param_threshold"
+  parameters "ds_azure_sql_databases_region_filtered", "ds_azure_sql_databases_with_used_space", "ds_azure_sql_capabilities_table", "ds_azure_db_storage_cost_map", "ds_currency", "ds_applied_policy", "param_recommendation_threshold", "param_min_savings", "param_threshold", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -969,7 +1029,7 @@ script "js_azure_sql_storage_incident", type: "javascript" do
     "% free space, based on current usage, to ensure ",
     "storage space does not unexpectedly run out due to write operations.\n\n",
     "The above settings can be modified by editing the applied policy ",
-    "and changing the appropriate parameters."
+    "and changing the appropriate parameters.\n\n"
   ].join('')
 
   // Dummy entry to ensure validation runs at least once
@@ -1011,7 +1071,7 @@ script "js_azure_sql_storage_incident", type: "javascript" do
   })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings
+  result[0]['message'] = findings + csv_message
 EOS
 end
 
@@ -1115,7 +1175,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################
@@ -1125,13 +1188,12 @@ end
 
 # If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
 # if it is set we will look for the parent policy.
-datasource "ds_get_policy" do
+datasource "ds_get_parent_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
   end
   result do
     encoding "json"
@@ -1139,59 +1201,42 @@ datasource "ds_get_policy" do
   end
 end
 
-datasource "ds_parent_policy_terminated" do
-  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
-end
-
 # If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
 # This information is used in two places:
 # - determining whether or not we make a delete call
 # - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
-script "js_decide_if_self_terminate", type: "javascript" do
-  parameters "found", "self_policy_id", "meta_parent_policy_id"
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
   result "result"
-  code <<-EOS
-  var result
-  if (meta_parent_policy_id != "" && found.id == undefined) {
-    result = true
-  } else {
-    result = false
-  }
-  EOS
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
 end
 
 # Two potentials ways to set this up:
 # - this way and make a unneeded 'get' request when not deleting
 # - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
-script "js_make_terminate_request", type: "javascript" do
-  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
-  result "request"
-  code <<-EOS
-
-  var request = {
-    auth:  'auth_flexera',
-    host: rs_governance_host,
-    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
-    headers: {
-      "API-Version": "1.0",
-      "Content-Type":"application/json"
-    },
-  }
-
-  if (should_delete) {
-    request.verb = 'DELETE'
-  }
-  EOS
-end
-
 datasource "ds_terminate_self" do
   request do
-    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
   end
 end
 
-datasource "ds_is_deleted" do
-  run_script $js_check_deleted, $ds_terminate_self
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
 end
 
 # This is just a way to have the check delete request connect to the farthest leaf from policy.
@@ -1200,10 +1245,12 @@ end
 # The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
 # would not have access to self-terminate
 # It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
-script "js_check_deleted", type: "javascript" do
-  parameters "response"
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
   result "result"
-  code <<-EOS
-  result = {"path":"/"}
-  EOS
+  code 'result = { path: "/"}'
 end

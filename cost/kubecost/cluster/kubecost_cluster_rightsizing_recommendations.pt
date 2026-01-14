@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Reports Kubecost recommendation for rightsizing of Kubernetes cluster. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/cluster) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/cluster"
 category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.4.0",
+  version: "0.5.1",
   provider: "Kubecost",
   service: "Kubernetes",
   policy_set: "Rightsize Clusters",
@@ -90,6 +91,24 @@ parameter "param_strategy" do
   default "Optimal"
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -105,13 +124,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -134,7 +192,7 @@ end
 script "js_architecture", type: "javascript" do
   parameters "param_architecture"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_architecture == "All Chipset Architectures"){
     result = { value: "" }
   } else {
@@ -151,7 +209,7 @@ end
 script "js_currency_target", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Default to USD if currency is not found
   result = ds_currency_reference['USD']
 
@@ -168,7 +226,7 @@ end
 script "js_conditional_currency_conversion", type: "javascript" do
   parameters "ds_currency_target", "ds_kubecost_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
   from_currency = "USD"
   // Make the request only if the target currency is not USD
@@ -234,7 +292,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_target", "ds_currency_conversion"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = ds_currency_target
   result['exchange_rate'] = 1
 
@@ -308,13 +366,15 @@ script "js_cluster_sizing", type: "javascript" do
 end
 
 datasource "ds_recommendations" do
-  run_script $js_recommendations, $ds_cluster_sizing, $ds_currency, $ds_applied_policy, $param_strategy, $param_min_nodes, $param_lookback, $param_target_util
+  run_script $js_recommendations, $ds_cluster_sizing, $ds_currency, $ds_applied_policy, $param_strategy, $param_min_nodes, $param_lookback, $param_target_util, $param_incident_csv
 end
 
 script "js_recommendations", type: "javascript" do
-  parameters "ds_cluster_sizing", "ds_currency", "ds_applied_policy", "param_strategy", "param_min_nodes", "param_lookback", "param_target_util"
+  parameters "ds_cluster_sizing", "ds_currency", "ds_applied_policy", "param_strategy", "param_min_nodes", "param_lookback", "param_target_util", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   result = []
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
@@ -367,7 +427,8 @@ script "js_recommendations", type: "javascript" do
       "- Minimum Nodes: ", param_min_nodes, "\n",
       "- Lookback Period: ", param_lookback, " Days\n",
       "- Target Utilization: ", param_target_util, "%\n\n",
-      "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+      "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n",
+      csv_message
     ].join('')
 
     if (recommendation['monthlySavings'] > 0){
@@ -508,5 +569,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

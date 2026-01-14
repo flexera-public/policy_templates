@@ -1,16 +1,17 @@
-name "Spot Ocean - Common Bill Ingest"
+name "Spot Ocean Common Bill Ingestion"
 rs_pt_ver 20180301
 type "policy"
 short_description "Ingests costs from [Spot Ocean Cluster Aggregated Detailed Costs API](https://docs.spot.io/api/#tag/Ocean-AWS/operation/oceanAwsK8sClusterAggregatedDetailedCosts) into Flexera using the [Flexera Bill Upload API](https://reference.rightscale.com/optima-bill-upload/#/). See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/spot/ocean_cbi/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/spot/ocean_cbi/"
 category "Operational"
 severity "low"
-default_frequency "hourly"
+default_frequency "daily"
 info(
-  version: "0.1.0",
+  version: "0.2.4",
   provider: "Flexera",
   service: "Kubernetes",
-  policy_set: "Common Bill Ingest",
+  policy_set: "Common Bill Ingestion",
   hide_skip_approvals: "true"
 )
 
@@ -95,6 +96,91 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get list of Cloud Vendor Account Names in Flexera Org
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    run_script $js_cloud_vendor_accounts, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "id", jmes_path(col_item, "dimensions.vendor_account")
+      field "name", jmes_path(col_item, "dimensions.vendor_account_name")
+    end
+  end
+end
+
+script "js_cloud_vendor_accounts", type: "javascript" do
+  parameters "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      dimensions: ["vendor_account", "vendor_account_name"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
 # https://api.spotinst.io/setup/account
 # Docs: https://docs.spot.io/api/#tag/Accounts/operation/OrganizationsAndAccountsGetAccounts
 datasource "ds_spotinst_accounts" do
@@ -119,7 +205,7 @@ end
 script "js_spotinst_accounts_filtered", type: "javascript" do
   parameters "ds_spotinst_accounts", "param_spotinst_accounts_allow_or_deny", "param_spotinst_accounts_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_spotinst_accounts_list.length > 0) {
     result = _.filter(ds_spotinst_accounts, function(subscription) {
       include = _.contains(param_spotinst_accounts_list, subscription['account']['accountId']) || _.contains(param_spotinst_accounts_list, subscription['account']['name'])
@@ -141,10 +227,7 @@ end
 datasource "ds_spotinst_clusters" do
   iterate $ds_spotinst_accounts_filtered
   request do
-    auth $auth_spotinst
-    host "api.spotinst.io"
-    path "/ocean/aws/k8s/cluster"
-    query "accountId", val(val(iter_item, "account"), "accountId")
+    run_script $js_spotinst_clusters, val(iter_item, "account")
   end
   result do
     encoding "json"
@@ -170,6 +253,31 @@ datasource "ds_spotinst_clusters" do
   end
 end
 
+script "js_spotinst_clusters", type: "javascript" do
+  parameters "spot_inst_account"
+  result "request"
+  code <<-'EOS'
+    host = "api.spotinst.io"
+    path = "/ocean/aws/k8s/cluster"
+
+    if (spot_inst_account.cloudProvider == "AZURE") {
+      path = "/ocean/azure/np/cluster"
+    } else if (spot_inst_account.cloudProvider == "GCP") {
+      path = "/ocean/gcp/k8s/cluster"
+    }
+
+    request = {
+      auth: "auth_spotinst",
+      host: host,
+      path: path,
+      query_params: {
+        'accountId': spot_inst_account.accountId
+      }
+    }
+  EOS
+end
+
+# Get Billing Period Dates
 datasource "ds_dates" do
   run_script $js_dates, $param_period, $param_period_specific_month, $param_reallocation_granularity
 end
@@ -177,7 +285,7 @@ end
 script "js_dates", type: "javascript" do
   parameters "param_period", "param_period_specific_month", "param_reallocation_granularity"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
     var today = new Date()
     // Switch or case statement in javascript for param_period values
     switch(param_period) {
@@ -231,7 +339,7 @@ end
 script "js_date_periods", type: "javascript" do
   parameters "ds_dates"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   var result = []
 
   if (ds_dates.granularity == "month") {
@@ -275,7 +383,7 @@ end
 script "js_requests_spotinst_cluster_aggregated_costs", type: "javascript" do
   parameters "ds_date_periods", "ds_spotinst_clusters"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   var result = []
   _.each(ds_date_periods, function(date_period) {
     _.each(ds_spotinst_clusters, function(spotinst_cluster) {
@@ -293,13 +401,7 @@ end
 datasource "ds_spotinst_cluster_aggregated_costs" do
   iterate $ds_requests_spotinst_cluster_aggregated_costs
   request do
-    auth $auth_spotinst
-    verb "POST"
-    host "api.spotinst.io"
-    path join(["/ocean/aws/k8s/cluster/", val(val(iter_item, "spotinst_cluster"), "id"), "/aggregatedCosts"])
-    query "accountId", jq(iter_item, ".spotinst_cluster.account.accountId")
-    body_field "startTime", val(val(iter_item, "date_period"), "start_date")
-    body_field "endTime", val(val(iter_item, "date_period"), "end_date")
+    run_script $js_spotinst_cluster_aggregated_costs, val(iter_item, "spotinst_cluster"), val(iter_item, "date_period")
   end
   result do
     encoding "json"
@@ -315,14 +417,43 @@ datasource "ds_spotinst_cluster_aggregated_costs" do
   end
 end
 
+script "js_spotinst_cluster_aggregated_costs", type: "javascript" do
+  parameters "spotinst_cluster", "date_period"
+  result "request"
+  code <<-'EOS'
+    host = "api.spotinst.io"
+    path = (["/ocean/aws/k8s/cluster/", spotinst_cluster.id, "/aggregatedCosts"]).join("")
+
+    if (spotinst_cluster.account.cloudProvider == "AZURE") {
+      path = (["/ocean/azure/k8s/cluster/", spotinst_cluster.id, "/aggregatedCosts"]).join("")
+    } else if (spotinst_cluster.account.cloudProvider == "GCP" ) {
+      path = (["/ocean/gcp/k8s/cluster/", spotinst_cluster.id, "/aggregatedCosts"]).join("")
+    }
+
+    request = {
+      auth: "auth_spotinst",
+      verb: "POST",
+      host: host,
+      path: path,
+      query_params: {
+        'accountId': spotinst_cluster.account.accountId
+      },
+      body_fields: {
+        "startTime": date_period.start_date,
+        "endTime": date_period.end_date
+      }
+    }
+  EOS
+end
+
 datasource "ds_calculated_proportions" do
-  run_script $js_calculated_proportions, $ds_spotinst_cluster_aggregated_costs
+  run_script $js_calculated_proportions, $ds_spotinst_cluster_aggregated_costs, $ds_cloud_vendor_accounts
 end
 
 script "js_calculated_proportions", type: "javascript" do
-  parameters "ds_spotinst_cluster_aggregated_costs"
+  parameters "ds_spotinst_cluster_aggregated_costs", "ds_cloud_vendor_accounts"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   var result = []
 
   function properCase(string) {
@@ -336,11 +467,27 @@ script "js_calculated_proportions", type: "javascript" do
   }
 
   // Loop through ds_spotinst_cluster_aggregated_costs
-  _.each(ds_spotinst_cluster_aggregated_costs, function(cost){
+  _.each(ds_spotinst_cluster_aggregated_costs, function(cost) {
+
+    var cloudVendorAccountId = cost.spotinst_cluster.account.providerExternalId
+    var cloudVendorAccountName = ""
+
+    var cloudVendorAccount = _.find(ds_cloud_vendor_accounts, function(acc) {
+      vendorAccountLowerCase = cloudVendorAccountId.toLowerCase()
+
+      if (acc["id"]) {
+        return acc.id == vendorAccountLowerCase
+      }
+    })
+
+    if (cloudVendorAccount != undefined) {
+      cloudVendorAccountName = cloudVendorAccount["name"]
+    }
+
     // Check if we have any costs
     if (cost.detailedCosts) {
       // Loop through the aggregations{} object
-      _.each(cost.detailedCosts.aggregations, function(aggregation){
+      _.each(cost.detailedCosts.aggregations, function(aggregation) {
         // Loop through each resource in the aggregation
         _.each(aggregation.resources, function(resource) {
           // These fields in the resource object are not cost dimensions
@@ -352,8 +499,8 @@ script "js_calculated_proportions", type: "javascript" do
           _.each(usageCategories, function(usageCategory){
             // Values that are the same for all usage categories
             var obj = {
-              "CloudVendorAccountID": "412879992092", // Should be the Cloud Account the K8S cluster resides in
-              "CloudVendorAccountName": "demo-poc-infra-production", // Should be the Cloud Account Name the K8S cluster resides in
+              "CloudVendorAccountID": cloudVendorAccountId, // Should be the Cloud Account the K8S cluster resides in
+              "CloudVendorAccountName": cloudVendorAccountName, // Should be the Cloud Account Name the K8S cluster resides in
               "Category": properCase(usageCategory), // Category can be the usage, with proper case (Networking, Storage, Compute)
               "InstanceType": "",
               "LineItemType": "Usage", // Static value used in other bills
@@ -361,7 +508,7 @@ script "js_calculated_proportions", type: "javascript" do
               "ResourceGroup": "", // Can be the namespace?  Or the K8S cluster name?
               "ResourceType": "", // Handled per usageCategory below
               "ResourceID": resource.metadata.type + "/" + resource.metadata.name,
-              "Service": "",
+              "Service": "Kubernetes",
               "UsageType": properCase(usageCategory),
               // Use lowercase tags and allow the common logic in next step to convert it from object to CSV string with escaped quotes
               "tags": {
@@ -475,19 +622,31 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
       flexera: "api.flexera.com",
-      fsm: "api.fsm.flexeraeng.com"
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
       flexera: "api.flexera.eu",
-      fsm: "api.fsm-eu.flexeraeng.com"
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
       flexera: "api.flexera.au",
-      fsm: "api.fsm-apac.flexeraeng.com"
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
     }
   }
 
@@ -527,7 +686,7 @@ end
 script "js_bill_connect", type: "javascript" do
   parameters "ds_existing_bill_connects", "ds_flexera_api_hosts", "param_bill_connect_id", "rs_org_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
 
   // Default request payload to CREATE the bill connect
   var request = {
@@ -681,7 +840,7 @@ end
 script "js_pending_bill_uploads", type: "javascript" do
   parameters "ds_existing_bill_uploads"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.filter(ds_existing_bill_uploads, function(item) {
     return item["status"] != "complete" && item["status"] != "aborted"
   })
@@ -719,7 +878,7 @@ end
 script "js_aborted_pending_bill_uploads_done", type: "javascript" do
   parameters "ds_abort_pending_bill_uploads"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = { abortedUploads: (ds_abort_pending_bill_uploads.length != 0).toString() }
 EOS
 end
@@ -733,7 +892,7 @@ end
 script "js_cbi_create_bill_upload", type: "javascript" do
   parameters "ds_dates", "ds_bill_connect", "ds_aborted_pending_bill_uploads_done", "param_bill_connect_id", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     verb: "POST",
@@ -878,7 +1037,7 @@ end
 script "js_cbi_upload_file", type: "javascript" do
   parameters "iter_item", "ds_dates", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     verb: "POST",
@@ -901,7 +1060,7 @@ end
 script "js_cbi_commit", type: "javascript" do
   parameters "ds_cbi_upload_file", "ds_cbi_create_bill_upload", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     verb: "POST",
@@ -922,7 +1081,7 @@ end
 # Policy
 ###############################################################################
 
-policy 'pol_spot_ocean_cbi' do
+policy "pol_spot_ocean_cbi" do
   validate $ds_cbi_commit do
     summary_template 'CBI Commited: {{data.billingPeriod}}'
     detail_template '{{ data }}'

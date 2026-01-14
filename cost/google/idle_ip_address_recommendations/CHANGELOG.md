@@ -1,5 +1,38 @@
 # Changelog
 
+## v4.4.3
+
+- Updated API call for listing Google Projects to speed up policy execution and reduce the number of paginated requests.
+- Incident table no longer includes Project Number. This is not supported by the above API and only has limited utility.
+
+## v4.4.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v4.4.1
+
+- Policy now only fetches active recommendations from Google Cloud Recommender API.
+
+## v4.4.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v4.3.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v4.3.3
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v4.3.2
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v4.3.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v4.3.0
 
 - Added support for filtering system and Google Apps Script projects from the results.

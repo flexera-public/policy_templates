@@ -19,9 +19,9 @@ def bad_file_path(file_path)
 end
 
 def child_missing_requirements(file_path, file_contents)
-  header_found = file_contents.include?("header \"Meta-Flexera\", val($ds_is_deleted, \"path\")")
+  header_found = file_contents.include?("header \"Meta-Flexera\", val($ds_is_deleted, \"path\")") || file_contents.include?("\"Meta-Flexera\": ds_is_deleted[\"path\"]")
   check_found = file_contents.include?("check logic_or($ds_parent_policy_terminated,")
-  footer_found = file_contents.include?("# Meta Policy [alpha]") && file_contents.include?("datasource \"ds_get_policy\" do") && file_contents.include?("datasource \"ds_parent_policy_terminated\" do") && file_contents.include?("datasource \"ds_terminate_self\" do") && file_contents.include?("datasource \"ds_is_deleted\" do")
+  footer_found = file_contents.include?("# Meta Policy [alpha]") && file_contents.include?("datasource \"ds_get_parent_policy\" do") && file_contents.include?("datasource \"ds_parent_policy_terminated\" do") && file_contents.include?("datasource \"ds_terminate_self\" do") && file_contents.include?("datasource \"ds_is_deleted\" do")
 
   unless header_found && check_found && footer_found
     print("Unable to generate meta parent for #{file_path}\n\n")
@@ -97,6 +97,10 @@ def compile_meta_parent_policy(file_path, specified_parent_pt_path)
   hide_skip_approvals_scan = pt.scan(/hide_skip_approvals: "(.*?)"/)
   hide_skip_approvals = ""
   hide_skip_approvals = hide_skip_approvals_scan[0][0] if !hide_skip_approvals_scan.empty?
+  # get the enable_child_schedule_options string if it exists, defaulting to false if not present
+  enable_child_schedule_options_scan = pt.scan(/enable_child_schedule_options: "(.*?)"/)
+  enable_child_schedule_options = "false"
+  enable_child_schedule_options = enable_child_schedule_options_scan[0][0] if !enable_child_schedule_options_scan.empty?
   # print("Name: #{name}\n")
   # print("Description: #{description}\n")
   # print("\n###########################\n")
@@ -163,9 +167,9 @@ end
     esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETERS__", esc_parameters)
     esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_VALUES__", esc_parameter_values_string)
     if esc_parameter_values_options_list.length > 0
-      esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_ACTION_OPTIONS__", "$actions_options = [" + esc_parameter_values_options_list.join(", ")+"]")
+      esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_ACTION_OPTIONS__", "$action_options = [" + esc_parameter_values_options_list.join(", ")+"]")
     else
-      esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_ACTION_OPTIONS__", "$actions_options = []")
+      esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_ACTION_OPTIONS__", "$action_options = []")
     end
     escalation_blocks_parent.push(esc)
     # Print the compiled escalation and parameters strings if exist
@@ -193,7 +197,7 @@ end
   script "js___PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_DATASOURCE___combined_incidents", type: "javascript" do
     parameters "ds_child_incident_details"
     result "result"
-    code <<-EOS
+    code <<-'EOS'
     result = []
     _.each(ds_child_incident_details, function(incident) {
       s = incident["summary"];
@@ -251,7 +255,7 @@ end
     fields = [] # Provide a default value, which is no fields declared
     # Check if export_block is length > 0
     if export_block.length > 0
-      fields = export_block[0].scan(/(^.*field\s+\".*?\".*?end)/m).flatten
+      fields = export_block[0].scan(/([^\\S\\n]+field\s+"[^"]*"\s+do.*?\n\s*end[\\S\\n]*)/m).flatten
     end
     fields.each do |field|
       # Remove path from the field output in the meta parent
@@ -260,6 +264,8 @@ end
       # A better solution would be a better regex above to capture only the field statements
       field.gsub!(/ *?export.*?do\n *resource_level true\n *field/, "field")
       field.gsub!(/ *?export.*?do\n *resource_level false\n *field/, "field")
+      # Remove any trailing newlines and spaces
+      field.strip!
       # Add 6 spaces to the beginning of each field to make it align with the policy.validate.export.<field> in the meta parent
       field = "      " + field
       # print("Field: \n")
@@ -346,6 +352,7 @@ end
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_VERSION__", version)
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PUBLISH__", publish)
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_DEPRECATED__", deprecated)
+
   if !hide_skip_approvals.empty?
     output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_HIDE_SKIP_APPROVALS__", hide_skip_approvals)
   else
@@ -353,6 +360,13 @@ end
     output_pt = output_pt.gsub(/^\s*,?\s*hide_skip_approvals: "__PLACEHOLDER_FOR_CHILD_POLICY_HIDE_SKIP_APPROVALS__",?\s*\n/, "")
     output_pt = output_pt.gsub(/,\s*\)/, "\n)")
   end
+
+  if enable_child_schedule_options == "true"
+    output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_SCHEDULE_OPTIONS__", '"15 minutes", "hourly", "daily", "weekly", "monthly"')
+  else
+    output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_SCHEDULE_OPTIONS__", '"daily", "weekly", "monthly"')
+  end
+
   # Attempt to identify the URL to the child policy template file on github using the file_path provided
   # This would only work if the pt file is located under the `policy_templates` repo directory
   # If it is not, then the URL will be incorrect
@@ -366,7 +380,7 @@ end
   output_pt_params = []
   parameters.each do |param|
     # Filter out parameters that we don't want the user to manage because they are used by our meta policy automation
-    param.include?("param_email") || param.include?("param_aws_account_number") || param.include?("param_subscription_allowed_list") || param.include?("param_subscriptions_list") || param.include?("param_subscriptions_allow_or_deny") || param.include?("param_project") || param.include?("param_projects_list") || param.include?("param_projects_allow_or_deny") || param.include?("param_schedule") ? nil : output_pt_params.push(param)
+    param.include?("param_incident_csv") || param.include?("param_incident_table_size") || param.include?("param_email") || param.include?("param_aws_account_number") || param.include?("param_subscription_allowed_list") || param.include?("param_subscriptions_list") || param.include?("param_subscriptions_allow_or_deny") || param.include?("param_project") || param.include?("param_projects_list") || param.include?("param_projects_allow_or_deny") || param.include?("param_schedule") ? nil : output_pt_params.push(param)
   end
   # Replace placeholder with the identified output parameter blocks
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PARAMETERS_BLOCKS__", output_pt_params.join("\n\n"))

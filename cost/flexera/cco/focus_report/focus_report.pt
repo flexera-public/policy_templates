@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Produces a FOCUS-compliant report of cloud costs for the current month or user-specified month. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/focus_report/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/focus_report/"
 category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.3",
+  version: "0.2.1",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -52,6 +53,24 @@ parameter "param_billing_centers" do
   default []
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -67,13 +86,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -84,7 +142,7 @@ end
 script "js_dates", type: "javascript" do
   parameters "param_month"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   month = new Date().toISOString()
   if (param_month != "") { month = new Date(param_month).toISOString() }
   month = month.split('-')[0] + '-' + month.split('-')[1]
@@ -138,7 +196,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   symbol = "US$"
   code = "USD"
   separator = ","
@@ -193,7 +251,7 @@ end
 script "js_included_bcs", type: "javascript" do
   parameters "ds_billing_centers", "param_billing_centers"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_billing_centers.length > 0) {
     result = _.filter(ds_billing_centers, function(bc) {
       return _.contains(param_billing_centers, bc['id']) || _.contains(param_billing_centers, bc['name'])
@@ -232,7 +290,7 @@ end
 script "js_flexera_costs", type: "javascript" do
   parameters "ds_included_bcs", "ds_dates", "param_amortization", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   amortization = "cost_nonamortized_unblended_adj"
   if (param_amortization == "Amortized") { amortization = "cost_amortized_unblended_adj" }
 
@@ -270,13 +328,15 @@ EOS
 end
 
 datasource "ds_flexera_costs_normalized" do
-  run_script $js_flexera_costs_normalized, $ds_flexera_costs, $ds_applied_policy, $ds_dates, $ds_currency, $ds_included_bcs, $param_amortization, $param_billing_centers
+  run_script $js_flexera_costs_normalized, $ds_flexera_costs, $ds_applied_policy, $ds_dates, $ds_currency, $ds_included_bcs, $param_amortization, $param_billing_centers, $param_incident_csv
 end
 
 script "js_flexera_costs_normalized", type: "javascript" do
-  parameters "ds_flexera_costs", "ds_applied_policy", "ds_dates", "ds_currency", "ds_included_bcs", "param_amortization", "param_billing_centers"
+  parameters "ds_flexera_costs", "ds_applied_policy", "ds_dates", "ds_currency", "ds_included_bcs", "param_amortization", "param_billing_centers", "param_incident_csv"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   includedBCs = "All Billing Centers"
   if (param_billing_centers.length > 0) { includedBCs = _.pluck(ds_included_bcs, "name").join(", ") }
 
@@ -310,7 +370,8 @@ script "js_flexera_costs_normalized", type: "javascript" do
       chargePeriodStart: billingPeriodStart,
       chargePeriodEnd: chargePeriodEnd,
       cost: cost,
-      includedBCs: includedBCs
+      includedBCs: includedBCs,
+      csv_message: csv_message
     }
   })
 EOS
@@ -323,7 +384,11 @@ end
 policy "pol_flexera_focus_report" do
   validate_each $ds_flexera_costs_normalized do
     summary_template "{{ with index data 0 }}{{ .policyName }}{{ end }} - {{ with index data 0 }}{{ .billingPeriodStart }}{{ end }} - {{ with index data 0 }}{{ .amortization }}{{ end }}"
-    detail_template "Billing Centers: {{ with index data 0 }}{{ .includedBCs }}{{ end }}"
+    detail_template <<-'EOS'
+    Billing Centers: {{ with index data 0 }}{{ .includedBCs }}{{ end }}
+
+    {{ with index data 0 }}{{ .csv_message }}{{ end }}
+    EOS
     check eq(val(item, "ProviderName"), "")
     escalate $esc_email
     export do
@@ -385,5 +450,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

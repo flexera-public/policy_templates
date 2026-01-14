@@ -141,8 +141,8 @@ An additional paragraph should be included at the bottom if destructive actions 
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
-For example if a user selects the "Terminate Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be terminated.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
+For example if a user selects the "Terminate Instances" action while applying the policy template, all the resources that didn't satisfy the policy condition will be terminated.
 ```
 
 ### Policy Actions
@@ -163,7 +163,7 @@ This section should contain a list of all possible actions the policy template c
 This section outlines the requirements for using the policy template. This will always begin with information about credentials and should always start with the following paragraph:
 
 ```text
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 ```
 
 This should be followed by an itemized list of every credential required for the policy template. Each credential should include a link to Flexera documentation about the credential, a description of the expected provider tag for the credential, and a list of specific permissions the credential needs. Optional permissions for specific functionality should be indicated with a `*` character and a footnote.
@@ -327,6 +327,10 @@ The following guidelines should be used when specifying policy template metadata
 - __long_description__
   - Always set to an empty string.
 
+- __doc_link__
+  - Should be a link to the policy template in the Github repository.
+  - _Example_: `https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/`
+
 - __category__
   - Should be set to one of the following categories based on the policy template's intended purpose: Compliance, Cost, Operational, SaaS Management, Security
 
@@ -357,6 +361,7 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Check for EC2 instances that have inefficient utilization for a specified number of days and downsizes or terminates them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/"
 severity "low"
 category "Cost"
 default_frequency "weekly"
@@ -500,7 +505,7 @@ The following guidelines should be used for `script` blocks:
 script "js_aws_account", type:"javascript" do
   parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.find(ds_cloud_vendor_accounts, function(account) {
     return account['id'] == ds_get_caller_identity[0]['account']
   })
@@ -530,18 +535,25 @@ The following guidelines should be used for the `policy` block:
   1. `export`
 
 - For the `summary_template` field:
-  - Include the name of the applied policy itself. This is to make it easier to know which policy template the incident is associated with on the Automation -> Incidents page in Flexera One.
+  - Should include the applied policy name and describe the thing the incident is reporting. If relevant, it should also indicate the number of resources being reported in the incident.
+    - Example: "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Old Snapshots Found"
+  - Should _not_ contain escape characters, such as `\n` and `\t`. These will cause the incident email to render incorrectly as raw HTML code.
+  - Should _not_ make use of a heredoc, such as `<<-EOS`, for the same reason.
 
 - For the `detail_template` field:
+  - Should contain useful information for contextualizing the contents of the incident table. For example, if the policy template is reporting unused disks, it should explain how we determined the disks were unused.
   - Use complete English sentences with proper grammar/spelling where it makes sense to do so.
   - __Currency__: Include currency symbol and appropriate separators. _Example_: `US$ 123,456.78`
   - __Percentages__: Append `%`. _Example_: `89.45%`
 
 - For the `export` field:
+  - Should contain the actual resources or items being reported by the incident when applicable.
   - Place fields with data the user is more likely to care about near the top of the list.
-  - Avoid putting currency symbols, percentage signs, or other characters in fields that contain numbers. This tends to break sorting, making the column less usable.
-    - Either place the symbol in the name of the field itself (_Example_: `CPU Usage (%)`) or include it in a separate column.
   - Sort the data by whichever field(s) make sense. For example, for a recommendations policy template, the largest potential savings should be at the top.
+  - The data in each field should be either strings or numbers, but in most cases, should not contain a mix of the two. Mixing the two will prevent the user from easily sorting data by number and making use of it in external tools, such as Excel.
+    - Avoid putting currency symbols, percentage signs, or other characters in fields that contain numbers. This tends to break sorting, making the column less usable. Either place the symbol in the name of the field itself (_Example_: `CPU Usage (%)`) or include it in a separate column.
+    - For fields that primarily contain numerical data, do not put "No value provided", "N/A", etc. for entries that lack a value. They should simply have a blank value. Additional contextualization, if needed, can be put in the `detail_template` field.
+  - Any fields that will contain JavaScript objects needed for Cloud Workflow automation, instead of information the user will need to see, should be at the end of the list.
   - For policy templates that produce recommendations for the Optimization Dashboard, [specific export fields are required](https://docs.flexera.com/flexera/EN/Automation/CreateRecomendationFromPolicyTemp.htm).
 
 #### Example

@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Downloads cost reports from Alibaba Cloud and then uploads them to a Flexera CBI endpoint. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/alibaba/alibaba_cbi) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/alibaba/alibaba_cbi"
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.1.0",
+  version: "0.1.4",
   provider: "Alibaba",
   service: "Common Bill Ingestion",
   policy_set: "Common Bill Ingestion",
@@ -123,16 +124,6 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-# Get applied policy metadata for use later
-datasource "ds_applied_policy" do
-  request do
-    auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
-  end
-end
-
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -141,24 +132,45 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
       flexera: "api.flexera.com",
-      fsm: "api.fsm.flexeraeng.com"
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
       flexera: "api.flexera.eu",
-      fsm: "api.fsm-eu.flexeraeng.com"
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
       flexera: "api.flexera.au",
-      fsm: "api.fsm-apac.flexeraeng.com"
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
     }
   }
 
   result = host_table[rs_optima_host]
 EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
 end
 
 datasource "ds_dates" do
@@ -168,7 +180,7 @@ end
 script "js_dates", type: "javascript" do
   parameters "param_billing_period", "param_specific_period", "param_frequency"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   period = param_specific_period
 
   if (param_billing_period != 'Specific Month') {
@@ -223,7 +235,7 @@ end
 script "js_cbi_endpoint_id", type: "javascript" do
   parameters "param_cbi_endpoint"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = param_cbi_endpoint != "" ? param_cbi_endpoint : "cbi-oi-alibaba-alibabacloud"
 EOS
 end
@@ -257,7 +269,7 @@ end
 script "js_to_create_bill_connect", type: "javascript" do
   parameters "ds_existing_bill_connects", "ds_cbi_endpoint_id"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   existing_bill_connect = _.find(ds_existing_bill_connects, function(connect) {
@@ -313,7 +325,7 @@ end
 script "js_cbi_endpoint", type: "javascript" do
   parameters "ds_create_bill_connect", "ds_existing_bill_connects", "ds_cbi_endpoint_id"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (ds_create_bill_connect.length > 0) {
     result = ds_create_bill_connect[0]
   } else {
@@ -349,7 +361,7 @@ end
 script "js_pending_bill_uploads", type: "javascript" do
   parameters "ds_existing_bill_uploads", "ds_cbi_endpoint_id"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.filter(ds_existing_bill_uploads, function(item) {
     return item["billConnectId"] == ds_cbi_endpoint_id && item["status"] != "complete" && item["status"] != "aborted"
   })
@@ -396,7 +408,7 @@ end
 script "js_cbi_create_bill_upload", type: "javascript" do
   parameters "cbi_endpoint", "period", "ds_abort_pending_bill_uploads", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   function sleep(seconds) {
     now = new Date().getTime()
     while(new Date().getTime() < now + (seconds * 1000)) { /* Do nothing */ }
@@ -466,7 +478,7 @@ end
 script "js_cbi_upload_files", type: "javascript" do
   parameters "cost_report", "ds_cbi_create_bill_upload", "ds_dates", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   function sleep(seconds) {
     now = new Date().getTime()
     while(new Date().getTime() < now + (seconds * 1000)) { /* Do nothing */ }
@@ -508,7 +520,7 @@ end
 script "js_cbi_commit_bill_upload", type: "javascript" do
   parameters "ds_cbi_upload_files", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   function sleep(seconds) {
     now = new Date().getTime()
     while(new Date().getTime() < now + (seconds * 1000)) { /* Do nothing */ }
@@ -538,7 +550,7 @@ end
 script "js_incident", type: "javascript" do
   parameters "ds_cbi_commit_bill_upload", "ds_applied_policy", "param_account_id", "param_region", "param_bucket", "param_path"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = [{
     policy_name: ds_applied_policy['name'],
     id: ds_cbi_commit_bill_upload['id'],

@@ -3,15 +3,17 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Schedules Azure virtual machines to start and stop at specific times based on a configuration stored in the virtual machine's tags. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/schedule_instance/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/azure/schedule_instance/"
 category "Cost"
 severity "low"
 default_frequency "15 minutes"
 info(
-  version: "7.0.1",
+  version: "7.0.9",
   provider: "Azure",
   service: "Compute",
   policy_set: "Schedule Instance",
-  hide_skip_approvals: "true"
+  hide_skip_approvals: "true",
+  enable_child_schedule_options: "true"
 )
 
 ###############################################################################
@@ -164,6 +166,7 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
 end
@@ -171,24 +174,34 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-      api: "api.flexera.com",
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
       ui: "app.flexera.com",
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-      api: "api.flexera.eu",
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
       ui: "app.flexera.eu",
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-      api: "api.flexera.au",
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
       ui: "app.flexera.au",
       tld: "flexera.au"
     }
   }
+
   result = host_table[rs_optima_host]
 EOS
 end
@@ -293,7 +306,7 @@ end
 script "js_policy_incident_action_most_recent", type: "javascript" do
   parameters "ds_policy_incident_action_status", "ds_applied_policy", "ds_flexera_api_hosts"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   // Define the action labels we are interested in and placeholder to store matches
@@ -333,7 +346,7 @@ end
 script "js_policy_incident_action_failed_details", type: "javascript" do
   parameters "ds_policy_incident_action_most_recent", "ds_instances_schedule_result_with_last_action_status"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Filter only the failed actions
   var actions = _.filter(ds_policy_incident_action_most_recent, function(action) {
     return action.action_status == 'failed'
@@ -372,7 +385,7 @@ end
 script "js_policy_incident_action_completed_details", type: "javascript" do
   parameters "ds_policy_incident_action_most_recent"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Filter only the completed actions
   var actions = _.filter(ds_policy_incident_action_most_recent, function(action) {
     return action.action_status == 'completed'
@@ -396,9 +409,8 @@ end
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -433,7 +445,7 @@ end
 script "js_azure_subscriptions_filtered", type: "javascript" do
   parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_subscriptions_list.length > 0) {
     result = _.filter(ds_azure_subscriptions, function(subscription) {
       include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
@@ -486,7 +498,7 @@ end
 script "js_azure_instances_tag_filtered", type: "javascript" do
   parameters "ds_azure_instances", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_tag_schedule"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -571,7 +583,7 @@ end
 script "js_azure_instances_region_filtered", type: "javascript" do
   parameters "ds_azure_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_regions_list.length > 0) {
     result = _.filter(ds_azure_instances_tag_filtered, function(vm) {
       include_vm = _.contains(param_regions_list, vm['region'])
@@ -623,7 +635,7 @@ end
 script "js_instances_with_schedule", type: "javascript" do
   parameters "ds_azure_instances_with_status", "ds_applied_policy", "ds_azure_directory", "param_tag_schedule"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
   now = new Date()
 
@@ -801,7 +813,7 @@ end
 script "js_instances_schedule_result_action_start", type: "javascript" do
   parameters "ds_instances_schedule_result", "param_enforce_schedules", "param_tag_schedule_action"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   var result = []
   var enforce_schedule_enabled = param_enforce_schedules == "Yes"
   // Force Action is a static string unless force action is enabled
@@ -873,7 +885,7 @@ end
 script "js_instances_schedule_result_action_stop", type: "javascript" do
   parameters "ds_instances_schedule_result", "param_enforce_schedules", "param_tag_schedule_action"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   var result = []
   var enforce_schedule_enabled = param_enforce_schedules == "Yes"
   // Force Action is a static string unless force action is enabled
@@ -939,7 +951,7 @@ end
 script "js_instances_schedule_result_with_last_action_status", type: "javascript" do
   parameters "ds_instances_schedule_result", "ds_policy_incident_details", "ds_policy_incident_action_most_recent"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Set result to ds_instances_schedule_result which is most recent list of instances with schedules
   var result = ds_instances_schedule_result
 
@@ -957,9 +969,9 @@ script "js_instances_schedule_result_with_last_action_status", type: "javascript
     _.each(result, function(instance) {
       if (instance_map && instance_map[instance['resourceID']]) {
         var instance_details = instance_map[instance['resourceID']]
-        instance['last_start_status'] = instance_details[0]['last_start_status']? instance_details[0]['last_start_status'] : "Unknown"
+        instance['last_start_status'] = instance_details[0]['last_start_status']? instance_details[0]['last_start_status'] : "No Action"
         instance['last_start_finished'] = instance_details[0]['last_start_finished']? instance_details[0]['last_start_finished'] : "Unknown"
-        instance['last_stop_status'] = instance_details[0]['last_stop_status']? instance_details[0]['last_stop_status'] : "Unknown"
+        instance['last_stop_status'] = instance_details[0]['last_stop_status']? instance_details[0]['last_stop_status'] : "No Action"
         instance['last_stop_finished'] = instance_details[0]['last_stop_finished']? instance_details[0]['last_stop_finished'] : "Unknown"
       }
     })
@@ -1015,7 +1027,7 @@ end
 policy "pol_schedule_instance" do
   validate $ds_policy_incident_action_completed_details do
     summary_template "{{ with index data.actions 0 }}{{ .policy_name }}{{ end }}: Completed Actions"
-    detail_template <<-EOS
+    detail_template <<-'EOS'
 **Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})**
 
 The following actions completed successfully:
@@ -1102,7 +1114,7 @@ The following actions completed successfully:
 
   validate $ds_policy_incident_action_failed_details do
     summary_template "{{ with index data.actions 0 }}{{ .policy_name }}{{ end }}: Failed Actions"
-    detail_template <<-EOS
+    detail_template <<-'EOS'
 **Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})**
 
 The following actions failed:
@@ -1184,7 +1196,7 @@ Failed:
 
   validate_each $ds_instances_schedule_result_action_start do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Starting {{ len data }} Instances"
-    detail_template <<-EOS
+    detail_template <<-'EOS'
 **Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})**
 
 The following Azure Instances are scheduled to start now:
@@ -1262,7 +1274,7 @@ The following Azure Instances are scheduled to start now:
 
   validate_each $ds_instances_schedule_result_action_stop do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Stopping {{ len data }} Instances"
-    detail_template <<-EOS
+    detail_template <<-'EOS'
 **Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})**
 
 The following Azure Instances are scheduled to stop now:
@@ -1340,7 +1352,7 @@ The following Azure Instances are scheduled to stop now:
 
   validate_each $ds_instances_schedule_result_with_last_action_status do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Scheduled Instances"
-    detail_template <<-EOS
+    detail_template <<-'EOS'
 **Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})**
 
 The following Azure Scheduled Instances have tag `{{ parameters.param_tag_schedule }}` and will be automatically started and stopped on a schedule.
@@ -2026,14 +2038,12 @@ end
 
 # If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
 # if it is set we will look for the parent policy.
-datasource "ds_get_policy" do
+datasource "ds_get_parent_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
-    # path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", "677c8b0030e2c6ca5d998679"]) # For Dev Only
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
   end
   result do
     encoding "json"
@@ -2041,59 +2051,42 @@ datasource "ds_get_policy" do
   end
 end
 
-datasource "ds_parent_policy_terminated" do
-  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
-end
-
 # If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
 # This information is used in two places:
 # - determining whether or not we make a delete call
 # - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
-script "js_decide_if_self_terminate", type: "javascript" do
-  parameters "found", "self_policy_id", "meta_parent_policy_id"
-  result "result"
-  code <<-EOS
-  var result
-  if (meta_parent_policy_id != "" && found.id == undefined) {
-    result = true
-  } else {
-    result = false
-  }
-  EOS
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
 end
 
-datasource "ds_terminate_self" do
-  request do
-    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
-  end
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
+  result "result"
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
 end
 
 # Two potentials ways to set this up:
 # - this way and make a unneeded 'get' request when not deleting
 # - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
-script "js_make_terminate_request", type: "javascript" do
-  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
-  result "request"
-  code <<-EOS
-
-  var request = {
-    auth:  'auth_flexera',
-    host: rs_governance_host,
-    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
-    headers: {
-      "API-Version": "1.0",
-      "Content-Type":"application/json"
-    },
-  }
-
-  if (should_delete) {
-    request.verb = 'DELETE'
-  }
-  EOS
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
+  end
 end
 
-datasource "ds_is_deleted" do
-  run_script $js_check_deleted, $ds_terminate_self
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
 end
 
 # This is just a way to have the check delete request connect to the farthest leaf from policy.
@@ -2102,10 +2095,12 @@ end
 # The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
 # would not have access to self-terminate
 # It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
-script "js_check_deleted", type: "javascript" do
-  parameters "response"
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
   result "result"
-  code <<-EOS
-  result = {"path":"/"}
-  EOS
+  code 'result = { path: "/"}'
 end

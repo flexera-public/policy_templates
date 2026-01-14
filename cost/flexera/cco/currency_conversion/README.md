@@ -6,7 +6,7 @@ This policy template creates adjustment rules that convert the currency of the c
 
 ## How It Works
 
-- This policy supports currency codes as per [ISO 4217](https://www.xe.com/iso4217.php), and uses the xe.com API to retrieve monthly average exchange rate.
+- This policy supports currency codes as per [ISO 4217](https://www.iban.com/currency-codes), and uses the xe.com API to retrieve monthly average exchange rate.
 - This policy supports four cloud providers natively: AWS, Azure, Google Cloud, and Oracle Cloud.
 - This policy also supports custom cloud provider names to handle specialized use cases.
 - This policy creates an adjustment rule for currency conversion using the exchange rate from xe.com.
@@ -15,11 +15,15 @@ This policy template creates adjustment rules that convert the currency of the c
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *Backfill Adjustments* - Whether to add/modify currency conversion to just the current month or to backfill previous months.
 - *Backfill Start Date* - The month and year in YYYY-MM format to backfill adjustments to. Only applicable if `Backfill Previous Months` is selected for the `Backfill Adjustments` parameter.
 - *Backfill Exchange Rates* - Whether or not to use the current exchange rate, or the exchange rate at the time, when applying currency conversion to previous months. Only applicable if `Backfill Previous Months` is selected for the `Backfill Adjustments` parameter.
+- *Bring Adjustments Forward* - Whether to automatically fill months with no adjustments with the adjustments from the previous month.
+  - Example: You run this policy template in June 2025 and you choose to backfill starting in January 2025. You currently only have adjustment rules for January 2025 and March 2025.
+    - With this option enabled, the existing adjustment rules for January 2025 will be carried forward to February, and existing rules for March 2025 will be carried forward to April, May, and June.
+    - With this option disabled, the only adjustment rules for March, April, May, and June will be the currency conversion adjustment created by this policy template. This means, for those months, the rules configured for January 2025 and March 2025 respectively will no longer apply for those months when they did previously.
 - *Dimensions* - The Flexera CCO cost dimension names/ids and values to apply the currency conversion to in 'Dimension=Value' format. Example: Cloud Vendor=AWS
 - *Dimensions Boolean* - Whether to apply the currency conversion to costs that match any of the criteria in the `Dimensions` parameter or only those that match all of them. Only applicable if more than one value is specified for the `Dimensions` parameter.
 - *Currency From* - Currency you want to convert from (based on ISO 4217 codes - e.g., 'USD' for US Dollar)
@@ -32,7 +36,7 @@ This policy has the following input parameters required when launching the polic
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `enterprise_manager`

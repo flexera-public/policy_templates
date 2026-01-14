@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Reports Request Rightsizing Recommendations from Kubecost. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/sizing/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/kubecost/sizing/"
 category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.4.2",
+  version: "0.5.1",
   provider: "Kubecost",
   service: "Kubernetes",
   policy_set: "Rightsize Containers",
@@ -122,6 +123,24 @@ parameter "param_mem_util" do
   default 80
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -137,13 +156,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
@@ -189,7 +247,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_kubecost_currency_code", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   code = ds_kubecost_currency_code['code'].toUpperCase().trim()
   if (code == '') { code = ds_currency_code['value'] }
   if (typeof(code) != 'string' || code == '') { code = 'USD' }
@@ -230,7 +288,7 @@ end
 script "js_sizing_recommendation_request_list", type: "javascript" do
   parameters "ds_clusters", "param_scope", "param_cpu_algo", "param_cpu_q", "param_mem_algo", "param_mem_q", "param_lookback", "param_cpu_util", "param_mem_util"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   cpu_util = (param_cpu_util / 100).toString()
   mem_util = (param_mem_util / 100).toString()
 
@@ -290,13 +348,15 @@ datasource "ds_request_sizing" do
 end
 
 datasource "ds_recommendations" do
-  run_script $js_recommendations, $ds_request_sizing, $ds_clusters, $ds_currency, $ds_applied_policy, $param_min_savings, $param_scope, $param_lookback, $param_cpu_algo, $param_cpu_q, $param_cpu_util, $param_mem_algo, $param_mem_q, $param_mem_util
+  run_script $js_recommendations, $ds_request_sizing, $ds_clusters, $ds_currency, $ds_applied_policy, $param_min_savings, $param_scope, $param_lookback, $param_cpu_algo, $param_cpu_q, $param_cpu_util, $param_mem_algo, $param_mem_q, $param_mem_util, $param_incident_csv
 end
 
 script "js_recommendations", type: "javascript" do
-  parameters "ds_request_sizing", "ds_clusters", "ds_currency", "ds_applied_policy", "param_min_savings", "param_scope", "param_lookback", "param_cpu_algo", "param_cpu_q", "param_cpu_util", "param_mem_algo", "param_mem_q", "param_mem_util"
+  parameters "ds_request_sizing", "ds_clusters", "ds_currency", "ds_applied_policy", "param_min_savings", "param_scope", "param_lookback", "param_cpu_algo", "param_cpu_q", "param_cpu_util", "param_mem_algo", "param_mem_q", "param_mem_util", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -403,7 +463,8 @@ script "js_recommendations", type: "javascript" do
       "- Memory Assessment Algorithm: ", param_mem_algo, "\n",
       "- Memory Percentile: ", param_mem_q, "%\n",
       "- Target Memory Utilization: ", param_mem_util, "%\n\n",
-      "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+      "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n",
+      csv_message
     ].join('')
   }
 EOS
@@ -514,5 +575,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

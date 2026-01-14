@@ -1,5 +1,30 @@
 # Changelog
 
+## v4.0.5
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v4.0.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v4.0.3
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v4.0.2
+
+- Fixed issue with "Ignore Current Month" when "Month" granularity is used.
+
+## v4.0.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v4.0.0
+
+- Added option to ignore current month when reporting.
+- Added ability to select an arbitrary number of months (up to 12) instead of preselected options.
+
 ## v3.5.2
 
 - Fixed a bug that prevented the policy incident from being created when `Billing Term` parameter was set to `Week`.

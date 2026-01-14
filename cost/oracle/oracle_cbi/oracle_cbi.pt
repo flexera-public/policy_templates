@@ -3,16 +3,16 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Downloads cost reports from Oracle Cloud (OCI) and then uploads them to a Flexera CBI endpoint. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/oracle_cbi) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/oracle_cbi"
 severity "low"
 category "Cost"
 default_frequency "15 minutes"
 info(
-  version: "3.2.3",
+  version: "3.3.4",
   provider: "Oracle",
   service: "Common Bill Ingestion",
   policy_set: "Common Bill Ingestion",
-  hide_skip_approvals: "true",
-  skip_permissions: "true"
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -58,8 +58,24 @@ parameter "param_bucket" do
   type "string"
   category "Oracle"
   label "Oracle Cloud Cost & Usage Bucket"
-  description "OCID of the Oracle Cloud Object Storage bucket containing the Cost and Usage reports."
+  description "Name of the Oracle Cloud Object Storage bucket containing the Cost and Usage reports."
   # No default value, user input required
+end
+
+parameter "param_namespace" do
+  type "string"
+  category "Oracle"
+  label "Oracle Cloud Cost & Usage Namespace"
+  description "Namespace that contains the bucket with the Cost and Usage reports. Default value of 'bling' should be used unless you're retrieving your cost reports from a custom bucket."
+  default "bling"
+end
+
+parameter "param_prefix" do
+  type "string"
+  category "Oracle"
+  label "Oracle Cloud Cost & Usage Prefix"
+  description "The object prefix for Cost and Usage reports. Leave blank to not filter objects by prefix. Should be left at default value unless you're retrieving your cost reports from a custom bucket."
+  default "reports/cost-csv/"
 end
 
 parameter "param_block_size" do
@@ -124,7 +140,7 @@ end
 script "js_dates", type: "javascript" do
   parameters "param_billing_period", "param_specific_period"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = { period: param_specific_period }
 
   if (param_billing_period != 'Specific Month') {
@@ -164,7 +180,7 @@ end
 script "js_broken_bill_uploads", type: "javascript" do
   parameters "ds_existing_bill_uploads"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.filter(ds_existing_bill_uploads, function(bill_upload) {
     broken_files = false
 
@@ -196,7 +212,7 @@ end
 script "js_abort_broken_uploads", type: "javascript" do
   parameters "bill_upload_id", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // Slow down rate of requests to prevent throttling
   api_wait = 5
   var now = new Date().getTime()
@@ -226,7 +242,7 @@ end
 script "js_bill_upload_check", type: "javascript" do
   parameters "ds_existing_bill_uploads", "ds_abort_broken_uploads"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = [1]
   broken_upload_ids = _.pluck(ds_abort_broken_uploads, 'id')
 
@@ -278,7 +294,7 @@ end
 script "js_bill_upload", type: "javascript" do
   parameters "ds_existing_bill_uploads", "ds_create_bill_upload"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (ds_create_bill_upload.length != 0) {
     result = ds_create_bill_upload[0]
   } else {
@@ -291,13 +307,7 @@ end
 
 datasource "ds_cost_object_list" do
   request do
-    auth $auth_oracle
-    pagination $pagination_oracle
-    host join(["objectstorage.", $param_region, ".oraclecloud.com"])
-    path join(["/n/bling/b/", $param_bucket, "/o/"])
-    query "prefix", "reports/cost-csv/"
-    query "fields", "name,etag,md5,timeCreated,timeModified"
-    header "User-Agent", "RS Policies"
+    run_script $js_cost_object_list, $param_region, $param_namespace, $param_bucket, $param_prefix
   end
   result do
     encoding "json"
@@ -311,6 +321,23 @@ datasource "ds_cost_object_list" do
   end
 end
 
+script "js_cost_object_list", type: "javascript" do
+  parameters "param_region", "param_namespace", "param_bucket", "param_prefix"
+  result "request"
+  code <<-'EOS'
+  query_params = { fields: "name,etag,md5,timeCreated,timeModified" }
+  if (param_prefix != "") { query_params["prefix"] = param_prefix }
+
+  var request = {
+    auth: "auth_oracle",
+    pagination: "pagination_oracle",
+    host: [ "objectstorage.", param_region, ".oraclecloud.com" ].join(''),
+    path: [ "/n/", param_namespace, "/b/", param_bucket, "/o/" ].join(''),
+    query_params: query_params
+  }
+EOS
+end
+
 datasource "ds_cost_object_list_current_month" do
   run_script $js_cost_object_list_current_month, $ds_cost_object_list, $ds_dates
 end
@@ -318,7 +345,7 @@ end
 script "js_cost_object_list_current_month", type: "javascript" do
   parameters "ds_cost_object_list", "ds_dates"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   period = new Date(ds_dates['period'])
 
   result = _.filter(ds_cost_object_list, function(object) {
@@ -335,7 +362,7 @@ end
 script "js_cost_object_list_filtered", type: "javascript" do
   parameters "ds_cost_object_list_current_month", "ds_bill_upload", "param_block_size"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
   bill_upload_length = 0
 
@@ -355,7 +382,7 @@ datasource "ds_cost_objects" do
   request do
     auth $auth_oracle
     host join(["objectstorage.", $param_region, ".oraclecloud.com"])
-    path join(["/n/bling/b/", $param_bucket, "/o/", val(iter_item, "name")])
+    path join(["/n/", $param_namespace, "/b/", $param_bucket, "/o/", val(iter_item, "name")])
     header "User-Agent", "RS Policies"
   end
   result do
@@ -383,7 +410,7 @@ end
 script "js_upload_file", type: "javascript" do
   parameters "oracle_cost_file", "ds_bill_upload", "ds_dates", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // Slow down rate of requests to prevent throttling
   api_wait = 3
   var now = new Date().getTime()
@@ -410,7 +437,7 @@ end
 script "js_commit_assess", type: "javascript" do
   parameters "ds_upload_file", "ds_cost_object_list_current_month", "ds_dates", "ds_bill_upload", "param_commit_delay"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   if (ds_bill_upload['files'] != null && ds_bill_upload['files'] != undefined) {
@@ -456,7 +483,7 @@ end
 script "js_commit_bill_upload", type: "javascript" do
   parameters "bill_upload_id", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // Slow down rate of requests to prevent throttling
   api_wait = 5
   var now = new Date().getTime()

@@ -1,5 +1,33 @@
 # Changelog
 
+## v3.1.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v3.1.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v3.0.7
+
+- Changed description to say "policy template" for clarity. Functionality unchanged.
+
+## v3.0.6
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v3.0.5
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v3.0.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v3.0.3
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v3.0.2
 
 - Updated service field in metadata to "Identity & Access Management". Functionality unchanged.

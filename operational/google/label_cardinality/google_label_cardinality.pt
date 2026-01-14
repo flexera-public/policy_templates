@@ -3,11 +3,12 @@ rs_pt_ver 20180301
 type "policy"
 short_description "Generates a label cardinality report for Google Projects and Resources. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/google/label_cardinality) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/operational/google/label_cardinality"
 category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.0",
+  version: "0.3.2",
   provider: "Google",
   service: "Tags",
   policy_set: "Tag Cardinality",
@@ -61,6 +62,24 @@ parameter "param_projects_ignore_app" do
   default "No"
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -96,31 +115,62 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
   end
 end
 
 datasource "ds_google_projects" do
   request do
-    auth $auth_google
-    pagination $pagination_google
-    host "cloudresourcemanager.googleapis.com"
-    path "/v1/projects/"
-    query "filter", "(lifecycleState:ACTIVE)"
-    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
-    # Forces `ds_is_deleted` datasource to run first during policy execution
-    header "Meta-Flexera", val($ds_is_deleted, "path")
+    run_script $js_google_projects, $ds_is_deleted, $param_projects_ignore_sys, $param_projects_ignore_app
   end
   result do
     encoding "json"
     collect jmes_path(response, "projects[*]") do
-      field "number", jmes_path(col_item, "projectNumber")
       field "id", jmes_path(col_item, "projectId")
       field "name", jmes_path(col_item, "name")
       field "labels", jmes_path(col_item, "labels")
@@ -128,17 +178,40 @@ datasource "ds_google_projects" do
   end
 end
 
+script "js_google_projects", type: "javascript" do
+  parameters "ds_is_deleted", "param_projects_ignore_sys", "param_projects_ignore_app"
+  result "request"
+  code <<-'EOS'
+  query = []
+  if (param_projects_ignore_sys == "Yes") { query.push("-projectId:sys-") }
+  if (param_projects_ignore_app == "Yes") { query.push("-projectId:app-") }
+
+  var request = {
+    auth: "auth_google",
+    pagination: "pagination_google",
+    host: "cloudresourcemanager.googleapis.com",
+    path: "/v3/projects:search",
+    query_params: { "query": query.join(" ") },
+    // Header Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    // Forces `ds_is_deleted` datasource to run first during policy execution
+    headers: {
+      "Meta-Flexera": ds_is_deleted["path"]
+    }
+  }
+EOS
+end
+
 datasource "ds_google_projects_filtered" do
-  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list, $param_projects_ignore_sys, $param_projects_ignore_app
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
 end
 
 script "js_google_projects_filtered", type: "javascript" do
-  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_projects_list.length > 0) {
-    filtered = _.filter(ds_google_projects, function(project) {
-      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
+    result = _.filter(ds_google_projects, function(project) {
+      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name'])
 
       if (param_projects_allow_or_deny == "Deny") {
         include_project = !include_project
@@ -147,12 +220,8 @@ script "js_google_projects_filtered", type: "javascript" do
       return include_project
     })
   } else {
-    filtered = ds_google_projects
+    result = ds_google_projects
   }
-
-  result = _.reject(filtered, function(project) {
-    return (project['id'].substring(0, 4) == "sys-" && param_projects_ignore_sys == "Yes") || (project['id'].substring(0, 4) == "app-" && param_projects_ignore_app == "Yes")
-  })
 EOS
 end
 
@@ -163,7 +232,7 @@ end
 script "js_google_global_compute_resource_types", type: "javascript" do
   parameters "ds_google_projects_filtered"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   types = [
     "images",
     "snapshots"
@@ -176,7 +245,6 @@ script "js_google_global_compute_resource_types", type: "javascript" do
       result.push({
         id: project['id'],
         name: project['name'],
-        number: project['number'],
         type: type
       })
     })
@@ -203,7 +271,6 @@ datasource "ds_global_google_compute_resources" do
       field "type", val(iter_item, "type")
       field "projectId", val(iter_item, "id")
       field "projectName", val(iter_item, "name")
-      field "projectNumber", val(iter_item, "number")
     end
   end
 end
@@ -232,7 +299,6 @@ script "js_google_aggregated_compute_resource_types", type: "javascript" do
       result.push({
         id: project['id'],
         name: project['name'],
-        number: project['number'],
         type: type
       })
     })
@@ -256,7 +322,6 @@ datasource "ds_aggregated_google_compute_resources" do
     field "type", val(iter_item, "type")
     field "projectId", val(iter_item, "id")
     field "projectName", val(iter_item, "name")
-    field "projectNumber", val(iter_item, "number")
   end
 end
 
@@ -267,7 +332,7 @@ end
 script "js_google_compute_resources", type: "javascript" do
   parameters "aggregated_resources", "global_resources"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   _.each(aggregated_resources, function(response) {
@@ -281,8 +346,7 @@ script "js_google_compute_resources", type: "javascript" do
             selfLink: resource['selfLink'],
             type: response['type'],
             projectId: response['projectId'],
-            projectName: response['projectName'],
-            projectNumber: response['projectNumber']
+            projectName: response['projectName']
           }
         }))
       }
@@ -314,7 +378,6 @@ datasource "ds_google_sqladmin_resources" do
       field "type", "sqladmin.instances"
       field "projectId", val(iter_item, "id")
       field "projectName", val(iter_item, "name")
-      field "projectNumber", val(iter_item, "number")
     end
   end
 end
@@ -339,7 +402,6 @@ datasource "ds_google_storage_resources" do
       field "type", "storage.buckets"
       field "projectId", val(iter_item, "id")
       field "projectName", val(iter_item, "name")
-      field "projectNumber", val(iter_item, "number")
     end
   end
 end
@@ -363,7 +425,6 @@ datasource "ds_google_bigquery_datasets" do
       field "type", "bigquery.datasets"
       field "projectId", val(iter_item, "id")
       field "projectName", val(iter_item, "name")
-      field "projectNumber", val(iter_item, "number")
     end
   end
 end
@@ -388,7 +449,6 @@ datasource "ds_google_bigquery_tables" do
       field "datasetId", val(iter_item, "id")
       field "projectId", val(iter_item, "projectId")
       field "projectName", val(iter_item, "projectName")
-      field "projectNumber", val(iter_item, "projectNumber")
     end
   end
 end
@@ -400,23 +460,25 @@ end
 script "js_google_resources_combined", type: "javascript" do
   parameters "ds_google_compute_resources", "ds_google_sqladmin_resources", "ds_google_storage_resources", "ds_google_bigquery_datasets", "ds_google_bigquery_tables"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = ds_google_compute_resources.concat(ds_google_sqladmin_resources, ds_google_storage_resources, ds_google_bigquery_datasets, ds_google_bigquery_tables)
 EOS
 end
 
 datasource "ds_google_projects_label_list" do
-  run_script $js_label_lister, $ds_google_projects_filtered, $ds_applied_policy, "Project"
+  run_script $js_label_lister, $ds_google_projects_filtered, $ds_applied_policy, $param_incident_csv, "Project"
 end
 
 datasource "ds_google_resources_label_list" do
-  run_script $js_label_lister, $ds_google_resources_combined, $ds_applied_policy, "Resource"
+  run_script $js_label_lister, $ds_google_resources_combined, $ds_applied_policy, $param_incident_csv, "Resource"
 end
 
 script "js_label_lister", type: "javascript" do
-  parameters "labeled_list", "ds_applied_policy", "label_type"
+  parameters "labeled_list", "ds_applied_policy", "param_incident_csv", "label_type"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   labels = {}
   result = []
 
@@ -435,7 +497,8 @@ script "js_label_lister", type: "javascript" do
       key: key,
       cardinality: _.uniq(labels[key]).length,
       value_list: _.uniq(labels[key]).join(', '),
-      policy_name: ds_applied_policy['name']
+      policy_name: ds_applied_policy['name'],
+      csv_message: csv_message
     })
   })
 
@@ -450,7 +513,7 @@ end
 script "js_label_report", type: "javascript" do
   parameters "ds_google_projects_label_list", "ds_google_resources_label_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = ds_google_projects_label_list.concat(ds_google_resources_label_list)
 EOS
 end
@@ -462,6 +525,7 @@ end
 policy "pol_google_label_cardinality_report" do
   validate_each $ds_label_report do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Label Keys Found"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "key"), ""))
     escalate $esc_email
     export do
@@ -490,7 +554,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################
@@ -500,13 +567,12 @@ end
 
 # If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
 # if it is set we will look for the parent policy.
-datasource "ds_get_policy" do
+datasource "ds_get_parent_policy" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    ignore_status [404]
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
   end
   result do
     encoding "json"
@@ -514,59 +580,42 @@ datasource "ds_get_policy" do
   end
 end
 
-datasource "ds_parent_policy_terminated" do
-  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
-end
-
 # If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
 # This information is used in two places:
 # - determining whether or not we make a delete call
 # - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
-script "js_decide_if_self_terminate", type: "javascript" do
-  parameters "found", "self_policy_id", "meta_parent_policy_id"
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
   result "result"
-  code <<-EOS
-  var result
-  if (meta_parent_policy_id != "" && found.id == undefined) {
-    result = true
-  } else {
-    result = false
-  }
-  EOS
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
 end
 
 # Two potentials ways to set this up:
 # - this way and make a unneeded 'get' request when not deleting
 # - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
-script "js_make_terminate_request", type: "javascript" do
-  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
-  result "request"
-  code <<-EOS
-
-  var request = {
-    auth:  'auth_flexera',
-    host: rs_governance_host,
-    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
-    headers: {
-      "API-Version": "1.0",
-      "Content-Type":"application/json"
-    },
-  }
-
-  if (should_delete) {
-    request.verb = 'DELETE'
-  }
-  EOS
-end
-
 datasource "ds_terminate_self" do
   request do
-    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
   end
 end
 
-datasource "ds_is_deleted" do
-  run_script $js_check_deleted, $ds_terminate_self
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
 end
 
 # This is just a way to have the check delete request connect to the farthest leaf from policy.
@@ -575,10 +624,12 @@ end
 # The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
 # would not have access to self-terminate
 # It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
-script "js_check_deleted", type: "javascript" do
-  parameters "response"
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
   result "result"
-  code <<-EOS
-  result = {"path":"/"}
-  EOS
+  code 'result = { path: "/"}'
 end

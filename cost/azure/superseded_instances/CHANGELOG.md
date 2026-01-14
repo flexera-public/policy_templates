@@ -1,5 +1,46 @@
 # Changelog
 
+## v4.1.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v4.1.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v4.0.0
+
+- Recommendations now consider number of attached data disks. Sizes that would not support the current number of attached disks for an instance will not be recommended.
+- Azure credential now requires `Microsoft.Compute/locations/vmSizes/read` permission to support the above.
+
+## v3.0.2
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v3.0.1
+
+- Fixed lookup when using NFU comparison for estimated savings.
+
+## v3.0.0
+
+- Changed savings calculation to improve accuracy. See README for more details.
+
+## v2.1.7
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v2.1.6
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v2.1.5
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v2.1.4
+
+- Fixed error where policy would fail completely when finding the superseded instances prices.
+
 ## v2.1.3
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.

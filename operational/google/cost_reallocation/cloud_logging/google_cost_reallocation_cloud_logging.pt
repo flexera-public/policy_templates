@@ -1,0 +1,1264 @@
+name "Cost Reallocation - Google Cloud Logging"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reallocates Google Cloud Logging costs from centralized logging project(s) to the project where the logs were sourced from. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/google/cost_reallocation/cloud_logging/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/operational/google/cost_reallocation/cloud_logging/"
+severity "critical"
+default_frequency "hourly"
+category "Operational"
+info(
+  version: "0.1.2",
+  provider: "Google",
+  service: "Cloud Logging",
+  category: "Operational",
+  policy_set: "Cost Reallocation",
+  publish: "false",
+  hide_skip_approvals: "true",
+  skip_permissions: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_bill_connect_id" do
+  type "string"
+  category "Policy Settings"
+  label "Bill Connect ID"
+  description "Bill Connect ID to use for reallocating costs. Usually does not need to be changed, will be created if not exists."
+  allowed_pattern /cbi-oi-optima-[a-zA-Z0-9]*/
+  default "cbi-oi-optima-sharedgooglecloudlogging"
+end
+
+parameter "param_centralized_logging_projects" do
+  type "list"
+  category "Policy Settings"
+  label "Centralized Logging Projects"
+  description "List of centralized logging projects to reallocate costs from. Costs will be reallocated to the project where the logs were sourced from.  At least 1 project is required.  Can be the Name or Project ID."
+  # No default value, user input required
+end
+
+# This is only needed so we can deploy 2 applied policies -- one for current month, one for previous month
+# TODO: enhance this PT so only 1 applied policy needs to be deployed to update previous + current month at least once daily
+parameter "param_period" do
+  type "string"
+  category "Billing Period Settings"
+  label "Billing Period"
+  description "Billing Period this applied policy will update. If \"Specific Month\" is selected, use the \"Billing Period - Specific Month\" parameter to specify the month in \"YYYY-MM\" format."
+  allowed_values "Previous Month", "Current Month", "Specific Month"
+  default "Previous Month"
+end
+
+parameter "param_period_specific_month" do
+  type "string"
+  category "Billing Period Settings"
+  label "Billing Period - Specific Month"
+  description "If \"Specific Month\" is selected for Billing Period, use this parameter to specify the month in \"YYYY-MM\" format."
+  constraint_description "Specific Month parameter must be in the format of YYYY-MM"
+  allowed_pattern /^(?:\d{4}-\d{2})?$/
+  default ""
+end
+
+parameter "param_reallocation_granularity" do
+  type "string"
+  category "Advanced Settings"
+  label "Reallocated Cost Granularity"
+  description "Reallocated Cost Granularity configures the granularity for the new line items. Typically \"Day\" is preferred.  For some extremely large environments, you may need to change this to 'Month' to prevent Policy Engine timeouts."
+  allowed_values "Day", "Month"
+  default "Day"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credential."
+  tags "provider=flexera"
+end
+
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_google" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_google_projects" do
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "number", jmes_path(col_item, "projectNumber")
+      field "id", jmes_path(col_item, "projectId")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+# datasource "ds_gcp_folders" do
+#   request do
+#     auth $auth_google
+#     pagination $pagination_google
+#     host "cloudresourcemanager.googleapis.com"
+#     path "/v3/folders"
+#   end
+#   result do
+#     encoding "json"
+#     collect jmes_path(response, "folders[*]") do
+#       field "id", jmes_path(col_item, "name")
+#       field "name", jmes_path(col_item, "displayName")
+#     end
+#   end
+# end
+
+# datasource "ds_gcp_folder_projects" do
+#   iterate $ds_gcp_folders
+#   request do
+#     auth $auth_google
+#     pagination $pagination_google
+#     host "cloudresourcemanager.googleapis.com"
+#     path join(["/v3/", val(iter_item, "id"), "/projects"])
+#   end
+#   result do
+#     encoding "json"
+#     collect jmes_path(response, "projects[*]") do
+#       field "id", jmes_path(col_item, "projectId")
+#       field "name", jmes_path(col_item, "displayName")
+#       field "parent_folder", val(iter_item, "name")
+#     end
+#   end
+# end
+
+datasource "ds_google_projects_filtered" do
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_centralized_logging_projects
+end
+
+script "js_google_projects_filtered", type: "javascript" do
+  parameters "ds_google_projects", "param_centralized_logging_projects"
+  result "result"
+  code <<-'EOS'
+  if (param_centralized_logging_projects.length > 0) {
+    result = _.filter(ds_google_projects, function(project) {
+      include_project = _.contains(param_centralized_logging_projects, project['id']) || _.contains(param_centralized_logging_projects, project['name']) || _.contains(param_centralized_logging_projects, project['number'])
+      return include_project
+    })
+  } else {
+    result = ds_google_projects
+  }
+EOS
+end
+
+datasource "ds_google_projects_filtered_regions" do
+  iterate $ds_google_projects_filtered
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/", val(iter_item, "id"), "/regions/"])
+  end
+  result do
+    encoding "json"
+    # We only need the first region for each project
+    # The only datasource that uses this is the Prometheus Cloud Logging Utilization datasource
+    # The metrics are global, so we only need to know the region to query the metrics
+    collect jmes_path(response, "items[0]") do
+      field "id", val(iter_item, "id")
+      field "name", val(iter_item, "name")
+      field "number", val(iter_item, "number")
+      field "region", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_prometheus_cloud_logging_utilization" do
+  iterate $ds_google_projects_filtered_regions
+  request do
+    auth $auth_google
+    host "monitoring.googleapis.com"
+    path join(["/v1/projects/", val(iter_item, "id"), "/location/", val(iter_item, "region"), "/prometheus/api/v1/query"])
+    query "query", "sum by (log_bucket_id,log_source,resource_type)(logging_googleapis_com:billing_log_bucket_monthly_bytes_ingested)"
+    query "time", val($ds_dates, "end_date_google_metrics")
+  end
+  result do
+    encoding "json"
+    collect jq(response, ".data.result[]?") do
+      field "project_id", val(iter_item, "id")
+      field "project_name", val(iter_item, "name")
+      field "metric_log_bucket_id", jq(col_item, ".metric.log_bucket_id")
+      field "metric_log_source", jq(col_item, ".metric.log_source")
+      field "metric_resource_type", jq(col_item, ".metric.resource_type")
+      field "log_bucket_monthly_bytes_ingested", jq(col_item, ".value[1] | tonumber")
+    end
+  end
+end
+
+datasource "ds_cloud_logging_utilization_allocations" do
+  run_script $js_cloud_logging_utilization_allocations, $ds_prometheus_cloud_logging_utilization
+end
+
+script "js_cloud_logging_utilization_allocations", type: "javascript" do
+  parameters "ds_prometheus_cloud_logging_utilization"
+  result "result"
+  code <<-'EOS'
+  var metric_to_use = "log_bucket_monthly_bytes_ingested"
+
+  var total_usage = 0
+  _.each(ds_prometheus_cloud_logging_utilization, function(project) {
+    total_usage += project[metric_to_use]
+  })
+
+  var grouped = {}
+  var np_bytes_total = 0
+  _.each(ds_prometheus_cloud_logging_utilization, function(project) {
+    var log_source_type = project.metric_log_source.split('/')[0]
+    var log_source_id = project.metric_log_source.split('/')[1]
+    if (grouped[log_source_type] == undefined) {
+      grouped[log_source_type] = {}
+    }
+    if (grouped[log_source_type][log_source_id] == undefined) {
+      grouped[log_source_type][log_source_id] = {}
+    }
+    if (grouped[log_source_type][log_source_id][project.metric_log_bucket_id] == undefined) {
+      grouped[log_source_type][log_source_id][project.metric_log_bucket_id] = {}
+    }
+    if (grouped[log_source_type][log_source_id][project.metric_log_bucket_id][project.metric_resource_type] == undefined) {
+      grouped[log_source_type][log_source_id][project.metric_log_bucket_id][project.metric_resource_type] = 0
+    }
+    grouped[log_source_type][log_source_id][project.metric_log_bucket_id][project.metric_resource_type] += project[metric_to_use]
+  })
+  result = {
+    np_bytes_total: np_bytes_total,
+    total_usage: total_usage,
+    grouped: grouped
+  }
+EOS
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_existing_bill_connects" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "updated_at", jmes_path(col_item, "updated_at")
+      field "billIdentifier", jmes_path(col_item, "cbi.billIdentifier")
+      field "integrationId", jmes_path(col_item, "cbi.integrationId")
+      field "name", jmes_path(col_item, "cbi.name")
+      field "displayName", jmes_path(col_item, "cbi.params.displayName")
+      field "vendorName", jmes_path(col_item, "cbi.params.vendorName")
+    end
+  end
+end
+
+datasource "ds_bill_connect" do
+  request do
+    run_script $js_bill_connect, $ds_existing_bill_connects, $ds_flexera_api_hosts, $param_bill_connect_id, rs_org_id
+  end
+end
+
+script "js_bill_connect", type: "javascript" do
+  parameters "ds_existing_bill_connects", "ds_flexera_api_hosts", "param_bill_connect_id", "rs_org_id"
+  result "request"
+  code <<-'EOS'
+
+  // Default request payload to CREATE the bill connect
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: ds_flexera_api_hosts["flexera"],
+    path:  "/finops-onboarding/v1/orgs/" + rs_org_id + "/bill-connects/cbi",
+    body_fields: {
+      "billIdentifier": param_bill_connect_id.split('cbi-oi-optima-')[1],
+      "integrationId": "cbi-oi-optima",
+      "name": "Shared Costs: Google Cloud Logging",
+      "params": {
+        "displayName": "GCP",
+        "vendorName": "GCP"
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies"
+    }
+  }
+
+  // Check if ds_existing_bill_connects contains bill connect matching param_bill_connect_id
+  existing_bc = _.find(ds_existing_bill_connects, function(bc) {
+    return bc.id == param_bill_connect_id
+  })
+  // If we did, override the POST which would create the BC with a GET instead to take no action
+  if (_.isObject(existing_bc)) {
+    request["verb"] = "GET"
+    request["path"] = request["path"] + "/" + param_bill_connect_id
+  }
+
+EOS
+end
+
+datasource "ds_dates" do
+  run_script $js_dates, $param_period, $param_period_specific_month, $param_reallocation_granularity
+end
+
+script "js_dates", type: "javascript" do
+  parameters "param_period", "param_period_specific_month", "param_reallocation_granularity"
+  result "result"
+  code <<-'EOS'
+    var today = new Date()
+
+    // Switch or case statement in javascript for param_period values
+    switch(param_period) {
+      case "Current Month":
+        var start_date = new Date(today.getFullYear(), today.getMonth(), 1)
+        var end_date = new Date(today.getFullYear(), today.getMonth() + 1, 1)
+        // lets get the date for today in DD format so we can use it to construct the end_date_google_metrics
+        break
+      case "Previous Month":
+        var start_date = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+        var end_date = new Date(today.getFullYear(), today.getMonth(), 1)
+        break
+      case "Specific Month":
+        // Else assume user defined input of YYYY-MM
+        var param_split = param_period_specific_month.split('-')
+        var start_date = new Date(parseInt(param_split[0]), parseInt(param_split[1]) - 1, 1)
+        var end_date = new Date(parseInt(param_split[0]), parseInt(param_split[1]), 1)
+    }
+
+    start_date = start_date.toISOString().split('T')[0]
+    end_date = end_date.toISOString().split('T')[0]
+    var period = start_date.split('-')[0] + "-" + start_date.split('-')[1]
+
+    // Get number of days in the month
+    // Account for leap year and February
+    var numdays = new Date(end_date.split("-")[0], end_date.split("-")[1] - 1, 0).getDate()
+
+    // Timestamp for the request to Google Metrics API
+    // Default to last day of month at 23:30:00 UTC
+    // We are not seeing results back for timestamps after this (23:59:59, 23:59:00, 23:50:00, etc)
+    var end_date_google_metrics = period+"-"+numdays+"T23:30:00Z" // Google Metrics API is inclusive of end date and requires included timezone
+    if (param_period == "Current Month") {
+      // If we are processing current month, we use the start time for today's date to ensure we get metric values back
+      end_date_google_metrics = today.toISOString().split('T')[0]+"T00:00:00Z"
+    }
+
+    var result = {
+      // Daily prefered to prevent issue when reconciling costs (would introduce diff looking at daily cost vs monthly cost)
+      start_date: start_date,
+      end_date: end_date,
+      today_date: today.toISOString().split('T')[0],
+      end_date_google_metrics: end_date_google_metrics,
+      granularity: "day",
+      period: period, // YYYY-MM
+      numdays: numdays,
+    }
+
+    // Override if granularity is configured to Month
+    if (param_reallocation_granularity == "Month") {
+      result["granularity"] = "month",
+      // Parse just the YYYY-MM portion of the start_date and end_date
+      result["start_date"] = start_date.split('-')[0] + "-" + start_date.split('-')[1],
+      result["end_date"] = end_date.split('-')[0] + "-" + end_date.split('-')[1],
+      // If granularity is month, we can summarize the costs
+      // This will group everything by the dimensions specified and provide only 1 timestamp (the start_at date)
+      // This is OK because we only pull one month at a time so summarizing that 1 month period is fine
+      // Helps reduce the number of line items we have to process, and total policy runtime
+      result["summarized"] = "true"
+    }
+EOS
+end
+
+# We need to get the dimensions to see if there are any adjustments
+datasource "ds_dimensions" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
+  end
+  result do
+    collect jq(response, ".dimensions[]") do
+      field "id", jq(col_item, ".id")
+      field "name", jq(col_item, ".name")
+      field "type", jq(col_item, ".type")
+    end
+  end
+end
+
+# We need to get the RBDs to see if there are any rules that use tag dimension in the conditions
+datasource "ds_rule_based_dimensions" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions"])
+  end
+  result do
+    collect jq(response, ".values[]") do
+      field "id", jq(col_item, ".id")
+      field "name", jq(col_item, ".name")
+      field "effectiveAtRuleLists", jq(col_item, "[.ruleListLinks[].effectiveAt]")
+    end
+  end
+end
+
+# Flatten the ruleListLinks array so we can iterate over each rule
+
+datasource "ds_rule_based_dimensions_effectiveAt_list" do
+  run_script $js_rule_based_dimensions_effectiveAt_list, $ds_rule_based_dimensions
+end
+
+script "js_rule_based_dimensions_effectiveAt_list", type: "javascript" do
+  parameters "ds_rule_based_dimensions"
+  result "result"
+  code <<-'EOS'
+  var result = []
+  _.each(ds_rule_based_dimensions, function(rule_based_dimension) {
+    _.each(rule_based_dimension.effectiveAtRuleLists, function(effectiveAt) {
+      result.push({
+        "id": rule_based_dimension.id,
+        "name": rule_based_dimension.name,
+        "effectiveAt": effectiveAt
+      })
+    })
+  })
+EOS
+end
+
+datasource "ds_rule_based_dimensions_rules" do
+  iterate $ds_rule_based_dimensions_effectiveAt_list
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", val(iter_item, "effectiveAt")])
+  end
+end
+
+datasource "ds_tag_dimensions_used_in_rbd_rules" do
+  run_script $js_tag_dimensions_used_in_rbd_rules, $ds_rule_based_dimensions_rules
+end
+
+script "js_tag_dimensions_used_in_rbd_rules", type: "javascript" do
+  parameters "ds_rule_based_dimensions_rules"
+  result "result"
+  code <<-'EOS'
+  var result = []
+  // Recursively traverse the objects to find any object with key "dimension" and value that starts with "tag_"
+  function findTagDimensions(obj) {
+    var tag_dimensions = []
+    _.each(_.keys(obj), function(key) {
+      if (key == "dimension" && /^tag_.*/.test(obj[key])) {
+        tag_dimensions.push(obj[key])
+      } else if (typeof(obj[key]) == "object") {
+        tag_dimensions = tag_dimensions.concat(findTagDimensions(obj[key]))
+      }
+    })
+    return tag_dimensions
+  }
+  // For each RBD rules list, find the tag dimensions used in conditions
+  _.each(ds_rule_based_dimensions_rules, function(rule) {
+    result = result.concat(findTagDimensions(rule))
+  })
+  // Deduplicate the tag dimensions
+  result = _.uniq(result)
+EOS
+end
+
+datasource "ds_tag_dimensions_used_in_rbd_rules_tag_key" do
+  iterate $ds_tag_dimensions_used_in_rbd_rules
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/tag-dimensions/", iter_item])
+  end
+  result do
+    field "id", jq(response, ".id")
+    field "tag_key", jq(response, ".tags[0].key") # We only need 1 tag key
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_shared_cost" do
+  request do
+    run_script $js_shared_cost, $ds_billing_centers, $ds_dates, $ds_google_projects_filtered, $ds_dimensions, $param_bill_connect_id, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jq(response, '.rows[]') do
+      # Dimensions
+      field "dimensions", jq(col_item, ".dimensions")
+      # Metrics
+      field "costs", jq(col_item, ".metrics.cost_nonamortized_unblended_adj")
+      field "usage_amount", jq(col_item, ".metrics.usage_amount")
+      # Timestamp
+      field "timestamp", jq(col_item, ".timestamp")
+    end
+  end
+end
+
+script "js_shared_cost", type: "javascript" do
+  parameters "ds_billing_centers", "ds_dates", "ds_google_projects_filtered", "ds_dimensions", "param_bill_connect_id", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  // Get all billing center IDs from top-level billing centers
+  var top_level_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc.parent_id == null
+  })
+  // Pluck the IDs from the top-level billing centers
+  var top_level_bc_ids = _.pluck(top_level_bcs, 'id')
+
+  var payload = {
+    "billing_center_ids": top_level_bc_ids,
+    // Get all dimension values for shared costs
+    // We want to use all the same values/dimensions for the split cost line items
+    "dimensions": [
+      // "availability_zone", // Not a dimension that maps to CBI dimension
+      // "bill_entity", // Not a dimension that maps to CBI dimension
+      // "bill_source", // No value for Google Cloud Logging costs, disabling to keep dimension count <10
+      // At maximum 10 without bill source, we can do this mapping elsewhere
+      // "billing_account", // Not a dimension that maps to CBI dimension
+      "category",
+      // "database_edition", // Not a dimension that maps to CBI dimension
+      // "database_engine", // Not a dimension that maps to CBI dimension
+      // "deployment_option", // Not a dimension that maps to CBI dimension
+      // "instance_type", // No value for Google Cloud Logging costs, disabling to keep dimension count <10
+      // "instance_type_family", // Not a dimension that maps to CBI dimension
+      "invoice_id",
+      // "license_model", // Not a dimension that maps to CBI dimension
+      // "line_item_type", // No value for Google Cloud Logging costs, disabling to keep dimension count <10
+      // "manufacturer_name", // Not a dimension that maps to CBI dimension
+      // "meter_category", // Not a dimension that maps to CBI dimension
+      // "operating_system", // Not a dimension that maps to CBI dimension
+      // "product_order_name", // Not a dimension that maps to CBI dimension
+      "region",
+      // "resource_group", // No value for Google Cloud Logging costs, disabling to keep dimension count <10
+      "resource_type",
+      "service",
+      // "service_family", // Not a dimension that maps to CBI dimension
+      // "usage_type", // No value for Google Cloud Logging costs, disabling to keep dimension count <10
+      "usage_unit",
+      // "vendor", // Not a dimension that maps to CBI dimension
+      "vendor_account",
+      "vendor_account_name" // Vendor Account Name can be mapped from the vendor account ID.. if we need another dimension we can disable this and get it elsewhere
+    ],
+
+    // Work with only Raw Costs for shared cost reallocation (exclude Adjustments)
+    // Exclude costs managed by this Policy Template
+    "filter": {
+      "type": "and",
+      "expressions": [
+        // Only Google Costs
+        {
+          "dimension": "vendor",
+          "type": "equal",
+          "value": "GCP"
+        },
+        {
+          "dimension": "bill_source",
+          "type": "substring",
+          "substring": "gcp-"
+        },
+        // Exclude costs managed by this Policy Template
+        {
+          "type": "not",
+          "expression": {
+            "dimension":"bill_source",
+            "type":"equal",
+            "value": param_bill_connect_id
+          }
+        },
+        // In scope costs are only Google Cloud Logging costs
+        // Service=Cloud Logging
+        {
+          "dimension": "service",
+          "type": "equal",
+          "value": "Cloud Logging"
+        },
+        // Scope to only centralized logging accounts
+        {
+          "type": "or",
+          // One condition per google project from ds_google_projects_filtered
+          "expressions": _.map(ds_google_projects_filtered, function(project) {
+            return {
+              "dimension": "vendor_account",
+              "type": "equal",
+              "value": project.id
+            }
+          })
+        }
+      ]
+    },
+
+    "granularity": ds_dates['granularity'],
+
+    "metrics": [
+      "cost_nonamortized_unblended_adj",
+      "usage_amount"
+    ],
+
+    "end_at": ds_dates['end_date'],
+    "start_at": ds_dates['start_date']
+  }
+
+  // If granularity is month, summarize the costs
+  // This will group everything by the dimensions specified and provide only 1 timestamp (the start_at date)
+  // This is OK because we only pull one month at a time so summarizing that 1 month period is fine
+  // Helps reduce the number of line items we have to process, and total policy runtime
+  if (payload.granularity == "month") {
+    payload.summarized = true
+  }
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    verb: 'POST',
+    body_fields: payload,
+    headers: {
+      "User-Agent": "RS Policies",
+    }
+  }
+EOS
+end
+
+datasource "ds_cleaned_costs" do
+  run_script $js_cleaned_costs, $ds_shared_cost
+end
+
+script "js_cleaned_costs", type: "javascript" do
+  parameters "ds_shared_cost"
+  result "result"
+  code <<-'EOS'
+    // function logSample() logs a sample to the console every 5 minutes
+  // This is useful for debugging and monitoring the progress of the script
+  // Sampling is used to mitigate/prevent hitting the 1000 console log Policy Engine limit
+  eventLast = null // Default lastEvent to null so that the first logSample will always log
+  eventCount = 0 // Default eventCount to 0
+  function logSample(sample) {
+    delaySecondsBetweenSample = 10 // 10 seconds between log events
+    eventCount = eventCount + 1
+    var now = new Date()
+    var log_entry = "[Event "+eventCount.toString()+" @ "+now.toISOString()+"] "+JSON.stringify(sample)
+    // Check if eventLast was old than delaySecondsBetweenSample ago
+    if (eventLast == null || (now - eventLast) > delaySecondsBetweenSample*1000) {
+      eventLast = now
+      console.log(log_entry) // Excluded from console.log test
+    }
+  }
+
+  var shared_cost = {}
+  var shared_cost_total = 0
+  _.each(ds_shared_cost, function(bc) {
+    if (bc['costs']+bc['usage_amount'] != 0) {
+      date = bc['timestamp'].split('T')[0]
+      day = parseInt(date.split('-')[2])
+
+      if (shared_cost[day] == undefined) {
+        shared_cost[day] = []
+      }
+
+      obj = {}
+      _.each(_.keys(bc['dimensions']), function(dimension) {
+        obj[dimension] = bc['dimensions'][dimension]
+      })
+      obj['costs'] = bc['costs']
+      obj['usage_amount'] = bc['usage_amount']
+      obj['timestamp'] = bc['timestamp']
+      obj['date'] = date
+
+      shared_cost[day].push(obj)
+      shared_cost_total += bc['costs']
+    }
+  })
+
+  result = {
+    'shared_costs': shared_cost,
+    'shared_costs_total': shared_cost_total
+  }
+EOS
+end
+
+datasource "ds_calculated_proportions" do
+  run_script $js_calculated_proportions, $ds_google_projects, $ds_cleaned_costs, $ds_cloud_logging_utilization_allocations, $ds_dates, $ds_tag_dimensions_used_in_rbd_rules_tag_key
+end
+
+script "js_calculated_proportions", type: "javascript" do
+  parameters "ds_google_projects", "ds_cleaned_costs", "ds_cloud_logging_utilization_allocations", "ds_dates", "ds_tag_dimensions_used_in_rbd_rules_tag_key"
+  result "result"
+  code <<-'EOS'
+  // function logSample() logs a sample to the console every 5 minutes
+  // This is useful for debugging and monitoring the progress of the script
+  // Sampling is used to mitigate/prevent hitting the 1000 console log Policy Engine limit
+  eventLast = null // Default lastEvent to null so that the first logSample will always log
+  eventCount = 0 // Default eventCount to 0
+  function logSample(sample) {
+    delaySecondsBetweenSample = 10 // 10 seconds between log events
+    eventCount = eventCount + 1
+    var now = new Date()
+    var log_entry = "[Event "+eventCount.toString()+" @ "+now.toISOString()+"] "+JSON.stringify(sample)
+    // Check if eventLast was old than delaySecondsBetweenSample ago
+    if (eventLast == null || (now - eventLast) > delaySecondsBetweenSample*1000) {
+      eventLast = now
+      console.log(log_entry) // Excluded from console.log test
+    }
+  }
+
+  var result = []
+
+  // Index Google Projects by number to make it easier to find the project by number
+  var google_project_number_map = _.groupBy(ds_google_projects, 'number')
+
+  // Push all shared costs to result
+  // Cost and Usage Amount will be -1 * original value
+  _.each(_.keys(ds_cleaned_costs['shared_costs']), function(day) {
+    _.each(ds_cleaned_costs['shared_costs'][day], function(cost) {
+      // Push original line item, with negative cost and usage amount
+      var negate_cost = _.clone(cost)
+      negate_cost['shared_cost'] = true
+      if (cost['costs'] != 0) {
+        negate_cost['allocated_cost'] = -1 * cost['costs']
+      } else {
+        negate_cost['allocated_cost'] = 0
+      }
+      if (cost['usage_amount'] != 0) {
+        negate_cost['allocated_usage_amount'] = -1 * cost['usage_amount']
+      } else {
+        negate_cost['allocated_usage_amount'] = 0
+      }
+      // Add line item to result
+      result.push(negate_cost)
+    })
+  })
+
+  // Calculate proportion of shared cost to other costs
+  _.each(_.keys(ds_cloud_logging_utilization_allocations['grouped']['projects']), function(project) {
+    _.each(_.keys(ds_cloud_logging_utilization_allocations['grouped']['projects'][project]), function(log_bucket_id){
+      _.each(_.keys(ds_cloud_logging_utilization_allocations['grouped']['projects'][project][log_bucket_id]), function(resource_type){
+        // Get the usage amount value
+        var usage_amount = ds_cloud_logging_utilization_allocations['grouped']['projects'][project][log_bucket_id][resource_type]
+        // Get the Project Details
+        var project_details = google_project_number_map[project]
+        if (project_details != undefined) {
+          // If we found a match, get the object
+          // There always will be only 1
+          project_details = project_details[0]
+        } else {
+          console.log("Warning: Project "+project+" not found in ds_google_projects") // Excluded from console.log test
+          // Default to using the project number as the name and id
+          project_details = {
+            "name": project,
+            "id": project,
+            "number": project
+          }
+        }
+        // Else we have a value and can get allocation percentage
+        var allocation_percentage = parseInt(usage_amount) / parseInt(ds_cloud_logging_utilization_allocations['total_usage'])
+        if (allocation_percentage >= 1) {
+          console.log("Warning: allocation_percentage >= 1.  This is not expected.") // Excluded from console.log test
+          console.log("vendor_account=" + project + " usage_amount=" + usage_amount + " allocation_percentage=" + allocation_percentage) // Excluded from console.log test
+        }
+        if (allocation_percentage != 0) {
+          _.each(_.keys(ds_cleaned_costs['shared_costs']), function(shared_cost_day) {
+            _.each(ds_cleaned_costs['shared_costs'][shared_cost_day], function(shared_cost) {
+              var new_cost = _.clone(shared_cost)
+              new_cost['allocated_cost'] = shared_cost['costs'] * allocation_percentage
+              new_cost['allocated_usage_amount'] = shared_cost['usage_amount'] * allocation_percentage
+              new_cost['vendor_account'] = project_details['id']
+              new_cost['vendor_account_name'] = project_details['name']
+              new_cost['tags'] = {
+                "flexera_reallocated": "true",
+                "log_project_id": shared_cost['vendor_account'],
+                "log_project_name": shared_cost['vendor_account_name'],
+                "log_source": "project/"+project_details['number'],
+                "log_source_number": project_details['number'],
+                "log_source_name": project_details['name'],
+                "log_bucket_id": log_bucket_id,
+                "log_resource_type": resource_type,
+              }
+              logSample("adding reallocated cost. project="+project+" log_bucket_id="+log_bucket_id+" resource_type="+resource_type+" new_cost=" + JSON.stringify(new_cost))
+              result.push(new_cost)
+            })
+          })
+        }
+      })
+    })
+  })
+EOS
+end
+
+datasource "ds_cbi_optima_headers" do
+  run_script $js_cbi_optima_headers
+end
+
+script "js_cbi_optima_headers", type: "javascript" do
+  result "ds_cbi_optima_headers"
+  code <<-'EOS'
+  // CBI Dimenions/Headers mapped to Dimension IDs from Flexera Cost API
+  // https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBIDefaultFormat.htm
+  var ds_cbi_optima_headers = {
+    "CloudVendorAccountID": "vendor_account",
+    "CloudVendorAccountName": "vendor_account_name",
+    "Category": "category",
+    "InstanceType": "instance_type",
+    "LineItemType": "line_item_type",
+    "Region": "region",
+    "ResourceGroup": "resource_group",
+    "ResourceType": "resource_type",
+    "ResourceID": "resource_id",
+    "Service": "service",
+    "UsageType": "usage_type",
+    "Tags": "",
+    "UsageAmount": "allocated_usage_amount",
+    "UsageUnit": "usage_unit",
+    "Cost": "allocated_cost",
+    "CurrencyCode": "",
+    "UsageStartTime": "",
+    "InvoiceYearMonth": "",
+    "InvoiceID": "invoice_id"
+  }
+EOS
+end
+
+datasource "ds_cbi_csv_rows" do
+  run_script $js_cbi_csv_rows, $ds_calculated_proportions, $ds_dates, $ds_cbi_optima_headers
+end
+
+script "js_cbi_csv_rows", type: "javascript" do
+  parameters "ds_calculated_proportions", "ds_dates", "ds_cbi_optima_headers"
+  result "rows"
+  code <<-'EOS'
+  // function logSample() logs a sample to the console every 5 minutes
+  // This is useful for debugging and monitoring the progress of the script
+  // Sampling is used to mitigate/prevent hitting the 1000 console log Policy Engine limit
+  eventLast = null // Default lastEvent to null so that the first logSample will always log
+  eventCount = 0 // Default eventCount to 0
+  function logSample(sample) {
+    delaySecondsBetweenSample = 10 // 10 seconds between log events
+    eventCount = eventCount + 1
+    var now = new Date()
+    var log_entry = "[Event "+eventCount.toString()+" @ "+now.toISOString()+"] "+JSON.stringify(sample)
+    // Check if eventLast was old than delaySecondsBetweenSample ago
+    if (eventLast == null || (now - eventLast) > delaySecondsBetweenSample*1000) {
+      eventLast = now
+      console.log(log_entry) // Excluded from console.log test
+    }
+  }
+
+  var row_total = ds_calculated_proportions.length
+  var row_index = 0
+  var row_total_duration = 0
+  var rows = []
+
+  _.each(ds_calculated_proportions, function(item) {
+    // Start time for row processing
+    var startTime = new Date()
+    // Increment row index
+    row_index += 1
+    // Calculate progress percentage
+    var progress = (parseInt(row_index) / parseInt(row_total)) * 100
+    // Calculate average duration for each row
+    var avg_duration = 0
+    var avg_duration_string = ""
+    // Check if this is the first row
+    // We don't have an average duration for the first row
+    if (row_index > 1) {
+      avg_duration = row_total_duration / (row_index - 1)
+      avg_duration_string = " Average row duration: "+avg_duration.toFixed(2)+"ms"
+    }
+    logSample("Processing row "+row_index.toString()+" of "+row_total.toString()+" ("+ progress.toFixed(1) +"%%)"+avg_duration_string)
+    // Create object to hold CBI dimension values
+    var obj = {}
+    // Loop through CBI headers and get the corresponding dimension value from the cost data
+    _.each(_.keys(ds_cbi_optima_headers), function(cbi_header) {
+      cost_dimension = ds_cbi_optima_headers[cbi_header]
+      // If we have a dimension from the cost that maps to CBI, add it to the object
+      if (cost_dimension != "") {
+        obj[cbi_header] = item[cost_dimension]
+      } else {
+        // No value from cost data for this CBI dimension then set it to empty string
+        obj[cbi_header] = ""
+      }
+    })
+    // Add CBI dimension values to object that do not exist from the cost data
+    obj["CurrencyCode"] = "USD" // Statically defined currency code for AWS Support Costs
+    obj["UsageStartTime"] = item.date + "T00:00:00Z"
+    obj["InvoiceYearMonth"] = ds_dates['period']
+
+    // Add Tags to object
+    // This is a JSON object that is stringified and then escaped for the CSV
+    var tags = {}
+    // if the item.tags is an object, use that
+    if (_.isObject(item.tags)) {
+      tags = item.tags
+    }
+
+    // Stringify the tags object
+    var tags_string = JSON.stringify(tags)
+    // Replace single " with double "" to escape the quotes in the CSV string
+    tags_string = tags_string.replace(/"/g, '""')
+    // Add resulting string type value to "Tags" field
+    obj["Tags"] = tags_string
+
+    // Add object to rows array
+    rows.push(obj)
+    var endTime = new Date()
+    var duration = (endTime - startTime)
+    row_total_duration += duration
+  })
+EOS
+end
+
+datasource "ds_existing_bill_uploads" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/optima/orgs/", rs_org_id, "/billUploads"])
+    query "billConnectId", $param_bill_connect_id
+    query "billingPeriod", val($ds_dates, "period")
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "status", jmes_path(col_item, "status")
+      field "billConnectId", jmes_path(col_item, "billConnectId")
+      field "billingPeriod", jmes_path(col_item, "billingPeriod")
+      field "createdAt", jmes_path(col_item, "createdAt")
+      field "updatedAt", jmes_path(col_item, "updatedAt")
+    end
+  end
+end
+
+datasource "ds_pending_bill_uploads" do
+  run_script $js_pending_bill_uploads, $ds_existing_bill_uploads
+end
+
+script "js_pending_bill_uploads", type: "javascript" do
+  parameters "ds_existing_bill_uploads"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_existing_bill_uploads, function(item) {
+    return item["status"] != "complete" && item["status"] != "aborted"
+  })
+EOS
+end
+
+datasource "ds_abort_pending_bill_uploads" do
+  iterate $ds_pending_bill_uploads
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host rs_optima_host
+    path join(["/optima/orgs/", rs_org_id, "/billUploads/", val(iter_item, "id"), "/operations"])
+    header "User-Agent", "RS Policies"
+    body_field "operation", "abort"
+    ignore_status [400, 401, 402, 403, 404, 405, 429, 500, 502]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "status", jmes_path(response, "status")
+    field "billConnectId", jmes_path(response, "billConnectId")
+    field "billingPeriod", jmes_path(response, "billingPeriod")
+    field "createdAt", jmes_path(response, "createdAt")
+    field "updatedAt", jmes_path(response, "updatedAt")
+  end
+end
+
+# Branching logic: This exists purely to be referenced later to ensure policy execution aborts
+# any pending bill uploads before attempting to create a new one.
+datasource "ds_aborted_pending_bill_uploads_done" do
+  run_script $js_aborted_pending_bill_uploads_done, $ds_abort_pending_bill_uploads
+end
+
+script "js_aborted_pending_bill_uploads_done", type: "javascript" do
+  parameters "ds_abort_pending_bill_uploads"
+  result "result"
+  code <<-'EOS'
+  result = { abortedUploads: (ds_abort_pending_bill_uploads.length != 0).toString() }
+EOS
+end
+
+datasource "ds_cbi_create_bill_upload" do
+  request do
+    run_script $js_cbi_create_bill_upload, $ds_dates, $ds_bill_connect, $ds_aborted_pending_bill_uploads_done, $param_bill_connect_id, rs_org_id, rs_optima_host
+  end
+end
+
+script "js_cbi_create_bill_upload", type: "javascript" do
+  parameters "ds_dates", "ds_bill_connect", "ds_aborted_pending_bill_uploads_done", "param_bill_connect_id", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  // $ds_aborted_pending_bill_uploads_done not used in the request
+  // Referenced here to ensure those requests to cancel existing bill uploads runs before ds_cbi_create_bill_upload
+
+  // Build request to create a new bill upload
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/optima/orgs/" + rs_org_id + "/billUploads",
+    body_fields: {
+      "billConnectId": param_bill_connect_id,
+      "billingPeriod": ds_dates['period']
+    },
+    headers: {
+      // This is to ensure that any pending bill uploads were aborted prior to creating a new one
+      "Aborted-Uploads": ds_aborted_pending_bill_uploads_done.abortedUploads,
+
+      "User-Agent": "RS Policies",
+      "allow_redirects": "False"
+    }
+  }
+EOS
+end
+
+datasource "ds_cbi_csv" do
+  run_script $js_cbi_csv, $ds_dates, $ds_cbi_optima_headers, $ds_cbi_csv_rows, $ds_cbi_create_bill_upload
+end
+
+script "js_cbi_csv", type: "javascript" do
+  parameters "ds_dates", "ds_cbi_optima_headers", "ds_cbi_csv_rows", "ds_cbi_create_bill_upload"
+  result "result"
+  code <<-'EOS'
+  var result = []
+
+  // function logSample() logs a sample to the console every 5 minutes
+  // This is useful for debugging and monitoring the progress of the script
+  // Sampling is used to mitigate/prevent hitting the 1000 console log Policy Engine limit
+  eventLast = null // Default lastEvent to null so that the first logSample will always log
+  eventCount = 0 // Default eventCount to 0
+  function logSample(sample) {
+    delaySecondsBetweenSample = 10 // 10 seconds between log events
+    eventCount = eventCount + 1
+    var now = new Date()
+    var log_entry = "[Event "+eventCount.toString()+" @ "+now.toISOString()+"] "+JSON.stringify(sample)
+    // Check if eventLast was old than delaySecondsBetweenSample ago
+    if (eventLast == null || (now - eventLast) > delaySecondsBetweenSample*1000) {
+      eventLast = now
+      console.log(log_entry) // Excluded from console.log test
+    }
+  }
+
+  // Empty CSV array
+  var csv = []
+
+  var cbi_headers = _.keys(ds_cbi_optima_headers)
+  // Wrap CBI headers in quotes
+  cbi_headers_safe = _.map(cbi_headers, function(header) {
+    return '"' + header + '"'
+  })
+
+  // Add Headers as first line of CSV
+  csv.push(cbi_headers_safe.join(","))
+
+  var row_total = ds_cbi_csv_rows.length
+  var row_index = 0
+  var row_total_duration = 0
+  // Counters to split number of rows
+  // Maximum number of files is 8
+  var batch_size = row_total / 8
+  // Loop through rows
+  _.each(ds_cbi_csv_rows, function(row) {
+    // Start time for row processing
+    var startTime = new Date()
+    // Increment row index
+    row_index += 1
+    // Calculate progress percentage
+    var progress = (parseInt(row_index) / parseInt(row_total)) * 100
+    // Calculate average duration for each row
+    var avg_duration = 0
+    var avg_duration_string = ""
+    // Check if this is the first row
+    // We don't have an average duration for the first row
+    if (row_index > 1) {
+      avg_duration = row_total_duration / (row_index - 1)
+      avg_duration_string = " Average row duration: "+avg_duration.toFixed(2)+"ms"
+    }
+    logSample("Appending CSV row "+row_index.toString()+" of "+row_total.toString()+" ("+ progress.toFixed(1) +"%%)"+avg_duration_string)
+    row_values = []
+    // Loop through headers and append to row_values array
+    // This ensures that the row values are in the same order as the headers
+    _.each(cbi_headers, function(header) {
+      // Check that we have a row value for the particular CBI header
+      // Without this check the resulting value would be `"undefined"` in the CSV
+      if (typeof row[header] != "undefined") {
+        row_values.push(row[header])
+      } else {
+        // Handle the dimensions where we don't have a value from the cost data
+        row_values.push("")
+      }
+    })
+    // Wrap row values in quotes
+    row_values = _.map(row_values, function(value) {
+      return '"' + value + '"'
+    })
+    // Push row values CSV string to CSV array
+    csv.push(row_values.join(","));
+    var endTime = new Date()
+    var duration = (endTime - startTime)
+    row_total_duration += duration
+    // check if we need to create a new batch
+    // If we have reached the batch size, or if we are on the last row
+    if ((row_index % batch_size == 0) || (row_index == row_total)) {
+      // Add CSV to result and reset
+      //batches.push(csv.join("\n"))
+      console.log("Added batch result number " + (result.length +1).toFixed(0) + " with rows " + (csv.length -1).toFixed(0)) // Excluded from console.log test
+      result.push({
+        "bill_upload_id": ds_cbi_create_bill_upload.id,
+        "index": result.length.toFixed(0),
+        // resulting CSV file is a string of csv lines separated by newline
+        "csv": csv.join("\n")
+      })
+      // Reset CSV array
+      csv = []
+      // Add Headers as first line of CSV
+      csv.push(cbi_headers_safe.join(","))
+    }
+  });
+  // var result = [];
+  // // Join rows with newline for output CSV
+  // // Use an index
+  // _.each(batches, function(batch, index) {
+  //   result.push({
+  //     "bill_upload_id": ds_cbi_create_bill_upload.id,
+  //     "index": index,
+  //     "csv": batch
+  //   })
+  // })
+EOS
+end
+
+datasource "ds_cbi_upload_file" do
+  iterate $ds_cbi_csv
+  request do
+    run_script $js_cbi_upload_file, iter_item, $ds_dates, rs_org_id, rs_optima_host
+  end
+end
+
+script "js_cbi_upload_file", type: "javascript" do
+  parameters "iter_item", "ds_dates", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/optima/orgs/" + rs_org_id + "/billUploads/" + iter_item.bill_upload_id + '/files/cost-reallocation-' + ds_dates['period'] + '-' + iter_item.index + '.csv',
+    headers: {
+      "User-Agent": "RS Policies",
+    },
+    body: iter_item.csv
+  }
+EOS
+end
+
+datasource "ds_cbi_commit" do
+  request do
+    run_script $js_cbi_commit, $ds_cbi_upload_file, $ds_cbi_create_bill_upload, rs_org_id, rs_optima_host
+  end
+end
+
+script "js_cbi_commit", type: "javascript" do
+  parameters "ds_cbi_upload_file", "ds_cbi_create_bill_upload", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/optima/orgs/" + rs_org_id + "/billUploads/" + ds_cbi_create_bill_upload["id"] + '/operations',
+    headers: {
+      "User-Agent": "RS Policies",
+    },
+    body_fields: {"operation": "commit"}
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_shared_cost_reallocation_google_cloud_logging" do
+  validate $ds_cbi_commit do
+    summary_template "Shared Cost Reallocation CBI Bill Ingest {{parameters.param_period}} - Google Cloud Logging"
+    detail_template "Shared cost reallocation CBI bill ingest for month of {{parameters.param_period}}."
+    check eq(0, 0)
+  end
+end
