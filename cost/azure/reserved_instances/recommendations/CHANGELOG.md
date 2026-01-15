@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.5.1
+
+- Fixed issue with "Estimated Break Even In Months" calculation.
+
 ## v4.5.0
 
 - Added "Estimated Break Even In Months" to incident table.
