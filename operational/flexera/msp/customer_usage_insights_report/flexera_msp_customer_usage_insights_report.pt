@@ -9,7 +9,7 @@ severity "low"
 default_frequency "daily"
 info(
   provider: "Flexera",
-  version: "0.1.3",
+  version: "0.2.0",
   publish: "false",
   service: "Cloud Cost Optimization",
   policy_set: "Usage Report",
@@ -85,6 +85,22 @@ parameter "param_contractual_exclusion" do
   default []
 end
 
+parameter "param_include_adjustments" do
+  type "list"
+  category "Advanced Settings"
+  label "Include Adjustments"
+  description "A list of adjustment names that should always be treated as invoiceable processed spend even if they also appear in the exclusion list. Leave blank to include all adjustments."
+  default []
+end
+
+parameter "param_exclude_adjustments" do
+  type "list"
+  category "Advanced Settings"
+  label "Exclude Adjustments"
+  description "A list of adjustment names to exclude from invoiceable processed spend. Matching adjustments are counted in the Excluded Processed Spend bucket."
+  default []
+end
+
 parameter "param_billing_period" do
   type "string"
   category "Policy Settings"
@@ -128,6 +144,32 @@ parameter "param_get_costs_from_parent_org" do
   description "Select whether to get customer org processed spend from the msp parent org or from customer orgs directly. Default is 'No' which gets costs from the parent org and customer orgs."
   allowed_values "Yes", "No"
   default "No"
+end
+
+parameter "param_bill_source_currencies" do
+  type "list"
+  category "Policy Settings"
+  label "Bill Source Currencies"
+  description "A list of currency overrides for specific bill sources. Format should be `bill_source_id:CURRENCY_CODE` (e.g. `cbi-oi-azure-ea-12345:AUD`). Useful when aggregating costs from sources with different currencies."
+  default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -187,6 +229,22 @@ script "js_flexera_api_hosts", type: "javascript" do
 
   result = host_table[rs_optima_host]
 EOS
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
 end
 
 datasource "ds_dates" do
@@ -286,8 +344,25 @@ datasource "ds_parent_org_billing_centers" do
   end
 end
 
-# Get parent org dimensions
-# https://api.optima.flexeraeng.com/bill-analysis/orgs/36616/costs/dimensions
+datasource "ds_parent_org_dimensions" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "dimensions") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+    end
+  end
+end
+
+# Used to identify if `ds_parent_org_rbds` exists which means bill splitting is setup
 datasource "ds_parent_org_rbds" do
   request do
     auth $auth_flexera
@@ -297,43 +372,79 @@ datasource "ds_parent_org_rbds" do
 end
 
 datasource "ds_request_parent_org_costs_not_allocated" do
-  run_script $js_request_parent_org_costs_not_allocated, $ds_parent_org_rbds, $ds_parent_org_billing_centers, $param_contractual_exclusion, rs_org_id, rs_org_name
+  run_script $js_request_parent_org_costs_not_allocated, $ds_parent_org_rbds, $ds_parent_org_billing_centers, $param_contractual_exclusion, $param_include_adjustments, $param_exclude_adjustments, rs_org_id, rs_org_name
 end
 
 script "js_request_parent_org_costs_not_allocated", type: "javascript" do
-  parameters "ds_parent_org_rbds", "ds_parent_org_billing_centers", "param_contractual_exclusion", "rs_org_id", "rs_org_name"
+  parameters "ds_parent_org_rbds", "ds_parent_org_billing_centers", "param_contractual_exclusion", "param_include_adjustments", "param_exclude_adjustments", "rs_org_id", "rs_org_name"
   result "result"
   code <<-'EOS'
   // initial filters for all requests
-  var filter_expression = null;
-
-  if (param_contractual_exclusion.length > 0) {
-    // Setup placeholder for expressions
-    filter_expression = {
-      "type": "or",
-      "expressions": []
+  function normalizeAdjustmentList(values) {
+    // If values is null or undefined, return an empty list
+    if (!values) {
+      return [];
     }
 
-    _.each(param_contractual_exclusion, function(exclusion) {
-      switch (exclusion) {
-        case "Tax":
-          // AWS Taxes
-          filter_expression.expressions.push({ "type":"equal", "dimension":"line_item_type", "value":"Tax" });
-          break;
-        case "Marketplace":
-          // AWS Marketplace
-          filter_expression.expressions.push({ "type":"equal", "dimension":"bill_entity", "value":"AWS Marketplace" });
-          // Azure EA + MCA Marketplace
-          filter_expression.expressions.push({ "type":"equal", "dimension":"bill_entity", "value":"Marketplace" });
-          break;
-      }
-    });
+    return _.chain(values)
+      // Process the values in a chain of functions
+      .map(function(value) {
+        // If string, trim string and return
+        if (_.isString(value)) {
+          return value.trim();
+        }
+        // If number, convert to string and return
+        if (_.isNumber(value)) {
+          return value.toString();
+        }
+        // If not a string or number, return empty string which will be filtered out in the next step
+        return "";
+      })
+      .filter(function(value) {
+        // Filter out any values that are empty after trimming or converting to string
+        return value.length > 0;
+      })
+      .uniq()
+      .value();
+  }
 
-    // Handle zero or 1 match
-    if (filter_expression.expressions.length == 0) {
-      filter_expression = null;
-    } else if (filter_expression.expressions.length == 1) {
-      filter_expression = filter_expression.expressions[0];
+  var include_adjustments = normalizeAdjustmentList(param_include_adjustments);
+  var exclude_adjustments = normalizeAdjustmentList(param_exclude_adjustments);
+
+  // If the same adjustment is in both lists, treat it as included (invoiceable)
+  if (include_adjustments.length > 0) {
+    exclude_adjustments = _.difference(exclude_adjustments, include_adjustments);
+  }
+
+  var exclusion_expressions = [];
+
+  _.each(param_contractual_exclusion, function(exclusion) {
+    switch (exclusion) {
+      case "Tax":
+        // AWS Taxes
+        exclusion_expressions.push({ "type":"equal", "dimension":"line_item_type", "value":"Tax" });
+        break;
+      case "Marketplace":
+        // AWS Marketplace
+        exclusion_expressions.push({ "type":"equal", "dimension":"bill_entity", "value":"AWS Marketplace" });
+        // Azure EA + MCA Marketplace
+        exclusion_expressions.push({ "type":"equal", "dimension":"bill_entity", "value":"Marketplace" });
+        break;
+    }
+  });
+
+  _.each(exclude_adjustments, function(adjustment) {
+    exclusion_expressions.push({ "type":"equal", "dimension":"adjustment_name", "value": adjustment });
+  });
+
+  var filter_expression = null;
+
+  if (exclusion_expressions.length == 1) {
+    filter_expression = exclusion_expressions[0];
+  } else if (exclusion_expressions.length > 1) {
+    filter_expression = {
+      "type": "or",
+      "expressions": exclusion_expressions
     }
   }
 
@@ -531,40 +642,146 @@ datasource "ds_children_org_get_billing_centers_step2" do
   end
 end
 
+datasource "ds_children_org_get_dimensions_step3" do
+  iterate $ds_children_org_get_billing_centers_step2
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", val(val(iter_item, "org"), "id"), "/costs/dimensions"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "org", val(iter_item, "org")
+    field "roles", val(iter_item, "roles")
+    field "billing_centers", val(iter_item, "billing_centers")
+    field "dimensions", jmes_path(response, "dimensions[*]")
+  end
+end
+
 # Gather top level billing center IDs for when we pull cost data
 datasource "ds_children_org_get_toplevel_billing_centers_step3" do
-  run_script $js_children_org_get_toplevel_billing_centers_step3, $ds_children_org_get_billing_centers_step2
+  run_script $js_children_org_get_toplevel_billing_centers_step3, $ds_children_org_get_dimensions_step3
 end
 
 script "js_children_org_get_toplevel_billing_centers_step3", type: "javascript" do
-  parameters "ds_children_org_get_billing_centers_step2"
+  parameters "ds_children_org_get_dimensions_step3"
   result "result"
   code <<-'EOS'
-  _.each(ds_children_org_get_billing_centers_step2, function(org) {
+  _.each(ds_children_org_get_dimensions_step3, function(org) {
     var top_level_bcs = _.filter(org['billing_centers'], function(bc) {
       return bc['parent_id'] == null || bc['parent_id'] == undefined
     })
     org['top_level_bc_ids'] = _.pluck(top_level_bcs, 'id')
   })
-  result = ds_children_org_get_billing_centers_step2
+  result = ds_children_org_get_dimensions_step3
 EOS
 end
 
 datasource "ds_request_children_org_get_costs_step4" do
-  run_script $js_request_children_org_get_costs_step4, $ds_children_org_get_toplevel_billing_centers_step3, $ds_request_parent_org_costs_not_allocated, $param_get_costs_from_parent_org, rs_org_id, rs_org_name
+  run_script $js_request_children_org_get_costs_step4, $ds_children_org_get_toplevel_billing_centers_step3, $ds_request_parent_org_costs_not_allocated, $param_get_costs_from_parent_org, $param_contractual_exclusion, $param_include_adjustments, $param_exclude_adjustments, rs_org_id, rs_org_name
 end
 
 script "js_request_children_org_get_costs_step4", type: "javascript" do
-  parameters "ds_children_org_get_toplevel_billing_centers_step3", "ds_request_parent_org_costs_not_allocated", "param_get_costs_from_parent_org", "rs_org_id", "rs_org_name"
+  parameters "ds_children_org_get_toplevel_billing_centers_step3", "ds_request_parent_org_costs_not_allocated", "param_get_costs_from_parent_org", "param_contractual_exclusion", "param_include_adjustments", "param_exclude_adjustments", "rs_org_id", "rs_org_name"
   result "result"
   code <<-'EOS'
+  // initial filters for all requests
+  function normalizeAdjustmentList(values) {
+    // If values is null or undefined, return an empty list
+    if (!values) {
+      return [];
+    }
+
+    return _.chain(values)
+      // Process the values in a chain of functions
+      .map(function(value) {
+        // If string, trim string and return
+        if (_.isString(value)) {
+          return value.trim();
+        }
+        // If number, convert to string and return
+        if (_.isNumber(value)) {
+          return value.toString();
+        }
+        // If not a string or number, return empty string which will be filtered out in the next step
+        return "";
+      })
+      .filter(function(value) {
+        // Filter out any values that are empty after trimming or converting to string
+        return value.length > 0;
+      })
+      .uniq()
+      .value();
+  }
+
+  var include_adjustments = normalizeAdjustmentList(param_include_adjustments);
+  var exclude_adjustments = normalizeAdjustmentList(param_exclude_adjustments);
+
+  // If the same adjustment is in both lists, treat it as included (invoiceable)
+  if (include_adjustments.length > 0) {
+    exclude_adjustments = _.difference(exclude_adjustments, include_adjustments);
+  }
+
+  var base_exclusion_expressions = [];
+
+  _.each(param_contractual_exclusion, function(exclusion) {
+    switch (exclusion) {
+      case "Tax":
+        // AWS Taxes
+        base_exclusion_expressions.push({ "type":"equal", "dimension":"line_item_type", "value":"Tax" });
+        break;
+      case "Marketplace":
+        // AWS Marketplace
+        base_exclusion_expressions.push({ "type":"equal", "dimension":"bill_entity", "value":"AWS Marketplace" });
+        // Azure EA + MCA Marketplace
+        base_exclusion_expressions.push({ "type":"equal", "dimension":"bill_entity", "value":"Marketplace" });
+        break;
+    }
+  });
+
   var result = [];
 
   _.each(ds_children_org_get_toplevel_billing_centers_step3, function(org) {
     var request = org;
+
+    // Logic to build filter for Child Org requests
+    var child_exclusion_expressions = JSON.parse(JSON.stringify(base_exclusion_expressions)); // Deep copy
+
+    // Check if this child org has the 'adjustment_name' dimension
+    var has_adjustment_name = _.some(org.dimensions, function(dim) {
+       return dim.id === "adjustment_name";
+    });
+
+    if (has_adjustment_name) {
+       _.each(exclude_adjustments, function(adjustment) {
+         child_exclusion_expressions.push({ "type":"equal", "dimension":"adjustment_name", "value": adjustment });
+       });
+    }
+
+    var filter_expression = null;
+
+    if (child_exclusion_expressions.length == 1) {
+      filter_expression = child_exclusion_expressions[0];
+    } else if (child_exclusion_expressions.length > 1) {
+      filter_expression = {
+        "type": "or",
+        "expressions": child_exclusion_expressions
+      }
+    }
+
+    var child_filter_net_costs = filter_expression ? {
+      "type": "not",
+      "expression": filter_expression
+    } : null;
+
+    var child_filter_excluded_costs = filter_expression ? JSON.parse(JSON.stringify(filter_expression)) : null;
+
     // Default request org ID and filter as if we are getting costs from the child org
     request.request_org = org.org.id;
-    request.filter = ds_request_parent_org_costs_not_allocated[0].filter_net_costs;
+    request.filter = child_filter_net_costs;
+    request.filter_excluded = child_filter_excluded_costs;
 
     // Check if we should get costs from the parent org
     if (param_get_costs_from_parent_org == "Yes") {
@@ -581,6 +798,8 @@ script "js_request_children_org_get_costs_step4", type: "javascript" do
           { "type": "equal", "dimension": "rbd_partner_child_org", "value": org.org.id.toFixed(0) }
         ]
       }
+
+      request.filter_excluded = ds_request_parent_org_costs_not_allocated[0].filter_excluded_costs;
 
       // Compact expressions list in case filter_net_costs is null
       request.filter.expressions = _.compact(request.filter.expressions);
@@ -619,6 +838,7 @@ datasource "ds_children_org_get_costs_step4" do
     field "billing_centers", val(iter_item, "billing_centers")
     field "top_level_bc_ids", val(iter_item, "top_level_bc_ids")
     field "costs", jq(response, ".rows")
+    field "filter_excluded", val(iter_item, "filter_excluded")
   end
 end
 
@@ -633,7 +853,7 @@ datasource "ds_children_org_get_costs_excluded_step5" do
     header "Content-Type", "application/json"
     body_field "dimensions", ["bill_source"]
     body_field "granularity", "month"
-    body_field "filter", val(first($ds_request_parent_org_costs_not_allocated), "filter_excluded_costs")
+    body_field "filter", val(iter_item, "filter_excluded")
     body_field "start_at", val($ds_dates, "start_at")
     body_field "end_at", val($ds_dates, "end_at")
     body_field "metrics", ["cost_nonamortized_unblended_adj"]
@@ -694,16 +914,41 @@ datasource "ds_children_org_get_bill_connects_step7" do
 end
 
 datasource "ds_report" do
-  run_script $js_report, $ds_flexera_api_hosts, $ds_dates, $ds_request_parent_org_costs_not_allocated, $ds_parent_org_costs_not_allocated, $ds_children_org_get_bill_connects_step7, $ds_applied_policy, $ds_applied_policy_template_hash, $ds_identify_errors, $param_excluded_user_regex, $param_included_user_regex, $param_active_days_threshold, $param_child_orgs_list, $param_child_orgs_allow_or_deny, $param_cost_threshold, $param_get_costs_from_parent_org, $param_billing_period, rs_org_id, rs_org_name
+  run_script $js_report, $ds_flexera_api_hosts, $ds_dates, $ds_currency_code, $ds_request_parent_org_costs_not_allocated, $ds_parent_org_costs_not_allocated, $ds_children_org_get_bill_connects_step7, $ds_applied_policy, $ds_applied_policy_template_hash, $ds_identify_errors, $param_excluded_user_regex, $param_included_user_regex, $param_active_days_threshold, $param_child_orgs_list, $param_child_orgs_allow_or_deny, $param_cost_threshold, $param_get_costs_from_parent_org, $param_billing_period, $param_bill_source_currencies, rs_org_id, rs_org_name
 end
 
 script "js_report", type: "javascript" do
-  parameters "ds_flexera_api_hosts", "ds_dates", "ds_request_parent_org_costs_not_allocated", "ds_parent_org_costs_not_allocated", "ds_children_org", "ds_applied_policy", "ds_applied_policy_template_hash", "ds_identify_errors", "param_excluded_user_regex", "param_included_user_regex", "param_active_days_threshold", "param_child_orgs_list", "param_child_orgs_allow_or_deny", "param_cost_threshold", "param_get_costs_from_parent_org", "param_billing_period", "rs_org_id", "rs_org_name"
+  parameters "ds_flexera_api_hosts", "ds_dates", "ds_currency_code", "ds_request_parent_org_costs_not_allocated", "ds_parent_org_costs_not_allocated", "ds_children_org", "ds_applied_policy", "ds_applied_policy_template_hash", "ds_identify_errors", "param_excluded_user_regex", "param_included_user_regex", "param_active_days_threshold", "param_child_orgs_list", "param_child_orgs_allow_or_deny", "param_cost_threshold", "param_get_costs_from_parent_org", "param_billing_period", "param_bill_source_currencies", "rs_org_id", "rs_org_name"
   result "result"
   code <<-'EOS'
-    function formatCurrency(value) {
+    var currencySymbols = {
+      'USD': '$',
+      'EUR': '€',
+      'GBP': '£',
+      'JPY': '¥',
+      'CNY': '¥',
+      'AUD': 'A$',
+      'CAD': 'C$',
+      'CHF': 'CHF',
+      'SEK': 'kr',
+      'NZD': 'NZ$',
+      'MXN': '$',
+      'SGD': 'S$',
+      'HKD': 'HK$',
+      'NOK': 'kr',
+      'KRW': '₩',
+      'TRY': '₺',
+      'INR': '₹',
+      'BRL': 'R$',
+      'ZAR': 'R'
+    };
+
+    function formatCurrency(value, currencyCode) {
       if (value === 0  || _.isNumber(value) === false) {
-        return "$0.00";
+        // Use default currency if not provided
+        var code = currencyCode || defaultCurrency;
+        var symbol = currencySymbols[code] || code + ' ';
+        return symbol + "0.00";
       }
       var parts = value.toFixed(2).split('.');
       var intPart = parts[0];
@@ -718,11 +963,31 @@ script "js_report", type: "javascript" do
       }
 
       parts[0] = formattedInt;
-      return "$" + parts.join('.');
+      var code = currencyCode || defaultCurrency;
+      var symbol = currencySymbols[code] || code + ' ';
+      return symbol + parts.join('.');
+    }
+
+    // Parse bill source currencies
+    var billSourceCurrencyMap = {};
+    if (param_bill_source_currencies) {
+      _.each(param_bill_source_currencies, function(item) {
+        var parts = item.split(":");
+        if (parts.length == 2) {
+          billSourceCurrencyMap[parts[0].trim()] = parts[1].trim();
+        }
+      });
+    }
+
+    var defaultCurrency = "USD"; // Default fallback
+    if (ds_currency_code && ds_currency_code.value) {
+      defaultCurrency = ds_currency_code.value;
     }
 
     var excludedTotalCost = 0;
     var netTotalCost = 0;
+    var costsByCurrency = {};
+    var costsByBillSource = {};
     var costsBySource = {
       aws: {cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
       azure: {cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}},
@@ -766,6 +1031,36 @@ script "js_report", type: "javascript" do
           months.push(month);
 
           var bill_source = cost.dimensions.bill_source;
+
+          // Currency Aggregation
+          var currency = billSourceCurrencyMap[bill_source] || defaultCurrency;
+          if (!costsByCurrency[currency]) {
+            costsByCurrency[currency] = {cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}};
+          }
+          var targetCurrency = costsByCurrency[currency];
+          targetCurrency.cost += amount;
+          if (!_.contains(targetCurrency.orgs, orgId)) {
+            targetCurrency.orgs.push(orgId);
+          }
+          if (!targetCurrency.monthlyAmounts[month]) {
+            targetCurrency.monthlyAmounts[month] = 0;
+          }
+          targetCurrency.monthlyAmounts[month] += amount;
+
+          // Bill Source Aggregation
+          if (!costsByBillSource[bill_source]) {
+            costsByBillSource[bill_source] = {currency: currency, cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}};
+          }
+          var targetBillSource = costsByBillSource[bill_source];
+          targetBillSource.cost += amount;
+          if (!_.contains(targetBillSource.orgs, orgId)) {
+            targetBillSource.orgs.push(orgId);
+          }
+          if (!targetBillSource.monthlyAmounts[month]) {
+            targetBillSource.monthlyAmounts[month] = 0;
+          }
+          targetBillSource.monthlyAmounts[month] += amount;
+
           var targetSource;
           if (/.*aws.*/.test(bill_source)) {
             targetSource = costsBySource.aws;
@@ -805,6 +1100,36 @@ script "js_report", type: "javascript" do
           months.push(month);
 
           var source = cost.dimensions.bill_source;
+
+          // Currency Aggregation
+          var currency = billSourceCurrencyMap[source] || defaultCurrency;
+          if (!costsByCurrency[currency]) {
+            costsByCurrency[currency] = {cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}};
+          }
+          var targetCurrency = costsByCurrency[currency];
+          targetCurrency.cost_excluded += amount;
+          if (!_.contains(targetCurrency.orgs, orgId)) {
+            targetCurrency.orgs.push(orgId);
+          }
+          if (!targetCurrency.monthlyAmounts_excluded[month]) {
+            targetCurrency.monthlyAmounts_excluded[month] = 0;
+          }
+          targetCurrency.monthlyAmounts_excluded[month] += amount;
+
+          // Bill Source Aggregation
+          if (!costsByBillSource[source]) {
+            costsByBillSource[source] = {currency: currency, cost: 0, orgs: [], monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}};
+          }
+          var targetBillSource = costsByBillSource[source];
+          targetBillSource.cost_excluded += amount;
+          if (!_.contains(targetBillSource.orgs, orgId)) {
+            targetBillSource.orgs.push(orgId);
+          }
+          if (!targetBillSource.monthlyAmounts_excluded[month]) {
+            targetBillSource.monthlyAmounts_excluded[month] = 0;
+          }
+          targetBillSource.monthlyAmounts_excluded[month] += amount;
+
           var targetSource;
           if (/.*aws.*/.test(source)) {
             targetSource = costsBySource.aws;
@@ -938,7 +1263,7 @@ script "js_report", type: "javascript" do
     markdown += "Report template hash: " + ds_applied_policy_template_hash + "\n\n";
     markdown += "Report period: " + sortedMonths[0] + " to " + sortedMonths[sortedMonths.length-1] + "\n\n";
     if (param_cost_threshold != -1) {
-      markdown += "Report does not include organizations with total costs less than " + formatCurrency(param_cost_threshold) + "\n\n";
+      markdown += "Report does not include organizations with total costs less than " + formatCurrency(param_cost_threshold, defaultCurrency) + "\n\n";
     }
     markdown += "**Active** Users are defined as users who have logged in to the Flexera One UI in the last "+param_active_days_threshold+" days.\n\n";
 
@@ -1005,6 +1330,8 @@ script "js_report", type: "javascript" do
     markdown += "\n";
     markdown += "## Overall Statistics\n\n";
 
+    markdown += "### Previous "+sortedMonths.length+"-Month Invoiceable Processed Spend: " + formatCurrency(netTotalCost, defaultCurrency) + "\n";
+
     markdown += "### Total Customer Orgs: " + inclusiveCosts.length + "\n";
 
     // Summary table of total costs for report period
@@ -1012,9 +1339,9 @@ script "js_report", type: "javascript" do
     markdown += "| **Previous "+sortedMonths.length+"-Month Excluded Processed Spend** ";
     markdown += "| **Previous "+sortedMonths.length+"-Month Invoiceable Processed Spend** |\n";
     markdown += "| --- | --- | --- |\n";
-    markdown += "| " + formatCurrency((netTotalCost || 0) + (excludedTotalCost || 0)) +  + " ";
-    markdown += "| " + formatCurrency(excludedTotalCost || 0) + " ";
-    markdown += "| " + formatCurrency(netTotalCost || 0) + " |\n\n";
+    markdown += "| " + formatCurrency((netTotalCost || 0) + (excludedTotalCost || 0), defaultCurrency) +  " ";
+    markdown += "| " + formatCurrency(excludedTotalCost || 0, defaultCurrency) + " ";
+    markdown += "| " + formatCurrency(netTotalCost || 0, defaultCurrency) + " |\n\n";
     // Print warning if expecting previous 12 months but we have less
     if (sortedMonths.length < 12 && param_billing_period == "Previous 12 Months") {
       markdown += "> Warning: Less than 12 months of data available\n\n";
@@ -1033,7 +1360,7 @@ script "js_report", type: "javascript" do
       var estimated12MCostFromLast3Months = (recentTotalCost / 3) * 12;
       markdown += "| **Estimated 12-Month Invoiceable Processed Spend** using Previous 3-Month Invoiceable Processed Spend |\n";
       markdown += "| --- |\n";
-      markdown += "| " + formatCurrency(estimated12MCostFromLast3Months) + " |\n\n";
+      markdown += "| " + formatCurrency(estimated12MCostFromLast3Months, defaultCurrency) + " |\n\n";
     }
 
     // Summary table of the estimated 12 month cost using most recent 1 month
@@ -1046,7 +1373,7 @@ script "js_report", type: "javascript" do
       });
       markdown += "| **"+previousMonth+" Total Processed Spend** | **"+previousMonth+" Excluded Processed Spend** | **"+previousMonth+" Invoiceable Processed Spend** |\n";
       markdown += "| --- | --- | --- |\n";
-      markdown += "| " + formatCurrency(recentTotalCost) + " | " + formatCurrency(recentExcludedTotalCost) + " | " + formatCurrency(recentTotalCost) + " |\n\n";
+      markdown += "| " + formatCurrency(recentTotalCost, defaultCurrency) + " | " + formatCurrency(recentExcludedTotalCost, defaultCurrency) + " | " + formatCurrency(recentTotalCost, defaultCurrency) + " |\n\n";
     }
 
     markdown += "| **Total Users** ";
@@ -1064,7 +1391,7 @@ script "js_report", type: "javascript" do
     if (inactiveOrgs.length > 0) {
       markdown += "| Organizations with 100% Inactive Users | Previous "+sortedMonths.length+"-Month Processed Spend for Organizations with 100% Inactive Users |\n";
       markdown += "| --- | --- |\n";
-      markdown += "|" +  _.pluck(inactiveOrgs, "id").join(", ") + " | " + formatCurrency(inactiveOrgsTotalCost) + "|\n\n";
+      markdown += "|" +  _.pluck(inactiveOrgs, "id").join(", ") + " | " + formatCurrency(inactiveOrgsTotalCost, defaultCurrency) + "|\n\n";
     } else {
       markdown += "All Customer Orgs have at least 1 Active User\n\n";
     }
@@ -1072,7 +1399,7 @@ script "js_report", type: "javascript" do
     markdown += "## Processed Spend by Bill Connection Type\n\n";
 
     // Build header row
-    var header = "| Bill Connection Type | Org Count";
+    var header = "| Bill Connection Type";
     _.each(sortedMonths, function(month) {
       header += " | " + month + " Invoiceable Processed Spend";
     });
@@ -1080,7 +1407,7 @@ script "js_report", type: "javascript" do
     markdown += header;
 
     // Build separator row
-    var separator = "|--------|------------";
+    var separator = "|--------";
     _.each(sortedMonths, function(month) {
       separator += "|-------";
     });
@@ -1099,16 +1426,101 @@ script "js_report", type: "javascript" do
     ];
 
     _.each(sources, function(source) {
-      var row = "| " + source.name + " | " + source.data.orgs.length;
+      var row = "| " + source.name;
       _.each(sortedMonths, function(month) {
       var amount = source.data.monthlyAmounts[month] || 0;
-      row += " | " + formatCurrency(amount);
+      row += " | " + formatCurrency(amount, defaultCurrency);
       });
-      row += " | " + formatCurrency(source.data.cost_excluded);
-      row += " | " + formatCurrency((source.data.cost_excluded || 0) + (source.data.cost || 0));
+      row += " | " + formatCurrency(source.data.cost_excluded, defaultCurrency);
+      row += " | " + formatCurrency((source.data.cost_excluded || 0) + (source.data.cost || 0), defaultCurrency);
       row += " | " + ((source.data.cost/netTotalCost)*100).toFixed(1) + "% |\n";
       markdown += row;
     });
+
+    if (_.keys(costsByBillSource).length > 0) {
+      markdown += "\n## Processed Spend by Bill Source\n\n";
+
+      // Build header row
+      var billSourceHeader = "| Bill Source | Currency";
+      _.each(sortedMonths, function(month) {
+        billSourceHeader += " | " + month + " Invoiceable Processed Spend";
+      });
+      billSourceHeader += "| Excluded Processed Spend | Total Processed Spend | % of Total Invoiceable Processed Spend |\n";
+      markdown += billSourceHeader;
+
+      // Build separator row
+      var billSourceSeparator = "|-----------|----------";
+      _.each(sortedMonths, function(month) {
+        billSourceSeparator += "|-------";
+      });
+      billSourceSeparator += "|--------|------------|--------|\n";
+      markdown += billSourceSeparator;
+
+      // Build data rows
+      var billSources = [];
+      _.each(costsByBillSource, function(data, name) {
+        billSources.push({name: name, data: data});
+      });
+      // Sort bill sources by total processed spend, descending
+      billSources.sort(function(a, b) {
+        return ((b.data.cost_excluded || 0) + (b.data.cost || 0)) - ((a.data.cost_excluded || 0) + (a.data.cost || 0));
+      });
+
+      _.each(billSources, function(billSource) {
+        var row = "| " + billSource.name + " | " + billSource.data.currency;
+        _.each(sortedMonths, function(month) {
+          var amount = billSource.data.monthlyAmounts[month] || 0;
+          row += " | " + formatCurrency(amount, billSource.data.currency);
+        });
+        row += " | " + formatCurrency(billSource.data.cost_excluded, billSource.data.currency);
+        row += " | " + formatCurrency((billSource.data.cost_excluded || 0) + (billSource.data.cost || 0), billSource.data.currency);
+        row += " | " + ((billSource.data.cost/netTotalCost)*100).toFixed(1) + "% |\n";
+        markdown += row;
+      });
+      markdown += "\n";
+    }
+
+    if (param_bill_source_currencies.length > 0) {
+      markdown += "## Processed Spend by Currency\n\n";
+      // Build header row
+      var currencyHeader = "| Currency";
+      _.each(sortedMonths, function(month) {
+        currencyHeader += " | " + month + " Invoiceable Processed Spend";
+      });
+      currencyHeader += "| Excluded Processed Spend | Total Processed Spend | % of Total Invoiceable Processed Spend |\n";
+      markdown += currencyHeader;
+
+      // Build separator row
+      var currencySeparator = "|----------";
+      _.each(sortedMonths, function(month) {
+        currencySeparator += "|-------";
+      });
+      currencySeparator += "|--------|------------|--------|\n";
+      markdown += currencySeparator;
+
+      // Build data rows
+      var currencies = [];
+      _.each(costsByCurrency, function(data, currency) {
+        currencies.push({name: currency, data: data});
+      });
+      // Sort currencies by total processed spend, descending
+      currencies.sort(function(a, b) {
+        return ((b.data.cost_excluded || 0) + (b.data.cost || 0)) - ((a.data.cost_excluded || 0) + (a.data.cost || 0));
+      });
+
+      _.each(currencies, function(currency) {
+        var row = "| " + currency.name;
+        _.each(sortedMonths, function(month) {
+          var amount = currency.data.monthlyAmounts[month] || 0;
+          row += " | " + formatCurrency(amount, currency.name);
+        });
+        row += " | " + formatCurrency(currency.data.cost_excluded, currency.name);
+        row += " | " + formatCurrency((currency.data.cost_excluded || 0) + (currency.data.cost || 0), currency.name);
+        row += " | " + ((currency.data.cost/netTotalCost)*100).toFixed(1) + "% |\n";
+        markdown += row;
+      });
+      markdown += "\n";
+    }
 
     // Process each child org
     // Sort organizations by total cost first
@@ -1168,10 +1580,10 @@ script "js_report", type: "javascript" do
         var row = "| " + org.org.name + " | " + org.org.id;
         _.each(sortedMonths, function(month) {
           var amount = monthlyTotals[month] || 0;
-          row += " | " + formatCurrency(amount);
+          row += " | " + formatCurrency(amount, defaultCurrency);
         });
-        row += " | " + formatCurrency(org.excludedTotalCost);
-        row += " | " + formatCurrency((org.excludedTotalCost || 0) + (orgTotal || 0));
+        row += " | " + formatCurrency(org.excludedTotalCost, defaultCurrency);
+        row += " | " + formatCurrency((org.excludedTotalCost || 0) + (orgTotal || 0), defaultCurrency);
         row += " | " + ((orgTotal/netTotalCost)*100).toFixed(1) + "% |\n";
         markdown += row;
       }
@@ -1199,10 +1611,11 @@ script "js_report", type: "javascript" do
             var amount = cost.metrics.cost_nonamortized_unblended_adj;
             var month = cost.timestamp.substring(0, 7);
             var source = cost.dimensions.bill_source;
+            var currency = billSourceCurrencyMap[source] || defaultCurrency;
 
             // Init the cost tracking for this source if it doesn't exist
             if (!orgCosts[source]) {
-              orgCosts[source] = {cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}};
+              orgCosts[source] = {currency: currency, cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}};
             }
             orgCosts[source].cost += amount;
             if (!orgCosts[source].monthlyAmounts[month]) {
@@ -1217,10 +1630,11 @@ script "js_report", type: "javascript" do
             var amount = cost.metrics.cost_nonamortized_unblended_adj;
             var month = cost.timestamp.substring(0, 7);
             var source = cost.dimensions.bill_source;
+            var currency = billSourceCurrencyMap[source] || defaultCurrency;
 
             // Init the cost tracking for this source if it doesn't exist
             if (!orgCosts[source]) {
-              orgCosts[source] = {cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}};
+              orgCosts[source] = {currency: currency, cost: 0, monthlyAmounts: {}, cost_excluded: 0, monthlyAmounts_excluded: {}};
             }
             orgCosts[source].cost_excluded += amount;
 
@@ -1244,9 +1658,9 @@ script "js_report", type: "javascript" do
 
         markdown += "| Total Processed Spend | Total Excluded Processed Spend | Total Invoiceable Processed Spend |\n";
         markdown += "| --- | --- | --- |\n";
-        markdown += "| " + formatCurrency((org.excludedTotalCost || 0) + (orgTotal || 0)) + " ";
-        markdown += "| " + formatCurrency(org.excludedTotalCost) + " ";
-        markdown += "| " + formatCurrency(orgTotal) + " |\n\n";
+        markdown += "| " + formatCurrency((org.excludedTotalCost || 0) + (orgTotal || 0), defaultCurrency) + " ";
+        markdown += "| " + formatCurrency(org.excludedTotalCost, defaultCurrency) + " ";
+        markdown += "| " + formatCurrency(orgTotal, defaultCurrency) + " |\n\n";
 
         // Only report on user activity if this is not the MSP Parent Org
         if (org.org.msp_parent != true) {
@@ -1311,10 +1725,10 @@ script "js_report", type: "javascript" do
               }
               _.each(sortedMonths, function(month) {
               var amount = source.monthlyAmounts[month] || 0;
-              row += " | " + formatCurrency(amount);
+              row += " | " + formatCurrency(amount, source.currency);
               });
-              row += " | " + formatCurrency(source.cost_excluded || 0);
-              row += " | " + formatCurrency((source.cost_excluded || 0) + (source.cost || 0));
+              row += " | " + formatCurrency(source.cost_excluded || 0, source.currency);
+              row += " | " + formatCurrency((source.cost_excluded || 0) + (source.cost || 0), source.currency);
               row += " | " + ((source.cost/orgTotal)*100).toFixed(1) + "% |\n";
               markdown += row;
             }
@@ -1327,10 +1741,10 @@ script "js_report", type: "javascript" do
           _.each(sources, function(bill_source) {
             monthTotal += orgCosts[bill_source].monthlyAmounts[month] || 0;
           });
-          markdown += " | " + formatCurrency(monthTotal);
+          markdown += " | " + formatCurrency(monthTotal, defaultCurrency);
           });
-          markdown += " | " + formatCurrency(org.excludedTotalCost);
-          markdown += " | " + formatCurrency((org.excludedTotalCost || 0) + (orgTotal || 0));
+          markdown += " | " + formatCurrency(org.excludedTotalCost, defaultCurrency);
+          markdown += " | " + formatCurrency((org.excludedTotalCost || 0) + (orgTotal || 0), defaultCurrency);
           markdown += " | 100% |\n";
         }
       }
@@ -1338,22 +1752,81 @@ script "js_report", type: "javascript" do
 
     var orgData = [];
     _.each(inclusiveCosts, function(org) {
-      orgData.push({
-        org: org.org,
-        costs: {
-          start_at: ds_dates.start_at,
-          end_at: ds_dates.end_at,
-          netTotalCost: org.netTotalCost,
-          excludedTotalCost: org.excludedTotalCost,
-          percentTotalCost: _.isNumber(org.netTotalCost) ? ((org.netTotalCost / netTotalCost) * 100).toFixed(1) : null,
-        },
-        users: {
-          activeUsers: org.activeUsers,
-          inactiveUsers: _.isNumber(org.totalUsers) && _.isNumber(org.activeUsers) ? org.totalUsers - org.activeUsers : null,
-          excludedUsers: org.excludedUsers,
-          inactivePercentUsers: _.isNumber(org.totalUsers) && _.isNumber(org.activeUsers) ? (((org.totalUsers - org.activeUsers) / org.totalUsers) * 100).toFixed(1) : null,
-        },
-      });
+      // Group costs by bill source
+      var orgCostsBySource = {};
+
+      // Helper to init source object
+      var initSource = function(sourceName) {
+        if (!orgCostsBySource[sourceName]) {
+          orgCostsBySource[sourceName] = {
+             netTotalCost: 0,
+             excludedTotalCost: 0
+          };
+        }
+      };
+
+      if (org.costs) {
+        _.each(org.costs, function(cost) {
+            var source = cost.dimensions.bill_source;
+            initSource(source);
+            orgCostsBySource[source].netTotalCost += cost.metrics.cost_nonamortized_unblended_adj;
+        });
+      }
+
+      if (org.costs_excluded) {
+         _.each(org.costs_excluded, function(cost) {
+            var source = cost.dimensions.bill_source;
+            initSource(source);
+            orgCostsBySource[source].excludedTotalCost += cost.metrics.cost_nonamortized_unblended_adj;
+         });
+      }
+
+      var sources = _.keys(orgCostsBySource);
+      if (sources.length === 0) {
+        // No costs found, push one entry with 0 costs
+        orgData.push({
+          org: org.org,
+          billSource: "N/A",
+          currency: defaultCurrency,
+          costs: {
+            start_at: ds_dates.start_at,
+            end_at: ds_dates.end_at,
+            netTotalCost: 0,
+            excludedTotalCost: 0,
+            percentTotalCost: null
+          },
+          users: {
+            activeUsers: org.activeUsers,
+            inactiveUsers: _.isNumber(org.totalUsers) && _.isNumber(org.activeUsers) ? org.totalUsers - org.activeUsers : null,
+            excludedUsers: org.excludedUsers,
+            inactivePercentUsers: _.isNumber(org.totalUsers) && _.isNumber(org.activeUsers) ? (((org.totalUsers - org.activeUsers) / org.totalUsers) * 100).toFixed(1) : null,
+          }
+        });
+      } else {
+        _.each(sources, function(source) {
+          var currency = billSourceCurrencyMap[source] || defaultCurrency;
+          var sourceCosts = orgCostsBySource[source];
+
+          orgData.push({
+            org: org.org,
+            billSource: source,
+            currency: currency,
+            costs: {
+              start_at: ds_dates.start_at,
+              end_at: ds_dates.end_at,
+              netTotalCost: sourceCosts.netTotalCost,
+              excludedTotalCost: sourceCosts.excludedTotalCost,
+              percentTotalCost: _.isNumber(netTotalCost) && netTotalCost > 0 ? ((sourceCosts.netTotalCost / netTotalCost) * 100).toFixed(1) : null,
+            },
+            users: {
+              activeUsers: org.activeUsers,
+              inactiveUsers: _.isNumber(org.totalUsers) && _.isNumber(org.activeUsers) ? org.totalUsers - org.activeUsers : null,
+              excludedUsers: org.excludedUsers,
+              inactivePercentUsers: _.isNumber(org.totalUsers) && _.isNumber(org.activeUsers) ? (((org.totalUsers - org.activeUsers) / org.totalUsers) * 100).toFixed(1) : null,
+            }
+          });
+        });
+      }
     });
 
     result = {
@@ -1388,6 +1861,14 @@ EOS
       field "orgName" do
         label "Flexera Org Name"
         path "org.name"
+      end
+      field "billSource" do
+        label "Bill Source"
+        path "billSource"
+      end
+      field "billSourceCurrency" do
+        label "Bill Source Currency"
+        path "currency"
       end
       field "costTotal" do
         label "Processed Spend Total"
@@ -1438,5 +1919,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

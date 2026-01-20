@@ -14,6 +14,8 @@ This policy generates a comprehensive report on the usage of MSP Customer Organi
 - It identifies organizations with 100% inactive users and includes their total costs in the report.
 - It allows excluding organizations with total costs below a specified threshold.
 - It allows excluding certain costs from the net cost calculations and reports excluded costs separately.
+- It optionally filters adjustments by name so you can explicitly include or exclude them from invoiceable processed spend.
+- It includes breakdowns of processed spend by Currency and Bill Source to better visualize multi-currency environments.
 
 ## Input Parameters
 
@@ -30,7 +32,12 @@ This policy has the following input parameters required when applying the policy
 - *Billing Period* - The billing period to report on. Options are "Previous Month", "Previous 12 Months", or "Specific Month".
 - *Specific Period* - If "Specific Month" is selected for Billing Period, specify the month in YYYY-MM format.
 - *Contractual Exclusions* - A list of cost types to exclude from invoiceable processed spend calculations. Options include "Tax" and "Marketplace". These exclusions are typically only for legacy agreements.
+- *Include Adjustments* - A list of adjustment names that should always remain in the invoiceable processed spend totals. Use this to explicitly include adjustments that might otherwise be excluded. If the same adjustment appears in both lists, the include list wins.
+- *Exclude Adjustments* - A list of adjustment names to move into the Excluded Processed Spend bucket. The policy filters on the `adjustment_name` dimension when collecting cost data.
 - *Get Customer Org Processed Spend from MSP Parent Org* - Select whether to get customer org processed spend from the MSP parent org or from customer orgs directly. Default is "No" which gets costs from both the parent org and customer orgs.
+- *Bill Source Currencies* - A list of currency overrides for specific bill sources. Format should be `bill_source_id:CURRENCY_CODE` (e.g. `cbi-oi-azure-ea-12345:AUD`). Only needed if the Flexera Org has multiple currencies, and not using adjustments for normalization to a single currency in the org.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results.
 
 ## Policy Actions
 
