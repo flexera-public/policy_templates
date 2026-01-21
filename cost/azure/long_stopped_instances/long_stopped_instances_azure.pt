@@ -691,17 +691,63 @@ script "js_azure_instances_long_stopped", type: "javascript" do
 EOS
 end
 
+datasource "ds_reverify_instance_view" do
+  iterate $ds_azure_instances_long_stopped
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join([val(iter_item, "resourceID"), "/instanceView"])
+    query "api-version", "2018-06-01"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    field "statuses", jmes_path(response, "statuses")
+    field "resourceID", val(iter_item, "resourceID")
+  end
+end
+
+datasource "ds_verified_long_stopped" do
+  run_script $js_verified_long_stopped, $ds_azure_instances_long_stopped, $ds_reverify_instance_view
+end
+
+script "js_verified_long_stopped", type: "javascript" do
+  parameters "ds_azure_instances_long_stopped", "ds_reverify_instance_view"
+  result "result"
+  code <<-'EOS'
+  var latest_status_map = {};
+  _.each(ds_reverify_instance_view, function(instance) {
+     latest_status_map[instance['resourceID']] = instance;
+  });
+
+  result = _.filter(ds_azure_instances_long_stopped, function(instance) {
+    if (!latest_status_map[instance['resourceID']]) {
+       // If we can't get the latest status, it's safer to skip than to delete a potentially running VM
+       return false;
+    }
+    
+    var latest_view = latest_status_map[instance['resourceID']];
+    var codes = _.pluck(latest_view['statuses'], 'code');
+    
+    // Strict check: Must have explicit stopped/deallocated state
+    return _.contains(codes, "PowerState/deallocated") || _.contains(codes, "PowerState/stopped");
+  })
+EOS
+end
+
 datasource "ds_disk_list" do
-  run_script $js_disk_list, $ds_azure_instances_long_stopped
+  run_script $js_disk_list, $ds_verified_long_stopped
 end
 
 script "js_disk_list", type: "javascript" do
-  parameters "ds_azure_instances_long_stopped"
+  parameters "ds_verified_long_stopped"
   result "result"
   code <<-'EOS'
   result = []
 
-  _.each(ds_azure_instances_long_stopped, function(instance) {
+  _.each(ds_verified_long_stopped, function(instance) {
     if (instance['disks']) {
       disks = _.map(instance['disks'], function(disk) {
         new_disk = { diskName: disk }
@@ -744,13 +790,13 @@ datasource "ds_azure_disks" do
 end
 
 datasource "ds_azure_subscriptions_for_cost" do
-  run_script $js_azure_subscriptions_for_cost, $ds_azure_instances_long_stopped
+  run_script $js_azure_subscriptions_for_cost, $ds_verified_long_stopped
 end
 
 script "js_azure_subscriptions_for_cost", type: "javascript" do
-  parameters "ds_azure_instances_long_stopped"
+  parameters "ds_verified_long_stopped"
   result "result"
-  code "result = _.uniq(_.pluck(ds_azure_instances_long_stopped, 'subscriptionId'))"
+  code "result = _.uniq(_.pluck(ds_verified_long_stopped, 'subscriptionId'))"
 end
 
 datasource "ds_azure_costs" do
@@ -870,11 +916,11 @@ EOS
 end
 
 datasource "ds_azure_instances_with_costs" do
-  run_script $js_azure_instances_with_costs, $ds_azure_instances_long_stopped, $ds_azure_disks, $ds_azure_costs_grouped
+  run_script $js_azure_instances_with_costs, $ds_verified_long_stopped, $ds_azure_disks, $ds_azure_costs_grouped
 end
 
 script "js_azure_instances_with_costs", type: "javascript" do
-  parameters "ds_azure_instances_long_stopped", "ds_azure_disks", "ds_azure_costs_grouped"
+  parameters "ds_verified_long_stopped", "ds_azure_disks", "ds_azure_costs_grouped"
   result "result"
   code <<-'EOS'
   disks_by_vm = _.groupBy(ds_azure_disks, function(disk) {
@@ -888,7 +934,7 @@ script "js_azure_instances_with_costs", type: "javascript" do
     ].join('').toLowerCase().trim()
   })
 
-  result = _.map(ds_azure_instances_long_stopped, function(instance) {
+  result = _.map(ds_verified_long_stopped, function(instance) {
     new_instance = { disks: [], diskCount: 0, vmCost: 0.0, diskCost: 0.0 }
 
     if (disks_by_vm[instance['resourceID'].toLowerCase().trim()]) {
