@@ -85,6 +85,15 @@ parameter "param_contractual_exclusion" do
   default []
 end
 
+parameter "param_contractual_exclusion_json" do
+  type "string"
+  category "Advanced Settings"
+  label "Contractual Exclusions (JSON)"
+  description "JSON representation of contractual exclusions for the organization.  Please reference https://reference.rightscale.com/bill_analysis/#/costs/costs_aggregated docs and specifically the \"FilterV1RequestBody\" object schema for valid structure. This parameter is optional and can be left blank if not needed."
+  allowed_pattern /(^\s*(\{[\s\S]*\}|\[[\s\S]*\])\s*$)|^\s*$/ # Valid JSON, or empty string
+  default ""
+end
+
 parameter "param_include_adjustments" do
   type "list"
   category "Advanced Settings"
@@ -372,11 +381,11 @@ datasource "ds_parent_org_rbds" do
 end
 
 datasource "ds_request_parent_org_costs_not_allocated" do
-  run_script $js_request_parent_org_costs_not_allocated, $ds_parent_org_rbds, $ds_parent_org_billing_centers, $param_contractual_exclusion, $param_include_adjustments, $param_exclude_adjustments, rs_org_id, rs_org_name
+  run_script $js_request_parent_org_costs_not_allocated, $ds_parent_org_rbds, $ds_parent_org_billing_centers, $param_contractual_exclusion, $param_contractual_exclusion_json, $param_include_adjustments, $param_exclude_adjustments, rs_org_id, rs_org_name
 end
 
 script "js_request_parent_org_costs_not_allocated", type: "javascript" do
-  parameters "ds_parent_org_rbds", "ds_parent_org_billing_centers", "param_contractual_exclusion", "param_include_adjustments", "param_exclude_adjustments", "rs_org_id", "rs_org_name"
+  parameters "ds_parent_org_rbds", "ds_parent_org_billing_centers", "param_contractual_exclusion", "param_contractual_exclusion_json", "param_include_adjustments", "param_exclude_adjustments", "rs_org_id", "rs_org_name"
   result "result"
   code <<-'EOS'
   // initial filters for all requests
@@ -432,6 +441,16 @@ script "js_request_parent_org_costs_not_allocated", type: "javascript" do
         break;
     }
   });
+
+  // If param_contractual_exclusion_json is provided, parse it and add to exclusion_expressions
+  if (param_contractual_exclusion_json && param_contractual_exclusion_json.trim().length > 0) {
+    var contractual_exclusions = JSON.parse(param_contractual_exclusion_json);
+    // Expecting contractual_exclusions to be a FilterV1RequestBody object
+    // https://reference.rightscale.com/bill_analysis/#/costs/costs_aggregated#FilterV1RequestBody
+    if (_.isObject(contractual_exclusions)) {
+      exclusion_expressions.push(contractual_exclusions);
+    }
+  }
 
   _.each(exclude_adjustments, function(adjustment) {
     exclusion_expressions.push({ "type":"equal", "dimension":"adjustment_name", "value": adjustment });
@@ -680,11 +699,11 @@ EOS
 end
 
 datasource "ds_request_children_org_get_costs_step4" do
-  run_script $js_request_children_org_get_costs_step4, $ds_children_org_get_toplevel_billing_centers_step3, $ds_request_parent_org_costs_not_allocated, $param_get_costs_from_parent_org, $param_contractual_exclusion, $param_include_adjustments, $param_exclude_adjustments, rs_org_id, rs_org_name
+  run_script $js_request_children_org_get_costs_step4, $ds_children_org_get_toplevel_billing_centers_step3, $ds_request_parent_org_costs_not_allocated, $param_get_costs_from_parent_org, $param_contractual_exclusion, $param_contractual_exclusion_json, $param_include_adjustments, $param_exclude_adjustments, rs_org_id, rs_org_name
 end
 
 script "js_request_children_org_get_costs_step4", type: "javascript" do
-  parameters "ds_children_org_get_toplevel_billing_centers_step3", "ds_request_parent_org_costs_not_allocated", "param_get_costs_from_parent_org", "param_contractual_exclusion", "param_include_adjustments", "param_exclude_adjustments", "rs_org_id", "rs_org_name"
+  parameters "ds_children_org_get_toplevel_billing_centers_step3", "ds_request_parent_org_costs_not_allocated", "param_get_costs_from_parent_org", "param_contractual_exclusion", "param_contractual_exclusion_json", "param_include_adjustments", "param_exclude_adjustments", "rs_org_id", "rs_org_name"
   result "result"
   code <<-'EOS'
   // initial filters for all requests
@@ -740,6 +759,14 @@ script "js_request_children_org_get_costs_step4", type: "javascript" do
         break;
     }
   });
+
+  // If param_contractual_exclusion_json is provided, parse it and add to exclusion_expressions
+  if (param_contractual_exclusion_json && param_contractual_exclusion_json.trim().length > 0) {
+    var contractual_exclusions = JSON.parse(param_contractual_exclusion_json);
+    if (_.isObject(contractual_exclusions)) {
+      base_exclusion_expressions.push(contractual_exclusions);
+    }
+  }
 
   var result = [];
 

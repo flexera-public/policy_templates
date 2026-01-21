@@ -5,6 +5,7 @@
 - Enhance Customer Usage Insights Report with new parameters and currency breakdowns
 - Added `Attach CSV To Incident Email` and `Incident Table Rows for Email Body (#)` parameters to control email attachment and table size.
 - Added `Include Adjustments` and `Exclude Adjustments` parameters to control which named adjustments remain invoiceable versus excluded when generating the report.
+- Added `Contractual Exclusions (JSON)` parameter to allow exclusion filters in JSON format, enhancing flexibility for operators.
 
 ## v0.1.3
 
