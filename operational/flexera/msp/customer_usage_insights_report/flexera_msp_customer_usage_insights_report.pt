@@ -81,8 +81,8 @@ parameter "param_contractual_exclusion" do
   category "Advanced Settings"
   label "Contractual Exclusions"
   description "A list of contractual exclusions for the organization. These are rare and typically only for legacy agreements. If you are unsure what to select here, please contact your Flexera Partner Business Manager."
-  allowed_values "Tax", "Marketplace"
-  default []
+  allowed_values "Tax", "Marketplace", "Flexera Adjustments"
+  default ["Flexera Adjustments"]
 end
 
 parameter "param_contractual_exclusion_json" do
@@ -92,22 +92,6 @@ parameter "param_contractual_exclusion_json" do
   description "JSON representation of contractual exclusions for the organization.  Please reference https://reference.rightscale.com/bill_analysis/#/costs/costs_aggregated docs and specifically the \"FilterV1RequestBody\" object schema for valid structure. This parameter is optional and can be left blank if not needed."
   allowed_pattern /(^\s*(\{[\s\S]*\}|\[[\s\S]*\])\s*$)|^\s*$/ # Valid JSON, or empty string
   default ""
-end
-
-parameter "param_include_adjustments" do
-  type "list"
-  category "Advanced Settings"
-  label "Include Adjustments"
-  description "A list of adjustment names that should always be treated as invoiceable processed spend even if they also appear in the exclusion list. Leave blank to include all adjustments."
-  default []
-end
-
-parameter "param_exclude_adjustments" do
-  type "list"
-  category "Advanced Settings"
-  label "Exclude Adjustments"
-  description "A list of adjustment names to exclude from invoiceable processed spend. Matching adjustments are counted in the Excluded Processed Spend bucket."
-  default []
 end
 
 parameter "param_billing_period" do
@@ -240,6 +224,14 @@ script "js_flexera_api_hosts", type: "javascript" do
 EOS
 end
 
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 datasource "ds_currency_code" do
   request do
     auth $auth_flexera
@@ -254,6 +246,36 @@ datasource "ds_currency_code" do
     field "id", jmes_path(response, "id")
     field "value", jmes_path(response, "value")
   end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
 end
 
 datasource "ds_dates" do
@@ -381,50 +403,13 @@ datasource "ds_parent_org_rbds" do
 end
 
 datasource "ds_request_parent_org_costs_not_allocated" do
-  run_script $js_request_parent_org_costs_not_allocated, $ds_parent_org_rbds, $ds_parent_org_billing_centers, $param_contractual_exclusion, $param_contractual_exclusion_json, $param_include_adjustments, $param_exclude_adjustments, rs_org_id, rs_org_name
+  run_script $js_request_parent_org_costs_not_allocated, $ds_parent_org_rbds, $ds_parent_org_billing_centers, $param_contractual_exclusion, $param_contractual_exclusion_json, rs_org_id, rs_org_name
 end
 
 script "js_request_parent_org_costs_not_allocated", type: "javascript" do
-  parameters "ds_parent_org_rbds", "ds_parent_org_billing_centers", "param_contractual_exclusion", "param_contractual_exclusion_json", "param_include_adjustments", "param_exclude_adjustments", "rs_org_id", "rs_org_name"
+  parameters "ds_parent_org_rbds", "ds_parent_org_billing_centers", "param_contractual_exclusion", "param_contractual_exclusion_json", "rs_org_id", "rs_org_name"
   result "result"
   code <<-'EOS'
-  // initial filters for all requests
-  function normalizeAdjustmentList(values) {
-    // If values is null or undefined, return an empty list
-    if (!values) {
-      return [];
-    }
-
-    return _.chain(values)
-      // Process the values in a chain of functions
-      .map(function(value) {
-        // If string, trim string and return
-        if (_.isString(value)) {
-          return value.trim();
-        }
-        // If number, convert to string and return
-        if (_.isNumber(value)) {
-          return value.toString();
-        }
-        // If not a string or number, return empty string which will be filtered out in the next step
-        return "";
-      })
-      .filter(function(value) {
-        // Filter out any values that are empty after trimming or converting to string
-        return value.length > 0;
-      })
-      .uniq()
-      .value();
-  }
-
-  var include_adjustments = normalizeAdjustmentList(param_include_adjustments);
-  var exclude_adjustments = normalizeAdjustmentList(param_exclude_adjustments);
-
-  // If the same adjustment is in both lists, treat it as included (invoiceable)
-  if (include_adjustments.length > 0) {
-    exclude_adjustments = _.difference(exclude_adjustments, include_adjustments);
-  }
-
   var exclusion_expressions = [];
 
   _.each(param_contractual_exclusion, function(exclusion) {
@@ -439,6 +424,10 @@ script "js_request_parent_org_costs_not_allocated", type: "javascript" do
         // Azure EA + MCA Marketplace
         exclusion_expressions.push({ "type":"equal", "dimension":"bill_entity", "value":"Marketplace" });
         break;
+      case "Flexera Adjustments":
+        // Exclude all named adjustments in Flexera Platform
+        exclusion_expressions.push({"type":"not", "expression":{ "type":"equal", "dimension":"adjustment_name", "value":"Raw Cost" }});
+        break;
     }
   });
 
@@ -451,10 +440,6 @@ script "js_request_parent_org_costs_not_allocated", type: "javascript" do
       exclusion_expressions.push(contractual_exclusions);
     }
   }
-
-  _.each(exclude_adjustments, function(adjustment) {
-    exclusion_expressions.push({ "type":"equal", "dimension":"adjustment_name", "value": adjustment });
-  });
 
   var filter_expression = null;
 
@@ -699,50 +684,13 @@ EOS
 end
 
 datasource "ds_request_children_org_get_costs_step4" do
-  run_script $js_request_children_org_get_costs_step4, $ds_children_org_get_toplevel_billing_centers_step3, $ds_request_parent_org_costs_not_allocated, $param_get_costs_from_parent_org, $param_contractual_exclusion, $param_contractual_exclusion_json, $param_include_adjustments, $param_exclude_adjustments, rs_org_id, rs_org_name
+  run_script $js_request_children_org_get_costs_step4, $ds_children_org_get_toplevel_billing_centers_step3, $ds_request_parent_org_costs_not_allocated, $param_get_costs_from_parent_org, $param_contractual_exclusion, $param_contractual_exclusion_json, rs_org_id, rs_org_name
 end
 
 script "js_request_children_org_get_costs_step4", type: "javascript" do
-  parameters "ds_children_org_get_toplevel_billing_centers_step3", "ds_request_parent_org_costs_not_allocated", "param_get_costs_from_parent_org", "param_contractual_exclusion", "param_contractual_exclusion_json", "param_include_adjustments", "param_exclude_adjustments", "rs_org_id", "rs_org_name"
+  parameters "ds_children_org_get_toplevel_billing_centers_step3", "ds_request_parent_org_costs_not_allocated", "param_get_costs_from_parent_org", "param_contractual_exclusion", "param_contractual_exclusion_json", "rs_org_id", "rs_org_name"
   result "result"
   code <<-'EOS'
-  // initial filters for all requests
-  function normalizeAdjustmentList(values) {
-    // If values is null or undefined, return an empty list
-    if (!values) {
-      return [];
-    }
-
-    return _.chain(values)
-      // Process the values in a chain of functions
-      .map(function(value) {
-        // If string, trim string and return
-        if (_.isString(value)) {
-          return value.trim();
-        }
-        // If number, convert to string and return
-        if (_.isNumber(value)) {
-          return value.toString();
-        }
-        // If not a string or number, return empty string which will be filtered out in the next step
-        return "";
-      })
-      .filter(function(value) {
-        // Filter out any values that are empty after trimming or converting to string
-        return value.length > 0;
-      })
-      .uniq()
-      .value();
-  }
-
-  var include_adjustments = normalizeAdjustmentList(param_include_adjustments);
-  var exclude_adjustments = normalizeAdjustmentList(param_exclude_adjustments);
-
-  // If the same adjustment is in both lists, treat it as included (invoiceable)
-  if (include_adjustments.length > 0) {
-    exclude_adjustments = _.difference(exclude_adjustments, include_adjustments);
-  }
-
   var base_exclusion_expressions = [];
 
   _.each(param_contractual_exclusion, function(exclusion) {
@@ -756,6 +704,11 @@ script "js_request_children_org_get_costs_step4", type: "javascript" do
         base_exclusion_expressions.push({ "type":"equal", "dimension":"bill_entity", "value":"AWS Marketplace" });
         // Azure EA + MCA Marketplace
         base_exclusion_expressions.push({ "type":"equal", "dimension":"bill_entity", "value":"Marketplace" });
+        break;
+      case "Flexera Adjustments":
+        // Exclude all adjustments by Flexera Platform
+        // Exclude all where (adjustment_name != "Raw Cost) -- keep only "Raw Cost" from each bill source
+        base_exclusion_expressions.push({"type":"not", "expression":{ "type":"equal", "dimension":"adjustment_name", "value":"Raw Cost" }});
         break;
     }
   });
@@ -775,17 +728,6 @@ script "js_request_children_org_get_costs_step4", type: "javascript" do
 
     // Logic to build filter for Child Org requests
     var child_exclusion_expressions = JSON.parse(JSON.stringify(base_exclusion_expressions)); // Deep copy
-
-    // Check if this child org has the 'adjustment_name' dimension
-    var has_adjustment_name = _.some(org.dimensions, function(dim) {
-       return dim.id === "adjustment_name";
-    });
-
-    if (has_adjustment_name) {
-       _.each(exclude_adjustments, function(adjustment) {
-         child_exclusion_expressions.push({ "type":"equal", "dimension":"adjustment_name", "value": adjustment });
-       });
-    }
 
     var filter_expression = null;
 
@@ -941,40 +883,21 @@ datasource "ds_children_org_get_bill_connects_step7" do
 end
 
 datasource "ds_report" do
-  run_script $js_report, $ds_flexera_api_hosts, $ds_dates, $ds_currency_code, $ds_request_parent_org_costs_not_allocated, $ds_parent_org_costs_not_allocated, $ds_children_org_get_bill_connects_step7, $ds_applied_policy, $ds_applied_policy_template_hash, $ds_identify_errors, $param_excluded_user_regex, $param_included_user_regex, $param_active_days_threshold, $param_child_orgs_list, $param_child_orgs_allow_or_deny, $param_cost_threshold, $param_get_costs_from_parent_org, $param_billing_period, $param_bill_source_currencies, rs_org_id, rs_org_name
+  run_script $js_report, $ds_flexera_api_hosts, $ds_dates, $ds_currency_code, $ds_currency_reference, $ds_request_parent_org_costs_not_allocated, $ds_parent_org_costs_not_allocated, $ds_children_org_get_bill_connects_step7, $ds_applied_policy, $ds_applied_policy_template_hash, $ds_identify_errors, $param_excluded_user_regex, $param_included_user_regex, $param_active_days_threshold, $param_child_orgs_list, $param_child_orgs_allow_or_deny, $param_cost_threshold, $param_get_costs_from_parent_org, $param_billing_period, $param_bill_source_currencies, rs_org_id, rs_org_name
 end
 
 script "js_report", type: "javascript" do
-  parameters "ds_flexera_api_hosts", "ds_dates", "ds_currency_code", "ds_request_parent_org_costs_not_allocated", "ds_parent_org_costs_not_allocated", "ds_children_org", "ds_applied_policy", "ds_applied_policy_template_hash", "ds_identify_errors", "param_excluded_user_regex", "param_included_user_regex", "param_active_days_threshold", "param_child_orgs_list", "param_child_orgs_allow_or_deny", "param_cost_threshold", "param_get_costs_from_parent_org", "param_billing_period", "param_bill_source_currencies", "rs_org_id", "rs_org_name"
+  parameters "ds_flexera_api_hosts", "ds_dates", "ds_currency_code", "ds_currency_reference", "ds_request_parent_org_costs_not_allocated", "ds_parent_org_costs_not_allocated", "ds_children_org", "ds_applied_policy", "ds_applied_policy_template_hash", "ds_identify_errors", "param_excluded_user_regex", "param_included_user_regex", "param_active_days_threshold", "param_child_orgs_list", "param_child_orgs_allow_or_deny", "param_cost_threshold", "param_get_costs_from_parent_org", "param_billing_period", "param_bill_source_currencies", "rs_org_id", "rs_org_name"
   result "result"
   code <<-'EOS'
-    var currencySymbols = {
-      'USD': '$',
-      'EUR': '€',
-      'GBP': '£',
-      'JPY': '¥',
-      'CNY': '¥',
-      'AUD': 'A$',
-      'CAD': 'C$',
-      'CHF': 'CHF',
-      'SEK': 'kr',
-      'NZD': 'NZ$',
-      'MXN': '$',
-      'SGD': 'S$',
-      'HKD': 'HK$',
-      'NOK': 'kr',
-      'KRW': '₩',
-      'TRY': '₺',
-      'INR': '₹',
-      'BRL': 'R$',
-      'ZAR': 'R'
-    };
-
     function formatCurrency(value, currencyCode) {
       if (value === 0  || _.isNumber(value) === false) {
         // Use default currency if not provided
         var code = currencyCode || defaultCurrency;
-        var symbol = currencySymbols[code] || code + ' ';
+        var symbol = code + ' ';
+        if (ds_currency_reference && ds_currency_reference[code] && ds_currency_reference[code]['symbol']) {
+             symbol = ds_currency_reference[code]['symbol'];
+        }
         return symbol + "0.00";
       }
       var parts = value.toFixed(2).split('.');
@@ -991,7 +914,10 @@ script "js_report", type: "javascript" do
 
       parts[0] = formattedInt;
       var code = currencyCode || defaultCurrency;
-      var symbol = currencySymbols[code] || code + ' ';
+      var symbol = code + ' ';
+      if (ds_currency_reference && ds_currency_reference[code] && ds_currency_reference[code]['symbol']) {
+           symbol = ds_currency_reference[code]['symbol'];
+      }
       return symbol + parts.join('.');
     }
 
