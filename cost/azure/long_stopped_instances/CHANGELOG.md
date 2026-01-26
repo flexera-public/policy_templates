@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1.3
+
+- Added strict state re-validation to prevent flagging running instances as stopped due to stale API data or missing logs.
+
 ## v6.1.2
 
 - Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
