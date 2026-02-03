@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4.5
+
+- Updated account scope description to better explain Payer vs Linked behavior.
+
 ## v3.4.4
 
 - Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
