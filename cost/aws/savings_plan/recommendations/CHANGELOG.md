@@ -2,7 +2,7 @@
 
 ## v3.4.5
 
-- Updated account scope description to better explain Payer vs Linked behavior.
+- Updated account scope description to better explain Payer vs Linked behavior. Functionality unchanged.
 
 ## v3.4.4
 
