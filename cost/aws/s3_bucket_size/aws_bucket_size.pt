@@ -8,7 +8,7 @@ category "Cost"
 severity "medium"
 default_frequency "weekly"
 info(
-  version: "3.2.3",
+  version: "4.0.1",
   provider: "AWS",
   service: "Storage",
   policy_set: "",
@@ -187,6 +187,92 @@ datasource "ds_cloud_vendor_accounts" do
   end
 end
 
+# Get AWS account info fallback
+datasource "ds_billing_centers_aws_acc" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs_aws_acc" do
+  run_script $js_top_level_bcs_aws_acc, $ds_billing_centers_aws_acc
+end
+
+script "js_top_level_bcs_aws_acc", type: "javascript" do
+  parameters "ds_billing_centers_aws_acc"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers_aws_acc, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_cloud_vendor_accounts_fallback" do
+  request do
+    run_script $js_cloud_vendor_accounts_fallback, $ds_top_level_bcs_aws_acc, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "id", jmes_path(col_item, "dimensions.vendor_account")
+      field "name", jmes_path(col_item, "dimensions.vendor_account_name")
+    end
+  end
+end
+
+script "js_cloud_vendor_accounts_fallback", type: "javascript" do
+  parameters "ds_top_level_bcs_aws_acc", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      dimensions: ["vendor_account", "vendor_account_name"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs_aws_acc
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
@@ -205,18 +291,29 @@ datasource "ds_get_caller_identity" do
 end
 
 datasource "ds_aws_account" do
-  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_cloud_vendor_accounts_fallback, $ds_get_caller_identity
 end
 
 script "js_aws_account", type:"javascript" do
-  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  parameters "ds_cloud_vendor_accounts", "ds_cloud_vendor_accounts_fallback", "ds_get_caller_identity"
   result "result"
   code <<-'EOS'
   result = _.find(ds_cloud_vendor_accounts, function(account) {
     return account['id'] == ds_get_caller_identity[0]['account']
   })
 
-  // This is in case the API does not return the relevant account info
+  // This is in case the Flexera List Cloud Accounts API does not return the relevant account info
+  if (result == undefined) {
+    result = _.find(ds_cloud_vendor_accounts_fallback, function(account) {
+      return account['id'] == ds_get_caller_identity[0]['account']
+    })
+
+    if (result) {
+      result["tags"] = {}
+    }
+  }
+
+  // This is in case both the Flexera List Cloud Accounts API and the Flexera Cost data do not return the relevant account info
   if (result == undefined) {
     result = {
       id: ds_get_caller_identity[0]['account'],
@@ -514,12 +611,17 @@ script "js_cloudwatch_metrics_by_bucket", type: "javascript" do
 
   _.each(ds_cloudwatch_metrics, function(metric) {
     dims = metric.dimensions || []
+
     bucket = _.find(dims, function(dim) { return dim.name == "BucketName" })
     if (!bucket || !bucket.value) return
-
     bucket_name = bucket.value
 
-    result[bucket_name] = {
+    storage_type = _.find(dims, function(dim) { return dim.name == "StorageType" })
+    if (!storage_type || !storage_type.value) return
+    storage_type_name = storage_type.value
+
+    // Composite Key of Bucket Name and Storage Type (as one bucket can have multiple associated storage types)
+    result[bucket_name + "::" + storage_type_name] = {
       namespace: metric.namespace,
       metricName: metric.metricName,
       dimensions: metric.dimensions
@@ -546,17 +648,49 @@ script "js_cloudwatch_queries", type: "javascript" do
     }
 
     // Find dimensions
-    metric_details = ds_cloudwatch_metrics_by_bucket[ bucket['name'] ]
+    metric_details = []
+
+    matched_keys = _.filter( _.keys(ds_cloudwatch_metrics_by_bucket), function(key) {
+      return key.indexOf(bucket['name']) !== -1
+    })
+
+    if (matched_keys) {
+      _.each(matched_keys, function(key) {
+        metric_details.push(
+          ds_cloudwatch_metrics_by_bucket[key]
+        )
+      })
+    }
 
     if (metric_details != null) {
-      // Custom metric taken from ListMetrics API response
-      metric_name = metric_details["metricName"]
+      _.each(metric_details, function(metric_detail) {
 
-      dimensions = []
-      _.each(metric_details['dimensions'], function (dim) {
-        dimensions.push({
-          "Name": dim["name"],
-          "Value": dim["value"]
+        // Custom metric taken from ListMetrics API response
+        metric_name = metric_detail["metricName"]
+
+        dimensions = _.map(metric_detail['dimensions'], function (dim) {
+          return {
+            "Name": dim["name"],
+            "Value": dim["value"]
+          }
+        })
+
+        storage_type_found = _.find(dimensions, function(dim) { return dim["Name"] == "StorageType" })
+        storage_type_name = (typeof storage_type_found === "undefined") ? "" : storage_type_found["Value"]
+
+        result[bucket['region']].push({
+          "Id": bucket['name'].replace(/-/g, "_") + "_" + storage_type_name
+          "MetricStat": {
+            "Metric": {
+              "Namespace": "AWS/S3",
+              "MetricName": metric_name,
+              "Dimensions": dimensions
+            },
+            "Period": 2592000,
+            "Stat": "Average",
+            "Unit": "Bytes"
+          },
+          "ReturnData": true
         })
       })
 
@@ -568,22 +702,22 @@ script "js_cloudwatch_queries", type: "javascript" do
         { "Name": "BucketName", "Value": bucket['name'] },
         { "Name": "StorageType", "Value": "StandardStorage" }
       ]
-    }
 
-    result[bucket['region']].push({
-      "Id": bucket['name'].replace(/-/g, "_"),
-      "MetricStat": {
-        "Metric": {
-          "Namespace": "AWS/S3",
-          "MetricName": metric_name,
-          "Dimensions": dimensions
+      result[bucket['region']].push({
+        "Id": bucket['name'].replace(/-/g, "_") + "_" + "StandardStorage",
+        "MetricStat": {
+          "Metric": {
+            "Namespace": "AWS/S3",
+            "MetricName": metric_name,
+            "Dimensions": dimensions
+          },
+          "Period": 2592000,
+          "Stat": "Average",
+          "Unit": "Bytes"
         },
-        "Period": 2592000,
-        "Stat": "Average",
-        "Unit": "Bytes"
-      },
-      "ReturnData": true
-    })
+        "ReturnData": true
+      })
+    }
   })
 EOS
 end
@@ -690,7 +824,7 @@ script "js_cloudwatch_data_sorted", type: "javascript" do
 
   _.each(ds_cloudwatch_data, function(item) {
     region = item['region']
-    name = item['id'].replace(/_/g, "-")
+    name = item['label']
 
     // Grabbing index 0 SHOULD be safe because we should only get one result.
     // Just in case AWS slices the data weirdly and returns 2 results, we make
@@ -716,16 +850,34 @@ script "js_aws_oversized_buckets", type: "javascript" do
   // Convert user-specified threshold to bytes
   size_threshold = param_size_threshold * 1073741824
 
-  oversized_buckets = _.filter(ds_aws_buckets_tag_filtered, function(bucket) {
+  oversized_buckets = []
+  _.each(ds_aws_buckets_tag_filtered, function(bucket) {
     oversized = false
     name = bucket['name']
     region = bucket['region']
 
-    if (ds_cloudwatch_data_sorted[region] && ds_cloudwatch_data_sorted[region][name]) {
-      oversized = ds_cloudwatch_data_sorted[region][name] > size_threshold
-    }
+    if (ds_cloudwatch_data_sorted[region]) {
 
-    return oversized
+      matched_keys = _.filter( _.keys(ds_cloudwatch_data_sorted[region]), function(key) {
+        return key.indexOf(name) !== -1
+      })
+
+      if (_.size(matched_keys) > 0) {
+        _.each(matched_keys, function(key) {
+          current_bucket = _.clone(bucket)
+          oversized = ds_cloudwatch_data_sorted[region][key] > size_threshold
+
+          if (oversized) {
+            storage_type = key.split(" ")[1]
+            label = key
+
+            current_bucket["storage_type"] = storage_type
+            current_bucket["label"] = label
+            oversized_buckets.push(current_bucket)
+          }
+        })
+      }
+    }
   })
 
   result = _.map(oversized_buckets, function(bucket) {
@@ -737,6 +889,8 @@ script "js_aws_oversized_buckets", type: "javascript" do
 
     name = bucket['name']
     region = bucket['region']
+    bucket_storage_type = bucket['storage_type']
+    bucket_label = bucket['label']
 
     return {
       resourceID: name,
@@ -746,7 +900,8 @@ script "js_aws_oversized_buckets", type: "javascript" do
       creation_date: new Date(bucket['creation_date']).toISOString(),
       threshold: param_size_threshold,
       // Convert size from bytes to GiB
-      size: Math.round(ds_cloudwatch_data_sorted[region][name] / 1073741824 * 100) / 100,
+      size: Math.round(ds_cloudwatch_data_sorted[region][bucket_label] / 1073741824 * 100) / 100,
+      storageType: bucket_storage_type,
       accountID: ds_aws_account['id'],
       accountName: ds_aws_account['name'],
       policy_name: ds_applied_policy['name'],
@@ -797,6 +952,9 @@ policy "pol_aws_oversized_buckets" do
       end
       field "service" do
         label "Service"
+      end
+      field "storageType" do
+        label "Storage Type"
       end
       field "threshold" do
         label "Size Threshold (GiB)"

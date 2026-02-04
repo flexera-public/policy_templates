@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.5.2",
+  version: "0.5.5",
   provider: "AWS",
   service: "Database",
   policy_set: "Rightsize Database Instances",
@@ -258,6 +258,92 @@ datasource "ds_cloud_vendor_accounts" do
   end
 end
 
+# Get AWS account info fallback
+datasource "ds_billing_centers_aws_acc" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs_aws_acc" do
+  run_script $js_top_level_bcs_aws_acc, $ds_billing_centers_aws_acc
+end
+
+script "js_top_level_bcs_aws_acc", type: "javascript" do
+  parameters "ds_billing_centers_aws_acc"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers_aws_acc, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_cloud_vendor_accounts_fallback" do
+  request do
+    run_script $js_cloud_vendor_accounts_fallback, $ds_top_level_bcs_aws_acc, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "id", jmes_path(col_item, "dimensions.vendor_account")
+      field "name", jmes_path(col_item, "dimensions.vendor_account_name")
+    end
+  end
+end
+
+script "js_cloud_vendor_accounts_fallback", type: "javascript" do
+  parameters "ds_top_level_bcs_aws_acc", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      dimensions: ["vendor_account", "vendor_account_name"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs_aws_acc
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
@@ -276,18 +362,29 @@ datasource "ds_get_caller_identity" do
 end
 
 datasource "ds_aws_account" do
-  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_cloud_vendor_accounts_fallback, $ds_get_caller_identity
 end
 
 script "js_aws_account", type:"javascript" do
-  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  parameters "ds_cloud_vendor_accounts", "ds_cloud_vendor_accounts_fallback", "ds_get_caller_identity"
   result "result"
   code <<-'EOS'
   result = _.find(ds_cloud_vendor_accounts, function(account) {
     return account['id'] == ds_get_caller_identity[0]['account']
   })
 
-  // This is in case the API does not return the relevant account info
+  // This is in case the Flexera List Cloud Accounts API does not return the relevant account info
+  if (result == undefined) {
+    result = _.find(ds_cloud_vendor_accounts_fallback, function(account) {
+      return account['id'] == ds_get_caller_identity[0]['account']
+    })
+
+    if (result) {
+      result["tags"] = {}
+    }
+  }
+
+  // This is in case both the Flexera List Cloud Accounts API and the Flexera Cost data do not return the relevant account info
   if (result == undefined) {
     result = {
       id: ds_get_caller_identity[0]['account'],
@@ -552,7 +649,7 @@ end
 
 # Filter out any clusters where a smaller size isn't available since we can't downsize them anyway
 datasource "ds_elasticache_clusters_resize_filtered" do
-  run_script $js_elasticache_clusters_resize_filtered, $ds_elasticache_clusters, $ds_aws_instance_type_map, $ds_aws_instance_type_map, $ds_aws_account
+  run_script $js_elasticache_clusters_resize_filtered, $ds_elasticache_clusters, $ds_aws_instance_type_map, $ds_aws_instance_types_by_family, $ds_aws_account
 end
 
 script "js_elasticache_clusters_resize_filtered", type: "javascript" do
@@ -578,7 +675,9 @@ script "js_elasticache_clusters_resize_filtered", type: "javascript" do
     normalizedType = cluster["nodeType"].split("cache.")[1]
     family = normalizedType.split('.')[0]
     typeIndex = null
-    if (ds_aws_instance_types_by_family[family]) { typeIndex = findTypeIndex(ds_aws_instance_types_by_family[family], instance['resourceType']) }
+    if (ds_aws_instance_types_by_family[family]) {
+      typeIndex = findTypeIndex(ds_aws_instance_types_by_family[family], normalizedType)
+    }
 
     if (typeIndex && typeIndex > 0) {
       resourceARN = [

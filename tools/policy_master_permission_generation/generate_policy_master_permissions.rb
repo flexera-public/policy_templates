@@ -248,49 +248,57 @@ def extract_permissions_from_readme(readme_content)
         elsif line.strip == "- Permissions" || line.strip == "Permission"
           credentials_section = "permissions"
         else
-          line.scan(/-\s*`([^`]+)`\*?/) do |match|
-            permission = match.first
+          line.scan(/-\s*`([^`]+)`([\*†‡§‖¶]*)/) do |match|
+            permission = match[0]
+            trailing_symbols = match[1]
 
-            # Set whether permission is read-only, required, and/or has a description (and depending on the symbol)
             read_only_permission = true
             required = true
 
-            # Checks for a symbol (which would denote that the permission has an accompanying description)
-            symbol_if_exists = list_of_notes.find { |note| permission.end_with?(note[:symbol]) == true || line.include?(note[:symbol]) == true }
+            # Gather all notes for trailing symbols, in order
+            notes_for_symbols = trailing_symbols.chars.map { |sym| list_of_notes.find { |note| note[:symbol] == sym } }.compact
 
-            if symbol_if_exists != nil && !symbol_if_exists[:detail].strip.empty?
+            # If there are any notes, process them in order (first note with detail wins for required/read_only logic)
+            description = nil
+            notes_for_symbols.each do |note|
+              next if note[:detail].strip.empty?
+
+              description = note[:detail]
               required = false
 
-              if symbol_if_exists[:detail].include?("taking action")
+              if note[:detail].include?("taking action")
                 read_only_permission = false
               end
 
-              if symbol_if_exists[:detail].include?("These permissions enable taking actions against cloud resources.")
+              if note[:detail].include?("These permissions enable taking actions against cloud resources.")
                 required = true
               end
 
-              permission = permission.chomp(symbol_if_exists[:symbol])
-
-              # Failsafe to ensure that write permissions are not marked as read-only due to README errors
-              if permission.downcase().include?("write") || permission.downcase().include?("create") || permission.downcase().include?("delete") || permission.downcase().include?("start") || permission.downcase().include?("stop") || permission.downcase().include?("modify") || permission.downcase().include?("update") || permission.downcase().include?("change")
-                read_only_permission = false
+              if note[:detail].include?("does not support more granular permissions")
+                required = true
               end
 
-              if credentials_section == "roles"
-                policy_credentials << { role: permission, provider: provider, read_only: read_only_permission, required: required, description: symbol_if_exists[:detail] }
-              elsif credentials_section == "permissions"
-                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required, description: symbol_if_exists[:detail] }
-              else
-                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required, description: symbol_if_exists[:detail] }
-              end
+              # Only use the first note with a detail for required/read_only logic
+              break
+            end
+
+            # Failsafe to ensure that write permissions are not marked as read-only due to README errors
+            if permission.downcase().include?("write") || permission.downcase().include?("create") || permission.downcase().include?("delete") || permission.downcase().include?("start") || permission.downcase().include?("stop") || permission.downcase().include?("modify") || permission.downcase().include?("update") || permission.downcase().include?("change")
+              read_only_permission = false
+            end
+
+            if credentials_section == "roles"
+              entry = { role: permission, provider: provider, read_only: read_only_permission, required: required }
+              entry[:description] = description if description
+              policy_credentials << entry
+            elsif credentials_section == "permissions"
+              entry = { permission: permission, provider: provider, read_only: read_only_permission, required: required }
+              entry[:description] = description if description
+              policy_credentials << entry
             else
-              if credentials_section == "roles"
-                policy_credentials << { role: permission, provider: provider, read_only: read_only_permission, required: required }
-              elsif credentials_section == "permissions"
-                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required }
-              else
-                policy_credentials << { permission: permission, provider: provider, read_only: read_only_permission, required: required }
-              end
+              entry = { permission: permission, provider: provider, read_only: read_only_permission, required: required }
+              entry[:description] = description if description
+              policy_credentials << entry
             end
           end
         end

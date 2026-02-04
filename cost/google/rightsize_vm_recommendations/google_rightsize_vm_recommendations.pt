@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.3.2",
+  version: "3.3.3",
   provider: "Google",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -380,36 +380,52 @@ end
 
 datasource "ds_google_projects" do
   request do
-    auth $auth_google
-    pagination $pagination_google
-    host "cloudresourcemanager.googleapis.com"
-    path "/v1/projects/"
-    query "filter", "(lifecycleState:ACTIVE)"
-    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
-    # Forces `ds_is_deleted` datasource to run first during policy execution
-    header "Meta-Flexera", val($ds_is_deleted, "path")
+    run_script $js_google_projects, $ds_is_deleted, $param_projects_ignore_sys, $param_projects_ignore_app
   end
   result do
     encoding "json"
     collect jmes_path(response, "projects[*]") do
-      field "number", jmes_path(col_item, "projectNumber")
       field "id", jmes_path(col_item, "projectId")
       field "name", jmes_path(col_item, "name")
+      field "labels", jmes_path(col_item, "labels")
     end
   end
 end
 
+script "js_google_projects", type: "javascript" do
+  parameters "ds_is_deleted", "param_projects_ignore_sys", "param_projects_ignore_app"
+  result "request"
+  code <<-'EOS'
+  query = []
+  if (param_projects_ignore_sys == "Yes") { query.push("-projectId:sys-") }
+  if (param_projects_ignore_app == "Yes") { query.push("-projectId:app-") }
+
+  var request = {
+    auth: "auth_google",
+    pagination: "pagination_google",
+    host: "cloudresourcemanager.googleapis.com",
+    path: "/v3/projects:search",
+    query_params: { "query": query.join(" ") },
+    // Header Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    // Forces `ds_is_deleted` datasource to run first during policy execution
+    headers: {
+      "Meta-Flexera": ds_is_deleted["path"]
+    }
+  }
+EOS
+end
+
 datasource "ds_google_projects_filtered" do
-  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list, $param_projects_ignore_sys, $param_projects_ignore_app
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
 end
 
 script "js_google_projects_filtered", type: "javascript" do
-  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
   result "result"
   code <<-'EOS'
   if (param_projects_list.length > 0) {
-    filtered = _.filter(ds_google_projects, function(project) {
-      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
+    result = _.filter(ds_google_projects, function(project) {
+      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name'])
 
       if (param_projects_allow_or_deny == "Deny") {
         include_project = !include_project
@@ -418,12 +434,8 @@ script "js_google_projects_filtered", type: "javascript" do
       return include_project
     })
   } else {
-    filtered = ds_google_projects
+    result = ds_google_projects
   }
-
-  result = _.reject(filtered, function(project) {
-    return (project['id'].substring(0, 4) == "sys-" && param_projects_ignore_sys == "Yes") || (project['id'].substring(0, 4) == "app-" && param_projects_ignore_app == "Yes")
-  })
 EOS
 end
 
@@ -448,7 +460,6 @@ datasource "ds_calculated_utilization" do
       field "cpuMinimum", prod(jmes_path(col_item, "pointData[0].values[2].doubleValue"), 100)
       field "projectId", val(iter_item, "id")
       field "projectName", val(iter_item, "name")
-      field "projectNumber", val(iter_item, "number")
     end
   end
 end
@@ -468,7 +479,6 @@ datasource "ds_get_instances" do
     field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind,hostname,cpuPlatform,labels,description,machineType} ]")
     field "projectId", val(iter_item, "id")
     field "projectName", val(iter_item, "name")
-    field "projectNumber", val(iter_item, "number")
   end
 end
 
@@ -520,7 +530,6 @@ script "js_instances", type: "javascript" do
           labels: instance['labels'],
           projectId: response['projectId'],
           projectName: response['projectName'],
-          projectNumber: response['projectNumber'],
           zone: zone,
           region: region,
           cpuAverage: cpuAverage,
@@ -925,7 +934,6 @@ script "js_sorted_recommendations", type:"javascript" do
             kind: instance['kind'],
             accountID: instance['projectId'],
             accountName: instance['projectName'],
-            projectNumber: instance['projectNumber'],
             cpuAverage: cpuAverage? Number(cpuAverage.toFixed(2)): cpuAverage,
             cpuMaximum: cpuMaximum? Number(cpuMaximum.toFixed(2)): cpuMaximum,
             cpuMinimum: cpuMinimum? Number(cpuMinimum.toFixed(2)): cpuMinimum,
@@ -1017,7 +1025,6 @@ script "js_sorted_recommendations", type:"javascript" do
             kind: instance['kind'],
             accountID: instance['projectId'],
             accountName: instance['projectName'],
-            projectNumber: instance['projectNumber'],
             cpuAverage: cpuAverage? Number(cpuAverage.toFixed(2)): cpuAverage,
             cpuMaximum: cpuMaximum? Number(cpuMaximum.toFixed(2)): cpuMaximum,
             cpuMinimum: cpuMinimum? Number(cpuMinimum.toFixed(2)): cpuMinimum,
@@ -1136,7 +1143,6 @@ script "js_idle_incident", type:"javascript" do
     kind: "",
     accountID: "",
     accountName: "",
-    projectNumber: "",
     cpuAverage: "",
     cpuMaximum: "",
     cpuMinimum: "",
@@ -1247,7 +1253,6 @@ script "js_underutil_incident", type:"javascript" do
     kind: "",
     accountID: "",
     accountName: "",
-    projectNumber: "",
     cpuAverage: "",
     cpuMaximum: "",
     cpuMinimum: "",
@@ -1297,9 +1302,6 @@ policy "pol_recommendations" do
       end
       field "accountName" do
         label "Project Name"
-      end
-      field "projectNumber" do
-        label "Project Number"
       end
       field "resourceID" do
         label "Resource ID"
@@ -1392,9 +1394,6 @@ policy "pol_recommendations" do
       end
       field "accountName" do
         label "Project Name"
-      end
-      field "projectNumber" do
-        label "Project Number"
       end
       field "resourceID" do
         label "Resource ID"

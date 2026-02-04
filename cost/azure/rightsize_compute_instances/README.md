@@ -76,7 +76,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
-  - `Microsoft.Insights/metrics/read`
+  - `Microsoft.Insights/*/read`†
   - `Microsoft.Compute/skus/read`
   - `Microsoft.Compute/locations/vmSizes/read`
   - `Microsoft.Compute/virtualMachines/read`
@@ -86,6 +86,8 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `Microsoft.Compute/virtualMachines/delete`*
 
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
+
+  † Currently, Microsoft Azure does not support more granular permissions for making batch requests to the metrics API.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`

@@ -19,7 +19,7 @@ def bad_file_path(file_path)
 end
 
 def child_missing_requirements(file_path, file_contents)
-  header_found = file_contents.include?("header \"Meta-Flexera\", val($ds_is_deleted, \"path\")")
+  header_found = file_contents.include?("header \"Meta-Flexera\", val($ds_is_deleted, \"path\")") || file_contents.include?("\"Meta-Flexera\": ds_is_deleted[\"path\"]")
   check_found = file_contents.include?("check logic_or($ds_parent_policy_terminated,")
   footer_found = file_contents.include?("# Meta Policy [alpha]") && file_contents.include?("datasource \"ds_get_parent_policy\" do") && file_contents.include?("datasource \"ds_parent_policy_terminated\" do") && file_contents.include?("datasource \"ds_terminate_self\" do") && file_contents.include?("datasource \"ds_is_deleted\" do")
 
@@ -378,10 +378,40 @@ end
   # Build a list of parameter block strings for the output pt
   # We need to do this because we need to exclude the param_email and param_aws_account_number params from meta parent pt
   output_pt_params = []
+
   parameters.each do |param|
     # Filter out parameters that we don't want the user to manage because they are used by our meta policy automation
     param.include?("param_incident_csv") || param.include?("param_incident_table_size") || param.include?("param_email") || param.include?("param_aws_account_number") || param.include?("param_subscription_allowed_list") || param.include?("param_subscriptions_list") || param.include?("param_subscriptions_allow_or_deny") || param.include?("param_project") || param.include?("param_projects_list") || param.include?("param_projects_allow_or_deny") || param.include?("param_schedule") ? nil : output_pt_params.push(param)
+
+    if param.include?("param_projects_ignore_sys")
+      adjusted_param = <<EOF
+parameter "param_projects_ignore_sys" do
+  type "string"
+  category "Filters"
+  label "Ignore System Projects"
+  description "Whether or not to automatically ignore system projects in child policies e.g. projects whose id begins with 'sys-'. Default value of 'Yes' is recommended."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+EOF
+      output_pt_params.push(adjusted_param)
+    end
+
+    if param.include?("param_projects_ignore_app")
+      adjusted_param = <<EOF
+parameter "param_projects_ignore_app" do
+  type "string"
+  category "Filters"
+  label "Ignore Google Apps Script Projects"
+  description "Whether or not to automatically ignore Google Apps Script projects in child policies e.g. projects whose id begins with 'app-'. Default value of 'Yes' is recommended."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+EOF
+      output_pt_params.push(adjusted_param)
+    end
   end
+
   # Replace placeholder with the identified output parameter blocks
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PARAMETERS_BLOCKS__", output_pt_params.join("\n\n"))
   # Replace placeholder with credentials blocks from child policy

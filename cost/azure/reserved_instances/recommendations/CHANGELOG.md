@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.5.1
+
+- Fixed issue with "Estimated Break Even In Months" calculation.
+
+## v4.5.0
+
+- Added "Estimated Break Even In Months" to incident table.
+
 ## v4.4.1
 
 - Updated heredocs in policy template code to conform to best practices. Functionality unchanged.

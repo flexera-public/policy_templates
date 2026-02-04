@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.4.2",
+  version: "3.4.4",
   provider: "AWS",
   service: "Compute",
   policy_set: "Savings Plans",
@@ -77,7 +77,7 @@ parameter "param_savings_plan_type" do
   category "Savings Plan Settings"
   label "Savings Plan Type"
   description "Type of Savings Plan to provide recommendations for."
-  allowed_values "Compute Savings Plan", "EC2 Instance Savings Plan", "SageMaker Savings Plans"
+  allowed_values "Compute Savings Plan", "EC2 Instance Savings Plan", "SageMaker Savings Plan", "Database Savings Plan"
   default "Compute Savings Plan"
 end
 
@@ -253,12 +253,98 @@ datasource "ds_cloud_vendor_accounts" do
   end
 end
 
+# Get AWS account info fallback
+datasource "ds_billing_centers_aws_acc" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs_aws_acc" do
+  run_script $js_top_level_bcs_aws_acc, $ds_billing_centers_aws_acc
+end
+
+script "js_top_level_bcs_aws_acc", type: "javascript" do
+  parameters "ds_billing_centers_aws_acc"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers_aws_acc, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_cloud_vendor_accounts_fallback" do
+  request do
+    run_script $js_cloud_vendor_accounts_fallback, $ds_top_level_bcs_aws_acc, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "id", jmes_path(col_item, "dimensions.vendor_account")
+      field "name", jmes_path(col_item, "dimensions.vendor_account_name")
+    end
+  end
+end
+
+script "js_cloud_vendor_accounts_fallback", type: "javascript" do
+  parameters "ds_top_level_bcs_aws_acc", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      dimensions: ["vendor_account", "vendor_account_name"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs_aws_acc
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
 datasource "ds_vendor_account_table" do
-  run_script $js_vendor_account_table, $ds_cloud_vendor_accounts
+  run_script $js_vendor_account_table, $ds_cloud_vendor_accounts, $ds_cloud_vendor_accounts_fallback
 end
 
 script "js_vendor_account_table", type:"javascript" do
-  parameters "ds_cloud_vendor_accounts"
+  parameters "ds_cloud_vendor_accounts", "ds_cloud_vendor_accounts_fallback"
   result "result"
   code <<-'EOS'
   result = {}
@@ -266,6 +352,13 @@ script "js_vendor_account_table", type:"javascript" do
   _.each(ds_cloud_vendor_accounts, function(account) {
     result[account['id']] = account['name']
   })
+
+  // This is in case the Flexera List Cloud Accounts API does not return the relevant account info
+  if (_.isEmpty(result)) {
+    _.each(ds_cloud_vendor_accounts_fallback, function(account) {
+      result[account['id']] = account['name']
+    })
+  }
 EOS
 end
 
@@ -316,7 +409,8 @@ script "js_sp_recommendations", type: "javascript" do
   plan_table = {
     "Compute Savings Plan": "COMPUTE_SP",
     "EC2 Instance Savings Plan": "EC2_INSTANCE_SP",
-    "SageMaker Savings Plans": "SAGEMAKER_SP"
+    "SageMaker Savings Plan": "SAGEMAKER_SP",
+    "Database Savings Plan": "DATABASE_SP"
   }
 
   // Build out the body of the request based on parameters
@@ -456,7 +550,8 @@ script "js_sp_normalization", type: "javascript" do
   service_table = {
     "Compute Savings Plan": "Compute",
     "EC2 Instance Savings Plan": "EC2",
-    "SageMaker Savings Plans": "SageMaker"
+    "SageMaker Savings Plan": "SageMaker",
+    "Database Savings Plan": "Database"
   }
 
   result = []

@@ -73,4 +73,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This policy template does not incur any cloud costs.
+This policy template makes use of AWS Cost Explorer APIs. Please review [AWS's documentation](https://aws.amazon.com/aws-cost-management/aws-cost-explorer/pricing/) on the cost of using these APIs.

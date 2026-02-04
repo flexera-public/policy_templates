@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.4.4
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
+## v3.4.3
+
+- Policy now supports the new Database Savings Plan Type.
+
 ## v3.4.2
 
 - Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
@@ -14,7 +22,7 @@
 
 ## v3.3.7
 
-- Changed incident field "Recommendeded Quantity to Purchase" to "Recommended Hourly Commitment" to both correct a spelling error and make the field clearer.
+- Changed incident field "Recommended Quantity to Purchase" to "Recommended Hourly Commitment" to both correct a spelling error and make the field clearer.
 
 ## v3.3.6
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## v5.6.5
+
+- Fixed an 'undefined' error when "Skip Instance Sizes" is set to "Yes" and certain type of VM is encountered.
+
+## v5.6.4
+
+- Fixed a bug introduced in v5.6.3 that would cause "Cannot access member 'result' of undefined", if the AWS account info does not exist in Flexera.
+
+## v5.6.3
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
 ## v5.6.2
 
 - Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
