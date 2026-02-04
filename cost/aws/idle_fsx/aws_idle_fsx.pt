@@ -1,0 +1,1288 @@
+name "AWS Idle FSx File Systems"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports AWS FSx file systems without read/write operations and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/idle_fsx) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/idle_fsx"
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "AWS",
+  service: "Storage",
+  policy_set: "Unused Storage",
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look for read/write operations. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 90
+  default 30
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Delete Idle FSx File Systems"]
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws_getmetricdata" do
+  get_page_marker do
+    body_path "NextToken"
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'api')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+# Get AWS account info fallback
+datasource "ds_billing_centers_aws_acc" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs_aws_acc" do
+  run_script $js_top_level_bcs_aws_acc, $ds_billing_centers_aws_acc
+end
+
+script "js_top_level_bcs_aws_acc", type: "javascript" do
+  parameters "ds_billing_centers_aws_acc"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers_aws_acc, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_cloud_vendor_accounts_fallback" do
+  request do
+    run_script $js_cloud_vendor_accounts_fallback, $ds_top_level_bcs_aws_acc, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "id", jmes_path(col_item, "dimensions.vendor_account")
+      field "name", jmes_path(col_item, "dimensions.vendor_account_name")
+    end
+  end
+end
+
+script "js_cloud_vendor_accounts_fallback", type: "javascript" do
+  parameters "ds_top_level_bcs_aws_acc", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      dimensions: ["vendor_account", "vendor_account_name"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs_aws_acc
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_cloud_vendor_accounts_fallback, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_cloud_vendor_accounts_fallback", "ds_get_caller_identity"
+  result "result"
+  code <<-'EOS'
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the Flexera List Cloud Accounts API does not return the relevant account info
+  if (result == undefined) {
+    result = _.find(ds_cloud_vendor_accounts_fallback, function(account) {
+      return account['id'] == ds_get_caller_identity[0]['account']
+    })
+
+    if (result) {
+      result["tags"] = {}
+    }
+  }
+
+  // This is in case both the Flexera List Cloud Accounts API and the Flexera Cost data do not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_describe_regions" do
+  request do
+    auth $auth_aws
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+datasource "ds_regions" do
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
+end
+
+script "js_regions", type:"javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-'EOS'
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+datasource "ds_region_check" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    verb "POST"
+    host join(["fsx.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    header "Content-Type", "application/x-amz-json-1.1"
+    header "X-Amz-Target", "AWSSimbaAPIService_v20180301.DescribeFileSystems"
+    body_field "MaxResults", 5
+    ignore_status [400, 401, 403]
+  end
+  result do
+    encoding "xml"
+    field "region", val(iter_item, "region")
+    field "status", "OK"
+  end
+end
+
+datasource "ds_aws_fsx_instances" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    verb "POST"
+    host join(["fsx.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    header "Content-Type", "application/x-amz-json-1.1"
+    header "X-Amz-Target", "AWSSimbaAPIService_v20180301.DescribeFileSystems"
+    body_field "MaxResults", 2147483647
+    ignore_status [400, 401, 403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "FileSystems[*]") do
+      field "id", jmes_path(col_item, "FileSystemId")
+      field "resourceID", jmes_path(col_item, "FileSystemId")
+      field "resourceARN", jmes_path(col_item, "ResourceARN")
+      field "resourceName", jmes_path(col_item, "DNSName")
+      field "fileSystemType", jmes_path(col_item, "FileSystemType")
+      field "fileSystemVersion", jmes_path(col_item, "FileSystemTypeVersion")
+      field "creationTime", jmes_path(col_item, "CreationTime")
+      field "tags", jmes_path(col_item, "Tags")
+      field "region", val(iter_item, "region")
+      field "accountID", val($ds_aws_account, "id")
+      field "accountName", val($ds_aws_account, "name")
+      field "service", "AmazonFSx"
+      field "total_savings", ""
+      field "message", ""
+    end
+  end
+end
+
+datasource "ds_aws_fsx_instances_tag_filtered" do
+  run_script $js_aws_fsx_instances_tag_filtered, $ds_aws_fsx_instances, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_aws_fsx_instances_tag_filtered", type: "javascript" do
+  parameters "ds_aws_fsx_instances", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-'EOS'
+  // Normalize tags so they aren't awkwardly stored the way AWS stores them
+  fsx_instances = _.map(ds_aws_fsx_instances, function(item) {
+    new_item = {}
+    _.each(_.keys(item), function(key) { new_item[key] = item[key] })
+
+    new_item["tags"] = {}
+
+    if (item["tags"]) {
+      _.each(item["tags"], function(tag) { new_item["tags"][tag["Key"]] = tag["Value"] })
+    }
+
+    return new_item
+  })
+
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(fsx_instances, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = fsx_instances
+  }
+EOS
+end
+
+datasource "ds_cloudwatch_queries" do
+  run_script $js_cloudwatch_queries, $ds_aws_fsx_instances_tag_filtered, $param_stats_lookback
+end
+
+script "js_cloudwatch_queries", type: "javascript" do
+  parameters "ds_aws_fsx_instances_tag_filtered", "param_stats_lookback"
+  result "result"
+  code <<-'EOS'
+  function newQuery(id, metric, lookback) {
+    return {
+      "Id": id.split('-').join('_') + "___" + metric,
+      "MetricStat": {
+        "Metric": {
+          "MetricName": metric,
+          "Namespace": "AWS/FSx",
+          "Dimensions": [
+            { "Name": "FileSystemId", "Value": id }
+          ]
+        },
+        "Period": lookback * 86400,
+        "Stat": "Sum"
+      }
+    }
+  }
+
+  queries = {}
+
+  _.each(ds_aws_fsx_instances_tag_filtered, function(item) {
+    if (!queries[item['region']]) { queries[item['region']] = [] }
+
+    queries[item['region']].push(newQuery(item['resourceID'], "DataReadOperations", param_stats_lookback))
+    queries[item['region']].push(newQuery(item['resourceID'], "DataWriteOperations", param_stats_lookback))
+  })
+
+  result = []
+
+  end_date = parseInt(new Date().getTime() / 1000)
+  start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 30)).getTime() / 1000)
+
+  chunk_size = 500
+
+  _.each(_.keys(queries), function(region) {
+    for (i = 0; i < queries[region].length; i += chunk_size) {
+      chunk = queries[region].slice(i, i + chunk_size)
+
+      result.push({
+        metricDataQueries: chunk,
+        region: region,
+        startTime: start_date,
+        endTime: end_date
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_cloudwatch_data" do
+  iterate $ds_cloudwatch_queries
+  request do
+    run_script $js_cloudwatch_data, iter_item
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
+script "js_cloudwatch_data", type: "javascript" do
+  parameters "query"
+  result "request"
+  code <<-'EOS'
+  // Slow down rate of requests to prevent throttling
+  api_wait = 5
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  end_date = parseInt(new Date().getTime() / 1000)
+  start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 30)).getTime() / 1000)
+
+  var request = {
+    auth: "auth_aws",
+    host: "monitoring." + query["region"] + ".amazonaws.com",
+    verb: "POST",
+    path: "/",
+    pagination: "pagination_aws_getmetricdata",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    query_params: { "Version": "2010-08-01" },
+    body: JSON.stringify({
+      "StartTime": query["startTime"],
+      "EndTime": query["endTime"],
+      "MetricDataQueries": query["metricDataQueries"]
+    })
+  }
+EOS
+end
+
+datasource "ds_aws_fsx_instances_with_stats" do
+  run_script $js_aws_fsx_instances_with_stats, $ds_aws_fsx_instances_tag_filtered, $ds_cloudwatch_data
+end
+
+script "js_aws_fsx_instances_with_stats", type: "javascript" do
+  parameters "ds_aws_fsx_instances_tag_filtered", "ds_cloudwatch_data"
+  result "result"
+  code <<-'EOS'
+  cloudwatch_activity = {}
+
+  _.each(ds_cloudwatch_data, function(item) {
+    id = item['id'].split('___')[0].split('_').join('-')
+    metric = item['id'].split('___')[1]
+
+    if (!cloudwatch_activity[id]) { cloudwatch_activity[id] = {} }
+    if (!cloudwatch_activity[id]["DataReadOperations"]) { cloudwatch_activity[id]["DataReadOperations"] = 0 }
+    if (!cloudwatch_activity[id]["DataWriteOperations"]) { cloudwatch_activity[id]["DataWriteOperations"] = 0 }
+
+    if (typeof(item['values']) == 'object') {
+      _.each(item['values'], function(value) { cloudwatch_activity[id][metric] += value })
+    }
+  })
+
+  result = _.map(ds_aws_fsx_instances_tag_filtered, function(item) {
+    new_item = {}
+    _.each(_.keys(item), function(key) { new_item[key] = item[key] })
+
+    id = item["resourceID"]
+    new_item["DataReadOperations"] = cloudwatch_activity[id] ? cloudwatch_activity[id]["DataReadOperations"] : 0
+    new_item["DataWriteOperations"] = cloudwatch_activity[id] ? cloudwatch_activity[id]["DataWriteOperations"] : 0
+
+    return new_item
+  })
+EOS
+end
+
+datasource "ds_fsx_costs" do
+  request do
+    run_script $js_fsx_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_fsx_costs", type: "javascript" do
+  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  //Get Start and End dates
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split("T")[0]
+
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split("T")[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      "dimensions": ["resource_id", "vendor_account_name"],
+      "granularity": "day",
+      "start_at": start_date,
+      "end_at": end_date,
+      "metrics": ["cost_amortized_unblended_adj"],
+      "billing_center_ids": ds_top_level_bcs,
+      "limit": 100000,
+      "filter": {
+        "type": "and",
+        "expressions": [
+          {
+            "dimension": "resource_id",
+            "type": "substring",
+            "substring": "file-system/fs-"
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": ds_aws_account['id']
+          },
+          {
+            type: "not",
+            expression: {
+              dimension: "adjustment_name",
+              type: "substring",
+              substring: "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_fsx_costs_grouped" do
+  run_script $js_fsx_costs_grouped, $ds_fsx_costs
+end
+
+script "js_fsx_costs_grouped", type: "javascript" do
+  parameters "ds_fsx_costs"
+  result "result"
+  code <<-'EOS'
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_fsx_costs, function(item) {
+    id = item['resource_id'].split("file-system/")[1]
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_aws_idle_fsx_instances" do
+  run_script $js_aws_idle_fsx_instances, $ds_aws_fsx_instances_with_stats, $ds_fsx_costs_grouped, $ds_applied_policy, $ds_currency, $param_stats_lookback, $param_min_savings
+end
+
+script "js_aws_idle_fsx_instances", type: "javascript" do
+  parameters "ds_aws_fsx_instances_with_stats", "ds_fsx_costs_grouped", "ds_applied_policy", "ds_currency", "param_stats_lookback", "param_min_savings"
+  result "result"
+  code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  idle_fsx_instances = _.filter(ds_aws_fsx_instances_with_stats, function(item) {
+    return item["DataReadOperations"] == 0 && item["DataWriteOperations"] == 0
+  })
+
+  result = []
+  total_savings = 0.0
+
+  _.each(idle_fsx_instances, function(item) {
+    savings = ds_fsx_costs_grouped[item["id"]] ? ds_fsx_costs_grouped[item["id"]] : 0.0
+
+    if (savings >= param_min_savings) {
+      total_savings += savings
+
+      new_item = {}
+      _.each(_.keys(item), function(key) { new_item[key] = item[key] })
+
+      new_item["policy_name"] = ds_applied_policy["name"]
+      new_item["lookbackPeriod"] = param_stats_lookback
+      new_item["savingsCurrency"] = ds_currency["symbol"]
+      new_item["savings"] = Math.round(savings * 1000) / 1000
+
+      new_item["tags"] = ""
+
+      if (typeof(item['tags']) == 'object') {
+        new_item["tags"] = _.map(_.keys(item['tags']), function(key) {
+          return [ key, item['tags'][key] ].join("=")
+        }).join(", ")
+      }
+
+      new_item["recommendationDetails"] = [
+        "Delete AWS FSx file system ", item["id"], " ",
+        "in AWS Account ", item['accountName'], " (", item['accountID'], ")"
+      ].join('')
+
+      result.push(new_item)
+    }
+  })
+
+  // Message for incident output
+  total_fsx = ds_aws_fsx_instances_with_stats.length.toString()
+  total_idle_fsx = result.length.toString()
+  idle_fsx_percentage = (total_idle_fsx / total_fsx * 100).toFixed(2).toString() + '%'
+
+  instance_noun = total_fsx == 1 ? "system" : "systems"
+  days_noun = param_stats_lookback == 1 ? "day" : "days"
+
+  findings = [
+    "Out of ", total_fsx, " AWS FSx file ", instance_noun, " analyzed, ",
+    total_idle_fsx, " (", idle_fsx_percentage,
+    ") have had no read or write operations for ", param_stats_lookback, " ", days_noun, " ",
+    "and are recommended for deletion.\n\n"
+  ].join('')
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(Math.round(total_savings * 100) / 100, ds_currency['separator'])
+  ].join('')
+
+  // Sort by descending order of savings value
+  result = _.sortBy(result, "savings").reverse()
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    id: "",
+    resourceID: "",
+    total_savings: "",
+    message: "",
+    tags: "",
+    savings: "",
+    savingsCurrency: ""
+  })
+
+  result[0]["total_savings"] = savings_message
+  result[0]["message"] = findings + disclaimer
+  result[0]["policy_name"] = ds_applied_policy["name"]
+EOS
+end
+
+datasource "ds_identify_errors" do
+  run_script $js_identify_errors, $ds_regions, $ds_region_check, $ds_applied_policy, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_identify_errors", type: "javascript" do
+  parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
+  result "errors"
+  code <<-'EOS'
+  var errors = [];
+
+  // Build a map of regions to their response status
+  var region_responses = {};
+  _.each(ds_region_check, function(item) {
+    if (item.region) {
+      region_responses[item.region] = "OK"
+    }
+  });
+
+  // Allowed regions are the keys from region_responses
+  var allowed_regions = _.keys(region_responses);
+
+  // Identify forbidden regions (expected but not in region_responses)
+  var forbidden_regions = [];
+  _.each(ds_regions, function(region_obj) {
+    if (!_.contains(allowed_regions, region_obj.region)) {
+      forbidden_regions.push(region_obj.region);
+    }
+  });
+
+  if (forbidden_regions.length > 0) {
+    var regions_string = forbidden_regions.sort().join(", ");
+    var successful_regions = allowed_regions.sort().join(", ");
+    var filter_guidance = "";
+
+    if (param_regions_list.length > 0) {
+      filter_guidance = " You are currently using the 'Allow/Deny Regions List' parameter. ";
+      filter_guidance += "You can update this list to exclude the inaccessible regions if appropriate.";
+    } else {
+      filter_guidance = " You can use the 'Allow/Deny Regions List' parameter to exclude these regions from the policy scope.";
+    }
+
+    errors.push(
+      "HTTP error received when attempting to describe snapshots in some AWS region(s).\n" +
+      "\n - Failed Regions: " + regions_string +
+      "\n - Successful Regions: " + successful_regions +
+      "\n\nThis typically indicates that the AWS credential does not have the required 'fsx:DescribeFileSystems' permission " +
+      "for these regions, or these regions may not be enabled in your AWS account. " +
+      "To resolve this issue: " +
+      "(1) Verify the AWS credential has 'fsx:DescribeFileSystems' permission for these regions, " +
+      "(2) Ensure these regions are enabled in your AWS account (some regions like opt-in regions require explicit enablement), or " +
+      "(3) Exclude these regions from policy evaluation using the region filter parameters." +
+      filter_guidance
+    );
+  }
+
+  errors = _.uniq(errors);
+
+  // Convert array of strings to array of objects for incident creation
+  errors = _.map(errors, function(err) {
+    return { "error": err };
+  });
+
+  if (errors.length > 0) {
+    policy_name = "AWS Idle FSx File Systems";
+    if (ds_applied_policy && ds_applied_policy.policy_template && ds_applied_policy.policy_template.name) {
+      policy_name = ds_applied_policy.policy_template.name;
+    }
+    errors[0].policy_name = policy_name;
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_idle_fsx" do
+  validate_each $ds_aws_idle_fsx_instances do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Idle FSx File Systems Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_delete_filesystems
+    hash_exclude "total_savings", "message", "tags", "age", "savings", "savingsCurrency"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "DNS Name"
+      end
+      field "fileSystemType" do
+        label "File System Type"
+      end
+      field "fileSystemVersion" do
+        label "File System Version"
+      end
+      field "creationTime" do
+        label "Created At"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "resourceARN" do
+        label "Resource ARN"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+      end
+    end
+  end
+
+  validate $ds_identify_errors do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to retrieve snapshot data from one or more AWS regions due to permission or configuration errors.
+
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end -}}
+
+    **Recommended Actions:**
+    1. Verify that the AWS credential has the 'fsx:DescribeFileSystems' permission for all regions where the policy should execute
+    2. Ensure that the required AWS regions are enabled in your AWS account (some regions require explicit opt-in)
+    3. Consider updating the 'Allow/Deny Regions List' parameter to exclude regions that are not accessible or not relevant to your use case
+
+    **Additional Information:**
+    If certain regions should be excluded from this policy's scope, you can configure the region filter parameters to prevent these errors from appearing in future policy runs.
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email_errors_identified" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_delete_filesystems" do
+  automatic contains($param_automatic_action, "Delete Idle FSx File Systems")
+  label "Delete Idle FSx File Systems"
+  description "Approval to delete all selected FSx file systems"
+  run "delete_filesystems", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_filesystems($data) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_filesystem($instance) retrieve $delete_response
+      $$all_responses << $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_filesystem($instance) return $response do
+  $host = "fsx." + $instance["region"] + ".amazonaws.com"
+  $href = "/"
+  $url = $host + $href
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: $href,
+    host: $host,
+    headers: { "X-Amz-Target": "AWSSimbaAPIService_v20180301.DeleteFileSystem" },
+    body: { "FileSystemId": $instance["resourceID"] }
+  )
+
+  task_label("Post FSx File System response: " + $instance["resourceID"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "GET " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response posting FSx File System: "+ $instance["resourceID"] + " " + to_json($response)
+  else
+    task_label("Post FSx File System successful: " + $instance["resourceID"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_parent_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
+  result "result"
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
+  end
+end
+
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
+  result "result"
+  code 'result = { path: "/"}'
+end
