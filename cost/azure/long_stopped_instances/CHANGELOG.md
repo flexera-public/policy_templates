@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1.3
+
+- Fixed an intermittent Azure Activity Log query failure caused by the start time exceeding the 90-day limit during policy execution.
+
 ## v6.1.2
 
 - Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
