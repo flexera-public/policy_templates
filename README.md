@@ -81,6 +81,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Storage
 
+  * [AWS Idle FSx File Systems](./cost/aws/idle_fsx)
   * [AWS Old Snapshots](./cost/aws/old_snapshots)
   * [AWS S3 Buckets Without Intelligent Tiering](./cost/aws/s3_storage_policy)
   * [Turbonomic Delete Unattached Volumes Recommendations AWS](./cost/turbonomics/delete_unattached_volumes/aws)
