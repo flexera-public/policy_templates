@@ -6,6 +6,78 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#4023](https://github.com/flexera-public/policy_templates/pull/4023): POL-1720 Meta Policy Fix
+
+*New Policy Template*
+
+#### Description
+
+> Fixes issue where meta parents aren't being generated due to non-existent policy templates being listed in the YAML file.
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4023) for these details.
+- **Merged At**: 2026-02-05 14:51:16 UTC
+
+---
+
+### PR [#4018](https://github.com/flexera-public/policy_templates/pull/4018): POL-1708 Azure Long Stopped Compute Instances - Fix for "Start time cannot be more than 90 days in the past" error
+
+*Bug Fix*
+
+#### Description
+
+> <!-- Describe what this change achieves below -->
+> This change prevents intermittent failures when querying Azure Activity Logs caused by `start_date` exceeding Azure's strict 90-day limit.
+>
+> The fix removes timestamp rounding and adds a small safety buffer (+5 minutes) after subtracting 90 days, ensuring all iterative API calls stay within the allowed window.
+>
+> ### Issues Resolved
+>
+> <!-- List any existing issues this PR resolves below -->
+>
+
+#### Metadata
+
+- **Policies**: [Azure Long Stopped Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/long_stopped_instances/README.md)
+- **Merged At**: 2026-02-05 14:17:00 UTC
+
+---
+
+### PR [#3670](https://github.com/flexera-public/policy_templates/pull/3670): POL-1666 New Policy: AWS Idle FSx File Systems
+
+*New Policy Template*
+
+#### Description
+
+> New policy template to detect and report on AWS FSx File Systems that are idle (no read/write operations).
+>
+
+#### Metadata
+
+- **Policies**: [AWS Idle FSx File Systems](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/idle_fsx/README.md)
+- **Merged At**: 2026-02-04 21:42:54 UTC
+
+---
+
+### PR [#4017](https://github.com/flexera-public/policy_templates/pull/4017): FOPTS-19145 Fixed Account Scope description for AWS savings plan recs policy
+
+#### Description
+
+> This PR updates the account_scope description in the AWS Savings Plan Recommendations Policy to align with AWS documentation.
+>
+> Reference - [AWS GetSavingsPlansPurchaseRecommendation API Specification](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetSavingsPlansPurchaseRecommendation.html#API_GetSavingsPlansPurchaseRecommendation_RequestParameters)
+>
+> ### Issues Resolved
+>
+
+#### Metadata
+
+- **Policies**: [AWS Savings Plan Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/recommendations/README.md)
+- **Merged At**: 2026-02-04 20:16:29 UTC
+
+---
+
 ### PR [#3990](https://github.com/flexera-public/policy_templates/pull/3990): Google Meta Parent sys- and app- Project Filtering
 
 *Minor Update*
@@ -2183,80 +2255,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Dynamic Dashboards](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/dynamic_dashboards/README.md)
 - **Merged At**: 2025-09-04 17:28:27 UTC
-
----
-
-### PR [#3492](https://github.com/flexera-public/policy_templates/pull/3492): POL-1599 Oracle Cloud Common Bill Ingestion Fix
-
-*Minor Update*
-
-#### Description
-
-> Fixes some incorrectly referenced variables that would cause the policy template to fail.
->
-
-#### Metadata
-
-- **Policies**: [Oracle Cloud Common Bill Ingestion](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/oracle_cbi/README.md)
-- **Merged At**: 2025-09-04 13:13:12 UTC
-
----
-
-### PR [#3396](https://github.com/flexera-public/policy_templates/pull/3396): FOAA-307 - New Template: Generic Meta Parent
-
-*New Policy Template, Minor Update*
-
-#### Description
-
-> This generic meta parent policy template dynamically creates and manages child policies based on cost dimensions from the Flexera Bill Analysis API. Unlike traditional meta parent policies that are pre-compiled for specific child policy templates, this policy uses parameters so it is very extendable and can be used for many use-cases.
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/FOAA-307
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3396) for details about unpublished policies.
-- **Merged At**: 2025-09-03 20:44:23 UTC
-
----
-
-### PR [#3487](https://github.com/flexera-public/policy_templates/pull/3487): POL-743 New Policy Template: Oracle Cloud Advisor: Rightsize Virtual Machines
-
-*New Policy Template*
-
-#### Description
-
-> This policy template reports on any existing idle and underutilized virtual machine recommendations generated by Oracle Cloud Advisor. Optionally, this report can be emailed.
->
-> This is a functioning first pass. There will undoubtedly be improvements as we get user feedback and a better understanding of how to manipulate Oracle's APIs.
->
-
-#### Metadata
-
-- **Policies**: [Oracle Cloud Advisor: Rightsize Virtual Machines](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_rightsize_vms/README.md)
-- **Merged At**: 2025-09-03 13:14:36 UTC
-
----
-
-### PR [#3473](https://github.com/flexera-public/policy_templates/pull/3473): FOAA-343 - fix: Azure Tag Cardinality subscription filtering
-
-*Bug Fix*
-
-#### Description
-
-> Fixes subscription filtering in Azure Tag Cardinality PT.  Currently was iterating over all subscriptions to inventory RGs + resources which is not expected.
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/FOAA-342
->
-
-#### Metadata
-
-- **Policies**: [Azure Tag Cardinality Report](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/tag_cardinality/README.md)
-- **Merged At**: 2025-09-02 13:43:46 UTC
 
 ---
 
