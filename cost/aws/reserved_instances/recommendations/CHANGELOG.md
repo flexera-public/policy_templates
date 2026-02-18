@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.7.3
+
+- Fixed issue where policy would sometimes fail if "Everything" was selected for the "Payment Option" parameter.
+
 ## v3.7.2
 
 - Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
