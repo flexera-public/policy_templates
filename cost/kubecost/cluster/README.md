@@ -8,6 +8,8 @@ This policy template reports a Kubecost cluster rightsizing recommendation gener
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Kubecost Host* - Kubecost Hostname or IP Address of Kubecost Load Balancer to make queries against.
+- *Kubecost Base Path* - Kubecost base path for all Kubecost API endpoints. IMPORTANT: please include leading slash, and remove trailing slash. E.g. \"/basepath1/basepath2\".
+- *Kubecost API Key Header* - Value for Kubecost API Key request header. This value is attached to header \"apiKey\" for all Kubecost requests. This header is only necessary for certain authentication mechanism.
 - *Minimum Node Count* - Minimum required node count for recommendations.
 - *Lookback Period (Days)* - Number of historical days of usage to analyze when generating recommendations.
 - *Target Utilization (%)* - Utilization target to use when generating recommendations.
@@ -25,6 +27,10 @@ This policy template reports a Kubecost cluster rightsizing recommendation gener
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
+- **Kubecost Credential** (*provider=kubecost*) Choose the corresponding type of credential accepted by your Kubecost clusters.
+
+  \* If no authentication is required, you could try to attach a dummy credential of type "API Key" or "Basic Auth".
+
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
 
@@ -32,10 +38,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ### Kubecost
 
-This Policy Template requires a minimum Kubecost version of 1.100.2 and does not use credentials to access resources in the Kubecost API. If you require authentication for Kubecost access, you can use one of the following options:
-
-- Use a modified, custom version of this policy template to support Basic Auth credentials (Recommended).
-- [Enable external access on your pod.](https://docs.kubecost.com/install-and-configure/install/ingress-examples)
+This Policy Template requires a minimum Kubecost version of 1.100.2
 
 ## Supported Clouds
 

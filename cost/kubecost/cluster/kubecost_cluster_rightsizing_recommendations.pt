@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.5.1",
+  version: "1.0.0",
   provider: "Kubecost",
   service: "Kubernetes",
   policy_set: "Rightsize Clusters",
@@ -35,6 +35,22 @@ parameter "param_kubecost_host" do
   description "Kubecost Hostname or IP Address of Kubecost Load Balancer to make queries against."
   min_length 1
   # No default value, user input required
+end
+
+parameter "param_kubecost_base_path" do
+  type "string"
+  category "Policy Settings"
+  label "Kubecost Base Path"
+  description "Kubecost base path for all Kubecost API endpoints. IMPORTANT: please include leading slash, and remove trailing slash. E.g. \"/basepath1/basepath2\"."
+  default ""
+end
+
+parameter "param_kubecost_apikey" do
+  type "string"
+  category "Policy Settings"
+  label "Kubecost API Key Header"
+  description "Value for Kubecost API Key request header. This value is attached to header \"apiKey\" for all Kubecost requests. This header is only necessary for certain authentication mechanism."
+  default ""
 end
 
 parameter "param_allow_shared_core" do
@@ -120,6 +136,13 @@ credentials "auth_flexera" do
   tags "provider=flexera"
 end
 
+credentials "auth_kubecost" do
+  schemes "api_key", "aws", "aws_sts", "basic", "digest", "ntlm", "jwt", "oauth2", "oracle"
+  label "Kubecost"
+  description "Select Kubecost credentials"
+  tags "provider=kubecost"
+end
+
 ###############################################################################
 # Datasources & Scripts
 ###############################################################################
@@ -175,8 +198,10 @@ end
 
 datasource "ds_kubecost_currency_code" do
   request do
+    auth $auth_kubecost
     host $param_kubecost_host
-    path "/model/getConfigs"
+    path join([$param_kubecost_base_path, "/getConfigs"])
+    header "apiKey", $param_kubecost_apikey
   end
   result do
     encoding "json"
@@ -323,8 +348,9 @@ end
 
 datasource "ds_clusters" do
   request do
+    auth $auth_kubecost
     host $param_kubecost_host
-    path "/model/savings/clusterSizingETL"
+    path join([$param_kubecost_base_path, "/savings/clusterSizingETL"])
     query "minNodeCount", to_s($param_min_nodes)
     query "window", join([$param_lookback, "d"])
     query "targetUtilization", val($ds_target_util, "value")
@@ -334,6 +360,7 @@ datasource "ds_clusters" do
     # Also, the field  `includeOverhead`  is not exposed as a configurable parameter because it is not part of the Cluster Right-Sizing Recommendation API specification.
     query "includeOverhead", "false"
     header "User-Agent", "RS Policies"
+    header "apiKey", $param_kubecost_apikey
   end
   result do
     encoding "json"
