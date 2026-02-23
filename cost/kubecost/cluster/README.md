@@ -8,8 +8,8 @@ This policy template reports a Kubecost cluster rightsizing recommendation gener
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Kubecost Host* - Kubecost Hostname or IP Address of Kubecost Load Balancer to make queries against.
-- *Kubecost Base Path* - Kubecost base path for all Kubecost API endpoints. IMPORTANT: please include leading slash, and remove trailing slash. E.g. \"/basepath1/basepath2\".
-- *Kubecost API Key Header* - Value for Kubecost API Key request header. This value is attached to header \"apiKey\" for all Kubecost requests. This header is only necessary for certain authentication mechanism.
+- *Kubecost Base Path* - Kubecost base path for all Kubecost API endpoints. Default is \"/model\" to match legacy Kubecost installs; override this if your Kubecost APIs are served under a different base path. IMPORTANT: if this field is non-empty, please include leading slash and remove trailing slash. E.g. \"/basepath1/basepath2\".
+- *Kubecost API Key Header* - Value for Kubecost API Key request header. This value is attached to header \"apiKey\" for all Kubecost requests. This header is only necessary for certain authentication mechanisms.
 - *Minimum Node Count* - Minimum required node count for recommendations.
 - *Lookback Period (Days)* - Number of historical days of usage to analyze when generating recommendations.
 - *Target Utilization (%)* - Utilization target to use when generating recommendations.
