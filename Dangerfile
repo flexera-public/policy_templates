@@ -593,6 +593,9 @@ changed_pt_files.each do |file|
 
     # Raise error if policy template has verb "GET" statements
     test = policy_verb_get?(file, file_lines); failures << test if test
+
+    # Raise error if policy template has invalid heredoc syntax or escape sequences
+    test = policy_invalid_heredoc_syntax?(file, file_lines); failures << test if test
   end
 
   # Output final list of failures and warnings

@@ -2,7 +2,20 @@
 
 ## What It Does
 
-This Policy Template scans all S3 buckets in the given account and checks if the bucket has an [intelligent tiering](https://docs.aws.amazon.com/AmazonS3/latest/userguide/intelligent-tiering-overview.html) policy configured. An incident is raised with any buckets without such a policy and, optionally, and email is sent.
+This Policy Template scans all S3 buckets in your AWS account and identifies buckets that don't have [S3 Intelligent Tiering](https://docs.aws.amazon.com/AmazonS3/latest/userguide/intelligent-tiering-overview.html) enabled. An incident is created listing all non-compliant buckets, with the option to enable Intelligent Tiering after approval, or automatically for any non-compliant buckets.
+
+**S3 Intelligent Tiering** automatically moves your data between different storage tiers based on access patterns, optimizing costs without performance impact. This feature is ideal for data with unpredictable access patterns and can provide significant cost savings with zero operational overhead.
+
+### Policy Savings Details
+
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized for non-compliant buckets if Intelligent Tiering is enabled.
+
+- The policy gets `TimedStorage-ByteHrs` usage costs per bucket from the past 24 hours (as tracked in Flexera CCO)
+- The monthly cost per bucket is calculated by multiplying the amortized cost for 1 day (from Flexera CCO) by 30.44, which is the average number of days in a month.
+- A conservative **30%** savings estimate is applied based on AWS published Intelligent Tiering benefits ([based on up to 40% for infrequent access and up to 68% for archive access](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/)).
+- If the bucket cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
+- The incident details will include individual bucket `Estimated Monthly Savings` and the summed `Potential Monthly Savings`.
+- All savings values are reported in the currency of the Flexera organization where the policy is applied.
 
 ## Input Parameters
 
@@ -16,15 +29,20 @@ This Policy Template scans all S3 buckets in the given account and checks if the
   - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
   - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
-- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
+- *Exclusion Tags: Any / All* - Whether to filter buckets containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
+For example if a user selects the "Enable Intelligent Tiering" action while applying the policy template, all the buckets that didn't satisfy the policy condition will have Intelligent Tiering enabled.
 
 ## Policy Actions
 
-The following policy actions are taken on any resources found to be out of compliance.
+The following policy actions can be taken on any resources found to be out of compliance.
 
-- Send an email report
+- Sends an email notification
+- Enable Intelligent Tiering on S3 buckets
 
 ## Prerequisites
 
@@ -35,11 +53,14 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+  - `sts:GetCallerIdentity`
   - `s3:ListAllMyBuckets`
   - `s3:GetBucketLocation`
   - `s3:GetBucketTagging`
   - `s3:GetIntelligentTieringConfiguration`
-  - `sts:GetCallerIdentity`
+  - `s3:PutLifecycleConfiguration`*
+
+  \* Only required for taking action (Enable Intelligent Tiering); the policy will still function in a read-only capacity without these permissions.
 
   Example IAM Permission Policy:
 
@@ -54,7 +75,8 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
                   "s3:GetBucketLocation",
                   "s3:GetBucketTagging",
                   "s3:GetIntelligentTieringConfiguration",
-                  "sts:GetCallerIdentity"
+                  "sts:GetCallerIdentity",
+                  "s3:PutLifecycleConfiguration"
               ],
               "Resource": "*"
           }
