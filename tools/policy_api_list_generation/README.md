@@ -117,11 +117,7 @@ The script automatically detects and categorizes API calls to:
 
 ## Automated Workflow
 
-There is an automated workflow that runs every time a push to the default branch is made. Whenever there are changes resulting from running the script, a new PR is created and can be approved by the Policy Template Maintainers.
-
-[![Generate Policy API List](https://github.com/flexera-public/policy_templates/actions/workflows/generate-policy-api-list.yaml/badge.svg?event=push)](https://github.com/flexera-public/policy_templates/actions/workflows/generate-policy-api-list.yaml)
-
-Workflow defined in file [.github/workflows/generate-policy-api-list.yaml](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-policy-api-list.yaml)
+There is an [automated workflow](https://github.com/flexera-public/policy_templates/actions/workflows/generate-policy-api-list.yaml) that runs every time a push to the default branch is made. Whenever there are changes resulting from running the script, a new PR is created and can be approved by the Policy Template Maintainers.
 
 ## Requirements
 
