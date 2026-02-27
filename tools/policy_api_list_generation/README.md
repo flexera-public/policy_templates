@@ -45,10 +45,41 @@ Each API call record contains the following fields:
 - `policy_name` - Name of the policy template
 - `policy_file` - Path to the policy template file
 - `policy_version` - Version of the policy template
+- `datasource_name` - Name of the datasource making the request (e.g., `ds_org_accounts`)
 - `api_service` - Which service the API targets (AWS, Azure, Flexera, GCP, etc.)
 - `method` - HTTP method (GET, POST, PUT, DELETE, PATCH)
 - `endpoint` - Full API endpoint URL with variable placeholders
+- `operation` - Human-readable operation name extracted from the endpoint and method
 - `field` - Field extracted from the API response (if any)
+
+### Operation Field
+
+The `operation` field provides a human-readable description of what operation is being performed. It is extracted from:
+
+**AWS**: X-Amz-Target header or URL path
+
+- `ListAccounts` - from `X-Amz-Target: AWSOrganizationsV20161128.ListAccounts`
+- `ListPolicies` - from `X-Amz-Target: AWSOrganizationsV20161128.ListPolicies`
+
+**Azure**: Resource type from URL path + HTTP method
+
+- `List Virtual Network Gateways` - from GET `/providers/Microsoft.Network/virtualNetworkGateways`
+- `List Virtual Machines` - from GET `/providers/Microsoft.Compute/virtualMachines`
+- `List Subscriptions` - from GET `/subscriptions`
+
+**Flexera**: Resource from URL path + HTTP method
+
+- `List Applied Policies` - from GET `/policy/v1/.../applied-policies`
+- `Get Billing Centers` - from GET `/analytics/.../billing_centers`
+
+**GCP**: Operation from URL path (often uses `:operation` pattern)
+
+- `Search` - from `/v3/projects:search`
+- `List Projects` - from GET `/v3/projects`
+
+**Other services**: Resource name extracted from URL path combined with HTTP method
+
+The operation name uses proper capitalization and handles camelCase, snake_case, and kebab-case resource names.
 
 ### Endpoint Format
 
