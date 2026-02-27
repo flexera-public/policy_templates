@@ -791,7 +791,16 @@ class PolicyTemplateParser:
         for match in re.finditer(xpath_pattern, result_body):
             field_name = match.group(1)
             xpath_value = match.group(2)
-            fields.append(xpath_value)  # Use the API field name, not our internal name
+            # Clean up XPath notation - remove leading // and convert paths to field names
+            # Examples: 
+            #   //LocationConstraint -> LocationConstraint
+            #   //PublicAccessBlockConfiguration/BlockPublicAcls -> BlockPublicAcls
+            #   //VersioningConfiguration/Status -> Status
+            clean_field = xpath_value.lstrip('/')
+            # If it's a path with /, take the last segment (the actual field name)
+            if '/' in clean_field:
+                clean_field = clean_field.split('/')[-1]
+            fields.append(clean_field)  # Use the cleaned field name
         
         # Extract field definitions with jmes_path
         # Pattern: field "fieldName", jmes_path(col_item, "jmesPath")
