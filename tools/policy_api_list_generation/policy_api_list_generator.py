@@ -1539,11 +1539,6 @@ def main():
     json_output_file = output_dir / 'policy_api_list.json'
     with open(json_output_file, 'w') as f:
         json.dump({
-            'metadata': {
-                'total_policies': processed_count,
-                'total_api_calls': len(all_api_calls),
-                'generated_at': Path(active_policy_list_file).stat().st_mtime
-            },
             'api_calls': all_api_calls
         }, f, indent=2)
     
