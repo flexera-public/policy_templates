@@ -31,8 +31,8 @@ python3 tools/policy_api_list_generation/policy_api_list_generator.py
 The script will:
 
 1. Read the active policy list from `data/active_policy_list/active_policy_list.json`
-2. Parse each policy template to extract API calls
-3. Generate output files in `data/policy_api_list/`:
+1. Parse each policy template to extract API calls
+1. Generate output files in `data/policy_api_list/`:
    - `policy_api_list.json` - Complete dataset in JSON format
    - `policy_api_list.csv` - Complete dataset in CSV format
 
@@ -91,10 +91,10 @@ Endpoints use curly braces `{}` to denote variables and placeholders:
 
 **Example endpoints:**
 
-- https[]()://{rs_optima_host}/analytics/orgs/{org}/billing_centers
-- https[]()://{flexera_api_host}/policy/v1/orgs/{org}/projects/{project}/applied-policies
-- https[]()://management.azure.com/subscriptions/{subscription}/providers/Microsoft.Compute/
-- https[]()://ec2.us-east-1.amazonaws.com/
+- https[]():\/\/{rs_optima_host}/analytics/orgs/{org}/billing_centers
+- https[]():\/\/{flexera_api_host}/policy/v1/orgs/{org}/projects/{project}/applied-policies
+- https[]():\/\/management.azure.com/subscriptions/{subscription}/providers/Microsoft.Compute/
+- https[]():\/\/ec2.us-east-1.amazonaws.com/
 
 ## Supported Services
 
