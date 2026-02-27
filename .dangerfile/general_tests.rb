@@ -126,7 +126,14 @@ def general_bad_urls?(file, file_diff)
           next if exclude_hosts.include?(url.scan(URI.regexp)[0][3])
 
           # Clean up URL string and convert it into a proper URI object
-          url_string = url.to_s.gsub(/[!@#$%^&*(),.?":{}|<>]/,'')
+          # Handle markdown image link syntax: [![alt](image-url)](link-url)
+          # Split on ]( to separate the image URL from the link URL
+          url_parts = url.to_s.split('](')
+          # Use the first URL (image) if there are multiple, otherwise use the whole string
+          url_string = url_parts[0]
+          # Remove any trailing ] or ) that might be left over from markdown syntax
+          url_string = url_string.gsub(/[\]\)]$/, '')
+          
           url = URI(url_string)
 
           # Check for a valid host. Skip URLs that are dynamicly constructed and may not have a valid hostname.
