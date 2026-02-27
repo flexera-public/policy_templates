@@ -133,12 +133,12 @@ Workflow defined in file [.github/workflows/generate-policy-api-list.yaml](https
 The script:
 
 1. Parses policy template datasources with `request` blocks
-2. Extracts host, path, query parameters, and body parameters
-3. Handles JavaScript request scripts for dynamic endpoint construction
-4. Resolves parameter references and variable patterns
-5. Identifies API services based on hostname patterns
-6. Formats endpoints with standardized variable placeholders
-7. Deduplicates and organizes output by policy
+1. Extracts host, path, query parameters, and body parameters
+1. Handles JavaScript request scripts for dynamic endpoint construction
+1. Resolves parameter references and variable patterns
+1. Identifies API services based on hostname patterns
+1. Formats endpoints with standardized variable placeholders
+1. Deduplicates and organizes output by policy
 
 The parser handles complex patterns including:
 
