@@ -91,12 +91,10 @@ Endpoints use curly braces `{}` to denote variables and placeholders:
 
 **Example endpoints:**
 
-```text
-https://{rs_optima_host}/analytics/orgs/{org}/billing_centers
-https://{flexera_api_host}/policy/v1/orgs/{org}/projects/{project}/applied-policies
-https://management.azure.com/subscriptions/{subscription}/providers/Microsoft.Compute/...
-https://ec2.us-east-1.amazonaws.com/
-```
+- https[]()://{rs_optima_host}/analytics/orgs/{org}/billing_centers
+- https[]()://{flexera_api_host}/policy/v1/orgs/{org}/projects/{project}/applied-policies
+- https[]()://management.azure.com/subscriptions/{subscription}/providers/Microsoft.Compute/
+- https[]()://ec2.us-east-1.amazonaws.com/
 
 ## Supported Services
 
