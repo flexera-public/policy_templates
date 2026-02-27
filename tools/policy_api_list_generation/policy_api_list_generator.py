@@ -216,14 +216,16 @@ class PolicyTemplateParser:
                 while i < len(lines) and depth > 0:
                     current_line = lines[i]
                     
-                    # Check for nested 'do' statements
-                    if re.search(r'\bdo\s*$', current_line):
-                        depth += 1
-                    # Check for 'end' statements
-                    elif re.match(r'^\s*end\s*$', current_line):
-                        depth -= 1
-                        if depth == 0:
-                            break
+                    # Ignore commented lines for depth tracking
+                    if not re.match(r'^\s*#', current_line):
+                        # Check for nested 'do' statements
+                        if re.search(r'\bdo\s*$', current_line):
+                            depth += 1
+                        # Check for 'end' statements
+                        elif re.match(r'^\s*end\s*$', current_line):
+                            depth -= 1
+                            if depth == 0:
+                                break
                     
                     datasource_lines.append(current_line)
                     i += 1
@@ -250,8 +252,11 @@ class PolicyTemplateParser:
             'headers': {}
         }
         
-        # Check if datasource has a request block
-        if 'request do' not in datasource_body:
+        # Check if datasource has a request block OR uses run_script directly
+        has_request_block = 'request do' in datasource_body
+        has_direct_script = re.search(r'^\s*run_script\s+\$', datasource_body, re.MULTILINE)
+        
+        if not has_request_block and not has_direct_script:
             return request_info
         
         request_info['has_request'] = True
@@ -348,8 +353,23 @@ class PolicyTemplateParser:
                 # Try val() function pattern - e.g., host val($ds_flexera_api_hosts, "flexera")
                 val_match = re.search(r'host\s+val\([^)]+\)', datasource_body)
                 if val_match:
-                    # This is a Flexera API call using dynamic host lookup
-                    request_info['host'] = 'flexera_api_host'
+                    val_content = val_match.group(0)
+                    # Check if it's val(iter_item, ...) - this means dynamic host from iteration
+                    if 'iter_item' in val_content:
+                        # This is iterating over data from previous datasource
+                        # Try to infer the service from auth or other context
+                        if 'auth $auth_aws' in datasource_body:
+                            # AWS authentication - likely S3 bucket host
+                            request_info['host'] = '{bucket}.s3.amazonaws.com'
+                        elif 'auth $auth_azure' in datasource_body or 'auth $auth_google' in datasource_body:
+                            # Other cloud - use generic placeholder
+                            request_info['host'] = '{dynamic_host}'
+                        else:
+                            # Unknown - use generic placeholder
+                            request_info['host'] = '{dynamic_host}'
+                    else:
+                        # This is a Flexera API call using dynamic host lookup
+                        request_info['host'] = 'flexera_api_host'
                 else:
                     # Try bare variable pattern (e.g., host rs_optima_host, host rs_governance_host)
                     bare_var_match = re.search(r'host\s+(rs_\w+)', datasource_body)
@@ -368,11 +388,50 @@ class PolicyTemplateParser:
         path_match = re.search(r'path\s+join\(\[([^\]]+)\]\)', datasource_body)
         if path_match:
             try:
-                # Extract quoted strings from the join array
-                path_parts = re.findall(r'["\']([^"\']+)["\']', path_match.group(1))
-                request_info['path'] = ''.join(path_parts)
-            except re.error as e:
-                # If regex fails, use placeholder
+                join_content = path_match.group(1)
+                
+                # Parse the join array to maintain proper order of strings and val() calls
+                # Split by comma but be careful with nested function calls
+                parts = []
+                current_part = ''
+                depth = 0
+                
+                for char in join_content + ',':
+                    if char in '([':
+                        depth += 1
+                        current_part += char
+                    elif char in ')]':
+                        depth -= 1
+                        current_part += char
+                    elif char == ',' and depth == 0:
+                        part = current_part.strip()
+                        if part:
+                            parts.append(part)
+                        current_part = ''
+                    else:
+                        current_part += char
+                
+                # Now process each part to extract strings or val() placeholders
+                path_result = ''
+                for part in parts:
+                    part = part.strip()
+                    # Check if it's a val(iter_item, "xxx") call
+                    val_match = re.search(r'val\(iter_item,\s*["\']([^"\']+)["\']\)', part)
+                    if val_match:
+                        path_result += '{' + val_match.group(1) + '}'
+                    else:
+                        # Check if it's a quoted string
+                        string_match = re.search(r'^["\']([^"\']+)["\']$', part)
+                        if string_match:
+                            path_result += string_match.group(1)
+                        elif 'val(' in part:
+                            # Other val() patterns (not iter_item) - use generic placeholder
+                            path_result += '{dynamic}'
+                        # Skip other patterns (variables, etc.)
+                
+                request_info['path'] = path_result
+            except Exception as e:
+                # If parsing fails, use placeholder
                 request_info['path'] = '/{dynamic}'
         else:
             # Try simple path pattern with single or double quotes
@@ -392,8 +451,8 @@ class PolicyTemplateParser:
         if script_match:
             request_info['script_name'] = script_match.group(1)
         
-        # Extract query parameters (with double or single quotes)
-        for query_match in re.finditer(r'query\s+["\']([^"\']+)["\']\s*,\s*["\']([^"\']+)["\']', datasource_body):
+        # Extract query parameters (with double or single quotes, allow empty values)
+        for query_match in re.finditer(r'query\s+["\']([^"\']+)["\']\s*,\s*["\']([^"\']*)["\']', datasource_body):
             param_name = query_match.group(1)
             param_value = query_match.group(2)
             request_info['query_params'][param_name] = param_value
@@ -442,102 +501,129 @@ class PolicyTemplateParser:
         
         # Extract host from JavaScript
         # Look for the entire host line first
-        host_line_match = re.search(r'host:\s*([^,\n]+)', js_code)
-        if host_line_match:
-            host_line = host_line_match.group(1).strip()
+        # Handle array.join() pattern: [ "tagging.", region, ".amazonaws.com" ].join('')
+        host_array_join_match = re.search(r'host:\s*\[\s*([^\]]+)\]\s*\.join\([^\)]*\)', js_code)
+        if host_array_join_match:
+            array_content = host_array_join_match.group(1)
+            # Extract string literals
+            strings = re.findall(r'["\']([^"\']+)["\']', array_content)
+            # Extract variable names  
+            variables = re.findall(r'(?:,\s*)(\w+)(?:\s*,|\s*$)', array_content)
             
-            # Check if this is a function call (e.g., get_host_by_region)
-            if '(' in host_line and ')' in host_line:
-                # This is a function call - try to trace the function
-                func_match = re.search(r'function\s+(\w+)\s*\([^)]*\)\s*\{([^}]+)\}', js_code, re.DOTALL)
-                if func_match:
-                    func_body = func_match.group(2)
-                    # Look for return statements with string patterns
-                    return_match = re.search(r'return\s+([^;]+)', func_body)
-                    if return_match:
-                        return_expr = return_match.group(1).strip()
-                        # Extract string literals from the return expression
-                        strings = re.findall(r'["\']([^"\']+)["\']', return_expr)
-                        # Extract variable names
-                        variables = re.findall(r'\b(\w+)\s*\+', return_expr)
-                        
-                        if strings:
-                            # Build host with semantic placeholders
-                            host_with_vars = ''
-                            var_idx = 0
-                            for i, s in enumerate(strings):
-                                s_clean = s.lstrip('.')
-                                host_with_vars += s_clean
-                                # Add placeholder between parts
-                                if i < len(strings) - 1:
-                                    if var_idx < len(variables):
-                                        placeholder = self._get_semantic_placeholder(variables[var_idx])
-                                        var_idx += 1
-                                    else:
-                                        placeholder = '{dynamic}'
-                                    host_with_vars += placeholder
-                            request_info['host'] = host_with_vars
+            if strings:
+                # Build host with semantic placeholders
+                host_with_vars = ''
+                var_idx = 0
+                for i, s in enumerate(strings):
+                    # Don't strip dots from strings, just use as-is
+                    host_with_vars += s
+                    # Add placeholder between parts
+                    if i < len(strings) - 1:
+                        if var_idx < len(variables):
+                            placeholder = self._get_semantic_placeholder(variables[var_idx])
+                            var_idx += 1
                         else:
-                            # No strings found, use a generic pattern
-                            request_info['host'] = '{region}.monitor.azure.com' if 'azure' in func_body.lower() else None
-            # Check if this is a concatenated string (contains +)
-            elif '+' in host_line:
-                # Extract all string literals from the concatenation
-                strings = re.findall(r'["\']([^"\']+)["\']', host_line)
-                # Extract variable names
-                variables = re.findall(r'\+\s*(\w+)\s*\+', host_line)
+                            placeholder = '{dynamic}'
+                        host_with_vars += placeholder
+                request_info['host'] = host_with_vars
+        else:
+            # Fall back to simpler patterns
+            host_line_match = re.search(r'host:\s*([^,\n]+)', js_code)
+            if host_line_match:
+                host_line = host_line_match.group(1).strip()
                 
-                if strings and len(strings) > 1:
-                    # Join them with semantic placeholders between
-                    parts = []
-                    var_idx = 0
-                    for i, s in enumerate(strings):
-                        if i == 0:
-                            parts.append(s.rstrip('.'))
-                        elif i == len(strings) - 1:
-                            parts.append(s.lstrip('.'))
-                        else:
-                            parts.append(s.strip('.'))
-                        
-                        # Add placeholder between parts (except after last)
-                        if i < len(strings) - 1:
-                            if var_idx < len(variables):
-                                placeholder = self._get_semantic_placeholder(variables[var_idx])
-                                var_idx += 1
+                # Check if this is a function call (e.g., get_host_by_region)
+                if '(' in host_line and ')' in host_line:
+                    # This is a function call - try to trace the function
+                    func_match = re.search(r'function\s+(\w+)\s*\([^)]*\)\s*\{([^}]+)\}', js_code, re.DOTALL)
+                    if func_match:
+                        func_body = func_match.group(2)
+                        # Look for return statements with string patterns
+                        return_match = re.search(r'return\s+([^;]+)', func_body)
+                        if return_match:
+                            return_expr = return_match.group(1).strip()
+                            # Extract string literals from the return expression
+                            strings = re.findall(r'["\']([^"\']+)["\']', return_expr)
+                            # Extract variable names
+                            variables = re.findall(r'\b(\w+)\s*\+', return_expr)
+                            
+                            if strings:
+                                # Build host with semantic placeholders
+                                host_with_vars = ''
+                                var_idx = 0
+                                for i, s in enumerate(strings):
+                                    s_clean = s.lstrip('.')
+                                    host_with_vars += s_clean
+                                    # Add placeholder between parts
+                                    if i < len(strings) - 1:
+                                        if var_idx < len(variables):
+                                            placeholder = self._get_semantic_placeholder(variables[var_idx])
+                                            var_idx += 1
+                                        else:
+                                            placeholder = '{dynamic}'
+                                        host_with_vars += placeholder
+                                request_info['host'] = host_with_vars
                             else:
-                                placeholder = '{dynamic}'
-                            parts.append(placeholder)
+                                # No strings found, use a generic pattern
+                                request_info['host'] = '{region}.monitor.azure.com' if 'azure' in func_body.lower() else None
+                # Check if this is a concatenated string (contains +)
+                elif '+' in host_line:
+                    # Extract all string literals from the concatenation
+                    strings = re.findall(r'["\']([^"\']+)["\']', host_line)
+                    # Extract variable names
+                    variables = re.findall(r'\+\s*(\w+)\s*\+', host_line)
                     
-                    request_info['host'] = '.'.join(parts)
-                elif strings:
-                    request_info['host'] = strings[0]
-            else:
-                # Check if it's an object/array access pattern first (e.g., ds_flexera_api_hosts["flexera"])
-                if '[' in host_line and ']' in host_line:
-                    # Extract the key being accessed
-                    key_match = re.search(r'\["?([^"\]]+)"?\]', host_line)
-                    if key_match:
-                        key = key_match.group(1)
-                        # If accessing with "flexera" key or similar, it's a Flexera API
-                        if 'flexera' in key.lower() or 'flexera' in host_line.lower():
-                            request_info['host'] = 'flexera_api_host'
-                # Check if it's a simple string literal
-                elif re.search(r'^["\'][^"\']+["\']$', host_line):
-                    # Only match if the ENTIRE line is a quoted string
-                    host_match = re.search(r'["\']([^"\']+)["\']', host_line)
-                    if host_match:
-                        request_info['host'] = host_match.group(1)
+                    if strings and len(strings) > 1:
+                        # Join them with semantic placeholders between
+                        parts = []
+                        var_idx = 0
+                        for i, s in enumerate(strings):
+                            if i == 0:
+                                parts.append(s.rstrip('.'))
+                            elif i == len(strings) - 1:
+                                parts.append(s.lstrip('.'))
+                            else:
+                                parts.append(s.strip('.'))
+                            
+                            # Add placeholder between parts (except after last)
+                            if i < len(strings) - 1:
+                                if var_idx < len(variables):
+                                    placeholder = self._get_semantic_placeholder(variables[var_idx])
+                                    var_idx += 1
+                                else:
+                                    placeholder = '{dynamic}'
+                                parts.append(placeholder)
+                        
+                        request_info['host'] = '.'.join(parts)
+                    elif strings:
+                        request_info['host'] = strings[0]
                 else:
-                    # It's a variable reference - check if it's a Flexera built-in
-                    var_name = host_line.strip()
-                    if var_name in ['rs_optima_host', 'rs_governance_host']:
-                        # These are Flexera built-in variables
-                        request_info['host'] = var_name
+                    # Check if it's an object/array access pattern first (e.g., ds_flexera_api_hosts["flexera"])
+                    if '[' in host_line and ']' in host_line:
+                        # Extract the key being accessed
+                        key_match = re.search(r'\["?([^"\]]+)"?\]', host_line)
+                        if key_match:
+                            key = key_match.group(1)
+                            # If accessing with "flexera" key or similar, it's a Flexera API
+                            if 'flexera' in key.lower() or 'flexera' in host_line.lower():
+                                request_info['host'] = 'flexera_api_host'
+                    # Check if it's a simple string literal
+                    elif re.search(r'^["\'][^"\']+["\']$', host_line):
+                        # Only match if the ENTIRE line is a quoted string
+                        host_match = re.search(r'["\']([^"\']+)["\']', host_line)
+                        if host_match:
+                            request_info['host'] = host_match.group(1)
                     else:
-                        # Try to resolve it from script parameters or policy file
-                        param_resolved = self._resolve_parameter_from_content(var_name)
-                        if param_resolved:
-                            request_info['host'] = param_resolved
+                        # It's a variable reference - check if it's a Flexera built-in
+                        var_name = host_line.strip()
+                        if var_name in ['rs_optima_host', 'rs_governance_host']:
+                            # These are Flexera built-in variables
+                            request_info['host'] = var_name
+                        else:
+                            # Try to resolve it from script parameters or policy file
+                            param_resolved = self._resolve_parameter_from_content(var_name)
+                            if param_resolved:
+                                request_info['host'] = param_resolved
         
         # Extract path from JavaScript - handle both simple strings and array joins
         # Try array join pattern first: [ "/v3/projects/", projectId, "/timeSeries:query" ].join('')
@@ -915,6 +1001,27 @@ class PolicyTemplateParser:
         words = name.split()
         return ' '.join(word.capitalize() for word in words)
     
+    def _get_generic_operation_from_method(self, method):
+        """Get a generic operation name based on HTTP method.
+        
+        Args:
+            method: HTTP method (GET, POST, PUT, DELETE, PATCH, etc.)
+            
+        Returns:
+            Generic operation name like 'Get Resource', 'Create Resource', etc.
+        """
+        method_upper = method.upper()
+        if method_upper == 'GET':
+            return 'Get Resource'
+        elif method_upper == 'POST':
+            return 'Create Resource'
+        elif method_upper in ('PUT', 'PATCH'):
+            return 'Update Resource'
+        elif method_upper == 'DELETE':
+            return 'Delete Resource'
+        else:
+            return f'{method_upper} Resource'
+    
     def _extract_operation_name(self, endpoint, method, api_service, request_info):
         """Extract a human-readable operation name from the endpoint and request information.
         
@@ -935,8 +1042,8 @@ class PolicyTemplateParser:
                 'logging': 'Logging Configuration',
                 'tagging': 'Tags',
                 'versioning': 'Versioning Configuration',
-                'location': 'Bucket Location',
-                'policy': 'Bucket Policy',
+                'location': 'Location',
+                'policy': 'Policy',
             },
             'Oracle': {
                 'o': 'Object',
@@ -969,29 +1076,60 @@ class PolicyTemplateParser:
                     action = params['Action'][0]
                     return action
             
-            # For AWS, if the entire endpoint is just a hostname (no path or just '/'), 
-            # extract a meaningful operation from the query parameters
+            # For AWS S3, check for operations in query parameters
+            # Query params can be in the URL or in request_info
             parsed_url = urllib.parse.urlparse(endpoint)
             path = parsed_url.path
             
-            if not path or path == '/':
-                # Look at query parameters to understand the operation
-                params = urllib.parse.parse_qs(parsed_url.query)
-                # Common S3 query parameters that indicate operations
-                s3_ops = RESOURCE_MAPPINGS.get('AWS', {})
-                for param_key in params.keys():
-                    param_lower = param_key.lower()
-                    if param_lower in s3_ops:
-                        return f'Get {s3_ops[param_lower]}'
-                    # If no mapping, use the parameter name itself
-                    elif param_lower not in ['maxkeys', 'prefix', 'delimiter', 'marker']:
-                        return f'Get {self._format_resource_name(param_key)}'
+            # Combine query params from URL and request_info
+            params_dict = {}
+            if parsed_url.query:
+                params_dict.update(urllib.parse.parse_qs(parsed_url.query))
+            if request_info.get('query_params'):
+                # Add query params from request_info (these are single values, not lists)
+                for k, v in request_info['query_params'].items():
+                    params_dict[k] = [v] if v else ['']
+            
+            # Check if it's an S3 bucket operation (path contains bucket name or is simple)
+            # Common S3 query parameters that indicate operations
+            s3_ops = RESOURCE_MAPPINGS.get('AWS', {})
+            for param_key in params_dict.keys():
+                param_lower = param_key.lower()
+                if param_lower in s3_ops:
+                    return f'Get Bucket {s3_ops[param_lower]}'
+                # Handle special S3 operations
+                elif param_lower == 'intelligent-tiering':
+                    return 'Get Bucket Intelligent Tiering Configuration'
+                # If no mapping, use the parameter name itself (but skip common filters)
+                elif param_lower not in ['maxkeys', 'prefix', 'delimiter', 'marker', 'api-version', 'view']:
+                    return f'Get Bucket {self._format_resource_name(param_key)}'
+            
+            # If path is just hostname or '/', and no useful query params
+            if not path or path == '/' or path == '/{name}':
                 # If no useful query params, it's a bucket list operation
                 return 'List Buckets'
             
             # Fallback: Try to infer from URL path
             if path.endswith('/'):
                 path = path[:-1]
+            
+            # Check if it's an S3 object operation (path has multiple segments with placeholders)
+            path_segments = [s for s in path.split('/') if s]
+            placeholder_count = sum(1 for s in path_segments if '{' in s)
+            
+            # If path has 2+ placeholders (e.g., /{bucket}/{key}), it's likely an object operation
+            if placeholder_count >= 2:
+                # Check if there's a query parameter that indicates the operation
+                if params_dict:
+                    for param_key in params_dict.keys():
+                        param_lower = param_key.lower()
+                        if param_lower == 'uploadid':
+                            return 'List Multipart Upload Parts'
+                        elif param_lower not in ['maxkeys', 'prefix', 'delimiter', 'marker', 'api-version', 'view']:
+                            return f'Get Object {self._format_resource_name(param_key)}'
+                # No query params, assume it's getting the object
+                return 'Get Object'
+            
             segments = [s for s in path.split('/') if s and '{' not in s.lower()]
             # Filter out placeholder segments
             segments = [s for s in segments if s.lower() not in SKIP_PLACEHOLDERS]
@@ -1009,19 +1147,47 @@ class PolicyTemplateParser:
             # Format: /subscriptions/{id}/providers/Microsoft.Network/virtualNetworkGateways
             path = self._get_url_path(endpoint)
             
+            # Check if it's Azure Storage (blob.core.windows.net, etc.)
+            if 'blob.core.windows.net' in endpoint or 'file.core.windows.net' in endpoint or 'queue.core.windows.net' in endpoint or 'table.core.windows.net' in endpoint:
+                # Azure Storage APIs use 'restype' and 'comp' parameters
+                parsed = urllib.parse.urlparse(endpoint)
+                params_dict = {}
+                if parsed.query:
+                    params_dict.update(urllib.parse.parse_qs(parsed.query))
+                if request_info.get('query_params'):
+                    for k, v in request_info['query_params'].items():
+                        params_dict[k] = [v] if v else ['']
+                
+                if 'restype' in params_dict:
+                    restype = params_dict['restype'][0] if params_dict['restype'] else ''
+                    comp = params_dict.get('comp', [''])[0]
+                    if comp:
+                        return f'List {self._format_resource_name(restype)} {self._format_resource_name(comp)}'
+                    return f'List {self._format_resource_name(restype)}'
+                
+                # Infer from path
+                if path:
+                    # Path like /{container} for blob storage
+                    return f'{method.upper()} Storage'
+            
             # Handle fully dynamic or empty paths
             if not path or path == '{dynamic}':
-                # Check query parameters for operation hints
+                # Check query parameters for operation hints (both in URL and request_info)
                 parsed = urllib.parse.urlparse(endpoint)
-                params = urllib.parse.parse_qs(parsed.query)
+                params_dict = {}
+                if parsed.query:
+                    params_dict.update(urllib.parse.parse_qs(parsed.query))
+                if request_info.get('query_params'):
+                    for k, v in request_info['query_params'].items():
+                        params_dict[k] = [v] if v else ['']
                 
                 # Azure Storage APIs use 'restype' and 'comp' parameters
-                if 'restype' in params:
-                    restype = params['restype'][0]
-                    comp = params.get('comp', [''])[0]
+                if 'restype' in params_dict:
+                    restype = params_dict['restype'][0] if params_dict['restype'] else ''
+                    comp = params_dict.get('comp', [''])[0]
                     if comp:
-                        return f'Get {self._format_resource_name(restype)} {self._format_resource_name(comp)}'
-                    return f'Get {self._format_resource_name(restype)}'
+                        return f'List {self._format_resource_name(restype)} {self._format_resource_name(comp)}'
+                    return f'List {self._format_resource_name(restype)}'
                 
                 # No useful info, return generic based on method
                 method_upper = method.upper()
@@ -1062,9 +1228,9 @@ class PolicyTemplateParser:
         elif api_service == 'GCP':
             path = self._get_url_path(endpoint)
             
-            # Handle fully dynamic or empty paths
+            # Handle fully dynamic or empty paths - use HTTP method as fallback
             if not path or path == '{dynamic}':
-                return ''  # Can't determine operation from fully dynamic URL
+                return self._get_generic_operation_from_method(method)
             
             # GCP often uses :operation patterns (e.g., /projects:search)
             if path and ':' in path.split('/')[-1]:  # Check only the last segment
@@ -1101,9 +1267,9 @@ class PolicyTemplateParser:
         elif api_service == 'Flexera':
             path = self._get_url_path(endpoint)
             
-            # Handle fully dynamic or empty paths
+            # Handle fully dynamic or empty paths - use HTTP method as fallback
             if not path or path == '{dynamic}':
-                return ''
+                return self._get_generic_operation_from_method(method)
             
             # Special handling for bill-analysis API
             if '/bill-analysis/' in path and '/costs/' in path:
@@ -1128,7 +1294,7 @@ class PolicyTemplateParser:
             path = self._get_url_path(endpoint)
             
             if not path:
-                return ''
+                return self._get_generic_operation_from_method(method)
             
             segments = [s for s in path.split('/') if s and '{' not in s.lower()]
             # Filter out placeholder segments
@@ -1148,7 +1314,7 @@ class PolicyTemplateParser:
             path = self._get_url_path(endpoint)
             
             if not path:
-                return ''
+                return self._get_generic_operation_from_method(method)
             
             segments = [s for s in path.split('/') if s and '{' not in s.lower()]
             # Filter out placeholder segments
@@ -1162,7 +1328,7 @@ class PolicyTemplateParser:
             path = self._get_url_path(endpoint)
             
             if not path:
-                return ''
+                return self._get_generic_operation_from_method(method)
             
             segments = [s for s in path.split('/') if s and '{' not in s.lower()]
             # Filter out placeholder segments
@@ -1171,8 +1337,8 @@ class PolicyTemplateParser:
                 resource = segments[-1]
                 return self._format_operation_from_method(method, resource)
         
-        # Ultimate fallback
-        return ''
+        # Ultimate fallback - use HTTP method to provide generic operation
+        return self._get_generic_operation_from_method(method)
     
     def _format_operation_from_method(self, method, resource):
         """Format an operation name from HTTP method and resource type.
