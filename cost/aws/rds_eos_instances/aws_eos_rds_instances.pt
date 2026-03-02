@@ -261,6 +261,10 @@ datasource "ds_billing_centers" do
   end
 end
 
+###############################################################################
+# Currency & FX
+###############################################################################
+
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -285,35 +289,96 @@ datasource "ds_currency_code" do
   end
 end
 
-datasource "ds_currency" do
-  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+# Determine target currency (defaults to USD if not set/found)
+datasource "ds_currency_target" do
+  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
 end
 
-script "js_currency", type:"javascript" do
+script "js_currency_target", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
-  symbol = "$"
-  separator = ","
+  code <<-'EOS'
+  // Default to USD if currency is not found
+  result = ds_currency_reference['USD']
 
-  if (ds_currency_code['value'] != undefined) {
-    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
-      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
-
-      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
-        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-      } else {
-        separator = ""
-      }
-    }
-  }
-
-  result = {
-    symbol: symbol,
-    separator: separator
+  if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
+    result = ds_currency_reference[ds_currency_code['value']]
   }
 EOS
 end
+
+# Branching logic:
+# Only request FX rates if target currency != USD (RDS support costs file is in USD)
+datasource "ds_conditional_currency_conversion" do
+  run_script $js_conditional_currency_conversion, $ds_currency_target
+end
+
+script "js_conditional_currency_conversion", type: "javascript" do
+  parameters "ds_currency_target"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  // RDS extended support cost mapping is in USD
+  from_currency = "USD"
+
+  // Make the request only if the target currency is not USD
+  if (ds_currency_target['code'] != from_currency) {
+    result = [{ from: from_currency }]
+  }
+EOS
+end
+
+datasource "ds_currency_conversion" do
+  # Only make a request if the target currency is not USD
+  iterate $ds_conditional_currency_conversion
+  request do
+    host "api.xe-auth.flexeraeng.com"
+    path "/prod/{proxy+}"
+    query "from", val(iter_item, 'from')
+    query "to", val($ds_currency_target, 'code')
+    query "amount", "1"
+    # Ignore currency conversion if API has issues
+    ignore_status [400, 404, 502]
+  end
+  result do
+    encoding "json"
+    field "from", jmes_path(response, "from")
+    field "to", jmes_path(response, "to")
+    field "amount", jmes_path(response, "amount")
+    field "year", jmes_path(response, "year")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_target", "ds_currency_conversion"
+  result "result"
+  code <<-'EOS'
+  result = ds_currency_target
+  result['exchange_rate'] = 1
+
+  if (ds_currency_conversion.length > 0) {
+    currency_code = ds_currency_target['code']
+    current_month = parseInt(new Date().toISOString().split('-')[1])
+
+    conversion_block = _.find(ds_currency_conversion[0]['to'][currency_code], function(item) {
+      return item['month'] == current_month
+    })
+
+    if (conversion_block != undefined) {
+      result['exchange_rate'] = conversion_block['monthlyAverage']
+    }
+  }
+EOS
+end
+
+###############################################################################
+# Regions & RDS Inventory
+###############################################################################
 
 datasource "ds_describe_regions" do
   request do
@@ -446,18 +511,34 @@ datasource "ds_aws_db_support_cost_map" do
 end
 
 datasource "ds_rds_instances" do
-  run_script $js_rds_instances, $ds_rds_instances_set, $ds_resource_tags, $ds_aws_account, $ds_applied_policy, $ds_aws_db_instance_map, $ds_aws_db_size_map, $ds_aws_db_support_cost_map, $ds_billing_centers, $ds_currency, $param_exclusion_tags, $param_exclusion_tags_boolean, $param_eos_notification, $param_incident_csv
+  run_script $js_rds_instances,
+    $ds_rds_instances_set,
+    $ds_resource_tags,
+    $ds_aws_account,
+    $ds_applied_policy,
+    $ds_aws_db_instance_map,
+    $ds_aws_db_size_map,
+    $ds_aws_db_support_cost_map,
+    $ds_billing_centers,
+    $ds_currency,
+    $ds_currency_conversion,
+    $ds_conditional_currency_conversion,
+    $param_exclusion_tags,
+    $param_exclusion_tags_boolean,
+    $param_eos_notification,
+    $param_incident_csv
 end
 
 script "js_rds_instances", type: "javascript" do
-  parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_account", "ds_applied_policy", "ds_aws_db_instance_map", "ds_aws_db_size_map", "ds_aws_db_support_cost_map", "ds_billing_centers", "ds_currency", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_eos_notification", "param_incident_csv"
+  parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_account", "ds_applied_policy", "ds_aws_db_instance_map", "ds_aws_db_size_map", "ds_aws_db_support_cost_map", "ds_billing_centers", "ds_currency", "ds_currency_conversion", "ds_conditional_currency_conversion", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_eos_notification", "param_incident_csv"
   result "result"
   code <<-EOS
   result = [];
 
   var HOURS = 720;
   var currency_symbol = ds_currency["symbol"] || "$";
-  var separator = ds_currency["separator"] || ",";
+  var separator = ds_currency["t_separator"] || "";
+  var exchange_rate = ds_currency["exchange_rate"] || 1;
 
   function daysUntil(dateStr) {
     var today = new Date();
@@ -598,7 +679,7 @@ script "js_rds_instances", type: "javascript" do
 
         var vcpu = ds_aws_db_size_map[db_class] ? Number(ds_aws_db_size_map[db_class]) : 0;
         var region = instance["region"];
-        var EXTENDED_SUPPORT_COST = 0.10; // default fallback
+        var EXTENDED_SUPPORT_COST = 0.10; // default fallback in USD per vCPU-hour
 
         var cost_entry = _.find(ds_aws_db_support_cost_map, function(entry) {
           return entry.region === region && entry.year1_cost_usd;
@@ -608,7 +689,10 @@ script "js_rds_instances", type: "javascript" do
           EXTENDED_SUPPORT_COST = Number(cost_entry.year1_cost_usd);
         }
 
-        var estimated_cost = HOURS * vcpu * EXTENDED_SUPPORT_COST;
+        // Base cost in USD, then convert using exchange_rate to target currency
+        var estimated_cost_usd = HOURS * vcpu * EXTENDED_SUPPORT_COST;
+        var estimated_cost = estimated_cost_usd * exchange_rate;
+
         var formatted_cost = formatCurrency(estimated_cost, currency_symbol, separator);
         var estimated_savings = cleanCurrencyValue(formatted_cost, currency_symbol, separator);
         var billing_center_id_or_name = getBillingCenter(instanceId);
@@ -656,8 +740,31 @@ script "js_rds_instances", type: "javascript" do
       }
     }
   });
-  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
-  result[0]['message'] = csv_message
+
+  // Currency conversion messaging (similar to RI template)
+  var currency = "USD";
+  if (ds_conditional_currency_conversion[0] != undefined) {
+    currency = ds_conditional_currency_conversion[0]['from'];
+  }
+
+  var conversion_message = "";
+
+  if (ds_currency['code'] != currency && ds_currency_conversion.length > 0 && exchange_rate != 1) {
+    conversion_message = [
+      "Savings values were converted from ", currency, " to ", ds_currency['code'],
+      " using an exchange rate of ", exchange_rate, ".\\n\\n"
+    ].join('');
+  }
+
+  if (ds_currency['code'] != currency && ds_currency_conversion.length == 0) {
+    conversion_message = "Savings values are in " + currency + " due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue.\\n\\n";
+  }
+
+  var csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident.";
+
+  if (result.length > 0) {
+    result[0]['message'] = conversion_message + csv_message;
+  }
 EOS
 end
 
@@ -756,14 +863,12 @@ end
 # Not intended to be modified or used by policy developers
 ###############################################################################
 
-# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
-# if it is set we will look for the parent policy.
 datasource "ds_get_parent_policy" do
   request do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"
@@ -771,10 +876,6 @@ datasource "ds_get_parent_policy" do
   end
 end
 
-# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
-# This information is used in two places:
-# - determining whether or not we make a delete call
-# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
 datasource "ds_parent_policy_terminated" do
   run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
 end
@@ -787,9 +888,6 @@ script "js_parent_policy_terminated", type: "javascript" do
 EOS
 end
 
-# Two potentials ways to set this up:
-# - this way and make a unneeded 'get' request when not deleting
-# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
 datasource "ds_terminate_self" do
   request do
     run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
@@ -809,12 +907,6 @@ script "js_make_terminate_request", type: "javascript" do
 EOS
 end
 
-# This is just a way to have the check delete request connect to the farthest leaf from policy.
-# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
-# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
-# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
-# would not have access to self-terminate
-# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
 datasource "ds_is_deleted" do
   run_script $js_is_deleted, $ds_terminate_self
 end
