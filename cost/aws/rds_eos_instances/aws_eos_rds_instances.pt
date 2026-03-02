@@ -1,7 +1,7 @@
 name "AWS RDS Instances With Support Ending Soon"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report on AWS RDS Instances that are about to transition from standard support to more expensive extended support. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rds_eos_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report on AWS RDS Instances that are about to transition from standard support to more expensive extended support. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rds_eos_instances) and [docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rds_eos_instances"
 category "Cost"
@@ -256,7 +256,7 @@ datasource "ds_billing_centers" do
       field "href", jmes_path(col_item, "href")
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
-      field "parent_id", jmes_path(col_item, "parent_id")
+      field "parent_id", jmes_path(col_item, "parent_id"]
     end
   end
 end
@@ -289,7 +289,7 @@ datasource "ds_currency_code" do
   end
 end
 
-# Determine target currency (defaults to USD if not set/found)
+# Determine target currency (defaults to USD if currency is not found)
 datasource "ds_currency_target" do
   run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
 end
@@ -307,8 +307,7 @@ script "js_currency_target", type:"javascript" do
 EOS
 end
 
-# Branching logic:
-# Only request FX rates if target currency != USD (RDS support costs file is in USD)
+# Only request FX rates if target currency != USD (RDS support mapping is in USD)
 datasource "ds_conditional_currency_conversion" do
   run_script $js_conditional_currency_conversion, $ds_currency_target
 end
@@ -360,6 +359,13 @@ script "js_currency", type:"javascript" do
   code <<-'EOS'
   result = ds_currency_target
   result['exchange_rate'] = 1
+
+  // Maintain backwards compatibility: expose "separator" like old script
+  if (result['t_separator'] != undefined) {
+    result['separator'] = result['t_separator']
+  } else {
+    result['separator'] = ""
+  }
 
   if (ds_currency_conversion.length > 0) {
     currency_code = ds_currency_target['code']
@@ -511,33 +517,18 @@ datasource "ds_aws_db_support_cost_map" do
 end
 
 datasource "ds_rds_instances" do
-  run_script $js_rds_instances,
-    $ds_rds_instances_set,
-    $ds_resource_tags,
-    $ds_aws_account,
-    $ds_applied_policy,
-    $ds_aws_db_instance_map,
-    $ds_aws_db_size_map,
-    $ds_aws_db_support_cost_map,
-    $ds_billing_centers,
-    $ds_currency,
-    $ds_currency_conversion,
-    $ds_conditional_currency_conversion,
-    $param_exclusion_tags,
-    $param_exclusion_tags_boolean,
-    $param_eos_notification,
-    $param_incident_csv
+  run_script $js_rds_instances, $ds_rds_instances_set, $ds_resource_tags, $ds_aws_account, $ds_applied_policy, $ds_aws_db_instance_map, $ds_aws_db_size_map, $ds_aws_db_support_cost_map, $ds_billing_centers, $ds_currency, $param_exclusion_tags, $param_exclusion_tags_boolean, $param_eos_notification, $param_incident_csv
 end
 
 script "js_rds_instances", type: "javascript" do
-  parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_account", "ds_applied_policy", "ds_aws_db_instance_map", "ds_aws_db_size_map", "ds_aws_db_support_cost_map", "ds_billing_centers", "ds_currency", "ds_currency_conversion", "ds_conditional_currency_conversion", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_eos_notification", "param_incident_csv"
+  parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_account", "ds_applied_policy", "ds_aws_db_instance_map", "ds_aws_db_size_map", "ds_aws_db_support_cost_map", "ds_billing_centers", "ds_currency", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_eos_notification", "param_incident_csv"
   result "result"
   code <<-EOS
   result = [];
 
   var HOURS = 720;
   var currency_symbol = ds_currency["symbol"] || "$";
-  var separator = ds_currency["t_separator"] || "";
+  var separator = ds_currency["separator"] || ",";
   var exchange_rate = ds_currency["exchange_rate"] || 1;
 
   function daysUntil(dateStr) {
@@ -679,7 +670,7 @@ script "js_rds_instances", type: "javascript" do
 
         var vcpu = ds_aws_db_size_map[db_class] ? Number(ds_aws_db_size_map[db_class]) : 0;
         var region = instance["region"];
-        var EXTENDED_SUPPORT_COST = 0.10; // default fallback in USD per vCPU-hour
+        var EXTENDED_SUPPORT_COST = 0.10; // default fallback (USD per vCPU-hour)
 
         var cost_entry = _.find(ds_aws_db_support_cost_map, function(entry) {
           return entry.region === region && entry.year1_cost_usd;
@@ -689,7 +680,7 @@ script "js_rds_instances", type: "javascript" do
           EXTENDED_SUPPORT_COST = Number(cost_entry.year1_cost_usd);
         }
 
-        // Base cost in USD, then convert using exchange_rate to target currency
+        // Base cost in USD, converted to org currency via exchange_rate
         var estimated_cost_usd = HOURS * vcpu * EXTENDED_SUPPORT_COST;
         var estimated_cost = estimated_cost_usd * exchange_rate;
 
@@ -740,30 +731,9 @@ script "js_rds_instances", type: "javascript" do
       }
     }
   });
-
-  // Currency conversion messaging (similar to RI template)
-  var currency = "USD";
-  if (ds_conditional_currency_conversion[0] != undefined) {
-    currency = ds_conditional_currency_conversion[0]['from'];
-  }
-
-  var conversion_message = "";
-
-  if (ds_currency['code'] != currency && ds_currency_conversion.length > 0 && exchange_rate != 1) {
-    conversion_message = [
-      "Savings values were converted from ", currency, " to ", ds_currency['code'],
-      " using an exchange rate of ", exchange_rate, ".\\n\\n"
-    ].join('');
-  }
-
-  if (ds_currency['code'] != currency && ds_currency_conversion.length == 0) {
-    conversion_message = "Savings values are in " + currency + " due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue.\\n\\n";
-  }
-
-  var csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident.";
-
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
   if (result.length > 0) {
-    result[0]['message'] = conversion_message + csv_message;
+    result[0]['message'] = csv_message
   }
 EOS
 end
