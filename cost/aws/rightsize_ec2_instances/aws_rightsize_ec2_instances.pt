@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.6.5",
+  version: "5.7.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -87,6 +87,15 @@ parameter "param_regions_list" do
   description "A list of allowed or denied regions. See the README for more details"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
+end
+
+parameter "param_filter_gpu" do
+  type "string"
+  category "Filters"
+  label "Exclude GPU Instances"
+  description "Whether or not to exclude GPU-focused EC2 instances from the results. Note: GPU metrics are not considered when producing recommendations."
+  allowed_values "Include GPU Instances", "Exclude GPU Instances"
+  default "Include GPU Instances"
 end
 
 parameter "param_stats_idle_threshold_cpu_value" do
@@ -715,12 +724,20 @@ datasource "ds_instance_sets" do
   end
 end
 
+datasource "ds_aws_instance_types_map" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 datasource "ds_instances" do
-  run_script $js_instances, $ds_instance_sets, $param_exclusion_tags, $param_exclusion_tags_boolean
+  run_script $js_instances, $ds_instance_sets, $ds_aws_instance_types_map, $param_exclusion_tags, $param_exclusion_tags_boolean, $param_filter_gpu
 end
 
 script "js_instances", type: "javascript" do
-  parameters "ds_instance_sets", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  parameters "ds_instance_sets", "ds_aws_instance_types_map", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_filter_gpu"
   result "result"
   code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -800,6 +817,15 @@ script "js_instances", type: "javascript" do
       result = result.concat(item['instances_set'])
     }
   })
+
+  if (param_filter_gpu == "Exclude GPU Instances") {
+    gpu_types = _.filter(ds_aws_instance_types_map, function(type) { return type["gpu"] })
+    gpu_type_names = _.pluck(gpu_types, "name")
+
+    result = _.reject(result, function(instance) {
+      return _.contains(gpu_type_names, instance["resourceType"])
+    })
+  }
 EOS
 end
 
