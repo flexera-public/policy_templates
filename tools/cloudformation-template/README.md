@@ -95,7 +95,7 @@ As you follow the official docs, you can use the recommended configurations belo
 
   - Construct **IAM Role ARN** for AWS STS Credential Setup in Flexera Automation
 
-    The *IAM Role ARN* is the ARN of the IAM Role created by the CloudFormation Template and is needed when creating the [AWS STS Credential in Flexera Automation](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm).  You only need to create **1** AWS STS Credential in Flexera Automation for each StackSet that is created because all IAM Roles created by the StackSet will have the same name and can leverage [AWS STS Multi-Account Credential Usage](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1136870).
+    The *IAM Role ARN* is the ARN of the IAM Role created by the CloudFormation Template and is needed when creating the [AWS STS Credential in Flexera Automation](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials).  You only need to create **1** AWS STS Credential in Flexera Automation for each StackSet that is created because all IAM Roles created by the StackSet will have the same name and can leverage [AWS STS Multi-Account Credential Usage](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#automationadmin_109256743_1136870).
 
     The CloudFormation Template Outputs are not visible at the StackSet level, and instead we recommend constructing the IAM Role ARN using the following:
 
@@ -106,7 +106,7 @@ As you follow the official docs, you can use the recommended configurations belo
 
     For example, if the Stack instance was deployed to AWS Account `123456789012` and the *IAM Role Name* parameter was `FlexeraAutomationPolicies-Org12345`, then the IAM Role ARN to input in Flexera Platform would be `arn:aws:iam::123456789012:role/FlexeraAutomationPolicies-Org12345`.
 
-    **See [Flexera Docs > Automation > AWS STS Multi-Account Credential Usage](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1136870) for more information.**
+    **See [Flexera Docs > Automation > AWS STS Multi-Account Credential Usage](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#automationadmin_109256743_1136870) for more information.**
 
 </details>
 
