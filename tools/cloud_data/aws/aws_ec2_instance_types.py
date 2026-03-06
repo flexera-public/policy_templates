@@ -125,22 +125,22 @@ def extract_gpu_info(item):
     if not gpu_info:
         return None
     
-    gpu_data = {
-        "totalGpuMemoryInMiB": safe_int(gpu_info.get("totalGpuMemoryInMiB")),
-        "gpus": []
-    }
-    
     gpus = gpu_info.get("gpus", {}).get("item", [])
-    for gpu in ensure_list(gpus):
-        gpu_entry = {
-            "name": gpu.get("name"),
-            "manufacturer": gpu.get("manufacturer"),
-            "count": safe_int(gpu.get("count")),
-            "memoryInMiB": safe_int(gpu.get("memoryInfo", {}).get("sizeInMiB"))
-        }
-        gpu_data["gpus"].append(gpu_entry)
+    gpu_list = ensure_list(gpus)
     
-    return gpu_data if gpu_data["gpus"] else None
+    if not gpu_list:
+        return None
+    
+    # Take the first GPU entry (in practice there's only one type per instance)
+    gpu = gpu_list[0]
+    
+    return {
+        "totalGpuMemoryInMiB": safe_int(gpu_info.get("totalGpuMemoryInMiB")),
+        "name": gpu.get("name"),
+        "manufacturer": gpu.get("manufacturer"),
+        "count": safe_int(gpu.get("count")),
+        "memoryInMiB": safe_int(gpu.get("memoryInfo", {}).get("sizeInMiB"))
+    }
 
 
 def extract_memory_info(item):
