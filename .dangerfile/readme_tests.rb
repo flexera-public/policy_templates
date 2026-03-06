@@ -176,8 +176,8 @@ def readme_invalid_credentials?(file, file_lines)
 
   file_lines.each_with_index do |line, index|
     line_number = index + 1
-
-    credential_footnote = true if line.start_with?("The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.")
+    expected_credential_footer = "The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers."
+    credential_footnote = true if line.start_with?(expected_credential_footer)
 
     aws_policy = true if (line.include?("AWS") || line.include?("aws") || line.include?("Alibaba") || line.include?("alibaba")) && (line.include?("Credential") || line.include?("credential"))
     azure_policy = true if (line.include?("Azure") || line.include?("azure")) && (line.include?("Credential") || line.include?("credential")) && !line.include?("China") && !line.include?("china") && !line.include?("Graph") && !line.include?("graph")
@@ -187,10 +187,10 @@ def readme_invalid_credentials?(file, file_lines)
     prereq_line_number = line_number if line.start_with?("## Prerequisites")
 
     if line_number == prereq_line_number + 2
-      expected_message = "This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s)."
-      if !line.start_with?(expected_message)
+      expected_credential_message = "This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s)."
+      if !line.start_with?(expected_credential_message)
         fail_message += "Line #{line_number.to_s}: README has invalid description for credentials section or description is not correctly located two lines below `## Prerequisites`. Credentials section should contain the following description text before the credential list:\n\n"
-        fail_message += "```"+expected_message+"```\n\n"
+        fail_message += "```"+expected_credential_message+"```\n\n"
       end
     end
 
