@@ -37,6 +37,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
   Replace `<group>` with a group that the user associated with the Oracle Cloud credential is a member of.
 
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
 ## Supported Clouds
 
 - Oracle

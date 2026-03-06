@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.7
+
+- Updated defunct URL to Flexera documentation with current URL.
+
 ## v0.1.6
 
 - Fixed issue where no Google policies were listed even when a GCP bill connect was present.
