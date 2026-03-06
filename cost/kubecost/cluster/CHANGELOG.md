@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.0
+
+- Added authentication for all Kubecost requests. Added header "apiKey" for all Kubecost requests.
+- Allow setting different base path for Kubecost requests. The default base path remains the same as previous version.
+
 ## v0.5.1
 
 - Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
