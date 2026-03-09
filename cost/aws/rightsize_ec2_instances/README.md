@@ -69,7 +69,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) to use with this policy, the following information is needed:
 
-- [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+- [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
   - `ec2:DescribeRegions`
   - `ec2:DescribeInstances`
   - `ec2:DescribeInstanceStatus`*
