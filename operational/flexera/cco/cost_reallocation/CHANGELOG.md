@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.3
+
+- Updated URLs in policy template description. Functionality unchanged.
+
 ## v0.1.2
 
 - Fixed bug that was preventing the destination cost line items from being generated.

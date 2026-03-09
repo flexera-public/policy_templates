@@ -4,7 +4,7 @@
 
 This policy template retrieves arbitrary cost data from AWS S3 Object Storage that is in either the [Common Bill Ingestion Format](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/common-bill-ingestion-default-format) or [FOCUS Format](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/) and sends it into Flexera Cloud Cost Optimization (CCO). Optionally, an email is sent indicating that this has happened.
 
-NOTE: This policy template is not intended for ingesting costs for AWS itself; [Flexera's native AWS bill connection](https://docs.flexera.com/flexera/EN/Administration/BillConnectConfigs.htm#cloudsettings_4227273830_1189529) should be used for that. It is intended for ingesting arbitrary costs that just happen to be stored in AWS S3 Object Storage.
+NOTE: This policy template is not intended for ingesting costs for AWS itself; [Flexera's native AWS bill connection](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/) should be used for that. It is intended for ingesting arbitrary costs that just happen to be stored in AWS S3 Object Storage.
 
 ## Input Parameters
 

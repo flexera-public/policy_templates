@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.3
+
+- Updated URLs in policy template description. Functionality unchanged.
+
 ## v0.1.2
 
 - Fixed Javascript TypeError in `js_calculated_proportions`
