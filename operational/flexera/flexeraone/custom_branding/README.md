@@ -44,7 +44,7 @@ This policy template has the following input parameters required when being appl
 - *Marketing Login Blurb Text* - Text to use for the marketing blurb on the login page.
 - *Marketing Login Title Text* - Text to use for the marketing title text on the login page.
 
-The [Partner MSP Customizations](https://docs.flexera.com/flexera/EN/Administration/PartnerMSPCustomizations.htm) page in our documents has detailed information on the settings and diagrams for custom branding
+The [Partner MSP Customizations](https://docs.flexera.com/flexera-one/administration/customizing-flexera-one-with-your-company-branding) page in our documents has detailed information on the settings and diagrams for custom branding
 
 [!NOTE] The abbreviation *CTA* means *Call To Action*
 
@@ -65,7 +65,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-Additionally a subdomain needs to be configured to ensure that the branding of the Flexera login page takes effect as outlined in the [Partner MSP Customizations](https://docs.flexera.com/flexera/EN/Administration/PartnerMSPCustomizations.htm) documentation. Otherwise the policy template will only allow the tenant to update the landing page.
+Additionally a subdomain needs to be configured to ensure that the branding of the Flexera login page takes effect as outlined in the [Partner MSP Customizations](https://docs.flexera.com/flexera-one/administration/customizing-flexera-one-with-your-company-branding) documentation. Otherwise the policy template will only allow the tenant to update the landing page.
 
 ## Supported Clouds
 

@@ -2,7 +2,7 @@
 
 ## Deprecated
 
-This policy template is no longer being updated. The more accurate "Savings" and "Savings Percent" cost metrics now available natively in Flexera CCO, in conjunction with the [Dashboards](https://docs.flexera.com/flexera/EN/Optima/Accessing_the_Cloud_Dashboard.htm#usingcco_3910196062_1183924) and [Tabular View](https://docs.flexera.com/flexera/EN/Optima/TabularView.htm#usingcco_3910196062_1186809) feature, should be used instead.
+This policy template is no longer being updated. The more accurate "Savings" and "Savings Percent" cost metrics now available natively in Flexera CCO, in conjunction with the [Dashboards](https://docs.flexera.com/flexera-one/cloud/using-cloud-cost-optimization/accessing-the-cloud-dashboard/) and [Tabular View](https://docs.flexera.com/flexera-one/cloud/using-cloud-cost-optimization/tabular-view) feature, should be used instead.
 
 ## What It Does
 
@@ -15,7 +15,7 @@ This policy template produces a report with chart showing the total savings real
 ## How It Works
 
 - Data is obtained from Flexera's stored cloud cost data via the [Flexera Bill Analysis API](https://reference.rightscale.com/bill_analysis/)
-- This policy template uses [savings metric](https://docs.flexera.com/flexera/EN/Optima/TabularView.htm#tabularview_3352643092_1192596) calculated as difference between list price and cost.
+- This policy template uses [savings metric](https://docs.flexera.com/flexera-one/cloud/using-cloud-cost-optimization/tabular-view) calculated as difference between list price and cost.
 
 ## Input Parameters
 

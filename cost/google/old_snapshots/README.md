@@ -4,7 +4,7 @@
 
 This policy template reports on Google snapshots that are older than a user-specified number of days and, optionally, deletes them.
 
-NOTE: Estimated savings will only appear if you are using [Google Detailed Billing](https://docs.flexera.com/flexera/EN/Administration/BillConnectConfigsGoogleDetailedBilling.htm) to ingest Google Cloud costs into Flexera CCO.
+NOTE: Estimated savings will only appear if you are using [Google Detailed Billing](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/google/) to ingest Google Cloud costs into Flexera CCO.
 
 ### Policy Savings Details
 

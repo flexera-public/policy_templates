@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template uses the [Flexera ITAM Cloud REST APIs](https://docs.flexera.com/FlexeraOneAPI/ITAMDataAPI/#api-Reports-reportsExecute) to run a report (Custom View) and email it. [View an example email.](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/operational/flexera/itam/schedule_itam_report/images/email_output.png)
+This policy template uses the [Flexera ITAM Cloud REST APIs](https://developer.flexera.com/docs/api/fnms/v1) to run a report (Custom View) and email it. [View an example email.](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/operational/flexera/itam/schedule_itam_report/images/email_output.png)
 
 NOTE: Only the first 100,000 rows of the report will be included. This is due to email size limitations.
 
