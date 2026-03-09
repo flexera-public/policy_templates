@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template retrieves arbitrary cost data from Azure Blob Storage that is in either the [Common Bill Ingestion Format](https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBIDefaultFormat.htm) or [FOCUS Format](https://docs.flexera.com/flexera/EN/Optima/FOCUS.htm) and sends it into Flexera Cloud Cost Optimization (CCO). An incident is raised on every execution of the policy to provide status information to the user.
+This policy template retrieves arbitrary cost data from Azure Blob Storage that is in either the [Common Bill Ingestion Format](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/common-bill-ingestion-default-format) or [FOCUS Format](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/) and sends it into Flexera Cloud Cost Optimization (CCO). An incident is raised on every execution of the policy to provide status information to the user.
 
 NOTE: This policy template is not intended for ingesting costs for Microsoft Azure itself; [Flexera's native Azure bill connection](https://docs.flexera.com/flexera/EN/Administration/BillConnectConfigs.htm#cloudsettings_4227273830_1189529) should be used for that. It is intended for ingesting arbitrary costs that just happen to be stored in Azure Blob Storage.
 

@@ -4,7 +4,7 @@
 
 This Policy Template leverages the the Flexera Cloud Cost Optimization APIs to import Cloud vendor services import service costs and add a markup or markdown by category.
 
-For a detailed explanation regarding categories and their mapping to the different cloud service please check the following link: [Flexera Cloud Cost Optimization categories](https://docs.flexera.com/flexera/EN/Optima/costdimcat.htm#optimabilling_2682776915_1151644)
+For a detailed explanation regarding categories and their mapping to the different cloud service please check the following link: [Flexera Cloud Cost Optimization categories](https://docs.flexera.com/flexera-one/cloud/using-cloud-cost-optimization/analyzing-cloud-costs-in-billing-centers/cost-dimensions/cloud-cost-optimization-generated-cost-dimension-category/)
 
 ## Cost Metrics
 

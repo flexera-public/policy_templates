@@ -6,7 +6,7 @@
 
 This policy allows you to set up cross organization scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will report the following:
 
-Chart of the previous 6 months of utilization based on whichever [Cost Dimension](https://docs.flexera.com/flexera/EN/Optima/costdim.htm#optimabilling_3819625383_1151399) you select (only bill data and Flexera-generated dimensions are supported).
+Chart of the previous 6 months of utilization based on whichever [Cost Dimension](https://docs.flexera.com/flexera-one/cloud/using-cloud-cost-optimization/analyzing-cloud-costs-in-billing-centers/cost-dimensions/) you select (only bill data and Flexera-generated dimensions are supported).
 Daily Average - Weekly: Daily average costs calculated from Monday of the previous week through today.
 Daily Average - Monthly: Daily average costs calculated from the 1st of the previous month through today.
 Previous - Weekly: Total costs during previous full week (Monday-Sunday).

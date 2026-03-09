@@ -15,7 +15,7 @@ The cost anomalies are identified using [Bollinger Bands](https://en.wikipedia.o
 - Any point outside of the bands is considered as anomalous. If multiple cost anomalies are detected for the given dimensions, the data point with the greatest deviation is reported as incident.
 - Additionally, a URL link is provided to a graphical report where all detected anomalies are shown.
 
-For more details on Flexera Cloud Cost Anomaly Detection, please see the [documentation](https://docs.flexera.com/flexera/EN/Optima/CostAnomaly.htm).
+For more details on Flexera Cloud Cost Anomaly Detection, please see the [documentation](https://docs.flexera.com/flexera-one/cloud/using-cloud-cost-optimization/cost-anomaly-detection).
 
 ## Input Parameters
 

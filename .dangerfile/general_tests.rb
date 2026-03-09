@@ -35,6 +35,10 @@ def general_textlint?(file)
     unless filtered_list.empty?
       filtered_list = filtered_list.join("\n\n")
       fail_message = "Textlint errors found:\n\n#{filtered_list}"
+
+      if filtered_list.include?('no-dead-link')
+        fail_message += "\n\nNote: URLs that redirect may be reported as dead links. Updating the URLs accordingly will resolve such issues."
+      end
     end
   end
 

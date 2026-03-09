@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template retrieves arbitrary cost data from AWS S3 Object Storage that is in either the [Common Bill Ingestion Format](https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBIDefaultFormat.htm) or [FOCUS Format](https://docs.flexera.com/flexera/EN/Optima/FOCUS.htm) and sends it into Flexera Cloud Cost Optimization (CCO). Optionally, an email is sent indicating that this has happened.
+This policy template retrieves arbitrary cost data from AWS S3 Object Storage that is in either the [Common Bill Ingestion Format](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/common-bill-ingestion-default-format) or [FOCUS Format](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/) and sends it into Flexera Cloud Cost Optimization (CCO). Optionally, an email is sent indicating that this has happened.
 
 NOTE: This policy template is not intended for ingesting costs for AWS itself; [Flexera's native AWS bill connection](https://docs.flexera.com/flexera/EN/Administration/BillConnectConfigs.htm#cloudsettings_4227273830_1189529) should be used for that. It is intended for ingesting arbitrary costs that just happen to be stored in AWS S3 Object Storage.
 
@@ -11,7 +11,7 @@ NOTE: This policy template is not intended for ingesting costs for AWS itself; [
 - *Email Addresses* - Email addresses of the recipients you wish to notify when billing data is uploaded
 - *Billing Month* - Month to upload costs for. Select `Specific Month` to specify a month.
 - *Specific Month* - Month to upload costs for in YYYY-MM format. Only relevant if `Specific Month` is selected for the Billing Month parameter.
-- *CBI (Common Bill Ingestion) Endpoint Type* - Whether costs are being sent to an endpoint for [Common Bill Ingestion Format](https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBIDefaultFormat.htm) or [FOCUS Format](https://docs.flexera.com/flexera/EN/Optima/FOCUS.htm).
+- *CBI (Common Bill Ingestion) Endpoint Type* - Whether costs are being sent to an endpoint for [Common Bill Ingestion Format](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/common-bill-ingestion-default-format) or [FOCUS Format](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/).
 - *CBI (Common Bill Ingestion) Endpoint ID* - The ID of CBI endpoint to create/use for ingested costs. Leave blank to have this generated and managed automatically. Ex: cbi-oi-optima-laborcosts
 - *Cloud Vendor* - The value the fixed cost should have for the `Cloud Vendor` dimension in Flexera CBI. Only has an effect when the CBI endpoint is first created. This is because the `Cloud Vendor` dimension isn't based on billing data but is configured for the CBI endpoint itself.
 - *Granularity* - Whether there will be one file per month of billing data, or one file per day of billing data.
