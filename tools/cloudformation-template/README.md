@@ -2,7 +2,7 @@
 
 ## Overview
 
-Template to create a CloudFormation Stack with IAM Role and Permission Policy resources required by [Flexera Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm).
+Template to create a CloudFormation Stack with IAM Role and Permission Policy resources required by [Flexera Automation](https://docs.flexera.com/flexera-one/automation/).
 
 Three supported versions are provided as options:
 
