@@ -238,17 +238,17 @@ def readme_invalid_credentials?(file, file_lines)
 
   if aws_policy && !aws_permission_line
     fail_message += "AWS permissions missing or incorrectly formatted. Please make sure AWS permissions begin with a list item like the following:\n\n"
-    fail_message += "```- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:```\n\n"
+    fail_message += "```- [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:```\n\n"
   end
 
   if azure_policy && !azure_permission_line
     fail_message += "Azure permissions missing or incorrectly formatted. Please make sure Azure permissions begin with a list item like the following:\n\n"
-    fail_message += "```- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:```\n\n"
+    fail_message += "```- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:```\n\n"
   end
 
   if google_policy && !google_permission_line
     fail_message += "Google permissions missing or incorrectly formatted. Please make sure Google permissions begin with a list item like the following:\n\n"
-    fail_message += "```- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:```\n\n"
+    fail_message += "```- [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:```\n\n"
   end
 
   if aws_permission_line
@@ -260,9 +260,9 @@ def readme_invalid_credentials?(file, file_lines)
     #   fail_message += "AWS permission JSON example missing or formatted incorrectly. JSON example should be formatted [like so](https://raw.githubusercontent.com/flexera-public/policy_templates/master/.dangerfile/examples/AWS_PERMISSION_JSON.md).\n\n"
     # end
 
-    if !aws_permission_text[0].start_with?("- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:") && !aws_permission_text[0].start_with?("- [**Alibaba Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*)")
+    if !aws_permission_text[0].start_with?("- [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:") && !aws_permission_text[0].start_with?("- [**Alibaba Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*)")
       fail_message += "Line #{aws_permission_line.to_s}: AWS permission statement does not use the standard text. Please make sure AWS permissions begin with the following text followed by a list:\n\n"
-      fail_message += "```- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:```\n\n"
+      fail_message += "```- [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:```\n\n"
     end
 
     aws_perm_tester = /`[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*:[a-zA-Z0-9]+`(?:[\*\u2020\u2021\u00a7\u2016\u00b6]+)?$/
@@ -329,9 +329,9 @@ def readme_invalid_credentials?(file, file_lines)
   end
 
   if azure_permission_line
-    if !azure_permission_text[0].start_with?("- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:") && !azure_permission_text[0].start_with?("- [**Azure Storage Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121576) (*provider=azure_storage*)")
+    if !azure_permission_text[0].start_with?("- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:") && !azure_permission_text[0].start_with?("- [**Azure Storage Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure) (*provider=azure_storage*)")
       fail_message += "Line #{azure_permission_line.to_s}: Azure permission statement does not use the standard text. Please make sure Azure permissions begin with the following text followed by a list:\n\n"
-      fail_message += "```- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:```\n\n"
+      fail_message += "```- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:```\n\n"
     end
 
     azure_perm_tester = /^`Microsoft\.(?:[a-zA-Z]+|\*)\/(?:[a-zA-Z]+|\*)\/(?:[a-zA-Z]+|\*)(?:\/(?:[a-zA-Z]+|\*))*`(?:[\*\u2020\u2021\u00a7\u2016\u00b6]+)?$/
@@ -395,9 +395,9 @@ def readme_invalid_credentials?(file, file_lines)
   end
 
   if google_permission_line
-    if !google_permission_text[0].start_with?("- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:")
+    if !google_permission_text[0].start_with?("- [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:")
       fail_message += "Line #{google_permission_line.to_s}: Google permission statement does not use the standard text. Please make sure Google permissions begin with the following text followed by a list:\n\n"
-      fail_message += "```- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:```\n\n"
+      fail_message += "```- [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:```\n\n"
     end
 
     google_perm_tester = /^`[a-zA-Z]+\.[a-zA-Z]+\.[a-zA-Z]+(?:\.[a-zA-Z]+)*`(?:[\*\u2020\u2021\u00a7\u2016\u00b6]+)?$/
