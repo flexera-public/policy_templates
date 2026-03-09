@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1.3
+
+- Updated documentation link in policy description. Functionality unchanged.
+
 ## v2.1.2
 
 - Fixed an issue where applied policy would fail due to an undefined variable.

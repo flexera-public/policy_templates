@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4.6
+
+- Updated documentation link in policy description. Functionality unchanged.
+
 ## v3.4.5
 
 - Updated account scope description to better explain Payer vs Linked behavior. Functionality unchanged.

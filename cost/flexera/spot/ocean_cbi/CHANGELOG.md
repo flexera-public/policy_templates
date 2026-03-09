@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.6
+
+- Updated documentation link in policy description. Functionality unchanged.
+
 ## v0.2.5
 
 - Updated URLs in policy template description. Functionality unchanged.
