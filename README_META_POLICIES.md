@@ -53,7 +53,7 @@ For all meta policies, a Flexera credential with the appropriate permissions nee
   - `Cloud: View cloud`
   - `Cloud: View cloud costs`
 
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ### Amazon Web Services
 

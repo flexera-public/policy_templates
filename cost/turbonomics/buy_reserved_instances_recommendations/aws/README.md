@@ -31,7 +31,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
     - Add Turbonomic credentials using the provided `clientId` and `clientSecret`.
     - Ensure the credential is tagged with `provider=turbonomic` and use `Basic Auth` for Credential Type.
 
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
