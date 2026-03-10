@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.10.5
+
+- Updated documentation link in policy description. Functionality unchanged.
+
 ## v5.10.4
 
 - Fixed a bug introduced in v5.10.3 that would cause "Cannot access member 'result' of undefined", if the AWS account info does not exist in Flexera.

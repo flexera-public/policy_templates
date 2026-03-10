@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.7
+
+- Updated documentation link in policy description. Functionality unchanged.
+
 ## v0.6.6
 
 - Updated heredocs in policy template code to conform to best practices. Functionality unchanged.

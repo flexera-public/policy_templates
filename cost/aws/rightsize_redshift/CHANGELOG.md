@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.5
+
+- Updated documentation link in policy description. Functionality unchanged.
+
 ## v0.2.4
 
 - Fixed a bug caused by an order of magnitude error which resulted in recommendations not being returned for valid Redshift instances.

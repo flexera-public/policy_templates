@@ -2,9 +2,9 @@
 
 ## What It Does
 
-This policy template retrieves arbitrary cost data from AWS S3 Object Storage that is in either the [Common Bill Ingestion Format](https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBIDefaultFormat.htm) or [FOCUS Format](https://docs.flexera.com/flexera/EN/Optima/FOCUS.htm) and sends it into Flexera Cloud Cost Optimization (CCO). An incident is raised on every execution of the policy to provide status information to the user.
+This policy template retrieves arbitrary cost data from AWS S3 Object Storage that is in either the [Common Bill Ingestion Format](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/common-bill-ingestion-default-format) or [FOCUS Format](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/) and sends it into Flexera Cloud Cost Optimization (CCO). An incident is raised on every execution of the policy to provide status information to the user.
 
-NOTE: This policy template is not intended for ingesting costs for AWS itself; [Flexera's native AWS bill connection](https://docs.flexera.com/flexera/EN/Administration/BillConnectConfigs.htm#cloudsettings_4227273830_1189529) should be used for that. It is intended for ingesting arbitrary costs that just happen to be stored in AWS S3 Object Storage.
+NOTE: This policy template is not intended for ingesting costs for AWS itself; [Flexera's native AWS bill connection](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/) should be used for that. It is intended for ingesting arbitrary costs that just happen to be stored in AWS S3 Object Storage.
 
 NOTE: Because of the complexities involved in this policy template, it is recommended for use only in situations where the standard [Common Bill Ingestion from AWS S3 Object Storage](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cbi_ingestion_aws_s3) policy template is unable to handle the amount of data being processed for CBI.
 
@@ -35,9 +35,9 @@ This policy template has the following input parameters:
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
-- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+- [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
   - `s3:ListBucket`*
   - `s3:GetObject`*
 
@@ -61,11 +61,11 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   }
   ```
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
   - `csm_bill_upload_admin`
 
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ### Additional Requirements
 
