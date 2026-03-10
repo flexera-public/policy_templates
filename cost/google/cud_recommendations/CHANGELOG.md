@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.5.4
+
+- Updated documentation link in policy description. Functionality unchanged.
+
 ## v4.5.3
 
 - Updated API call for listing Google Projects to speed up policy execution and reduce the number of paginated requests.

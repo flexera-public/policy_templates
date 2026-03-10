@@ -40,7 +40,7 @@ Policy templates require the correct permissions configured for your [Flexera Cr
 
 ### Policy Templates for Optimization
 
-These templates can generate savings estimates for your environment. The incidents they raise are scraped for recommendations for the [Cost Optimization](https://docs.flexera.com/flexera/EN/Optima/ViewPotentialSavings.htm#usingcco_3910196062_1188061) section of Flexera One.
+These templates can generate savings estimates for your environment. The incidents they raise are scraped for recommendations for the [Cost Optimization](https://docs.flexera.com/flexera-one/cloud/using-cloud-cost-optimization/viewing-potential-savings) section of Flexera One.
 
 #### AWS
 

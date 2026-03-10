@@ -6,6 +6,35 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#4047](https://github.com/flexera-public/policy_templates/pull/4047): POL-1710 AWS Lambda Functions With High Error Rate Fix
+
+#### Description
+
+> `AWS Lambda Functions With High Error RateAWS Lambda Functions With High Error Rate`
+> - Fixed issue with `GetMetricData` API request when gathering CloudWatch metrics. Functionality unchanged.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Lambda Functions With High Error Rate](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/lambda_functions_with_high_error_rate/README.md)
+- **Merged At**: 2026-02-19 13:05:39 UTC
+
+---
+
+### PR [#4046](https://github.com/flexera-public/policy_templates/pull/4046): POL-1695 Azure Long Stopped Compute Instances Fix
+
+#### Description
+
+> Fixes issue with the `Azure Long Stopped Compute Instances` policy template where resources in a state of "starting" were reported as stopped.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Long Stopped Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/long_stopped_instances/README.md)
+- **Merged At**: 2026-02-19 13:05:31 UTC
+
+---
+
 ### PR [#4023](https://github.com/flexera-public/policy_templates/pull/4023): POL-1720 Meta Policy Fix
 
 *New Policy Template*
@@ -2217,44 +2246,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Azure Databricks Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/databricks/rightsize_compute/README.md), [Meta Parent: Azure Databricks Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/databricks/rightsize_compute/README.md)
 - **Merged At**: 2025-09-05 17:58:32 UTC
-
----
-
-### PR [#3474](https://github.com/flexera-public/policy_templates/pull/3474): fix: js_make_terminate_request gracefully handle if policy_id not def…
-
-*Unpublished*
-
-#### Description
-
-> Updates the `js_make_terminate_request` script to gracefully handle when policy_id is not set (i.e. during retrieve_data).  This snippet is used for "Meta" capabilities in the child policy template, and today it causes an error during local development.
->
-> This change, combined with https://github.com/flexera-public/policy_sdk/pull/43 should enable most catalog policy templates to run `retrieve_data` without any need to modify the template, which should improve the policy developers QoL.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3474) for these details.
-- **Merged At**: 2025-09-04 17:56:41 UTC
-
----
-
-### PR [#3397](https://github.com/flexera-public/policy_templates/pull/3397): FOAA-307 - New Template Dynamic Dashboards
-
-*New Policy Template, Minor Update*
-
-#### Description
-
-> This policy template creates dynamic dashboards based on cost data aggregated by user-specified dimensions over the previous 12 months. For each unique value of the selected dashboard dimension, the policy creates a dashboard showcasing the top N widget dimension values by cost. This enables automatic creation of focused cost dashboards for different organizational segments (vendors, regions, services, etc.).
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/FOAA-307
->
-
-#### Metadata
-
-- **Policies**: [Dynamic Dashboards](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/dynamic_dashboards/README.md)
-- **Merged At**: 2025-09-04 17:28:27 UTC
 
 ---
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## v5.1.5
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v5.1.4
+
+- Fixed issue with `GetMetricData` API request when gathering CloudWatch metrics. Functionality unchanged.
+
 ## v5.1.3
 
 - Fixed a bug introduced in v5.1.2 that would cause "Cannot access member 'result' of undefined", if the AWS account info does not exist in Flexera.

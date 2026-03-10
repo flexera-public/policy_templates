@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.6
+
+- Updated documentation link in policy description. Functionality unchanged.
+
 ## v0.5.5
 
 - Fixed a bug where the no recommendations would be returned for valid Elasticache instances.

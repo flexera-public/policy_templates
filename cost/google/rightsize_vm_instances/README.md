@@ -4,7 +4,7 @@
 
 This policy template checks all the VM instances in Google Projects for the average or maximum CPU and/or memory usage over a user-specified number of days. If the usage is less than the user provided Idle Instance CPU and/or memory percentage threshold then the Virtual Machine is recommended for stopping. If the usage is less than the user provided Underutilized Instance CPU and/or Memory percentage threshold, then the Virtual Machine is recommended for downsizing. Both sets of Virtual Machines returned from this policy are emailed to the user.
 
-Estimated savings will only appear if you are using [Google Detailed Billing](https://docs.flexera.com/flexera/EN/Administration/BillConnectConfigsGoogleDetailedBilling.htm) to ingest Google Cloud costs into Flexera CCO. If you have not configured Flexera One to ingest detailed billing information from Google, or prefer to receive recommendations produced by the Google Recommender service rather than Flexera, please use the [Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations) policy template instead of this one.
+Estimated savings will only appear if you are using [Google Detailed Billing](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/google/) to ingest Google Cloud costs into Flexera CCO. If you have not configured Flexera One to ingest detailed billing information from Google, or prefer to receive recommendations produced by the Google Recommender service rather than Flexera, please use the [Google Rightsize VM Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_recommendations) policy template instead of this one.
 
 ## How It Works
 
@@ -70,9 +70,9 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
-- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
+- [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:
   - `resourcemanager.projects.get`
   - `monitoring.metricDescriptors.list`
   - `monitoring.timeSeries.list`
@@ -85,10 +85,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
 
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 Additionally, this Policy Template requires that several APIs be enabled in your Google Cloud environment:
 

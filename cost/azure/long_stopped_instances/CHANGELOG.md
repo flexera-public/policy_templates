@@ -1,5 +1,13 @@
 # Changelog
 
+## v6.1.5
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v6.1.4
+
+- Policy no longer erroneously reports virtual machines in a "starting" state as stopped.
+
 ## v6.1.3
 
 - Fixed an intermittent Azure Activity Log query failure caused by the start time exceeding the 90-day limit during policy execution.

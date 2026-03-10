@@ -12,7 +12,7 @@ There are two components of a meta policy; the child policy, which is just the n
 
 ### Flexera
 
-For all meta policies, a Flexera credential with the appropriate permissions needs to be [added to the Flexera CCO platform](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm).
+For all meta policies, a Flexera credential with the appropriate permissions needs to be [added to the Flexera CCO platform](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials).
 
 - Permissions:
   - `governance:action_status:index`
@@ -53,7 +53,7 @@ For all meta policies, a Flexera credential with the appropriate permissions nee
   - `Cloud: View cloud`
   - `Cloud: View cloud costs`
 
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ### Amazon Web Services
 
@@ -62,18 +62,18 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 - The same name should be used for the role in every account. Permissions should be configured for whichever policy templates you intended to use.
 - Recommended method for creating roles is AWS CloudFormation (StackSets). [We provide a template](https://raw.githubusercontent.com/flexera-public/policy_templates/master/tools/cloudformation-template/FlexeraAutomationPolicies.template) for this purpose.
 
-#### [Create an AWS credential in the Flexera CCO platform](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1122264)
+#### [Create an AWS credential in the Flexera CCO platform](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws)
 
 - This should be created as an ordinary AWS cross-account role.
 - The role can be any of the roles created in step 1. The meta policy will infer the credentials for the rest of the AWS accounts based on the shared name.
 
 ### Microsoft Azure
 
-Microsoft Azure requires no special configuration. Simply [add a Microsoft Azure credential](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1124668) with the appropriate permissions to the Flexera CCO platform.
+Microsoft Azure requires no special configuration. Simply [add a Microsoft Azure credential](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure) with the appropriate permissions to the Flexera CCO platform.
 
 ### Google Cloud
 
-Google Cloud requires no special configuration. Simply [add a Google Cloud credential](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) with the appropriate permissions to the Flexera CCO platform.
+Google Cloud requires no special configuration. Simply [add a Google Cloud credential](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) with the appropriate permissions to the Flexera CCO platform.
 
 ## Usage
 

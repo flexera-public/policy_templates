@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.7
+
+- Updated documentation link in policy description. Functionality unchanged.
+
 ## v0.1.6
 
 - Fixed issue where no Google policies were listed even when a GCP bill connect was present.
