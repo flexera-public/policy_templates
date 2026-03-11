@@ -21,6 +21,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation. This is based on the value of the `Estimated Monthly Savings` field.
 - *CPU Family* - CPU family recommendations to include. Recommendations for CPU families not listed here will not be included in the results.
 - *Operating System Family* - Which operating system families to include. EC2 instances not running one of the specified operating system families will not be included in the results.
+- *GPU Instances* - Whether to report recommendations for instances with GPUs, without GPUs, or both.
 - *Show Multiple Recommendations* - Whether or not to show multiple recommendations for a single instance or to only show the one with the most savings potential. Note that including multiple recommendations per instance may skew metrics around potential savings in the Flexera One platform and is not recommended in most cases.
 - *Allow/Deny Regions* - Whether to treat regions parameter as allow or deny list.
 - *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.

@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.4.2",
+  version: "0.5.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -96,6 +96,15 @@ parameter "param_recommendations_os" do
   description "Which operating system families to include. EC2 instances not running one of the specified operating system families will not be included in the results."
   allowed_values ["Windows", "Linux", "Other"]
   default ["Windows", "Linux", "Other"]
+end
+
+parameter "param_recommendations_gpu" do
+  type "list"
+  category "Filters"
+  label "GPU Instances"
+  description "Whether to report recommendations for instances with GPUs, without GPUs, or both."
+  allowed_values ["With GPU", "Without GPU"]
+  default ["With GPU", "Without GPU"]
 end
 
 parameter "param_multi_recommendations" do
@@ -397,12 +406,36 @@ datasource "ds_instance_sets" do
   end
 end
 
+datasource "ds_aws_instance_types" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_aws_gpu_table" do
+  run_script $js_aws_gpu_table, $ds_aws_instance_types
+end
+
+script "js_aws_gpu_table", type:"javascript" do
+  parameters "ds_aws_instance_types"
+  result "result"
+  code <<-'EOS'
+  result = {}
+
+  _.each(ds_aws_instance_types, function(instance) {
+    result[instance["name"]] = instance["gpu"] ? true : false
+  })
+EOS
+end
+
 datasource "ds_instances" do
-  run_script $js_instances, $ds_instance_sets, $param_exclusion_tags, $param_exclusion_tags_boolean
+  run_script $js_instances, $ds_instance_sets, $ds_aws_gpu_table, $param_exclusion_tags, $param_exclusion_tags_boolean, $param_recommendations_gpu
 end
 
 script "js_instances", type: "javascript" do
-  parameters "ds_instance_sets", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  parameters "ds_instance_sets", "ds_aws_gpu_table", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_recommendations_gpu"
   result "result"
   code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -482,6 +515,18 @@ script "js_instances", type: "javascript" do
       result = result.concat(item['instances_set'])
     }
   })
+
+  if (!_.contains(param_recommendations_gpu, "With GPU")) {
+    result = _.reject(result, function(instance) {
+      return ds_aws_gpu_table[instance["resourceType"]]
+    })
+  }
+
+  if (!_.contains(param_recommendations_gpu, "Without GPU")) {
+    result = _.filter(result, function(instance) {
+      return ds_aws_gpu_table[instance["resourceType"]]
+    })
+  }
 EOS
 end
 
