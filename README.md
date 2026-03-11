@@ -510,6 +510,7 @@ These templates can generate savings estimates for your environment. The inciden
   * [Configure Custom Branding](./operational/flexera/flexeraone/custom_branding)
   * [Flexera One API Event Report](./operational/flexera/iam/api_event_report)
   * [Flexera One User Access Report](./operational/flexera/iam/iam_user_report)
+  * [Flexera User Groups from Billing Centers](./operational/flexera/iam/user_groups_from_billing_centers)
 
 * Kubernetes
 
