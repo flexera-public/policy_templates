@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.3
+
+- Updated documentation link in policy description. Functionality unchanged.
+
 ## v3.3.2
 
 - Updated API call for listing Google Projects to speed up policy execution and reduce the number of paginated requests.

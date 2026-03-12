@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.1.5
+
+- Updated documentation link in policy description. Functionality unchanged.
+
 ## v5.1.4
 
 - Fixed issue with `GetMetricData` API request when gathering CloudWatch metrics. Functionality unchanged.

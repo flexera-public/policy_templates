@@ -138,7 +138,7 @@ An additional paragraph should be included at the bottom if destructive actions 
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws)
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
@@ -163,13 +163,13 @@ This section should contain a list of all possible actions the policy template c
 This section outlines the requirements for using the policy template. This will always begin with information about credentials and should always start with the following paragraph:
 
 ```text
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 ```
 
 This should be followed by an itemized list of every credential required for the policy template. Each credential should include a link to Flexera documentation about the credential, a description of the expected provider tag for the credential, and a list of specific permissions the credential needs. Optional permissions for specific functionality should be indicated with a `*` character and a footnote.
 
 ```text
-- [__AWS Credential__](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+- [__AWS Credential__](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
   - `ec2:DescribeRegions`
   - `ec2:DescribeImages`
   - `ec2:DescribeSnapshots`
@@ -190,7 +190,7 @@ This should be followed by an itemized list of every credential required for the
 After the list of credentials, the following paragraph should always be included at the end.
 
 ```text
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 ```
 
 For most policy templates, credentials are the only requirement. Any requirements other than credentials should be specified at the bottom of this section, beneath the above paragraph.
@@ -322,7 +322,7 @@ The following guidelines should be used when specifying policy template metadata
 - __short_description__
   - In most cases, should match the first lines of the README description.
   - Should include a link to the README.
-  - _Example_: `Check for EC2 instances that have inefficient utilization for a specified number of days and downsizes or terminates them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more.`
+  - _Example_: `Check for EC2 instances that have inefficient utilization for a specified number of days and downsizes or terminates them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more.`
 
 - __long_description__
   - Always set to an empty string.
@@ -359,7 +359,7 @@ The following guidelines should be used when specifying policy template metadata
 name "AWS Rightsize EC2 Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for EC2 instances that have inefficient utilization for a specified number of days and downsizes or terminates them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Check for EC2 instances that have inefficient utilization for a specified number of days and downsizes or terminates them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/"
 severity "low"
@@ -554,7 +554,7 @@ The following guidelines should be used for the `policy` block:
     - Avoid putting currency symbols, percentage signs, or other characters in fields that contain numbers. This tends to break sorting, making the column less usable. Either place the symbol in the name of the field itself (_Example_: `CPU Usage (%)`) or include it in a separate column.
     - For fields that primarily contain numerical data, do not put "No value provided", "N/A", etc. for entries that lack a value. They should simply have a blank value. Additional contextualization, if needed, can be put in the `detail_template` field.
   - Any fields that will contain JavaScript objects needed for Cloud Workflow automation, instead of information the user will need to see, should be at the end of the list.
-  - For policy templates that produce recommendations for the Optimization Dashboard, [specific export fields are required](https://docs.flexera.com/flexera/EN/Automation/CreateRecomendationFromPolicyTemp.htm).
+  - For policy templates that produce recommendations for the Optimization Dashboard, [specific export fields are required](https://docs.flexera.com/flexera-one/automation/automation-reference-information/create-a-recommendation-from-a-policy-template).
 
 #### Example
 
