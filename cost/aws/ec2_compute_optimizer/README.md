@@ -91,7 +91,11 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automat
 
 Since this policy template relies on the AWS Compute Optimizer, it must be enabled in the various accounts and regions that one wishes to obtain recommendations for. Please consult the [relevant AWS documentation](https://docs.aws.amazon.com/compute-optimizer/latest/ug/getting-started.html) for more information on how to do this.
 
-### GPU Recommendations
+#### Memory Metrics
+
+In order to get the most accurate recommendations, it is recommended that the CloudWatch agent be installed with memory metrics enabled. Please consult the [relevant AWS documentation](https://docs.aws.amazon.com/compute-optimizer/latest/ug/ec2-metrics-analyzed.html#cw-agent) for more information.
+
+#### GPU Metrics
 
 In order to receive recommendations for instances with GPUs, the CloudWatch agent needs to be installed on the instances with the relevant metrics enabled. Please consult the [relevant AWS documentation](https://docs.aws.amazon.com/compute-optimizer/latest/ug/ec2-metrics-analyzed.html#nvidia-cw-agent) for more information.
 
