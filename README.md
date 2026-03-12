@@ -40,7 +40,7 @@ Policy templates require the correct permissions configured for your [Flexera Cr
 
 ### Policy Templates for Optimization
 
-These templates can generate savings estimates for your environment. The incidents they raise are scraped for recommendations for the [Cost Optimization](https://docs.flexera.com/flexera/EN/Optima/ViewPotentialSavings.htm#usingcco_3910196062_1188061) section of Flexera One.
+These templates can generate savings estimates for your environment. The incidents they raise are scraped for recommendations for the [Cost Optimization](https://docs.flexera.com/flexera-one/cloud/using-cloud-cost-optimization/viewing-potential-savings) section of Flexera One.
 
 #### AWS
 
@@ -50,6 +50,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Compute
 
+  * [AWS EC2 Compute Optimizer Recommendations](./cost/aws/ec2_compute_optimizer)
   * [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
   * [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
   * [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
@@ -510,6 +511,7 @@ These templates can generate savings estimates for your environment. The inciden
   * [Configure Custom Branding](./operational/flexera/flexeraone/custom_branding)
   * [Flexera One API Event Report](./operational/flexera/iam/api_event_report)
   * [Flexera One User Access Report](./operational/flexera/iam/iam_user_report)
+  * [Flexera User Groups from Billing Centers](./operational/flexera/iam/user_groups_from_billing_centers)
 
 * Kubernetes
 

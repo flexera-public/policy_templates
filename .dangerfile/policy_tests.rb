@@ -1463,7 +1463,6 @@ def policy_missing_recommendation_fields?(file, file_lines, file_parsed, field_t
   return false
 end
 
-
 ### Improper Comma Spacing Test
 # Return false if all comma separated items have a space between them like so: one, two, three
 def policy_bad_comma_spacing?(file, file_lines)

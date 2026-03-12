@@ -8,6 +8,10 @@
 - Fixed bug preventing Azure recommendations from being pulled
 - Estimated Savings is being provided by Recommendations Spot API instead of calculated from aggregated costs
 
+## v0.2.3
+
+- Updated documentation link in policy description. Functionality unchanged.
+
 ## v0.2.2
 
 - Updated heredocs in policy template code to conform to best practices. Functionality unchanged.

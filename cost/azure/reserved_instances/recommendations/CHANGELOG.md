@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.5.2
+
+- Updated documentation link in policy description. Functionality unchanged.
+
 ## v4.5.1
 
 - Fixed issue with "Estimated Break Even In Months" calculation.

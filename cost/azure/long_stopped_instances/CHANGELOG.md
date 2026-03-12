@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1.5
+
+- Updated documentation link in policy description. Functionality unchanged.
+
 ## v6.1.4
 
 - Policy no longer erroneously reports virtual machines in a "starting" state as stopped.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.7.0
+
+- Added support for filtering GPU instances from the policy incident via a new `Filter GPU Instances` parameter.
+
 ## v5.6.5
 
 - Fixed an 'undefined' error when "Skip Instance Sizes" is set to "Yes" and certain type of VM is encountered.

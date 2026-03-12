@@ -35,6 +35,10 @@ def general_textlint?(file)
     unless filtered_list.empty?
       filtered_list = filtered_list.join("\n\n")
       fail_message = "Textlint errors found:\n\n#{filtered_list}"
+
+      if filtered_list.include?('no-dead-link')
+        fail_message += "\n\nNote: URLs that redirect may be reported as dead links. Updating the URLs accordingly will resolve such issues."
+      end
     end
   end
 
@@ -105,12 +109,19 @@ def general_bad_urls?(file, file_diff)
 
   # List of hosts to ignore in the analysis
   exclude_hosts = [
-    'api.loganalytics.io',          'management.azure.com',
-    'management.core.windows.net',  'login.microsoftonline.com',
-    'oauth2.googleapis.com',        'www.googleapis.com',
-    'image-charts.com',             'graph.microsoft.com',
-    'www.w3.org',                   'tempuri.org',
-    'us-3.rightscale.com',          'us-4.rightscale.com'
+    'api.loganalytics.io',
+    'management.azure.com',
+    'management.core.windows.net',
+    'login.microsoftonline.com',
+    'oauth2.googleapis.com',
+    'www.googleapis.com',
+    'image-charts.com',
+    'graph.microsoft.com',
+    'www.w3.org',
+    'tempuri.org',
+    'us-3.rightscale.com',
+    'us-4.rightscale.com',
+    'storage.azure.com' # Not a legitimate URL but used in request headers for generating Azure tokens
   ]
 
   regex = /(^\+)/
@@ -133,7 +144,7 @@ def general_bad_urls?(file, file_diff)
           url_string = url_parts[0]
           # Remove any trailing ] or ) that might be left over from markdown syntax
           url_string = url_string.gsub(/[\]\)]$/, '')
-          
+
           url = URI(url_string)
 
           # Check for a valid host. Skip URLs that are dynamicly constructed and may not have a valid hostname.
