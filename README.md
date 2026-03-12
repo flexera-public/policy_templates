@@ -50,6 +50,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Compute
 
+  * [AWS EC2 Compute Optimizer Recommendations](./cost/aws/ec2_compute_optimizer)
   * [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
   * [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
   * [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
