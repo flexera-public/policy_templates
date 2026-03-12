@@ -71,7 +71,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `recommender.computeInstanceMachineTypeRecommendations.list`†
   - `recommender.computeInstanceIdleResourceRecommendations.list`†
   - `resourcemanager.projects.get`
-  - `monitoring.metricDescriptors.list`
   - `monitoring.timeSeries.list`
   - `compute.instances.list`
   - `compute.instances.get`

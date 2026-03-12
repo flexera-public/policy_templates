@@ -46,10 +46,14 @@ For example if a user selects the "Apply Hybrid Use Benefit" action while applyi
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.Resources/subscriptions/read`
   - `Microsoft.SqlVirtualMachine/sqlVirtualMachines/read`
   - `Microsoft.SqlVirtualMachine/sqlVirtualMachines/write`*
   - `Microsoft.Sql/servers/read`
-  - `Microsoft.Sql/servers/write`*
+  - `Microsoft.Sql/servers/databases/read`
+  - `Microsoft.Sql/servers/databases/write`*
+  - `Microsoft.Sql/servers/elasticPools/read`
+  - `Microsoft.Sql/servers/elasticPools/write`*
   - `Microsoft.Sql/managedInstances/read`
   - `Microsoft.Sql/managedInstances/write`*
 

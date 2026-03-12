@@ -73,14 +73,11 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `ec2:DescribeRegions`
   - `ec2:DescribeInstances`
   - `ec2:DescribeInstanceStatus`*
-  - `ec2:DescribeTags`
   - `ec2:ModifyInstanceAttribute`*
   - `ec2:StartInstances`*
   - `ec2:StopInstances`*
   - `ec2:TerminateInstances`*
-  - `cloudwatch:GetMetricStatistics`
   - `cloudwatch:GetMetricData`
-  - `cloudwatch:ListMetrics`
   - `sts:GetCallerIdentity`
 
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
@@ -97,14 +94,11 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
                   "ec2:DescribeRegions",
                   "ec2:DescribeInstances",
                   "ec2:DescribeInstanceStatus",
-                  "ec2:DescribeTags",
                   "ec2:ModifyInstanceAttribute",
                   "ec2:StartInstances",
                   "ec2:StopInstances",
                   "ec2:TerminateInstances",
-                  "cloudwatch:GetMetricStatistics",
                   "cloudwatch:GetMetricData",
-                  "cloudwatch:ListMetrics",
                   "sts:GetCallerIdentity"
               ],
               "Resource": "*"

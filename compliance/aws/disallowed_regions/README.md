@@ -30,6 +30,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `sts:GetCallerIdentity`
   - `ec2:DescribeRegions`
   - `ec2:DescribeInstances`
+  - `ec2:DescribeInstanceStatus`*
   - `ec2:StopInstances`*
   - `ec2:TerminateInstances`*
 
@@ -47,6 +48,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
                   "sts:GetCallerIdentity",
                   "ec2:DescribeRegions",
                   "ec2:DescribeInstances",
+                  "ec2:DescribeInstanceStatus",
                   "ec2:StopInstances",
                   "ec2:TerminateInstances"
               ],

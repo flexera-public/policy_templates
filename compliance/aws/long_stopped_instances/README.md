@@ -43,9 +43,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `ec2:DescribeInstances`
   - `ec2:DescribeInstanceStatus`*
   - `ec2:TerminateInstances`*
-  - `cloudwatch:GetMetricStatistics`
   - `cloudwatch:GetMetricData`
-  - `cloudwatch:ListMetrics`
   - `sts:GetCallerIdentity`
 
   \* Only required for taking action (termination); the policy will still function in a read-only capacity without these permissions.
@@ -63,9 +61,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
                   "ec2:DescribeInstances",
                   "ec2:DescribeInstanceStatus",
                   "ec2:TerminateInstances",
-                  "cloudwatch:GetMetricStatistics",
                   "cloudwatch:GetMetricData",
-                  "cloudwatch:ListMetric",
                   "sts:GetCallerIdentity"
               ],
               "Resource": "*"

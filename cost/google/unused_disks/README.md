@@ -61,6 +61,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `compute.disks.list`
   - `compute.disks.createSnapshot`*
   - `compute.disks.delete`*
+  - `compute.snapshots.create`*
+  - `compute.zoneOperations.get`*
 
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 

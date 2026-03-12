@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.4
+
+- Fixed issue with "PutEventSelectors" API call that could potentially cause policy actions to fail.
+
 ## v0.2.3
 
 - Updated documentation link in policy description. Functionality unchanged.

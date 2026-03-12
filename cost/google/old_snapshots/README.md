@@ -57,7 +57,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `compute.zones.list`
   - `compute.regions.list`
   - `compute.disks.list`
-  - `compute.snapshots.get`
   - `compute.snapshots.list`
   - `compute.snapshots.delete`*
 

@@ -51,9 +51,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) to use with this policy, the following information is needed:
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.Resources/subscriptions/read`
   - `Microsoft.Sql/managedInstances/read`
-  - `Microsoft.Sql/managedInstances/metrics/read`
-  - `Microsoft.Sql/managedInstances/update`*
+
+  - `Microsoft.Sql/managedInstances/write`*
   - `Microsoft.Insights/metrics/read`
 
   \* Only required for taking action (deleting or downsizing); the policy will still function in a read-only capacity without these permissions.

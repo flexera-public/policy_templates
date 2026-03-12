@@ -39,7 +39,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `sts:GetCallerIdentity`
   - `ce:StartCommitmentPurchaseAnalysis`
   - `ce:GetCommitmentPurchaseAnalysis`
-  - `ce:ListCommitmentPurchaseAnalyses`
 
   Example IAM Permission Policy:
 
@@ -52,8 +51,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
               "Action": [
                   "sts:GetCallerIdentity",
                   "ce:StartCommitmentPurchaseAnalysis",
-                  "ce:GetCommitmentPurchaseAnalysis",
-                  "ce:ListCommitmentPurchaseAnalyses"
+                  "ce:GetCommitmentPurchaseAnalysis"
               ],
               "Resource": "*"
           }

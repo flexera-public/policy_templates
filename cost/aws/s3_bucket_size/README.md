@@ -39,7 +39,6 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `s3:ListAllMyBuckets`
   - `s3:GetBucketLocation`
   - `s3:GetBucketTagging`
-  - `cloudwatch:ListMetrics`
   - `cloudwatch:GetMetricData`
   - `sts:GetCallerIdentity`
 
@@ -55,7 +54,6 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
                   "s3:ListAllMyBuckets",
                   "s3:GetBucketLocation",
                   "s3:GetBucketTagging",
-                  "cloudwatch:ListMetrics",
                   "cloudwatch:GetMetricData",
                   "sts:GetCallerIdentity"
               ],

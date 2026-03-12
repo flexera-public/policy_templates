@@ -26,7 +26,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 - [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
   - `sts:GetCallerIdentity`
   - `ec2:DescribeRegions`
-  - `config:DescribeConfigurationRecorderStatus`
+  - `config:DescribeConfigurationRecorders`
 
   Example IAM Permission Policy:
 
@@ -39,7 +39,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
               "Action": [
                   "sts:GetCallerIdentity",
                   "ec2:DescribeRegions",
-                  "config:DescribeConfigurationRecorderStatus"
+                  "config:DescribeConfigurationRecorders"
               ],
               "Resource": "*"
           }
