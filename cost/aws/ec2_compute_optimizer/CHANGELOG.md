@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.0
+
+- Added parameter to filter results for resources with or without GPUs.
+
 ## v0.4.2
 
 - Updated documentation link in policy description. Functionality unchanged.
