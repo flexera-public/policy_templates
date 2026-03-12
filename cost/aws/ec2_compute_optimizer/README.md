@@ -97,7 +97,7 @@ In order to get the most accurate recommendations, it is recommended that the Cl
 
 #### GPU Metrics
 
-In order to receive recommendations for instances with GPUs, the CloudWatch agent needs to be installed on the instances with the relevant metrics enabled. Please consult the [relevant AWS documentation](https://docs.aws.amazon.com/compute-optimizer/latest/ug/ec2-metrics-analyzed.html#nvidia-cw-agent) for more information.
+In order to receive recommendations for instances with GPUs, the CloudWatch agent needs to be installed on the instances with the relevant GPU metrics enabled. Please consult the [relevant AWS documentation](https://docs.aws.amazon.com/compute-optimizer/latest/ug/ec2-metrics-analyzed.html#nvidia-cw-agent) for more information.
 
 ## Supported Clouds
 
