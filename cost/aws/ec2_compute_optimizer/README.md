@@ -4,7 +4,9 @@
 
 This policy template reports EC2 rightsizing recommendations produced by the [AWS Compute Optimizer](https://aws.amazon.com/compute-optimizer/faqs/#EC2_instance_recommendations). Optionally, this report can be emailed and the offending instances can be resized.
 
-NOTE: This policy template will produce recommendations similar to the [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances) policy template. If using this policy template strictly for GPU recommendations, it is recommended that you apply the latest version of the [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances) policy template with the `Filter GPU Instances` parameter set to "Exclude GPU Instances". You can then set the `GPU Instances` parameter in this policy template to only include "With GPU". Otherwise, it is recommended that you only use one of these policy templates rather than both to avoid producing duplicate recommendations.
+NOTE: This policy template will produce recommendations similar to the [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances) policy template. If using this policy template strictly for GPU recommendations, it is recommended that you apply the latest version of the [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances) policy template with the `Filter GPU Instances` parameter set to "Exclude GPU Instances". You can then set the `GPU Instances` parameter in this policy template to only include "With GPU". This will prevent duplicate recommendations.
+
+If you are uninterested in GPU recommendations or they are not relevant to your use case, it is recommended that you only use one of these policy templates rather than both to avoid producing duplicate recommendations.
 
 ## How It Works
 
