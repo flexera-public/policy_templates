@@ -85,7 +85,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 ### Credential configuration
 
 - [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
+  - `sts:GetCallerIdentity`
   - `ec2:DescribeInstances`
+  - `ec2:DescribeInstanceStatus`
   - `ec2:StartInstances`*
   - `ec2:StopInstances`*
   - `ec2:DeleteTags`*
@@ -112,7 +114,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
       {
         "Effect": "Allow",
         "Action": [
+            "sts:GetCallerIdentity",
             "ec2:DescribeInstances",
+            "ec2:DescribeInstanceStatus",
             "ec2:StartInstances",
             "ec2:StopInstances",
             "ec2:TerminateInstances",

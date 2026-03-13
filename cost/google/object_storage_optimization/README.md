@@ -43,6 +43,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `resourcemanager.projects.get`
   - `storage.buckets.list`
   - `storage.objects.list`
+  - `storage.objects.get`*
   - `storage.objects.create`*
   - `storage.objects.delete`*
 

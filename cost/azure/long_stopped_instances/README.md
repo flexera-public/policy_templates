@@ -64,7 +64,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `Microsoft.Compute/virtualMachines/read`
   - `Microsoft.Compute/virtualMachines/instanceView/read`
   - `Microsoft.Compute/disks/read`
-  - `Microsoft.Insights/eventtypes/management/read`
+  - `Microsoft.Insights/eventtypes/management/values/read`
   - `Microsoft.Compute/virtualMachines/delete`*
 
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.

@@ -2,22 +2,28 @@
 Extract REST API calls from Flexera Policy Templates.
 
 This script parses Flexera policy template (.pt) files and extracts information about
-all REST API calls, including the HTTP method, endpoint URL, target service (AWS, Azure, 
-GCP, Oracle, Flexera, etc.), and fields extracted from the response.
+all REST API calls, including the HTTP method, endpoint URL, target service (AWS, Azure,
+GCP, Oracle, Flexera, etc.), fields extracted from the response, and the cloud provider
+IAM permission required to make each call.
 
 Usage:
-    python pt_extract_calls
-    
+    python policy_api_list_generator.py [--output-dir DIR]
+
+    --output-dir DIR  Write output files to DIR instead of the default
+                      data/policy_api_list/ directory. Useful for writing to
+                      a temporary location (e.g. /tmp) in CI pipelines.
+
 The script will process all policies listed in data/active_policy_list/active_policy_list.json
 and output results to:
-    - data/policy_api_list/policy_api_list.json
-    - data/policy_api_list/policy_api_list.csv
+    - <output-dir>/policy_api_list.json
+    - <output-dir>/policy_api_list.csv
 """
 
 import sys
 import re
 import csv
 import json
+import argparse
 import urllib.parse
 from pathlib import Path
 
@@ -86,7 +92,51 @@ class PolicyTemplateParser:
             r'graph\.microsoft\.com',
         ],
     }
-    
+
+    # Class-level permission lookup table storage (loaded once per run via set_repo_root)
+    _aws_service_prefixes_data = None
+    _gcp_permission_data = None
+    _repo_root = None
+
+    @classmethod
+    def set_repo_root(cls, repo_root):
+        """Set the repository root path used to locate permission data tables."""
+        cls._repo_root = Path(repo_root)
+
+    @classmethod
+    def _get_aws_service_prefixes(cls):
+        """Lazily load and return the AWS IAM service prefix lookup table."""
+        if cls._aws_service_prefixes_data is None:
+            cls._aws_service_prefixes_data = {}
+            if cls._repo_root:
+                data_file = cls._repo_root / 'data' / 'aws' / 'aws_iam_service_prefixes.json'
+                if data_file.exists():
+                    with open(data_file) as f:
+                        cls._aws_service_prefixes_data = json.load(f).get('host_prefix_to_iam_prefix', {})
+        return cls._aws_service_prefixes_data
+
+    @classmethod
+    def _get_gcp_permission_data_table(cls):
+        """Lazily load the full GCP IAM permission data file."""
+        if cls._gcp_permission_data is None:
+            cls._gcp_permission_data = {}
+            if cls._repo_root:
+                data_file = cls._repo_root / 'data' / 'google' / 'gcp_iam_permission_service_prefixes.json'
+                if data_file.exists():
+                    with open(data_file) as f:
+                        cls._gcp_permission_data = json.load(f)
+        return cls._gcp_permission_data
+
+    @classmethod
+    def _get_gcp_service_prefixes(cls):
+        """Return the GCP host-prefix-to-IAM-service-prefix mapping."""
+        return cls._get_gcp_permission_data_table().get('host_prefix_to_iam_prefix', {})
+
+    @classmethod
+    def _get_gcp_resource_abbreviations(cls):
+        """Return the GCP API resource abbreviation mapping (e.g., 'b' -> 'buckets')."""
+        return cls._get_gcp_permission_data_table().get('resource_abbreviations', {})
+
     def __init__(self, file_path):
         self.file_path = Path(file_path)
         self.content = self.file_path.read_text()
@@ -1382,7 +1432,308 @@ class PolicyTemplateParser:
         else:
             return f'{method} {resource}'
 
-    
+    def _derive_permission(self, endpoint, method, api_service, request_info, operation):
+        """Derive the cloud provider IAM permission required to make this API call.
+
+        Returns the permission string (e.g., 'ec2:DescribeInstances',
+        'Microsoft.Compute/virtualMachines/read', 'compute.regions.list'),
+        or an empty string if the permission cannot be determined or is not
+        applicable for the given service.
+        """
+        if not endpoint:
+            return ''
+        if api_service == 'AWS':
+            return self._derive_aws_permission(endpoint, method, request_info, operation)
+        elif api_service == 'Azure':
+            return self._derive_azure_permission(endpoint, method)
+        elif api_service == 'GCP':
+            return self._derive_gcp_permission(endpoint, method)
+        return ''
+
+    def _derive_aws_permission(self, endpoint, method, request_info, operation):
+        """Derive the AWS IAM permission string (e.g., 'ec2:DescribeInstances')."""
+        host = urllib.parse.urlparse(endpoint).netloc
+        service_prefix = self._get_aws_service_prefix_from_host(host)
+        if not service_prefix:
+            return ''
+        action = self._get_aws_action_name(endpoint, request_info, operation, service_prefix)
+        if not action:
+            return ''
+        return f'{service_prefix}:{action}'
+
+    def _get_aws_service_prefix_from_host(self, host):
+        """Map an AWS API hostname to its IAM service action prefix."""
+        prefixes = self._get_aws_service_prefixes()
+        if not host:
+            return ''
+        # API Gateway execute-api endpoints
+        if 'execute-api' in host:
+            return 'execute-api'
+        # Strip port if present
+        if ':' in host and not host.startswith('{'):
+            host = host.split(':')[0]
+        if not (host.endswith('.amazonaws.com') or '.amazonaws.com' in host):
+            return ''
+        # Isolate the subdomain portion before .amazonaws.com
+        host_inner = re.sub(r'\.amazonaws\.com.*$', '', host)
+        parts = host_inner.split('.')
+        # {bucket}.s3 or {id}.s3 -> s3
+        if len(parts) >= 2 and parts[-1] == 's3':
+            return prefixes.get('s3', 's3')
+        # s3.{region} -> s3
+        if len(parts) >= 2 and parts[0] == 's3':
+            return prefixes.get('s3', 's3')
+        # General case: first segment is the service name
+        service = parts[0].strip('{}')
+        return prefixes.get(service, service)
+
+    def _get_aws_action_name(self, endpoint, request_info, operation, service_prefix):
+        """Extract the AWS IAM action name for this API call."""
+        # X-Amz-Target header (JSON/query API style: Organizations, DynamoDB, etc.)
+        if request_info.get('headers'):
+            for key, value in request_info['headers'].items():
+                if key.lower() == 'x-amz-target' and '.' in value:
+                    return value.split('.')[-1]
+        # Action query parameter (EC2, IAM, STS, and other query-style APIs)
+        parsed_url = urllib.parse.urlparse(endpoint)
+        if parsed_url.query:
+            params = urllib.parse.parse_qs(parsed_url.query)
+            if 'Action' in params:
+                return params['Action'][0]
+        # Operation name already in CamelCase (no spaces) - use directly
+        if operation and ' ' not in operation:
+            return operation
+        # Human-readable operation name - convert to CamelCase with special S3 handling
+        if operation:
+            if service_prefix == 's3':
+                S3_ACTION_MAP = {
+                    'List Buckets': 'ListAllMyBuckets',
+                    'Get Bucket Tags': 'GetBucketTagging',
+                    'Get Bucket Encryption Configuration': 'GetBucketEncryption',
+                    'Get Bucket Versioning Configuration': 'GetBucketVersioning',
+                    'Get Bucket Lifecycle Configuration': 'GetBucketLifecycleConfiguration',
+                    'Get Bucket Logging Configuration': 'GetBucketLogging',
+                    'Get Bucket Public Access Block': 'GetPublicAccessBlock',
+                    'Get Bucket Policy': 'GetBucketPolicy',
+                    'Get Bucket Location': 'GetBucketLocation',
+                    'Get Bucket Intelligent Tiering Configuration': 'GetIntelligentTieringConfiguration',
+                    'Get Bucket CORS': 'GetBucketCORS',
+                    'Get Bucket ACLs': 'GetBucketAcl',
+                    'Get Bucket Uploads': 'ListMultipartUploads',
+                    'Get Object': 'GetObject',
+                }
+                if operation in S3_ACTION_MAP:
+                    return S3_ACTION_MAP[operation]
+            # Generic CamelCase conversion: "List Clusters" -> "ListClusters"
+            words = operation.split()
+            if words:
+                return ''.join(word[0].upper() + word[1:] for word in words if word)
+        return ''
+
+    def _derive_azure_permission(self, endpoint, method):
+        """Derive the Azure RBAC permission string (e.g., 'Microsoft.Compute/virtualMachines/read')."""
+        parsed = urllib.parse.urlparse(endpoint)
+        host = parsed.netloc
+        path = parsed.path
+        method_upper = method.upper()
+        METHOD_TO_ACTION = {
+            'GET': 'read',
+            'POST': 'action',
+            'PUT': 'write',
+            'PATCH': 'write',
+            'DELETE': 'delete',
+        }
+        action = METHOD_TO_ACTION.get(method_upper, 'action')
+        # Azure Storage REST APIs served from storage account subdomains
+        if 'blob.core.windows.net' in host:
+            return f'Microsoft.Storage/storageAccounts/blobServices/{action}'
+        if 'queue.core.windows.net' in host:
+            return f'Microsoft.Storage/storageAccounts/queueServices/{action}'
+        if 'table.core.windows.net' in host:
+            return f'Microsoft.Storage/storageAccounts/tableServices/{action}'
+        # Azure Monitor metrics batch endpoint
+        if 'metrics.monitor.azure' in host:
+            return 'Microsoft.Insights/metrics/read'
+        # Azure Pricing API has no RBAC requirement
+        if 'prices.azure.com' in host:
+            return ''
+        # Azure Management API
+        if 'management.azure' in host or 'management.chinacloudapi' in host:
+            return self._derive_azure_management_permission(path, action)
+        return ''
+
+    def _derive_azure_management_permission(self, path, action):
+        """Derive an Azure RBAC permission from a management.azure.com URL path."""
+        path_clean = path.split('?')[0].rstrip('/')
+        if not path_clean:
+            return ''
+        # Provider-based paths: .../providers/Microsoft.X/resourceType[/{id}/subType...]
+        if '/providers/' in path_clean:
+            after_provider = path_clean.split('/providers/')[-1]
+            segments = [s for s in after_provider.split('/') if s]
+            if not segments:
+                return ''
+            # Azure resource type paths alternate between type and ID segments after
+            # the provider namespace.  Even-indexed positions (0, 2, 4, ...) are
+            # resource types; odd-indexed positions (1, 3, 5, ...) are resource IDs.
+            type_segments = [segments[0]]
+            for i, seg in enumerate(segments[1:]):
+                if i % 2 == 0:
+                    type_segments.append(seg)
+            # Normalize provider namespace capitalisation (e.g., microsoft.insights -> Microsoft.Insights)
+            if type_segments and '.' in type_segments[0]:
+                ns_parts = type_segments[0].split('.')
+                type_segments[0] = '.'.join(p[0].upper() + p[1:] if p else p for p in ns_parts)
+            resource_path = '/'.join(type_segments)
+            return f'{resource_path}/{action}'
+        # Non-provider paths: handle common well-known patterns
+        segments = [s for s in path_clean.split('/') if s]
+        non_placeholder = [s for s in segments if not (s.startswith('{') and s.endswith('}'))]
+        if not non_placeholder:
+            return ''
+        first = non_placeholder[0].lower()
+        if first == 'subscriptions':
+            if len(non_placeholder) == 1:
+                return f'Microsoft.Resources/subscriptions/{action}'
+            second = non_placeholder[1].lower()
+            if second == 'resourcegroups':
+                if len(non_placeholder) == 2:
+                    return f'Microsoft.Resources/subscriptions/resourceGroups/{action}'
+                return f'Microsoft.Resources/subscriptions/resourceGroups/{"/".join(non_placeholder[2:])}/{action}'
+            if second == 'resources':
+                return f'Microsoft.Resources/subscriptions/resources/{action}'
+            if second == 'providers':
+                return f'Microsoft.Resources/subscriptions/providers/{action}'
+        elif first == 'tenants':
+            return f'Microsoft.Resources/tenants/{action}'
+        elif first == 'savingsplanorders':
+            if len(non_placeholder) >= 2 and non_placeholder[1].lower() == 'savingsplans':
+                return f'Microsoft.BillingBenefits/savingsPlanOrders/savingsPlans/{action}'
+            return f'Microsoft.BillingBenefits/savingsPlanOrders/{action}'
+        return ''
+
+    def _derive_gcp_permission(self, endpoint, method):
+        """Derive the GCP IAM permission string (e.g., 'compute.regions.list')."""
+        parsed = urllib.parse.urlparse(endpoint)
+        host = parsed.netloc
+        path = parsed.path
+        # Special case: /b/{id}/iam -> getIamPolicy on a storage bucket
+        if host == 'storage.googleapis.com' and re.search(r'/b/[^/]+/iam$', path):
+            return 'storage.buckets.getIamPolicy'
+        service = self._get_gcp_service_prefix_from_host(host, path)
+        if not service:
+            return ''
+        resource = self._extract_gcp_resource_from_path(path, service)
+        if not resource:
+            return ''
+        verb = self._get_gcp_permission_verb(path, method)
+        return f'{service}.{resource}.{verb}'
+
+    def _get_gcp_service_prefix_from_host(self, host, path=''):
+        """Map a GCP API hostname to its IAM permission service prefix."""
+        prefixes = self._get_gcp_service_prefixes()
+        if not host:
+            return ''
+        # www.googleapis.com uses legacy paths that start with the service name
+        if host == 'www.googleapis.com':
+            path_parts = [s for s in path.split('/') if s]
+            if path_parts:
+                svc = path_parts[0]
+                return prefixes.get(svc, svc)
+            return ''
+        if host.endswith('.googleapis.com'):
+            host_prefix = host[:-len('.googleapis.com')]
+            return prefixes.get(host_prefix, host_prefix)
+        return ''
+
+    def _extract_gcp_resource_from_path(self, path, service):
+        """Extract the GCP IAM resource type name from a URL path.
+
+        Applies the following rules in order:
+        1. Handle known special-case sub-resource paths (e.g. /b/{id}/iam).
+        2. Strip version segments (v1, v2, v1beta1, ...).
+        3. Strip placeholder segments ({...}).
+        4. Strip segments that are directly followed by a placeholder (they are
+           parent-resource navigational segments, not the target resource type).
+        5. Strip the service-name prefix when it appears as the first path segment.
+        6. Strip common non-resource qualifiers ('global', 'aggregated').
+        7. Return the last remaining segment after applying abbreviation mappings.
+        """
+        abbreviations = self._get_gcp_resource_abbreviations()
+        # Special case: /b/{id}/iam -> IAM policy on a bucket
+        if re.search(r'/b/[^/]+/iam$', path):
+            return 'buckets'
+        path = path.rstrip('/')
+        if not path:
+            return ''
+        segments = [s for s in path.split('/') if s]
+        # Identify segments that are directly followed by a placeholder
+        followed_by_placeholder = set()
+        for i, seg in enumerate(segments):
+            if i + 1 < len(segments):
+                nxt = segments[i + 1]
+                if nxt.startswith('{') and nxt.endswith('}'):
+                    followed_by_placeholder.add(i)
+        version_re = re.compile(r'^v\d+')
+        NON_RESOURCE = {'global', 'aggregated'}
+        filtered = []
+        for i, seg in enumerate(segments):
+            if version_re.match(seg):
+                continue
+            if seg.startswith('{') and seg.endswith('}'):
+                continue
+            if i in followed_by_placeholder:
+                continue
+            if seg in NON_RESOURCE:
+                continue
+            filtered.append(seg)
+        # Remove service-name prefix if it appears as the first path component
+        if filtered and filtered[0].lower() == service.lower():
+            filtered = filtered[1:]
+        if not filtered:
+            return ''
+        resource = filtered[-1]
+        # Strip :verb suffix (e.g. "entries:list" -> "entries")
+        if ':' in resource:
+            resource = resource.split(':')[0]
+        if not resource:
+            return ''
+        return abbreviations.get(resource, resource)
+
+    def _get_gcp_permission_verb(self, path, method):
+        """Determine the GCP IAM permission verb from the URL path and HTTP method."""
+        # Check for :operation suffix on the last path segment
+        path_stripped = path.rstrip('/')
+        if path_stripped:
+            last_segment = path_stripped.split('/')[-1]
+            if ':' in last_segment:
+                op = last_segment.split(':')[-1]
+                OP_TO_VERB = {
+                    'list': 'list',
+                    'aggregatedList': 'aggregatedList',
+                    'search': 'list',
+                    'query': 'list',
+                    'get': 'get',
+                    'getIamPolicy': 'getIamPolicy',
+                    'setIamPolicy': 'setIamPolicy',
+                    'create': 'create',
+                    'insert': 'create',
+                    'delete': 'delete',
+                    'update': 'update',
+                    'patch': 'update',
+                }
+                return OP_TO_VERB.get(op, op)
+        method_upper = method.upper()
+        if method_upper == 'GET':
+            return 'list'
+        elif method_upper == 'POST':
+            return 'create'
+        elif method_upper in ('PUT', 'PATCH'):
+            return 'update'
+        elif method_upper == 'DELETE':
+            return 'delete'
+        return 'get'
+
     def extract_api_calls(self):
         """Extract all API calls from the policy template."""
         api_calls = []
@@ -1435,10 +1786,13 @@ class PolicyTemplateParser:
                 
                 # Build the endpoint URL
                 endpoint = self._build_endpoint_url(request_info)
-                
+
                 # Extract operation name
                 operation = self._extract_operation_name(endpoint, request_info['method'], api_service, request_info)
-                
+
+                # Derive the cloud provider IAM permission for this API call
+                permission = self._derive_permission(endpoint, request_info['method'], api_service, request_info, operation)
+
                 if endpoint:
                     # If no fields found, add at least one entry for the API call
                     if not unique_fields:
@@ -1448,6 +1802,7 @@ class PolicyTemplateParser:
                             'method': request_info['method'],
                             'endpoint': endpoint,
                             'operation': operation,
+                            'permission': permission,
                             'field': '{entire response}',
                             'api_service': api_service
                         })
@@ -1460,6 +1815,7 @@ class PolicyTemplateParser:
                                 'method': request_info['method'],
                                 'endpoint': endpoint,
                                 'operation': operation,
+                                'permission': permission,
                                 'field': field,
                                 'api_service': api_service
                             })
@@ -1469,6 +1825,17 @@ class PolicyTemplateParser:
 
 def main():
     """Main function to run the script."""
+    arg_parser = argparse.ArgumentParser(
+        description='Extract REST API calls and permissions from Flexera Policy Templates.'
+    )
+    arg_parser.add_argument(
+        '--output-dir',
+        metavar='DIR',
+        default=None,
+        help='Write output files to DIR instead of the default data/policy_api_list/ directory.'
+    )
+    args = arg_parser.parse_args()
+
     # Get the repository root directory (two levels up from script location)
     script_path = Path(__file__).resolve() if '__file__' in globals() else Path.cwd()
     repo_root = script_path.parent.parent.parent if '__file__' in globals() else Path.cwd()
@@ -1490,7 +1857,10 @@ def main():
         sys.exit(1)
     
     print(f"Processing {len(policies)} policy templates...")
-    
+
+    # Load permission lookup tables once before processing all files
+    PolicyTemplateParser.set_repo_root(repo_root)
+
     # Collect all API calls
     all_api_calls = []
     processed_count = 0
@@ -1532,7 +1902,10 @@ def main():
     print(f"Extracted {len(all_api_calls)} total API call fields")
     
     # Create output directory if it doesn't exist
-    output_dir = repo_root / 'data' / 'policy_api_list'
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+    else:
+        output_dir = repo_root / 'data' / 'policy_api_list'
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Write to JSON
@@ -1547,7 +1920,7 @@ def main():
     # Write to CSV
     csv_output_file = output_dir / 'policy_api_list.csv'
     with open(csv_output_file, 'w', newline='') as csvfile:
-        fieldnames = ['policy_name', 'policy_file', 'policy_version', 'datasource_name', 'api_service', 'method', 'endpoint', 'operation', 'field']
+        fieldnames = ['policy_name', 'policy_file', 'policy_version', 'datasource_name', 'api_service', 'method', 'endpoint', 'operation', 'permission', 'field']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         
         writer.writeheader()

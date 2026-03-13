@@ -53,7 +53,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `ec2:DescribeRegions`
   - `ec2:DescribeNatGateways`
   - `ec2:DeleteNatGateway`*
-  - `sts:GetCallerIdentity`
+  - `ce:GetReservationPurchaseRecommendation`
 
   \* Only required for taking action (deletion); the policy will still function in a read-only capacity without these permissions.
 

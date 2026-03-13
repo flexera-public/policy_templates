@@ -41,7 +41,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `ec2:DescribeRegions`
   - `lambda:ListFunctions`
   - `lambda:ListTags`
-  - `cloudwatch:ListMetrics`
   - `cloudwatch:GetMetricData`
 
   Example IAM Permission Policy:
@@ -57,7 +56,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
                   "ec2:DescribeRegions",
                   "lambda:ListFunctions",
                   "lambda:ListTags",
-                  "cloudwatch:ListMetrics",
                   "cloudwatch:GetMetricData"
               ],
               "Resource": "*"

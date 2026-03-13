@@ -6,7 +6,7 @@ This Policy Template is used to automatically apply the Azure Hybrid Use Benefit
 
 ## How It Works
 
-- The policy identifies all Linux server instances that could utilize [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/hybrid-benefit/) but are not currently using it. It raises an incident for all applicable VMs not currently using AHUB with the option to automatically enable AHUB on all identified instances.
+- The policy identifies all Linux server instances that could utilize [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/offers/hybrid-benefit/) but are not currently using it. It raises an incident for all applicable VMs not currently using AHUB with the option to automatically enable AHUB on all identified instances.
 - Before enabling AHUB for RHEL, you must enable your [Red Hat products for Cloud Access](https://www.redhat.com/en/technologies/cloud-computing/cloud-access) on Azure through Red Hat Subscription Management.
 - This policy template does not track licenses or availability. It is your responsibility to ensure you are not under licensed.
 - The hourly cost of a virtual machine is calculated by dividing the total cost of the virtual machine for the last 30 days by the hours of usage for that same time period.
@@ -45,6 +45,7 @@ For example if a user selects the "Apply Hybrid Use Benefit" action while applyi
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.Resources/subscriptions/read`
   - `Microsoft.Compute/virtualMachines/read`
   - `Microsoft.Compute/virtualMachines/write`*
 

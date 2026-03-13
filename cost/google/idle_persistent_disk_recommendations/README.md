@@ -69,11 +69,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `resourcemanager.projects.get`
   - `compute.disks.list`
   - `logging.logEntries.list`
-  - `logging.privateLogEntries.list`
-  - `logging.views.access`
   - `compute.disks.createSnapshot`*
   - `compute.disks.delete`*
-  - `compute.globalOperations.get`*
   - `compute.zoneOperations.get`*
   - `compute.snapshots.create`*
 
