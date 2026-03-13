@@ -465,6 +465,7 @@ changed_pt_files.each do |file|
     test = policy_bad_metadata?(file, file_parsed, "long_description"); failures << test if test
     test = policy_bad_metadata?(file, file_parsed, "doc_link"); failures << test if test
     test = policy_bad_metadata?(file, file_parsed, "category"); failures << test if test
+    test = policy_wrong_category_for_directory?(file, file_parsed); failures << test if test
     test = policy_bad_metadata?(file, file_parsed, "default_frequency"); failures << test if test
     test = policy_bad_metadata?(file, file_parsed, "severity"); failures << test if test
     test = policy_bad_metadata?(file, file_parsed, "info"); failures << test if test

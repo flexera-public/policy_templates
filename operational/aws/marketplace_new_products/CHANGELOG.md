@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.3
+
+- Category of policy template updated to "Operational". Functionality unchanged.
+
 ## v0.4.2
 
 - Updated documentation link in policy description. Functionality unchanged.
