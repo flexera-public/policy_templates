@@ -286,6 +286,9 @@ changed_readme_files.each do |file|
 
     # Raise error if README credentials are formatted incorrectly
     test = readme_invalid_credentials?(file, file_lines); failures << test if test
+
+    # Raise warning if README permissions may not match policy template API calls
+    test = readme_api_permission_mismatch?(file, file_lines); warnings << test if test
   end
 
   # Output final list of failures and warnings
@@ -597,6 +600,14 @@ changed_pt_files.each do |file|
 
     # Raise error if policy template has invalid heredoc syntax or escape sequences
     test = policy_invalid_heredoc_syntax?(file, file_lines); failures << test if test
+
+    # Raise warning if the README permissions may not match policy template API calls.
+    # Only run if the README for this policy template is not itself being tested to avoid duplicate warnings.
+    pt_readme_file = File.join(File.dirname(file), "README.md")
+    if File.exist?(pt_readme_file) && !changed_readme_files.include?(pt_readme_file)
+      pt_readme_lines = File.readlines(pt_readme_file)
+      test = readme_api_permission_mismatch?(pt_readme_file, pt_readme_lines); warnings << test if test
+    end
   end
 
   # Output final list of failures and warnings
