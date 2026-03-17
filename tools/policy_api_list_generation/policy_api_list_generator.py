@@ -39,7 +39,7 @@ class PolicyTemplateParser:
             r'^flexera$',  # Turbonomic API with flexera as placeholder host
         ],
         'AWS': [
-            r'\.amazonaws\.com',
+            r'amazonaws\.com',
         ],
         'Azure': [
             r'management\.azure\.com',
@@ -65,6 +65,7 @@ class PolicyTemplateParser:
             r'rs_optima_host',  # Flexera built-in variable
             r'rs_governance_host',  # Flexera built-in variable
             r'flexera_api_host',  # Common pattern for Flexera API hosts
+            r'^api_host$',  # CWF variable resolved from dict field (e.g. $policy["api_host"])
             r'flexnetmanager',  # FlexNet Manager
             r'fnms',  # FlexNet Manager Service abbreviation
             r'FlexNet Manager',  # FlexNet Manager full name
@@ -196,13 +197,16 @@ class PolicyTemplateParser:
         # Escape special regex characters in the variable name
         escaped_var_name = re.escape(var_name)
 
-        # Try to match parameter definition
-        # Pattern: parameter "var_name" do ... default "value" ... end
-        param_pattern = rf'parameter\s+"{escaped_var_name}".*?default\s+"([^"]+)"'
-        param_match = re.search(param_pattern, self.content, re.DOTALL)
+        # Match parameter block and extract default value from within it only.
+        # We stop at 'end' to avoid bleeding across parameter boundaries.
+        param_pattern = rf'parameter\s+"{escaped_var_name}"\s+do(.*?)^end\b'
+        param_match = re.search(param_pattern, self.content, re.DOTALL | re.MULTILINE)
 
         if param_match:
-            return param_match.group(1)
+            block_body = param_match.group(1)
+            default_match = re.search(r'default\s+"([^"]+)"', block_body)
+            if default_match:
+                return default_match.group(1)
 
         return None
 
@@ -1465,13 +1469,37 @@ class PolicyTemplateParser:
         """Resolve a CWF host expression to an actual hostname or placeholder.
 
         Tries the CWF_HOST_MAP first, then backwards variable lookup in the define block,
-        then parameter resolution.
+        then parameter resolution.  Also handles inline string-concatenation expressions
+        like: "ec2." + $instance["region"] + ".amazonaws.com"
         """
         host_expr = host_expr.strip().rstrip(',')
 
         # Direct map lookup (handles $param_azure_endpoint, $$rs_optima_host, etc.)
         if host_expr in self.CWF_HOST_MAP:
             return self.CWF_HOST_MAP[host_expr]
+
+        # Inline concatenation: expression contains "+" and quoted string parts
+        # e.g.  "ec2." + $instance["region"] + ".amazonaws.com"
+        # Strip dict-key accesses like ["region"] so they don't get picked up as strings.
+        if '+' in host_expr:
+            expr_stripped = re.sub(r'\["[^"]*"\]', '', host_expr)
+            strings = re.findall(r'"([^"]+)"', expr_stripped)
+            if strings:
+                full = ''.join(strings)
+                if 'amazonaws.com' in full:
+                    parts = []
+                    for j, s in enumerate(strings):
+                        parts.append(s)
+                        if j < len(strings) - 1:
+                            parts.append('{region}')
+                    return ''.join(parts)
+                else:
+                    parts = []
+                    for j, s in enumerate(strings):
+                        parts.append(s)
+                        if j < len(strings) - 1:
+                            parts.append('{id}')
+                    return ''.join(parts)
 
         # Backwards variable lookup: look for $varname = "..." + $var + "..." in define body
         var_name = re.sub(r'^\$+', '', host_expr)
@@ -1482,24 +1510,38 @@ class PolicyTemplateParser:
             )
             if assign_match:
                 rhs = assign_match.group(1).strip()
-                strings = re.findall(r'"([^"]+)"', rhs)
-                if strings:
-                    full = ''.join(strings)
-                    if 'amazonaws.com' in full:
-                        # Build host with {region} placeholder between string literals
-                        parts = []
-                        for j, s in enumerate(strings):
-                            parts.append(s)
-                            if j < len(strings) - 1:
-                                parts.append('{region}')
-                        return ''.join(parts)
-                    else:
-                        parts = []
-                        for j, s in enumerate(strings):
-                            parts.append(s)
-                            if j < len(strings) - 1:
-                                parts.append('{id}')
-                        return ''.join(parts)
+                # If RHS is a dict/array field access (e.g. $bucket["host"]), skip —
+                # the extracted key is not a hostname; let auth-fallback handle it.
+                if re.search(r'\$\w+\[', rhs):
+                    pass
+                # If the RHS is itself an inline concatenation, recurse
+                elif '+' in rhs:
+                    resolved = self._resolve_cwf_host(rhs, define_body)
+                    if resolved:
+                        return resolved
+                else:
+                    strings = re.findall(r'"([^"]+)"', rhs)
+                    if strings:
+                        full = ''.join(strings)
+                        if 'amazonaws.com' in full:
+                            # Build host with {region} placeholder between string literals
+                            parts = []
+                            for j, s in enumerate(strings):
+                                parts.append(s)
+                                if j < len(strings) - 1:
+                                    parts.append('{region}')
+                            return ''.join(parts)
+                        # If the resolved string is in CWF_HOST_MAP, return the mapped value
+                        resolved_str = strings[0] if len(strings) == 1 else None
+                        if resolved_str and resolved_str in self.CWF_HOST_MAP:
+                            return self.CWF_HOST_MAP[resolved_str]
+                        else:
+                            parts = []
+                            for j, s in enumerate(strings):
+                                parts.append(s)
+                                if j < len(strings) - 1:
+                                    parts.append('{id}')
+                            return ''.join(parts)
 
         # Try resolving $param_xxx from parameter definitions
         param_match = re.match(r'^\$+param_(\w+)', host_expr)
@@ -1549,8 +1591,8 @@ class PolicyTemplateParser:
                 auth_match = re.search(r'\bauth:\s*(\$\$\w+)', call_body)
                 auth_name = auth_match.group(1) if auth_match else None
 
-                # Parse host
-                host_match = re.search(r'\bhost:\s*(\S+?)(?:\s*,|\s*\n)', call_body)
+                # Parse host — capture the full expression including concatenation
+                host_match = re.search(r'\bhost:\s*(.+?)(?:\s*,\s*$|\s*\n)', call_body, re.MULTILINE)
                 raw_host = host_match.group(1).strip().rstrip(',') if host_match else None
 
                 host = None
