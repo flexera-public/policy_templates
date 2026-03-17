@@ -6,18 +6,23 @@ all REST API calls, including the HTTP method, endpoint URL, target service (AWS
 GCP, Oracle, Flexera, etc.), and fields extracted from the response.
 
 Usage:
-    python pt_extract_calls
+    python policy_api_list_generator.py [--output-dir DIR]
+
+    --output-dir DIR  Write output files to DIR instead of the default
+                      data/policy_api_list/ directory. Useful for writing to
+                      a temporary location (e.g. /tmp) in CI pipelines.
 
 The script will process all policies listed in data/active_policy_list/active_policy_list.json
 and output results to:
-    - data/policy_api_list/policy_api_list.json
-    - data/policy_api_list/policy_api_list.csv
+    - <output-dir>/policy_api_list.json
+    - <output-dir>/policy_api_list.csv
 """
 
 import sys
 import re
 import csv
 import json
+import argparse
 import urllib.parse
 from pathlib import Path
 
@@ -1718,6 +1723,15 @@ class PolicyTemplateParser:
 
 def main():
     """Main function to run the script."""
+    parser = argparse.ArgumentParser(description='Extract REST API calls from Flexera Policy Templates.')
+    parser.add_argument(
+        '--output-dir',
+        metavar='DIR',
+        default=None,
+        help='Write output files to DIR instead of the default data/policy_api_list/ directory.'
+    )
+    args = parser.parse_args()
+
     # Get the repository root directory (two levels up from script location)
     script_path = Path(__file__).resolve() if '__file__' in globals() else Path.cwd()
     repo_root = script_path.parent.parent.parent if '__file__' in globals() else Path.cwd()
@@ -1781,7 +1795,10 @@ def main():
     print(f"Extracted {len(all_api_calls)} total API call fields")
 
     # Create output directory if it doesn't exist
-    output_dir = repo_root / 'data' / 'policy_api_list'
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+    else:
+        output_dir = repo_root / 'data' / 'policy_api_list'
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Write to JSON
