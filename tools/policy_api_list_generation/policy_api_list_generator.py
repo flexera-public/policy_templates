@@ -1432,6 +1432,17 @@ class PolicyTemplateParser:
             'tagging': 'tag',
             'ecs': 'ecs',
         }
+        # Map AWS API version strings (date) to service prefixes for bare amazonaws.com calls
+        VERSION_TO_SERVICE = {
+            '2016-11-15': 'ec2',
+            '2014-10-31': 'rds',
+            '2015-02-02': 'elasticache',
+            '2012-12-01': 'redshift',
+            '2010-05-08': 'iam',
+            '2011-06-15': 'sts',
+            '2015-12-01': 'elasticloadbalancing',
+            '2012-06-01': 'elasticloadbalancing',
+        }
 
         if not host:
             return None
@@ -1440,15 +1451,30 @@ class PolicyTemplateParser:
         if '.s3.' in host or host.startswith('s3.') or host.startswith('s3-'):
             return 's3'
 
-        # Ambiguous bare amazonaws.com or execute-api
-        if host in ('amazonaws.com',):
-            return None
         if 'execute-api' in host:
             return None
+
+        # Bare amazonaws.com — return sentinel; caller will infer from Version= param
+        if host in ('amazonaws.com',):
+            return '__bare__'
 
         # Extract first subdomain part, strip placeholders
         first = host.split('.')[0].strip('{}')
         return HOST_TO_SERVICE.get(first)
+
+    def _aws_infer_service_from_version(self, endpoint):
+        """Infer AWS service from Version= query parameter (used for bare amazonaws.com calls)."""
+        VERSION_TO_SERVICE = {
+            '2016-11-15': 'ec2',
+            '2014-10-31': 'rds',
+            '2015-02-02': 'elasticache',
+            '2012-12-01': 'redshift',
+            '2010-05-08': 'iam',
+            '2011-06-15': 'sts',
+        }
+        params = urllib.parse.parse_qs(urllib.parse.urlparse(endpoint).query)
+        version = params.get('Version', [None])[0]
+        return VERSION_TO_SERVICE.get(version)
 
     def _aws_rest_permission(self, service, path, method, endpoint):
         """Return a permission for REST-style AWS APIs that have no Action param."""
@@ -1521,6 +1547,9 @@ class PolicyTemplateParser:
         """Determine the IAM permission for an AWS API call."""
         host = request_info.get('host', '') if request_info else ''
         service = self._aws_service_from_host(host)
+        # For bare amazonaws.com, try to infer service from Version= param
+        if service == '__bare__':
+            service = self._aws_infer_service_from_version(endpoint)
         if not service:
             return None
 
@@ -1568,16 +1597,22 @@ class PolicyTemplateParser:
                 return 'delete'
             return 'action'
 
-        # Blob / Queue data-plane
+        # Blob / Queue / Table data-plane
         if '.blob.core.windows.net' in endpoint:
             parsed_q = urllib.parse.urlparse(endpoint).query
-            qs_keys = set(urllib.parse.parse_qs(parsed_q).keys())
-            if 'comp' in qs_keys and 'list' in urllib.parse.parse_qs(parsed_q).get('comp', [''])[0].lower():
+            qs = urllib.parse.parse_qs(parsed_q)
+            comp = qs.get('comp', [''])[0].lower()
+            if comp == 'list':
                 return 'Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read'
+            if method.upper() in ('PUT', 'PATCH'):
+                return 'Microsoft.Storage/storageAccounts/blobServices/containers/blobs/write'
             return 'Microsoft.Storage/storageAccounts/blobServices/read'
 
         if '.queue.core.windows.net' in endpoint:
             return 'Microsoft.Storage/storageAccounts/queueServices/read'
+
+        if '.table.core.windows.net' in endpoint:
+            return 'Microsoft.Storage/storageAccounts/tableServices/read'
 
         # Pricing API — no ARM permission
         if 'prices.azure.com' in endpoint:
@@ -1589,6 +1624,15 @@ class PolicyTemplateParser:
         # Azure Monitor batch metrics
         if 'metrics:getBatch' in endpoint or path.endswith('metrics:getBatch'):
             return 'microsoft.insights/metrics/read'
+
+        # Blob tier change: PUT /{id}?comp=tier
+        parsed_qs = urllib.parse.parse_qs(parsed.query)
+        if parsed_qs.get('comp', [''])[0].lower() == 'tier':
+            return 'Microsoft.Storage/storageAccounts/blobServices/containers/blobs/write'
+
+        # Storage management policy (path has no {id} prefix — script lost container context)
+        if re.search(r'/managementPolicies/default', path, re.IGNORECASE):
+            return 'Microsoft.Storage/storageAccounts/managementPolicies/' + _verb(method)
 
         # Special top-level ARM paths without /providers/
         path_lower = path.lower()
@@ -1633,6 +1677,62 @@ class PolicyTemplateParser:
                     return f"{namespace}/{resource_type}/{sub}/{_verb(method)}"
 
             return f"{namespace}/{resource_type}/{_verb(method)}"
+
+        # Sub-resource paths where {id} is the full ARM resource URI.
+        # Map the trailing sub-resource pattern to the most common permission.
+        SUB_RESOURCE_MAP = {
+            'agentPools':                        'Microsoft.ContainerService/managedClusters/agentPools/read',
+            'blobServices/default':              'Microsoft.Storage/storageAccounts/blobServices/read',
+            'elasticPools':                      'Microsoft.Sql/servers/elasticPools/read',
+            'databases':                         'Microsoft.Sql/servers/databases/read',
+            'instanceView':                      'Microsoft.Compute/virtualMachines/instanceView/read',
+            'configurations/tls_version':        'Microsoft.DBforMySQL/flexibleServers/configurations/read',
+            'configurations/log_retention_days': 'Microsoft.DBForPostgreSql/servers/configurations/read',
+            'configurations/connection_throttling': 'Microsoft.DBForPostgreSql/servers/configurations/read',
+            'transparentDataEncryption/current': 'Microsoft.Sql/servers/databases/transparentDataEncryption/read',
+            'vulnerabilityAssessments/default':  'Microsoft.Sql/servers/databases/vulnerabilityAssessments/read',
+            'auditingSettings/default':          'Microsoft.Sql/servers/auditingSettings/read',
+            'administrators':                    'Microsoft.Sql/servers/administrators/read',
+            'securityAlertPolicies/Default':     'Microsoft.Sql/servers/securityAlertPolicies/read',
+            'managementPolicies/default':        'Microsoft.Storage/storageAccounts/managementPolicies/read',
+            'sites':                             'Microsoft.Web/serverFarms/sites/read',
+            'connections':                       'Microsoft.Network/virtualNetworkGateways/connections/read',
+            'config/web':                        'Microsoft.Web/sites/config/read',
+        }
+        # Normalize the path to extract the sub-resource suffix after any /{id} segment
+        sub_path_match = re.match(r'^/\{[^}]+\}/(.+?)(?:\?.*)?$', path)
+        if sub_path_match:
+            sub_suffix = sub_path_match.group(1).rstrip('/')
+            # Try exact match first, then prefix match
+            if sub_suffix in SUB_RESOURCE_MAP:
+                perm = SUB_RESOURCE_MAP[sub_suffix]
+                # Adjust verb for non-GET calls
+                if method.upper() != 'GET':
+                    perm = perm.rsplit('/', 1)[0] + '/' + _verb(method)
+                return perm
+            # Try matching by first segment (e.g. 'configurations/tls_version' → 'configurations')
+            first_seg = sub_suffix.split('/')[0]
+            if first_seg + '/' in '\n'.join(SUB_RESOURCE_MAP.keys()) + '\n':
+                for k, v in SUB_RESOURCE_MAP.items():
+                    if k.startswith(first_seg + '/'):
+                        perm = v
+                        if method.upper() != 'GET':
+                            perm = perm.rsplit('/', 1)[0] + '/' + _verb(method)
+                        return perm
+
+        # blob container listing — path is /{container} on blob endpoint (handled above)
+        # data lake blob listing: path is / or /{container} on blob host
+        if '.blob.core.windows.net' in endpoint or '.blob.' in endpoint:
+            return 'Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read'
+
+        if re.search(r'/subscriptions/[^/]+/resources/?$', path_lower):
+            return 'Microsoft.Resources/subscriptions/resources/read'
+
+        if re.search(r'/tenants/?$', path_lower):
+            return 'Microsoft.Resources/tenants/read'
+
+        if re.search(r'/subscriptions/[^/]+/metrics:getBatch', path_lower):
+            return 'microsoft.insights/metrics/read'
 
         return None
 
