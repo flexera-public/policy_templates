@@ -1391,6 +1391,366 @@ class PolicyTemplateParser:
         # Ultimate fallback - use HTTP method to provide generic operation
         return self._get_generic_operation_from_method(method)
 
+    # ------------------------------------------------------------------ #
+    #  IAM permission resolution                                           #
+    # ------------------------------------------------------------------ #
+
+    def _determine_api_permission(self, endpoint, method, api_service, request_info, operation):
+        """Return the IAM permission string for an API call, or None if undetermined."""
+        if api_service == 'AWS':
+            return self._aws_permission(endpoint, method, request_info, operation)
+        elif api_service == 'Azure':
+            return self._azure_permission(endpoint, method, request_info, operation)
+        elif api_service == 'GCP':
+            return self._gcp_permission(endpoint, method, request_info, operation)
+        return None
+
+    def _aws_service_from_host(self, host):
+        """Map an AWS hostname to its IAM service prefix."""
+        HOST_TO_SERVICE = {
+            'monitoring': 'cloudwatch',
+            'organizations': 'organizations',
+            'sts': 'sts',
+            'ec2': 'ec2',
+            'iam': 'iam',
+            'cloudtrail': 'cloudtrail',
+            'kms': 'kms',
+            'savingsplans': 'savingsplans',
+            'eks': 'eks',
+            'lambda': 'lambda',
+            's3': 's3',
+            's3-external-1': 's3',
+            'config': 'config',
+            'ce': 'ce',
+            'compute-optimizer': 'compute-optimizer',
+            'fsx': 'fsx',
+            'elasticloadbalancing': 'elasticloadbalancing',
+            'rds': 'rds',
+            'elasticache': 'elasticache',
+            'redshift': 'redshift',
+            'access-analyzer': 'access-analyzer',
+            'tagging': 'tag',
+            'ecs': 'ecs',
+        }
+
+        if not host:
+            return None
+
+        # S3 virtual-hosted / path-style detection
+        if '.s3.' in host or host.startswith('s3.') or host.startswith('s3-'):
+            return 's3'
+
+        # Ambiguous bare amazonaws.com or execute-api
+        if host in ('amazonaws.com',):
+            return None
+        if 'execute-api' in host:
+            return None
+
+        # Extract first subdomain part, strip placeholders
+        first = host.split('.')[0].strip('{}')
+        return HOST_TO_SERVICE.get(first)
+
+    def _aws_rest_permission(self, service, path, method, endpoint):
+        """Return a permission for REST-style AWS APIs that have no Action param."""
+        # Lambda
+        if service == 'lambda':
+            if re.search(r'/functions/?$', path):
+                return 'lambda:ListFunctions'
+            if re.search(r'/tags/', path):
+                return 'lambda:ListTags'
+            if re.search(r'/functions/[^/]+/versions', path):
+                return 'lambda:ListVersionsByFunction'
+            if re.search(r'/provisioned-concurrency', path):
+                return 'lambda:GetProvisionedConcurrencyConfig'
+
+        # EKS
+        if service == 'eks':
+            if re.search(r'/clusters/[^/]+/node-groups/[^/]+', path):
+                return 'eks:DescribeNodegroup'
+            if re.search(r'/clusters/[^/]+/node-groups', path):
+                return 'eks:ListNodegroups'
+            if re.search(r'/clusters/[^/]+', path):
+                return 'eks:DescribeCluster'
+            if re.search(r'/clusters/?$', path):
+                return 'eks:ListClusters'
+
+        # S3
+        if service == 's3':
+            qs = urllib.parse.urlparse(endpoint).query
+            qs_keys = set(urllib.parse.parse_qs(qs).keys()) | set(k.rstrip('=') for k in qs.split('&') if k)
+            if 'location' in qs_keys or qs.startswith('location'):
+                return 's3:GetBucketLocation'
+            if 'logging' in qs_keys:
+                return 's3:GetBucketLogging'
+            if 'acl' in qs_keys:
+                return 's3:GetBucketAcl'
+            if 'policy' in qs_keys:
+                return 's3:DeleteBucketPolicy' if method == 'DELETE' else 's3:GetBucketPolicy'
+            if 'encryption' in qs_keys:
+                return 's3:PutEncryptionConfiguration' if method == 'PUT' else 's3:GetEncryptionConfiguration'
+            if 'tagging' in qs_keys:
+                return 's3:GetBucketTagging'
+            if 'versioning' in qs_keys:
+                return 's3:GetBucketVersioning'
+            if 'publicAccessBlock' in qs_keys:
+                return 's3:GetPublicAccessBlock'
+            if 'intelligent-tiering' in qs_keys:
+                return 's3:GetIntelligentTieringConfiguration'
+            if 'lifecycle' in qs_keys:
+                return 's3:GetLifecycleConfiguration'
+            if 'uploads' in qs_keys:
+                return 's3:ListMultipartUploads'
+            # Root list
+            if path in ('/', '') or not path.strip('/'):
+                return 's3:ListBuckets'
+            # Object operations
+            if method in ('GET', 'HEAD'):
+                return 's3:GetObject'
+            if method == 'PUT':
+                return 's3:PutObject'
+            if method == 'DELETE':
+                return 's3:DeleteObject'
+
+        # CloudWatch
+        if service == 'cloudwatch':
+            return 'cloudwatch:GetMetricData' if method == 'POST' else 'cloudwatch:ListMetrics'
+
+        return None
+
+    def _aws_permission(self, endpoint, method, request_info, operation):
+        """Determine the IAM permission for an AWS API call."""
+        host = request_info.get('host', '') if request_info else ''
+        service = self._aws_service_from_host(host)
+        if not service:
+            return None
+
+        parsed = urllib.parse.urlparse(endpoint)
+
+        # 1. Query-string Action param
+        params = urllib.parse.parse_qs(parsed.query)
+        if 'Action' in params:
+            return f"{service}:{params['Action'][0]}"
+
+        # 2. X-Amz-Target header (JSON services like Organizations, CE)
+        if request_info and request_info.get('headers'):
+            for key, value in request_info['headers'].items():
+                if key.lower() == 'x-amz-target' and '.' in value:
+                    return f"{service}:{value.split('.')[-1]}"
+
+        # 3. Path-based PascalCase action  (e.g., /DescribeSavingsPlans)
+        path_parts = [p for p in parsed.path.split('/') if p and not p.startswith('{')]
+        last = path_parts[-1] if path_parts else ''
+        if re.match(r'^[A-Z][a-zA-Z]+$', last):
+            return f"{service}:{last}"
+
+        # 4. REST API lookup (before operation fallback to avoid false matches)
+        rest = self._aws_rest_permission(service, parsed.path, method, endpoint)
+        if rest:
+            return rest
+
+        # 5. Operation name fallback
+        clean_op = operation.replace(' ', '') if operation else ''
+        if re.match(r'^[A-Z][a-zA-Z]+$', clean_op):
+            return f"{service}:{clean_op}"
+
+        return None
+
+    def _azure_permission(self, endpoint, method, request_info, operation):
+        """Determine the ARM permission for an Azure API call."""
+
+        def _verb(m):
+            m = m.upper()
+            if m == 'GET':
+                return 'read'
+            if m in ('PUT', 'PATCH'):
+                return 'write'
+            if m == 'DELETE':
+                return 'delete'
+            return 'action'
+
+        # Blob / Queue data-plane
+        if '.blob.core.windows.net' in endpoint:
+            parsed_q = urllib.parse.urlparse(endpoint).query
+            qs_keys = set(urllib.parse.parse_qs(parsed_q).keys())
+            if 'comp' in qs_keys and 'list' in urllib.parse.parse_qs(parsed_q).get('comp', [''])[0].lower():
+                return 'Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read'
+            return 'Microsoft.Storage/storageAccounts/blobServices/read'
+
+        if '.queue.core.windows.net' in endpoint:
+            return 'Microsoft.Storage/storageAccounts/queueServices/read'
+
+        # Pricing API — no ARM permission
+        if 'prices.azure.com' in endpoint:
+            return None
+
+        parsed = urllib.parse.urlparse(endpoint)
+        path = parsed.path
+
+        # Azure Monitor batch metrics
+        if 'metrics:getBatch' in endpoint or path.endswith('metrics:getBatch'):
+            return 'microsoft.insights/metrics/read'
+
+        # Special top-level ARM paths without /providers/
+        path_lower = path.lower()
+
+        if re.match(r'^/subscriptions/?$', path_lower) or re.match(r'^/subscriptions/\{[^}]+\}/?$', path_lower):
+            return 'Microsoft.Resources/subscriptions/read'
+
+        if re.search(r'/subscriptions/[^/]+/resourcegroups/?$', path_lower):
+            return 'Microsoft.Resources/subscriptions/resourceGroups/read'
+
+        if 'savingsplanorder' in path_lower:
+            if 'savingsplan' in path_lower and re.search(r'savingsplanorder[^/]*/savingsplan', path_lower):
+                return 'Microsoft.BillingBenefits/savingsPlanOrders/savingsPlans/read'
+            return 'Microsoft.BillingBenefits/savingsPlanOrders/read'
+
+        if 'savingsPlan' in path or 'savingsplan' in path_lower:
+            return 'Microsoft.BillingBenefits/savingsPlanOrders/savingsPlans/read'
+
+        if 'microsoft.insights/metrics' in path_lower or '/metrics' in path_lower and 'monitor' in endpoint.lower():
+            return 'microsoft.insights/metrics/read'
+
+        # ARM management.azure.com calls
+        m = re.search(r'/providers/([^/?]+)/([^/?/]+)', path, re.IGNORECASE)
+        if m:
+            namespace = m.group(1)
+            resource_type = m.group(2)
+            after_provider = path[m.end():]
+
+            sub_match = re.match(r'/[^/]+/([^/?]+)', after_provider)
+            if sub_match:
+                sub = sub_match.group(1)
+                if not sub.startswith('{') and not re.match(r'^[0-9a-f-]{32,}$', sub, re.I):
+                    after_sub = after_provider[sub_match.end():]
+                    sub2_match = re.match(r'/([^/]+)/([^/?]+)', after_sub)
+                    if sub2_match:
+                        sub2_name = sub2_match.group(1)
+                        sub2_type = sub2_match.group(2)
+                        if not sub2_name.startswith('{') and not sub2_type.startswith('{'):
+                            return f"{namespace}/{resource_type}/{sub}/{sub2_type}/{_verb(method)}"
+                    if sub[0].islower():
+                        return f"{namespace}/{resource_type}/{sub}/action"
+                    return f"{namespace}/{resource_type}/{sub}/{_verb(method)}"
+
+            return f"{namespace}/{resource_type}/{_verb(method)}"
+
+        return None
+
+    def _gcp_permission(self, endpoint, method, request_info, operation):
+        """Determine the IAM permission for a GCP API call."""
+        GCP_HOST_SERVICE = {
+            'compute.googleapis.com': 'compute',
+            'www.googleapis.com': 'compute',
+            'storage.googleapis.com': 'storage',
+            'bigquery.googleapis.com': 'bigquery',
+            'sqladmin.googleapis.com': 'cloudsql',
+            'cloudresourcemanager.googleapis.com': 'resourcemanager',
+            'recommender.googleapis.com': 'recommender',
+            'logging.googleapis.com': 'logging',
+            'monitoring.googleapis.com': 'monitoring',
+        }
+
+        host = request_info.get('host', '') if request_info else ''
+        # Normalise – strip port
+        host_clean = host.split(':')[0].lower()
+        service = GCP_HOST_SERVICE.get(host_clean)
+        if not service:
+            return None
+
+        parsed = urllib.parse.urlparse(endpoint)
+        path = parsed.path
+
+        # Recommender — all calls list recommendations
+        if service == 'recommender':
+            return 'recommender.recommendations.list'
+
+        # Cloud SQL
+        if service == 'cloudsql':
+            if re.search(r'/instances/?', path):
+                return 'cloudsql.instances.list'
+            return None
+
+        # Resource Manager
+        if service == 'resourcemanager':
+            if re.search(r'/projects:search', path):
+                return 'resourcemanager.projects.search'
+            if re.search(r'/projects/[^/]+$', path):
+                return 'resourcemanager.projects.get'
+            if re.search(r'/projects/?$', path) or re.search(r'/projects$', path):
+                return 'resourcemanager.projects.list'
+            return None
+
+        # Logging
+        if service == 'logging':
+            if 'entries' in path:
+                return 'logging.logEntries.list'
+            return None
+
+        # Monitoring
+        if service == 'monitoring':
+            if 'timeSeries' in path or 'timeseries' in path.lower():
+                return 'monitoring.timeSeries.list'
+            return None
+
+        # Storage
+        if service == 'storage':
+            if re.search(r'/b/[^/]+/iam', path):
+                return 'storage.buckets.getIamPolicy'
+            if re.search(r'/b/[^/]+/o', path):
+                return 'storage.objects.list'
+            if re.search(r'/b/?$', path) or re.search(r'/b\?', endpoint):
+                return 'storage.buckets.list'
+            return 'storage.buckets.list'
+
+        # BigQuery
+        if service == 'bigquery':
+            if re.search(r'/datasets/[^/]+/tables', path):
+                return 'bigquery.tables.list'
+            if re.search(r'/datasets', path):
+                return 'bigquery.datasets.list'
+            return None
+
+        # Compute
+        if service == 'compute':
+            # Aggregated list: /compute/v1/projects/{id}/aggregated/{resource}
+            m_agg = re.search(r'/aggregated/([^/?]+)', path)
+            if m_agg:
+                resource = m_agg.group(1).rstrip('/')
+                return f'compute.{resource}.aggregatedList'
+
+            # /compute/v1/projects/{id}/regions
+            if re.search(r'/projects/[^/]+/regions/?$', path):
+                return 'compute.regions.list'
+
+            # /compute/v1/projects/{id}/zones  (list or single zone listing)
+            if re.search(r'/projects/[^/]+/zones/?$', path):
+                return 'compute.zones.list'
+
+            # /compute/v1/projects/{id}/zones/{zone}/{resource}
+            m_zone = re.search(r'/zones/[^/]+/([^/?]+)/?$', path)
+            if m_zone:
+                resource = m_zone.group(1)
+                if not resource.startswith('{'):
+                    return f'compute.{resource}.list'
+
+            # /compute/v1/projects/{id}/regions/{region}/{resource}
+            m_region = re.search(r'/regions/[^/]+/([^/?]+)/?$', path)
+            if m_region:
+                resource = m_region.group(1)
+                if not resource.startswith('{'):
+                    return f'compute.{resource}.list'
+
+            # /compute/v1/projects/{id}/global/{resource}
+            m_global = re.search(r'/global/([^/?]+)/?$', path)
+            if m_global:
+                resource = m_global.group(1)
+                if not resource.startswith('{'):
+                    return f'compute.{resource}.list'
+
+            return None
+
+        return None
+
     def _format_operation_from_method(self, method, resource):
         """Format an operation name from HTTP method and resource type.
 
@@ -1657,6 +2017,7 @@ class PolicyTemplateParser:
 
                 api_service = self._determine_api_service(host, path)
                 operation = self._extract_operation_name(endpoint, method, api_service, request_info)
+                permission = self._determine_api_permission(endpoint, method, api_service, request_info, operation)
 
                 api_calls.append({
                     'policy_name': self.policy_name,
@@ -1665,7 +2026,8 @@ class PolicyTemplateParser:
                     'endpoint': endpoint,
                     'operation': operation,
                     'field': '{entire response}',
-                    'api_service': api_service
+                    'api_service': api_service,
+                    'permission': permission
                 })
 
         return api_calls
@@ -1730,6 +2092,7 @@ class PolicyTemplateParser:
 
                 # Extract operation name
                 operation = self._extract_operation_name(endpoint, request_info['method'], api_service, request_info)
+                permission = self._determine_api_permission(endpoint, request_info['method'], api_service, request_info, operation)
 
                 if endpoint:
                     # If no fields found, add at least one entry for the API call
@@ -1741,7 +2104,8 @@ class PolicyTemplateParser:
                             'endpoint': endpoint,
                             'operation': operation,
                             'field': '{entire response}',
-                            'api_service': api_service
+                            'api_service': api_service,
+                            'permission': permission
                         })
                     else:
                         # Add one entry per field
@@ -1753,7 +2117,8 @@ class PolicyTemplateParser:
                                 'endpoint': endpoint,
                                 'operation': operation,
                                 'field': field,
-                                'api_service': api_service
+                                'api_service': api_service,
+                                'permission': permission
                             })
 
         # Also extract API calls from CWF define blocks (remediation/action calls)
@@ -1855,7 +2220,7 @@ def main():
     # Write to CSV
     csv_output_file = output_dir / 'policy_api_list.csv'
     with open(csv_output_file, 'w', newline='') as csvfile:
-        fieldnames = ['policy_name', 'policy_file', 'policy_version', 'datasource_name', 'api_service', 'method', 'endpoint', 'operation', 'field']
+        fieldnames = ['policy_name', 'policy_file', 'policy_version', 'datasource_name', 'api_service', 'method', 'endpoint', 'operation', 'field', 'permission']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
         writer.writeheader()
