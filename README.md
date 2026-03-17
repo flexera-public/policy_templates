@@ -494,6 +494,7 @@ These templates can generate savings estimates for your environment. The inciden
   * [Dynamic Dashboards](./operational/flexera/cco/dynamic_dashboards)
   * [FinOps Dashboards](./operational/flexera/cco/finops_dashboards)
   * [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
+  * [MSP Invoiceable Spend Report](./operational/flexera/msp/msp_invoiceable_spend_report)
 
 * FlexNet Manager
 
