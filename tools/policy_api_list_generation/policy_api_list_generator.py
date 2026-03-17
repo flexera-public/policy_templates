@@ -30,6 +30,7 @@ class PolicyTemplateParser:
     SERVICE_PATTERNS = {
         'Turbonomic': [
             r'turbonomic',  # Turbonomic (IBM) instances
+            r'turbonomic_host',  # Turbonomic host variable
             r'^flexera$',  # Turbonomic API with flexera as placeholder host
         ],
         'AWS': [
@@ -85,6 +86,27 @@ class PolicyTemplateParser:
         'Microsoft Graph': [
             r'graph\.microsoft\.com',
         ],
+    }
+
+    # Maps common CWF host variable expressions to resolved host values
+    CWF_HOST_MAP = {
+        'rs_optima_host': 'rs_optima_host',
+        '$rs_optima_host': 'rs_optima_host',
+        '$$rs_optima_host': 'rs_optima_host',
+        'optima_host': 'rs_optima_host',
+        'rs_governance_host': 'rs_governance_host',
+        '$governance_host': 'rs_governance_host',
+        '$$governance_host': 'rs_governance_host',
+        'governance_host': 'rs_governance_host',
+        '$param_azure_endpoint': 'management.azure.com',
+        'param_azure_endpoint': 'management.azure.com',
+        '$$flexera_api_host': 'flexera_api_host',
+        'flexera_api_host': 'flexera_api_host',
+        '$flexera_api_host': 'flexera_api_host',
+        'api_host': 'flexera_api_host',
+        'turbonomic_endpoint': 'turbonomic_host',
+        'param_turbonomic_host': 'turbonomic_host',
+        '$param_turbonomic_host': 'turbonomic_host',
     }
 
     def __init__(self, file_path):
@@ -179,7 +201,7 @@ class PolicyTemplateParser:
 
         return None
 
-    def _determine_api_service(self, host):
+    def _determine_api_service(self, host, path=None):
         """Determine which service/cloud the API call is targeting based on the host.
 
         Returns:
@@ -187,6 +209,10 @@ class PolicyTemplateParser:
         """
         if not host:
             return 'Unknown'
+
+        # Databricks uses dynamic workspace URLs; /api/2.0/ paths indicate Azure Databricks
+        if host == '{dynamic_host}' and path and '/api/2.0/' in path:
+            return 'Azure'
 
         for service, patterns in self.SERVICE_PATTERNS.items():
             for pattern in patterns:
@@ -265,6 +291,11 @@ class PolicyTemplateParser:
         verb_match = re.search(r'verb\s+"([^"]+)"', datasource_body, re.IGNORECASE)
         if verb_match:
             request_info['method'] = verb_match.group(1).upper()
+        else:
+            # Handle ternary expressions like: verb ds_parent_policy_terminated ? "DELETE" : "GET"
+            ternary_match = re.search(r'\bverb\s+\w+\s*\?\s*"([^"]+)"\s*:\s*"([^"]+)"', datasource_body)
+            if ternary_match:
+                request_info['method'] = ternary_match.group(1).upper()
 
         # Extract host (including join pattern)
         host_match = re.search(r'host\s+join\(\[([^\]]+)\]\)', datasource_body)
@@ -498,6 +529,11 @@ class PolicyTemplateParser:
         verb_match = re.search(r'verb:\s*["\']([^"\']+)["\']', js_code)
         if verb_match:
             request_info['method'] = verb_match.group(1).upper()
+        else:
+            # Handle ternary: verb: condition ? "DELETE" : "GET"
+            ternary_match = re.search(r'\bverb:\s*\w+\s*\?\s*"([^"]+)"\s*:\s*"([^"]+)"', js_code)
+            if ternary_match:
+                request_info['method'] = ternary_match.group(1).upper()
 
         # Extract host from JavaScript
         # Look for the entire host line first
@@ -624,6 +660,8 @@ class PolicyTemplateParser:
                             param_resolved = self._resolve_parameter_from_content(var_name)
                             if param_resolved:
                                 request_info['host'] = param_resolved
+                            elif 'turbonomic' in var_name.lower():
+                                request_info['host'] = 'turbonomic_host'
 
         # Extract path from JavaScript - handle both simple strings and array joins
         # Try array join pattern first: [ "/v3/projects/", projectId, "/timeSeries:query" ].join('')
@@ -929,8 +967,12 @@ class PolicyTemplateParser:
         host = request_info['host']
         path = request_info.get('path', '/')
 
+        # Skip malformed Monthly/ hosts (broken Flexera CBI URLs with no real hostname)
+        if host.startswith('Monthly'):
+            return None
+
         # Wrap policy language constructs in curly braces
-        policy_variables = ['rs_optima_host', 'rs_governance_host', 'flexera_api_host', 'rs_org_id', 'rs_project_id']
+        policy_variables = ['rs_optima_host', 'rs_governance_host', 'flexera_api_host', 'turbonomic_host', 'rs_org_id', 'rs_project_id']
         for var in policy_variables:
             if var in host:
                 host = host.replace(var, f'{{{var}}}')
@@ -1382,6 +1424,204 @@ class PolicyTemplateParser:
         else:
             return f'{method} {resource}'
 
+    def _extract_define_blocks(self):
+        """Extract all CWF define...do...end blocks from the policy template."""
+        define_blocks = []
+        lines = self.content.split('\n')
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            # Match define header that starts with 'define name' and ends with 'do'
+            define_match = re.match(r'^define\s+(\w+)', line)
+            if define_match and re.search(r'\bdo\s*$', line):
+                define_name = define_match.group(1)
+                define_lines = []
+                depth = 1  # header line has 'do'
+                i += 1
+                while i < len(lines) and depth > 0:
+                    current_line = lines[i]
+                    if not re.match(r'^\s*#', current_line):
+                        if re.search(r'\bdo\s*$', current_line):
+                            depth += 1
+                        elif re.match(r'^\s*end\s*$', current_line):
+                            depth -= 1
+                            if depth == 0:
+                                break
+                    define_lines.append(current_line)
+                    i += 1
+                define_blocks.append({
+                    'name': define_name,
+                    'body': '\n'.join(define_lines)
+                })
+            i += 1
+        return define_blocks
+
+    def _resolve_cwf_host(self, host_expr, define_body):
+        """Resolve a CWF host expression to an actual hostname or placeholder.
+
+        Tries the CWF_HOST_MAP first, then backwards variable lookup in the define block,
+        then parameter resolution.
+        """
+        host_expr = host_expr.strip().rstrip(',')
+
+        # Direct map lookup (handles $param_azure_endpoint, $$rs_optima_host, etc.)
+        if host_expr in self.CWF_HOST_MAP:
+            return self.CWF_HOST_MAP[host_expr]
+
+        # Backwards variable lookup: look for $varname = "..." + $var + "..." in define body
+        var_name = re.sub(r'^\$+', '', host_expr)
+        if var_name:
+            assign_match = re.search(
+                rf'\${re.escape(var_name)}\s*=\s*(.+)',
+                define_body
+            )
+            if assign_match:
+                rhs = assign_match.group(1).strip()
+                strings = re.findall(r'"([^"]+)"', rhs)
+                if strings:
+                    full = ''.join(strings)
+                    if 'amazonaws.com' in full:
+                        # Build host with {region} placeholder between string literals
+                        parts = []
+                        for j, s in enumerate(strings):
+                            parts.append(s)
+                            if j < len(strings) - 1:
+                                parts.append('{region}')
+                        return ''.join(parts)
+                    else:
+                        parts = []
+                        for j, s in enumerate(strings):
+                            parts.append(s)
+                            if j < len(strings) - 1:
+                                parts.append('{id}')
+                        return ''.join(parts)
+
+        # Try resolving $param_xxx from parameter definitions
+        param_match = re.match(r'^\$+param_(\w+)', host_expr)
+        if param_match:
+            param_name = 'param_' + param_match.group(1)
+            resolved = self._resolve_parameter_from_content(param_name)
+            if resolved:
+                return resolved
+
+        return None
+
+    def _extract_cwf_calls(self):
+        """Extract HTTP API calls from CWF define...do...end blocks."""
+        api_calls = []
+        define_blocks = self._extract_define_blocks()
+
+        for define_block in define_blocks:
+            define_name = define_block['name']
+            define_body = define_block['body']
+
+            pos = 0
+            while pos < len(define_body):
+                match = re.search(r'http_request\s*\(', define_body[pos:])
+                if not match:
+                    break
+
+                # Track paren depth to find the matching closing )
+                start = pos + match.end()
+                depth = 1
+                call_end = start
+                while call_end < len(define_body) and depth > 0:
+                    c = define_body[call_end]
+                    if c == '(':
+                        depth += 1
+                    elif c == ')':
+                        depth -= 1
+                    call_end += 1
+
+                call_body = define_body[start:call_end - 1]
+                pos = call_end  # advance past closing )
+
+                # Parse verb
+                verb_match = re.search(r'\bverb:\s*"([^"]+)"', call_body, re.IGNORECASE)
+                method = verb_match.group(1).upper() if verb_match else 'GET'
+
+                # Parse auth (for host fallback inference)
+                auth_match = re.search(r'\bauth:\s*(\$\$\w+)', call_body)
+                auth_name = auth_match.group(1) if auth_match else None
+
+                # Parse host
+                host_match = re.search(r'\bhost:\s*(\S+?)(?:\s*,|\s*\n)', call_body)
+                raw_host = host_match.group(1).strip().rstrip(',') if host_match else None
+
+                host = None
+                if raw_host:
+                    host = self._resolve_cwf_host(raw_host, define_body)
+
+                # Fallback: infer host from auth credential name
+                if not host and auth_name:
+                    auth_lower = auth_name.lower()
+                    if 'azure' in auth_lower:
+                        host = 'management.azure.com'
+                    elif 'aws' in auth_lower:
+                        host = 'amazonaws.com'
+                    elif 'google' in auth_lower:
+                        host = 'googleapis.com'
+                    elif 'flexera' in auth_lower:
+                        host = 'rs_optima_host'
+
+                if not host:
+                    continue
+
+                # Skip boolean-default parameters (false host means no URL configured)
+                if host == 'false' or host.startswith('false/'):
+                    continue
+
+                # Parse href or path
+                path = None
+                href_match = re.search(r'\b(?:href|path):\s*"([^"]+)"', call_body)
+                if href_match:
+                    path = href_match.group(1)
+                else:
+                    join_match = re.search(r'\b(?:href|path):\s*join\(\[([^\]]+)\]\)', call_body)
+                    if join_match:
+                        strings = re.findall(r'"([^"]+)"', join_match.group(1))
+                        path = '/{id}'.join(strings) if strings else '/{id}'
+                    else:
+                        var_match = re.search(r'\b(?:href|path):\s*(\$\S+)', call_body)
+                        if var_match:
+                            path = '/{id}'
+                if not path:
+                    path = '/'
+
+                # Parse query_strings: { "key": "value", ... }
+                query_params = {}
+                qs_match = re.search(r'query_strings:\s*\{([^}]+)\}', call_body, re.DOTALL)
+                if qs_match:
+                    for kv in re.finditer(r'"([^"]+)"\s*:\s*"([^"]+)"', qs_match.group(1)):
+                        query_params[kv.group(1)] = kv.group(2)
+
+                request_info = {
+                    'host': host,
+                    'path': path,
+                    'method': method,
+                    'query_params': query_params,
+                    'body_params': {},
+                    'headers': {}
+                }
+
+                endpoint = self._build_endpoint_url(request_info)
+                if not endpoint:
+                    continue
+
+                api_service = self._determine_api_service(host, path)
+                operation = self._extract_operation_name(endpoint, method, api_service, request_info)
+
+                api_calls.append({
+                    'policy_name': self.policy_name,
+                    'datasource_name': 'define_' + define_name,
+                    'method': method,
+                    'endpoint': endpoint,
+                    'operation': operation,
+                    'field': '{entire response}',
+                    'api_service': api_service
+                })
+
+        return api_calls
 
     def extract_api_calls(self):
         """Extract all API calls from the policy template."""
@@ -1415,8 +1655,13 @@ class PolicyTemplateParser:
 
             # Process all API calls (not just cloud providers)
             if request_info['host']:
+                # Skip boolean-default parameters (false host means no URL configured)
+                host_val = request_info['host']
+                if host_val == 'false' or host_val.startswith('false/'):
+                    continue
+
                 # Determine which service this API call targets
-                api_service = self._determine_api_service(request_info['host'])
+                api_service = self._determine_api_service(request_info['host'], request_info.get('path'))
 
                 # Extract fields from the response
                 fields = self._extract_fields(datasource['body'])
@@ -1463,6 +1708,10 @@ class PolicyTemplateParser:
                                 'field': field,
                                 'api_service': api_service
                             })
+
+        # Also extract API calls from CWF define blocks (remediation/action calls)
+        cwf_calls = self._extract_cwf_calls()
+        api_calls.extend(cwf_calls)
 
         return api_calls
 
