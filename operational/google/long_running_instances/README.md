@@ -49,8 +49,8 @@ For example if a user selects the "Delete VM Instances" action while applying th
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:
-  - `resourcemanager.projects.list`
-  - `compute.instances.list`
+  - `resourcemanager.projects.search`
+  - `compute.instances.aggregatedList`
   - `compute.instances.delete`*
 
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
