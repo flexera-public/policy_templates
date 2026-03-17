@@ -64,6 +64,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
+  - `csm_bill_upload_admin`
   - `org_owner`*
 
   \* The `org_owner` role is only required if the Bill Connect does not already exist.  If the Bill Connect already exists, the `org_owner` role is not required.

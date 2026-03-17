@@ -100,6 +100,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
                   "ec2:StopInstances",
                   "ec2:TerminateInstances",
                   "cloudwatch:GetMetricData",
+                  "cloudwatch:ListMetrics",
                   "sts:GetCallerIdentity"
               ],
               "Resource": "*"

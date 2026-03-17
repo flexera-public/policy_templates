@@ -53,7 +53,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `resourcemanager.projects.list`
   - `monitoring.timeSeries.list`
   - `compute.instances.list`
-  - `compute.instances.get`
   - `compute.instances.start`*
   - `compute.instances.stop`*
   - `compute.instances.setMachineType`*
