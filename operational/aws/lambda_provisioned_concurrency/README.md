@@ -33,7 +33,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `ec2:DescribeRegions`
   - `lambda:ListFunctions`
   - `lambda:ListTags`
-  - `lambda:ListProvisionedConcurrencyConfigs`
+  - `lambda:GetProvisionedConcurrencyConfig`
   - `lambda:ListVersionsByFunction`
 
   Example IAM Permission Policy:
@@ -49,7 +49,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
                   "ec2:DescribeRegions",
                   "lambda:ListFunctions",
                   "lambda:ListTags",
-                  "lambda:ListProvisionedConcurrencyConfigs",
+                  "lambda:GetProvisionedConcurrencyConfig",
                   "lambda:ListVersionsByFunction"
               ],
               "Resource": "*"

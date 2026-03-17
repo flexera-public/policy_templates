@@ -62,9 +62,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Resources/subscriptions/read`
   - `Microsoft.Compute/disks/read`
-  - `Microsoft.Compute/disks/write`*
   - `Microsoft.Compute/disks/delete`*
   - `Microsoft.Compute/snapshots/write`*
+  - `Microsoft.Compute/virtualMachines/read`*
+  - `Microsoft.Compute/virtualMachines/write`*
   - `Microsoft.Insights/metrics/read`
 
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.

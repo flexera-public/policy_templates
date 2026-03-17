@@ -57,7 +57,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Resources/subscriptions/read`
-  - `Microsoft.Compute/virtualMachines/read`
+  - `Microsoft.Databricks/workspaces/read`
   - `Microsoft.Compute/skus/read`
   - `Microsoft.Insights/*/read`†
 

@@ -97,6 +97,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
                   "cloudwatch:GetMetricData",
                   "ec2:DescribeRegions",
                   "rds:DescribeDBInstances",
+                  "rds:DescribeOrderableDBInstanceOptions",
                   "rds:ListTagsForResource",
                   "rds:ModifyDBInstance",
                   "rds:DeleteDBInstance"

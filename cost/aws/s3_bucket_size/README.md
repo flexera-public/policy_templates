@@ -40,6 +40,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `s3:GetBucketLocation`
   - `s3:GetBucketTagging`
   - `cloudwatch:GetMetricData`
+  - `cloudwatch:ListMetrics`
   - `sts:GetCallerIdentity`
 
   Example IAM Permission Policy:
@@ -55,6 +56,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
                   "s3:GetBucketLocation",
                   "s3:GetBucketTagging",
                   "cloudwatch:GetMetricData",
+                  "cloudwatch:ListMetrics",
                   "sts:GetCallerIdentity"
               ],
               "Resource": "*"
