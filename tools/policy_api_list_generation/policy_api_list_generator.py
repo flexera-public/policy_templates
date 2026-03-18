@@ -2197,7 +2197,7 @@ class PolicyTemplateParser:
             ('instance', 'GET', ''):                 'compute.instances.get',
             ('instance', 'POST', 'setLabels'):       'compute.instances.setLabels',
             ('disk', 'DELETE', ''):                  'compute.disks.delete',
-            ('disk', 'POST', 'createSnapshot'):      'compute.snapshots.create',
+            ('disk', 'POST', 'createSnapshot'):      'compute.disks.createSnapshot',
             ('snapshot', 'DELETE', ''):              'compute.snapshots.delete',
             ('address', 'DELETE', ''):               'compute.addresses.delete',
             ('operation', 'GET', ''):                'compute.zoneOperations.get',
@@ -2312,12 +2312,40 @@ class PolicyTemplateParser:
                             return synthetic_path
                     return None
 
+                # Store a hint from the RHS base variable for fallback context synthesis below
+                # e.g. $instance["resourceID"] → hint = "instance"
+                base_var_m = re.match(r'\$(\w+)\[', rhs)
+                _base_var_hint = base_var_m.group(1).lower() if base_var_m else ''
+
         # Look up the ARM path from the escalation context
         context = cwf_context.get(define_name)
-        if not context:
-            return None
-        host, arm_path = context
+        host, arm_path = context if context else (None, None)
         if not arm_path or '/providers/' not in arm_path:
+            # Context is missing or invalid (e.g. wrong datasource traced for this define).
+            # Try to synthesise the ARM path from:
+            # 1. Action suffix (e.g. /start, /deallocate → virtualMachines)
+            # 2. Variable-name hint (e.g. $instance["resourceID"] → virtualMachines)
+            ACTION_TO_ARM_TYPE = {
+                '/start':      'Microsoft.Compute/virtualMachines',
+                '/deallocate': 'Microsoft.Compute/virtualMachines',
+                '/powerOff':   'Microsoft.Compute/virtualMachines',
+                '/restart':    'Microsoft.Compute/virtualMachines',
+                '/redeploy':   'Microsoft.Compute/virtualMachines',
+            }
+            VAR_HINT_TO_ARM_TYPE = {
+                'instance':         'Microsoft.Compute/virtualMachines',
+                'vm':               'Microsoft.Compute/virtualMachines',
+                'virtual_machine':  'Microsoft.Compute/virtualMachines',
+            }
+            synthetic_type = (
+                ACTION_TO_ARM_TYPE.get(action_suffix)
+                or VAR_HINT_TO_ARM_TYPE.get(locals().get('_base_var_hint', ''))
+            )
+            if synthetic_type:
+                return (
+                    '/subscriptions/{id}/resourceGroups/{id}/providers/'
+                    + synthetic_type + '/{id}' + action_suffix
+                )
             return None
 
         # Strip any trailing slashes and build: arm_path + /{id} + action_suffix
@@ -2597,7 +2625,33 @@ class PolicyTemplateParser:
                                     })
                         continue
 
-                    # Unrecognised url: pattern — skip
+                    # Unrecognised url: pattern — skip.
+                    # However, if the URL variable contains $param_azure_endpoint or
+                    # $azure_endpoint, treat it as management.azure.com and derive from context.
+                    if re.search(r'\$(?:param_)?azure_endpoint\b', url_expr):
+                        ctx = cwf_context.get(define_name)
+                        if ctx:
+                            _, arm_path = ctx
+                            if arm_path and '/providers/' in arm_path:
+                                full_path = arm_path.rstrip('/') + '/{id}'
+                                host = 'management.azure.com'
+                                request_info = {
+                                    'host': host, 'path': full_path,
+                                    'method': method, 'query_params': {},
+                                    'body_params': {}, 'headers': {},
+                                }
+                                endpoint = self._build_endpoint_url(request_info)
+                                if endpoint:
+                                    api_service = 'Azure'
+                                    operation = self._extract_operation_name(endpoint, method, api_service, request_info)
+                                    permission = self._determine_api_permission(endpoint, method, api_service, request_info, operation)
+                                    api_calls.append({
+                                        'policy_name': self.policy_name,
+                                        'datasource_name': 'define_' + define_name,
+                                        'method': method, 'endpoint': endpoint,
+                                        'operation': operation, 'field': '{entire response}',
+                                        'api_service': api_service, 'permission': permission,
+                                    })
                     continue
 
                 # ----------------------------------------------------------------
