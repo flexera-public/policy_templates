@@ -38,6 +38,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `s3:ListAllMyBuckets`
   - `s3:GetBucketLocation`
   - `s3:GetBucketTagging`
+  - `s3:GetObject`
   - `s3:ListBucketMultipartUploads`
   - `s3:ListMultipartUploadParts`
   - `s3:AbortMultipartUpload`*
@@ -57,6 +58,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
                   "s3:ListAllMyBuckets",
                   "s3:GetBucketLocation",
                   "s3:GetBucketTagging",
+                  "s3:GetObject",
                   "s3:ListBucketMultipartUploads",
                   "s3:ListMultipartUploadParts",
                   "s3:AbortMultipartUpload"
