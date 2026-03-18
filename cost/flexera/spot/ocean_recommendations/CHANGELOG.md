@@ -1,8 +1,16 @@
 # Changelog
 
-## v0.2.4
+## v0.3.1
 
 - Category of policy template updated to "Cost". Functionality unchanged.
+
+## v0.3.0
+
+- Improved incident report formatting to use currency from Flexera Org
+- Improved formatting and context in the "Recommendation Details" for each recommendation
+- Added Minimum Savings Threshold input parameter to filter out recommendations below the specified estimated monthly savings
+- Fixed bug preventing Azure recommendations from being pulled
+- Estimated Savings is being provided by Recommendations Spot API instead of calculated from aggregated costs
 
 ## v0.2.3
 

@@ -1,0 +1,1206 @@
+name "Rule-Based Dimensions to MSP Child Orgs"
+rs_pt_ver 20180301
+type "policy"
+short_description "Synchronizes selected Rule-Based Dimensions from the current Flexera org to MSP child orgs by filtering vendor-account rules to the vendor accounts historically allocated to each child org. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/rbd_to_child_orgs/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/rbd_to_child_orgs/"
+severity "low"
+category "Operational"
+default_frequency "daily"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: "Rule-Based Dimensions",
+  publish: "false",
+  hide_skip_approvals: "true",
+  skip_permissions: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify when any incidents are raised."
+  default []
+end
+
+parameter "param_rbd_list" do
+  type "list"
+  category "Policy Settings"
+  label "Rule-Based Dimensions"
+  description "A list of parent-org Rule-Based Dimension IDs or exact names to synchronize to MSP child orgs. Enter one ID or name per list item."
+  # No default value, user input required
+end
+
+parameter "param_effective_date" do
+  type "string"
+  category "Policy Settings"
+  label "Effective Date"
+  description "The month and year in YYYY-MM format for the Rule-Based Dimension rules to synchronize."
+  default "2020-01"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credential."
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for report summaries and managed blocks
+
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+end
+
+# Get current-org Rule-Based Dimensions
+
+datasource "ds_parent_org_rbds" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions"])
+  end
+end
+
+datasource "ds_child_org_sync_enabled" do
+  run_script $js_child_org_sync_enabled, $ds_parent_org_rbds
+end
+
+script "js_child_org_sync_enabled", type: "javascript" do
+  parameters "ds_parent_org_rbds"
+  result "result"
+  code <<-'EOS'
+  enabled = false
+  reason = "rbd_partner_child_org not found"
+
+  rbd_partner_child_org = _.find((ds_parent_org_rbds["values"] || []), function(rbd) {
+    return rbd["id"] == "rbd_partner_child_org"
+  })
+
+  if (rbd_partner_child_org) {
+    enabled = true
+    reason = "Enabled"
+  }
+
+  result = {
+    enabled: enabled,
+    reason: reason
+  }
+EOS
+end
+
+datasource "ds_parent_rbd_selection" do
+  run_script $js_parent_rbd_selection, $ds_parent_org_rbds, $param_rbd_list, $param_effective_date
+end
+
+script "js_parent_rbd_selection", type: "javascript" do
+  parameters "ds_parent_org_rbds", "param_rbd_list", "param_effective_date"
+  result "result"
+  code <<-'EOS'
+  selected = []
+  missing = []
+  seen_selected = {}
+  parent_rbds = ds_parent_org_rbds["values"] || []
+
+  rbds_by_id = {}
+  rbds_by_name = {}
+
+  _.each(parent_rbds, function(rbd) {
+    id = String(rbd["id"] || "").trim()
+    name = String(rbd["name"] || "").trim()
+
+    if (id != "") {
+      rbds_by_id[id] = rbd
+    }
+
+    if (name != "") {
+      rbds_by_name[name.toLowerCase()] = rbd
+    }
+  })
+
+  _.each(param_rbd_list || [], function(requested) {
+    requested_value = String(requested || "").trim()
+
+    if (requested_value == "") {
+      return
+    }
+
+    match = rbds_by_id[requested_value] || rbds_by_name[requested_value.toLowerCase()]
+
+    if (!match) {
+      missing.push({
+        requested_value: requested_value,
+        effective_at: param_effective_date,
+        recommendation: "Verify that the Rule-Based Dimension exists in the current org and that the requested ID or name is correct."
+      })
+      return
+    }
+
+    match_id = String(match["id"] || "").trim()
+
+    if (match_id == "" || seen_selected[match_id]) {
+      return
+    }
+
+    seen_selected[match_id] = true
+
+    selected.push({
+      id: match["id"],
+      name: match["name"],
+      effective_at: param_effective_date
+    })
+  })
+
+  result = {
+    selected: selected,
+    missing: missing
+  }
+EOS
+end
+
+datasource "ds_selected_parent_rbds" do
+  run_script $js_selected_parent_rbds, $ds_parent_rbd_selection
+end
+
+script "js_selected_parent_rbds", type: "javascript" do
+  parameters "ds_parent_rbd_selection"
+  result "result"
+  code <<-'EOS'
+  result = ds_parent_rbd_selection["selected"] || []
+EOS
+end
+
+datasource "ds_missing_parent_rbds" do
+  run_script $js_missing_parent_rbds, $ds_parent_rbd_selection, $ds_applied_policy
+end
+
+script "js_missing_parent_rbds", type: "javascript" do
+  parameters "ds_parent_rbd_selection", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_parent_rbd_selection["missing"] || [], function(item) {
+    item["id"] = item["requested_value"]
+    item["policy_name"] = ds_applied_policy["name"]
+    return item
+  })
+EOS
+end
+
+datasource "ds_selected_parent_rbds_with_rules" do
+  iterate $ds_selected_parent_rbds
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", val(iter_item, "effective_at")])
+    ignore_status [400, 401, 403, 404, 429]
+  end
+  result do
+    encoding "json"
+    field "org_id", rs_org_id
+    field "org_name", "Current Org"
+    field "effective_at", val(iter_item, "effective_at")
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "rules", jmes_path(response, "rules")
+  end
+end
+
+# Get MSP child orgs and cost-allocation mapping
+
+datasource "ds_child_organizations" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/msp/v1/orgs/", rs_org_id, "/customers"])
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_parent_org_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "parent_id", jmes_path(col_item, "parent_id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_parent_org_top_level_billing_centers" do
+  run_script $js_parent_org_top_level_billing_centers, $ds_parent_org_billing_centers
+end
+
+script "js_parent_org_top_level_billing_centers", type: "javascript" do
+  parameters "billing_centers"
+  result "result"
+  code <<-'EOS'
+  ids = _.pluck(_.filter(billing_centers || [], function(bc) {
+    return bc["parent_id"] == null || bc["parent_id"] == undefined
+  }), "id")
+
+  ids.push("unallocated")
+
+  result = _.uniq(_.compact(ids))
+EOS
+end
+
+datasource "ds_child_org_cost_windows" do
+  run_script $js_child_org_cost_windows, $ds_child_org_sync_enabled
+end
+
+script "js_child_org_cost_windows", type: "javascript" do
+  parameters "ds_child_org_sync_enabled"
+  result "result"
+  code <<-'EOS'
+  function pad2(number) {
+    return number < 10 ? "0" + number : "" + number
+  }
+
+  function formatMonth(date) {
+    return date.getFullYear() + "-" + pad2(date.getMonth() + 1)
+  }
+
+  function addMonths(date, count) {
+    next_date = new Date(date)
+    next_date.setMonth(next_date.getMonth() + count)
+    return next_date
+  }
+
+  result = []
+
+  if (!ds_child_org_sync_enabled["enabled"]) {
+    result = []
+  } else {
+    start_boundary = new Date(2020, 0, 1)
+    end_boundary = new Date()
+    end_boundary = new Date(end_boundary.getFullYear(), end_boundary.getMonth(), 1)
+    cursor = new Date(start_boundary)
+    window_index = 0
+
+    while (cursor < end_boundary) {
+      next_boundary = addMonths(cursor, 24)
+      if (next_boundary > end_boundary) {
+        next_boundary = new Date(end_boundary)
+      }
+
+      result.push({
+        start_at: formatMonth(cursor),
+        end_at: formatMonth(next_boundary),
+        window_index: window_index,
+        window_label: formatMonth(cursor) + " to " + formatMonth(next_boundary)
+      })
+
+      cursor = next_boundary
+      window_index = window_index + 1
+    }
+  }
+EOS
+end
+
+datasource "ds_parent_costs_by_child_org_and_account" do
+  iterate $ds_child_org_cost_windows
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/aggregated"])
+    header "Api-Version", "1.0"
+    header "Content-Type", "application/json"
+    header "User-Agent", "RS Policies"
+    body_field "dimensions", ["vendor_account", "rbd_partner_child_org"]
+    body_field "granularity", "month"
+    body_field "billing_center_ids", jq($ds_parent_org_top_level_billing_centers, ".[]", "array")
+    body_field "start_at", val(iter_item, "start_at")
+    body_field "end_at", val(iter_item, "end_at")
+    body_field "metrics", ["cost_nonamortized_unblended_adj"]
+  end
+  result do
+    encoding "json"
+    field "start_at", val(iter_item, "start_at")
+    field "end_at", val(iter_item, "end_at")
+    field "rows", jq(response, ".rows")
+  end
+end
+
+datasource "ds_child_org_account_mapping" do
+  run_script $js_child_org_account_mapping, $ds_parent_costs_by_child_org_and_account, $ds_child_organizations
+end
+
+script "js_child_org_account_mapping", type: "javascript" do
+  parameters "cost_windows", "child_organizations"
+  result "result"
+  code <<-'EOS'
+  organizations_by_id = {}
+  _.each(child_organizations || [], function(org) {
+    organizations_by_id[String(org["id"]).trim()] = org["name"]
+  })
+
+  accounts_by_child = {}
+
+  _.each(cost_windows || [], function(window_result) {
+    _.each(window_result["rows"] || [], function(row) {
+      child_org_id = row && row["dimensions"] ? row["dimensions"]["rbd_partner_child_org"] : null
+      vendor_account = row && row["dimensions"] ? row["dimensions"]["vendor_account"] : null
+
+      if (child_org_id == null || child_org_id == undefined || vendor_account == null || vendor_account == undefined) {
+        return
+      }
+
+      child_org_id = String(child_org_id).trim()
+      vendor_account = String(vendor_account).trim()
+
+      if (child_org_id == "" || vendor_account == "" || child_org_id.toLowerCase() == "none") {
+        return
+      }
+
+      if (!accounts_by_child[child_org_id]) {
+        accounts_by_child[child_org_id] = []
+      }
+
+      accounts_by_child[child_org_id].push(vendor_account)
+    })
+  })
+
+  result = []
+
+  _.each(_.keys(accounts_by_child), function(child_org_id) {
+    result.push({
+      child_org_id: child_org_id,
+      child_org_name: organizations_by_id[child_org_id] || "",
+      vendor_account_ids: _.uniq(accounts_by_child[child_org_id])
+    })
+  })
+EOS
+end
+
+# Build desired child-org payloads by filtering parent-org RBD rules to allocated vendor accounts
+
+datasource "ds_child_rbd_targets" do
+  run_script $js_child_rbd_targets, $ds_child_org_account_mapping, $ds_selected_parent_rbds_with_rules
+end
+
+script "js_child_rbd_targets", type: "javascript" do
+  parameters "ds_child_org_account_mapping", "parent_rbds_with_rules"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(ds_child_org_account_mapping || [], function(mapping) {
+    child_org_id = String(mapping["child_org_id"] || "").trim()
+    child_org_name = String(mapping["child_org_name"] || "").trim()
+    allocated_accounts = _.uniq(_.map(mapping["vendor_account_ids"] || [], function(account_id) {
+      return String(account_id || "").trim()
+    }))
+    allocated_account_table = {}
+
+    _.each(allocated_accounts, function(account_id) {
+      if (account_id != "") {
+        allocated_account_table[account_id] = true
+      }
+    })
+
+    if (child_org_id == "" || child_org_name == "") {
+      return
+    }
+
+    _.each(parent_rbds_with_rules || [], function(parent_rbd) {
+      target_rules = []
+
+      _.each(parent_rbd["rules"] || [], function(rule) {
+        condition = rule["condition"] || {}
+        vendor_account = String(condition["value"] || "").trim()
+
+        if (String(condition["dimension"] || "") != "vendor_account" || String(condition["type"] || "") != "dimension_equals") {
+          return
+        }
+
+        if (!allocated_account_table[vendor_account]) {
+          return
+        }
+
+        target_rules.push(rule)
+      })
+
+      if (target_rules.length > 0) {
+        result.push({
+          org_id: child_org_id,
+          org_name: child_org_name,
+          id: parent_rbd["id"],
+          name: parent_rbd["name"],
+          effective_at: parent_rbd["effective_at"],
+          rules: target_rules
+        })
+      }
+    })
+  })
+EOS
+end
+
+datasource "ds_child_existing_rbds" do
+  iterate $ds_child_organizations
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-customizations/v1/orgs/", val(iter_item, "id"), "/rule-based-dimensions"])
+    ignore_status [400, 401, 403, 404, 429]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "org_id", val(iter_item, "id")
+      field "org_name", val(iter_item, "name")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_child_existing_selected_rbds_that_match" do
+  run_script $js_child_existing_selected_rbds_that_match, $ds_child_existing_rbds, $ds_selected_parent_rbds
+end
+
+script "js_child_existing_selected_rbds_that_match", type: "javascript" do
+  parameters "existing_rbds", "selected_parent_rbds"
+  result "result"
+  code <<-'EOS'
+  selected_ids = _.pluck(selected_parent_rbds || [], "id")
+
+  result = _.filter(existing_rbds || [], function(rbd) {
+    return _.contains(selected_ids, rbd["id"])
+  })
+EOS
+end
+
+datasource "ds_child_existing_selected_rbds_with_rules" do
+  iterate $ds_child_existing_selected_rbds_that_match
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-customizations/v1/orgs/", val(iter_item, "org_id"), "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", $param_effective_date])
+    ignore_status [400, 401, 403, 404, 429]
+  end
+  result do
+    encoding "json"
+    field "org_id", val(iter_item, "org_id")
+    field "org_name", val(iter_item, "org_name")
+    field "effective_at", $param_effective_date
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "rules", jmes_path(response, "rules")
+  end
+end
+
+datasource "ds_child_rbds" do
+  run_script $js_child_rbds, $ds_child_rbd_targets, $ds_child_existing_rbds, $ds_child_existing_selected_rbds_with_rules, $ds_applied_policy
+end
+
+script "js_child_rbds", type: "javascript" do
+  parameters "ds_child_rbd_targets", "ds_child_existing_rbds", "ds_child_existing_selected_rbds_with_rules", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  start_block_value = "Start: " + ds_applied_policy["name"]
+  end_block_value = "End: " + ds_applied_policy["name"]
+
+  block_start_rule = {
+    condition: { dimension: "vendor_account", type: "dimension_equals", value: start_block_value },
+    value: { text: start_block_value }
+  }
+
+  block_end_rule = {
+    condition: { dimension: "vendor_account", type: "dimension_equals", value: end_block_value },
+    value: { text: end_block_value }
+  }
+
+  existing_rbd_keys = {}
+  _.each(ds_child_existing_rbds || [], function(rbd) {
+    key = String(rbd["org_id"] || "") + "|" + String(rbd["id"] || "")
+    existing_rbd_keys[key] = true
+  })
+
+  existing_rules_table = {}
+  _.each(ds_child_existing_selected_rbds_with_rules || [], function(rbd) {
+    key = String(rbd["org_id"] || "") + "|" + String(rbd["id"] || "")
+    existing_rules_table[key] = rbd["rules"]
+  })
+
+  result = []
+
+  _.each(ds_child_rbd_targets || [], function(target) {
+    key = String(target["org_id"] || "") + "|" + String(target["id"] || "")
+    rules = []
+    found_block = false
+    injected_rules = false
+
+    if (existing_rules_table[key]) {
+      _.each(existing_rules_table[key], function(rule) {
+        if (!found_block) {
+          if (rule["condition"] && rule["condition"]["value"] == start_block_value) {
+            found_block = true
+            injected_rules = true
+
+            rules.push(block_start_rule)
+            rules = rules.concat(target["rules"])
+            rules.push(block_end_rule)
+          } else {
+            rules.push(rule)
+          }
+        }
+
+        if (found_block && rule["condition"] && rule["condition"]["value"] == end_block_value) {
+          found_block = false
+        }
+      })
+    }
+
+    if (!injected_rules) {
+      rules.push(block_start_rule)
+      rules = rules.concat(target["rules"])
+      rules.push(block_end_rule)
+    }
+
+    result.push({
+      org_id: target["org_id"],
+      org_name: target["org_name"],
+      id: target["id"],
+      name: target["name"],
+      verb: existing_rbd_keys[key] ? "PATCH" : "POST",
+      effective_at: target["effective_at"],
+      rules: rules
+    })
+  })
+EOS
+end
+
+datasource "ds_child_create_rbds" do
+  iterate $ds_child_rbds
+  request do
+    run_script $js_child_create_rbds, val(iter_item, "org_id"), val(iter_item, "id"), val(iter_item, "verb"), val(iter_item, "name"), val($ds_flexera_api_hosts, "flexera")
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_child_create_rbds", type: "javascript" do
+  parameters "org_id", "rbd_id", "verb", "name", "api_host"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    verb: verb,
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", org_id, "/rule-based-dimensions/", rbd_id].join(''),
+    body_fields: { name: name },
+    ignore_status: [400, 401, 402, 403, 404, 405, 409, 422, 429, 500, 502]
+  }
+EOS
+end
+
+datasource "ds_child_apply_rbds" do
+  iterate $ds_child_rbds
+  request do
+    run_script $js_child_apply_rbds, val(iter_item, "org_id"), val(iter_item, "id"), val(iter_item, "effective_at"), val(iter_item, "rules"), val($ds_flexera_api_hosts, "flexera"), $ds_child_create_rbds
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_child_apply_rbds", type: "javascript" do
+  parameters "org_id", "rbd_id", "effective_at", "rules", "api_host", "ds_child_create_rbds"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    verb: "PUT",
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", org_id, "/rule-based-dimensions/", rbd_id, "/rules/", effective_at].join(''),
+    body_fields: { rules: rules },
+    ignore_status: [400, 401, 402, 403, 404, 405, 409, 422, 429, 500, 502]
+  }
+EOS
+end
+
+# Reporting
+
+datasource "ds_child_stale_managed_rules" do
+  run_script $js_child_stale_managed_rules, $ds_child_existing_selected_rbds_with_rules, $ds_child_rbd_targets, $ds_applied_policy
+end
+
+script "js_child_stale_managed_rules", type: "javascript" do
+  parameters "existing_rbds_with_rules", "child_rbd_targets", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  desired_accounts = {}
+
+  _.each(child_rbd_targets || [], function(target) {
+    key = [String(target["org_id"] || ""), String(target["id"] || "")].join("|")
+
+    if (!desired_accounts[key]) {
+      desired_accounts[key] = {}
+    }
+
+    _.each(target["rules"] || [], function(rule) {
+      condition = rule["condition"] || {}
+      vendor_account = String(condition["value"] || "").trim()
+
+      if (vendor_account != "") {
+        desired_accounts[key][vendor_account] = rule["value"] && rule["value"]["text"] ? rule["value"]["text"] : ""
+      }
+    })
+  })
+
+  start_block_value = "Start: " + ds_applied_policy["name"]
+  end_block_value = "End: " + ds_applied_policy["name"]
+  seen = {}
+  result = []
+
+  _.each(existing_rbds_with_rules || [], function(rbd) {
+    key = [String(rbd["org_id"] || ""), String(rbd["id"] || "")].join("|")
+    desired_for_rbd = desired_accounts[key] || {}
+    inside_managed_block = false
+
+    _.each(rbd["rules"] || [], function(rule) {
+      condition = rule["condition"] || {}
+      condition_value = String(condition["value"] || "").trim()
+
+      if (condition_value == start_block_value) {
+        inside_managed_block = true
+        return
+      }
+
+      if (condition_value == end_block_value) {
+        inside_managed_block = false
+        return
+      }
+
+      if (!inside_managed_block) {
+        return
+      }
+
+      if (String(condition["dimension"] || "") != "vendor_account" || String(condition["type"] || "") != "dimension_equals") {
+        return
+      }
+
+      vendor_account = condition_value
+
+      if (vendor_account == "" || desired_for_rbd[vendor_account]) {
+        return
+      }
+
+      stale_key = [rbd["org_id"], rbd["id"], rbd["effective_at"], vendor_account].join("|")
+
+      if (seen[stale_key]) {
+        return
+      }
+
+      seen[stale_key] = true
+
+      result.push({
+        id: stale_key,
+        policy_name: ds_applied_policy["name"],
+        org_id: rbd["org_id"],
+        org_name: rbd["org_name"],
+        rbd_id: rbd["id"],
+        rbd_name: rbd["name"],
+        effective_at: rbd["effective_at"],
+        vendor_account: vendor_account,
+        rule_value: rule["value"] && rule["value"]["text"] ? rule["value"]["text"] : "",
+        recommendation: "Review this policy-managed child-org rule. It no longer matches the selected parent-org Rule-Based Dimensions for the currently allocated vendor accounts."
+      })
+    })
+  })
+EOS
+end
+
+datasource "ds_child_org_sync_report" do
+  run_script $js_child_org_sync_report, $ds_child_org_sync_enabled, $ds_child_org_account_mapping, $ds_child_rbd_targets, $ds_applied_policy
+end
+
+script "js_child_org_sync_report", type: "javascript" do
+  parameters "ds_child_org_sync_enabled", "ds_child_org_account_mapping", "ds_child_rbd_targets", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (ds_child_org_sync_enabled["enabled"]) {
+    targets_by_org = {}
+
+    _.each(ds_child_rbd_targets || [], function(target) {
+      key = String(target["org_id"] || "").trim()
+
+      if (key == "") {
+        return
+      }
+
+      if (!targets_by_org[key]) {
+        targets_by_org[key] = {
+          org_name: String(target["org_name"] || "").trim(),
+          target_rbd_count: 0
+        }
+      }
+
+      targets_by_org[key]["target_rbd_count"] = targets_by_org[key]["target_rbd_count"] + 1
+    })
+
+    _.each(ds_child_org_account_mapping || [], function(mapping) {
+      child_org_id = String(mapping["child_org_id"] || "").trim()
+      child_org_name = String(mapping["child_org_name"] || "").trim()
+      vendor_account_ids = mapping["vendor_account_ids"] || []
+      allocated_account_count = vendor_account_ids.length
+      target_rbd_count = targets_by_org[child_org_id] ? targets_by_org[child_org_id]["target_rbd_count"] : 0
+      status = "attempted"
+      reason = "Child-org Rule-Based Dimension updates were attempted."
+
+      if (child_org_id == "") {
+        return
+      }
+
+      if (child_org_name == "") {
+        status = "skipped_unknown_child_org"
+        reason = "The child org ID was present in cost allocation data but was not returned by the MSP child-org lookup."
+      } else if (target_rbd_count == 0) {
+        status = "skipped_no_matching_parent_rules"
+        reason = "The child org had allocated vendor accounts but none of the selected parent-org Rule-Based Dimensions contained vendor-account rules for those allocated accounts."
+      }
+
+      result.push({
+        id: [child_org_id, status].join("|"),
+        policy_name: ds_applied_policy["name"],
+        org_id: child_org_id,
+        org_name: child_org_name,
+        allocated_account_count: allocated_account_count,
+        allocated_vendor_accounts: vendor_account_ids.join(", "),
+        target_rbd_count: target_rbd_count,
+        apply_attempt_count: target_rbd_count,
+        status: status,
+        reason: reason
+      })
+    })
+  }
+EOS
+end
+
+datasource "ds_child_org_sync_issues" do
+  run_script $js_child_org_sync_issues, $ds_child_org_sync_report
+end
+
+script "js_child_org_sync_issues", type: "javascript" do
+  parameters "ds_child_org_sync_report"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_child_org_sync_report || [], function(item) {
+    return item["status"] != "attempted"
+  })
+EOS
+end
+
+datasource "ds_child_org_rbd_report" do
+  run_script $js_child_org_rbd_report, $ds_child_rbd_targets, $ds_selected_parent_rbds, $ds_child_org_account_mapping, $ds_child_org_sync_enabled, $ds_applied_policy
+end
+
+script "js_child_org_rbd_report", type: "javascript" do
+  parameters "ds_child_rbd_targets", "ds_selected_parent_rbds", "ds_child_org_account_mapping", "ds_child_org_sync_enabled", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  rbd_orgs = {}
+  rbd_rules_count = {}
+  rbd_accounts = {}
+
+  _.each(ds_child_rbd_targets || [], function(target) {
+    rbd_id = String(target["id"] || "")
+    org_id = String(target["org_id"] || "")
+
+    if (!rbd_orgs[rbd_id]) {
+      rbd_orgs[rbd_id] = {}
+      rbd_rules_count[rbd_id] = 0
+      rbd_accounts[rbd_id] = {}
+    }
+
+    rbd_orgs[rbd_id][org_id] = true
+    rbd_rules_count[rbd_id] = rbd_rules_count[rbd_id] + (target["rules"] || []).length
+
+    _.each(target["rules"] || [], function(rule) {
+      cond = rule && rule["condition"] ? rule["condition"] : {}
+      acct = String(cond["value"] || "").trim()
+      if (acct != "") {
+        rbd_accounts[rbd_id][acct] = true
+      }
+    })
+  })
+
+  allocated_org_count = (ds_child_org_account_mapping || []).length
+
+  unique_synced_orgs = {}
+  total_rules_automated = 0
+
+  _.each(_.keys(rbd_orgs), function(rbd_id) {
+    _.each(_.keys(rbd_orgs[rbd_id]), function(org_id) {
+      unique_synced_orgs[org_id] = true
+    })
+    total_rules_automated = total_rules_automated + (rbd_rules_count[rbd_id] || 0)
+  })
+
+  total_unique_org_count = _.keys(unique_synced_orgs).length
+  total_rbd_count = (ds_selected_parent_rbds || []).length
+
+  result = []
+
+  if (!ds_child_org_sync_enabled["enabled"]) {
+    result = [{
+      id: "sync_disabled",
+      policy_name: ds_applied_policy["name"],
+      rbd_id: "",
+      rbd_name: "",
+      synced_org_count: 0,
+      allocated_org_count: allocated_org_count,
+      synced_org_pct: "0%",
+      unique_vendor_accounts: 0,
+      total_rules_automated: 0,
+      total_unique_org_count: 0,
+      total_rbd_count: total_rbd_count,
+      total_rules_automated_summary: 0,
+      report_status: "sync_disabled",
+      report_message: "Customer-organization synchronization did not run because the current org does not have the rbd_partner_child_org Rule-Based Dimension."
+    }]
+  } else {
+    _.each(ds_selected_parent_rbds || [], function(rbd) {
+      rbd_id = String(rbd["id"] || "")
+      synced_org_count = rbd_orgs[rbd_id] ? _.keys(rbd_orgs[rbd_id]).length : 0
+      rules_count = rbd_rules_count[rbd_id] || 0
+      accounts_count = rbd_accounts[rbd_id] ? _.keys(rbd_accounts[rbd_id]).length : 0
+      synced_pct = allocated_org_count > 0 ? Math.round(synced_org_count / allocated_org_count * 100) + "%" : "N/A"
+
+      result.push({
+        id: rbd_id,
+        policy_name: ds_applied_policy["name"],
+        rbd_id: rbd_id,
+        rbd_name: rbd["name"],
+        synced_org_count: synced_org_count,
+        allocated_org_count: allocated_org_count,
+        synced_org_pct: synced_pct,
+        unique_vendor_accounts: accounts_count,
+        total_rules_automated: rules_count,
+        total_unique_org_count: total_unique_org_count,
+        total_rbd_count: total_rbd_count,
+        total_rules_automated_summary: total_rules_automated,
+        report_status: synced_org_count > 0 ? "synced" : "no_allocations",
+        report_message: synced_org_count > 0 ?
+          "This Rule-Based Dimension was automatically synchronized to " + synced_org_count + " customer organization(s), covering " + accounts_count + " unique vendor account(s) with " + rules_count + " rule(s) managed automatically." :
+          "No customer organizations received this Rule-Based Dimension. None of its vendor-account rules matched the allocated accounts for any child org."
+      })
+    })
+
+    if (result.length == 0) {
+      result = [{
+        id: "no_rbds_selected",
+        policy_name: ds_applied_policy["name"],
+        rbd_id: "",
+        rbd_name: "",
+        synced_org_count: 0,
+        allocated_org_count: allocated_org_count,
+        synced_org_pct: "N/A",
+        unique_vendor_accounts: 0,
+        total_rules_automated: 0,
+        total_unique_org_count: 0,
+        total_rbd_count: 0,
+        total_rules_automated_summary: 0,
+        report_status: "no_rbds_selected",
+        report_message: "No Rule-Based Dimensions were selected for synchronization."
+      }]
+    }
+  }
+EOS
+end
+
+datasource "ds_sync_summary" do
+  run_script $js_sync_summary, $ds_selected_parent_rbds, $ds_missing_parent_rbds, $ds_child_org_sync_enabled, $ds_child_organizations, $ds_child_org_cost_windows, $ds_child_org_account_mapping, $ds_child_rbd_targets, $ds_child_apply_rbds, $ds_child_stale_managed_rules, $ds_child_org_sync_report
+end
+
+script "js_sync_summary", type: "javascript" do
+  parameters "ds_selected_parent_rbds", "ds_missing_parent_rbds", "ds_child_org_sync_enabled", "ds_child_organizations", "ds_child_org_cost_windows", "ds_child_org_account_mapping", "ds_child_rbd_targets", "ds_child_apply_rbds", "ds_child_stale_managed_rules", "ds_child_org_sync_report"
+  result "result"
+  code <<-'EOS'
+  child_orgs_attempted = _.filter(ds_child_org_sync_report || [], function(item) {
+    return item["status"] == "attempted"
+  }).length
+
+  child_orgs_skipped_unknown = _.filter(ds_child_org_sync_report || [], function(item) {
+    return item["status"] == "skipped_unknown_child_org"
+  }).length
+
+  child_orgs_skipped_no_matching_parent_rules = _.filter(ds_child_org_sync_report || [], function(item) {
+    return item["status"] == "skipped_no_matching_parent_rules"
+  }).length
+
+  result = [{
+    selected_parent_rbd_count: (ds_selected_parent_rbds || []).length,
+    missing_parent_rbd_count: (ds_missing_parent_rbds || []).length,
+    child_sync_enabled: ds_child_org_sync_enabled["enabled"] ? "Yes" : "No",
+    child_sync_reason: ds_child_org_sync_enabled["reason"] || "",
+    child_org_count: (ds_child_organizations || []).length,
+    child_cost_window_count: (ds_child_org_cost_windows || []).length,
+    child_orgs_with_allocations: (ds_child_org_account_mapping || []).length,
+    child_orgs_attempted: child_orgs_attempted,
+    child_orgs_skipped_unknown: child_orgs_skipped_unknown,
+    child_orgs_skipped_no_matching_parent_rules: child_orgs_skipped_no_matching_parent_rules,
+    child_rbd_targets: (ds_child_rbd_targets || []).length,
+    child_rbd_apply_attempts: (ds_child_apply_rbds || []).length,
+    child_stale_managed_rules: (ds_child_stale_managed_rules || []).length
+  }]
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_child_rbd_sync" do
+  validate $ds_sync_summary do
+    summary_template "Child-Org Rule-Based Dimension Sync Evaluated"
+    detail_template "This policy template synchronizes selected parent-org Rule-Based Dimensions to MSP child orgs by filtering parent-org vendor-account rules to the vendor accounts historically allocated to each child org. It preserves rules outside the policy-managed block in child orgs, reports requested parent-org Rule-Based Dimensions that could not be found, reports child orgs that were skipped before updates could be attempted, and separately reports stale policy-managed child-org rules that no longer match the selected parent-org Rule-Based Dimensions for currently allocated vendor accounts."
+    check eq(0, 0) # Always pass this validate
+  end
+  validate $ds_child_org_rbd_report do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ with index data 0 }}{{ .total_rbd_count }} Rule-Based Dimension(s) synchronized to {{ .total_unique_org_count }} customer org(s) — {{ .total_rules_automated_summary }} rules managed automatically{{ end }}"
+    detail_template <<-'EOS'
+### Rule-Based Dimension Sync Summary
+
+Total RBDs selected: {{ with index data 0 }}{{ .total_rbd_count }}{{ end }}
+
+Customer orgs with any sync: {{ with index data 0 }}{{ .total_unique_org_count }}{{ end }}
+
+Rules managed automatically: {{ with index data 0 }}{{ .total_rules_automated_summary }}{{ end }}
+
+Quick notes:
+- Child-org synchronization was performed; see the appended per-RBD table for full details.
+- If you need CSV export or email notifications, ensure `param_email` is set in the applied policy.
+
+For a detailed per-RBD breakdown, review the attached table in this incident (one row per selected Rule-Based Dimension).
+EOS
+    check eq(size(data), 0) # If we have results, raise an incident
+    escalate $esc_email
+    export do
+      resource_level true
+      field "id" do
+        label "ID"
+      end
+      field "rbd_id" do
+        label "Rule-Based Dimension ID"
+      end
+      field "rbd_name" do
+        label "Rule-Based Dimension Name"
+      end
+      field "synced_org_count" do
+        label "Customer Orgs Synced"
+      end
+      field "allocated_org_count" do
+        label "Eligible Customer Orgs"
+      end
+      field "synced_org_pct" do
+        label "% Customer Orgs Synced"
+      end
+      field "unique_vendor_accounts" do
+        label "Vendor Accounts Covered"
+      end
+      field "total_rules_automated" do
+        label "Rules Managed Automatically"
+      end
+    end
+  end
+  validate_each $ds_missing_parent_rbds do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Requested Parent Rule-Based Dimension(s) Not Found"
+    detail_template "{{ with index data 0 }}The requested parent-org Rule-Based Dimension '{{ .requested_value }}' was not found in the current org.{{ end }}"
+    check eq(val(item, "requested_value"), "")
+    escalate $esc_email
+    export do
+      resource_level true
+      field "id" do
+        label "ID"
+      end
+      field "requested_value" do
+        label "Requested ID or Name"
+      end
+      field "effective_at" do
+        label "Effective Date"
+      end
+      field "recommendation" do
+        label "Recommended Action"
+      end
+    end
+  end
+  validate_each $ds_child_org_sync_issues do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Child Org Sync Warning(s)"
+    detail_template <<-'EOS'
+**Child Org Sync Warning**
+
+Organization: {{ rs_org_id }} ({{ rs_org_name }})
+EOS
+    check eq(val(item, "status"), "")
+    escalate $esc_email
+    export do
+      resource_level true
+      field "id" do
+        label "ID"
+      end
+      field "org_id" do
+        label "Customer Organization ID"
+      end
+      field "org_name" do
+        label "Customer Organization Name"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "allocated_account_count" do
+        label "Allocated Vendor Accounts"
+      end
+      field "allocated_vendor_accounts" do
+        label "Allocated Vendor Account IDs"
+      end
+      field "target_rbd_count" do
+        label "Target RBDs"
+      end
+      field "apply_attempt_count" do
+        label "Apply Attempts"
+      end
+      field "reason" do
+        label "Reason"
+      end
+    end
+  end
+  validate_each $ds_child_stale_managed_rules do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Stale Child-Org Managed Rule(s) Found"
+    detail_template <<-'EOS'
+**Stale Managed Rule Detected**
+
+Vendor account: {{ .vendor_account }}
+Rule-Based Dimension: {{ .rbd_name }} ({{ .rbd_id }})
+Organization: {{ .org_id }}{{ if .org_name }} ({{ .org_name }}){{ end }}
+Effective date: {{ .effective_at }}
+
+Details: The policy-managed child-org rule for this vendor account was retained but no longer matches the selected parent-org Rule-Based Dimensions for the currently allocated vendor accounts.
+
+Recommendation: Review the managed rule and consider removing or updating it if it is no longer applicable.
+EOS
+    check eq(val(item, "vendor_account"), "")
+    escalate $esc_email
+    export do
+      resource_level true
+      field "id" do
+        label "ID"
+      end
+      field "org_id" do
+        label "Customer Organization ID"
+      end
+      field "org_name" do
+        label "Customer Organization Name"
+      end
+      field "rbd_id" do
+        label "Rule-Based Dimension ID"
+      end
+      field "rbd_name" do
+        label "Rule-Based Dimension Name"
+      end
+      field "effective_at" do
+        label "Effective Date"
+      end
+      field "vendor_account" do
+        label "Vendor Account ID"
+      end
+      field "rule_value" do
+        label "Managed Rule Value"
+      end
+      field "recommendation" do
+        label "Recommended Action"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
