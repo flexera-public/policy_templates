@@ -783,6 +783,13 @@ class PolicyTemplateParser:
                 value = param_match.group(2)
                 request_info['query_params'][key] = value
 
+        # Fallback: also look for Action in variable-assigned query_params dicts
+        # Handles: query_params = { "Action": "DescribeVolumes", ... }
+        if 'Action' not in request_info['query_params']:
+            action_match = re.search(r'"Action"\s*:\s*"([^"]+)"', js_code)
+            if action_match:
+                request_info['query_params']['Action'] = action_match.group(1)
+
         # Extract body_fields object from JavaScript
         body_fields_match = re.search(r'body_fields:\s*\{([^}]+)\}', js_code, re.DOTALL)
         if body_fields_match:
@@ -1118,14 +1125,23 @@ class PolicyTemplateParser:
                             operation = value.split('.')[-1]
                             return operation
 
-            # Check for Action query parameter (common in AWS APIs)
+            # Check for Action query parameter (only for query-action style AWS services)
+            QUERY_ACTION_SERVICES_OP = {
+                'ec2', 'sts', 'iam', 'autoscaling', 'elasticloadbalancing', 'elb',
+                'monitoring', 'cloudwatch', 'sqs', 'rds', 'sns', 'cloudformation',
+                'organizations', 'ecs', 'route53', 'tagging', 'support', 'cloudtrail',
+                'elasticache', 'kms', 'redshift',
+            }
             if '?Action=' in endpoint or '&Action=' in endpoint:
-                # Extract the Action value from query params
-                parsed = urllib.parse.urlparse(endpoint)
-                params = urllib.parse.parse_qs(parsed.query)
-                if 'Action' in params:
-                    action = params['Action'][0]
-                    return action
+                # Only use Action= for services that natively use query-action API style
+                _op_host = urllib.parse.urlparse(endpoint).netloc
+                _op_svc = self._aws_service_from_host(_op_host) if _op_host else None
+                if _op_svc in QUERY_ACTION_SERVICES_OP:
+                    parsed = urllib.parse.urlparse(endpoint)
+                    params = urllib.parse.parse_qs(parsed.query)
+                    if 'Action' in params:
+                        action = params['Action'][0]
+                        return action
 
             # For AWS S3, check for operations in query parameters
             # Query params can be in the URL or in request_info
@@ -1151,8 +1167,8 @@ class PolicyTemplateParser:
                 # Handle special S3 operations
                 elif param_lower == 'intelligent-tiering':
                     return 'Get Bucket Intelligent Tiering Configuration'
-                # If no mapping, use the parameter name itself (but skip common filters)
-                elif param_lower not in ['maxkeys', 'prefix', 'delimiter', 'marker', 'api-version', 'view']:
+                # If no mapping, use the parameter name itself (but skip common filters and AWS action params)
+                elif param_lower not in ['maxkeys', 'prefix', 'delimiter', 'marker', 'api-version', 'view', 'action', 'version', 'filter']:
                     return f'Get Bucket {self._format_resource_name(param_key)}'
 
             # If path is just hostname or '/', and no useful query params
@@ -1478,7 +1494,13 @@ class PolicyTemplateParser:
 
     def _aws_rest_permission(self, service, path, method, endpoint):
         """Return a permission for REST-style AWS APIs that have no Action param."""
-        # Lambda
+        # Access Analyzer (REST-based, not query-action)
+        if service == 'access-analyzer':
+            if re.search(r'/analyzer/?$', path) or re.search(r'/analyzer\?', endpoint):
+                return 'access-analyzer:ListAnalyzers'
+            if re.search(r'/analyzer/[^/]+$', path):
+                return 'access-analyzer:GetAnalyzer'
+
         if service == 'lambda':
             if re.search(r'/functions/?$', path):
                 return 'lambda:ListFunctions'
@@ -1519,7 +1541,7 @@ class PolicyTemplateParser:
             if 'versioning' in qs_keys:
                 return 's3:GetBucketVersioning'
             if 'publicAccessBlock' in qs_keys:
-                return 's3:GetPublicAccessBlock'
+                return 's3:GetBucketPublicAccessBlock'
             if 'intelligent-tiering' in qs_keys:
                 return 's3:GetIntelligentTieringConfiguration'
             if 'lifecycle' in qs_keys:
@@ -1528,7 +1550,7 @@ class PolicyTemplateParser:
                 return 's3:ListMultipartUploads'
             # Root list
             if path in ('/', '') or not path.strip('/'):
-                return 's3:ListBuckets'
+                return 's3:ListAllMyBuckets'
             # Object operations
             if method in ('GET', 'HEAD'):
                 return 's3:GetObject'
@@ -1555,9 +1577,15 @@ class PolicyTemplateParser:
 
         parsed = urllib.parse.urlparse(endpoint)
 
-        # 1. Query-string Action param
+        # 1. Query-string Action param — only for services that use the query-action API style
+        QUERY_ACTION_SERVICES = {
+            'ec2', 'sts', 'iam', 'autoscaling', 'elasticloadbalancing', 'elb',
+            'monitoring', 'cloudwatch', 'sqs', 'rds', 'sns', 'cloudformation',
+            'organizations', 'ecs', 'route53', 'tagging', 'support', 'cloudtrail',
+            'elasticache', 'kms', 'redshift',
+        }
         params = urllib.parse.parse_qs(parsed.query)
-        if 'Action' in params:
+        if 'Action' in params and service in QUERY_ACTION_SERVICES:
             return f"{service}:{params['Action'][0]}"
 
         # 2. X-Amz-Target header (JSON services like Organizations, CE)
@@ -1672,8 +1700,6 @@ class PolicyTemplateParser:
                         sub2_type = sub2_match.group(2)
                         if not sub2_name.startswith('{') and not sub2_type.startswith('{'):
                             return f"{namespace}/{resource_type}/{sub}/{sub2_type}/{_verb(method)}"
-                    if sub[0].islower():
-                        return f"{namespace}/{resource_type}/{sub}/action"
                     return f"{namespace}/{resource_type}/{sub}/{_verb(method)}"
 
             return f"{namespace}/{resource_type}/{_verb(method)}"
@@ -1690,7 +1716,7 @@ class PolicyTemplateParser:
             'configurations/log_retention_days': 'Microsoft.DBForPostgreSql/servers/configurations/read',
             'configurations/connection_throttling': 'Microsoft.DBForPostgreSql/servers/configurations/read',
             'transparentDataEncryption/current': 'Microsoft.Sql/servers/databases/transparentDataEncryption/read',
-            'vulnerabilityAssessments/default':  'Microsoft.Sql/servers/databases/vulnerabilityAssessments/read',
+            'vulnerabilityAssessments/default':  'Microsoft.Sql/servers/vulnerabilityAssessments/read',
             'auditingSettings/default':          'Microsoft.Sql/servers/auditingSettings/read',
             'administrators':                    'Microsoft.Sql/servers/administrators/read',
             'securityAlertPolicies/Default':     'Microsoft.Sql/servers/securityAlertPolicies/read',
@@ -1760,9 +1786,34 @@ class PolicyTemplateParser:
         parsed = urllib.parse.urlparse(endpoint)
         path = parsed.path
 
-        # Recommender — all calls list recommendations
+        # Recommender — map literal recommender IDs to specific IAM permissions
         if service == 'recommender':
-            return 'recommender.recommendations.list'
+            RECOMMENDER_ID_MAP = {
+                'google.compute.commitment.UsageCommitmentRecommender':         'recommender.usageCommitmentRecommendations.list',
+                'google.compute.instance.MachineTypeRecommender':               'recommender.computeInstanceMachineTypeRecommendations.list',
+                'google.compute.instance.IdleResourceRecommender':              'recommender.computeInstanceIdleResourceRecommendations.list',
+                'google.compute.disk.IdleResourceRecommender':                  'recommender.computeDiskIdleResourceRecommendations.list',
+                'google.compute.address.IdleResourceRecommender':               'recommender.computeAddressIdleResourceRecommendations.list',
+                'google.compute.image.IdleResourceRecommender':                 'recommender.computeImageIdleResourceRecommendations.list',
+                'google.compute.instanceGroupManager.MachineTypeRecommender':   'recommender.computeInstanceGroupManagerMachineTypeRecommendations.list',
+                'google.cloudsql.instance.IdleRecommender':                     'recommender.cloudsqlIdleInstanceRecommendations.list',
+                'google.cloudsql.instance.OverprovisionedRecommender':          'recommender.cloudsqlOverprovisionedInstanceRecommendations.list',
+                'google.cloudsql.instance.OutOfDiskRecommender':                'recommender.cloudsqlInstanceOutOfDiskRecommendations.list',
+                'google.iam.policy.Recommender':                                'recommender.iamPolicyRecommendations.list',
+                'google.container.DiagnosisRecommender':                        'recommender.containerDiagnosisRecommendations.list',
+                'google.logging.ProductSuggestionRecommender':                  'recommender.loggingProductSuggestionContainerRecommendations.list',
+                'google.monitoring.ProductSuggestionRecommender':               'recommender.monitoringProductSuggestionComputeRecommendations.list',
+                'google.resourcemanager.ProjectUtilizationRecommender':         'recommender.resourcemanagerProjectUtilizationRecommendations.list',
+                'google.run.service.SecurityRecommender':                       'recommender.runServiceSecurityRecommendations.list',
+                'google.cloudsql.security.GeneralRecommender':                  'recommender.cloudSecurityGeneralRecommendations.list',
+            }
+            rec_match = re.search(r'/recommenders/([^/{}]+)/recommendations', path)
+            if rec_match:
+                rec_id = rec_match.group(1)
+                if rec_id in RECOMMENDER_ID_MAP:
+                    return RECOMMENDER_ID_MAP[rec_id]
+            # Dynamic recommender type — cannot determine specific permission
+            return None
 
         # Cloud SQL
         if service == 'cloudsql':
@@ -2102,13 +2153,20 @@ class PolicyTemplateParser:
                     for kv in re.finditer(r'"([^"]+)"\s*:\s*"([^"]+)"', qs_match.group(1)):
                         query_params[kv.group(1)] = kv.group(2)
 
+                # Parse headers: { "key": "value", ... }
+                headers = {}
+                h_match = re.search(r'headers:\s*\{([^}]+)\}', call_body, re.DOTALL)
+                if h_match:
+                    for kv in re.finditer(r'"([^"]+)"\s*:\s*"([^"]+)"', h_match.group(1)):
+                        headers[kv.group(1)] = kv.group(2)
+
                 request_info = {
                     'host': host,
                     'path': path,
                     'method': method,
                     'query_params': query_params,
                     'body_params': {},
-                    'headers': {}
+                    'headers': headers
                 }
 
                 endpoint = self._build_endpoint_url(request_info)
