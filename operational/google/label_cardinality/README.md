@@ -49,14 +49,14 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `bigquery.datasets.list`
   - `bigquery.tables.list`
   - `cloudsql.instances.list`
-  - `compute.addresses.list`
-  - `compute.disks.list`
+  - `compute.addresses.aggregatedList`
+  - `compute.disks.aggregatedList`
   - `compute.images.list`
   - `compute.instances.aggregatedList`
   - `compute.snapshots.list`
-  - `compute.storagePools.list`
-  - `compute.vpnGateways.list`
-  - `compute.vpnTunnels.list`
+  - `compute.storagePools.aggregatedList`
+  - `compute.vpnGateways.aggregatedList`
+  - `compute.vpnTunnels.aggregatedList`
   - `storage.buckets.list`
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:

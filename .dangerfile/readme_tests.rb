@@ -637,8 +637,10 @@ def readme_api_permission_mismatch?(file, file_lines)
 
   # Wildcard permissions (e.g. Microsoft.Insights/*/read) are intentional and
   # are not expected to appear verbatim in the derived list, so skip them here.
+  # Azure RBAC role names (e.g. 'Storage Blob Data Reader') contain neither '/'
+  # nor ':' and cannot be matched against derived ARM permission strings; skip them.
   readme_aws_perms.each   { |p| missing_from_derived << "AWS: `#{p}`"   unless p.include?('*') || derived_aws.any?   { |d| d.casecmp?(p) } }
-  readme_azure_perms.each { |p| missing_from_derived << "Azure: `#{p}`" unless p.include?('*') || derived_azure.any? { |d| d.casecmp?(p) } }
+  readme_azure_perms.each { |p| missing_from_derived << "Azure: `#{p}`" unless p.include?('*') || (!p.include?('/') && !p.include?(':')) || derived_azure.any? { |d| d.casecmp?(p) } }
   readme_gcp_perms.each   { |p| missing_from_derived << "GCP: `#{p}`"   unless p.include?('*') || derived_gcp.any?   { |d| d.casecmp?(p) } }
 
   return false if missing_from_readme.empty? && missing_from_derived.empty?

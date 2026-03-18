@@ -812,8 +812,8 @@ class PolicyTemplateParser:
                 for key in keys:
                     request_info['body_params'][key] = '{dynamic}'
 
-        # Extract headers from JavaScript (e.g., headers: { "X-Amz-Target": "..." })
-        headers_match = re.search(r'headers:\s*\{([^}]+)\}', js_code, re.DOTALL)
+        # Extract headers from JavaScript (e.g., "headers": { "X-Amz-Target": "..." })
+        headers_match = re.search(r'["\']?headers["\']?\s*:\s*\{([^}]+)\}', js_code, re.DOTALL)
         if headers_match:
             headers_str = headers_match.group(1)
             # Extract key-value pairs from headers object
@@ -1572,6 +1572,18 @@ class PolicyTemplateParser:
         # For bare amazonaws.com, try to infer service from Version= param
         if service == '__bare__':
             service = self._aws_infer_service_from_version(endpoint)
+        # When host is dynamic, try to identify service from X-Amz-Target header.
+        # e.g. AWSPriceListService.GetProducts -> pricing:GetProducts
+        if not service and request_info and request_info.get('headers'):
+            TARGET_HEADER_SERVICE_MAP = {
+                'AWSPriceListService': 'pricing',
+            }
+            for _k, _v in request_info['headers'].items():
+                if _k.lower() == 'x-amz-target' and '.' in _v:
+                    _mapped = TARGET_HEADER_SERVICE_MAP.get(_v.split('.')[0])
+                    if _mapped:
+                        return f"{_mapped}:{_v.split('.')[-1]}"
+
         if not service:
             return None
 
@@ -1631,16 +1643,24 @@ class PolicyTemplateParser:
             qs = urllib.parse.parse_qs(parsed_q)
             comp = qs.get('comp', [''])[0].lower()
             if comp == 'list':
-                return 'Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read'
+                restype = qs.get('restype', [''])[0].lower()
+                if restype == 'container':
+                    # List blobs within a container; ARM permission applies
+                    return 'Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read'
+                # Root container listing — data-plane, requires RBAC role (e.g. Storage Blob Data Reader)
+                return None
             if method.upper() in ('PUT', 'PATCH'):
                 return 'Microsoft.Storage/storageAccounts/blobServices/containers/blobs/write'
-            return 'Microsoft.Storage/storageAccounts/blobServices/read'
+            # Other blob data-plane calls (e.g. ?restype=service&comp=properties) — RBAC, not ARM
+            return None
 
         if '.queue.core.windows.net' in endpoint:
-            return 'Microsoft.Storage/storageAccounts/queueServices/read'
+            # Queue data-plane — requires Storage Queue Data Reader RBAC role, not an ARM permission
+            return None
 
         if '.table.core.windows.net' in endpoint:
-            return 'Microsoft.Storage/storageAccounts/tableServices/read'
+            # Table data-plane — requires Storage Table Data Reader RBAC role, not an ARM permission
+            return None
 
         # Pricing API — no ARM permission
         if 'prices.azure.com' in endpoint:
@@ -1702,7 +1722,7 @@ class PolicyTemplateParser:
                     if sub2_match:
                         sub2_name = sub2_match.group(1)
                         sub2_type = sub2_match.group(2)
-                        if not sub2_name.startswith('{') and not sub2_type.startswith('{'):
+                        if not sub2_type.startswith('{'):
                             return f"{namespace}/{resource_type}/{sub}/{sub2_type}/{_verb(method)}"
                     return f"{namespace}/{resource_type}/{sub}/{_verb(method)}"
 
@@ -1900,8 +1920,8 @@ class PolicyTemplateParser:
             m_global = re.search(r'/global/([^/?]+)/?$', path)
             if m_global:
                 resource = m_global.group(1)
-                if not resource.startswith('{'):
-                    return f'compute.{resource}.list'
+                # Include variable resources as placeholders (e.g. compute.{type}.list)
+                return f'compute.{resource}.list'
 
             return None
 
@@ -2226,6 +2246,15 @@ class PolicyTemplateParser:
                         request_info['headers'].update(script_request['headers'])
 
             # Process all API calls (not just cloud providers)
+            # When host is dynamic/unknown but an X-Amz-Target header is present (e.g. the AWS
+            # Pricing API whose host comes from a runtime parameter), synthesize a bare
+            # amazonaws.com host so the call is not silently skipped.
+            if not request_info['host']:
+                headers_lower = {k.lower(): v for k, v in request_info.get('headers', {}).items()}
+                if 'x-amz-target' in headers_lower:
+                    request_info = dict(request_info)
+                    request_info['host'] = 'amazonaws.com'
+
             if request_info['host']:
                 # Skip boolean-default parameters (false host means no URL configured)
                 host_val = request_info['host']
@@ -2288,7 +2317,107 @@ class PolicyTemplateParser:
         cwf_calls = self._extract_cwf_calls()
         api_calls.extend(cwf_calls)
 
+        # Expand placeholder GCP permissions where resource type is a runtime variable.
+        # Scans the template source for literal 'types = [...]' JS arrays and replaces
+        # e.g. compute.{type}.aggregatedList with compute.addresses.aggregatedList, etc.
+        api_calls = self._expand_dynamic_gcp_type_permissions(api_calls)
+
         return api_calls
+
+    def _expand_dynamic_gcp_type_permissions(self, api_calls):
+        """
+        Replace placeholder GCP compute permissions that contain a variable resource type
+        (e.g. compute.{type}.aggregatedList or compute.{type}.list) with one entry per
+        literal type found in the template source.
+
+        When multiple 'types = [...]' JS arrays exist (e.g. separate arrays for /global/
+        and /aggregated/ paths), this method traces the chain:
+          JS script (types) → generator datasource (run_script) → consumer datasource (iterate, path)
+        to associate each type list with the correct suffix (aggregatedList vs list).
+        Falls back to using all types for all placeholders when the chain cannot be traced.
+        """
+        placeholder_re = re.compile(r'^compute\.\{[^}]+\}\.(aggregatedList|list)$')
+        if not any(placeholder_re.match(c.get('permission') or '') for c in api_calls):
+            return api_calls
+
+        # --- Step 1: Collect type arrays per named JS script ---
+        js_types = {}  # script_name -> [type, ...]
+        for m in re.finditer(
+            r'\bscript\s+"([^"]+)".*?^end\b',
+            self.content, re.MULTILINE | re.DOTALL
+        ):
+            sname = m.group(1)
+            body = m.group(0)
+            types = []
+            for raw in re.findall(r'\btypes\s*=\s*\[([^\]]+)\]', body, re.DOTALL):
+                types.extend(re.findall(r'["\']([A-Za-z][A-Za-z0-9_]+)["\']', raw))
+            if types:
+                js_types[sname] = list(dict.fromkeys(types))
+
+        if not js_types:
+            return api_calls
+
+        # --- Step 2: Map generator datasource → script name ---
+        gen_ds_map = {}  # ds_name -> script_name
+        for m in re.finditer(
+            r'\bdatasource\s+"([^"]+)".*?^end\b',
+            self.content, re.MULTILINE | re.DOTALL
+        ):
+            ds_name = m.group(1)
+            body = m.group(0)
+            for sname in js_types:
+                if re.search(r'\$' + re.escape(sname) + r'\b', body):
+                    gen_ds_map[ds_name] = sname
+                    break
+
+        # --- Step 3: Map suffix → types by tracing iterate → path ---
+        suffix_types = {'aggregatedList': [], 'list': []}
+        for m in re.finditer(
+            r'\bdatasource\s+"[^"]*".*?^end\b',
+            self.content, re.MULTILINE | re.DOTALL
+        ):
+            body = m.group(0)
+            iter_m = re.search(r'\biterate\s+\$(\w+)', body)
+            if not iter_m or iter_m.group(1) not in gen_ds_map:
+                continue
+            sname = gen_ds_map[iter_m.group(1)]
+            types = js_types[sname]
+            # Identify suffix from path string inside this datasource
+            path_src = ' '.join(re.findall(r'"(/compute/v1[^"]+)"', body))
+            path_src += ' '.join(re.findall(r"'(/compute/v1[^']+)'", body))
+            for join_args in re.findall(r'join\(\s*\[([^\]]+)\]', body):
+                path_src += ''.join(re.findall(r'"([^"]+)"', join_args))
+                path_src += ''.join(re.findall(r"'([^']+)'", join_args))
+            if '/aggregated/' in path_src:
+                suffix_types['aggregatedList'].extend(types)
+            elif '/global/' in path_src:
+                suffix_types['list'].extend(types)
+
+        for k in suffix_types:
+            suffix_types[k] = list(dict.fromkeys(suffix_types[k]))
+
+        # Fallback: if tracing failed, combine all types for all suffixes
+        all_types = list(dict.fromkeys(
+            [t for tl in js_types.values() for t in tl]
+        ))
+
+        expanded = []
+        for call in api_calls:
+            perm = call.get('permission') or ''
+            m = placeholder_re.match(perm)
+            if m:
+                suffix = m.group(1)
+                types = suffix_types.get(suffix) or all_types
+                if not types:
+                    expanded.append(call)
+                    continue
+                for resource_type in types:
+                    expanded_call = dict(call)
+                    expanded_call['permission'] = f'compute.{resource_type}.{suffix}'
+                    expanded.append(expanded_call)
+            else:
+                expanded.append(call)
+        return expanded
 
 
 def main():
