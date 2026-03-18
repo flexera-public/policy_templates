@@ -543,7 +543,7 @@ def permission_covered?(derived_perm, readme_perms)
       regex = Regexp.new('\A' + Regexp.escape(readme_perm).gsub('\*', '[^/]+') + '\z', Regexp::IGNORECASE)
       regex.match?(derived_perm)
     else
-      readme_perm == derived_perm
+      readme_perm.casecmp?(derived_perm)
     end
   end
 end
@@ -637,9 +637,9 @@ def readme_api_permission_mismatch?(file, file_lines)
 
   # Wildcard permissions (e.g. Microsoft.Insights/*/read) are intentional and
   # are not expected to appear verbatim in the derived list, so skip them here.
-  readme_aws_perms.each   { |p| missing_from_derived << "AWS: `#{p}`"   unless p.include?('*') || derived_aws.include?(p) }
-  readme_azure_perms.each { |p| missing_from_derived << "Azure: `#{p}`" unless p.include?('*') || derived_azure.include?(p) }
-  readme_gcp_perms.each   { |p| missing_from_derived << "GCP: `#{p}`"   unless p.include?('*') || derived_gcp.include?(p) }
+  readme_aws_perms.each   { |p| missing_from_derived << "AWS: `#{p}`"   unless p.include?('*') || derived_aws.any?   { |d| d.casecmp?(p) } }
+  readme_azure_perms.each { |p| missing_from_derived << "Azure: `#{p}`" unless p.include?('*') || derived_azure.any? { |d| d.casecmp?(p) } }
+  readme_gcp_perms.each   { |p| missing_from_derived << "GCP: `#{p}`"   unless p.include?('*') || derived_gcp.any?   { |d| d.casecmp?(p) } }
 
   return false if missing_from_readme.empty? && missing_from_derived.empty?
 
