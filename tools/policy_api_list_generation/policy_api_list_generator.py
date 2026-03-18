@@ -1969,6 +1969,339 @@ class PolicyTemplateParser:
         else:
             return f'{method} {resource}'
 
+    def _cwf_path_is_specific(self, host, path):
+        """Return True only if the path identifies a specific cloud resource type.
+
+        Used to avoid stopping a datasource trace at overly generic paths
+        like /subscriptions or /v1/projects that don't reveal a resource type.
+        """
+        if not path:
+            return False
+        if 'googleapis.com' in host:
+            return any(s in path for s in ['/compute/', '/sql/', '/v1/', '/storage/', '/bigtable/'])
+        if 'azure.com' in host or 'management.azure' in host:
+            return '/providers/' in path
+        # For other hosts (AWS, etc.) any non-trivial path is specific
+        return path not in ('/', '/subscriptions', '/subscriptions/')
+
+    def _trace_datasource_api(self, ds_name, depth=0, visited=None):
+        """Recursively trace a datasource chain to find its underlying API host and path.
+
+        Returns (host, path) or (None, None).
+        """
+        if visited is None:
+            visited = set()
+        if depth > 10 or ds_name in visited:
+            return None, None
+        visited.add(ds_name)
+
+        pat = re.compile(
+            r'datasource\s+"' + re.escape(ds_name) + r'"\s+do(.*?)^end',
+            re.MULTILINE | re.DOTALL
+        )
+        m = pat.search(self.content)
+        if not m:
+            return None, None
+        ds_body = m.group(1)
+
+        # Check for a request block with explicit host (literal string or parameter variable)
+        host_m = re.search(r'\bhost\s+"([^"]+)"', ds_body)
+        if host_m:
+            host = host_m.group(1)
+        else:
+            # Try host with a $param_ variable: host $param_azure_endpoint
+            param_host_m = re.search(r'\bhost\s+\$+param_(\w+)', ds_body)
+            if param_host_m:
+                param_name = 'param_' + param_host_m.group(1)
+                host = self._resolve_parameter_from_content(param_name)
+            else:
+                host = None
+
+        if host:
+            # path join([...])
+            pj = re.search(r'path\s+join\(\s*\[([^\]]+)\]\s*\)', ds_body)
+            if pj:
+                lits = re.findall(r'"([^"]+)"', pj.group(1))
+                path = ''.join(lits)
+                if self._cwf_path_is_specific(host, path):
+                    return host, path
+                # Pattern: join([val(iter_item, "id"), "/suffix"]) — literal suffix appended to
+                # the iterate datasource's path. Detect a leading val(iter_item,...) + literal suffix.
+                val_suffix = re.search(
+                    r'val\s*\(\s*iter_item.*?\)\s*,\s*"(/[^"]*)"', pj.group(1)
+                )
+                if val_suffix:
+                    suffix = val_suffix.group(1)
+                    iter_ds = re.search(r'\biterate\s+\$(ds_\w+)', ds_body)
+                    if iter_ds:
+                        parent_h, parent_p = self._trace_datasource_api(
+                            iter_ds.group(1), depth + 1, visited.copy()
+                        )
+                        if parent_h and parent_p and '/providers/' in (parent_p or ''):
+                            combined = parent_p.rstrip('/') + '/{id}' + suffix
+                            return parent_h, combined
+            # literal path "..."
+            pl = re.search(r'\bpath\s+"([^"]+)"', ds_body)
+            if pl:
+                path = pl.group(1)
+                if self._cwf_path_is_specific(host, path):
+                    return host, path
+            # Host found but no specific path — fall through to trace dependencies
+
+        # Trace all $ds_ references (run_script inputs and iterate)
+        all_ds_refs = re.findall(r'\$(ds_\w+)', ds_body)
+        seen_deps = visited.copy()
+        for dep in all_ds_refs:
+            h, p = self._trace_datasource_api(dep, depth + 1, seen_deps.copy())
+            if h and self._cwf_path_is_specific(h, p or ''):
+                return h, p
+
+        # Return host with no path if we know the cloud provider but found no specific path
+        if host:
+            return host, None
+
+        return None, None
+
+    def _build_cwf_define_context(self):
+        """Build a mapping of define_name -> (api_host, arm_or_gcp_path).
+
+        Traces: escalation 'NAME' do run "DEFINE" -> validate_each $ds_X do escalate $NAME
+        -> datasource $ds_X -> (host, path)
+        """
+        content = self.content
+
+        # Step 1: escalation_name -> [define_names it calls via run "..."]
+        esc_to_defines = {}
+        for m in re.finditer(r'escalation\s+"(\w+)"\s+do(.*?)^end', content, re.MULTILINE | re.DOTALL):
+            esc_name = m.group(1)
+            body = m.group(2)
+            defines = re.findall(r'run\s+"(\w+)"', body)
+            if defines:
+                esc_to_defines[esc_name] = defines
+
+        # Step 2: define_name -> datasource_name (from validate_each blocks in policy blocks)
+        define_to_ds = {}
+        for pol_m in re.finditer(r'^policy\s+"[^"]+"\s+do(.*?)^end', content, re.MULTILINE | re.DOTALL):
+            pol_body = pol_m.group(1)
+            for ve_m in re.finditer(
+                r'validate(?:_each)?\s+(\S+)\s+do(.*?)(?=^\s+(?:validate|end)\b)',
+                pol_body, re.MULTILINE | re.DOTALL
+            ):
+                ds_ref = ve_m.group(1).lstrip('$')
+                ve_body = ve_m.group(2)
+                esc_refs = re.findall(r'escalate\s+\$(\w+)', ve_body)
+                for esc_ref in esc_refs:
+                    if esc_ref in esc_to_defines:
+                        for define_name in esc_to_defines[esc_ref]:
+                            if define_name not in define_to_ds:
+                                define_to_ds[define_name] = ds_ref
+
+        # Step 3: trace each datasource to find its API host and path
+        define_context = {}
+        for define_name, ds_name in define_to_ds.items():
+            host, path = self._trace_datasource_api(ds_name)
+            if host:
+                define_context[define_name] = (host, path)
+
+        # Step 4: propagate context from top-level defines to nested helper defines
+        # (e.g. downsize_instances calls downsize_instance — propagate context to the callee)
+        changed = True
+        while changed:
+            changed = False
+            for caller_name, ctx in list(define_context.items()):
+                define_pat = re.compile(
+                    r'^define\s+' + re.escape(caller_name) + r'\b[^\n]*\bdo\b(.*?)^end',
+                    re.MULTILINE | re.DOTALL
+                )
+                dm = define_pat.search(content)
+                if not dm:
+                    continue
+                body = dm.group(1)
+
+                # Build resourceType → callee mapping for if/elsif dispatch blocks:
+                # if ($instance["resourceType"] == "X")
+                #   call callee_name(...)
+                rt_dispatch = {}  # {callee_name: resource_type_string}
+                pending_rt = None
+                for line in body.splitlines():
+                    m_rt = re.search(r'\b(?:if|elsif)\b.*\["resourceType"\]\s*==\s*"([^"]+)"', line)
+                    if m_rt:
+                        pending_rt = m_rt.group(1)
+                    m_call = re.search(r'\bcall\s+(\w+)\b', line)
+                    if m_call:
+                        if pending_rt:
+                            rt_dispatch[m_call.group(1)] = pending_rt
+                            pending_rt = None
+                    # Reset pending_rt at end/else/end keywords
+                    if re.match(r'\s*(end|else)\s*$', line):
+                        pending_rt = None
+
+                for callee in re.findall(r'\bcall\s+(\w+)', body):
+                    if callee in define_context:
+                        continue
+                    if callee in rt_dispatch:
+                        # Use the resource type from the if/elsif guard.
+                        # Compound types like "Microsoft.Sql/servers/elasticPools" need
+                        # intermediate /{id} segments: /providers/Microsoft.Sql/servers/{id}/elasticPools/{id}
+                        rt = rt_dispatch[callee]
+                        ctx_host = ctx[0] if ctx else 'management.azure.com'
+                        rt_parts = rt.split('/')
+                        ns = rt_parts[0]
+                        sub_parts = []
+                        for part in rt_parts[1:]:
+                            sub_parts.append(part)
+                            sub_parts.append('{id}')
+                        arm_path = (
+                            '/subscriptions/{id}/resourceGroups/{id}/providers/'
+                            + ns + '/' + '/'.join(sub_parts)
+                        )
+                        define_context[callee] = (ctx_host, arm_path)
+                    else:
+                        define_context[callee] = ctx
+                    changed = True
+
+        return define_context
+
+    def _gcp_cwf_permission(self, resource_var, method, action_suffix, is_cloudsql=False):
+        """Return the GCP IAM permission for a CWF http_* call.
+
+        Args:
+            resource_var: Variable name holding the resource (e.g. 'instance', 'disk', 'snapshot')
+            method: HTTP method (GET, POST, PATCH, DELETE, PUT)
+            action_suffix: Literal suffix appended to selfLink (e.g. '/stop', '/setMachineType', '')
+            is_cloudsql: True if the resource is a Cloud SQL instance (sqladmin.googleapis.com)
+        """
+        action = action_suffix.lstrip('/')
+        # Normalize variable name: try original then strip trailing 's' (instances→instance, disks→disk)
+        # Try original first to avoid corrupting words like 'address' → 'addres'
+        hint_orig = resource_var.lower()
+        hint_stripped = hint_orig.rstrip('s')
+
+        if is_cloudsql:
+            if method == 'DELETE':
+                return 'cloudsql.instances.delete'
+            if action == 'setMachineType' or method in ('PATCH', 'PUT'):
+                return 'cloudsql.instances.update'
+            if method == 'GET':
+                return 'cloudsql.instances.get'
+            if method == 'POST':
+                return 'cloudsql.instances.update'
+            return None
+
+        # Compute Engine lookup table
+        COMPUTE = {
+            ('instance', 'DELETE', ''):              'compute.instances.delete',
+            ('instance', 'POST', 'setMachineType'):  'compute.instances.setMachineType',
+            ('instance', 'POST', 'start'):           'compute.instances.start',
+            ('instance', 'POST', 'stop'):            'compute.instances.stop',
+            ('instance', 'GET', ''):                 'compute.instances.get',
+            ('instance', 'POST', 'setLabels'):       'compute.instances.setLabels',
+            ('disk', 'DELETE', ''):                  'compute.disks.delete',
+            ('disk', 'POST', 'createSnapshot'):      'compute.snapshots.create',
+            ('snapshot', 'DELETE', ''):              'compute.snapshots.delete',
+            ('address', 'DELETE', ''):               'compute.addresses.delete',
+            ('operation', 'GET', ''):                'compute.zoneOperations.get',
+        }
+        # Try original name first, then singularized form
+        for hint in [hint_orig, hint_stripped]:
+            key = (hint, method, action)
+            if key in COMPUTE:
+                return COMPUTE[key]
+
+        # Generic fallback: use the original var name (plural), strip trailing 's' for singular
+        hint = hint_orig
+        resource_plural = hint if hint.endswith('s') else hint + 's'
+        if method == 'DELETE':
+            return f'compute.{resource_plural}.delete'
+        if method in ('PATCH', 'PUT'):
+            return f'compute.{resource_plural}.update'
+        if method == 'POST' and action:
+            return f'compute.{resource_plural}.{action}'
+        if method == 'GET':
+            return f'compute.{resource_plural}.get'
+        return None
+
+    def _resolve_azure_cwf_href(self, href_expr, define_body, define_name, cwf_context):
+        """Attempt to resolve an Azure CWF href variable expression to a full ARM path.
+
+        For href: $href where $href = $instance["id"] + "/powerOff", returns
+        the ARM collection path from the datasource + "/{id}/powerOff".
+
+        Returns a resolved path string, or None if not resolvable.
+        """
+        action_suffix = ''
+        href_expr = href_expr.strip().rstrip(',').strip()
+        inline_m = re.match(
+            r'\$(\w+)\[["\'][\w]+["\']\]\s*\+\s*"(/[^"]*)"', href_expr
+        )
+        if not inline_m:
+            inline_m = re.match(r"\$(\w+)\['[\w]+'\]\s*\+\s*'(/[^']*)'", href_expr)
+        if inline_m:
+            action_suffix = inline_m.group(2)
+        else:
+            # Simple dict access: $instance["id"] with no suffix
+            inline_simple = re.match(r'\$(\w+)\[["\'][\w]+["\']\]$', href_expr.rstrip())
+            if not inline_simple:
+                inline_simple = re.match(r"\$(\w+)\['[\w]+'\]$", href_expr.rstrip())
+            if inline_simple:
+                action_suffix = ''
+            else:
+                # --- Case 2: href is a simple variable $href — look backward for assignment
+                var_name = href_expr.lstrip('$').split('[')[0].split("'")[0]
+                # Find ALL assignments of this variable; use the last meaningful one
+                all_assignments = re.findall(
+                    r'\$' + re.escape(var_name) + r'\s*=\s*(.+)',
+                    define_body
+                )
+                if not all_assignments:
+                    # href is a function parameter with no body assignment —
+                    # fall back to using the context's ARM path directly
+                    context = cwf_context.get(define_name)
+                    if context:
+                        _, arm_path = context
+                        if arm_path and '/providers/' in arm_path:
+                            return arm_path.rstrip('/') + '/{id}'
+                    return None
+
+                # Check all RHS values; prefer join( patterns for synthesizing ARM paths
+                join_rhs = next((r for r in all_assignments if 'join(' in r), None)
+                rhs = (join_rhs or all_assignments[-1]).strip()
+
+                # Parse assignment: $param["field"] + "/action" or just $param["field"]
+                am = re.match(r'\$\w+\[["\'][\w]+["\']\]\s*\+\s*"(/[^"]*)"', rhs)
+                if not am:
+                    am = re.match(r"\$\w+\['[\w]+'\]\s*\+\s*'(/[^']*)'", rhs)
+                if am:
+                    action_suffix = am.group(1)
+                elif re.match(r'\$\w+\[["\'][\w]+["\']\]', rhs):
+                    action_suffix = ''
+                else:
+                    # Handle join([..., "Microsoft.X", "/type/", ...]) patterns
+                    if 'join(' in rhs or 'join([' in rhs:
+                        # Extract all string literals from the join call
+                        literals = re.findall(r'"(Microsoft\.[^"]+)"', define_body)
+                        type_hints = re.findall(r'"(/[^"]+/)"', define_body)
+                        if literals and type_hints:
+                            ns = literals[0]  # e.g. "Microsoft.Compute"
+                            type_part = type_hints[0].strip('/')  # e.g. "snapshots"
+                            synthetic_path = (
+                                '/subscriptions/{id}/resourceGroups/{id}/providers/'
+                                + ns + '/' + type_part + '/{id}'
+                            )
+                            return synthetic_path
+                    return None
+
+        # Look up the ARM path from the escalation context
+        context = cwf_context.get(define_name)
+        if not context:
+            return None
+        host, arm_path = context
+        if not arm_path or '/providers/' not in arm_path:
+            return None
+
+        # Strip any trailing slashes and build: arm_path + /{id} + action_suffix
+        return arm_path.rstrip('/') + '/{id}' + action_suffix
+
     def _extract_define_blocks(self):
         """Extract all CWF define...do...end blocks from the policy template."""
         define_blocks = []
@@ -2090,9 +2423,17 @@ class PolicyTemplateParser:
         return None
 
     def _extract_cwf_calls(self):
-        """Extract HTTP API calls from CWF define...do...end blocks."""
+        """Extract HTTP API calls from CWF define...do...end blocks.
+
+        Handles both http_request(...) and GCP-style http_get/post/patch/put/delete(...) calls.
+        For Azure, resolves dynamic href variables using escalation context.
+        For GCP, determines permission from selfLink variable name and action suffix.
+        """
         api_calls = []
         define_blocks = self._extract_define_blocks()
+
+        # Pre-build context: define_name -> (api_host, arm_or_gcp_path)
+        cwf_context = self._build_cwf_define_context()
 
         for define_block in define_blocks:
             define_name = define_block['name']
@@ -2100,12 +2441,23 @@ class PolicyTemplateParser:
 
             pos = 0
             while pos < len(define_body):
-                match = re.search(r'http_request\s*\(', define_body[pos:])
-                if not match:
+                # Match http_request OR GCP helper functions
+                http_match = re.search(
+                    r'\b(http_(?:request|get|post|patch|put|delete))\s*\(',
+                    define_body[pos:]
+                )
+                if not http_match:
                     break
 
-                # Track paren depth to find the matching closing )
-                start = pos + match.end()
+                func_name = http_match.group(1)
+                # Determine method from function name for GCP helpers
+                FUNC_METHOD = {
+                    'http_get': 'GET', 'http_post': 'POST',
+                    'http_patch': 'PATCH', 'http_put': 'PUT', 'http_delete': 'DELETE',
+                }
+                method_from_func = FUNC_METHOD.get(func_name)
+
+                start = pos + http_match.end()
                 depth = 1
                 call_end = start
                 while call_end < len(define_body) and depth > 0:
@@ -2117,17 +2469,109 @@ class PolicyTemplateParser:
                     call_end += 1
 
                 call_body = define_body[start:call_end - 1]
-                pos = call_end  # advance past closing )
+                pos = call_end
 
-                # Parse verb
+                # Parse verb (explicit verb: field takes precedence, else infer from func name)
                 verb_match = re.search(r'\bverb:\s*"([^"]+)"', call_body, re.IGNORECASE)
-                method = verb_match.group(1).upper() if verb_match else 'GET'
+                method = verb_match.group(1).upper() if verb_match else (method_from_func or 'GET')
 
-                # Parse auth (for host fallback inference)
+                # Parse auth for cloud provider inference
                 auth_match = re.search(r'\bauth:\s*(\$\$\w+)', call_body)
                 auth_name = auth_match.group(1) if auth_match else None
 
-                # Parse host — capture the full expression including concatenation
+                # ----------------------------------------------------------------
+                # Handle url: field (GCP http_delete/post/etc. or Azure full-URL style)
+                # ----------------------------------------------------------------
+                url_field_match = re.search(
+                    r'\burl:\s*(.+?)(?=\s*,\s*\n|\s*\n)', call_body, re.MULTILINE
+                )
+                if url_field_match:
+                    raw_url_expr = url_field_match.group(1).strip().rstrip(',')
+
+                    # Resolve variable if needed
+                    url_expr = raw_url_expr
+                    if url_expr.startswith('$') and '[' not in url_expr and '+' not in url_expr:
+                        var_name = url_expr.lstrip('$')
+                        assign_m = re.search(
+                            r'\$' + re.escape(var_name) + r'\s*=\s*(.+)',
+                            define_body
+                        )
+                        if assign_m:
+                            url_expr = assign_m.group(1).strip()
+
+                    # Pattern: $var['selfLink'] or $var['selfLink'] + '/action'
+                    sl_m = re.match(
+                        r"\$(\w+)\[[\'\"]selfLink[\'\"]\](?:\s*\+\s*['\"]([^'\"]*)['\"])?",
+                        url_expr
+                    )
+                    if sl_m:
+                        resource_var = sl_m.group(1)
+                        action_suffix = sl_m.group(2) or ''
+
+                        # Determine if Cloud SQL by checking template datasources (not context,
+                        # which may point to a wrong/unrelated datasource)
+                        is_cloudsql = bool(re.search(r'sqladmin\.googleapis\.com', self.content))
+
+                        permission = self._gcp_cwf_permission(
+                            resource_var, method, action_suffix, is_cloudsql
+                        )
+                        if permission:
+                            if is_cloudsql:
+                                ep_host = 'sqladmin.googleapis.com'
+                                ep_path = f'/sql/v1beta4/projects/{{id}}/instances/{{id}}{action_suffix}'
+                            else:
+                                ep_host = 'compute.googleapis.com'
+                                ep_path = (
+                                    f'/compute/v1/projects/{{id}}/zones/{{id}}'
+                                    f'/{resource_var}s/{{id}}{action_suffix}'
+                                )
+                            endpoint = f'https://{ep_host}{ep_path}'
+                            api_calls.append({
+                                'policy_name': self.policy_name,
+                                'datasource_name': 'define_' + define_name,
+                                'method': method,
+                                'endpoint': endpoint,
+                                'operation': action_suffix.lstrip('/') or resource_var,
+                                'field': '{entire response}',
+                                'api_service': 'GCP',
+                                'permission': permission,
+                            })
+                        continue
+
+                    # Pattern: full static URL string containing management.azure.com
+                    azure_url_m = re.search(r'management\.azure\.com', url_expr)
+                    if azure_url_m:
+                        ctx = cwf_context.get(define_name)
+                        if ctx:
+                            _, arm_path = ctx
+                            if arm_path and '/providers/' in arm_path:
+                                full_path = arm_path.rstrip('/') + '/{id}'
+                                host = 'management.azure.com'
+                                request_info = {
+                                    'host': host, 'path': full_path,
+                                    'method': method, 'query_params': {},
+                                    'body_params': {}, 'headers': {},
+                                }
+                                endpoint = self._build_endpoint_url(request_info)
+                                if endpoint:
+                                    api_service = 'Azure'
+                                    operation = self._extract_operation_name(endpoint, method, api_service, request_info)
+                                    permission = self._determine_api_permission(endpoint, method, api_service, request_info, operation)
+                                    api_calls.append({
+                                        'policy_name': self.policy_name,
+                                        'datasource_name': 'define_' + define_name,
+                                        'method': method, 'endpoint': endpoint,
+                                        'operation': operation, 'field': '{entire response}',
+                                        'api_service': api_service, 'permission': permission,
+                                    })
+                        continue
+
+                    # Unrecognised url: pattern — skip
+                    continue
+
+                # ----------------------------------------------------------------
+                # Standard http_request path: parse host + href/path
+                # ----------------------------------------------------------------
                 host_match = re.search(r'\bhost:\s*(.+?)(?:\s*,\s*$|\s*\n)', call_body, re.MULTILINE)
                 raw_host = host_match.group(1).strip().rstrip(',') if host_match else None
 
@@ -2149,8 +2593,6 @@ class PolicyTemplateParser:
 
                 if not host:
                     continue
-
-                # Skip boolean-default parameters (false host means no URL configured)
                 if host == 'false' or host.startswith('false/'):
                     continue
 
@@ -2167,7 +2609,17 @@ class PolicyTemplateParser:
                     else:
                         var_match = re.search(r'\b(?:href|path):\s*(\$\S+)', call_body)
                         if var_match:
-                            path = '/{id}'
+                            var_expr = var_match.group(1).rstrip(',')
+                            # For Azure, try to resolve the href expression to a full ARM path
+                            if 'azure' in (host or '').lower() or host == 'management.azure.com':
+                                resolved = self._resolve_azure_cwf_href(
+                                    var_expr, define_body, define_name, cwf_context
+                                )
+                                if resolved:
+                                    path = resolved
+                            if not path:
+                                path = '/{id}'
+
                 if not path:
                     path = '/'
 
@@ -2186,12 +2638,8 @@ class PolicyTemplateParser:
                         headers[kv.group(1)] = kv.group(2)
 
                 request_info = {
-                    'host': host,
-                    'path': path,
-                    'method': method,
-                    'query_params': query_params,
-                    'body_params': {},
-                    'headers': headers
+                    'host': host, 'path': path, 'method': method,
+                    'query_params': query_params, 'body_params': {}, 'headers': headers,
                 }
 
                 endpoint = self._build_endpoint_url(request_info)
@@ -2205,12 +2653,9 @@ class PolicyTemplateParser:
                 api_calls.append({
                     'policy_name': self.policy_name,
                     'datasource_name': 'define_' + define_name,
-                    'method': method,
-                    'endpoint': endpoint,
-                    'operation': operation,
-                    'field': '{entire response}',
-                    'api_service': api_service,
-                    'permission': permission
+                    'method': method, 'endpoint': endpoint,
+                    'operation': operation, 'field': '{entire response}',
+                    'api_service': api_service, 'permission': permission,
                 })
 
         return api_calls
