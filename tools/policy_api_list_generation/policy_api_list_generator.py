@@ -2209,6 +2209,10 @@ class PolicyTemplateParser:
                 return COMPUTE[key]
 
         # Generic fallback: use the original var name (plural), strip trailing 's' for singular
+        # Skip generic variable names that don't map to a specific GCP resource type.
+        GENERIC_NAMES = {'resource', 'item', 'data', 'object', 'result', 'response'}
+        if hint_orig in GENERIC_NAMES or hint_stripped in GENERIC_NAMES:
+            return None
         hint = hint_orig
         resource_plural = hint if hint.endswith('s') else hint + 's'
         if method == 'DELETE':
@@ -2274,6 +2278,23 @@ class PolicyTemplateParser:
                 if am:
                     action_suffix = am.group(1)
                 elif re.match(r'\$\w+\[["\'][\w]+["\']\]', rhs):
+                    # Check if the field name hints at a different resource type than context.
+                    # e.g. $item['attached_vm'] → virtualMachines, $item['disk_id'] → disks
+                    field_m = re.match(r"\$\w+\[['\"]([\w]+)['\"]\]", rhs)
+                    if field_m:
+                        field_name = field_m.group(1).lower()
+                        FIELD_TYPE_MAP = {
+                            'vm': 'virtualMachines',
+                            'virtual_machine': 'virtualMachines',
+                            'attached_vm': 'virtualMachines',
+                        }
+                        for hint_key, arm_type in FIELD_TYPE_MAP.items():
+                            if hint_key in field_name:
+                                sub_id = (
+                                    '/subscriptions/{id}/resourceGroups/{id}/providers/'
+                                    f'Microsoft.Compute/{arm_type}' + '/{id}'
+                                )
+                                return sub_id
                     action_suffix = ''
                 else:
                     # Handle join([..., "Microsoft.X", "/type/", ...]) patterns
@@ -2314,17 +2335,26 @@ class PolicyTemplateParser:
             if define_match and re.search(r'\bdo\s*$', line):
                 define_name = define_match.group(1)
                 define_lines = []
-                depth = 1  # header line has 'do'
+                depth = 1  # header line opens with 'do'
                 i += 1
                 while i < len(lines) and depth > 0:
                     current_line = lines[i]
-                    if not re.match(r'^\s*#', current_line):
-                        if re.search(r'\bdo\s*$', current_line):
-                            depth += 1
-                        elif re.match(r'^\s*end\s*$', current_line):
+                    stripped = current_line.strip()
+                    if not stripped.startswith('#'):
+                        # Each CWF block maps to exactly one 'end'.
+                        # Count a line as ONE opener if it ends with 'do'
+                        # (covers: foreach/while/sub/standalone do blocks).
+                        # Count a line as ONE opener if it starts with 'if' or 'case'
+                        # (these use end without a leading 'do').
+                        # Never double-count (e.g. "foreach x do" is one opener, not two).
+                        if re.match(r'^end\s*$', stripped):
                             depth -= 1
                             if depth == 0:
                                 break
+                        elif re.search(r'\bdo\s*$', stripped):
+                            depth += 1
+                        elif re.match(r'\b(if|case)\b', stripped):
+                            depth += 1
                     define_lines.append(current_line)
                     i += 1
                 define_blocks.append({
@@ -2379,15 +2409,16 @@ class PolicyTemplateParser:
             )
             if assign_match:
                 rhs = assign_match.group(1).strip()
-                # If RHS is a dict/array field access (e.g. $bucket["host"]), skip —
-                # the extracted key is not a hostname; let auth-fallback handle it.
-                if re.search(r'\$\w+\[', rhs):
-                    pass
-                # If the RHS is itself an inline concatenation, recurse
-                elif '+' in rhs:
+                # If the RHS is a string concatenation (contains '+'), recurse on it first.
+                # This handles patterns like "ec2." + $instance["region"] + ".amazonaws.com"
+                if '+' in rhs:
                     resolved = self._resolve_cwf_host(rhs, define_body)
                     if resolved:
                         return resolved
+                # If RHS is a pure dict/array field access with no string literals,
+                # skip — the extracted key is not a hostname; let auth-fallback handle it.
+                elif re.search(r'\$\w+\[', rhs):
+                    pass
                 else:
                     strings = re.findall(r'"([^"]+)"', rhs)
                     if strings:
@@ -2610,8 +2641,13 @@ class PolicyTemplateParser:
                         var_match = re.search(r'\b(?:href|path):\s*(\$\S+)', call_body)
                         if var_match:
                             var_expr = var_match.group(1).rstrip(',')
-                            # For Azure, try to resolve the href expression to a full ARM path
-                            if 'azure' in (host or '').lower() or host == 'management.azure.com':
+                            # Try to resolve simple string variable ($href = "/")
+                            vname = re.escape(var_expr.lstrip('$'))
+                            lit_m = re.search(r'\$' + vname + r'\s*=\s*"([^"]*)"', define_body)
+                            if lit_m:
+                                path = lit_m.group(1) or '/'
+                            elif 'azure' in (host or '').lower() or host == 'management.azure.com':
+                                # For Azure, try to resolve the href expression to a full ARM path
                                 resolved = self._resolve_azure_cwf_href(
                                     var_expr, define_body, define_name, cwf_context
                                 )
@@ -2631,11 +2667,26 @@ class PolicyTemplateParser:
                         query_params[kv.group(1)] = kv.group(2)
 
                 # Parse headers: { "key": "value", ... }
+                # Supports both `headers:` (plural) and `header:` (singular) CWF keyword
                 headers = {}
-                h_match = re.search(r'headers:\s*\{([^}]+)\}', call_body, re.DOTALL)
+                h_match = re.search(r'\bheaders?:\s*\{([^}]+)\}', call_body, re.DOTALL)
                 if h_match:
                     for kv in re.finditer(r'"([^"]+)"\s*:\s*"([^"]+)"', h_match.group(1)):
                         headers[kv.group(1)] = kv.group(2)
+
+                # Parse query_strings: { ... } or query_strings: $var_name
+                # If the value is a variable, trace the first assignment in the define body
+                if not query_params:
+                    qs_var_match = re.search(r'query_strings:\s*(\$\w+)', call_body)
+                    if qs_var_match:
+                        qvar = re.escape(qs_var_match.group(1).lstrip('$'))
+                        qs_assign = re.search(
+                            r'\$' + qvar + r'\s*=\s*\{([^}]+)\}',
+                            define_body
+                        )
+                        if qs_assign:
+                            for kv in re.finditer(r'"([^"]+)"\s*:\s*"([^"]+)"', qs_assign.group(1)):
+                                query_params[kv.group(1)] = kv.group(2)
 
                 request_info = {
                     'host': host, 'path': path, 'method': method,
