@@ -470,6 +470,22 @@ class PolicyTemplateParser:
                         # Skip other patterns (variables, etc.)
 
                 request_info['path'] = path_result
+
+                # If path starts with '{id}' the datasource path is relative to the iterator's
+                # resource ID (e.g. join([val(iter_item, "id"), "/configurations/", ...])).
+                # Resolve the iterate parent's full ARM path and build the complete path.
+                if path_result.startswith('{id}') and '/providers/' not in path_result:
+                    iter_ds_m = re.search(r'\biterate\s+\$(ds_\w+)', datasource_body)
+                    if iter_ds_m:
+                        try:
+                            parent_h, parent_p = self._trace_datasource_api(
+                                iter_ds_m.group(1), 1, set()
+                            )
+                            if parent_h and parent_p and '/providers/' in (parent_p or ''):
+                                rest = re.sub(r'^\{id\}', '', path_result)
+                                request_info['path'] = parent_p.rstrip('/') + '/{id}' + rest
+                        except Exception:
+                            pass
             except Exception as e:
                 # If parsing fails, use placeholder
                 request_info['path'] = '/{dynamic}'
@@ -2258,8 +2274,20 @@ class PolicyTemplateParser:
                     define_body
                 )
                 if not all_assignments:
-                    # href is a function parameter with no body assignment —
-                    # fall back to using the context's ARM path directly
+                    # href is a function parameter with no body assignment.
+                    # Check variable name for resource type hints before falling back to context.
+                    # e.g. $snapshotId → snapshots, $snapshotName → snapshots
+                    VAR_NAME_TO_ARM = {
+                        'snapshot': 'Microsoft.Compute/snapshots',
+                    }
+                    var_lower = var_name.lower()
+                    for hint_str, arm_type in VAR_NAME_TO_ARM.items():
+                        if var_lower.startswith(hint_str):
+                            return (
+                                '/subscriptions/{id}/resourceGroups/{id}/providers/'
+                                + arm_type + '/{id}'
+                            )
+                    # Fall back to using the context's ARM path directly
                     context = cwf_context.get(define_name)
                     if context:
                         _, arm_path = context

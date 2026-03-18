@@ -622,6 +622,9 @@ def readme_api_permission_mismatch?(file, file_lines)
     next unless match
 
     perm = match[1].gsub(/[†‡§‖¶]+$/, '').strip
+    # Skip permissions marked with § — these are KMS key policy requirements
+    # that are not direct API calls and cannot be derived from code analysis.
+    next if line.include?('§')
     readme_aws_perms   << perm if in_aws
     readme_azure_perms << perm if in_azure
     readme_gcp_perms   << perm if in_gcp
