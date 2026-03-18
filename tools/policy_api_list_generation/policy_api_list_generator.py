@@ -1547,7 +1547,7 @@ class PolicyTemplateParser:
             if 'lifecycle' in qs_keys:
                 return 's3:GetLifecycleConfiguration'
             if 'uploads' in qs_keys:
-                return 's3:ListMultipartUploads'
+                return 's3:ListBucketMultipartUploads'
             # Root list
             if path in ('/', '') or not path.strip('/'):
                 return 's3:ListAllMyBuckets'
@@ -1682,6 +1682,10 @@ class PolicyTemplateParser:
         if 'microsoft.insights/metrics' in path_lower or '/metrics' in path_lower and 'monitor' in endpoint.lower():
             return 'microsoft.insights/metrics/read'
 
+        # Activity Log events: 'management' is a fixed path segment, not an instance name
+        if re.search(r'/providers/microsoft\.insights/eventtypes/management/values', path, re.IGNORECASE):
+            return 'Microsoft.Insights/eventtypes/management/values/read'
+
         # ARM management.azure.com calls
         m = re.search(r'/providers/([^/?]+)/([^/?/]+)', path, re.IGNORECASE)
         if m:
@@ -1721,7 +1725,7 @@ class PolicyTemplateParser:
             'administrators':                    'Microsoft.Sql/servers/administrators/read',
             'securityAlertPolicies/Default':     'Microsoft.Sql/servers/securityAlertPolicies/read',
             'managementPolicies/default':        'Microsoft.Storage/storageAccounts/managementPolicies/read',
-            'sites':                             'Microsoft.Web/serverFarms/sites/read',
+            'sites':                             'Microsoft.Web/serverfarms/sites/read',
             'connections':                       'Microsoft.Network/virtualNetworkGateways/connections/read',
             'config/web':                        'Microsoft.Web/sites/config/read',
         }
@@ -1737,8 +1741,9 @@ class PolicyTemplateParser:
                     perm = perm.rsplit('/', 1)[0] + '/' + _verb(method)
                 return perm
             # Try matching by first segment (e.g. 'configurations/tls_version' → 'configurations')
+            # Only when sub_suffix is fully literal (no variable placeholders like {setting})
             first_seg = sub_suffix.split('/')[0]
-            if first_seg + '/' in '\n'.join(SUB_RESOURCE_MAP.keys()) + '\n':
+            if '{' not in sub_suffix and first_seg + '/' in '\n'.join(SUB_RESOURCE_MAP.keys()) + '\n':
                 for k, v in SUB_RESOURCE_MAP.items():
                     if k.startswith(first_seg + '/'):
                         perm = v
