@@ -40,6 +40,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
   \* Only required for meta-policy self-termination; the policy will still function in a read-only capacity without this permission.
 
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
 ## Supported Clouds
 
 - Azure
