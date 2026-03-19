@@ -512,6 +512,11 @@ class PolicyTemplateParser:
             param_name = query_match.group(1)
             param_value = query_match.group(2)
             request_info['query_params'][param_name] = param_value
+        # Also capture query directives with dynamic values (val(), variables, etc.)
+        for query_match in re.finditer(r'query\s+["\']([^"\']+)["\']\s*,\s*(?!["\'])([^\n]+)', datasource_body):
+            param_name = query_match.group(1)
+            if param_name not in request_info['query_params']:
+                request_info['query_params'][param_name] = '{dynamic}'
 
         # Extract headers (with double or single quotes)
         for header_match in re.finditer(r'header\s+["\']([^"\']+)["\']\s*,\s*["\']([^"\']+)["\']', datasource_body):
@@ -792,12 +797,14 @@ class PolicyTemplateParser:
         query_params_match = re.search(r'query_params:\s*\{([^}]+)\}', js_code, re.DOTALL)
         if query_params_match:
             params_str = query_params_match.group(1)
-            # Extract key-value pairs from the query_params object
-            param_pattern = r'["\']([^"\']+)["\']\s*:\s*["\']([^"\']+)["\']'
+            # Match both quoted keys ("key": "value") and unquoted JS keys (key: "value").
+            # Values may be empty strings.
+            param_pattern = r'(?:["\']([^"\']+)["\']\s*|(\w+)\s*):\s*["\']([^"\']*)["\']'
             for param_match in re.finditer(param_pattern, params_str):
-                key = param_match.group(1)
-                value = param_match.group(2)
-                request_info['query_params'][key] = value
+                key = param_match.group(1) or param_match.group(2)
+                value = param_match.group(3)
+                if key:
+                    request_info['query_params'][key] = value
 
         # Fallback: also look for Action in variable-assigned query_params dicts
         # Handles: query_params = { "Action": "DescribeVolumes", ... }
@@ -836,6 +843,17 @@ class PolicyTemplateParser:
             header_pairs = re.findall(r'["\']([^"\']+)["\']\s*:\s*["\']([^"\']+)["\']', headers_str)
             for key, value in header_pairs:
                 request_info['headers'][key] = value
+
+        # When host couldn't be extracted, infer from auth field in the JS request object.
+        if not request_info['host']:
+            js_auth_match = re.search(r'\bauth:\s*["\'](\w+)["\']', js_code)
+            if js_auth_match and 'aws' in js_auth_match.group(1).lower():
+                _S3_SPECIFIC = {'acl', 'logging', 'encryption', 'uploadId', 'uploads',
+                                'tagging', 'versioning', 'publicAccessBlock', 'lifecycle'}
+                if request_info['query_params'].keys() & _S3_SPECIFIC:
+                    request_info['host'] = '{bucket}.s3.amazonaws.com'
+                else:
+                    request_info['host'] = 'amazonaws.com'
 
         return request_info
 
@@ -1545,9 +1563,9 @@ class PolicyTemplateParser:
             if 'location' in qs_keys or qs.startswith('location'):
                 return 's3:GetBucketLocation'
             if 'logging' in qs_keys:
-                return 's3:GetBucketLogging'
+                return 's3:PutBucketLogging' if method == 'PUT' else 's3:GetBucketLogging'
             if 'acl' in qs_keys:
-                return 's3:GetBucketAcl'
+                return 's3:PutBucketAcl' if method == 'PUT' else 's3:GetBucketAcl'
             if 'policy' in qs_keys:
                 return 's3:DeleteBucketPolicy' if method == 'DELETE' else 's3:GetBucketPolicy'
             if 'encryption' in qs_keys:
@@ -1562,6 +1580,8 @@ class PolicyTemplateParser:
                 return 's3:GetIntelligentTieringConfiguration'
             if 'lifecycle' in qs_keys:
                 return 's3:GetLifecycleConfiguration'
+            if 'uploadId' in qs_keys:
+                return 's3:ListMultipartUploadParts' if method == 'GET' else 's3:AbortMultipartUpload'
             if 'uploads' in qs_keys:
                 return 's3:ListBucketMultipartUploads'
             # Root list
@@ -1573,6 +1593,11 @@ class PolicyTemplateParser:
             if method == 'PUT':
                 return 's3:PutObject'
             if method == 'DELETE':
+                # Bucket-level DELETE has only one path segment (the bucket name / placeholder).
+                # Object-level DELETE has two or more segments (bucket + key).
+                all_segs = [p for p in path.strip('/').split('/') if p]
+                if len(all_segs) <= 1:
+                    return 's3:DeleteBucket'
                 return 's3:DeleteObject'
 
         # CloudWatch
@@ -1599,6 +1624,20 @@ class PolicyTemplateParser:
                     _mapped = TARGET_HEADER_SERVICE_MAP.get(_v.split('.')[0])
                     if _mapped:
                         return f"{_mapped}:{_v.split('.')[-1]}"
+
+        # When service cannot be determined from host or headers, fall back to detecting
+        # S3 from the presence of S3-specific query-string keys in the endpoint URL.
+        if not service:
+            _S3_QS_KEYS = {
+                'acl', 'logging', 'encryption', 'uploadId', 'uploads',
+                'tagging', 'versioning', 'publicAccessBlock', 'intelligent-tiering',
+                'lifecycle', 'policy', 'location',
+            }
+            _qs = urllib.parse.urlparse(endpoint).query
+            _qs_keys = (set(urllib.parse.parse_qs(_qs).keys()) |
+                        set(k.rstrip('=') for k in _qs.split('&') if k))
+            if _qs_keys & _S3_QS_KEYS:
+                service = 's3'
 
         if not service:
             return None
@@ -2474,6 +2513,10 @@ class PolicyTemplateParser:
                 # If RHS is a pure dict/array field access with no string literals,
                 # skip — the extracted key is not a hostname; let auth-fallback handle it.
                 elif re.search(r'\$\w+\[', rhs):
+                    # When the variable holds a bucket's host field (e.g. $bucket["host"]),
+                    # it resolves to an S3 virtual-hosted URL at runtime.
+                    if re.search(r'\$(?:\w*bucket\w*)\["host"\]', rhs, re.IGNORECASE):
+                        return '{bucket}.s3.amazonaws.com'
                     pass
                 else:
                     strings = re.findall(r'"([^"]+)"', rhs)
@@ -2727,7 +2770,13 @@ class PolicyTemplateParser:
                             vname = re.escape(var_expr.lstrip('$'))
                             lit_m = re.search(r'\$' + vname + r'\s*=\s*"([^"]*)"', define_body)
                             if lit_m:
-                                path = lit_m.group(1) or '/'
+                                # If the assignment is actually a concatenation (e.g. "/" + $var),
+                                # the literal match only captures the prefix — use /{id} instead.
+                                concat_m = re.search(r'\$' + vname + r'\s*=\s*"[^"]*"\s*\+', define_body)
+                                if concat_m:
+                                    path = '/{id}'
+                                else:
+                                    path = lit_m.group(1) or '/'
                             elif 'azure' in (host or '').lower() or host == 'management.azure.com':
                                 # For Azure, try to resolve the href expression to a full ARM path
                                 resolved = self._resolve_azure_cwf_href(
@@ -2742,11 +2791,18 @@ class PolicyTemplateParser:
                     path = '/'
 
                 # Parse query_strings: { "key": "value", ... }
+                # Values may be empty strings or variable references (e.g. $var["field"]).
                 query_params = {}
                 qs_match = re.search(r'query_strings:\s*\{([^}]+)\}', call_body, re.DOTALL)
                 if qs_match:
-                    for kv in re.finditer(r'"([^"]+)"\s*:\s*"([^"]+)"', qs_match.group(1)):
+                    qs_str = qs_match.group(1)
+                    # Quoted key with quoted value (value may be empty)
+                    for kv in re.finditer(r'"([^"]+)"\s*:\s*"([^"]*)"', qs_str):
                         query_params[kv.group(1)] = kv.group(2)
+                    # Quoted key with non-quoted (variable) value — just record the key
+                    for km in re.finditer(r'"([^"]+)"\s*:\s*\$\w', qs_str):
+                        if km.group(1) not in query_params:
+                            query_params[km.group(1)] = '{dynamic}'
 
                 # Parse headers: { "key": "value", ... }
                 # Supports both `headers:` (plural) and `header:` (singular) CWF keyword
