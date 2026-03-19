@@ -1163,12 +1163,16 @@ class PolicyTemplateParser:
                                             param_names = re.findall(r'"([^"]+)"', params_match.group(1))
                                             if var_name in param_names:
                                                 param_idx = param_names.index(var_name)
-                                                # Find the run_script call for this script in the PT
+                                                # Find the run_script call for this script in the PT.
+                                                # group(1) starts with ", arg1, arg2, ..." so we strip
+                                                # the leading ", " before splitting to avoid an
+                                                # off-by-one error in the positional index.
                                                 run_m = re.search(
                                                     r'run_script\s+\$' + re.escape(script_name) + r'\b(.*)',
                                                     self.content)
                                                 if run_m:
-                                                    all_args = self._split_args_top_level(run_m.group(1))
+                                                    args_str = run_m.group(1).lstrip(', ')
+                                                    all_args = self._split_args_top_level(args_str)
                                                     if param_idx < len(all_args):
                                                         resolved = self._resolve_run_script_arg(all_args[param_idx])
                                                         if resolved:
