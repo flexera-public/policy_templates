@@ -142,8 +142,10 @@ def general_bad_urls?(file, file_diff)
           url_parts = url.to_s.split('](')
           # Use the first URL (image) if there are multiple, otherwise use the whole string
           url_string = url_parts[0]
-          # Remove any trailing ] or ) that might be left over from markdown syntax
-          url_string = url_string.gsub(/[\]\)]$/, '')
+          # Remove any trailing ] or ) that might be left over from markdown syntax,
+          # along with any punctuation that may follow (e.g. [text](https://url/). where
+          # URI.extract captures the closing ) and trailing . as part of the URL)
+          url_string = url_string.gsub(/[\]\)][.,;:!?]*$/, '')
 
           url = URI(url_string)
 
