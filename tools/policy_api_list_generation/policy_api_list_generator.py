@@ -192,6 +192,20 @@ class PolicyTemplateParser:
                 "Microsoft.Compute/virtualMachines/{name}",
     }
 
+    # Maps a parameter name suffix to a synthetic placeholder host.
+    # Used when a datasource uses `host $param_xxx` and the parameter has
+    # no default value, but the parameter name alone reveals which service
+    # is being called.  The auth credential is checked as an additional
+    # signal where possible.
+    PARAM_NAME_TO_HOST = {
+        # CBI ingestion: user provides their own S3 bucket hostname
+        "s3_hostname":   "{bucket}.s3.amazonaws.com",
+        # CBI ingestion: user provides their own Azure blob hostname
+        "blob_hostname": "{account}.blob.core.windows.net",
+        # Kubecost: user provides their own Kubecost server hostname
+        "kubecost_host": "{kubecost_host}",
+    }
+
     # Maps a trailing sub-resource suffix (after /{id}/) to its ARM RBAC permission.
     # Used in _azure_permission when the full ARM path has no /providers/ segment
     # but the path ends in a recognisable sub-resource suffix.
@@ -487,35 +501,95 @@ class PolicyTemplateParser:
 
     # ===== PARSING HELPERS =====
 
+    def _split_args_top_level(self, s):
+        """Split a comma-separated argument string at top-level commas only.
+
+        Parentheses are respected so that function calls like
+        val($ds_flexera_api_hosts, "flexera") are not split in the middle.
+
+        Args:
+            s: Argument string (everything after the script/function name on the run_script line).
+
+        Returns:
+            List of argument strings with leading/trailing whitespace stripped.
+        """
+        parts = []
+        current = ''
+        depth = 0
+        for ch in s:
+            if ch == '(':
+                depth += 1
+                current += ch
+            elif ch == ')':
+                depth -= 1
+                current += ch
+            elif ch == ',' and depth == 0:
+                parts.append(current.strip())
+                current = ''
+            else:
+                current += ch
+        if current.strip():
+            parts.append(current.strip())
+        return parts
+
+    def _resolve_run_script_arg(self, arg):
+        """Resolve a single run_script argument expression to a host string.
+
+        Handles the most common argument patterns seen in Flexera PT files:
+        - Built-in host variables:    rs_optima_host, rs_governance_host
+        - Flexera API host lookup:    val($ds_flexera_api_hosts, "flexera")
+        - Template parameter:         $param_xxx (resolved via _resolve_parameter_from_content)
+
+        Args:
+            arg: A single argument string from a run_script call.
+
+        Returns:
+            Resolved host string, or None if not recognisable.
+        """
+        arg = arg.strip()
+
+        # Bare built-in host variables
+        if arg in ('rs_optima_host', 'rs_governance_host'):
+            return arg
+
+        # val($ds_flexera_api_hosts, "flexera") → flexera_api_host
+        # (any key works — they all point to a Flexera endpoint host)
+        if re.search(r'val\s*\(\s*\$ds_flexera_api_hosts\b', arg):
+            return 'flexera_api_host'
+
+        # $param_xxx → resolve via parameter default or allowed_values
+        param_m = re.match(r'^\$param_(\w+)', arg)
+        if param_m:
+            param_name = 'param_' + param_m.group(1)
+            resolved = self._resolve_parameter_from_content(param_name)
+            if resolved:
+                return resolved
+
+        return None
+
     def _extract_host_from_param(self, host_pattern):
         """
         Extract actual host from parameter references.
         E.g., $param_azure_endpoint -> management.azure.com
+
+        Delegates to _resolve_parameter_from_content (which tries both
+        'default' and 'allowed_values') plus val() pattern handling.
         """
         if not host_pattern or not isinstance(host_pattern, str):
             return None
 
-        # Check for parameter reference pattern
+        # Check for parameter reference pattern ($param_xxx)
         param_match = re.search(r'\$param_(\w+)', host_pattern)
         if param_match:
-            param_name = param_match.group(1)
-            # Escape special characters in parameter name (should be safe with \w+ but defensive)
-            escaped_param_name = re.escape(param_name)
-            # Find the parameter definition and extract its default value
-            param_pattern = rf'parameter\s+"param_{escaped_param_name}".*?default\s+"([^"]+)"'
-            param_def = re.search(param_pattern, self.content, re.DOTALL)
-            if param_def:
-                return param_def.group(1)
+            param_name = 'param_' + param_match.group(1)
+            # _resolve_parameter_from_content tries default first, then allowed_values
+            resolved = self._resolve_parameter_from_content(param_name)
+            if resolved:
+                return resolved
 
         # Check for val() function pattern - e.g., val($ds_flexera_api_hosts, "flexera")
-        # These typically resolve to Flexera endpoints - try to extract them
         if 'val(' in host_pattern:
-            # Try to extract the datasource name and look up its value
-            # For now, return the pattern as-is for further processing
-            pass
-
-        # For Flexera endpoints, we want to capture them now
-        # No need to return None for rs_optima_host or rs_governance_host
+            pass  # handled by caller in the val() branch
 
         return None
 
@@ -540,6 +614,12 @@ class PolicyTemplateParser:
             default_match = re.search(r'default\s+"([^"]+)"', block_body)
             if default_match:
                 return default_match.group(1)
+            # Fallback: use the first allowed_value when no default is set.
+            # This covers parameters like param_fnms_host whose allowed_values list
+            # contains the real hostnames (e.g. "slo.app.flexera.com").
+            allowed_match = re.search(r'allowed_values\s+"([^"]+)"', block_body)
+            if allowed_match:
+                return allowed_match.group(1)
 
         return None
 
@@ -758,6 +838,15 @@ class PolicyTemplateParser:
                             resolved_host = self._extract_host_from_param(param_ref)
                             if resolved_host:
                                 request_info['host'] = resolved_host
+                            else:
+                                # No default/allowed_values — try PARAM_NAME_TO_HOST
+                                # inference based on the parameter name suffix alone.
+                                # E.g. $param_s3_hostname → "{bucket}.s3.amazonaws.com"
+                                param_name_only = re.sub(r'^\$+param_', '', param_ref)
+                                for suffix, placeholder_host in self.PARAM_NAME_TO_HOST.items():
+                                    if param_name_only.endswith(suffix):
+                                        request_info['host'] = placeholder_host
+                                        break
 
         # Extract path (including join pattern and simple quotes)
         path_match = re.search(r'path\s+join\(\[([^\]]+)\]\)', datasource_body)
@@ -872,7 +961,19 @@ class PolicyTemplateParser:
     # ===== SCRIPT PARSING =====
 
     def _extract_request_from_script(self, script_name):
-        """Extract request information from a JavaScript script block."""
+        """Extract request information from a JavaScript script block.
+
+        Scripts with `result "request"` explicitly declare themselves as HTTP
+        request builders.  Scripts with other result names (e.g. "result") may
+        still return an HTTP request dict — this is allowed in the PT language.
+        The distinction is that data-transformation scripts assign their result
+        to a collection operation (_.map, _.filter, _.each, etc.), while HTTP
+        request scripts assign their result to a plain dict literal { host:..., path:... }.
+
+        We allow both patterns through, but skip scripts that clearly only
+        produce iterated collection results (the false positive is detected later
+        if the script has no path: field).
+        """
         # Find the script definition
         script_pattern = rf'script\s+"{script_name}".*?do\s+(.*?)\nend'
         script_match = re.search(script_pattern, self.content, re.DOTALL)
@@ -1037,6 +1138,41 @@ class PolicyTemplateParser:
                                 request_info['host'] = param_resolved
                             elif 'turbonomic' in var_name.lower():
                                 request_info['host'] = 'turbonomic_host'
+                            else:
+                                # Fix 1: look for a local variable assignment in the JS code.
+                                # Pattern: var_name = "hostname.example.com"
+                                # Safety guard: only apply when the JS code also contains
+                                # a `path:` field, confirming this is an HTTP request builder
+                                # and not a data transformation script that happens to name
+                                # a return object field "host".
+                                if re.search(r'\bpath\s*:', js_code):
+                                    local_assign = re.search(
+                                        rf'\b{re.escape(var_name)}\s*=\s*["\']([^"\']+)["\']',
+                                        js_code)
+                                    if local_assign:
+                                        request_info['host'] = local_assign.group(1)
+                                    else:
+                                        # Fix 2: var_name might be declared in the script's
+                                        # `parameters` clause (passed from run_script).
+                                        # Find which positional index it occupies, then look
+                                        # up the matching argument in the run_script call.
+                                        params_match = re.search(
+                                            r'^script\s+"' + re.escape(script_name) + r'".*?parameters\s+(.*?)\n',
+                                            self.content, re.DOTALL | re.MULTILINE)
+                                        if params_match:
+                                            param_names = re.findall(r'"([^"]+)"', params_match.group(1))
+                                            if var_name in param_names:
+                                                param_idx = param_names.index(var_name)
+                                                # Find the run_script call for this script in the PT
+                                                run_m = re.search(
+                                                    r'run_script\s+\$' + re.escape(script_name) + r'\b(.*)',
+                                                    self.content)
+                                                if run_m:
+                                                    all_args = self._split_args_top_level(run_m.group(1))
+                                                    if param_idx < len(all_args):
+                                                        resolved = self._resolve_run_script_arg(all_args[param_idx])
+                                                        if resolved:
+                                                            request_info['host'] = resolved
 
         # Extract path from JavaScript - handle both simple strings and array joins
         # Try array join pattern first: [ "/v3/projects/", projectId, "/timeSeries:query" ].join('')
@@ -2763,6 +2899,17 @@ class PolicyTemplateParser:
             )
             if assign_match:
                 rhs = assign_match.group(1).strip()
+                # Fix 6: join([$iter_var["field"], ".service.com"]) pattern.
+                # Seen in Okta template: $host = join([$user["org"], ".okta.com"])
+                # → synthesize {field}.service.com so the service can be identified.
+                join_suffix_m = re.match(
+                    r'join\(\s*\[\s*\$\w+\["?(\w+)"?\]\s*,\s*"(\.[^"]+)"\s*\]\s*\)',
+                    rhs
+                )
+                if join_suffix_m:
+                    field_name = join_suffix_m.group(1)    # e.g. "org"
+                    domain_suffix = join_suffix_m.group(2)  # e.g. ".okta.com"
+                    return f'{{{field_name}}}{domain_suffix}'
                 # If the RHS is a string concatenation (contains '+'), recurse on it first.
                 # This handles patterns like "ec2." + $instance["region"] + ".amazonaws.com"
                 if '+' in rhs:
@@ -2859,21 +3006,60 @@ class PolicyTemplateParser:
                 pos = call_end
 
                 # Parse verb (explicit verb: field takes precedence, else infer from func name)
+                # Note: verb/auth parsing uses the raw call_body so that the method keyword
+                # is found even when the request body is held in a separate dict variable.
                 verb_match = re.search(r'\bverb:\s*"([^"]+)"', call_body, re.IGNORECASE)
                 method = verb_match.group(1).upper() if verb_match else (method_from_func or 'GET')
 
-                # Parse auth for cloud provider inference
+                # Parse auth for cloud provider inference (also check the expanded body
+                # when the request was built in a separate dict variable).
                 auth_match = re.search(r'\bauth:\s*(\$\$\w+)', call_body)
                 auth_name = auth_match.group(1) if auth_match else None
+
+                # ----------------------------------------------------------------
+                # Pre-check: when the entire call argument is a single variable
+                # (e.g. http_post($request)), the request dict was built earlier.
+                # Resolve the variable to its dict literal so that url:/host: fields
+                # can be extracted by the normal branches below.
+                # Pattern:  $request = { "url": join(["https://", $host, "/path"]), ... }
+                # ----------------------------------------------------------------
+                expanded_call_body = call_body
+                single_var_m = re.match(r'^\s*(\$\w+)\s*$', call_body)
+                if single_var_m:
+                    req_var_name = single_var_m.group(1).lstrip('$')
+                    # Find the assignment start and extract a brace-balanced dict body.
+                    assign_start_m = re.search(
+                        r'\$' + re.escape(req_var_name) + r'\s*=\s*\{',
+                        define_body
+                    )
+                    if assign_start_m:
+                        # Walk forward tracking brace depth to find the matching '}'
+                        start_pos = assign_start_m.end() - 1  # position of opening '{'
+                        depth = 0
+                        end_pos = start_pos
+                        for i, ch in enumerate(define_body[start_pos:], start_pos):
+                            if ch == '{':
+                                depth += 1
+                            elif ch == '}':
+                                depth -= 1
+                                if depth == 0:
+                                    end_pos = i + 1
+                                    break
+                        expanded_call_body = define_body[start_pos:end_pos]
+                        # Re-check auth from the expanded body if it wasn't in the call itself.
+                        if not auth_name:
+                            auth_m2 = re.search(r'"auth":\s*(\$\$\w+)', expanded_call_body)
+                            auth_name = auth_m2.group(1) if auth_m2 else None
 
                 # ----------------------------------------------------------------
                 # Branch A — url: field present
                 # GCP helper functions (http_get/post/etc.) and some Azure CWF calls
                 # supply a single "url:" field containing either a selfLink variable
                 # (GCP Compute Engine) or a full management.azure.com URL expression.
+                # Also handles JSON-dict style "url": ... (from CWF $request = {...} dicts).
                 # ----------------------------------------------------------------
                 url_field_match = re.search(
-                    r'\burl:\s*(.+?)(?=\s*,\s*\n|\s*\n)', call_body, re.MULTILINE
+                    r'"?url"?:\s*(.+?)(?=\s*,\s*\n|\s*\n)', expanded_call_body, re.MULTILINE
                 )
                 if url_field_match:
                     raw_url_expr = url_field_match.group(1).strip().rstrip(',')
@@ -2888,6 +3074,39 @@ class PolicyTemplateParser:
                         )
                         if assign_m:
                             url_expr = assign_m.group(1).strip()
+
+                    # ---- NEW: join(["https://", $host_var, "/path..."]) pattern ----
+                    # Handles CWF defines that build a URL with join() and a host variable.
+                    # We extract the host variable and the first path segment, then resolve
+                    # the host variable via _resolve_cwf_host (param/CWF_HOST_MAP lookup).
+                    join_url_m = re.match(
+                        r'join\(\s*\[\s*"https://"\s*,\s*(\$\w+)\s*,\s*"(/[^"]*)"',
+                        url_expr
+                    )
+                    if join_url_m:
+                        cwf_host_var = join_url_m.group(1)
+                        path_start = join_url_m.group(2)
+                        resolved_host = self._resolve_cwf_host(cwf_host_var, define_body)
+                        if resolved_host:
+                            request_info = {
+                                'host': resolved_host,
+                                'path': path_start + '/{id}',
+                                'method': method,
+                                'query_params': {}, 'body_params': {}, 'headers': {},
+                            }
+                            endpoint = self._build_endpoint_url(request_info)
+                            if endpoint:
+                                api_service = self._determine_api_service(resolved_host, path_start)
+                                operation = self._extract_operation_name(endpoint, method, api_service, request_info)
+                                permission = self._determine_api_permission(endpoint, method, api_service, request_info, operation)
+                                api_calls.append({
+                                    'policy_name': self.policy_name,
+                                    'datasource_name': 'define_' + define_name,
+                                    'method': method, 'endpoint': endpoint,
+                                    'operation': operation, 'field': '{entire response}',
+                                    'api_service': api_service, 'permission': permission,
+                                })
+                            continue
 
                     # Pattern: $var['selfLink'] or $var['selfLink'] + '/action'
                     self_link_match = re.match(
@@ -2993,7 +3212,7 @@ class PolicyTemplateParser:
                 # path/href is either a literal string, a join([...]) array, or a
                 # variable that may need Azure ARM context resolution.
                 # ----------------------------------------------------------------
-                host_match = re.search(r'\bhost:\s*(.+?)(?:\s*,\s*$|\s*\n)', call_body, re.MULTILINE)
+                host_match = re.search(r'\bhost:\s*(.+?)(?:\s*,\s*$|\s*\n)', expanded_call_body, re.MULTILINE)
                 raw_host = host_match.group(1).strip().rstrip(',') if host_match else None
 
                 host = None
@@ -3019,16 +3238,16 @@ class PolicyTemplateParser:
 
                 # Parse href or path
                 path = None
-                href_match = re.search(r'\b(?:href|path):\s*"([^"]+)"', call_body)
+                href_match = re.search(r'\b(?:href|path):\s*"([^"]+)"', expanded_call_body)
                 if href_match:
                     path = href_match.group(1)
                 else:
-                    join_match = re.search(r'\b(?:href|path):\s*join\(\[([^\]]+)\]\)', call_body)
+                    join_match = re.search(r'\b(?:href|path):\s*join\(\[([^\]]+)\]\)', expanded_call_body)
                     if join_match:
                         strings = re.findall(r'"([^"]+)"', join_match.group(1))
                         path = '/{id}'.join(strings) if strings else '/{id}'
                     else:
-                        var_match = re.search(r'\b(?:href|path):\s*(\$\S+)', call_body)
+                        var_match = re.search(r'\b(?:href|path):\s*(\$\S+)', expanded_call_body)
                         if var_match:
                             var_expr = var_match.group(1).rstrip(',')
                             # Try to resolve simple string variable ($href = "/")
