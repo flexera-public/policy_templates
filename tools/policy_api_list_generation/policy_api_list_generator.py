@@ -2973,7 +2973,42 @@ class PolicyTemplateParser:
         # e.g. compute.{type}.aggregatedList with compute.addresses.aggregatedList, etc.
         api_calls = self._expand_dynamic_gcp_type_permissions(api_calls)
 
+        # Add implicit companion GCP permissions that are always required alongside
+        # a specific permission (e.g. compute.snapshots.create paired with createSnapshot).
+        api_calls = self._add_gcp_implicit_paired_permissions(api_calls)
+
         return api_calls
+
+    def _add_gcp_implicit_paired_permissions(self, api_calls):
+        """Add GCP permissions implicitly required alongside another permission.
+
+        Some GCP operations require permissions on two different resources. The canonical
+        example is disk snapshot creation: compute.disks.createSnapshot (on the source disk)
+        always requires compute.snapshots.create (on the destination snapshot resource).
+        These companion permissions cannot be derived from the API call alone, but they are
+        a fixed GCP IAM invariant with no exceptions.
+        """
+        # Map: source permission -> list of implicit companion permissions
+        IMPLICIT_PAIRS = {
+            'compute.disks.createSnapshot': ['compute.snapshots.create'],
+        }
+
+        existing = {(c['policy_name'], c.get('permission')) for c in api_calls}
+
+        additions = []
+        for call in api_calls:
+            perm = call.get('permission')
+            if perm in IMPLICIT_PAIRS:
+                for companion in IMPLICIT_PAIRS[perm]:
+                    key = (call['policy_name'], companion)
+                    if key not in existing:
+                        new_call = dict(call)
+                        new_call['permission'] = companion
+                        new_call['datasource_name'] = call['datasource_name'] + '_implicit'
+                        additions.append(new_call)
+                        existing.add(key)
+
+        return api_calls + additions
 
     def _expand_dynamic_gcp_type_permissions(self, api_calls):
         """
