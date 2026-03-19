@@ -2977,7 +2977,107 @@ class PolicyTemplateParser:
         # a specific permission (e.g. compute.snapshots.create paired with createSnapshot).
         api_calls = self._add_gcp_implicit_paired_permissions(api_calls)
 
+        # Add GCP Recommender API permissions extracted from recommender_map dicts and
+        # inline type-suffix patterns in run_script calls.
+        recommender_calls = self._extract_gcp_recommender_permissions()
+        if recommender_calls:
+            existing = {(c['policy_name'], c.get('permission')) for c in api_calls}
+            for rc in recommender_calls:
+                if (rc['policy_name'], rc['permission']) not in existing:
+                    api_calls.append(rc)
+
         return api_calls
+
+    def _extract_gcp_recommender_permissions(self):
+        """Extract GCP Recommender API permissions from static patterns in the template.
+
+        Handles two patterns:
+        1. A JS `recommender_map = { "Label": "google.xxx.RecommenderType", ... }` dict —
+           the full recommender type ID is a string literal value in the map.
+        2. A path built as `"google.prefix." + type` where `type` suffix is passed as a
+           string literal to run_script (e.g. "IdleResourceRecommender").
+
+        Each extracted recommender type ID is looked up in a static table to produce the
+        corresponding GCP IAM permission name.
+        """
+        RECOMMENDER_TYPE_TO_PERMISSION = {
+            'google.accounts.security.SecurityKeyRecommender':
+                'recommender.cloudSecurityGeneralRecommendations.list',
+            'google.cloudsql.instance.IdleRecommender':
+                'recommender.cloudsqlIdleInstanceRecommendations.list',
+            'google.cloudsql.instance.OutOfDiskRecommender':
+                'recommender.cloudsqlInstanceOutOfDiskRecommendations.list',
+            'google.cloudsql.instance.OverprovisionedRecommender':
+                'recommender.cloudsqlOverprovisionedInstanceRecommendations.list',
+            'google.compute.address.IdleResourceRecommender':
+                'recommender.computeAddressIdleResourceRecommendations.list',
+            'google.compute.commitment.UsageCommitmentRecommender':
+                'recommender.usageCommitmentRecommendations.list',
+            'google.compute.disk.IdleResourceRecommender':
+                'recommender.computeDiskIdleResourceRecommendations.list',
+            'google.compute.image.IdleResourceRecommender':
+                'recommender.computeImageIdleResourceRecommendations.list',
+            'google.compute.instance.IdleResourceRecommender':
+                'recommender.computeInstanceIdleResourceRecommendations.list',
+            'google.compute.instance.MachineTypeRecommender':
+                'recommender.computeInstanceMachineTypeRecommendations.list',
+            'google.compute.instanceGroupManager.MachineTypeRecommender':
+                'recommender.computeInstanceGroupManagerMachineTypeRecommendations.list',
+            'google.container.DiagnosisRecommender':
+                'recommender.containerDiagnosisRecommendations.list',
+            'google.iam.policy.Recommender':
+                'recommender.iamPolicyRecommendations.list',
+            'google.logging.productSuggestion.ContainerRecommender':
+                'recommender.loggingProductSuggestionContainerRecommendations.list',
+            'google.monitoring.productSuggestion.ComputeRecommender':
+                'recommender.monitoringProductSuggestionComputeRecommendations.list',
+            'google.resourcemanager.projectUtilization.Recommender':
+                'recommender.resourcemanagerProjectUtilizationRecommendations.list',
+            'google.run.service.SecurityRecommender':
+                'recommender.runServiceSecurityRecommendations.list',
+        }
+
+        found_type_ids = set()
+
+        # Pattern 1: recommender_map = { "Label": "google.xxx.yyy.RecommenderType", ... }
+        map_match = re.search(r'recommender_map\s*=\s*\{([^}]+)\}', self.content, re.DOTALL)
+        if map_match:
+            for kv in re.finditer(
+                r'["\']([^"\']+)["\']\s*:\s*["\']([^"\']+)["\']', map_match.group(1)
+            ):
+                type_id = kv.group(2)
+                if type_id.startswith('google.'):
+                    found_type_ids.add(type_id)
+
+        # Pattern 2: path built as "google.prefix." + type where type suffix is a string
+        # literal passed to run_script (e.g. "IdleResourceRecommender"). Extract the
+        # prefix from the path and all Recommender suffix literals from the template, then
+        # combine. Invalid combinations are filtered out by the lookup table.
+        for prefix_match in re.finditer(
+            r'recommenders/(google\.[^"]+)"\s*\+\s*type', self.content
+        ):
+            prefix = prefix_match.group(1).rstrip('.')
+            for suffix in re.findall(r',\s*"(\w+Recommender)"', self.content):
+                found_type_ids.add(f'{prefix}.{suffix}')
+
+        result = []
+        for type_id in sorted(found_type_ids):
+            perm = RECOMMENDER_TYPE_TO_PERMISSION.get(type_id)
+            if perm:
+                result.append({
+                    'policy_name': self.policy_name,
+                    'datasource_name': 'recommender_' + type_id.split('.')[-1],
+                    'method': 'GET',
+                    'endpoint': (
+                        'https://recommender.googleapis.com/v1/projects/{id}'
+                        f'/locations/{{region}}/recommenders/{type_id}/recommendations'
+                    ),
+                    'operation': f'List {type_id.split(".")[-1]} Recommendations',
+                    'field': '{entire response}',
+                    'api_service': 'GCP',
+                    'permission': perm,
+                })
+        return result
 
     def _add_gcp_implicit_paired_permissions(self, api_calls):
         """Add GCP permissions implicitly required alongside another permission.
