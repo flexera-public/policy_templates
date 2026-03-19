@@ -498,7 +498,17 @@ class PolicyTemplateParser:
                 # Check for val() or other dynamic expressions - use placeholder
                 path_val_match = re.search(r'path\s+(val\(|iter_item)', datasource_body)
                 if path_val_match:
-                    request_info['path'] = '/{dynamic}'
+                    # When the field name hints at a known ARM resource type, synthesize the path.
+                    arm_field_match = re.search(
+                        r'path\s+val\s*\([^,]+,\s*["\'](\w+)["\']\s*\)', datasource_body)
+                    FIELD_TO_ARM_PATH = {
+                        'vmId': '/subscriptions/{id}/resourceGroups/{rg}/providers/'
+                                'Microsoft.Compute/virtualMachines/{name}',
+                    }
+                    if arm_field_match and arm_field_match.group(1) in FIELD_TO_ARM_PATH:
+                        request_info['path'] = FIELD_TO_ARM_PATH[arm_field_match.group(1)]
+                    else:
+                        request_info['path'] = '/{dynamic}'
                 else:
                     request_info['path'] = '/'
 
@@ -695,18 +705,23 @@ class PolicyTemplateParser:
 
         # Extract path from JavaScript - handle both simple strings and array joins
         # Try array join pattern first: [ "/v3/projects/", projectId, "/timeSeries:query" ].join('')
-        path_join_match = re.search(r'path:\s*\[\s*([^\]]+)\]\s*\.join\([^\)]*\)', js_code)
+        # Use a pattern that tolerates inner brackets from object-property accesses like obj['key'].
+        path_join_match = re.search(
+            r'path:\s*\[((?:[^\[\]]|\[[^\[\]]*\])*)\]\s*\.join\([^\)]*\)', js_code)
         if path_join_match:
             path_parts_str = path_join_match.group(1)
+            # Strip dict/array access brackets (e.g. ['subscriptionId'] or ["id"]) before
+            # extracting string literals so inner keys are not mistaken for path segments.
+            path_parts_clean = re.sub(r'\[["\'][^"\']*["\']\]', '', path_parts_str)
             # Extract string literals from the array
-            strings = re.findall(r'["\']([^"\']+)["\']', path_parts_str)
+            strings = re.findall(r'["\']([^"\']+)["\']', path_parts_clean)
             # Extract variable names from the array
-            variables = re.findall(r'(?:,\s*)(\w+)(?:\s*,|\s*\])', path_parts_str)
+            variables = re.findall(r'(?:,\s*)(\w+)(?:\s*,|\s*$)', path_parts_clean)
 
             if strings:
                 # Join them but replace variables with placeholders
                 # Count commas to determine if there are variables
-                parts_count = len(path_parts_str.split(','))
+                parts_count = len(path_parts_clean.split(','))
                 strings_count = len(strings)
                 if parts_count > strings_count:
                     # Has variables - insert semantic placeholders
@@ -1702,8 +1717,10 @@ class PolicyTemplateParser:
                 if restype == 'container':
                     # List blobs within a container; ARM permission applies
                     return 'Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read'
-                # Root container listing — data-plane, requires RBAC role (e.g. Storage Blob Data Reader)
-                return None
+                # Root-level container listing
+                return 'Microsoft.Storage/storageAccounts/blobServices/containers/list'
+            if method.upper() == 'DELETE':
+                return 'Microsoft.Storage/storageAccounts/blobServices/containers/blobs/delete'
             if method.upper() in ('PUT', 'PATCH'):
                 return 'Microsoft.Storage/storageAccounts/blobServices/containers/blobs/write'
             # Other blob data-plane calls (e.g. ?restype=service&comp=properties) — RBAC, not ARM
@@ -2474,10 +2491,10 @@ class PolicyTemplateParser:
 
         # Inline concatenation: expression contains "+" and quoted string parts
         # e.g.  "ec2." + $instance["region"] + ".amazonaws.com"
-        # Strip dict-key accesses like ["region"] so they don't get picked up as strings.
+        # Strip dict-key accesses like ["region"] or ['region'] so they don't get picked up as strings.
         if '+' in host_expr:
-            expr_stripped = re.sub(r'\["[^"]*"\]', '', host_expr)
-            strings = re.findall(r'"([^"]+)"', expr_stripped)
+            expr_stripped = re.sub(r'\[["\'][^"\']*["\']\]', '', host_expr)
+            strings = re.findall(r'["\']([^"\']+)["\']', expr_stripped)
             if strings:
                 full = ''.join(strings)
                 if 'amazonaws.com' in full:
