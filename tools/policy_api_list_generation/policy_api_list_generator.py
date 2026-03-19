@@ -367,6 +367,43 @@ class PolicyTemplateParser:
         "project", "subscription", "resource", "region", "zone"
     }
 
+    # Maps the prefix of an X-Amz-Target header value to its IAM service prefix.
+    # Used in _aws_permission when the host is unresolvable but a target header is present
+    # (e.g. the AWS Pricing API, whose host comes from a runtime parameter).
+    AWS_TARGET_HEADER_SERVICE_MAP = {
+        "AWSPriceListService": "pricing",
+    }
+
+    # CWF HTTP helper function names mapped to their HTTP method.
+    # http_request uses an explicit verb: field instead.
+    CWF_FUNC_TO_METHOD = {
+        "http_get":    "GET",
+        "http_post":   "POST",
+        "http_patch":  "PATCH",
+        "http_put":    "PUT",
+        "http_delete": "DELETE",
+    }
+
+    # Variable names so generic they cannot reliably identify a GCP resource type.
+    # _gcp_cwf_permission skips the generic fallback path for these names.
+    GCP_GENERIC_VAR_NAMES = {"resource", "item", "data", "object", "result", "response"}
+
+    # Maps variable name prefixes to Azure ARM resource types.
+    # Used in _resolve_azure_cwf_href when href is a parameter with no body assignment
+    # and the variable name itself hints at the resource type (e.g. $snapshotId → snapshots).
+    AZURE_VAR_NAME_TO_ARM = {
+        "snapshot": "Microsoft.Compute/snapshots",
+    }
+
+    # Maps field name substrings to Azure ARM resource types.
+    # Used in _resolve_azure_cwf_href when the RHS of an href assignment accesses a field
+    # whose name hints at a resource type (e.g. $item['attached_vm'] → virtualMachines).
+    AZURE_FIELD_TYPE_MAP = {
+        "vm":           "virtualMachines",
+        "virtual_machine": "virtualMachines",
+        "attached_vm":  "virtualMachines",
+    }
+
     # ===== INITIALISATION =====
 
     def __init__(self, file_path):
@@ -1890,12 +1927,9 @@ class PolicyTemplateParser:
         # When host is dynamic, try to identify service from X-Amz-Target header.
         # e.g. AWSPriceListService.GetProducts -> pricing:GetProducts
         if not service and request_info and request_info.get('headers'):
-            TARGET_HEADER_SERVICE_MAP = {
-                'AWSPriceListService': 'pricing',
-            }
             for _k, _v in request_info['headers'].items():
                 if _k.lower() == 'x-amz-target' and '.' in _v:
-                    _mapped = TARGET_HEADER_SERVICE_MAP.get(_v.split('.')[0])
+                    _mapped = self.AWS_TARGET_HEADER_SERVICE_MAP.get(_v.split('.')[0])
                     if _mapped:
                         return f"{_mapped}:{_v.split('.')[-1]}"
 
@@ -2493,10 +2527,9 @@ class PolicyTemplateParser:
             if key in self.GCP_COMPUTE_CWF_PERMISSIONS:
                 return self.GCP_COMPUTE_CWF_PERMISSIONS[key]
 
-        # Generic fallback: use the original var name (plural), strip trailing 's' for singular
-        # Skip generic variable names that don't map to a specific GCP resource type.
-        GENERIC_NAMES = {'resource', 'item', 'data', 'object', 'result', 'response'}
-        if hint_orig in GENERIC_NAMES or hint_stripped in GENERIC_NAMES:
+        # Generic fallback: build a permission from the resource variable name.
+        # Skip variable names so generic they don't identify a real GCP resource type.
+        if hint_orig in self.GCP_GENERIC_VAR_NAMES or hint_stripped in self.GCP_GENERIC_VAR_NAMES:
             return None
         hint = hint_orig
         resource_plural = hint if hint.endswith('s') else hint + 's'
@@ -2562,11 +2595,8 @@ class PolicyTemplateParser:
                     # href is a function parameter with no body assignment.
                     # Check variable name for resource type hints before falling back to context.
                     # e.g. $snapshotId → snapshots, $snapshotName → snapshots
-                    VAR_NAME_TO_ARM = {
-                        'snapshot': 'Microsoft.Compute/snapshots',
-                    }
                     var_lower = var_name.lower()
-                    for hint_str, arm_type in VAR_NAME_TO_ARM.items():
+                    for hint_str, arm_type in self.AZURE_VAR_NAME_TO_ARM.items():
                         if var_lower.startswith(hint_str):
                             return (
                                 '/subscriptions/{id}/resourceGroups/{id}/providers/'
@@ -2585,23 +2615,18 @@ class PolicyTemplateParser:
                 rhs = (join_rhs or all_assignments[-1]).strip()
 
                 # Parse assignment: $param["field"] + "/action" or just $param["field"]
-                am = re.match(r'\$\w+\[["\'][\w]+["\']\]\s*\+\s*"(/[^"]*)"', rhs)
-                if not am:
-                    am = re.match(r"\$\w+\['[\w]+'\]\s*\+\s*'(/[^']*)'", rhs)
-                if am:
-                    action_suffix = am.group(1)
+                rhs_action_match = re.match(r'\$\w+\[["\'][\w]+["\']\]\s*\+\s*"(/[^"]*)"', rhs)
+                if not rhs_action_match:
+                    rhs_action_match = re.match(r"\$\w+\['[\w]+'\]\s*\+\s*'(/[^']*)'", rhs)
+                if rhs_action_match:
+                    action_suffix = rhs_action_match.group(1)
                 elif re.match(r'\$\w+\[["\'][\w]+["\']\]', rhs):
                     # Check if the field name hints at a different resource type than context.
                     # e.g. $item['attached_vm'] → virtualMachines, $item['disk_id'] → disks
-                    field_m = re.match(r"\$\w+\[['\"]([\w]+)['\"]\]", rhs)
-                    if field_m:
-                        field_name = field_m.group(1).lower()
-                        FIELD_TYPE_MAP = {
-                            'vm': 'virtualMachines',
-                            'virtual_machine': 'virtualMachines',
-                            'attached_vm': 'virtualMachines',
-                        }
-                        for hint_key, arm_type in FIELD_TYPE_MAP.items():
+                    field_match = re.match(r"\$\w+\[['\"]([\w]+)['\"]\]", rhs)
+                    if field_match:
+                        field_name = field_match.group(1).lower()
+                        for hint_key, arm_type in self.AZURE_FIELD_TYPE_MAP.items():
                             if hint_key in field_name:
                                 sub_id = (
                                     '/subscriptions/{id}/resourceGroups/{id}/providers/'
@@ -2815,12 +2840,9 @@ class PolicyTemplateParser:
                     break
 
                 func_name = http_match.group(1)
-                # Determine method from function name for GCP helpers
-                FUNC_METHOD = {
-                    'http_get': 'GET', 'http_post': 'POST',
-                    'http_patch': 'PATCH', 'http_put': 'PUT', 'http_delete': 'DELETE',
-                }
-                method_from_func = FUNC_METHOD.get(func_name)
+                # Determine HTTP method from the helper function name (http_get → GET, etc.).
+                # http_request uses an explicit verb: field instead (handled below).
+                method_from_func = self.CWF_FUNC_TO_METHOD.get(func_name)
 
                 start = pos + http_match.end()
                 depth = 1
