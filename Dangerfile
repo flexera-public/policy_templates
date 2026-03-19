@@ -110,7 +110,8 @@ changed_files.each do |file|
   messages = []
 
   # Perform a basic text lint on all changed files
-  test = general_textlint?(file); warnings << test if test
+  # Disabled temporarily due to issues with URLs rejecting requests from Github
+  # test = general_textlint?(file); warnings << test if test
 
   # Output final list of failures and warnings
   fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?

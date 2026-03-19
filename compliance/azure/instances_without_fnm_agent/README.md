@@ -42,7 +42,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 - [**Flexera ITAM Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `Web Service` or equivalent role in IT Asset Accounts (for calling ITAM SOAP APIs)
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) (*provider=flexera*) which has the following roles:
+- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `policy_viewer`
   - `policy_manager`*
 
