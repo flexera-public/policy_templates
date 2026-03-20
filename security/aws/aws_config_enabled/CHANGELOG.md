@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.0
+
+- Added support for attaching CSV files to incident emails.
+
 ## v3.0.8
 
 - Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
