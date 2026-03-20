@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5.0
+
+- Added support for attaching CSV files to incident emails.
+
 ## v2.4.7
 
 - Updated documentation link in policy description. Functionality unchanged.

@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "daily"
 info(
-  version: "0.1.0",
+  version: "0.2.0",
   provider: "Flexera",
   service: "Identity & Access Management",
   policy_set: "Automation",
@@ -85,6 +85,24 @@ parameter "param_automatic_action" do
   description "Actions to automatically take when the policy finds changes to make."
   allowed_values "Create User Groups", "Delete User Groups"
   default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -649,13 +667,15 @@ end
 
 # Join memberships with user activity data and compute adoption metrics
 datasource "ds_membership_report" do
-  run_script $js_membership_report, $ds_group_memberships, $ds_users, $ds_managed_groups, $ds_applied_policy, $ds_costs_by_bc, $ds_billing_centers
+  run_script $js_membership_report, $ds_group_memberships, $ds_users, $ds_managed_groups, $ds_applied_policy, $ds_costs_by_bc, $ds_billing_centers, $param_incident_csv
 end
 
 script "js_membership_report", type: "javascript" do
-  parameters "ds_group_memberships", "ds_users", "ds_managed_groups", "ds_applied_policy", "ds_costs_by_bc", "ds_billing_centers"
+  parameters "ds_group_memberships", "ds_users", "ds_managed_groups", "ds_applied_policy", "ds_costs_by_bc", "ds_billing_centers", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   result = []
 
   // Build billing center lookup for level calculation
@@ -778,7 +798,8 @@ script "js_membership_report", type: "javascript" do
       costPctOfTotal: costPctStr,
       policyName: policyName,
       billingCentersManaged: String(billingCentersManaged),
-      totalUsersWithAccess: String(totalUsersWithAccess)
+      totalUsersWithAccess: String(totalUsersWithAccess),
+      csv_message: csv_message
     })
   })
 
@@ -793,6 +814,7 @@ end
 policy "pol_user_groups" do
   validate $ds_groups_to_create do
     summary_template "{{ with index data 0 }}{{ .policyName }}{{ end }}: {{ len data }} User Groups to Create"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check eq(size(data), 0)
     escalate $esc_email
     escalate $esc_create_user_groups
@@ -912,7 +934,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send email notification."
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_create_user_groups" do
