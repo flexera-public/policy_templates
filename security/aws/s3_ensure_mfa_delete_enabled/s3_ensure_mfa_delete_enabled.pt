@@ -8,7 +8,7 @@ category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "3.0.9",
+  version: "3.1.0",
   provider: "AWS",
   service: "Storage",
   policy_set: "CIS",
@@ -82,6 +82,24 @@ parameter "param_exclude_buckets" do
   label "Exclude S3 Buckets"
   description "Names of specific S3 buckets to exclude from the results."
   default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -539,13 +557,15 @@ datasource "ds_aws_buckets_with_versioning" do
 end
 
 datasource "ds_aws_buckets_without_mfa" do
-  run_script $js_aws_buckets_without_mfa, $ds_aws_buckets_with_versioning, $ds_aws_account, $ds_applied_policy
+  run_script $js_aws_buckets_without_mfa, $ds_aws_buckets_with_versioning, $ds_aws_account, $ds_applied_policy, $param_incident_csv
 end
 
 script "js_aws_buckets_without_mfa", type:"javascript" do
-  parameters "ds_aws_buckets_with_versioning", "ds_aws_account", "ds_applied_policy"
+  parameters "ds_aws_buckets_with_versioning", "ds_aws_account", "ds_applied_policy", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   bad_buckets = _.filter(ds_aws_buckets_with_versioning, function(bucket) {
     return bucket['mfadelete'] != "Enabled"
   })
@@ -588,6 +608,7 @@ script "js_aws_buckets_without_mfa", type:"javascript" do
     mfadelete: '',
     policy_name: ''
   })
+  _.each(result, function(item) { item['csv_message'] = csv_message })
 EOS
 end
 
@@ -598,6 +619,7 @@ end
 policy "pol_aws_buckets_without_mfa" do
   validate_each $ds_aws_buckets_without_mfa do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS S3 Buckets Without MFA Delete Enabled Found"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     escalate $esc_email
     hash_exclude "tags"
@@ -639,7 +661,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################

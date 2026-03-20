@@ -22,6 +22,8 @@ This policy template automatically creates and manages Flexera IAM User Groups b
 - *Billing Center Role* - The role to grant to the User Group on the Billing Center. Allowed values: `billing_center_viewer`, `billing_center_admin`.
 - *User Group Name Prefix* - A prefix to prepend to the Billing Center name when creating the User Group name. Default: `BC:`. Leave empty for no prefix.
 - *Billing Center Name Collision Strategy* - How to handle Billing Centers with the same name. `Use Full Path` uses the full hierarchy path (e.g. `North America / Engineering`). `Include BC ID` appends the Billing Center ID. `Allow Collisions` maps identically-named Billing Centers to a single User Group.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Automatic Actions* - Actions to automatically take when the policy template finds changes to make. Allowed values: `Create User Groups`, `Delete User Groups`.
 
 ## Policy Actions
