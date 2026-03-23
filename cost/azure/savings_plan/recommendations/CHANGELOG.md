@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4.0
+
+- Updated Azure API calls to use most current version. Functionality unchanged.
+
 ## v3.3.2
 
 - Updated documentation link in policy description. Functionality unchanged.

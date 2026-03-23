@@ -8,12 +8,11 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.4.2",
+  version: "0.5.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
-  recommendation_type: "Usage Reduction",
-  publish: "false"
+  recommendation_type: "Usage Reduction"
 )
 
 ###############################################################################
@@ -96,6 +95,15 @@ parameter "param_recommendations_os" do
   description "Which operating system families to include. EC2 instances not running one of the specified operating system families will not be included in the results."
   allowed_values ["Windows", "Linux", "Other"]
   default ["Windows", "Linux", "Other"]
+end
+
+parameter "param_recommendations_gpu" do
+  type "list"
+  category "Filters"
+  label "GPU Instances"
+  description "Whether to report recommendations for instances with GPUs, without GPUs, or both."
+  allowed_values ["With GPU", "Without GPU"]
+  default ["With GPU", "Without GPU"]
 end
 
 parameter "param_multi_recommendations" do
@@ -397,12 +405,36 @@ datasource "ds_instance_sets" do
   end
 end
 
+datasource "ds_aws_instance_types" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_aws_gpu_table" do
+  run_script $js_aws_gpu_table, $ds_aws_instance_types
+end
+
+script "js_aws_gpu_table", type:"javascript" do
+  parameters "ds_aws_instance_types"
+  result "result"
+  code <<-'EOS'
+  result = {}
+
+  _.each(ds_aws_instance_types, function(instance) {
+    result[instance["name"]] = instance["gpu"] ? true : false
+  })
+EOS
+end
+
 datasource "ds_instances" do
-  run_script $js_instances, $ds_instance_sets, $param_exclusion_tags, $param_exclusion_tags_boolean
+  run_script $js_instances, $ds_instance_sets, $ds_aws_gpu_table, $param_exclusion_tags, $param_exclusion_tags_boolean, $param_recommendations_gpu
 end
 
 script "js_instances", type: "javascript" do
-  parameters "ds_instance_sets", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  parameters "ds_instance_sets", "ds_aws_gpu_table", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_recommendations_gpu"
   result "result"
   code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -482,6 +514,18 @@ script "js_instances", type: "javascript" do
       result = result.concat(item['instances_set'])
     }
   })
+
+  if (!_.contains(param_recommendations_gpu, "With GPU")) {
+    result = _.reject(result, function(instance) {
+      return ds_aws_gpu_table[instance["resourceType"]]
+    })
+  }
+
+  if (!_.contains(param_recommendations_gpu, "Without GPU")) {
+    result = _.filter(result, function(instance) {
+      return ds_aws_gpu_table[instance["resourceType"]]
+    })
+  }
 EOS
 end
 
@@ -757,6 +801,14 @@ script "js_recommendations_merged", type: "javascript" do
       netDailyBytesMetric = _.find(rec['utilizationMetrics'], function(metric) { return metric['name'] == "NETWORK_THROUGHPUT_DAILY_BYTE" && metric['statistic'] == "MAXIMUM" })
       if (netDailyBytesMetric != undefined) { netDailyBytes = Math.round(netDailyBytesMetric['value'] * 100) / 100 }
 
+      gpuMaximum = null
+      gpuMaximumMetric = _.find(rec['utilizationMetrics'], function(metric) { return metric['name'] == "GPU_PERCENTAGE" && metric['statistic'] == "MAXIMUM" })
+      if (gpuMaximumMetric != undefined) { gpuMaximum = Math.round(gpuMaximumMetric['value'] * 100) / 100 }
+
+      gpuMemoryMaximum = null
+      gpuMemoryMaximumMetric = _.find(rec['utilizationMetrics'], function(metric) { return metric['name'] == "GPU_MEMORY_PERCENTAGE" && metric['statistic'] == "MAXIMUM" })
+      if (gpuMemoryMaximumMetric != undefined) { gpuMemoryMaximum = Math.round(gpuMemoryMaximumMetric['value'] * 100) / 100 }
+
       _.each(rec['recommendationOptions'], function(option) {
         if (option['rank'] == 1 || param_multi_recommendations == "Yes") {
           savings = option['savingsOpportunity']['estimatedMonthlySavings']['value'] * ds_currency['exchange_rate']
@@ -810,6 +862,8 @@ script "js_recommendations_merged", type: "javascript" do
               netOutBytes: netOutBytes,
               netInPackets: netInPackets,
               netOutPackets: netOutPackets,
+              gpuMaximum: gpuMaximum,
+              gpuMemoryMaximum: gpuMemoryMaximum,
               service: "EC2",
               lookbackPeriod: Math.round(lookbackPeriod * 100) / 100,
               policy_name: ds_applied_policy['name'],
@@ -893,6 +947,8 @@ script "js_recommendations_merged", type: "javascript" do
     netOutBytes: '',
     netInPackets: '',
     netOutPackets: '',
+    gpuMaximum: '',
+    gpuMemoryMaximum: '',
     service: '',
     lookbackPeriod: '',
     policy_name: '',
@@ -920,7 +976,7 @@ policy "pol_utilization" do
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_resize_instances
-    hash_exclude "message", "total_savings", "tags", "savings", "savings_after_discount", "savingsCurrency", "cpuMaximum", "memMaximum", "ebsReadOps", "ebsWriteOps", "ebsReadBytes", "ebsWriteBytes", "netInBytes", "netOutBytes", "netInPackets", "netOutPackets"
+    hash_exclude "message", "total_savings", "tags", "savings", "savings_after_discount", "savingsCurrency", "cpuMaximum", "memMaximum", "ebsReadOps", "ebsWriteOps", "ebsReadBytes", "ebsWriteBytes", "netInBytes", "netOutBytes", "netInPackets", "netOutPackets", "gpuMaximum", "gpuMemoryMaximum"
     export do
       resource_level true
       field "accountID" do
@@ -1010,6 +1066,12 @@ policy "pol_utilization" do
       field "netOutPackets" do
         label "Network Outbound Packets/sec Maximum"
       end
+      field "gpuMaximum" do
+        label "GPU Maximum %"
+      end
+      field "gpuMemoryMaximum" do
+        label "GPU Memory Maximum %"
+      end
       field "launchTime" do
         label "Launch Time"
       end
@@ -1055,7 +1117,7 @@ end
 # Cloud Workflow
 ###############################################################################
 
-# Core CWF function to downsize instances
+# Core CWF function to resize instances
 define resize_instances($data) do
   foreach $instance in $data do
     sub on_error: handle_error() do

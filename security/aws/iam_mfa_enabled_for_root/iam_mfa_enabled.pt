@@ -8,7 +8,7 @@ category "Security"
 severity "high"
 default_frequency "15 minutes"
 info(
-  version: "3.0.9",
+  version: "3.1.0",
   provider: "AWS",
   service: "Identity & Access Management",
   policy_set: "CIS",
@@ -39,6 +39,24 @@ parameter "param_aws_account_number" do
   label "Account Number"
   description "Leave blank; this is for automated use with Meta Policies. See README for more details."
   default ""
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -304,13 +322,15 @@ end
 
 # Combine ds_get_caller_identity and ds_iam_accesskeys into a single datasource
 datasource "ds_iam_mfa_status" do
-  run_script $js_iam_mfa_status, $ds_iam_mfa_enabled, $ds_iam_mfa_devices, $ds_aws_account, $ds_applied_policy
+  run_script $js_iam_mfa_status, $ds_iam_mfa_enabled, $ds_iam_mfa_devices, $ds_aws_account, $ds_applied_policy, $param_incident_csv
 end
 
 script "js_iam_mfa_status", type:"javascript" do
-  parameters "ds_iam_mfa_enabled", "ds_iam_mfa_devices", "ds_aws_account", "ds_applied_policy"
+  parameters "ds_iam_mfa_enabled", "ds_iam_mfa_devices", "ds_aws_account", "ds_applied_policy", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   result = {
     accountID: ds_aws_account['id'],
     accountName: ds_aws_account['name'],
@@ -318,6 +338,7 @@ script "js_iam_mfa_status", type:"javascript" do
     mfa_hw_enabled: (ds_iam_mfa_enabled['accountMFAEnabled'] == 1 && ds_iam_mfa_devices['virtualMFADevices'] == null).toString(),
     policy_name: ds_applied_policy['name']
   }
+  result['csv_message'] = csv_message
 EOS
 end
 
@@ -334,6 +355,7 @@ Multi-factor authentication is not enabled for the root user of the following AW
 **AWS Account:** {{ data.accountName }} ({{ data.accountID }})\\
 **MFA Enabled:** {{ data.mfa_enabled }}\\
 **Hardware MFA Enabled:** {{ data.mfa_hw_enabled }}
+{{ data.csv_message }}
 EOS
     check eq(val(data, "mfa_enabled"), "true")
     escalate $esc_email
@@ -348,5 +370,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

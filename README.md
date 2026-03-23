@@ -50,6 +50,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Compute
 
+  * [AWS EC2 Compute Optimizer Recommendations](./cost/aws/ec2_compute_optimizer)
   * [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
   * [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
   * [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
@@ -493,6 +494,7 @@ These templates can generate savings estimates for your environment. The inciden
   * [Dynamic Dashboards](./operational/flexera/cco/dynamic_dashboards)
   * [FinOps Dashboards](./operational/flexera/cco/finops_dashboards)
   * [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
+  * [MSP Invoiceable Spend Report](./operational/flexera/msp/msp_invoiceable_spend_report)
 
 * FlexNet Manager
 
@@ -510,6 +512,7 @@ These templates can generate savings estimates for your environment. The inciden
   * [Configure Custom Branding](./operational/flexera/flexeraone/custom_branding)
   * [Flexera One API Event Report](./operational/flexera/iam/api_event_report)
   * [Flexera One User Access Report](./operational/flexera/iam/iam_user_report)
+  * [Flexera User Groups from Billing Centers](./operational/flexera/iam/user_groups_from_billing_centers)
 
 * Kubernetes
 

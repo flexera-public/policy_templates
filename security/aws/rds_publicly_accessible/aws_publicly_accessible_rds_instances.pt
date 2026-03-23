@@ -8,7 +8,7 @@ category "Security"
 severity "high"
 default_frequency "hourly"
 info(
-  version: "5.1.7",
+  version: "5.2.0",
   provider: "AWS",
   service: "RDS",
   policy_set: "",
@@ -77,6 +77,24 @@ parameter "param_automatic_action" do
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Remove RDS Instances Public Access", "Terminate RDS Instances"]
   default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -612,16 +630,19 @@ EOS
 end
 
 datasource "ds_bad_rds_instances" do
-  run_script $js_bad_rds_instances, $ds_rds_instances
+  run_script $js_bad_rds_instances, $ds_rds_instances, $param_incident_csv
 end
 
 script "js_bad_rds_instances", type: "javascript" do
-  parameters "ds_rds_instances"
+  parameters "ds_rds_instances", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   result = _.filter(ds_rds_instances, function(db) {
     return db['publiclyAccessible'] == 'true' && db['deletionProtection'] == 'false' && db['state'] == 'available'
   })
+  _.each(result, function(item) { item['csv_message'] = csv_message })
 EOS
 end
 
@@ -632,6 +653,7 @@ end
 policy "pol_bad_rds_instances" do
   validate_each $ds_bad_rds_instances do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Publicly Accessible RDS Instances Found"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_modify
@@ -715,7 +737,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_modify" do
