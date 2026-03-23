@@ -8,6 +8,8 @@ This policy template provides a report of every role assigned to a user in Flexe
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Report Inactive Roles* - Whether to include roles that are not active for users in the results. If enabled, the report will contain an entry for every possible role for every user, regardless of whether it is active for that user. The `Role Status` field will indicate if the role is active or not.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 

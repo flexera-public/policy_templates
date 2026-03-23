@@ -12,6 +12,8 @@ This policy template reports any Azure Network Security Groups that have SSH (TC
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions.
 - *Allow/Deny Regions* - Allow or Deny entered regions to filter results.
 - *Allow/Deny Regions List* - A list of allowed or denied regions. Leave blank to check all Subscriptions.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 
