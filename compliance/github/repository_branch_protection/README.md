@@ -32,7 +32,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 - [**GitHub Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/generic-credentials) (*provider=github*) which has the following permissions:
   - `read:org`
-  - `repo`\*
+  - `repo`*
 
 \* Only required if the corresponding action is enabled.
 
