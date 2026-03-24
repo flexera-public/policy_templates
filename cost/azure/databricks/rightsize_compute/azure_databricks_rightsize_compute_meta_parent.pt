@@ -365,7 +365,7 @@ datasource "ds_get_published_child_policy_information" do
       field "name", jmes_path(col_item, "name")
       field "created_by", jmes_path(col_item, "createdBy.email")
       field "short_description", jmes_path(col_item, "shortDescription")
-      field "ref", jmes_path(col_item, "policyTemplateRef")
+      field "ref", jmes_path(col_item, "ref")
       field "href", join(["/policy/v1/orgs/", rs_org_id, "/published-templates/", jmes_path(col_item, "id")])
     end
   end
@@ -1543,6 +1543,9 @@ EOS
       field "options" do
         label "Options"
       end
+      field "template_ref" do
+        label "Template Ref #"
+      end
       field "flexera_host" do
         label "Flexera Host"
       end
@@ -1682,102 +1685,129 @@ end
 ###############################################################################
 
 # Workflows for creating, updating, and deleting applied policies
-define create_applied_policies($data, $rs_org_id, $rs_project_id) return $responses do
-  $responses = []
-  $$debug = []
-  $item_index = 0
-  $item_total = size($data)
+define create_applied_policies($data, $rs_org_id, $rs_project_id) return $all_responses do
+  $$all_responses = []
 
   foreach $item in $data do
-    $item_index = $item_index + 1
-    $status = to_s("("+$item_index+"/"+$item_total+")")
-    task_label($status+" Creating Applied Policy with Options: " + to_json($item["options"]))
+    sub on_error: handle_error() do
+      call create_applied_policy($item, $rs_org_id, $rs_project_id) retrieve $create_response
+    end
+  end
 
-    $response = http_request(
-      auth: $$auth_flexera,
-      verb: "post",
-      https: true,
-      host: $item["flexera_host"],
-      href: join(["/policy/v1/orgs/", $rs_org_id, "/projects/", $rs_project_id, "/applied-policies"]),
-      body: {
-        "name": $item["name"],
-        "description": $item["description"],
-        "templateRef": $item["template_ref"],
-        "options": $item["options"],
-        "credentials": $item["credentials"],
-        "metaParentPolicyId": $item["meta_parent_policy_id"],
-        "schedule": { "rrule": $item["frequency"] }
-      }
-    )
-
-    $responses << $response
-
-    $$debug << to_json({
-      "response": $response,
-      "item": $item,
-      "host": $item["flexera_host"]
-    })
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
   end
 end
 
-define update_applied_policies($data, $rs_org_id, $rs_project_id) return $responses do
-  $responses = []
-  $$debug = []
-  $item_index = 0
-  $item_total = size($data)
+define update_applied_policies($data, $rs_org_id, $rs_project_id) return $all_responses do
+  $$all_responses = []
 
   foreach $item in $data do
-    $item_index = $item_index + 1
-    $status = to_s("("+$item_index+"/"+$item_total+")")
-    task_label($status+" Updating Applied Policy with Options: " + to_json($item["options"]))
+    sub on_error: handle_error() do
+      call update_applied_policy($item, $rs_org_id, $rs_project_id) retrieve $update_response
+    end
+  end
 
-    $response = http_request(
-      auth: $$auth_flexera,
-      verb: "patch",
-      https: true,
-      host: $item["flexera_host"],
-      href: join(["/policy/v1/orgs/", $rs_org_id, "/projects/", $rs_project_id, "/applied-policies/", $item["applied_policy_id"]]),
-      body: {
-        "options": $item["options"]
-      }
-    )
-
-    $responses << $response
-
-    $$debug << to_json({
-      "response": $response,
-      "item": $item,
-      "host": $item["flexera_host"]
-    })
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
   end
 end
 
-define delete_applied_policies($data, $rs_org_id, $rs_project_id) return $responses do
-  $responses = []
-  $$debug = []
-  $item_index = 0
-  $item_total = size($data)
+define delete_applied_policies($data, $rs_org_id, $rs_project_id) return $all_responses do
+  $$all_responses = []
 
   foreach $item in $data do
-    $item_index = $item_index + 1
-    $status = to_s("("+$item_index+"/"+$item_total+")")
-    task_label($status+" Deleting Applied Policy: " + $item["id"])
+    sub on_error: handle_error() do
+      call delete_applied_policy($item, $rs_org_id, $rs_project_id) retrieve $delete_response
+    end
+  end
 
-    $response = http_request(
-      auth: $$auth_flexera,
-      verb: "delete",
-      https: true,
-      host: $item["flexera_host"],
-      href: join(["/policy/v1/orgs/", $rs_org_id, "/projects/", $rs_project_id, "/applied-policies/", $item["id"]])
-    )
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
 
-    $responses << $response
+define create_applied_policy($item, $rs_org_id, $rs_project_id) return $response do
+  $host = $item["flexera_host"]
+  $href = join(["/policy/v1/orgs/", $rs_org_id, "/projects/", $rs_project_id, "/applied-policies"])
+  $url = $host + $href
+  task_label("POST " + $url)
 
-    $$debug << to_json({
-      "response": $response,
-      "item": $item,
-      "host": $item["flexera_host"]
-    })
+  $response = http_request(
+    auth: $$auth_flexera,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    body: {
+      "name": $item["name"],
+      "description": $item["description"],
+      "templateRef": $item["template_ref"],
+      "options": $item["options"],
+      "credentials": $item["credentials"],
+      "metaParentPolicyId": $item["meta_parent_policy_id"],
+      "schedule": { "rrule": $item["frequency"] }
+    }
+  )
+
+  task_label("Create applied policy response: " + $item["name"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 201 && $response["code"] != 200
+    raise "Unexpected response creating applied policy: "+ $item["name"] + " " + to_json($response)
+  else
+    task_label("Create applied policy successful: " + $item["name"])
+  end
+end
+
+define update_applied_policy($item, $rs_org_id, $rs_project_id) return $response do
+  $host = $item["flexera_host"]
+  $href = join(["/policy/v1/orgs/", $rs_org_id, "/projects/", $rs_project_id, "/applied-policies/", $item["applied_policy_id"]])
+  $url = $host + $href
+  task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_flexera,
+    https: true,
+    verb: "patch",
+    host: $host,
+    href: $href,
+    body: {
+      "options": $item["options"]
+    }
+  )
+
+  task_label("Update applied policy response: " + $item["applied_policy_id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 201 && $response["code"] != 200
+    raise "Unexpected response updating applied policy: "+ $item["applied_policy_id"] + " " + to_json($response)
+  else
+    task_label("Update applied policy successful: " + $item["applied_policy_id"])
+  end
+end
+
+define delete_applied_policy($item, $rs_org_id, $rs_project_id) return $response do
+  $host = $item["flexera_host"]
+  $href = join(["/policy/v1/orgs/", $rs_org_id, "/projects/", $rs_project_id, "/applied-policies/", $item["id"]])
+  $url = $host + $href
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_flexera,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href
+  )
+
+  task_label("Delete applied policy response: " + $item["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 201 && $response["code"] != 200
+    raise "Unexpected response deleting applied policy: "+ $item["id"] + " " + to_json($response)
+  else
+    task_label("Delete applied policy successful: " + $item["id"])
   end
 end
 
@@ -1788,13 +1818,15 @@ define groupByIncidentID($data) return $incidents do
 
   task_label("Grouping items by Incident ID")
   $index = 1
+
   foreach $item in $data do
-    task_label("Grouping items by Incident ID. "+to_s($index)+"/"+to_s(size($data)))
+    task_label("Grouping items by Incident ID. " + to_s($index) + "/" + to_s(size($data)))
+    $index = $index + 1
+
     if !$incidents[$item["incident_id"]]
-      #task_label("Grouping items by Incident ID. "+to_s($index)+"/"+to_s(size($data))". New Incident: "+$item["incident_id"])
       $incidents[$item["incident_id"]] = {"id": $item["incident_id"], "resource_ids": []}
     end
-    #task_label("Grouping items by Incident ID. "+to_s($index)+"/"+to_s(size($data))". Appending Resource: "+$item["id"])
+
     # Append resource id to the list for the incident
     $incidents[$item["incident_id"]]["resource_ids"] = $incidents[$item["incident_id"]]["resource_ids"] + [$item["id"]]
   end
@@ -1818,14 +1850,14 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label, 
 
   # If we made it here, all actions completed successfully
   # Celebrate Success!
-  task_label("All \""+$action_label+"\" actions completed successfully!")
+  task_label("All \"" + $action_label + "\" actions completed successfully!")
 end
 
 define runActions($incidents, $action_label, $governance_host, $rs_project_id, $action_options) do
   foreach $id in keys($incidents) do
     sub on_error: handle_error() do
       $incident = $incidents[$id]
-      task_label("Triggering action \""+$action_label+"\" on "+size($incident["resource_ids"])+" count resources via incident "+$incident["id"])
+      task_label("Triggering action \"" + $action_label + "\" on " + size($incident["resource_ids"]) + " count resources via incident " + $incident["id"])
 
       $request = {
         auth: $$auth_flexera,
