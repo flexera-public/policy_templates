@@ -33,18 +33,22 @@ This policy template reports AWS Lambda functions that have zero or near-zero in
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera account team for assistance.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
-**AWS Credential** (`provider=aws`) must have the following permissions:
+- [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
+  - `ec2:DescribeRegions`
+  - `sts:GetCallerIdentity`
+  - `lambda:ListFunctions`
+  - `lambda:ListTags`
+  - `lambda:DeleteFunction`*
+  - `cloudwatch:GetMetricData`
 
-- `ec2:DescribeRegions`
-- `sts:GetCallerIdentity`
-- `lambda:ListFunctions`
-- `lambda:ListTags`
-- `lambda:DeleteFunction`
-- `cloudwatch:GetMetricData`
+  \* Only required for taking action (deletion); the policy will still function in a read-only capacity without these permissions.
 
-**Flexera Credential** (`provider=flexera`) is used to access Flexera billing data and policy metadata.
+- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 

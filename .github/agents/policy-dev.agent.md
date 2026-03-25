@@ -1668,6 +1668,40 @@ Every README must begin with `# Policy Template Name` and include the following 
 3. `## Input Parameters` — italicized parameter name followed by ` - ` and its description
 4. `## Policy Actions` — bulleted list of all possible actions including email
 5. `## Prerequisites` — credentials required (always start with the standard credentials paragraph), then any other requirements
+
+The `## Prerequisites` section must follow this **exact format**, which is validated by the Dangerfile's `readme_invalid_credentials?` test:
+
+```markdown
+## Prerequisites
+
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
+
+- [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
+  - `ec2:DescribeRegions`
+  - `sts:GetCallerIdentity`
+  - `lambda:DeleteFunction`*
+
+  \* Only required for taking action (deletion); the policy will still function in a read-only capacity without these permissions.
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+```
+
+Key rules enforced by the Dangerfile:
+
+1. **Opening paragraph** — must be the exact long sentence shown above (including the specific URL). Do not paraphrase it, shorten it, or use the old `ManagingCredentialsExternal.htm` URL.
+2. **Credential header format** — must use `- [**Provider Credential**](url) (*provider=xyz*) which has the following permissions:` (or `roles:` for Flexera). Do not use plain bold (`**...**`) or backtick syntax for the provider value.
+3. **Permission list indentation** — each permission must be indented with two spaces: `  - \`permission:Action\``. Top-level `-` (no indent) will fail.
+4. **Action-only permissions** — any permission only needed for taking action (e.g. delete, terminate) must be suffixed with `*` and have a `\* Only required for taking action...` footnote immediately after the list.
+5. **Closing footnote** — the section must end with exactly: `The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.`
+
+Canonical credential header lines by provider:
+- **AWS**: `- [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:`
+- **Azure**: `- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:`
+- **Google**: `- [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:`
+- **Flexera**: `- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:`
 6. `## Supported Clouds` — list of supported providers, or "All" for cloud-agnostic
 7. `## Cost` — whether this policy template incurs additional costs
 
