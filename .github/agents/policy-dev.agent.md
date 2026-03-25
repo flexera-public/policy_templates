@@ -1349,6 +1349,10 @@ Other useful parameter fields (beyond `type`, `label`, `description`, `default`,
 - `allowed_pattern /regex/` — validates string input against a regex (mutually exclusive with `allowed_values`)
 - `constraint_description "..."` — custom error message shown when a constraint is violated
 
+**Parameter types:** Valid `type` values are `"string"`, `"number"`, and `"list"`. There is no `"integer"` or `"bool"` type — use `"number"` for numeric values and `"string"` with `allowed_values "true", "false"` for booleans.
+
+**`allowed_values` with numbers:** For `type "number"` parameters, `allowed_values` accepts bare integers (no quotes): `allowed_values 0, 10, 50, 100`.
+
 ## Style Rules
 
 Style rules are covered in detail in the Style Guide:
