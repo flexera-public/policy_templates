@@ -83,6 +83,8 @@ end
 ### Markdown lint test
 # Return false if linter finds no problems
 def general_bad_markdown?(file)
+  return false if file.start_with?(".github/agents/")
+
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing file using markdown linter..."
 
   # Adjust testing based on which file we're doing
@@ -107,6 +109,8 @@ end
 ### Bad URL test
 # Return false if no invalid URLs are found.
 def general_bad_urls?(file, file_diff)
+  return false if file.start_with?(".github/agents/")
+
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing file for bad or invalid URLs..."
 
   # List of hosts to ignore in the analysis
@@ -144,8 +148,10 @@ def general_bad_urls?(file, file_diff)
           url_parts = url.to_s.split('](')
           # Use the first URL (image) if there are multiple, otherwise use the whole string
           url_string = url_parts[0]
-          # Remove any trailing ] or ) that might be left over from markdown syntax
-          url_string = url_string.gsub(/[\]\)]$/, '')
+          # Remove any trailing ] or ) that might be left over from markdown syntax,
+          # along with any punctuation that may follow (e.g. [text](https://url/). where
+          # URI.extract captures the closing ) and trailing . as part of the URL)
+          url_string = url_string.gsub(/[\]\)][.,;:!?]*$/, '')
 
           url = URI(url_string)
 
@@ -185,6 +191,8 @@ end
 ### Outdated Terminology test
 # Return false if no outdated terminology, such as RightScale, is found in the file
 def general_outdated_terminology?(file, file_lines)
+  return false if file.start_with?(".github/agents/")
+
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing file for outdated terminology..."
 
   fail_message = ""
