@@ -223,9 +223,16 @@ credentials "auth_flexera" do
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
+
+credentials "auth_oracle" do
+  schemes "oracle"
+  label "Oracle"
+  description "Select the Oracle Cloud (OCI) Credential from the list."
+  tags "provider=oracle"
+end
 ```
 
-Correct `tags` values by provider: `provider=aws`, `provider=azure_rm` (Azure), `provider=gce` (Google), `provider=flexera`.
+Correct `tags` values by provider: `provider=aws`, `provider=azure_rm` (Azure), `provider=gce` (Google), `provider=flexera`, `provider=oracle` (Oracle OCI).
 
 ### Pagination
 
@@ -514,6 +521,33 @@ end
 ```
 
 The field name `item['region']` may differ depending on how the upstream datasource names the region field. Adapt as needed (e.g. `item['location']` for Azure, `item['name']` for Google).
+
+### Common JavaScript Patterns — Azure Subscription Filtering
+
+The `param_subscriptions_allow_or_deny` + `param_subscriptions_list` parameter pair is applied in JavaScript using this standard pattern. It matches by either subscription **ID or name** to be user-friendly. An empty list means no filter:
+
+```
+script "js_filter_subscriptions", type: "javascript" do
+  parameters "subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-'EOS'
+    if (param_subscriptions_list.length > 0) {
+      result = _.filter(subscriptions, function(subscription) {
+        include_subscription = _.contains(param_subscriptions_list, subscription['id']) ||
+                               _.contains(param_subscriptions_list, subscription['name'])
+
+        if (param_subscriptions_allow_or_deny == "Deny") {
+          include_subscription = !include_subscription
+        }
+
+        return include_subscription
+      })
+    } else {
+      result = subscriptions  // empty list = no filter; include all subscriptions
+    }
+  EOS
+end
+```
 
 ### Policy Block
 
@@ -817,6 +851,27 @@ datasource "ds_billing_centers" do
 end
 ```
 
+Include `ds_cloud_vendor_accounts` in any template that needs to display account/subscription names alongside resource data. It fetches cloud vendor account metadata (IDs, names, tags) from the Flexera FinOps Analytics API and is used in 468+ templates. The `id` field path differs by provider — use the AWS boilerplate below and adapt for other clouds:
+
+```
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id",   jmes_path(col_item, "aws.accountId")   # use azure.subscriptionId, gcp.projectId etc. for other providers
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+```
+
 For Meta Policy support, include these two boilerplate datasources. The `$ds_parent_policy_terminated` value is then used in every `check` line as shown in the Policy Block section above:
 
 ```
@@ -905,6 +960,24 @@ parameter "param_regions_list" do
   category "Filters"
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+# Azure subscription filter pair — use in all Azure templates (analogous to region filter for Azure)
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied subscription IDs/names. See the README for more details."
   default []
 end
 
