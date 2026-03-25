@@ -66,4 +66,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automat
 
 ## Cost
 
-This policy template uses Flexera billing API calls and AWS API calls. The Flexera billing API does not incur additional costs beyond your existing Flexera subscription. AWS CloudWatch `GetMetricData` API calls may incur standard AWS charges.
+This policy template does not incur any cloud costs.
