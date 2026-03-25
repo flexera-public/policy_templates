@@ -600,6 +600,8 @@ script "js_filter_projects", type: "javascript" do
 end
 ```
 
+### Policy Block
+
 **`summary_template` and `detail_template` Go template syntax:**
 
 Both `summary_template` and `detail_template` use [Go template](https://pkg.go.dev/text/template) syntax to render incident metadata. `data` is the slice of incident rows. Commonly used expressions:
@@ -1273,6 +1275,30 @@ Other useful parameter fields (beyond `type`, `label`, `description`, `default`,
 Style rules are covered in detail in the Style Guide:
 
 - https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md
+
+### Naming Conventions
+
+All datasources **must** be named with a `ds_` prefix. All scripts **must** be named with a `js_` prefix. When a script is paired with a single datasource, they share the same base name:
+
+```
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_azure_subscriptions, ...
+end
+
+script "js_filtered_subscriptions", type: "javascript" do
+  ...
+end
+```
+
+When a script serves multiple datasources (e.g. a request builder used by several datasources), give it a functional name rather than coupling it to one datasource name:
+
+```
+script "js_billing_request", type: "javascript" do   # used by ds_billing_data AND ds_usage_data
+  ...
+end
+```
+
+These naming conventions are enforced by code review — do not use arbitrary names or omit the prefixes.
 
 ## Versioning (Semantic Versioning)
 
