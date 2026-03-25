@@ -728,6 +728,43 @@ define handle_error() do
 end
 ```
 
+**`task_label(msg)`:** Call this inside every `define` that makes HTTP requests to log the current operation to the execution audit trail (used in 2,500+ templates). Passing the HTTP verb + URL as the message makes failures easy to diagnose in the Flexera UI. This is the standard Cloud Workflow logging mechanism:
+
+```
+define delete_one_item($item) return $response do
+  $url = "https://example.com/items/" + $item["id"]
+  task_label("DELETE " + $url)
+  $response = http_request(
+    auth:  $$auth_aws,
+    https: true,
+    verb:  "delete",
+    host:  "example.com",
+    href:  join(["/items/", $item["id"]])
+  )
+  task_label("DELETE " + $url + " response: " + to_json($response))
+end
+```
+
+**`to_json($obj)`:** Serializes any Cloud Workflow value to a JSON string. Use it to include response bodies in `task_label` calls and error messages: `raise "Unexpected response: " + to_json($response)`. Also used to accumulate full request/response pairs for debugging: `$$all_responses << to_json({ "req": $url, "resp": $response })`.
+
+**`inspect($$var)`:** Returns the string `"null"` when a global variable is unset, or the string representation when it is set. The idiomatic null-check is `inspect($$errors) != "null"` — this is the standard guard before operating on a `$$` variable that may not have been initialized:
+
+```
+  if inspect($$errors) != "null"
+    raise "\n" + join($$errors, "\n") + "\n"
+  end
+```
+
+**`concurrent foreach`:** Use instead of `foreach` when iterations are independent and can safely run in parallel. This dramatically reduces execution time for batch operations (e.g. stopping many instances simultaneously). Individual `sub on_error:` handlers still work per-iteration:
+
+```
+  concurrent foreach $instance in $data do
+    sub on_error: handle_error() do
+      call stop_one_instance($instance)
+    end
+  end
+```
+
 ### Built-in Runtime Variables
 
 These variables are automatically injected by the policy engine — they do not need to be declared:
@@ -902,6 +939,115 @@ script "js_parent_policy_terminated", type: "javascript" do
 end
 ```
 
+### Provider Boilerplate Datasources
+
+Multi-region / multi-subscription / multi-project templates start with a datasource that lists all accessible provider accounts to iterate over. All three patterns below use `header "Meta-Flexera", val($ds_is_deleted, "path")` — this header has no effect on the actual API request, but it forces the engine to evaluate `$ds_is_deleted` (and therefore the Meta Policy self-termination check) *before* making any cloud provider API calls.
+
+**AWS — `ds_describe_regions`** (40+ usages): Lists all enabled AWS regions via the EC2 DescribeRegions API. Pass the result through the region allow/deny filter before iterating:
+
+```
+datasource "ds_describe_regions" do
+  request do
+    auth $auth_aws
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+```
+
+**Azure — `ds_azure_subscriptions`** (many usages): Lists all Azure subscriptions accessible to the credential. Use `$param_azure_endpoint` as the host (see Standard Parameter Conventions) to support both commercial Azure and Azure China:
+
+```
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id",    jmes_path(col_item, "subscriptionId")
+      field "name",  jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+```
+
+**Google — `ds_google_projects`** (26+ usages): Lists all active Google Cloud projects accessible to the credential:
+
+```
+datasource "ds_google_projects" do
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+    query "filter", "(lifecycleState:ACTIVE)"
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "number", jmes_path(col_item, "projectNumber")
+      field "id",     jmes_path(col_item, "projectId")
+      field "name",   jmes_path(col_item, "name")
+    end
+  end
+end
+```
+
+**`ds_terminate_self` + `ds_is_deleted`** — Meta Policy self-termination boilerplate (159+ usages): These datasources let a child policy automatically self-terminate when its parent Meta Policy has been deleted. `ds_terminate_self` issues a `DELETE` call against its own applied policy record when `$ds_parent_policy_terminated` is `true`; otherwise a harmless `GET`. `ds_is_deleted` produces a sentinel `{ path: "/" }` object used only as the `header "Meta-Flexera"` value to enforce evaluation order — ensuring the termination check always runs first:
+
+```
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
+  end
+end
+
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+    request = {
+      auth: "auth_flexera",
+      host: ds_flexera_api_hosts["flexera"],
+      path: "/policy/v1/orgs/" + rs_org_id + "/projects/" + rs_project_id + "/applied-policies" + (policy_id ? "/" + policy_id : ""),
+      verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+    }
+  EOS
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
+  result "result"
+  code 'result = { path: "/" }'
+end
+```
+
 ## Standard Parameter Conventions
 
 Most catalog policy templates include the following parameters by convention. Use the exact labels and descriptions shown so the UI is consistent across policies:
@@ -979,6 +1125,16 @@ parameter "param_subscriptions_list" do
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied subscription IDs/names. See the README for more details."
   default []
+end
+
+# Azure endpoint — include in all Azure templates; allows targeting Azure China cloud
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
 end
 
 # Tag-based exclusion — common across all providers
