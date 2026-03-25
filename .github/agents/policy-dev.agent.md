@@ -970,6 +970,10 @@ Commonly used built-in DSL functions for use in `check`, `request`, and `result`
 | `switch(val, if_truthy, if_falsy)` | Ternary: returns second arg if val is truthy, third if falsy |
 | `to_n(str)` | Parse string to number |
 | `to_s(val)` | Convert value to string |
+| `first(list)` | Return first element of a list |
+| `last(list)` | Return last element of a list |
+| `get(index, list)` | Get element at index (e.g. `get(4, split(id, '/'))` extracts the 5th segment) |
+| `type(val)` | Return type as string (e.g. `"array"`, `"string"`) — used in Cloud Workflow |
 
 ### Flexera API Boilerplate Datasources
 
