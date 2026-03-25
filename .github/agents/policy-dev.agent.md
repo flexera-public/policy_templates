@@ -491,7 +491,43 @@ script "js_filter_resources", type: "javascript" do
 end
 ```
 
+### Common JavaScript Patterns — Region Filtering
+
+The `param_regions_allow_or_deny` + `param_regions_list` parameter pair is applied in JavaScript using this standard pattern. An empty list means "no filter — include all regions":
+
+```
+script "js_filter_regions", type: "javascript" do
+  parameters "regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-'EOS'
+    allow_deny_test = { "Allow": true, "Deny": false }
+
+    if (param_regions_list.length > 0) {
+      result = _.filter(regions, function(item) {
+        return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+      })
+    } else {
+      result = regions  // empty list = no filter; include all regions
+    }
+  EOS
+end
+```
+
+The field name `item['region']` may differ depending on how the upstream datasource names the region field. Adapt as needed (e.g. `item['location']` for Azure, `item['name']` for Google).
+
 ### Policy Block
+
+**`summary_template` and `detail_template` Go template syntax:**
+
+Both `summary_template` and `detail_template` use [Go template](https://pkg.go.dev/text/template) syntax to render incident metadata. `data` is the slice of incident rows. Commonly used expressions:
+
+| Expression | Meaning |
+|---|---|
+| `{{ len data }}` | Number of violation rows in the incident |
+| `{{ with index data 0 }}{{ .field_name }}{{ end }}` | Access a field from the first row (safe — renders nothing if empty) |
+| `{{ range data -}}\n  - {{ .field }}\n{{ end -}}` | Iterate all rows; `-` trims surrounding whitespace |
+
+The `{{ .policy_name }}` and `{{ .message }}` fields are populated by the final JavaScript transform before the policy block runs (see Cost Template Conventions below). Always use `with index data 0` rather than direct `index data 0` to safely handle an empty datasource.
 
 ```
 policy "pol_example" do
@@ -541,6 +577,36 @@ end
 **`hash_exclude`:** Prevents listed fields from contributing to the incident's deduplication hash. Without this, any change to an excluded field (e.g. tag updates, savings estimates recalculating) closes and re-opens the incident on the next evaluation. Always exclude volatile fields that don't indicate a meaningful state change. **`hash_include`** is the inverse (whitelists only specific fields for hashing); it is a valid DSL keyword but is rarely used in the catalog — `hash_exclude` is the standard convention.
 
 **`export <path> do`:** The `export` keyword accepts an optional JMESPath expression before `do` to extract a nested sub-array from the incident data as the exported table (e.g. `export "items[*]" do`). Omit the path when the incident data itself is the flat array to export.
+
+### Common JavaScript Patterns — Final Transform / Cost Template Conventions
+
+The last datasource in every template is typically a JavaScript transform (`run_script`) that:
+1. Joins all upstream datasources into the final incident rows
+2. Populates `result[0]` with metadata fields that feed into `summary_template` / `detail_template`
+3. For cost templates, attaches savings data to each row
+
+**Standard fields set on `result[0]`** (the first item in the result array):
+
+```javascript
+result[0]['policy_name'] = ds_applied_policy['name']  // always — feeds {{ .policy_name }} in summary_template
+result[0]['message']     = "Multi-line markdown string..."  // feeds {{ .message }} in detail_template
+result[0]['total_savings'] = "Total Estimated Monthly Savings: " + currency_symbol + total  // cost templates only
+```
+
+**Standard per-row fields for cost recommendation templates:**
+
+```javascript
+result.push({
+  // ... resource fields ...
+  savings:         parseFloat(item_savings.toFixed(3)),   // estimated monthly savings (number)
+  savingsCurrency: ds_currency['symbol'],                 // e.g. "$", "€"
+  // ...
+})
+```
+
+Always add `"savings"`, `"savingsCurrency"`, `"total_savings"`, and `"message"` to `hash_exclude` in the `validate_each` block so that savings recalculations and message updates don't trigger spurious incident re-opens.
+
+For cost templates, the `ds_currency` datasource (fetched from the Flexera billing API) provides the org's currency symbol. Copy the boilerplate from a reference template such as `cost/aws/old_snapshots/aws_delete_old_snapshots.pt`.
 
 ### Escalations
 
