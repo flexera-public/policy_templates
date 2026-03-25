@@ -19,8 +19,7 @@ You are an expert Flexera policy template developer working in the `flexera-publ
 
 ## Resources
 
-The following web resources provide detailed information on the policy template language and Flexera's public policy catalog. You should review them to learn more:
-
+**Policy template language & catalog:**
 - https://docs.flexera.com/flexera/en/Automation/AutomationGS.htm
 - https://docs.flexera.com/flexera-one/automation/managing-and-using-the-automation-catalog
 - https://docs.flexera.com/flexera-one/automation/automation-reference-information/policy-template-language/
@@ -32,8 +31,7 @@ The following web resources provide detailed information on the policy template 
 - https://github.com/flexera-public/policy_templates/blob/master/tools/policy_master_permission_generation/README.md
 - https://github.com/flexera-public/policy_sdk
 
-You should also review the following web resources that document Flexera's REST APIs:
-
+**Flexera REST APIs:**
 - https://developer.flexera.com/
 - https://reference.rightscale.com/bill_analysis/
 - https://reference.rightscale.com/billing_center/
@@ -43,13 +41,11 @@ You should also review the following web resources that document Flexera's REST 
 - https://reference.rightscale.com/cred-management/
 - https://reference.rightscale.com/optima-recommendations/
 
-You should also review the following web resources that document Flexera's bill ingestion and CBI tools:
-
+**Bill ingestion & CBI:**
 - https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/
 - https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/
 
-When necessary, consult the documentation for various providers and their REST APIs:
-
+**Cloud provider APIs:**
 - https://docs.aws.amazon.com/
 - https://learn.microsoft.com/en-us/azure/
 - https://docs.cloud.google.com/docs
@@ -57,15 +53,15 @@ When necessary, consult the documentation for various providers and their REST A
 - https://docs.databricks.com/
 - https://www.servicenow.com/docs/
 
-When none of the above documentation provides clarity, review other policy templates in this repository for examples to work off of.
+When documentation is unclear, use existing policy templates in this repository as examples.
 
 ## Tools
 
 You have access to the command line `fpt` tool with the following useful commands:
 
 ```bash
-# Check syntax of a policy template (always run this after writing or modifying a .pt file)
-# Note: fpt check requires valid credentials in ~/.fpt.yml even for syntax-only checks
+# Check syntax (always run after writing or modifying a .pt file)
+# Requires valid credentials in ~/.fpt.yml even for syntax-only checks
 fpt check path/to/policy_template.pt
 
 # Upload and apply a policy template for live end-to-end testing
@@ -76,15 +72,7 @@ fpt run path/to/policy_template.pt param_name=value
 fpt retrieve_data path/to/policy_template.pt --names datasource_name
 ```
 
-`fpt` requires a `~/.fpt.yml` config file with Flexera account credentials before any command will work. Use the `-a` flag to select a named account when multiple accounts are configured (`fpt -a my_account check ...`). See the [policy_sdk README](https://github.com/flexera-public/policy_sdk) for setup instructions.
-
-Documentation on this tool can be found on its Github page:
-
-- https://github.com/flexera-public/policy_sdk
-
-## Repository Overview
-
-This repository contains Flexera policy templates (`.pt` files) used inside the Flexera One platform for cloud cost optimization, compliance, operational, security, and SaaS governance. Policy templates are written in [Flexera's policy template language](https://docs.flexera.com/flexera-one/automation/automation-reference-information/policy-template-language/).
+`fpt` requires `~/.fpt.yml` with Flexera credentials. Use `-a` to select a named account (`fpt -a my_account check ...`). See https://github.com/flexera-public/policy_sdk for setup.
 
 ## Directory Structure
 
@@ -183,7 +171,7 @@ All catalog templates follow a fixed section order, with each section preceded b
 ###############################################################################
 ```
 
-"Authentication" is what the catalog calls the `credentials` blocks. "Datasources & Scripts" covers both `datasource` and `script` blocks together. The "Cloud Workflow" section contains all `define` blocks. Omit sections that aren't needed (e.g. omit Pagination if no paginated APIs, omit Cloud Workflow if there are no actions).
+"Authentication" = `credentials` blocks. "Datasources & Scripts" = both `datasource` and `script` blocks. "Cloud Workflow" = `define` blocks. Omit sections that aren't needed.
 
 ## DSL Quick Reference
 
@@ -304,7 +292,7 @@ For AWS APIs that return XML (many older EC2/RDS endpoints), use `encoding "xml"
   end
 ```
 
-Use `encoding "text"` when the API returns raw text (e.g. CSV files). The entire response body becomes the datasource value — no `field` declarations needed. When passed to a downstream `run_script`, the parameter is the raw string; when iterated, `iter_item` is the raw string. Commonly used in CBI (bill ingestion) templates to download raw files and re-upload them:
+Use `encoding "text"` for raw text responses (e.g. CSV). The entire response body becomes the datasource value — no `field` declarations needed:
 
 ```
   result do
@@ -457,11 +445,11 @@ end
 
 **Datasource structure rules:**
 - A datasource can have EITHER `iterate` OR top-level `run_script`, not both
-- `iterate` is for making one HTTP request per element in a list
-- Top-level `run_script` is for pure JavaScript transforms with no HTTP request
-- `request do { run_script }` is for dynamically building a single HTTP request (different from top-level `run_script`)
+- `iterate` = one HTTP request per element in a list
+- Top-level `run_script` = pure JavaScript transform with no HTTP request
+- `request do { run_script }` = dynamically build a single HTTP request
 
-**Important:** Underscore.js (`_`) is always available inside `script` blocks. Use `_.filter`, `_.map`, `_.uniq`, `_.groupBy`, `_.each`, etc. to avoid verbose manual loops. `_.pluck(array, "field")` extracts a single field from every object in an array (e.g. `_.pluck(billing_centers, "id")` returns `["id1", "id2", ...]`). It is used in 596+ templates.
+Underscore.js (`_`) is always available in `script` blocks. Use `_.filter`, `_.map`, `_.uniq`, `_.groupBy`, `_.each`, `_.pluck`, etc.
 
 > **⚠️ JavaScript in `script` blocks runs on an older ES5-era engine.** Do NOT use:
 > - `const` or `let` — use `var` for all variable declarations
@@ -476,9 +464,9 @@ end
 
 The `param_exclusion_tags` + `param_exclusion_tags_boolean` parameter pair is filtered in JavaScript using a standard comparator pattern. It supports: bare key (key exists), `Key==Value` (exact), `Key!=Value` (not equal), `Key=~Value` (regex match), `Key!~Value` (regex non-match).
 
-> **Note on tag format:** Tags arrive in different shapes by provider:
-> - **AWS:** `resource['tags']` is an array of `{ key: "k", value: "v" }` objects — iterate to build a flat map (as in the script below)
-> - **Azure/GCP:** `resource['tags']` is already a flat `{ Key: Value }` object — assign directly: `if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }`
+**Tag format by provider:**
+- **AWS:** `resource['tags']` is an array of `{ key: "k", value: "v" }` — iterate to build a flat map
+- **Azure/GCP:** `resource['tags']` is already a flat `{ Key: Value }` object
 
 ```
 script "js_filter_resources", type: "javascript" do
@@ -552,7 +540,7 @@ script "js_filter_regions", type: "javascript" do
 end
 ```
 
-The filter script must be wrapped in a companion datasource that wires it to the raw listing. This is the complete pattern (AWS example):
+Wrap in a companion datasource:
 
 ```
 datasource "ds_regions" do
@@ -560,9 +548,7 @@ datasource "ds_regions" do
 end
 ```
 
-Downstream datasources then use `iterate $ds_regions` to iterate only over the filtered list.
-
-The field name `item['region']` may differ depending on how the upstream datasource names the region field. Adapt as needed (e.g. `item['location']` for Azure, `item['name']` for Google).
+Downstream datasources use `iterate $ds_regions`. Adapt field name as needed (`item['location']` for Azure, `item['name']` for Google).
 
 ### Common JavaScript Patterns — Azure Subscription Filtering
 
@@ -591,15 +577,13 @@ script "js_filter_subscriptions", type: "javascript" do
 end
 ```
 
-The filter script must be wrapped in a companion datasource:
+Wrap in a companion datasource; downstream datasources use `iterate $ds_azure_subscriptions_filtered`:
 
 ```
 datasource "ds_azure_subscriptions_filtered" do
   run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 ```
-
-Downstream datasources use `iterate $ds_azure_subscriptions_filtered`.
 
 ### Common JavaScript Patterns — Google Project Filtering
 
@@ -629,7 +613,7 @@ script "js_filter_projects", type: "javascript" do
 end
 ```
 
-The filter script must be wrapped in a companion datasource:
+Wrap in a companion datasource; downstream datasources use `iterate $ds_google_projects_filtered`:
 
 ```
 datasource "ds_google_projects_filtered" do
@@ -637,13 +621,9 @@ datasource "ds_google_projects_filtered" do
 end
 ```
 
-Downstream datasources use `iterate $ds_google_projects_filtered`.
-
 ### Policy Block
 
-**`summary_template` and `detail_template` Go template syntax:**
-
-Both `summary_template` and `detail_template` use [Go template](https://pkg.go.dev/text/template) syntax to render incident metadata. `data` is the slice of incident rows. Commonly used expressions:
+`summary_template` and `detail_template` use [Go template](https://pkg.go.dev/text/template) syntax. `data` is the slice of incident rows:
 
 | Expression | Meaning |
 |---|---|
@@ -651,7 +631,7 @@ Both `summary_template` and `detail_template` use [Go template](https://pkg.go.d
 | `{{ with index data 0 }}{{ .field_name }}{{ end }}` | Access a field from the first row (safe — renders nothing if empty) |
 | `{{ range data -}}\n  - {{ .field }}\n{{ end -}}` | Iterate all rows; `-` trims surrounding whitespace |
 
-The `{{ .policy_name }}` and `{{ .message }}` fields are populated by the final JavaScript transform before the policy block runs (see Cost Template Conventions below). Always use `with index data 0` rather than direct `index data 0` to safely handle an empty datasource.
+`{{ .policy_name }}` and `{{ .message }}` are populated by the final JavaScript transform. Always use `with index data 0` to safely handle empty datasources.
 
 ```
 policy "pol_example" do
@@ -692,15 +672,15 @@ policy "pol_example" do
 end
 ```
 
-> **Note:** The catalog exclusively uses `validate_each` — even for error-checking datasources. There is no `validate` (without `_each`) usage in this catalog.
+The catalog exclusively uses `validate_each` — there is no `validate` (without `_each`) usage.
 
-**`check` semantics:** The incident is created when `check` evaluates to **`false`**, **`0`**, an **empty string**, an **empty array**, or an **empty object** — any other value is treated as a pass. Multiple `check` statements are allowed per `validate_each` block; the engine evaluates them in order and stops at the first failure. An empty `id` field (`eq(val(item, "id"), "")`) is the standard sentinel value used to produce no incident when the datasource has no results.
+**`check` semantics:** Incident fires when `check` evaluates to `false`, `0`, empty string, empty array, or empty object. Multiple `check` statements evaluate in order, stopping at first failure. `eq(val(item, "id"), "")` is the standard sentinel for "no incident when datasource is empty".
 
-**Meta Policy termination check:** Always include `logic_or($ds_parent_policy_terminated, ...)` as the first argument in `check` for any policy that supports Meta Policies. This allows the parent policy to gracefully terminate child incidents.
+**Meta Policy termination check:** Always include `logic_or($ds_parent_policy_terminated, ...)` as first argument in `check` for Meta Policy support.
 
-**`hash_exclude`:** Prevents listed fields from contributing to the incident's deduplication hash. Without this, any change to an excluded field (e.g. tag updates, savings estimates recalculating) closes and re-opens the incident on the next evaluation. Always exclude volatile fields that don't indicate a meaningful state change.
+**`hash_exclude`:** Prevents listed fields from contributing to incident deduplication hash. Exclude volatile fields (tags, savings) that change without indicating meaningful state change.
 
-**`export <field_name> do`:** The `export` keyword accepts an optional plain field name before `do` to extract a nested sub-array from the incident data as the exported table (e.g. `export "instances" do` where `instances` is a field containing an array). Omit the field name when the incident data itself is the flat array to export.
+**`export <field_name> do`:** Optional field name before `do` extracts a nested sub-array as the exported table. Omit when the incident data itself is the flat array.
 
 ### Common JavaScript Patterns — Final Transform / Cost Template Conventions
 
@@ -821,20 +801,16 @@ define handle_error() do
 end
 ```
 
-**`$_error` object:** Inside a `sub on_error:` handler, the `$_error` object contains details about the caught error:
-- `$_error["type"]` — error type/category (e.g. `"http"`, `"general"`)
-- `$_error["message"]` — human-readable error message
+**`$_error` object:** In `sub on_error:` handlers: `$_error["type"]` (e.g. `"http"`, `"general"`) and `$_error["message"]`. Set `$_error_behavior = "skip"` to suppress re-raising.
 
-Set `$_error_behavior = "skip"` to suppress re-raising; omit it to let the error propagate after logging.
-
-**`call` and `retrieve`:** Use `call define_name(args) retrieve $var` when the define returns a value. `retrieve` is optional — omit it when you don't need the return value:
+**`call` and `retrieve`:** Use `retrieve` to capture return values; omit when not needed:
 
 ```
   call delete_one_item($item) retrieve $response   # captures return value
   call log_event($item)                            # fire-and-forget; no return value needed
 ```
 
-**`task_label(msg)`:** Call this inside every `define` that makes HTTP requests to log the current operation to the execution audit trail (used in 2,500+ templates). Passing the HTTP verb + URL as the message makes failures easy to diagnose in the Flexera UI:
+**`task_label(msg)`:** Log HTTP operations to the execution audit trail. Pass HTTP verb + URL for easy failure diagnosis:
 
 ```
 define delete_one_item($item) return $response do
@@ -851,9 +827,9 @@ define delete_one_item($item) return $response do
 end
 ```
 
-**`to_json($obj)`:** Serializes any Cloud Workflow value to a JSON string. Use it to include response bodies in `task_label` calls and error messages: `raise "Unexpected response: " + to_json($response)`. Also used to accumulate full request/response pairs for debugging: `$$all_responses << to_json({ "req": $url, "resp": $response })`.
+**`to_json($obj)`:** Serialize to JSON string. Use in `task_label` calls and error messages.
 
-**`inspect($$var)`:** Returns the string `"null"` when a global variable is unset, or the string representation when it is set. The idiomatic null-check is `inspect($$errors) != "null"` — this is the standard guard before operating on a `$$` variable that may not have been initialized:
+**`inspect($$var)`:** Returns `"null"` when unset. Idiomatic null-check: `inspect($$errors) != "null"`:
 
 ```
   if inspect($$errors) != "null"
@@ -861,7 +837,7 @@ end
   end
 ```
 
-**`concurrent foreach`:** Use instead of `foreach` when iterations are independent and can safely run in parallel. This dramatically reduces execution time for batch operations (e.g. stopping many instances simultaneously). Individual `sub on_error:` handlers still work per-iteration:
+**`concurrent foreach`:** Use for independent iterations that can run in parallel. Individual `sub on_error:` handlers still work per-iteration:
 
 ```
   concurrent foreach $instance in $data do
@@ -871,7 +847,7 @@ end
   end
 ```
 
-**Response code validation:** Always check `$response["code"]` after an HTTP call and `raise` on unexpected values. Common success codes: `200` (read/update), `201` (create), `202` (accepted/async), `204` (delete/no content). Include `to_json($response)` in the error message for easy debugging:
+**Response code validation:** Check `$response["code"]` and `raise` on unexpected values. Success codes: `200`, `201`, `202`, `204`:
 
 ```
   if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
@@ -881,7 +857,7 @@ end
   end
 ```
 
-**`sleep($seconds)`:** Pauses execution for the specified number of seconds. Use in polling loops when waiting for async operations to complete (241+ usages in catalog):
+**`sleep($seconds)`:** Pause execution. Use in polling loops:
 
 ```
   while $instance_state != "running" do
@@ -890,7 +866,7 @@ end
   end
 ```
 
-**`while` loops:** Cloud Workflow supports `while condition do ... end` loops. Combine with `sleep()` and `sub timeout:` for polling patterns:
+**`while` loops:** Combine with `sleep()` and `sub timeout:` for polling:
 
 ```
   sub timeout: 5m, on_timeout: skip do
@@ -901,7 +877,7 @@ end
   end
 ```
 
-**`sub timeout:` with `on_timeout:`:** Wraps a block with a timeout. If the block doesn't complete within the specified duration, the `on_timeout` handler runs. Use `skip` to silently continue, or call a handler `define`:
+**`sub timeout:` with `on_timeout:`:** Use `skip` to silently continue, or call a handler `define`:
 
 ```
   sub timeout: 5m, on_timeout: handle_timeout() do
@@ -912,7 +888,7 @@ end
   end
 ```
 
-**HTTP shorthand functions:** Cloud Workflow provides `http_get`, `http_post`, `http_patch`, and `http_delete` as shortcuts that take a single `url` parameter instead of separate `host`/`href`. Use these for Google and Azure APIs:
+**HTTP shorthand functions:** `http_get`, `http_post`, `http_patch`, `http_delete` take a single `url` parameter. Use for Google/Azure:
 
 ```
   $response = http_post(
@@ -925,7 +901,7 @@ end
 
 ### Built-in Runtime Variables
 
-These variables are automatically injected by the policy engine — they do not need to be declared:
+Automatically injected by the policy engine:
 
 | Variable | Description |
 |---|---|
@@ -940,11 +916,11 @@ These variables are automatically injected by the policy engine — they do not 
 | `rs_ss_host` | Flexera Self-Service API endpoint |
 | `f1_app_host` | Flexera One UI hostname |
 
-These can be passed directly to `run_script` as parameters: `run_script $js_example, rs_org_id, rs_optima_host`
+Pass directly to `run_script`: `run_script $js_example, rs_org_id, rs_optima_host`
 
 ### Special Loop Variables
 
-Three implicit variables are available in specific DSL contexts — they do not need to be declared:
+Implicit variables in specific DSL contexts:
 
 | Variable | Available in | Description |
 |---|---|---|
@@ -1003,11 +979,9 @@ script "js_flexera_api_hosts", type: "javascript" do
 end
 ```
 
-Use `val($ds_flexera_api_hosts, "flexera")` as the `host` in any Flexera API datasource request.
+Use `val($ds_flexera_api_hosts, "flexera")` as `host` in Flexera API requests. For FSM/GRS APIs, copy the full boilerplate (including `fsm`, `grs`, `api`, `ui`, `tld` keys) from an existing template.
 
-> **Note:** The table above is a simplified subset. If your template calls FSM (SaaS Management) or GRS APIs, copy the full `ds_flexera_api_hosts` boilerplate (including `fsm`, `grs`, `api`, `ui`, `tld` keys) from an existing template such as `cost/aws/old_snapshots/aws_delete_old_snapshots.pt`.
-
-Include `ds_applied_policy` in every template that references `{{ .policy_name }}` in a `summary_template`. The policy name is injected into incident data by the final mapping script: `result[0]['policy_name'] = ds_applied_policy['name']`
+Include `ds_applied_policy` in templates that reference `{{ .policy_name }}` in `summary_template`:
 
 ```
 datasource "ds_applied_policy" do
@@ -1024,7 +998,7 @@ datasource "ds_applied_policy" do
 end
 ```
 
-Include `ds_billing_centers` in any cost template that queries billing data. It provides the billing center IDs used in the billing API request script:
+Include `ds_billing_centers` in cost templates that query billing data:
 
 ```
 datasource "ds_billing_centers" do
@@ -1049,7 +1023,7 @@ datasource "ds_billing_centers" do
 end
 ```
 
-Include `ds_cloud_vendor_accounts` in any template that needs to display account/subscription names alongside resource data. It fetches cloud vendor account metadata (IDs, names, tags) from the Flexera FinOps Analytics API and is used in 468+ templates. The `id` field path differs by provider — use the AWS boilerplate below and adapt for other clouds:
+Include `ds_cloud_vendor_accounts` to display account/subscription names. The `id` field path differs by provider:
 
 ```
 datasource "ds_cloud_vendor_accounts" do
@@ -1070,7 +1044,7 @@ datasource "ds_cloud_vendor_accounts" do
 end
 ```
 
-For Meta Policy support, include these two boilerplate datasources. The `$ds_parent_policy_terminated` value is then used in every `check` line as shown in the Policy Block section above:
+For Meta Policy support, include these boilerplate datasources. Use `$ds_parent_policy_terminated` in every `check` line:
 
 ```
 datasource "ds_get_parent_policy" do
@@ -1102,9 +1076,9 @@ end
 
 ### Provider Boilerplate Datasources
 
-Multi-region / multi-subscription / multi-project templates start with a datasource that lists all accessible provider accounts to iterate over. All three patterns below use `header "Meta-Flexera", val($ds_is_deleted, "path")` — this header has no effect on the actual API request, but it forces the engine to evaluate `$ds_is_deleted` (and therefore the Meta Policy self-termination check) *before* making any cloud provider API calls.
+Multi-region/subscription/project templates start with a datasource listing all accessible accounts. All patterns use `header "Meta-Flexera", val($ds_is_deleted, "path")` to force Meta Policy termination check *before* cloud API calls.
 
-**AWS — `ds_describe_regions`** (40+ usages): Lists all enabled AWS regions via the EC2 DescribeRegions API. Pass the result through the region allow/deny filter before iterating:
+**AWS — `ds_describe_regions`:** Pass through region allow/deny filter before iterating:
 
 ```
 datasource "ds_describe_regions" do
@@ -1128,7 +1102,7 @@ datasource "ds_describe_regions" do
 end
 ```
 
-**Azure — `ds_azure_subscriptions`** (many usages): Lists all Azure subscriptions accessible to the credential. Use `$param_azure_endpoint` as the host (see Standard Parameter Conventions) to support both commercial Azure and Azure China:
+**Azure — `ds_azure_subscriptions`:** Use `$param_azure_endpoint` as host to support Azure China:
 
 ```
 datasource "ds_azure_subscriptions" do
@@ -1153,7 +1127,7 @@ datasource "ds_azure_subscriptions" do
 end
 ```
 
-**Google — `ds_google_projects`** (26+ usages): Lists all active Google Cloud projects accessible to the credential:
+**Google — `ds_google_projects`:**
 
 ```
 datasource "ds_google_projects" do
@@ -1176,7 +1150,7 @@ datasource "ds_google_projects" do
 end
 ```
 
-**`ds_terminate_self` + `ds_is_deleted`** — Meta Policy self-termination boilerplate (159+ usages): These datasources let a child policy automatically self-terminate when its parent Meta Policy has been deleted. `ds_terminate_self` issues a `DELETE` call against its own applied policy record when `$ds_parent_policy_terminated` is `true`; otherwise a harmless `GET`. `ds_is_deleted` produces a sentinel `{ path: "/" }` object used only as the `header "Meta-Flexera"` value to enforce evaluation order — ensuring the termination check always runs first:
+**`ds_terminate_self` + `ds_is_deleted`** — Meta Policy self-termination: `ds_terminate_self` issues `DELETE` when `$ds_parent_policy_terminated` is true, otherwise `GET`. `ds_is_deleted` produces sentinel `{ path: "/" }` to enforce evaluation order:
 
 ```
 datasource "ds_terminate_self" do
@@ -1211,7 +1185,7 @@ end
 
 ## Standard Parameter Conventions
 
-Most catalog policy templates include the following parameters by convention. Use the exact labels and descriptions shown so the UI is consistent across policies:
+Use exact labels/descriptions for UI consistency:
 
 ```
 # Always first — recipient list for incident emails
@@ -1368,7 +1342,7 @@ Other useful parameter fields (beyond `type`, `label`, `description`, `default`,
 
 ## Style Rules
 
-See the [Style Guide](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md) for complete details. Key rules are summarized below.
+See [STYLE_GUIDE.md](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md) for complete details.
 
 ### Naming Conventions
 
@@ -1384,15 +1358,13 @@ script "js_filtered_subscriptions", type: "javascript" do
 end
 ```
 
-When a script serves multiple datasources (e.g. a request builder used by several datasources), give it a functional name rather than coupling it to one datasource name:
+When a script serves multiple datasources, give it a functional name:
 
 ```
 script "js_billing_request", type: "javascript" do   # used by ds_billing_data AND ds_usage_data
   ...
 end
 ```
-
-These naming conventions are enforced by code review — do not use arbitrary names or omit the prefixes.
 
 ## Versioning (Semantic Versioning)
 
@@ -1449,23 +1421,13 @@ policy_templates:
 -  "../../cost/aws/my_new_policy/aws_my_new_policy.pt"
 ```
 
-Do **not** manually edit `data/active_policy_list/active_policy_list.json` — this file is auto-generated from `validated_policy_templates.yaml` and updated by automation.
-
-More information on both of these tools is available in their respective READMEs:
-- https://github.com/flexera-public/policy_templates/blob/master/tools/meta_parent_policy_compiler/README.md
-- https://github.com/flexera-public/policy_templates/blob/master/tools/policy_master_permission_generation/README.md
+Do **not** manually edit `data/active_policy_list/active_policy_list.json` — auto-generated from `validated_policy_templates.yaml`.
 
 ## Dangerfile
 
-All PRs in this repository are tested using [Dangerfile](https://danger.systems/guides/dangerfile). Dangerfile tests are contained in `Dangerfile` and the contents of the `.dangerfile` directory. To the best of your ability, ensure that your policy template work passes these tests.
+PRs are tested via [Dangerfile](https://danger.systems/guides/dangerfile). Run locally: `bundle exec danger pr https://github.com/flexera-public/policy_templates/pull/NNNNN --pry`
 
-You can run Dangerfile tests locally against an open PR to quickly verify fixes:
-
-```bash
-bundle exec danger pr https://github.com/flexera-public/policy_templates/pull/NNNNN --pry
-```
-
-Key things Dangerfile checks (self-verify before submitting):
+**Key checks:**
 
 - **`info()` block** — must be present and contain `version`, `provider`, and `service`
 - **Version format** — must be valid semantic versioning (`X.Y.Z`)
@@ -1481,36 +1443,29 @@ Key things Dangerfile checks (self-verify before submitting):
 
 ## Flexera APIs
 
-Always prefer REST API endpoints listed on [developer.flexera.com/](https://developer.flexera.com/). Fall back to RightScale APIs only when no equivalent REST API endpoint is documented on [developer.flexera.com/](https://developer.flexera.com/).
+Prefer [developer.flexera.com](https://developer.flexera.com/) REST endpoints. Use RightScale APIs only when no Flexera equivalent exists.
 
 ## Your Responsibilities
 
-When asked to create a new policy template:
-1. Search the repository for existing templates that do something similar and use them as a reference for structure, patterns, and conventions
-2. Determine the correct category and provider for the directory path
-3. Write the `.pt` file following the DSL conventions and style guide; set `publish: "false"` in the `info()` block for all new templates
-4. Run `fpt check` on the `.pt` file and fix any errors before finishing
+**Creating a new policy template:**
+1. Search for similar templates to use as reference
+2. Determine correct category/provider for directory path
+3. Write `.pt` file with `publish: "false"` in `info()` block
+4. Run `fpt check` and fix errors
 5. Write `README.md` and `CHANGELOG.md`
 6. Update `tools/policy_master_permission_generation/validated_policy_templates.yaml`
-7. Update `tools/meta_parent_policy_compiler/default_template_files.yaml` if meta policy is supported
-8. Validate that versioning, naming, and structure are correct
+7. Update `tools/meta_parent_policy_compiler/default_template_files.yaml` if Meta Policy supported
 
-When asked to modify an existing policy template:
-1. Read the existing `.pt` file, README, and CHANGELOG first
-2. Apply changes following the style guide
-3. Bump the version appropriately (MAJOR/MINOR/PATCH)
-4. Run `fpt check` on the `.pt` file and fix any errors before finishing
-5. Update the CHANGELOG with a user-facing description of changes
-6. Update the README if parameters or behavior changed
+**Modifying an existing policy template:**
+1. Read existing `.pt`, README, and CHANGELOG
+2. Apply changes following style guide
+3. Bump version (MAJOR/MINOR/PATCH)
+4. Run `fpt check` and fix errors
+5. Update CHANGELOG and README as needed
 
-When asked to review a policy template:
-1. Check against the style guide conventions
-2. Verify directory structure, file naming, and required files
+**Reviewing a policy template:**
+1. Check style guide compliance
+2. Verify directory structure and file naming
 3. Validate semantic versioning
-4. Check for hardcoded secrets or sensitive values
-5. Confirm user-visible text is professional and jargon-free
-6. Verify the `info()` block contains all required fields
-7. Verify the README has all required sections in the correct order
-8. Verify the CHANGELOG uses the correct format
-
-Always reference `STYLE_GUIDE.md` and `CONTRIBUTING.md` in the repo root for the authoritative rules.
+4. Check for hardcoded secrets
+5. Verify `info()` block, README sections, and CHANGELOG format
