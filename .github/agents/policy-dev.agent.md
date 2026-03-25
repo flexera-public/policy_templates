@@ -323,6 +323,49 @@ result do
 end
 ```
 
+### Datasource — Static POST / PUT / DELETE Request
+
+For POST (or any non-GET) requests where the body is static or can be built from DSL expressions, use `verb`, `body_field`, and/or `body` directly in the `request do` block — no JavaScript script required. Use the dynamic `run_script` pattern only when the body needs conditional logic or complex data transformation.
+
+```
+datasource "ds_create_items" do
+  iterate $ds_items_to_create
+  request do
+    auth $auth_flexera
+    verb "POST"                                           # override the default GET verb
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/some/api/v1/orgs/", rs_org_id, "/items"])
+    header "User-Agent", "RS Policies"
+    body_field "name",   val(iter_item, "name")           # individual JSON body fields
+    body_field "params", val(iter_item, "params")         # repeat for each field
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+```
+
+For APIs that expect a raw string body (CSV, XML, empty JSON object, etc.) use `body` instead of `body_field`:
+
+```
+datasource "ds_post_raw" do
+  request do
+    auth $auth_aws
+    verb "POST"
+    host "some-aws-api.amazonaws.com"
+    path "/some/endpoint"
+    body "{}"    # send an empty JSON object body; can also be val(...) or join([...]) expressions
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+```
+
+`body_field` and `body` are mutually exclusive — use one or the other per request block, not both.
+
 ### Datasource — Dynamic / POST Request
 
 Use `request do { run_script }` when the request URL, verb, or body must be constructed dynamically (e.g. POST requests to Flexera billing APIs). The script must return a `request` object — note that `result` must be named `"request"`, and credentials are passed as a **string** name, not a `$variable`:
@@ -479,13 +522,17 @@ policy "pol_example" do
     end
   end
 
-  validate $ds_errors do            # validate (not validate_each) checks the whole datasource
+  # Error-check pattern: validate_each fires one incident per error row.
+  # check eq(size(data), 0) passes when there are zero total errors and fails (fires) when any exist.
+  validate_each $ds_errors do
     summary_template "{{ len data }} Errors Identified"
-    check eq(size(data), 0)         # fires incident if there are any errors
+    check eq(size(data), 0)
     escalate $esc_email_errors
   end
 end
 ```
+
+> **Note:** The catalog exclusively uses `validate_each` — even for error-checking datasources. There is no `validate` (without `_each`) usage in this catalog.
 
 **`check` semantics:** The incident is created when `check` evaluates to **`false`**, **`0`**, an **empty string**, an **empty array**, or an **empty object** — any other value is treated as a pass. Multiple `check` statements are allowed per `validate_each` block; the engine evaluates them in order and stops at the first failure. An empty `id` field (`eq(val(item, "id"), "")`) is the standard sentinel value used to produce no incident when the datasource has no results.
 
