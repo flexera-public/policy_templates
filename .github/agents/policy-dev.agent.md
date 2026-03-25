@@ -543,6 +543,16 @@ script "js_filter_regions", type: "javascript" do
 end
 ```
 
+The filter script must be wrapped in a companion datasource that wires it to the raw listing. This is the complete pattern (AWS example):
+
+```
+datasource "ds_regions" do
+  run_script $js_regions, $ds_describe_regions, $param_regions_allow_or_deny, $param_regions_list
+end
+```
+
+Downstream datasources then use `iterate $ds_regions` to iterate only over the filtered list.
+
 The field name `item['region']` may differ depending on how the upstream datasource names the region field. Adapt as needed (e.g. `item['location']` for Azure, `item['name']` for Google).
 
 ### Common JavaScript Patterns — Azure Subscription Filtering
@@ -572,6 +582,16 @@ script "js_filter_subscriptions", type: "javascript" do
 end
 ```
 
+The filter script must be wrapped in a companion datasource:
+
+```
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+```
+
+Downstream datasources use `iterate $ds_azure_subscriptions_filtered`.
+
 ### Common JavaScript Patterns — Google Project Filtering
 
 The `param_projects_allow_or_deny` + `param_projects_list` parameter pair is applied in JavaScript using this standard pattern. It matches by project **ID, name, or number** (Google projects have all three identifiers). An empty list means no filter:
@@ -599,6 +619,16 @@ script "js_filter_projects", type: "javascript" do
   EOS
 end
 ```
+
+The filter script must be wrapped in a companion datasource:
+
+```
+datasource "ds_google_projects_filtered" do
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
+end
+```
+
+Downstream datasources use `iterate $ds_google_projects_filtered`.
 
 ### Policy Block
 
@@ -700,7 +730,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv      # attach CSV export of incident data; use "false" to disable
+    body_table_max_rows $param_incident_table_size  # cap inline table rows to avoid oversized emails
+  end
 end
 
 # Automated action — runs without approval when param contains the action name
@@ -1252,14 +1285,6 @@ parameter "param_incident_csv" do
   description "Whether or not to attach a CSV of the incident data to the incident email."
   allowed_values "true", "false"
   default "true"
-end
-```
-
-`param_incident_table_size` and `param_incident_csv` are used in the email escalation block:
-```
-email $param_email do
-  attach_export_table $param_incident_csv
-  body_table_max_rows $param_incident_table_size
 end
 ```
 
