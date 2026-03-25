@@ -294,15 +294,13 @@ end
 
 For AWS APIs that return XML (many older EC2/RDS endpoints), use `encoding "xml"` and XPath expressions instead of JMESPath:
 
-Use `encoding "text"` when the API returns raw text (CSV, plain strings). The entire response body becomes a single string field named `content`:
+Use `encoding "text"` when the API returns raw text (e.g. CSV files). The entire response body becomes the datasource value — no `field` declarations needed. When passed to a downstream `run_script`, the parameter is the raw string; when iterated, `iter_item` is the raw string. Commonly used in CBI (bill ingestion) templates to download raw files and re-upload them:
 
 ```
   result do
-    encoding "text"    # response body is available as response["content"]
+    encoding "text"    # entire response body is the datasource value (a string)
   end
 ```
-
-The raw text is typically parsed in a downstream JavaScript transform via `response["content"].split("\n")` etc.
 
 ```
   result do
