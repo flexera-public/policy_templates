@@ -719,7 +719,7 @@ Commonly used optional fields (use these standard names — do not invent custom
 | `resourceType` | string | Instance type, volume type, runtime, etc. |
 | `region` | string | Cloud provider region |
 | `service` | string | Cloud service name (overrides `info.service` for the incident row) |
-| `lookbackPeriod` | number | Number of days analyzed, e.g. `30`. **Store as a bare number, not a string with units.** |
+| `lookbackPeriod` | number | Number of days analyzed, e.g. `30`. **Store as a bare number, not a string with units.** Use label `"Look Back Period (Days)"` in the export block. |
 | `recommendationDetails` | string | Human-readable action description |
 | `savingsCurrency` | string | Currency symbol, e.g. `"$"` |
 | `state` | string | Resource state, e.g. `"Active"`, `"unattached"` |
