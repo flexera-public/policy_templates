@@ -433,7 +433,7 @@ end
 
 ### Datasource — JavaScript Transform
 
-Use `run_script` to transform or combine data with JavaScript:
+Use `run_script` at the datasource top level to transform or combine data with JavaScript:
 
 ```
 datasource "ds_filtered" do
@@ -452,7 +452,13 @@ script "js_filter_items", type: "javascript" do
 end
 ```
 
-**Important:** Underscore.js (`_`) is always available inside `script` blocks. Use `_.filter`, `_.map`, `_.uniq`, `_.groupBy`, `_.each`, etc. to avoid verbose manual loops. `_.pluck(array, "field")` is particularly common — it extracts a single named field from every object in an array (e.g. `_.pluck(billing_centers, "id")` returns `["id1", "id2", ...]`). It is used in 596+ templates.
+**Datasource structure rules:**
+- A datasource can have EITHER `iterate` OR top-level `run_script`, not both
+- `iterate` is for making one HTTP request per element in a list
+- Top-level `run_script` is for pure JavaScript transforms with no HTTP request
+- `request do { run_script }` is for dynamically building a single HTTP request (different from top-level `run_script`)
+
+**Important:** Underscore.js (`_`) is always available inside `script` blocks. Use `_.filter`, `_.map`, `_.uniq`, `_.groupBy`, `_.each`, etc. to avoid verbose manual loops. `_.pluck(array, "field")` extracts a single field from every object in an array (e.g. `_.pluck(billing_centers, "id")` returns `["id1", "id2", ...]`). It is used in 596+ templates.
 
 > **⚠️ JavaScript in `script` blocks runs on an older ES5-era engine.** Do NOT use:
 > - `const` or `let` — use `var` for all variable declarations
