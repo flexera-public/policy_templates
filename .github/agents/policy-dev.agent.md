@@ -459,7 +459,9 @@ end
 
 The `param_exclusion_tags` + `param_exclusion_tags_boolean` parameter pair is filtered in JavaScript using a standard comparator pattern. It supports: bare key (key exists), `Key==Value` (exact), `Key!=Value` (not equal), `Key=~Value` (regex match), `Key!~Value` (regex non-match).
 
-> **Note on tag format:** The pattern below assumes `resource['tags']` is an array of `{key, value}` objects (AWS convention). Azure tags are typically a flat `{Key: Value}` object — adjust the `resource_tags` population block accordingly.
+> **Note on tag format:** Tags arrive in different shapes by provider:
+> - **AWS:** `resource['tags']` is an array of `{ key: "k", value: "v" }` objects — iterate to build a flat map (as in the script below)
+> - **Azure/GCP:** `resource['tags']` is already a flat `{ Key: Value }` object — assign directly: `if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }`
 
 ```
 script "js_filter_resources", type: "javascript" do
@@ -562,7 +564,33 @@ script "js_filter_subscriptions", type: "javascript" do
 end
 ```
 
-### Policy Block
+### Common JavaScript Patterns — Google Project Filtering
+
+The `param_projects_allow_or_deny` + `param_projects_list` parameter pair is applied in JavaScript using this standard pattern. It matches by project **ID, name, or number** (Google projects have all three identifiers). An empty list means no filter:
+
+```
+script "js_filter_projects", type: "javascript" do
+  parameters "projects", "param_projects_allow_or_deny", "param_projects_list"
+  result "result"
+  code <<-'EOS'
+    if (param_projects_list.length > 0) {
+      result = _.filter(projects, function(project) {
+        include_project = _.contains(param_projects_list, project['id']) ||
+                          _.contains(param_projects_list, project['name']) ||
+                          _.contains(param_projects_list, project['number'])
+
+        if (param_projects_allow_or_deny == "Deny") {
+          include_project = !include_project
+        }
+
+        return include_project
+      })
+    } else {
+      result = projects  // empty list = no filter; include all projects
+    }
+  EOS
+end
+```
 
 **`summary_template` and `detail_template` Go template syntax:**
 
