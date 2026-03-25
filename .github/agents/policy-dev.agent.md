@@ -709,7 +709,7 @@ Required fields (scraping will not work without these):
 | `savings` | number | Estimated monthly savings |
 | `accountID` | string | AWS account number / Azure subscription ID / GCP project ID (note: **ID** is capitalized) |
 | `resourceID` | string | Unique cloud resource identifier |
-| `tags` | array of strings | Each element must use `"="` delimiter: `["key1=val1", "key2=val2"]`. **Must be an array, not a joined string.** |
+| `tags` | string | Comma-separated `key=value` pairs, e.g. `"env=prod,team=ops"`. Build with `tags.join(', ')` where `tags` is an array of `"key=value"` strings. **Do NOT store as a raw array — join to a display string.** |
 
 Commonly used optional fields (use these standard names — do not invent custom names):
 | Field | Type | Notes |
@@ -719,7 +719,7 @@ Commonly used optional fields (use these standard names — do not invent custom
 | `resourceType` | string | Instance type, volume type, runtime, etc. |
 | `region` | string | Cloud provider region |
 | `service` | string | Cloud service name (overrides `info.service` for the incident row) |
-| `lookbackPeriod` | string | Time range analyzed, e.g. `"30 days"` (must be a string with units, not a bare number) |
+| `lookbackPeriod` | number | Number of days analyzed, e.g. `30`. **Store as a bare number, not a string with units.** |
 | `recommendationDetails` | string | Human-readable action description |
 | `savingsCurrency` | string | Currency symbol, e.g. `"$"` |
 | `state` | string | Resource state, e.g. `"Active"`, `"unattached"` |
@@ -750,12 +750,12 @@ Always include `field "id" do label "Id" path "resourceID" end` as the last fiel
 ```javascript
 result.push({
   // ... resource fields ...
-  accountID: ds_aws_account['id'],            // required — note capital ID
-  resourceID: resource['id'],                 // required
-  tags: tags,                                 // required — array, NOT tags.join(', ')
-  savings: parseFloat(item_savings.toFixed(3)),  // required — number
-  savingsCurrency: ds_currency['symbol'],        // optional but standard
-  lookbackPeriod: param_lookback_days + " days", // optional — string with units
+  accountID: ds_aws_account['id'],              // required — note capital ID
+  resourceID: resource['id'],                   // required
+  tags: tags.join(', '),                        // required — joined display string, NOT a raw array
+  savings: parseFloat(item_savings.toFixed(3)), // required — number
+  savingsCurrency: ds_currency['symbol'],       // optional but standard
+  lookbackPeriod: param_lookback_days,          // optional — bare number (days), NOT a string with units
   // ...
 })
 ```
