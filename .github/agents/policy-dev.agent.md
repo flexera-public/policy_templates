@@ -262,6 +262,19 @@ pagination "pagination_azure" do
 end
 ```
 
+Google APIs return a `nextPageToken` in the response body and expect it back as a `pageToken` query parameter:
+
+```
+pagination "pagination_google" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+```
+
 ### Datasource — REST Request
 
 ```
@@ -440,7 +453,7 @@ script "js_filter_items", type: "javascript" do
 end
 ```
 
-**Important:** Underscore.js (`_`) is always available inside `script` blocks. Use `_.filter`, `_.map`, `_.uniq`, `_.groupBy`, etc. to avoid verbose manual loops.
+**Important:** Underscore.js (`_`) is always available inside `script` blocks. Use `_.filter`, `_.map`, `_.uniq`, `_.groupBy`, `_.each`, etc. to avoid verbose manual loops. `_.pluck(array, "field")` is particularly common — it extracts a single named field from every object in an array (e.g. `_.pluck(billing_centers, "id")` returns `["id1", "id2", ...]`). It is used in 596+ templates.
 
 ### Common JavaScript Patterns — Tag Filtering
 
@@ -1124,6 +1137,24 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied subscription IDs/names. See the README for more details."
+  default []
+end
+
+# Google project filter pair — use in all Google templates (analogous to region filter for Google)
+parameter "param_projects_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Projects"
+  description "Allow or Deny entered Projects. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_projects_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Projects List"
+  description "A list of allowed or denied project IDs/names. See the README for more details."
   default []
 end
 
