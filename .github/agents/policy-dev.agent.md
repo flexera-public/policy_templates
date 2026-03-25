@@ -294,14 +294,6 @@ end
 
 For AWS APIs that return XML (many older EC2/RDS endpoints), use `encoding "xml"` and XPath expressions instead of JMESPath:
 
-Use `encoding "text"` when the API returns raw text (e.g. CSV files). The entire response body becomes the datasource value — no `field` declarations needed. When passed to a downstream `run_script`, the parameter is the raw string; when iterated, `iter_item` is the raw string. Commonly used in CBI (bill ingestion) templates to download raw files and re-upload them:
-
-```
-  result do
-    encoding "text"    # entire response body is the datasource value (a string)
-  end
-```
-
 ```
   result do
     encoding "xml"
@@ -309,6 +301,14 @@ Use `encoding "text"` when the API returns raw text (e.g. CSV files). The entire
       field "id",   xpath(col_item, "snapshotId/text()")
       field "size", xpath(col_item, "volumeSize/text()")
     end
+  end
+```
+
+Use `encoding "text"` when the API returns raw text (e.g. CSV files). The entire response body becomes the datasource value — no `field` declarations needed. When passed to a downstream `run_script`, the parameter is the raw string; when iterated, `iter_item` is the raw string. Commonly used in CBI (bill ingestion) templates to download raw files and re-upload them:
+
+```
+  result do
+    encoding "text"    # entire response body is the datasource value (a string)
   end
 ```
 
@@ -698,9 +698,9 @@ end
 
 **Meta Policy termination check:** Always include `logic_or($ds_parent_policy_terminated, ...)` as the first argument in `check` for any policy that supports Meta Policies. This allows the parent policy to gracefully terminate child incidents.
 
-**`hash_exclude`:** Prevents listed fields from contributing to the incident's deduplication hash. Without this, any change to an excluded field (e.g. tag updates, savings estimates recalculating) closes and re-opens the incident on the next evaluation. Always exclude volatile fields that don't indicate a meaningful state change. **`hash_include`** is the inverse (whitelists only specific fields for hashing); it is a valid DSL keyword but is rarely used in the catalog — `hash_exclude` is the standard convention.
+**`hash_exclude`:** Prevents listed fields from contributing to the incident's deduplication hash. Without this, any change to an excluded field (e.g. tag updates, savings estimates recalculating) closes and re-opens the incident on the next evaluation. Always exclude volatile fields that don't indicate a meaningful state change.
 
-**`export <path> do`:** The `export` keyword accepts an optional JMESPath expression before `do` to extract a nested sub-array from the incident data as the exported table (e.g. `export "items[*]" do`). Omit the path when the incident data itself is the flat array to export.
+**`export <field_name> do`:** The `export` keyword accepts an optional plain field name before `do` to extract a nested sub-array from the incident data as the exported table (e.g. `export "instances" do` where `instances` is a field containing an array). Omit the field name when the incident data itself is the flat array to export.
 
 ### Common JavaScript Patterns — Final Transform / Cost Template Conventions
 
@@ -939,7 +939,6 @@ These variables are automatically injected by the policy engine — they do not 
 | `rs_governance_host` | Flexera Automation API endpoint |
 | `rs_ss_host` | Flexera Self-Service API endpoint |
 | `f1_app_host` | Flexera One UI hostname |
-| `iter_index` | Zero-based index of the current element when using `iterate` in a datasource or resource |
 
 These can be passed directly to `run_script` as parameters: `run_script $js_example, rs_org_id, rs_optima_host`
 
