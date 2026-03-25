@@ -74,6 +74,8 @@ fpt retrieve_data path/to/policy_template.pt --names datasource_name
 
 `fpt` requires `~/.fpt.yml` with Flexera credentials. Use `-a` to select a named account (`fpt -a my_account check ...`). See https://github.com/flexera-public/policy_sdk for setup.
 
+Always prompt the user for confirmation when using fpt for anything that isn't `fpt check`.
+
 ## Directory Structure
 
 Valid top-level categories (use snake_case for all path components):
@@ -272,7 +274,7 @@ datasource "ds_example" do
   end
   result do
     encoding "json"
-    collect jmes_path(response, "Items[*]") do
+    collect jmes_path(response, "items[*]") do
       field "id",   jmes_path(col_item, "Id")
       field "name", jmes_path(col_item, "Name")
     end
