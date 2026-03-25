@@ -1595,6 +1595,34 @@ Other useful parameter fields (beyond `type`, `label`, `description`, `default`,
 
 **`allowed_values` with numbers:** For `type "number"` parameters, `allowed_values` accepts bare integers (no quotes): `allowed_values 0, 10, 50, 100`.
 
+### Statistics Category Parameters
+
+Parameters that control statistical analysis (lookback window, thresholds, statistic type) must use `category "Statistics"` and the following naming and formatting conventions, matching the pattern in `aws_rightsize_ec2_instances.pt`:
+
+| Concept | Parameter name | Label | Constraints |
+|---|---|---|---|
+| Lookback window | `param_stats_lookback` | `"Statistic Lookback Period"` | `min_value 1`, `max_value 90` (CloudWatch limit) |
+| Threshold statistic | `param_stats_threshold` | `"Threshold Statistic"` | `allowed_values "Average", "Maximum", "p99", "p95", "p90"` |
+| CPU idle threshold | `param_stats_cpu_idle` | `"Idle Instance CPU Threshold (%)"` | `min_value -1`, `max_value 100` |
+
+Key rules:
+- **Name**: Always `param_stats_lookback` — never `param_lookback_days`, `param_lookback`, or similar variants.
+- **No `allowed_values`** for the lookback: use `min_value`/`max_value` so the user can enter any integer in range, not just a fixed list.
+- **Description** must mention the CloudWatch 90-day retention ceiling: *"This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."*
+- The export field label for the lookback in the incident output should remain `"Look Back Period (Days)"` (the Flexera scraping standard) — the `category`/`label` change is only for the parameter UI.
+
+```
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at CloudWatch data when assessing resources. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 90
+  default 30
+end
+```
+
 ## Style Rules
 
 See [STYLE_GUIDE.md](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md) for complete details.

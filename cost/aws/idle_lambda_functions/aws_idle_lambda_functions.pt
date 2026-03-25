@@ -45,12 +45,13 @@ parameter "param_min_savings" do
   default 0
 end
 
-parameter "param_lookback_days" do
+parameter "param_stats_lookback" do
   type "number"
-  category "Policy Settings"
-  label "Look Back Period (Days)"
-  description "How many days back to look at CloudWatch invocation data when assessing whether an AWS Lambda function is idle."
-  allowed_values 30, 60, 90
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at CloudWatch invocation data when assessing whether an AWS Lambda function is idle. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 90
   default 30
 end
 
@@ -650,11 +651,11 @@ EOS
 end
 
 datasource "ds_cloudwatch_queries" do
-  run_script $js_cloudwatch_queries, $ds_aws_lambda_functions_tag_filtered, $param_lookback_days
+  run_script $js_cloudwatch_queries, $ds_aws_lambda_functions_tag_filtered, $param_stats_lookback
 end
 
 script "js_cloudwatch_queries", type: "javascript" do
-  parameters "ds_aws_lambda_functions_tag_filtered", "param_lookback_days"
+  parameters "ds_aws_lambda_functions_tag_filtered", "param_stats_lookback"
   result "result"
   code <<-'EOS'
   // Create the CloudWatch queries we're going to send for each function
@@ -673,7 +674,7 @@ script "js_cloudwatch_queries", type: "javascript" do
     if (/^[0-9]/.test(cw_id)) { cw_id = 'f' + cw_id }
 
     // Period covers the entire lookback window in one data point
-    lookback = param_lookback_days * 86400
+    lookback = param_stats_lookback * 86400
 
     var query = {
       "Id": "invocations_" + cw_id,
@@ -698,11 +699,11 @@ end
 
 # Combine queries into 500 item blocks so we can make bulk requests to CloudWatch
 datasource "ds_cloudwatch_requests" do
-  run_script $js_cloudwatch_requests, $ds_cloudwatch_queries, $param_lookback_days
+  run_script $js_cloudwatch_requests, $ds_cloudwatch_queries, $param_stats_lookback
 end
 
 script "js_cloudwatch_requests", type: "javascript" do
-  parameters "ds_cloudwatch_queries", "param_lookback_days"
+  parameters "ds_cloudwatch_queries", "param_stats_lookback"
   result "result"
   code <<-'EOS'
   // Organize the queries into discrete requests to send in.
@@ -716,7 +717,7 @@ script "js_cloudwatch_requests", type: "javascript" do
   end_date = parseInt(end_date.getTime() / 1000)
 
   start_date = new Date()
-  start_date.setDate(start_date.getDate() - param_lookback_days)
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
   start_date.setHours(0, 0, 0, 0)
   start_date = parseInt(start_date.getTime() / 1000)
 
@@ -818,7 +819,7 @@ end
 
 datasource "ds_lambda_costs" do
   request do
-    run_script $js_lambda_costs, $ds_aws_account, $ds_top_level_bcs, $param_lookback_days, rs_org_id, rs_optima_host
+    run_script $js_lambda_costs, $ds_aws_account, $ds_top_level_bcs, $param_stats_lookback, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -830,7 +831,7 @@ datasource "ds_lambda_costs" do
 end
 
 script "js_lambda_costs", type: "javascript" do
-  parameters "ds_aws_account", "ds_top_level_bcs", "param_lookback_days", "rs_org_id", "rs_optima_host"
+  parameters "ds_aws_account", "ds_top_level_bcs", "param_stats_lookback", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
   end_date = new Date()
@@ -838,7 +839,7 @@ script "js_lambda_costs", type: "javascript" do
   end_date = end_date.toISOString().split('T')[0]
 
   start_date = new Date()
-  start_date.setDate(start_date.getDate() - 2 - param_lookback_days)
+  start_date.setDate(start_date.getDate() - 2 - param_stats_lookback)
   start_date = start_date.toISOString().split('T')[0]
 
   var request = {
@@ -921,11 +922,11 @@ EOS
 end
 
 datasource "ds_idle_lambda_functions" do
-  run_script $js_idle_lambda_functions, $ds_aws_lambda_functions_tag_filtered, $ds_cloudwatch_data_sorted, $ds_lambda_costs_grouped, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_lookback_days, $param_min_invocations, $param_min_savings, $param_incident_csv
+  run_script $js_idle_lambda_functions, $ds_aws_lambda_functions_tag_filtered, $ds_cloudwatch_data_sorted, $ds_lambda_costs_grouped, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_stats_lookback, $param_min_invocations, $param_min_savings, $param_incident_csv
 end
 
 script "js_idle_lambda_functions", type: "javascript" do
-  parameters "ds_aws_lambda_functions_tag_filtered", "ds_cloudwatch_data_sorted", "ds_lambda_costs_grouped", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_lookback_days", "param_min_invocations", "param_min_savings", "param_incident_csv"
+  parameters "ds_aws_lambda_functions_tag_filtered", "ds_cloudwatch_data_sorted", "ds_lambda_costs_grouped", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_stats_lookback", "param_min_invocations", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -988,7 +989,7 @@ script "js_idle_lambda_functions", type: "javascript" do
     // Primary: use Flexera billing data if available
     billing_cost = ds_lambda_costs_grouped[resource['name']]
     if (billing_cost != undefined && billing_cost > 0) {
-      monthly_cost = (billing_cost / param_lookback_days) * cost_multiplier
+      monthly_cost = (billing_cost / param_stats_lookback) * cost_multiplier
       savings_source = "Flexera Billing Data"
     } else {
       // Fallback: estimate from code storage size ($0.09/GB-month)
@@ -1030,7 +1031,7 @@ script "js_idle_lambda_functions", type: "javascript" do
       codeSize: resource['codeSize'],
       lastModified: resource['lastModified'],
       invocations: invocations,
-      lookbackPeriod: param_lookback_days,
+      lookbackPeriod: param_stats_lookback,
       tags: tags.join(', '),
       savings: Math.round(monthly_cost * 1000) / 1000,
       savingsCurrency: ds_currency['symbol'],
@@ -1064,11 +1065,11 @@ script "js_idle_lambda_functions", type: "javascript" do
   ].join('')
 
   day_noun = "day"
-  if (param_lookback_days != 1) { day_noun += 's' }
+  if (param_stats_lookback != 1) { day_noun += 's' }
 
   settings = [
     "Functions are considered idle if they have ", param_min_invocations,
-    " or fewer total invocations over the last ", param_lookback_days, " ", day_noun, ". ",
+    " or fewer total invocations over the last ", param_stats_lookback, " ", day_noun, ". ",
     "Savings estimates use Flexera billing data when available; ",
     "otherwise estimates are based on Lambda code storage at $0.09/GB-month.\n\n"
   ].join('')
