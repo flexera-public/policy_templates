@@ -294,6 +294,16 @@ end
 
 For AWS APIs that return XML (many older EC2/RDS endpoints), use `encoding "xml"` and XPath expressions instead of JMESPath:
 
+Use `encoding "text"` when the API returns raw text (CSV, plain strings). The entire response body becomes a single string field named `content`:
+
+```
+  result do
+    encoding "text"    # response body is available as response["content"]
+  end
+```
+
+The raw text is typically parsed in a downstream JavaScript transform via `response["content"].split("\n")` etc.
+
 ```
   result do
     encoding "xml"
@@ -818,6 +828,13 @@ end
 - `$_error["message"]` — human-readable error message
 
 Set `$_error_behavior = "skip"` to suppress re-raising; omit it to let the error propagate after logging.
+
+**`call` and `retrieve`:** Use `call define_name(args) retrieve $var` when the define returns a value. `retrieve` is optional — omit it when you don't need the return value:
+
+```
+  call delete_one_item($item) retrieve $response   # captures return value
+  call log_event($item)                            # fire-and-forget; no return value needed
+```
 
 **`task_label(msg)`:** Call this inside every `define` that makes HTTP requests to log the current operation to the execution audit trail (used in 2,500+ templates). Passing the HTTP verb + URL as the message makes failures easy to diagnose in the Flexera UI:
 
