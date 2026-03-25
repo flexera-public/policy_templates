@@ -664,17 +664,142 @@ policy "pol_example" do
     end
   end
 
-  # Error-check pattern: validate_each fires one incident per error row.
-  # check eq(size(data), 0) passes when there are zero total errors and fails (fires) when any exist.
-  validate_each $ds_errors do
-    summary_template "{{ len data }} Errors Identified"
+  # Error-check pattern: validate (NOT validate_each) checks the whole datasource at once.
+  # check eq(size(data), 0) passes when there are zero errors and fires an incident when any exist.
+  validate $ds_identify_errors do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end -}}
+    EOS
     check eq(size(data), 0)
-    escalate $esc_email_errors
+    escalate $esc_email_errors_identified
   end
 end
 ```
 
-The catalog exclusively uses `validate_each` — there is no `validate` (without `_each`) usage.
+**`validate` vs `validate_each`:** The main incident block uses `validate_each` (checks each row individually). The region-error block uses `validate` (without `_each`) — it evaluates `check` once against the entire datasource. Use `validate` when you want a single incident that fires if the datasource is non-empty, not a per-row check.
+
+**AWS region error-reporting pattern:** All multi-region AWS templates must include a `ds_region_check` / `ds_identify_errors` pair so that inaccessible regions produce a clear, actionable error incident instead of silently dropping data. Structure:
+
+1. **`ds_region_check`** — iterates `$ds_regions`, makes a lightweight probe call to each region's service endpoint with `ignore_status [403, 401]`. Records `region` and a sentinel `status` field.
+
+2. **`ds_identify_errors` + `js_identify_errors`** — compares the full region list against successful responses to identify failed regions, then formats a human-readable error object per failure.
+
+3. **`validate $ds_identify_errors do`** in the policy block (using `validate`, not `validate_each`) — fires an incident when the error list is non-empty.
+
+4. **`esc_email_errors_identified`** escalation — simple email with no table attachment.
+
+```
+# 1. Probe each region for accessibility
+datasource "ds_region_check" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    host join(["lambda.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/2015-03-31/functions/"
+    query "MaxItems", "1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403, 401]
+  end
+  result do
+    encoding "json"
+    field "region", val(iter_item, "region")
+    field "status", "OK"
+  end
+end
+
+# 2. Identify inaccessible regions
+datasource "ds_identify_errors" do
+  run_script $js_identify_errors, $ds_regions, $ds_region_check, $ds_applied_policy, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_identify_errors", type: "javascript" do
+  parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
+  result "errors"
+  code <<-'EOS'
+  var errors = []
+
+  var region_responses = {}
+  _.each(ds_region_check, function(item) {
+    if (item.region) { region_responses[item.region] = "OK" }
+  })
+
+  var allowed_regions = _.keys(region_responses)
+  var forbidden_regions = []
+
+  _.each(ds_regions, function(region_obj) {
+    if (!_.contains(allowed_regions, region_obj.region)) {
+      forbidden_regions.push(region_obj.region)
+    }
+  })
+
+  if (forbidden_regions.length > 0) {
+    var regions_string = forbidden_regions.sort().join(", ")
+    var successful_regions = allowed_regions.sort().join(", ")
+    var filter_guidance = ""
+
+    if (param_regions_list.length > 0) {
+      filter_guidance = " You are currently using the 'Allow/Deny Regions List' parameter. "
+      filter_guidance += "You can update this list to exclude the inaccessible regions if appropriate."
+    } else {
+      filter_guidance = " You can use the 'Allow/Deny Regions List' parameter to exclude these regions."
+    }
+
+    errors.push(
+      "HTTP error received when attempting to list [resources] in some AWS region(s).\n" +
+      "\n - Failed Regions: " + regions_string +
+      "\n - Successful Regions: " + successful_regions +
+      "\n\nThis typically indicates that the AWS credential does not have the required " +
+      "'[service]:[Action]' permission for these regions, or these regions may not be enabled." +
+      " To resolve: (1) Verify the credential has the required permission, " +
+      "(2) Ensure these regions are opted-in in your account, or " +
+      "(3) Exclude these regions using the region filter parameters." +
+      filter_guidance
+    )
+  }
+
+  errors = _.uniq(errors)
+  errors = _.map(errors, function(err) { return { "error": err } })
+
+  if (errors.length > 0) {
+    var policy_name = "AWS Policy"
+    if (ds_applied_policy && ds_applied_policy.name) { policy_name = ds_applied_policy.name }
+    errors[0].policy_name = policy_name
+  }
+EOS
+end
+
+# 3. In the policy block — use 'validate' (not validate_each) for the error datasource
+  validate $ds_identify_errors do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to access one or more AWS regions due to permission or configuration errors.
+
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end -}}
+
+    **Recommended Actions:**
+    1. Verify the AWS credential has the required permissions for all policy regions.
+    2. Ensure any opt-in regions are enabled in your AWS account.
+    3. Use the Allow/Deny Regions List parameter to exclude inaccessible regions.
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
+
+# 4. In escalations — simple email with no table attachment
+escalation "esc_email_errors_identified" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+```
 
 **`check` semantics:** Incident fires when `check` evaluates to `false`, `0`, empty string, empty array, or empty object. Multiple `check` statements evaluate in order, stopping at first failure. `eq(val(item, "id"), "")` is the standard sentinel for "no incident when datasource is empty".
 
