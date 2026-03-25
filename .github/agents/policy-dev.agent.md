@@ -128,9 +128,9 @@ info(
   version: "0.1.0",
   provider: "AWS",           # e.g. AWS, Azure, Google, Flexera, etc.
   service: "Storage",        # The provider service this policy targets
-  policy_set: "",            # Grouping label; leave blank if none
-  recommendation_type: "Usage Reduction",  # Optional; omit if not a cost recommendation
-  hide_skip_approvals: "true",  # Hides "Skip Approval" UI button; use for cost recommendation policies
+  policy_set: "",            # Grouping label for recommendations; must be non-blank for recommendation templates
+  recommendation_type: "Usage Reduction",  # Required for recommendation templates: "Usage Reduction" or "Rate Reduction"; omit for non-cost templates
+  hide_skip_approvals: "true",  # Required for recommendation templates; hides "Skip Approval" UI button
   publish: "false"           # Always start new templates as unpublished; remove or set "true" when ready
 )
 ```
@@ -703,60 +703,138 @@ result[0]['total_savings'] = "Total Estimated Monthly Savings: " + currency_symb
 
 The Flexera platform scrapes incident export data to populate the Total Potential Savings chart and recommendation tables in Cloud Cost Optimization. For this scraping to work correctly, the export block field names **must** exactly match the standard names defined in the [Flexera recommendation documentation](https://docs.flexera.com/flexera-one/automation/automation-reference-information/create-a-recommendation-from-a-policy-template).
 
-Required fields (scraping will not work without these):
-| Field | Type | Notes |
-|---|---|---|
-| `savings` | number | Estimated monthly savings |
-| `accountID` | string | AWS account number / Azure subscription ID / GCP project ID (note: **ID** is capitalized) |
-| `resourceID` | string | Unique cloud resource identifier |
-| `tags` | string | Comma-separated `key=value` pairs, e.g. `"env=prod,team=ops"`. Build with `tags.join(', ')` where `tags` is an array of `"key=value"` strings. **Do NOT store as a raw array — join to a display string.** |
+**Canonical field names, labels, and notes** (derived from the catalog's recommendation templates):
 
-Commonly used optional fields (use these standard names — do not invent custom names):
-| Field | Type | Notes |
-|---|---|---|
-| `accountName` | string | Human-friendly account name |
-| `resourceName` | string | Human-friendly resource name |
-| `resourceType` | string | Instance type, volume type, runtime, etc. |
-| `region` | string | Cloud provider region |
-| `service` | string | Cloud service name (overrides `info.service` for the incident row) |
-| `lookbackPeriod` | number | Number of days analyzed, e.g. `30`. **Store as a bare number, not a string with units.** Use label `"Look Back Period (Days)"` in the export block. |
-| `recommendationDetails` | string | Human-readable action description |
-| `savingsCurrency` | string | Currency symbol, e.g. `"$"` |
-| `state` | string | Resource state, e.g. `"Active"`, `"unattached"` |
-| `threshold` | number | Numeric threshold used to produce recommendation |
-| `thresholdType` | string | Metric percentile, e.g. `"avg"`, `"p95"` |
-| `cpuAverage`, `cpuMaximum`, `cpuP95` | number | CPU utilization metrics |
-| `memAverage`, `memMaximum`, `memP95` | number | Memory utilization metrics |
-| `newResourceType` | string | Recommended replacement resource type |
-| `size` | number | Resource size (e.g. volume size in GB) |
-| `platform` | string | OS or database engine |
-| `licenseModel` | string | License model (e.g. `"BYOL"`) |
-| `deploymentOption` | string | Deployment option (e.g. `"Multi-AZ"`) |
-| `scope` | string | Commitment scope (e.g. `"Shared"`) |
-| `term` | string | Commitment term (e.g. `"1 year"`) |
-| `paymentOption` | string | Purchasing option (e.g. `"All Upfront"`) |
-| `averageUtilization` | number | Predicted utilization for a recommended reservation |
+| Field | Canonical Label | Type | Req? | Notes |
+|---|---|---|---|---|
+| `accountID` | `"Account ID"` | string | ✅ | AWS account number / Azure subscription ID / GCP project ID. Note: **ID** is capitalized. |
+| `accountName` | `"Account Name"` | string | ✅ | Human-friendly name for accountID. |
+| `resourceID` | `"Resource ID"` | string | ✅ | Unique cloud resource identifier (ID, not full ARN). |
+| `resourceName` | `"Resource Name"` | string | ✅ | Human-friendly resource name. |
+| `tags` | `"Resource Tags"` | string | ✅ | Comma-separated `key=value` pairs. Build with `tags.join(', ')`. **Do NOT store as a raw array.** |
+| `recommendationDetails` | `"Recommendation"` | string | ✅ | Human-readable action description. |
+| `region` | `"Region"` | string | ✅ | Cloud provider region. |
+| `state` | `"State"` | string | when applicable | Resource state, e.g. `"Active"`, `"unattached"`. |
+| `resourceType` | descriptive, e.g. `"Resource Type"`, `"Instance Size"` | string | when applicable | Current instance type, volume type, runtime, etc. Label is context-dependent. |
+| `newResourceType` | descriptive, e.g. `"Recommended Resource Type"` | string | when applicable | Recommended replacement resource type for rightsizing. |
+| `platform` | `"Platform"` | string | when applicable | OS or database engine, e.g. `"Linux"`, `"Windows"`. |
+| `savings` | `"Estimated Monthly Savings"` | number | ✅ | Estimated monthly savings as a numeric value. |
+| `savingsCurrency` | `"Savings Currency"` | string | ✅ | Currency symbol, e.g. `"$"`. |
+| `lookbackPeriod` | `"Look Back Period (Days)"` | number | when applicable | Number of days analyzed. **Store as a bare number, not a string with units.** |
+| `threshold` | context-dependent, e.g. `"CPU Threshold"` | number | when applicable | Numeric threshold used to produce recommendation. |
+| `thresholdType` | `"Threshold Statistic"` | string | when applicable | Metric percentile or statistic, e.g. `"avg"`, `"p95"`. |
+| `cpuMaximum` | `"CPU Maximum %"` | number | when applicable | CPU utilization maximum value. |
+| `cpuMinimum` | `"CPU Minimum %"` | number | when applicable | CPU utilization minimum value. |
+| `cpuAverage` | `"CPU Average %"` | number | when applicable | CPU utilization average value. |
+| `cpuP99` | `"CPU p99"` | number | when applicable | CPU utilization 99th percentile value. |
+| `cpuP95` | `"CPU p95"` | number | when applicable | CPU utilization 95th percentile value. |
+| `cpuP90` | `"CPU p90"` | number | when applicable | CPU utilization 90th percentile value. |
+| `memMaximum` | `"Memory Maximum %"` | number | when applicable | Memory utilization maximum value. |
+| `memMinimum` | `"Memory Minimum %"` | number | when applicable | Memory utilization minimum value. |
+| `memAverage` | `"Memory Average %"` | number | when applicable | Memory utilization average value. |
+| `memP99` | `"Memory p99"` | number | when applicable | Memory utilization 99th percentile value. |
+| `memP95` | `"Memory p95"` | number | when applicable | Memory utilization 95th percentile value. |
+| `memP90` | `"Memory p90"` | number | when applicable | Memory utilization 90th percentile value. |
+| `size` | context-dependent, e.g. `"Size (GB)"` | number | when applicable | Resource size. |
+| `licenseModel` | `"License Model"` | string | when applicable | e.g. `"BYOL"`, `"License Included"`. |
+| `deploymentOption` | `"Deployment Option"` | string | when applicable | e.g. `"Multi-AZ"`. |
+| `scope` | `"Scope"` | string | when applicable | Commitment scope, e.g. `"Shared"`. |
+| `term` | `"Term"` | string | when applicable | Commitment term, e.g. `"1 year"`. |
+| `paymentOption` | `"Payment Option"` | string | when applicable | e.g. `"All Upfront"`. |
+| `averageUtilization` | `"Average Utilization %"` | number | when applicable | Predicted utilization for a recommended reservation. |
+| `service` | `"Service"` | string | ✅ | Cloud service name (overrides `info.service` for the incident row). |
+| `resourceARN` | `"Resource ARN"` | string | convention | Full resource ARN for audit trail. Used by most AWS templates but is not a scraping field — include for consistency. |
+| `id` | `"ID"` | alias | ✅ | Always the **last** field. Use `path "resourceID"`. Required by the platform. |
 
-In the export block, use `path` to alias a data field to a standard name when needed:
+**Standard field order in the export block** (follow this order — resource-specific fields fill in between region and savings):
+
 ```
-field "resourceType" do
-  label "Resource Type"
-  path "runtime"   # 'runtime' is the data key; 'resourceType' is the standard scraping name
+accountID → accountName → resourceID → resourceName → tags → recommendationDetails →
+region → [resource-specific fields] → savings → savingsCurrency →
+[lookbackPeriod, threshold, metric fields] → service → resourceARN → id
+```
+
+**Canonical export block example:**
+
+```
+export do
+  resource_level true
+  field "accountID" do
+    label "Account ID"
+  end
+  field "accountName" do
+    label "Account Name"
+  end
+  field "resourceID" do
+    label "Resource ID"
+  end
+  field "resourceName" do
+    label "Resource Name"
+  end
+  field "tags" do
+    label "Resource Tags"
+  end
+  field "recommendationDetails" do
+    label "Recommendation"
+  end
+  field "region" do
+    label "Region"
+  end
+  field "state" do
+    label "State"
+  end
+  field "resourceType" do
+    label "Resource Type"
+    path "runtime"    # use 'path' to alias a data field to a standard name
+  end
+  field "savings" do
+    label "Estimated Monthly Savings"
+  end
+  field "savingsCurrency" do
+    label "Savings Currency"
+  end
+  field "lookbackPeriod" do
+    label "Look Back Period (Days)"
+  end
+  field "service" do
+    label "Service"
+  end
+  field "resourceARN" do
+    label "Resource ARN"
+  end
+  field "id" do
+    label "ID"
+    path "resourceID"
+  end
 end
 ```
 
-Always include `field "id" do label "Id" path "resourceID" end` as the last field in every export block.
+**`hash_exclude` minimum** — always exclude these volatile fields that change without indicating a meaningful state change. Extend as needed for utilization metrics or age fields:
+
+```
+hash_exclude "message", "total_savings", "tags", "savings", "savingsCurrency"
+```
 
 ```javascript
 result.push({
-  // ... resource fields ...
+  // Account info
   accountID: ds_aws_account['id'],              // required — note capital ID
+  accountName: ds_aws_account['name'],
+  // Resource identity
   resourceID: resource['id'],                   // required
+  resourceName: resource['name'],
+  // Metadata
   tags: tags.join(', '),                        // required — joined display string, NOT a raw array
+  recommendationDetails: recommendationDetails,
+  region: region,
+  // Resource-specific fields here ...
+  // Financial
   savings: parseFloat(item_savings.toFixed(3)), // required — number
-  savingsCurrency: ds_currency['symbol'],       // optional but standard
-  lookbackPeriod: param_lookback_days,          // optional — bare number (days), NOT a string with units
-  // ...
+  savingsCurrency: ds_currency['symbol'],
+  // Contextual
+  lookbackPeriod: param_lookback_days,          // bare number (days), NOT a string with units
+  service: "EC2",
+  resourceARN: resource['arn'],                 // full ARN for audit trail
 })
 ```
 
