@@ -701,11 +701,61 @@ result[0]['total_savings'] = "Total Estimated Monthly Savings: " + currency_symb
 
 **Standard per-row fields for cost recommendation templates:**
 
+The Flexera platform scrapes incident export data to populate the Total Potential Savings chart and recommendation tables in Cloud Cost Optimization. For this scraping to work correctly, the export block field names **must** exactly match the standard names defined in the [Flexera recommendation documentation](https://docs.flexera.com/flexera-one/automation/automation-reference-information/create-a-recommendation-from-a-policy-template).
+
+Required fields (scraping will not work without these):
+| Field | Type | Notes |
+|---|---|---|
+| `savings` | number | Estimated monthly savings |
+| `accountID` | string | AWS account number / Azure subscription ID / GCP project ID (note: **ID** is capitalized) |
+| `resourceID` | string | Unique cloud resource identifier |
+| `tags` | array of strings | Each element must use `"="` delimiter: `["key1=val1", "key2=val2"]`. **Must be an array, not a joined string.** |
+
+Commonly used optional fields (use these standard names — do not invent custom names):
+| Field | Type | Notes |
+|---|---|---|
+| `accountName` | string | Human-friendly account name |
+| `resourceName` | string | Human-friendly resource name |
+| `resourceType` | string | Instance type, volume type, runtime, etc. |
+| `region` | string | Cloud provider region |
+| `service` | string | Cloud service name (overrides `info.service` for the incident row) |
+| `lookbackPeriod` | string | Time range analyzed, e.g. `"30 days"` (must be a string with units, not a bare number) |
+| `recommendationDetails` | string | Human-readable action description |
+| `savingsCurrency` | string | Currency symbol, e.g. `"$"` |
+| `state` | string | Resource state, e.g. `"Active"`, `"unattached"` |
+| `threshold` | number | Numeric threshold used to produce recommendation |
+| `thresholdType` | string | Metric percentile, e.g. `"avg"`, `"p95"` |
+| `cpuAverage`, `cpuMaximum`, `cpuP95` | number | CPU utilization metrics |
+| `memAverage`, `memMaximum`, `memP95` | number | Memory utilization metrics |
+| `newResourceType` | string | Recommended replacement resource type |
+| `size` | number | Resource size (e.g. volume size in GB) |
+| `platform` | string | OS or database engine |
+| `licenseModel` | string | License model (e.g. `"BYOL"`) |
+| `deploymentOption` | string | Deployment option (e.g. `"Multi-AZ"`) |
+| `scope` | string | Commitment scope (e.g. `"Shared"`) |
+| `term` | string | Commitment term (e.g. `"1 year"`) |
+| `paymentOption` | string | Purchasing option (e.g. `"All Upfront"`) |
+| `averageUtilization` | number | Predicted utilization for a recommended reservation |
+
+In the export block, use `path` to alias a data field to a standard name when needed:
+```
+field "resourceType" do
+  label "Resource Type"
+  path "runtime"   # 'runtime' is the data key; 'resourceType' is the standard scraping name
+end
+```
+
+Always include `field "id" do label "Id" path "resourceID" end` as the last field in every export block.
+
 ```javascript
 result.push({
   // ... resource fields ...
-  savings:         parseFloat(item_savings.toFixed(3)),   // estimated monthly savings (number)
-  savingsCurrency: ds_currency['symbol'],                 // e.g. "$", "€"
+  accountID: ds_aws_account['id'],            // required — note capital ID
+  resourceID: resource['id'],                 // required
+  tags: tags,                                 // required — array, NOT tags.join(', ')
+  savings: parseFloat(item_savings.toFixed(3)),  // required — number
+  savingsCurrency: ds_currency['symbol'],        // optional but standard
+  lookbackPeriod: param_lookback_days + " days", // optional — string with units
   // ...
 })
 ```
@@ -1345,6 +1395,36 @@ Other useful parameter fields (beyond `type`, `label`, `description`, `default`,
 ## Style Rules
 
 See [STYLE_GUIDE.md](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md) for complete details.
+
+### No Alignment Padding
+
+Do **not** pad field names or object keys with extra spaces to visually align values into columns. Use a single space after the field name / colon only.
+
+**Wrong:**
+```
+field "region",       val(iter_item, "region")
+field "arn",          jmes_path(col_item, "FunctionArn")
+field "lastModified", jmes_path(col_item, "LastModified")
+```
+```javascript
+accountID:             ds_aws_account['id'],
+accountName:           ds_aws_account['name'],
+recommendationDetails: recommendationDetails,
+```
+
+**Correct:**
+```
+field "region", val(iter_item, "region")
+field "arn", jmes_path(col_item, "FunctionArn")
+field "lastModified", jmes_path(col_item, "LastModified")
+```
+```javascript
+accountID: ds_aws_account['id'],
+accountName: ds_aws_account['name'],
+recommendationDetails: recommendationDetails,
+```
+
+This applies to DSL `field` declarations in `result do` blocks and to JavaScript object literals in `script` blocks.
 
 ### Naming Conventions
 
