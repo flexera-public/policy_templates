@@ -1664,10 +1664,27 @@ All versions must use three period-separated integers (`MAJOR.MINOR.PATCH`):
 Every README must begin with `# Policy Template Name` and include the following sections **in this order**:
 
 1. `## What It Does` — 2–5 sentence description of what the policy template does
-2. `## How It Works` *(optional)* — formulas, data sources, or methodology worth explaining
-3. `## Input Parameters` — italicized parameter name followed by ` - ` and its description
-4. `## Policy Actions` — bulleted list of all possible actions including email
-5. `## Prerequisites` — credentials required (always start with the standard credentials paragraph), then any other requirements
+2. `## How It Works` *(optional)* — formulas, data sources, or methodology worth explaining; if present, include `### Policy Savings Details` as a subsection
+3. `### Policy Savings Details` — if there is no `## How It Works`, this subsection goes directly under `## What It Does`; if `## How It Works` exists, it is the last subsection within it
+4. `## Input Parameters` — italicized parameter name followed by ` - ` and its description
+5. `## Policy Actions` — bulleted list of all possible actions including email
+6. `## Prerequisites` — credentials required (always start with the standard credentials paragraph), then any other requirements
+
+The `### Policy Savings Details` subsection is **required for all cost/recommendation templates**. It must use this standard bullet format:
+
+```markdown
+### Policy Savings Details
+
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is [deleted/terminated/stopped/etc.].
+
+- The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
+- Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
+- If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
+- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
+- Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
+```
+
+If the template uses a fallback savings calculation (e.g. storage size × rate) when CCO data is unavailable, replace the "is 0" bullet with the fallback formula. Add any resource-specific caveats (e.g. incremental snapshots) as additional bullets.
 
 The `## Prerequisites` section must follow this **exact format**, which is validated by the Dangerfile's `readme_invalid_credentials?` test:
 
@@ -1702,8 +1719,8 @@ Canonical credential header lines by provider:
 - **Azure**: `- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:`
 - **Google**: `- [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:`
 - **Flexera**: `- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:`
-6. `## Supported Clouds` — list of supported providers, or "All" for cloud-agnostic
-7. `## Cost` — whether this policy template incurs additional costs
+7. `## Supported Clouds` — list of supported providers, or "All" for cloud-agnostic
+8. `## Cost` — whether this policy template incurs additional costs
 
 ## CHANGELOG Requirements
 

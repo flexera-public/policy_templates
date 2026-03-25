@@ -6,10 +6,17 @@ This policy template reports AWS Lambda functions that have zero or near-zero in
 
 ## How It Works
 
-- The policy uses the AWS CloudWatch `GetMetricData` API to retrieve the `Invocations` metric (Sum statistic) for each Lambda function over the configured lookback window. Functions whose total invocation count is at or below the **Minimum Invocations Threshold** parameter are flagged.
-- **Savings estimates** are computed per function:
-  - **Primary method:** If Flexera billing data contains costs for the function (filtered to the `AWSLambda` service for the same account and lookback period), the total cost is divided by the number of lookback days and scaled to a monthly figure using the factor `365.25 / 12`. This captures all Lambda cost components including provisioned concurrency and data transfer.
-  - **Fallback method:** If no billing data is available for a function, the estimated monthly savings are calculated from the function's code storage size: `codeSize (bytes) / (1024³) × $0.09/GB-month`.
+- The policy uses the AWS CloudWatch `GetMetricData` API to retrieve the `Invocations` metric (Sum statistic) for each Lambda function over the configured lookback window. Functions whose total invocation count is at or below the **Minimum Invocations Threshold** parameter are flagged as idle and recommended for deletion.
+
+### Policy Savings Details
+
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the idle Lambda function is deleted.
+
+- The `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month.
+- Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
+- If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is calculated from the function's code storage size: `code size (bytes) / (1024³) × $0.09/GB-month`.
+- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
+- Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
 
 ## Input Parameters
 
