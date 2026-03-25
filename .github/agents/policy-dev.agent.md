@@ -1694,7 +1694,15 @@ Every README must begin with `# Policy Template Name` and include the following 
 1. `## What It Does` — 2–5 sentence description of what the policy template does
 2. `## How It Works` *(optional)* — formulas, data sources, or methodology worth explaining; if present, include `### Policy Savings Details` as a subsection
 3. `### Policy Savings Details` — if there is no `## How It Works`, this subsection goes directly under `## What It Does`; if `## How It Works` exists, it is the last subsection within it
-4. `## Input Parameters` — italicized parameter name followed by ` - ` and its description
+4. `## Input Parameters` — italicized parameter name followed by ` - ` and its description. If the template has a `param_automatic_action` parameter (i.e. it can take destructive/modifying action), add the following warning blurb **after the last parameter bullet and before the next `##` heading**, customised to name the specific action(s):
+
+   ```
+   Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
+   For example if a user selects the "Delete Idle Resources" action while applying the policy template, all the resources that didn't satisfy the policy condition will be deleted.
+   ```
+
+   Replace `"Delete Idle Resources"` with the actual `allowed_values` string from `param_automatic_action`, and update the last phrase to describe the effect (deleted, stopped, terminated, downsized, etc.). This blurb is required any time the policy can modify or delete cloud resources.
+
 5. `## Policy Actions` — bulleted list of all possible actions including email
 6. `## Prerequisites` — credentials required (always start with the standard credentials paragraph), then any other requirements
 

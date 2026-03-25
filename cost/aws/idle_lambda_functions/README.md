@@ -33,6 +33,9 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email.
 
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
+For example if a user selects the "Delete Idle Lambda Functions" action while applying the policy template, all the resources that didn't satisfy the policy condition will be deleted.
+
 ## Policy Actions
 
 - Send an email notification
