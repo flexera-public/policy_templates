@@ -318,7 +318,6 @@ datasource "ds_per_region" do
     auth $auth_aws
     host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
     path "/some/endpoint"
-    header "X-Meta-Flexera", val(iter_item, "region")  # required header for Meta Policy region tracking
   end
   result do
     encoding "json"
@@ -454,6 +453,15 @@ end
 ```
 
 **Important:** Underscore.js (`_`) is always available inside `script` blocks. Use `_.filter`, `_.map`, `_.uniq`, `_.groupBy`, `_.each`, etc. to avoid verbose manual loops. `_.pluck(array, "field")` is particularly common — it extracts a single named field from every object in an array (e.g. `_.pluck(billing_centers, "id")` returns `["id1", "id2", ...]`). It is used in 596+ templates.
+
+> **⚠️ JavaScript in `script` blocks runs on an older ES5-era engine.** Do NOT use:
+> - `const` or `let` — use `var` for all variable declarations
+> - Arrow functions (`=>`) — use `function(x) { return ... }` syntax
+> - Template literals (`` `${var}` ``) — use string concatenation (`"" + var + ""`)
+> - `Array.forEach`, `Array.map`, etc. — use Underscore.js (`_.each`, `_.map`) instead
+> - Any ES6+ features (destructuring, spread, classes, `Promise`, etc.)
+>
+> Underscore.js 1.13.x is available. All other JavaScript must be valid ES5.
 
 ### Common JavaScript Patterns — Tag Filtering
 
@@ -803,6 +811,16 @@ end
     sub on_error: handle_error() do
       call stop_one_instance($instance)
     end
+  end
+```
+
+**Response code validation:** Always check `$response["code"]` after an HTTP call and `raise` on unexpected values. Common success codes: `200` (read/update), `201` (create), `202` (accepted/async), `204` (delete/no content). Include `to_json($response)` in the error message for easy debugging:
+
+```
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response deleting item " + $item["id"] + ": " + to_json($response)
+  else
+    task_label("Successfully deleted item: " + $item["id"])
   end
 ```
 
