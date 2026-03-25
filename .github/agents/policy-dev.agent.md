@@ -812,7 +812,13 @@ define handle_error() do
 end
 ```
 
-**`task_label(msg)`:** Call this inside every `define` that makes HTTP requests to log the current operation to the execution audit trail (used in 2,500+ templates). Passing the HTTP verb + URL as the message makes failures easy to diagnose in the Flexera UI. This is the standard Cloud Workflow logging mechanism:
+**`$_error` object:** Inside a `sub on_error:` handler, the `$_error` object contains details about the caught error:
+- `$_error["type"]` — error type/category (e.g. `"http"`, `"general"`)
+- `$_error["message"]` — human-readable error message
+
+Set `$_error_behavior = "skip"` to suppress re-raising; omit it to let the error propagate after logging.
+
+**`task_label(msg)`:** Call this inside every `define` that makes HTTP requests to log the current operation to the execution audit trail (used in 2,500+ templates). Passing the HTTP verb + URL as the message makes failures easy to diagnose in the Flexera UI:
 
 ```
 define delete_one_item($item) return $response do
@@ -857,6 +863,48 @@ end
   else
     task_label("Successfully deleted item: " + $item["id"])
   end
+```
+
+**`sleep($seconds)`:** Pauses execution for the specified number of seconds. Use in polling loops when waiting for async operations to complete (241+ usages in catalog):
+
+```
+  while $instance_state != "running" do
+    call get_instance_state($instance) retrieve $instance_state
+    sleep(10)
+  end
+```
+
+**`while` loops:** Cloud Workflow supports `while condition do ... end` loops. Combine with `sleep()` and `sub timeout:` for polling patterns:
+
+```
+  sub timeout: 5m, on_timeout: skip do
+    while $state != "RUNNING" do
+      call get_state($item) retrieve $state
+      sleep(5)
+    end
+  end
+```
+
+**`sub timeout:` with `on_timeout:`:** Wraps a block with a timeout. If the block doesn't complete within the specified duration, the `on_timeout` handler runs. Use `skip` to silently continue, or call a handler `define`:
+
+```
+  sub timeout: 5m, on_timeout: handle_timeout() do
+    while $state == null do
+      call get_state($item) retrieve $state
+      sleep(10)
+    end
+  end
+```
+
+**HTTP shorthand functions:** Cloud Workflow provides `http_get`, `http_post`, `http_patch`, and `http_delete` as shortcuts that take a single `url` parameter instead of separate `host`/`href`. Use these for Google and Azure APIs:
+
+```
+  $response = http_post(
+    auth: $$auth_google,
+    url: $url,
+    headers: { "content-type": "application/json" },
+    body: { "labels": $new_labels }
+  )
 ```
 
 ### Built-in Runtime Variables
