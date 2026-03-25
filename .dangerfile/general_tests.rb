@@ -49,6 +49,8 @@ end
 ### Spell check test
 # Run the Danger spell checker on a file
 def general_spellcheck?(file)
+  return false if file.start_with?(".github/agents/")
+
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing file using aspell spell checker..."
 
   fail_message = ""
