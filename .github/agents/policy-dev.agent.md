@@ -65,12 +65,14 @@ You have access to the command line `fpt` tool with the following useful command
 
 ```bash
 # Check syntax of a policy template (always run this after writing or modifying a .pt file)
+# Note: fpt check requires valid credentials in ~/.fpt.yml even for syntax-only checks
 fpt check path/to/policy_template.pt
 
 # Upload and apply a policy template for live end-to-end testing
 fpt run path/to/policy_template.pt param_name=value
 
 # Execute a policy and save datasource output to disk for debugging
+# Use --names multiple times to retrieve specific datasources: --names ds_one --names ds_two
 fpt retrieve_data path/to/policy_template.pt --names datasource_name
 ```
 
@@ -153,6 +155,8 @@ info(
 ```
 
 The `short_description` must always end with links to the README and Flexera Automation docs using the exact pattern shown above.
+
+**`publish` field:** Set `publish: "false"` for templates under development. When a template is production-ready, either remove the `publish` field entirely or set it to `publish: "true"`. Templates with `publish: "false"` are not included in the public catalog and trigger the `UNPUBLISHED` PR label in Dangerfile checks.
 
 ## Policy Template Structure
 
