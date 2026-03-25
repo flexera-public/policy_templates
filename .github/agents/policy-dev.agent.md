@@ -88,10 +88,6 @@ This repository contains Flexera policy templates (`.pt` files) used inside the 
 
 ## Directory Structure
 
-The directory structure is described in detail in the Style Guide:
-
-- https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#file-names--directory-structure
-
 Valid top-level categories (use snake_case for all path components):
 
 - `cost` — cloud cost optimization recommendations
@@ -125,11 +121,6 @@ Directory structure for Flexera-product templates:
 > Although the syntax superficially resembles Ruby (heredocs with `<<-'EOS'`, `do...end` blocks, `$variable` sigils), the two languages are entirely different. Arbitrary Ruby code, Ruby gems, Ruby standard-library methods, and any other Ruby-specific constructs will NOT work inside `.pt` files or inside `script` blocks. Script blocks (`type: "javascript"`) must contain valid **JavaScript** only. All top-level DSL keywords (`datasource`, `policy`, `escalation`, `define`, etc.) are part of the Flexera policy template DSL and have no equivalents in Ruby.
 
 ## Policy Template Anatomy
-
-Policy template anatomy is described in detail in both the official documentation and the Style Guide:
-
-- https://docs.flexera.com/flexera-one/automation/automation-reference-information/policy-template-language/
-- https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md
 
 Every policy template must begin with the following header block. All fields are required unless noted:
 
@@ -1363,9 +1354,7 @@ Other useful parameter fields (beyond `type`, `label`, `description`, `default`,
 
 ## Style Rules
 
-Style rules are covered in detail in the Style Guide:
-
-- https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md
+See the [Style Guide](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md) for complete details. Key rules are summarized below.
 
 ### Naming Conventions
 
@@ -1393,10 +1382,6 @@ These naming conventions are enforced by code review — do not use arbitrary na
 
 ## Versioning (Semantic Versioning)
 
-Versioning is covered in detail in the Style Guide:
-
-- https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#versioning
-
 All versions must use three period-separated integers (`MAJOR.MINOR.PATCH`):
 
 - **MAJOR** — breaking change: parameters removed/renamed, fundamental behavior change, or anything that would break existing automation.
@@ -1404,10 +1389,6 @@ All versions must use three period-separated integers (`MAJOR.MINOR.PATCH`):
 - **PATCH** — bug fixes and minor non-functional changes.
 
 ## README Requirements
-
-README requirements are covered in detail in the Style Guide:
-
-- https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#readmemd
 
 Every README must begin with `# Policy Template Name` and include the following sections **in this order**:
 
@@ -1420,10 +1401,6 @@ Every README must begin with `# Policy Template Name` and include the following 
 7. `## Cost` — whether this policy template incurs additional costs
 
 ## CHANGELOG Requirements
-
-CHANGELOG requirements are covered in detail in the Style Guide:
-
-- https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#changelogmd
 
 Every CHANGELOG must use exactly this format, with the most recent version first:
 
