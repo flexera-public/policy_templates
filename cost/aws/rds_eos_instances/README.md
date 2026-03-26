@@ -4,10 +4,17 @@
 
 This policy template identifies AWS RDS instances running MySQL or PostgreSQL that are approaching the end of standard support. It checks whether these instances match the list of currently supported versions and calculates an estimated cost for extended support, based on the notification period you specify.
 
-**Note:** Limitations
+## How It Works
 
-- This policy template does not currently support Serverless deployments.
-- If you have a deployment not listed in a region in our list we will default to USD$0.10 per vCPU per running hour.
+- This policy pulls *End of Support dates* from a manually maintained and updated list based on the AWS Release calendars
+- The calculations for extended support costs are provided by AWS. Refer to the links below for further information.
+- [AWS PostgreSQL] <https://docs.aws.amazon.com/AmazonRDS/latest/PostgreSQLReleaseNotes/postgresql-release-calendar.html>
+- [AWS MySQL] <https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/MySQL.Concepts.VersionMgmt.html#MySQL.Concepts.VersionMgmt.ReleaseCalendar>
+- [AWS Aurora PostgreSQL] <https://docs.aws.amazon.com/AmazonRDS/latest/AuroraPostgreSQLReleaseNotes/aurorapostgresql-release-calendar.html#aurorapostgresql.minor.versions.supported>
+- [AWS Aurora MySQL] <https://docs.aws.amazon.com/AmazonRDS/latest/AuroraMySQLReleaseNotes/AuroraMySQL.release-calendars.html#AuroraMySQL.release-calendars.minor>
+- [AWS Postgresql Extended Support Pricing] <https://aws.amazon.com/rds/postgresql/pricing/#Amazon_RDS_Extended_Support_costs>
+- [AWS MySQL Extended Support Pricing] <https://aws.amazon.com/rds/mysql/pricing/#Amazon_RDS_Extended_Support_costs>
+- [AWS Aurora Extended Support Pricing] <https://aws.amazon.com/rds/aurora/pricing/#Amazon_RDS_Extended_Support_costs>
 
 ### Policy Savings Details
 
@@ -17,15 +24,10 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
 
-**Note:** The *End of Support dates* list is manually maintained and updated based on the AWS Release calendars and the calculations for extended support costs are provided by AWS. Refer to the links below for further information.
+**Note:** Limitations
 
-- [AWS PostgreSQL] <https://docs.aws.amazon.com/AmazonRDS/latest/PostgreSQLReleaseNotes/postgresql-release-calendar.html>
-- [AWS MySQL] <https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/MySQL.Concepts.VersionMgmt.html#MySQL.Concepts.VersionMgmt.ReleaseCalendar>
-- [AWS Aurora PostgreSQL] <https://docs.aws.amazon.com/AmazonRDS/latest/AuroraPostgreSQLReleaseNotes/aurorapostgresql-release-calendar.html#aurorapostgresql.minor.versions.supported>
-- [AWS Aurora MySQL] <https://docs.aws.amazon.com/AmazonRDS/latest/AuroraMySQLReleaseNotes/AuroraMySQL.release-calendars.html#AuroraMySQL.release-calendars.minor>
-- [AWS Postgresql Extended Support Pricing] <https://aws.amazon.com/rds/postgresql/pricing/#Amazon_RDS_Extended_Support_costs>
-- [AWS MySQL Extended Support Pricing] <https://aws.amazon.com/rds/mysql/pricing/#Amazon_RDS_Extended_Support_costs>
-- [AWS Aurora Extended Support Pricing] <https://aws.amazon.com/rds/aurora/pricing/#Amazon_RDS_Extended_Support_costs>
+- This policy template does not currently support Serverless deployments.
+- If you have a deployment not listed in a region in our list we will default to USD$0.10 per vCPU per running hour.
 
 ## Input Parameters
 
@@ -42,7 +44,7 @@ This policy has the following input parameters required when launching the polic
   - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
-- *Notification Time Frame* - Specify how many days in advance you want to be notified before the end of standard support.
+- *Notification Time Frame (Days)* - Specify how many days in advance you want to be notified before the end of standard support.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
