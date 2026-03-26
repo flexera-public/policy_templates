@@ -11,7 +11,7 @@ GitHub Copilot CLI is an AI-powered terminal assistant that brings Copilot's age
 ### Installation
 
 ```bash
-# macOS / Linux
+# macOS / Linux / WSL2
 curl -fsSL https://gh.io/copilot-install | bash
 
 # macOS with Homebrew
