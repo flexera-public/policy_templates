@@ -127,6 +127,7 @@ def general_bad_urls?(file, file_diff)
     'tempuri.org',
     'us-3.rightscale.com',
     'us-4.rightscale.com',
+    'gh.io',
     'storage.azure.com' # Not a legitimate URL but used in request headers for generating Azure tokens
   ]
 

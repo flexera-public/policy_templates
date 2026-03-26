@@ -1,14 +1,8 @@
 # Using GitHub Copilot CLI to Build Policy Templates
 
-This guide explains how to use GitHub Copilot CLI together with the `policy-dev` agent to create, edit, and review Flexera policy templates in this repository.
+This guide explains how to use GitHub Copilot CLI together with the `policy-dev` agent to create, edit, and review Flexera policy templates in this repository. GitHub Copilot CLI is an AI-powered terminal assistant that brings Copilot's agentic coding capabilities directly to your command line. It can read and write files, run shell commands, search the codebase, and carry on a multi-turn conversation — all without leaving your terminal.
 
----
-
-## What Is GitHub Copilot CLI?
-
-GitHub Copilot CLI is an AI-powered terminal assistant that brings Copilot's agentic coding capabilities directly to your command line. It can read and write files, run shell commands, search the codebase, and carry on a multi-turn conversation — all without leaving your terminal.
-
-### Installation
+## Installation
 
 ```bash
 # macOS / Linux / WSL2
@@ -24,7 +18,7 @@ winget install GitHub.Copilot
 npm install -g @github/copilot
 ```
 
-### Starting a session
+## Starting a session
 
 ```bash
 cd /path/to/policy_templates   # always launch from the repo root
