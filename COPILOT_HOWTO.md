@@ -50,7 +50,7 @@ The repository ships with a custom agent at `.github/agents/policy-dev.agent.md`
 
 Type `/agent` in the Copilot CLI prompt and select **policy-dev** from the list, or mention it by name in your first message:
 
-```
+```text
 @policy-dev create a new AWS cost policy that identifies unattached EBS volumes
 ```
 
@@ -64,25 +64,26 @@ Using `@policy-dev` at the start of a prompt automatically routes the request to
 
 Provide the agent with enough context to generate production-ready files:
 
-```
+```text
 @policy-dev Create a new cost policy for AWS that finds EC2 instances that have
 been stopped for more than 30 days and recommends terminating them.
 The policy should support region filtering, tag-based exclusions, and meta policies.
 ```
 
 The agent will:
+
 1. Choose the correct directory path (e.g. `cost/aws/stopped_ec2_instances/`)
-2. Write the `.pt` file starting with `publish: "false"` in the `info()` block
-3. Run `fpt check` to validate syntax (requires `~/.fpt.yml` credentials)
-4. Generate `README.md` and `CHANGELOG.md`
-5. Add the path to `tools/policy_master_permission_generation/validated_policy_templates.yaml`
-6. Optionally add it to `tools/meta_parent_policy_compiler/default_template_files.yaml`
+1. Write the `.pt` file starting with `publish: "false"` in the `info()` block
+1. Run `fpt check` to validate syntax (requires `~/.fpt.yml` credentials)
+1. Generate `README.md` and `CHANGELOG.md`
+1. Add the path to `tools/policy_master_permission_generation/validated_policy_templates.yaml`
+1. Optionally add it to `tools/meta_parent_policy_compiler/default_template_files.yaml`
 
 ### 2. Create a Policy for a Specific Provider
 
 Include the provider, service, and category so the agent places the files in the right location:
 
-```
+```text
 @policy-dev Create an Azure compliance policy that checks all Storage Accounts
 for public blob access and reports any that have it enabled.
 Place it in compliance/azure/storage_public_access/.
@@ -92,12 +93,13 @@ Place it in compliance/azure/storage_public_access/.
 
 Point the agent to the file and describe the change:
 
-```
+```text
 @policy-dev Update cost/aws/old_snapshots/aws_delete_old_snapshots.pt to add
 a minimum savings threshold parameter. Follow the style guide conventions.
 ```
 
 The agent will:
+
 - Read the existing `.pt`, `README.md`, and `CHANGELOG.md`
 - Apply the change following style-guide rules
 - Bump the version (MAJOR / MINOR / PATCH) as appropriate
@@ -107,12 +109,13 @@ The agent will:
 
 Ask the agent to review a file before you open a pull request:
 
-```
+```text
 @policy-dev Review cost/aws/old_snapshots/aws_delete_old_snapshots.pt for style
 guide compliance, correct README format, and valid CHANGELOG entries.
 ```
 
 The agent checks:
+
 - `info()` block completeness (version, provider, service, publish)
 - Directory structure and snake_case naming
 - Section order in `.pt` file
@@ -125,7 +128,7 @@ The agent checks:
 
 After writing or editing a `.pt` file, ask the agent to run the linter:
 
-```
+```text
 @policy-dev Run fpt check on cost/aws/old_snapshots/aws_delete_old_snapshots.pt
 and fix any errors.
 ```
@@ -136,7 +139,7 @@ and fix any errors.
 
 If your template supports Meta Policies, ask the agent to compile the parent:
 
-```
+```text
 @policy-dev Add meta policy support to cost/aws/stopped_ec2_instances/
 and generate the meta parent template.
 ```
@@ -148,7 +151,7 @@ The agent will update `tools/meta_parent_policy_compiler/default_template_files.
 ## Useful Prompting Tips
 
 | Goal | Prompt pattern |
-|---|---|
+| --- | --- |
 | New catalog template | `@policy-dev Create a [cost/compliance/operational/security] policy for [provider] that [does X]` |
 | Based on an existing template | `@policy-dev Create a new policy similar to [path/to/existing.pt] but for [different resource]` |
 | Add a feature | `@policy-dev Add [feature] to [path/to/policy.pt], bump the version, and update the CHANGELOG` |
@@ -161,7 +164,7 @@ The agent will update `tools/meta_parent_policy_compiler/default_template_files.
 ## Modes and Keyboard Shortcuts
 
 | Shortcut | Effect |
-|---|---|
+| --- | --- |
 | `Shift+Tab` | Cycle through modes: **Interactive → Plan → Autopilot** |
 | `Ctrl+S` | Run the current command while preserving the input |
 | `Ctrl+C` | Cancel the current operation or clear input |
@@ -178,7 +181,7 @@ Use **Plan mode** (`Shift+Tab` until you see `[plan]`) for larger tasks — Copi
 
 Below is the recommended end-to-end flow for adding a new template to the catalog:
 
-```
+```text
 1.  git checkout -b POL-XXXX-my-new-policy
 2.  copilot                              # launch Copilot CLI in repo root
 3.  @policy-dev Create a new [category] policy for [provider] that [does X]
@@ -196,7 +199,7 @@ Below is the recommended end-to-end flow for adding a new template to the catalo
 ## Key Repository Resources
 
 | Resource | Purpose |
-|---|---|
+| --- | --- |
 | [`STYLE_GUIDE.md`](STYLE_GUIDE.md) | Naming, versioning, formatting conventions |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Branch, PR, and merge workflow |
 | [`README.md`](README.md) | Catalog overview and template list |
@@ -210,17 +213,17 @@ Below is the recommended end-to-end flow for adding a new template to the catalo
 
 ## Frequently Asked Questions
 
-**Q: Do I need Flexera credentials to use the agent?**  
+**Q: Do I need Flexera credentials to use the agent?**
 A: No — the agent can write, review, and search files without credentials. You only need `~/.fpt.yml` credentials when you want to run `fpt check` (syntax validation) or `fpt run` (live testing). The agent will alert you before issuing those commands.
 
-**Q: Will the agent commit or push my changes automatically?**  
+**Q: Will the agent commit or push my changes automatically?**
 A: No. The agent creates and edits files locally, but all `git` operations (commit, push, PR creation) remain under your control unless you explicitly ask the agent to run those commands.
 
-**Q: What if the agent produces code that fails `fpt check`?**  
+**Q: What if the agent produces code that fails `fpt check`?**
 A: Show the agent the error output and ask it to fix the issues. The policy template DSL has strict syntax requirements; the agent is tuned for them but occasionally needs a correction loop. Example: `@policy-dev fpt check returned the following error — please fix it: [paste error]`
 
-**Q: Can I use Copilot CLI to work on non-catalog (private or internal) templates?**  
+**Q: Can I use Copilot CLI to work on non-catalog (private or internal) templates?**
 A: Yes. The `policy-dev` agent is useful for any `.pt` file regardless of whether it is destined for the public catalog. Just omit the catalog-specific steps (automation YAML updates, Dangerfile label requirements) from your workflow.
 
-**Q: What's the difference between Interactive and Autopilot mode?**  
+**Q: What's the difference between Interactive and Autopilot mode?**
 A: In **Interactive** mode (default), the agent pauses to ask for confirmation before running shell commands or making large changes. In **Autopilot** mode (experimental, `Shift+Tab` twice), it works autonomously until the task is done. Use Autopilot for well-defined tasks and Interactive mode when you want to review each step.
