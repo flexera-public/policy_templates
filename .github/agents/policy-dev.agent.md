@@ -19,6 +19,9 @@ You are an expert Flexera policy template developer working in the `flexera-publ
 
 ## Resources
 
+**Flexera Cloud Cost Optimization (CCO):**
+- https://docs.flexera.com/flexera-one/partners/cloud-cost-optimization/
+
 **Policy template language & catalog:**
 - https://docs.flexera.com/flexera/en/Automation/AutomationGS.htm
 - https://docs.flexera.com/flexera-one/automation/managing-and-using-the-automation-catalog
@@ -131,13 +134,13 @@ info(
   policy_set: "",            # Grouping label for recommendations; must be non-blank for recommendation templates
   recommendation_type: "Usage Reduction",  # Required for recommendation templates: "Usage Reduction" or "Rate Reduction"; omit for non-cost templates
   hide_skip_approvals: "true",  # Required for recommendation templates; hides "Skip Approval" UI button
-  publish: "false"           # Always start new templates as unpublished; remove or set "true" when ready
+  publish: "false"           # Only include this line if the user explicitly requests the template be unpublished
 )
 ```
 
 The `short_description` must always end with links to the README and Flexera Automation docs using the exact pattern shown above.
 
-**`publish` field:** Set `publish: "false"` for templates under development. When a template is production-ready, either remove the `publish` field entirely or set it to `publish: "true"`. Templates with `publish: "false"` are not included in the public catalog and trigger the `UNPUBLISHED` PR label in Dangerfile checks.
+**`publish` field:** Omit the `publish` field from new templates — omitting it is equivalent to `publish: "true"` and means the template will appear in the public catalog. Only add `publish: "false"` if the user explicitly requests the template be kept unpublished. Templates with `publish: "false"` are not included in the public catalog and trigger the `UNPUBLISHED` PR label in Dangerfile checks.
 
 ## Policy Template Structure
 
@@ -420,7 +423,7 @@ script "js_billing_request", type: "javascript" do
       headers: { "Api-Version": "1.0", "User-Agent": "RS Policies" },
       ignore_status: [400]
     }
-  EOS
+EOS
 end
 ```
 
@@ -441,7 +444,7 @@ script "js_filter_items", type: "javascript" do
     result = _.filter(items, function(item) {
       return item.value > threshold
     })
-  EOS
+EOS
 end
 ```
 
@@ -516,7 +519,7 @@ script "js_filter_resources", type: "javascript" do
       if (param_exclusion_tags_boolean == 'Any') { return found_tags.length > 0 }
       return found_tags.length == comparators.length  // 'All'
     })
-  EOS
+EOS
 end
 ```
 
@@ -538,7 +541,7 @@ script "js_filter_regions", type: "javascript" do
     } else {
       result = regions  // empty list = no filter; include all regions
     }
-  EOS
+EOS
 end
 ```
 
@@ -575,7 +578,7 @@ script "js_filter_subscriptions", type: "javascript" do
     } else {
       result = subscriptions  // empty list = no filter; include all subscriptions
     }
-  EOS
+EOS
 end
 ```
 
@@ -611,7 +614,7 @@ script "js_filter_projects", type: "javascript" do
     } else {
       result = projects  // empty list = no filter; include all projects
     }
-  EOS
+EOS
 end
 ```
 
@@ -1230,7 +1233,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       "api.optima-apac.flexeraeng.com": { flexera: "api.flexera.au",   optima: "api.optima-apac.flexeraeng.com" }
     }
     result = host_table[rs_optima_host]
-  EOS
+EOS
 end
 ```
 
@@ -1325,7 +1328,7 @@ script "js_parent_policy_terminated", type: "javascript" do
   result "result"
   code <<-'EOS'
     result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
-  EOS
+EOS
 end
 ```
 
@@ -1424,7 +1427,7 @@ script "js_make_terminate_request", type: "javascript" do
       path: "/policy/v1/orgs/" + rs_org_id + "/projects/" + rs_project_id + "/applied-policies" + (policy_id ? "/" + policy_id : ""),
       verb: ds_parent_policy_terminated ? "DELETE" : "GET"
     }
-  EOS
+EOS
 end
 
 datasource "ds_is_deleted" do
@@ -1679,6 +1682,44 @@ script "js_billing_request", type: "javascript" do   # used by ds_billing_data A
 end
 ```
 
+### Heredoc `EOS` Delimiter Alignment
+
+The closing `EOS` delimiter must be **left-aligned at column 0** for `code <<-'EOS'` script blocks. It must **never** be indented, regardless of the indentation of the surrounding `script` block:
+
+**Wrong:**
+```
+script "js_example", type: "javascript" do
+  parameters "items"
+  result "result"
+  code <<-'EOS'
+    result = _.filter(items, function(item) { return item.value > 0 })
+  EOS
+end
+```
+
+**Correct:**
+```
+script "js_example", type: "javascript" do
+  parameters "items"
+  result "result"
+  code <<-'EOS'
+    result = _.filter(items, function(item) { return item.value > 0 })
+EOS
+end
+```
+
+The `detail_template <<-'EOS'` heredoc inside a `policy` block is the one exception — its closing `EOS` is indented to match the surrounding `validate_each` or `validate` block, typically 4 spaces:
+
+```
+policy "pol_example" do
+  validate_each $ds_items do
+    detail_template <<-'EOS'
+    **Details:** {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+  end
+end
+```
+
 ## Versioning (Semantic Versioning)
 
 All versions must use three period-separated integers (`MAJOR.MINOR.PATCH`):
@@ -1687,7 +1728,111 @@ All versions must use three period-separated integers (`MAJOR.MINOR.PATCH`):
 - **MINOR** — new non-breaking functionality (e.g. a new parameter whose default preserves existing behavior).
 - **PATCH** — bug fixes and minor non-functional changes.
 
+**When to bump the version:** Only bump the version (and add a CHANGELOG entry) when the change is ready to commit. If you are iterating on a template across multiple requests in the same working session and no changes have been committed to Git yet, do **not** bump the version or update the CHANGELOG between iterations — wait until the work is complete and ready to commit. You can check whether any changes have been committed with `git log --oneline -1` and `git status`.
+
 ## README Requirements
+
+### Markdown Linting
+
+All README files are linted with `mdl`. The `.mdlrc` in the repo root disables MD013 (line length), MD005 (list indentation), MD009 (trailing spaces), and MD024 (duplicate headings). All other rules are active. The most practically important rules for README authoring are listed below.
+
+**MD001 — Heading levels increment by one at a time.** Never skip a level (e.g., `##` directly to `####`):
+
+```markdown
+<!-- Wrong -->
+## Section
+#### Subsection
+
+<!-- Correct -->
+## Section
+### Subsection
+```
+
+**MD022 — Headings must be surrounded by blank lines.** Always leave a blank line before and after every heading:
+
+```markdown
+<!-- Wrong -->
+Some text.
+## Heading
+More text.
+
+<!-- Correct -->
+Some text.
+
+## Heading
+
+More text.
+```
+
+**MD025 — Only one top-level heading per file.** Each README has exactly one `#` heading at the top.
+
+**MD031 — Fenced code blocks must be surrounded by blank lines:**
+
+```markdown
+<!-- Wrong -->
+Some text.
+```bash
+command
+```
+More text.
+
+<!-- Correct -->
+Some text.
+
+```bash
+command
+```
+
+More text.
+```
+
+**MD032 — Lists must be surrounded by blank lines:**
+
+```markdown
+<!-- Wrong -->
+Some text.
+- item one
+- item two
+More text.
+
+<!-- Correct -->
+Some text.
+
+- item one
+- item two
+
+More text.
+```
+
+**MD040 — Fenced code blocks must declare a language.** Always specify the language after the opening fence. Use `markdown`, `bash`, `javascript`, `yaml`, `json`, or `text` as appropriate. Never leave the fence bare:
+
+```markdown
+<!-- Wrong -->
+```
+some code
+```
+
+<!-- Correct -->
+```bash
+some code
+```
+```
+
+**MD047 — Files must end with a single newline character.** Ensure there is a newline at the very end of every Markdown file.
+
+**MD060 — Table separator rows must use `| --- |` style (with spaces), not `|---|` (compact).** The separator row must match the spaced style used in the header and data rows:
+
+```markdown
+<!-- Wrong -->
+| Column 1 | Column 2 |
+|---|---|
+| value    | value    |
+
+<!-- Correct -->
+| Column 1 | Column 2 |
+| --- | --- |
+| value    | value    |
+```
 
 Every README must begin with `# Policy Template Name` and include the following sections **in this order**:
 
@@ -1851,7 +1996,7 @@ Prefer [developer.flexera.com](https://developer.flexera.com/) REST endpoints. U
 **Creating a new policy template:**
 1. Search for similar templates to use as reference
 2. Determine correct category/provider for directory path
-3. Write `.pt` file with `publish: "false"` in `info()` block
+3. Write `.pt` file (omit `publish` field unless user requests unpublished)
 4. Run `fpt check` and fix errors
 5. Write `README.md` and `CHANGELOG.md`
 6. Update `tools/policy_master_permission_generation/validated_policy_templates.yaml`
