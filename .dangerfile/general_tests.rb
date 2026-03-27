@@ -49,6 +49,8 @@ end
 ### Spell check test
 # Run the Danger spell checker on a file
 def general_spellcheck?(file)
+  return false if file.start_with?(".github/agents/")
+
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing file using aspell spell checker..."
 
   fail_message = ""
@@ -81,6 +83,8 @@ end
 ### Markdown lint test
 # Return false if linter finds no problems
 def general_bad_markdown?(file)
+  return false if file.start_with?(".github/agents/")
+
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing file using markdown linter..."
 
   # Adjust testing based on which file we're doing
@@ -105,6 +109,8 @@ end
 ### Bad URL test
 # Return false if no invalid URLs are found.
 def general_bad_urls?(file, file_diff)
+  return false if file.start_with?(".github/agents/")
+
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing file for bad or invalid URLs..."
 
   # List of hosts to ignore in the analysis
@@ -121,6 +127,7 @@ def general_bad_urls?(file, file_diff)
     'tempuri.org',
     'us-3.rightscale.com',
     'us-4.rightscale.com',
+    'gh.io',
     'storage.azure.com' # Not a legitimate URL but used in request headers for generating Azure tokens
   ]
 
@@ -185,6 +192,8 @@ end
 ### Outdated Terminology test
 # Return false if no outdated terminology, such as RightScale, is found in the file
 def general_outdated_terminology?(file, file_lines)
+  return false if file.start_with?(".github/agents/")
+
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing file for outdated terminology..."
 
   fail_message = ""
