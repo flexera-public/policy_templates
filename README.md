@@ -76,6 +76,10 @@ These templates can generate savings estimates for your environment. The inciden
   * [AWS Unused Classic Load Balancers](./cost/aws/unused_clbs)
   * [AWS Unused Network Load Balancers](./cost/aws/unused_nlbs)
 
+* PaaS
+
+  * [AWS Idle Lambda Functions](./cost/aws/idle_lambda_functions)
+
 * RDS
 
   * [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
