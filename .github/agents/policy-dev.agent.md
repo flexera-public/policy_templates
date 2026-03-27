@@ -1864,6 +1864,31 @@ policy "pol_example" do
 end
 ```
 
+### API-Level Filtering
+
+**Always filter data at the API level wherever the API supports it.** Only fall back to JavaScript filtering inside the policy template when the API does not provide the necessary filter capability. Fetching fewer records from the API reduces network transfer, memory usage, and JavaScript processing time.
+
+**General principle:** Before writing a JavaScript filter step, check the API documentation for query parameters, `$filter` expressions, or other server-side filtering mechanisms that can narrow the result set before it reaches the policy engine.
+
+**Common API-level filtering mechanisms by provider:**
+
+- **AWS**: Use `Filter.N.Name` / `Filter.N.Value.N` query parameters on `Describe*` calls wherever the service supports them. For example:
+  - `Filter.1.Name=instance-state-name&Filter.1.Value.1=running` — only return running instances
+  - `Filter.1.Name=tag-key&Filter.1.Value.1=Environment` — only return tagged resources
+  - Check the AWS API docs for the specific action — not all Describe calls support the same filters.
+
+- **Azure**: Use OData `$filter` query parameters where supported. Coverage varies significantly by API:
+  - Azure VM list (`/providers/Microsoft.Compute/virtualMachines`): only `location eq '{location}'` and `virtualMachineScaleSet/id eq '...'` are supported — publisher, osType, SKU, and other image properties **cannot** be filtered at the API level.
+  - Many other Azure APIs (Resource Graph, policy assignments, role assignments, etc.) support richer OData expressions.
+  - Use `statusOnly=true` on VM list calls only when you need instance-view status and do not need full VM properties.
+  - Do **not** request `$expand=instanceView` unless you specifically need live running-state data — it significantly increases response size and latency.
+
+- **Google**: Use the `filter` query parameter, which accepts a key:value or comparison expression depending on the API. For example:
+  - `filter=status:RUNNING` — only return running instances
+  - `filter=labels.env:production` — only return resources with a specific label
+
+**When restructuring is not worth it:** Some API-level filters (e.g., Azure VM `$filter=location eq 'xxx'`) would require changing the iteration pattern (e.g., iterating per subscription × location instead of per subscription). If the added complexity outweighs the benefit — especially when the allowed set of values is large or unknown — it is acceptable to fetch at the broader scope and filter in JavaScript. Document the reason in a comment.
+
 ## Versioning (Semantic Versioning)
 
 All versions must use three period-separated integers (`MAJOR.MINOR.PATCH`):

@@ -1,9 +1,9 @@
-name "Azure Resources Under Extended Security Updates"
+name "Azure End-of-Life Resources"
 rs_pt_ver 20180301
 type "policy"
-short_description "Reports Azure virtual machines running operating systems that are under or past Microsoft's Extended Security Updates (ESU) program. These resources are outdated and pose a security risk. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/azure/extended_security_updates) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+short_description "Reports Azure virtual machines running end-of-life operating systems. Includes resources that are no longer receiving security updates as well as those still under Microsoft's Extended Security Updates (ESU) program. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/azure/eol_resources) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
 long_description ""
-doc_link "https://github.com/flexera-public/policy_templates/tree/master/security/azure/extended_security_updates"
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/security/azure/eol_resources"
 category "Security"
 severity "high"
 default_frequency "weekly"
@@ -33,6 +33,15 @@ parameter "param_azure_endpoint" do
   description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
+end
+
+parameter "param_report_scope" do
+  type "string"
+  category "Policy Settings"
+  label "Report Scope"
+  description "Whether to report all end-of-life resources or only those no longer receiving any security updates. Resources 'Under Extended Security Updates' are still receiving Microsoft security patches (at additional cost when not hosted in Azure) and may be excluded based on this setting."
+  allowed_values "All End-of-Life Resources", "Only Resources Without Active Security Updates"
+  default "All End-of-Life Resources"
 end
 
 parameter "param_subscriptions_allow_or_deny" do
@@ -303,11 +312,11 @@ datasource "ds_azure_virtual_machines" do
 end
 
 datasource "ds_esu_resources" do
-  run_script $js_esu_resources, $ds_azure_virtual_machines, $ds_applied_policy, $ds_azure_regions_table, $ds_azure_esu_os_versions, $param_regions_allow_or_deny, $param_regions_list, $param_exclusion_tags, $param_exclusion_tags_boolean, $param_incident_csv
+  run_script $js_esu_resources, $ds_azure_virtual_machines, $ds_applied_policy, $ds_azure_regions_table, $ds_azure_esu_os_versions, $param_regions_allow_or_deny, $param_regions_list, $param_exclusion_tags, $param_exclusion_tags_boolean, $param_incident_csv, $param_report_scope
 end
 
 script "js_esu_resources", type: "javascript" do
-  parameters "ds_azure_virtual_machines", "ds_applied_policy", "ds_azure_regions_table", "ds_azure_esu_os_versions", "param_regions_allow_or_deny", "param_regions_list", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_incident_csv"
+  parameters "ds_azure_virtual_machines", "ds_applied_policy", "ds_azure_regions_table", "ds_azure_esu_os_versions", "param_regions_allow_or_deny", "param_regions_list", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_incident_csv", "param_report_scope"
   result "result"
   code <<-'EOS'
   // Lookup table of known end-of-life OS versions detectable via Azure Marketplace image reference.
@@ -347,8 +356,7 @@ script "js_esu_resources", type: "javascript" do
 
     // Region filtering — support both shorthand ("eastus") and pretty name ("East US")
     if (param_regions_list.length > 0) {
-      var region_match = _.contains(param_regions_list, vm['location']) ||
-                         _.contains(param_regions_list, ds_azure_regions_table[vm['location']])
+      var region_match = _.contains(param_regions_list, vm['location']) || _.contains(param_regions_list, ds_azure_regions_table[vm['location']])
       if (region_match != allow_deny_test[param_regions_allow_or_deny]) { return }
     }
 
@@ -393,6 +401,10 @@ script "js_esu_resources", type: "javascript" do
     })
 
     if (!esu_match) { return }
+
+    // Filter by report scope: if user only wants Only Resources Without Active Security Updates,
+    // skip resources that are currently under Extended Security Updates
+    if (param_report_scope == "Only Resources Without Active Security Updates" && esu_match['esu_status'] == "Under Extended Security Updates") { return }
 
     // Build flat tags display string
     var tags = []
@@ -494,9 +506,9 @@ end
 
 policy "pol_esu_resources" do
   validate_each $ds_esu_resources do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Resources Under Extended Security Updates Found"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure End-of-Life Resources Found"
     detail_template <<-'EOS'
-The following Azure virtual machines are running operating systems that have reached end of life and are under or past Microsoft's Extended Security Updates (ESU) program. These resources should be upgraded or migrated to a supported operating system version to reduce security risk.
+The following Azure virtual machines are running end-of-life operating systems. These resources should be upgraded or migrated to a supported operating system version to reduce security risk.
 
 {{ with index data 0 }}{{ .csv_message }}{{ end }}
     EOS

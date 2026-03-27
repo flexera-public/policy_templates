@@ -1,8 +1,8 @@
-# Azure Resources Under Extended Security Updates
+# Azure End-of-Life Resources
 
 ## What It Does
 
-This policy template reports Azure virtual machines running operating systems that are under or past Microsoft's Extended Security Updates (ESU) program. These resources are outdated and running on unsupported software, representing a security risk to the organization. A report is produced containing a list of these resources, and optionally, an email is sent with this report.
+This policy template reports Azure virtual machines running end-of-life operating systems. By default, all detected end-of-life resources are reported, including those still under Microsoft's Extended Security Updates (ESU) program. Optionally, results can be filtered to only include resources that are no longer receiving any security updates at all. These resources are outdated and running on unsupported software, representing a security risk to the organization. A report is produced containing a list of these resources, and optionally, an email is sent with this report.
 
 > **Note:** Microsoft provides Extended Security Updates at no additional charge for virtual machines hosted in Azure. This policy is therefore categorized as a Security policy rather than a Cost policy — the goal is to identify outdated resources for remediation, not to report costs.
 
@@ -32,6 +32,7 @@ This policy template has the following input parameters:
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using Azure China.
+- *Report Scope* - Whether to report all end-of-life resources or only those no longer receiving any security updates. Resources under Extended Security Updates are still receiving Microsoft security patches (at additional cost when not hosted in Azure) and may be excluded based on this setting.
 - *Allow/Deny Subscriptions* - Whether to treat `Allow/Deny Subscriptions List` parameter as allow or deny list. Has no effect if `Allow/Deny Subscriptions List` is left empty.
 - *Allow/Deny Subscriptions List* - A list of allowed or denied subscription IDs/names. Leave blank to check all Azure subscriptions.
 - *Allow/Deny Regions* - Whether to treat `Allow/Deny Regions List` parameter as allow or deny list. Has no effect if `Allow/Deny Regions List` is left empty.
@@ -61,7 +62,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `Microsoft.Compute/virtualMachines/read`
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
-  - `billing_center_viewer`
+  - `policy_viewer`
+  - `policy_manager`*
+
+  \* Only required for meta-policy self-termination; not required if not using the meta parent of this policy template.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
