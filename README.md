@@ -649,6 +649,10 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Azure Web Apps Without Secure TLS](./security/azure/webapp_tls_version_support)
 
+* Compute
+
+  * [Azure End-of-Life Resources](./security/azure/eol_resources)
+
 * Identity & Access Management
 
   * [Azure Guest Users](./security/azure/guest_users)
