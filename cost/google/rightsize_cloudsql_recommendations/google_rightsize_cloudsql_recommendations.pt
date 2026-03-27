@@ -1,14 +1,14 @@
 name "Google Rightsize Cloud SQL Recommender"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy finds underutilized and idle Google Cloud SQL instances and downsizes, stops, or deletes them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This Policy finds underutilized and idle Google Cloud SQL instances and downsizes, stops, or deletes them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_recommendations"
 category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.4.1",
+  version: "0.4.4",
   provider: "Google",
   service: "Compute",
   policy_set: "Rightsize Database Instances",
@@ -185,7 +185,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -258,7 +258,7 @@ end
 script "js_currency_target", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Default to USD if currency is not found
   result = ds_currency_reference['USD']
 
@@ -270,36 +270,52 @@ end
 
 datasource "ds_google_projects" do
   request do
-    auth $auth_google
-    pagination $pagination_google
-    host "cloudresourcemanager.googleapis.com"
-    path "/v1/projects/"
-    query "filter", "(lifecycleState:ACTIVE)"
-    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
-    # Forces `ds_is_deleted` datasource to run first during policy execution
-    header "Meta-Flexera", val($ds_is_deleted, "path")
+    run_script $js_google_projects, $ds_is_deleted, $param_projects_ignore_sys, $param_projects_ignore_app
   end
   result do
     encoding "json"
     collect jmes_path(response, "projects[*]") do
-      field "number", jmes_path(col_item, "projectNumber")
       field "id", jmes_path(col_item, "projectId")
       field "name", jmes_path(col_item, "name")
+      field "labels", jmes_path(col_item, "labels")
     end
   end
 end
 
+script "js_google_projects", type: "javascript" do
+  parameters "ds_is_deleted", "param_projects_ignore_sys", "param_projects_ignore_app"
+  result "request"
+  code <<-'EOS'
+  query = []
+  if (param_projects_ignore_sys == "Yes") { query.push("-projectId:sys-") }
+  if (param_projects_ignore_app == "Yes") { query.push("-projectId:app-") }
+
+  var request = {
+    auth: "auth_google",
+    pagination: "pagination_google",
+    host: "cloudresourcemanager.googleapis.com",
+    path: "/v3/projects:search",
+    query_params: { "query": query.join(" ") },
+    // Header Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    // Forces `ds_is_deleted` datasource to run first during policy execution
+    headers: {
+      "Meta-Flexera": ds_is_deleted["path"]
+    }
+  }
+EOS
+end
+
 datasource "ds_google_projects_filtered" do
-  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list, $param_projects_ignore_sys, $param_projects_ignore_app
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
 end
 
 script "js_google_projects_filtered", type: "javascript" do
-  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_projects_list.length > 0) {
-    filtered = _.filter(ds_google_projects, function(project) {
-      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
+    result = _.filter(ds_google_projects, function(project) {
+      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name'])
 
       if (param_projects_allow_or_deny == "Deny") {
         include_project = !include_project
@@ -308,12 +324,8 @@ script "js_google_projects_filtered", type: "javascript" do
       return include_project
     })
   } else {
-    filtered = ds_google_projects
+    result = ds_google_projects
   }
-
-  result = _.reject(filtered, function(project) {
-    return (project['id'].substring(0, 4) == "sys-" && param_projects_ignore_sys == "Yes") || (project['id'].substring(0, 4) == "app-" && param_projects_ignore_app == "Yes")
-  })
 EOS
 end
 
@@ -350,7 +362,6 @@ datasource "ds_cloudsql_instances" do
       field "pricingPlan", jmes_path(col_item, "settings.pricingPlan")
       field "projectId", val(iter_item, "id")
       field "projectName", val(iter_item, "name")
-      field "projectNumber", val(iter_item, "number")
     end
   end
 end
@@ -362,7 +373,7 @@ end
 script "js_cloudsql_instances_label_filtered", type: "javascript" do
   parameters "ds_cloudsql_instances", "param_exclusion_labels", "param_exclusion_labels_boolean"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   comparators = _.map(param_exclusion_labels, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -439,7 +450,7 @@ end
 script "js_cloudsql_instances_region_filtered", type: "javascript" do
   parameters "ds_cloudsql_instances_label_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_regions_list.length > 0) {
     result = _.filter(ds_cloudsql_instances_label_filtered, function(instance) {
       include_instance = _.contains(param_regions_list, instance['region'])
@@ -463,7 +474,7 @@ end
 script "js_idle_recommender_requests", type: "javascript" do
   parameters "ds_cloudsql_instances_region_filtered", "param_idle_or_underutilized"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   // Skip gathering recommendations for idle instances if the user opted not to
@@ -490,7 +501,7 @@ end
 script "js_underutil_recommender_requests", type: "javascript" do
   parameters "ds_cloudsql_instances_region_filtered", "param_idle_or_underutilized"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
 
   // Skip gathering recommendations for underutilized instances if the user opted not to
@@ -569,7 +580,7 @@ end
 script "js_recommendations", type: "javascript" do
   parameters "projectId", "region", "number", "type"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // If 100 requests have been made, wait 1 minute to avoid throttling
   if (number % 100 === 0) {
     now = new Date().getTime()
@@ -599,7 +610,7 @@ end
 script "js_conditional_currency_conversion", type: "javascript" do
   parameters "ds_currency_target", "ds_idle_recommendations", "ds_underutil_recommendations"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
   from_currency = "USD"
 
@@ -646,7 +657,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_target", "ds_currency_conversion"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = ds_currency_target
   result['exchange_rate'] = 1
 
@@ -732,7 +743,6 @@ script "js_sorted_recommendations", type:"javascript" do
           idle_result.push({
             accountID: instance['projectId'],
             accountName: instance['projectName'],
-            projectNumber: instance['projectNumber'],
             resourceID: instance['resourceID'],
             resourceName: instance['resourceName'],
             status: instance['state'],
@@ -822,7 +832,6 @@ script "js_sorted_recommendations", type:"javascript" do
           underutil_result.push({
             accountID: instance['projectId'],
             accountName: instance['projectName'],
-            projectNumber: instance['projectNumber'],
             resourceID: instance['resourceID'],
             resourceName: instance['resourceName'],
             status: instance['state'],
@@ -941,7 +950,6 @@ script "js_idle_incident", type:"javascript" do
   result.push({
     accountID: "",
     accountName: "",
-    projectNumber: "",
     resourceID: "",
     resourceName: "",
     status: "",
@@ -1052,7 +1060,6 @@ script "js_underutil_incident", type:"javascript" do
   result.push({
     accountID: "",
     accountName: "",
-    projectNumber: "",
     resourceID: "",
     resourceName: "",
     status: "",
@@ -1113,9 +1120,6 @@ policy "pol_cloudsql_recommendations" do
       end
       field "accountName" do
         label "Project Name"
-      end
-      field "projectNumber" do
-        label "Project Number"
       end
       field "resourceID" do
         label "Resource ID"
@@ -1211,9 +1215,6 @@ policy "pol_cloudsql_recommendations" do
       end
       field "accountName" do
         label "Project Name"
-      end
-      field "projectNumber" do
-        label "Project Number"
       end
       field "resourceID" do
         label "Resource ID"
@@ -1513,7 +1514,7 @@ end
 script "js_make_terminate_request", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],

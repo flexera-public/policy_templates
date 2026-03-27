@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.4.0
+
+- Updated Azure API calls to use most current version. Functionality unchanged.
+
+## v3.3.2
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v3.3.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v3.3.0
 
 - Added new parameter and field to incident table to indicate the 'Payment Option' for recommendations.

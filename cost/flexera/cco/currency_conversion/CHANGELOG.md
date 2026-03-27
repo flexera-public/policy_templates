@@ -1,5 +1,13 @@
 # Changelog
 
+## v5.1.2
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v5.1.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v5.1.0
 
 - Added `Bring Adjustments Forward` parameter to automatically fill months with adjustments from previous month when applicable.

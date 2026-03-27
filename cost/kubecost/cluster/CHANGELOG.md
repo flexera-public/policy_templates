@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.5.2
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v0.5.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v0.5.0
 
 - Added support for attaching CSV files to incident emails.

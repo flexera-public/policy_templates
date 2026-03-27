@@ -1,0 +1,1158 @@
+name "Flexera User Groups from Billing Centers"
+rs_pt_ver 20180301
+type "policy"
+short_description "Automatically creates and manages User Groups based on Billing Centers, granting each group access to its corresponding Billing Center. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/iam/user_groups_from_billing_centers/) and [Flexera Automation docs](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/iam/user_groups_from_billing_centers/"
+category "Operational"
+severity "low"
+default_frequency "daily"
+info(
+  version: "0.2.0",
+  provider: "Flexera",
+  service: "Identity & Access Management",
+  policy_set: "Automation",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify."
+  default []
+end
+
+parameter "param_billing_center_scope" do
+  type "string"
+  category "Policy Settings"
+  label "Billing Center Scope"
+  description "Whether to create user groups for all Billing Centers, only top-level ones, or only those at a specific level. Specify a level with 'L1' through 'L9', 'Level 1' through 'Level 9', or 'Level1' through 'Level9'. Level 1 is equivalent to 'Top-Level Billing Centers Only'."
+  allowed_values "All Billing Centers", "Top-Level Billing Centers Only", "Level 1", "Level 2", "Level 3", "Level 4", "Level 5", "Level 6", "Level 7", "Level 8", "Level 9"
+  default "All Billing Centers"
+end
+
+parameter "param_billing_center_list" do
+  type "list"
+  category "Filters"
+  label "Billing Center Names"
+  description "Optional list of Billing Center names or IDs to include. If empty, all Billing Centers (per scope setting) are included."
+  default []
+end
+
+parameter "param_billing_center_list_exclude" do
+  type "list"
+  category "Filters"
+  label "Billing Center Names Exclude"
+  description "Optional list of Billing Center names or IDs to exclude."
+  default []
+end
+
+parameter "param_role" do
+  type "string"
+  category "Policy Settings"
+  label "Billing Center Role"
+  description "The role to grant to the User Group on the Billing Center."
+  allowed_values "billing_center_viewer", "billing_center_admin"
+  default "billing_center_viewer"
+end
+
+parameter "param_group_name_prefix" do
+  type "string"
+  category "Policy Settings"
+  label "User Group Name Prefix"
+  description "A prefix to prepend to the Billing Center name when creating the User Group name."
+  default "BC:"
+end
+
+parameter "param_bc_name_strategy" do
+  type "string"
+  category "Policy Settings"
+  label "Billing Center Name Collision Strategy"
+  description "How to handle Billing Centers with the same name. 'Use Full Path' uses the full hierarchy path (e.g. 'North America / Engineering'). 'Include BC ID' appends the Billing Center ID. 'Allow Collisions' maps identically-named Billing Centers to a single User Group."
+  allowed_values "Use Full Path", "Include BC ID", "Allow Collisions"
+  default "Use Full Path"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "Actions to automatically take when the policy finds changes to make."
+  allowed_values "Create User Groups", "Delete User Groups"
+  default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select FlexeraOne OAuth2 credential."
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+  result do
+    encoding "json"
+    field "id", switch(policy_id, jmes_path(response, "id"), "")
+    field "name", switch(policy_id, jmes_path(response, "name"), "")
+  end
+end
+
+# Get all Billing Centers
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jq(response, '.[]') do
+      field "id", jq(col_item, ".id")
+      field "name", jq(col_item, ".name")
+      field "parent_id", jq(col_item, ".parent_id")
+    end
+  end
+end
+
+# Filter billing centers based on parameters
+datasource "ds_billing_centers_filtered" do
+  run_script $js_billing_centers_filtered, $ds_billing_centers, $param_billing_center_scope, $param_billing_center_list, $param_billing_center_list_exclude
+end
+
+script "js_billing_centers_filtered", type: "javascript" do
+  parameters "ds_billing_centers", "param_billing_center_scope", "param_billing_center_list", "param_billing_center_list_exclude"
+  result "result"
+  code <<-'EOS'
+  result = ds_billing_centers
+
+  // Build lookup by ID for parent chain walking
+  var bcById = {}
+
+  _.each(ds_billing_centers, function(bc) { bcById[bc["id"]] = bc })
+
+  // Parse scope parameter for level filtering
+  var targetLevel = 0 // 0 means all levels
+
+  if (param_billing_center_scope == "Top-Level Billing Centers Only") {
+    targetLevel = 1
+  } else if (param_billing_center_scope != "All Billing Centers") {
+    // Match L1-L9, Level 1-Level 9, Level1-Level9
+    var match = param_billing_center_scope.match(/^(?:L|Level ?)(\d)$/)
+
+    if (match) { targetLevel = parseInt(match[1], 10) }
+  }
+
+  if (targetLevel > 0) {
+    function getLevel(bc) {
+      var level = 1
+      var current = bc
+
+      while (current["parent_id"] && bcById[current["parent_id"]]) {
+        level++
+        current = bcById[current["parent_id"]]
+      }
+
+      return level
+    }
+
+    result = _.filter(result, function(bc) {
+      return getLevel(bc) == targetLevel
+    })
+  }
+
+  // Exclude unallocated billing centers
+  result = _.reject(result, function(bc) {
+    return /^unallocated/i.test(bc["id"])
+  })
+
+  // Include filter
+  if (param_billing_center_list.length > 0) {
+    result = _.filter(result, function(bc) {
+      return _.contains(param_billing_center_list, bc["name"]) ||
+             _.contains(param_billing_center_list, bc["id"])
+    })
+  }
+
+  // Exclude filter
+  if (param_billing_center_list_exclude.length > 0) {
+    result = _.reject(result, function(bc) {
+      return _.contains(param_billing_center_list_exclude, bc["name"]) ||
+             _.contains(param_billing_center_list_exclude, bc["id"])
+    })
+  }
+
+  // Compute full path for each billing center by walking parent chain
+  function getPath(bc) {
+    var parts = [bc["name"]]
+    var current = bc
+
+    while (current["parent_id"] && bcById[current["parent_id"]]) {
+      current = bcById[current["parent_id"]]
+      parts.unshift(current["name"])
+    }
+
+    return parts.join(" / ")
+  }
+
+  result = _.map(result, function(bc) {
+    return {
+      id: bc["id"],
+      name: bc["name"],
+      parent_id: bc["parent_id"],
+      path: getPath(bc)
+    }
+  })
+EOS
+end
+
+# Get all IAM groups
+datasource "ds_groups" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/iam/v1/orgs/", rs_org_id, "/groups"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "ref", jmes_path(col_item, "ref")
+      field "kind", jmes_path(col_item, "kind")
+      field "createdAt", jmes_path(col_item, "createdAt")
+      field "updatedAt", jmes_path(col_item, "updatedAt")
+    end
+  end
+end
+
+# Get all IAM users for login activity data
+datasource "ds_users" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/iam/v1/orgs/", rs_org_id, "/users"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "email", jmes_path(col_item, "email")
+      field "firstName", jmes_path(col_item, "firstName")
+      field "lastName", jmes_path(col_item, "lastName")
+      field "lastUILogin", jmes_path(col_item, "lastUILogin")
+      field "lastAPILogin", jmes_path(col_item, "lastAPILogin")
+      field "lastActivity", jmes_path(col_item, "lastActivity")
+      field "status", jmes_path(col_item, "status")
+      field "createdAt", jmes_path(col_item, "createdAt")
+    end
+  end
+end
+
+# Get all access rules to look up role IDs for CWF grant/revoke
+datasource "ds_access_rules" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/iam/v1/orgs/", rs_org_id, "/access-rules"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "roleId", jmes_path(col_item, "role.id")
+      field "roleName", jmes_path(col_item, "role.name")
+    end
+  end
+end
+
+# Extract role ID mapping from access rules
+datasource "ds_role_ids" do
+  run_script $js_role_ids, $ds_access_rules
+end
+
+script "js_role_ids", type: "javascript" do
+  parameters "ds_access_rules"
+  result "result"
+  code <<-'EOS'
+  result = {}
+
+  _.each(ds_access_rules, function(rule) {
+    if (rule["roleName"] && rule["roleId"]) {
+      result[rule["roleName"]] = rule["roleId"]
+    }
+  })
+EOS
+end
+
+# Filter groups to only those managed by this applied policy
+datasource "ds_managed_groups" do
+  run_script $js_managed_groups, $ds_groups, $ds_applied_policy, $ds_billing_centers
+end
+
+script "js_managed_groups", type: "javascript" do
+  parameters "ds_groups", "ds_applied_policy", "ds_billing_centers"
+  result "result"
+  code <<-'EOS'
+  result = []
+  // Use the fixed policy template name so matching is stable regardless of
+  // what the user names their applied policy instance.
+  var prefix = "Managed by Policy Template: "+ds_applied_policy.name.trim()
+
+  var bcLookup = {}
+
+  _.each(ds_billing_centers, function(bc) {
+    bcLookup[bc["id"]] = bc
+  })
+
+  _.each(ds_groups, function(group) {
+    var desc = group["description"] || ""
+
+    if (desc.indexOf(prefix) === 0) {
+      var parts = desc.split("| Billing Center: ")
+      var billingCenterIdStr = parts.length > 1 ? parts[1].trim() : ""
+
+      // billingCenterIdStr may be comma-separated for Allow Collisions
+      var bcIds = billingCenterIdStr.split(", ")
+      var firstBc = bcLookup[bcIds[0]] || {}
+      var billingCenterName = firstBc["name"] || "Unknown"
+      var billingCenterParentId = firstBc["parent_id"] || ""
+
+      result.push({
+        id: group["id"],
+        name: group["name"],
+        description: group["description"],
+        ref: group["ref"],
+        billingCenterId: billingCenterIdStr,
+        billingCenterName: billingCenterName,
+        billingCenterParentId: billingCenterParentId
+      })
+    }
+  })
+EOS
+end
+
+# Compare billing centers to managed groups, produce create/delete/exists actions
+datasource "ds_user_groups_crud" do
+  run_script $js_user_groups_crud, $ds_billing_centers_filtered, $ds_managed_groups, $ds_applied_policy, $ds_role_ids, $param_group_name_prefix, $param_role, $param_bc_name_strategy
+end
+
+script "js_user_groups_crud", type: "javascript" do
+  parameters "ds_billing_centers_filtered", "ds_managed_groups", "ds_applied_policy", "ds_role_ids", "param_group_name_prefix", "param_role", "param_bc_name_strategy"
+  result "result"
+  code <<-'EOS'
+  result = []
+  var policyName = ds_applied_policy["name"]
+  var roleId = ds_role_ids[param_role] || ""
+  var trimmedPrefix = param_group_name_prefix.trim()
+
+  // Build lookup of managed groups keyed by billing center ID
+  // Split comma-separated BC IDs (from Allow Collisions) to register under each
+  var managedByBcId = {}
+
+  _.each(ds_managed_groups, function(group) {
+    var bcIds = group["billingCenterId"].split(", ")
+
+    _.each(bcIds, function(bcId) {
+      managedByBcId[bcId.trim()] = group
+    })
+  })
+
+  // Build set of filtered billing center IDs
+  var filteredBcIds = {}
+
+  _.each(ds_billing_centers_filtered, function(bc) {
+    filteredBcIds[bc["id"]] = true
+  })
+
+  // Determine the display name for a billing center based on the collision strategy
+  function bcDisplayName(bc) {
+    if (param_bc_name_strategy == "Use Full Path") {
+      return bc["path"] || bc["name"]
+    } else if (param_bc_name_strategy == "Include BC ID") {
+      return bc["name"] + " (" + bc["id"] + ")"
+    } else {
+      // Allow Collisions — just use the leaf name
+      return bc["name"]
+    }
+  }
+
+  // For Allow Collisions, track which group names we've already seen
+  // so we only create one group per unique name
+  var seenGroupNames = {}
+
+  // For each filtered billing center, check if a managed group exists
+  _.each(ds_billing_centers_filtered, function(bc) {
+    var managedGroup = managedByBcId[bc["id"]]
+    var description = "Managed by Policy Template: Flexera User Groups from Billing Centers | Billing Center: " + bc["id"]
+    var displayName = bcDisplayName(bc)
+    var groupName = trimmedPrefix ? trimmedPrefix + " " + displayName : displayName
+    var action = managedGroup ? "exists" : "create"
+
+    // For Allow Collisions, merge into existing entry instead of creating a duplicate
+    if (param_bc_name_strategy == "Allow Collisions" && seenGroupNames[groupName] != null) {
+      var existingIndex = seenGroupNames[groupName]
+      result[existingIndex]["billingCenterPath"] += ", " + (bc["path"] || bc["name"])
+      result[existingIndex]["billingCenterId"] += ", " + bc["id"]
+      result[existingIndex]["userGroupDescription"] += ", " + bc["id"]
+
+      // Only upgrade to "create" if the existing entry is not already managed
+      if (action == "create" && result[existingIndex]["action"] != "exists") {
+        result[existingIndex]["action"] = "create"
+      }
+
+      return
+    }
+
+    seenGroupNames[groupName] = result.length
+
+    if (managedGroup) {
+      result.push({
+        id: (bc["parent_id"] || "") + "|" + bc["name"],
+        action: "exists",
+        billingCenterName: bc["name"],
+        billingCenterPath: bc["path"] || bc["name"],
+        billingCenterId: bc["id"],
+        billingCenterParentId: bc["parent_id"] || "",
+        userGroupName: managedGroup["name"],
+        userGroupId: String(managedGroup["id"]),
+        userGroupRef: managedGroup["ref"] || "",
+        userGroupDescription: description,
+        role: param_role,
+        roleId: String(roleId),
+        policyName: policyName
+      })
+    } else {
+      result.push({
+        id: (bc["parent_id"] || "") + "|" + bc["name"],
+        action: "create",
+        billingCenterName: bc["name"],
+        billingCenterPath: bc["path"] || bc["name"],
+        billingCenterId: bc["id"],
+        billingCenterParentId: bc["parent_id"] || "",
+        userGroupName: groupName,
+        userGroupId: "",
+        userGroupRef: "",
+        userGroupDescription: description,
+        role: param_role,
+        roleId: String(roleId),
+        policyName: policyName
+      })
+    }
+  })
+
+  // For each managed group, check if its billing center still exists in the filtered list
+  // Split comma-separated BC IDs and only delete if NONE are still in scope
+  _.each(ds_managed_groups, function(group) {
+    var bcIds = group["billingCenterId"].split(", ")
+    var anyInScope = _.any(bcIds, function(bcId) {
+      return filteredBcIds[bcId.trim()]
+    })
+
+    if (!anyInScope) {
+      result.push({
+        id: (group["billingCenterParentId"] || "") + "|" + group["billingCenterName"],
+        action: "delete",
+        billingCenterName: group["billingCenterName"],
+        billingCenterPath: "",
+        billingCenterId: group["billingCenterId"],
+        billingCenterParentId: group["billingCenterParentId"] || "",
+        userGroupName: group["name"],
+        userGroupId: String(group["id"]),
+        userGroupRef: group["ref"] || "",
+        userGroupDescription: group["description"],
+        role: param_role,
+        roleId: String(roleId),
+        policyName: policyName
+      })
+    }
+  })
+EOS
+end
+
+# Filter for groups to create
+datasource "ds_groups_to_create" do
+  run_script $js_groups_to_create, $ds_user_groups_crud
+end
+
+script "js_groups_to_create", type: "javascript" do
+  parameters "ds_user_groups_crud"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_user_groups_crud, function(item) {
+    return item["action"] == "create"
+  })
+EOS
+end
+
+# Filter for groups to delete
+datasource "ds_groups_to_delete" do
+  run_script $js_groups_to_delete, $ds_user_groups_crud
+end
+
+script "js_groups_to_delete", type: "javascript" do
+  parameters "ds_user_groups_crud"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_user_groups_crud, function(item) {
+    return item["action"] == "delete"
+  })
+EOS
+end
+
+# Fetch memberships for each managed group
+datasource "ds_group_memberships" do
+  iterate $ds_managed_groups
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/iam/v1/orgs/", rs_org_id, "/groups/", val(iter_item, "id"), "/memberships"])
+    query "view", "extended"
+    header "User-Agent", "RS Policies"
+    ignore_status [403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "groupId", val(iter_item, "id")
+      field "groupName", val(iter_item, "name")
+      field "billingCenterId", val(iter_item, "billingCenterId")
+      field "billingCenterName", val(iter_item, "billingCenterName")
+      field "userId", jmes_path(col_item, "user.id")
+      field "userEmail", jmes_path(col_item, "user.email")
+      field "userFirstName", jmes_path(col_item, "user.firstName")
+      field "userLastName", jmes_path(col_item, "user.lastName")
+    end
+  end
+end
+
+# Get costs aggregated by billing center for the last 12 months
+datasource "ds_costs_by_bc" do
+  request do
+    run_script $js_costs_by_bc, $ds_billing_centers, rs_optima_host, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_costs_by_bc", type: "javascript" do
+  parameters "ds_billing_centers", "rs_optima_host", "rs_org_id"
+  result "request"
+  code <<-'EOS'
+  // Compute date range: 12 months ago to current month
+  var now = new Date()
+  var endYear = now.getFullYear()
+  var endMonth = now.getMonth() + 2 // getMonth() is 0-based, +1 for current, +1 for exclusive end
+
+  if (endMonth > 12) { endMonth = 1; endYear++ }
+
+  var startYear = endYear
+  var startMonth = endMonth - 12
+
+  if (startMonth <= 0) { startMonth += 12; startYear-- }
+
+  function pad(n) { return n < 10 ? "0" + n : "" + n }
+
+  var startAt = startYear + "-" + pad(startMonth)
+  var endAt = endYear + "-" + pad(endMonth)
+
+  // Only pass top-level billing centers to avoid "bc_path entries are overlapping" error
+  var topLevelBcIds = _.pluck(_.filter(ds_billing_centers, function(bc) {
+    return bc["parent_id"] == null || bc["parent_id"] == ""
+  }), "id")
+
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    headers: { "Api-Version": "1.0", "User-Agent": "RS Policies" },
+    body_fields: {
+      "dimensions": ["billing_center_id"],
+      "granularity": "month",
+      "metrics": ["cost_amortized_unblended_adj"],
+      "billing_center_ids": topLevelBcIds,
+      "start_at": startAt,
+      "end_at": endAt
+    }
+  }
+EOS
+end
+
+# Join memberships with user activity data and compute adoption metrics
+datasource "ds_membership_report" do
+  run_script $js_membership_report, $ds_group_memberships, $ds_users, $ds_managed_groups, $ds_applied_policy, $ds_costs_by_bc, $ds_billing_centers, $param_incident_csv
+end
+
+script "js_membership_report", type: "javascript" do
+  parameters "ds_group_memberships", "ds_users", "ds_managed_groups", "ds_applied_policy", "ds_costs_by_bc", "ds_billing_centers", "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
+  result = []
+
+  // Build billing center lookup for level calculation
+  var bcById = {}
+
+  _.each(ds_billing_centers, function(bc) { bcById[bc["id"]] = bc })
+
+  function getBcLevel(bcId) {
+    var level = 1
+    var current = bcById[bcId]
+
+    while (current && current["parent_id"] && bcById[current["parent_id"]]) {
+      level++
+      current = bcById[current["parent_id"]]
+    }
+
+    return level
+  }
+
+  if (ds_managed_groups.length > 0) {
+
+  // Build user lookup by ID
+  var userLookup = {}
+
+  _.each(ds_users, function(user) {
+    userLookup[String(user["id"])] = user
+  })
+
+  // Build membership lookup keyed by group ID
+  var membershipsByGroup = {}
+
+  _.each(ds_group_memberships, function(membership) {
+    var gid = String(membership["groupId"])
+
+    if (!membershipsByGroup[gid]) { membershipsByGroup[gid] = [] }
+
+    membershipsByGroup[gid].push(membership)
+  })
+
+  // Aggregate costs by billing center ID
+  var costByBcId = {}
+  var totalCost = 0
+
+  _.each(ds_costs_by_bc, function(row) {
+    var bcId = row["billing_center_id"]
+    var cost = Number(row["cost"]) || 0
+
+    if (!costByBcId[bcId]) { costByBcId[bcId] = 0 }
+
+    costByBcId[bcId] += cost
+    totalCost += cost
+  })
+
+  // Compute global stats
+  var billingCentersManaged = ds_managed_groups.length
+  var uniqueUsers = {}
+
+  _.each(ds_group_memberships, function(m) {
+    uniqueUsers[String(m["userId"])] = true
+  })
+
+  var totalUsersWithAccess = _.keys(uniqueUsers).length
+  var policyName = ds_applied_policy["name"] || "Flexera User Groups from Billing Centers"
+
+  // Build report rows — 1 row per managed group
+  _.each(ds_managed_groups, function(group) {
+    var gid = String(group["id"])
+    var members = membershipsByGroup[gid] || []
+    var memberCount = members.length
+
+    // Count active members (activity within 30 days)
+    var activeCount = 0
+
+    _.each(members, function(membership) {
+      var user = userLookup[String(membership["userId"])]
+
+      if (user && user["lastActivity"]) {
+        var daysSince = Math.floor((new Date() - new Date(user["lastActivity"])) / (1000 * 60 * 60 * 24))
+
+        if (daysSince <= 30) { activeCount++ }
+      }
+    })
+
+    var adoptionRate = memberCount > 0 ? Math.round((activeCount / memberCount) * 100) + "%" : "N/A"
+
+    // Compute cost for this group's billing centers
+    var bcIds = group["billingCenterId"].split(", ")
+    var groupCost = 0
+
+    _.each(bcIds, function(bcId) {
+      groupCost += costByBcId[bcId.trim()] || 0
+    })
+
+    var costPct = totalCost > 0 ? (groupCost / totalCost * 100) : 0
+    var costPctStr = costPct > 0 ? costPct.toFixed(2) + "%" : "0.00%"
+    var parts = groupCost.toFixed(2).split(".")
+    var intPart = parts[0]
+    var sign = ""
+    if (intPart.charAt(0) == "-") { sign = "-"; intPart = intPart.substring(1) }
+    var formatted = ""
+    for (var i = intPart.length - 1, c = 0; i >= 0; i--, c++) {
+      if (c > 0 && c % 3 == 0) { formatted = "," + formatted }
+      formatted = intPart.charAt(i) + formatted
+    }
+    var costStr = "$" + sign + formatted + "." + parts[1]
+
+    // Determine billing center level from the first BC ID
+    var firstBcId = bcIds[0].trim()
+    var billingCenterLevel = "L" + getBcLevel(firstBcId)
+
+    result.push({
+      billingCenterName: group["billingCenterName"],
+      billingCenterId: group["billingCenterId"],
+      billingCenterLevel: billingCenterLevel,
+      userGroupName: group["name"],
+      memberCount: String(memberCount),
+      activeCount: String(activeCount),
+      adoptionRate: adoptionRate,
+      costAmortized: costStr,
+      costPctOfTotal: costPctStr,
+      policyName: policyName,
+      billingCentersManaged: String(billingCentersManaged),
+      totalUsersWithAccess: String(totalUsersWithAccess),
+      csv_message: csv_message
+    })
+  })
+
+  } // end if (ds_managed_groups.length > 0)
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_user_groups" do
+  validate $ds_groups_to_create do
+    summary_template "{{ with index data 0 }}{{ .policyName }}{{ end }}: {{ len data }} User Groups to Create"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
+    check eq(size(data), 0)
+    escalate $esc_email
+    escalate $esc_create_user_groups
+    export do
+      resource_level true
+      field "billingCenterName" do
+        label "Billing Center"
+      end
+      field "billingCenterPath" do
+        label "Billing Center Path"
+      end
+      field "billingCenterId" do
+        label "Billing Center ID"
+      end
+      field "userGroupName" do
+        label "User Group Name"
+      end
+      field "role" do
+        label "Role"
+      end
+      field "userGroupDescription" do
+        label "Description"
+      end
+      field "action" do
+        label "Action"
+      end
+      field "id" do
+        label "ID"
+      end
+    end
+  end
+
+  validate $ds_groups_to_delete do
+    summary_template "{{ with index data 0 }}{{ .policyName }}{{ end }}: {{ len data }} User Groups to Delete"
+    check eq(size(data), 0)
+    escalate $esc_email
+    escalate $esc_delete_user_groups
+    export do
+      resource_level true
+      field "userGroupName" do
+        label "User Group Name"
+      end
+      field "userGroupId" do
+        label "User Group ID"
+      end
+      field "billingCenterName" do
+        label "Billing Center"
+      end
+      field "billingCenterPath" do
+        label "Billing Center Path"
+      end
+      field "billingCenterId" do
+        label "Billing Center ID"
+      end
+      field "role" do
+        label "Role"
+      end
+      field "action" do
+        label "Action"
+      end
+      field "id" do
+        label "ID"
+      end
+    end
+  end
+
+  validate $ds_membership_report do
+    summary_template "{{ with index data 0 }}{{ .policyName }}{{ end }}: Managed Group Report — {{ len data }} groups across {{ with index data 0 }}{{ .billingCentersManaged }}{{ end }} billing centers"
+    detail_template <<-'EOS'
+## Managed Group Report
+
+**Billing Centers Managed:** {{ with index data 0 }}{{ .billingCentersManaged }}{{ end }}
+**Total Users with Access:** {{ with index data 0 }}{{ .totalUsersWithAccess }}{{ end }}
+**Total Groups:** {{ len data }}
+
+See the incident table below for per-group details, adoption metrics, and cost allocation.
+EOS
+    check eq(size(data), 0)
+    escalate $esc_email
+    export do
+      field "billingCenterName" do
+        label "Billing Center"
+      end
+      field "billingCenterLevel" do
+        label "BC Level"
+      end
+      field "billingCenterId" do
+        label "Billing Center ID"
+      end
+      field "userGroupName" do
+        label "User Group"
+      end
+      field "memberCount" do
+        label "Members"
+      end
+      field "activeCount" do
+        label "Active (30d)"
+      end
+      field "adoptionRate" do
+        label "Adoption Rate"
+      end
+      field "costAmortized" do
+        label "Cost (Amortized, 12M)"
+      end
+      field "costPctOfTotal" do
+        label "% of Total Cost"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send email notification."
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
+end
+
+escalation "esc_create_user_groups" do
+  automatic contains($param_automatic_action, "Create User Groups")
+  label "Create User Groups"
+  description "Create User Groups for the listed Billing Centers and grant access."
+  run "create_user_groups", data, rs_org_id, rs_optima_host
+  resolve_incident
+end
+
+escalation "esc_delete_user_groups" do
+  automatic contains($param_automatic_action, "Delete User Groups")
+  label "Delete User Groups"
+  description "Delete User Groups for Billing Centers that no longer exist."
+  run "delete_user_groups", data, rs_org_id, rs_optima_host
+  resolve_incident
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+# Helper function to batch data list into groups for concurrent processing
+define batch_group($data) return $groups do
+  $group_size = 10
+  $groups = []
+  $index = 0
+
+  while $index < size($data) do
+    $next_index = $index + $group_size
+    $groups << $data[$index..$next_index - 1]
+    $index = $next_index
+  end
+end
+
+define create_user_groups($data, $rs_org_id, $rs_optima_host) do
+  # Derive Flexera API host from the Cloud Cost Optimization host
+  $host_table = {
+    "api.optima.flexeraeng.com": "api.flexera.com",
+    "api.optima-eu.flexeraeng.com": "api.flexera.eu",
+    "api.optima-apac.flexeraeng.com": "api.flexera.au"
+  }
+
+  $flexera_api_host = $host_table[$rs_optima_host]
+
+  call batch_group($data) retrieve $$groups
+
+  concurrent foreach $group in $$groups do
+    $data_total = size($group)
+    task_label("Size of group: " + to_s($data_total))
+    $data_index = 0
+
+    foreach $item in $group do
+      $data_index = $data_index + 1
+      call log_message(to_s($data_index) + "/" + to_s($data_total) + " Creating user group: " + $item["userGroupName"] + " for billing center: " + $item["billingCenterName"])
+
+      # Step 1: Create the User Group via IAM API
+      $create_request = {
+        "auth": $$auth_flexera,
+        "url": join(["https://", $flexera_api_host, "/iam/v1/orgs/", $rs_org_id, "/groups"]),
+        "headers": { "User-Agent": "RS Policies" },
+        "body": {
+          "name": $item["userGroupName"],
+          "description": $item["userGroupDescription"]
+        }
+      }
+
+      $create_response = http_post($create_request)
+
+      if $create_response["code"] == 409
+        call log_message("Group already exists: " + $item["userGroupName"] + ". Looking up existing group for grants.")
+
+        # Look up existing group by listing all groups and matching by name
+        $groups_response = http_request(
+          auth: $$auth_flexera,
+          verb: "get",
+          https: true,
+          host: $flexera_api_host,
+          href: join(["/iam/v1/orgs/", $rs_org_id, "/groups"]),
+          headers: { "User-Agent": "RS Policies" }
+        )
+
+        $group_id = null
+
+        foreach $existing_group in $groups_response["body"]["values"] do
+          if $existing_group["name"] == $item["userGroupName"]
+            $group_id = $existing_group["id"]
+          end
+        end
+
+        if $group_id == null
+          call log_message("Warning: Could not find existing group by name: " + $item["userGroupName"])
+        end
+      elsif $create_response["code"] != 201
+        raise "Failed to create user group: " + $item["userGroupName"] + ". request=" + to_json($create_request) + " response=" + to_json($create_response)
+      else
+        # Extract group ID from response
+        $group_id = $create_response["body"]["id"]
+        call log_message("Created user group: " + $item["userGroupName"] + " with ID: " + to_s($group_id))
+      end
+
+      # Step 2: Grant access rule on each Billing Center via the billing center access API
+      # billingCenterId may be comma-separated for Allow Collisions (1::Many)
+      if $group_id != null
+        $bc_ids = split($item["billingCenterId"], ", ")
+
+        foreach $bc_id in $bc_ids do
+          $grant_body = {
+            "role": { "href": join(["/grs/orgs/", $rs_org_id, "/roles/", $item["roleId"]]) },
+            "subject": { "href": join(["/grs/orgs/", $rs_org_id, "/groups/", to_s($group_id)]) }
+          }
+
+          $grant_response = http_request(
+            auth: $$auth_flexera,
+            verb: "put",
+            https: true,
+            host: $rs_optima_host,
+            href: join(["/analytics/orgs/", $rs_org_id, "/billing_centers/", $bc_id, "/access_rules/grant"]),
+            headers: { "Api-Version": "0.1", "User-Agent": "RS Policies" },
+            body: $grant_body
+          )
+
+          if $grant_response["code"] != 204
+            call log_message("Warning: Failed to grant access rule on BC " + $bc_id + ". request_body=" + to_json($grant_body) + " response=" + to_json($grant_response))
+          else
+            call log_message("Granted " + $item["role"] + " on billing center " + $bc_id + " to group " + $item["userGroupName"])
+          end
+        end
+      end
+    end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_user_groups($data, $rs_org_id, $rs_optima_host) do
+  # Derive Flexera API host from the Cloud Cost Optimization host
+  $host_table = {
+    "api.optima.flexeraeng.com": "api.flexera.com",
+    "api.optima-eu.flexeraeng.com": "api.flexera.eu",
+    "api.optima-apac.flexeraeng.com": "api.flexera.au"
+  }
+
+  $flexera_api_host = $host_table[$rs_optima_host]
+
+  call batch_group($data) retrieve $$groups
+
+  concurrent foreach $group in $$groups do
+    $data_total = size($group)
+    task_label("Size of group: " + to_s($data_total))
+    $data_index = 0
+
+    foreach $item in $group do
+      $data_index = $data_index + 1
+      call log_message(to_s($data_index) + "/" + to_s($data_total) + " Deleting user group: " + $item["userGroupName"] + " (ID: " + $item["userGroupId"] + ")")
+
+      # Step 1: Revoke access rules on each Billing Center (safety measure before deletion)
+      # billingCenterId may be comma-separated for Allow Collisions (1::Many)
+      $bc_ids = split($item["billingCenterId"], ", ")
+
+      foreach $bc_id in $bc_ids do
+        sub on_error: skip do
+          $revoke_body = {
+            "role": { "href": join(["/grs/orgs/", $rs_org_id, "/roles/", $item["roleId"]]) },
+            "subject": { "href": join(["/grs/orgs/", $rs_org_id, "/groups/", $item["userGroupId"]]) }
+          }
+
+          $revoke_response = http_request(
+            auth: $$auth_flexera,
+            verb: "put",
+            https: true,
+            host: $rs_optima_host,
+            href: join(["/analytics/orgs/", $rs_org_id, "/billing_centers/", $bc_id, "/access_rules/revoke"]),
+            headers: { "Api-Version": "0.1", "User-Agent": "RS Policies" },
+            body: $revoke_body
+          )
+
+          call log_message("Revoke response for group " + $item["userGroupName"] + " on BC " + $bc_id + ": " + to_s($revoke_response["code"]))
+        end
+      end
+
+      # Step 2: Delete the User Group via IAM API
+      $delete_request = {
+        "auth": $$auth_flexera,
+        "url": join(["https://", $flexera_api_host, "/iam/v1/orgs/", $rs_org_id, "/groups/", $item["userGroupId"]])
+      }
+
+      $delete_response = http_delete($delete_request)
+
+      if $delete_response["code"] == 404
+        call log_message("Group already deleted: " + $item["userGroupName"])
+      elsif $delete_response["code"] != 204
+        raise "Failed to delete user group: " + $item["userGroupName"] + ". request=" + to_json($delete_request) + " response=" + to_json($delete_response)
+      else
+        call log_message("Deleted user group: " + $item["userGroupName"])
+      end
+    end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+# CWF function to help with capturing log output
+define log_message($message) do
+  if !$$log_messages
+    $$log_messages = []
+  end
+
+  $message_string = to_json($message)
+  task_label($message_string)
+  $$log_messages << $message_string
+end

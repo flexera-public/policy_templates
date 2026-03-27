@@ -1,5 +1,17 @@
 # Changelog
 
+## v6.1.3
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v6.1.2
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
+## v6.1.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v6.1.0
 
 - Added support for attaching CSV files to incident emails.

@@ -29,6 +29,8 @@ This policy can be used for automated "reporting" use-cases, as well as "alertin
 - *Percent Change Consecutive Threshold* - The number of consecutive time period(s) where there was a percent change in cost between time period(s) that will trigger the report. Default of `0` will send the report every time based on the applied policy schedule.
 - *Percent Change Alert Metric* - The metric to use for the percent change alert. Percent Change from Previous Time Period Daily Average is recommended to normalize between Month periods. This has no affect if Billing Term is set to 'Day'.
 - *Percent Change Alert Direction* - Select the direction of percent change that will trigger the report.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 
@@ -36,16 +38,16 @@ This policy can be used for automated "reporting" use-cases, as well as "alertin
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 ### Credential configuration
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+For administrators [creating and managing credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) to use with this policy, the following information is needed:
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
 
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 

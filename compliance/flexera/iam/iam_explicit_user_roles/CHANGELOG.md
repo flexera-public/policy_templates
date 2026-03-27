@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.0.6
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v4.0.5
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v4.0.4
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
@@ -34,7 +42,7 @@
 
 ## v3.0
 
-- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
+- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials)
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
 
 ## v2.1

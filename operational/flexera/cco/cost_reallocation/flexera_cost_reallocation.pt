@@ -1,14 +1,14 @@
 name "Cost Reallocation"
 rs_pt_ver 20180301
 type "policy"
-short_description "Reallocates costs and usage from a `Origin` scope, and reallocations it to a `Destination` using a user-configurable reallocation strategy. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/cost_reallocation/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reallocates costs and usage from a `Origin` scope, and reallocations it to a `Destination` using a user-configurable reallocation strategy. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/cost_reallocation/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/cost_reallocation/"
 severity "critical"
 default_frequency "daily"
 category "Operational"
 info(
-  version: "0.1.0",
+  version: "0.1.4",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   category: "Operational",
@@ -38,7 +38,7 @@ parameter "param_origin_filter" do
   type "string"
   category "Policy Settings"
   label "Origin Filter"
-  description <<-EOS
+  description <<-'EOS'
 Filter to scope to the origin costs.
 {
   "dimension": "vendor_account_name",
@@ -133,7 +133,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
       flexera: "api.flexera.com",
@@ -185,7 +185,7 @@ end
 script "js_bill_connect", type: "javascript" do
   parameters "ds_existing_bill_connects", "ds_flexera_api_hosts", "param_bill_connect_id", "rs_org_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
 
   // Default request payload to CREATE the bill connect
   // TODO make bill connect name+params user-configurable with parameter
@@ -228,7 +228,7 @@ end
 script "js_dates", type: "javascript" do
   parameters "param_period", "param_period_specific_month", "param_reallocation_granularity"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
     var today = new Date()
 
     // Switch or case statement in javascript for param_period values
@@ -304,7 +304,7 @@ end
 script "js_rule_based_dimensions_effectiveAt_list", type: "javascript" do
   parameters "ds_rule_based_dimensions"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   var result = []
   _.each(ds_rule_based_dimensions, function(rule_based_dimension) {
     _.each(rule_based_dimension.effectiveAtRuleLists, function(effectiveAt) {
@@ -334,7 +334,7 @@ end
 script "js_tag_dimensions_used_in_rbd_rules", type: "javascript" do
   parameters "ds_rule_based_dimensions_rules", "ds_dimensions"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
 
   var result = []
   // Recursively traverse the objects to find any object with key "dimension" and value that starts with "tag_"
@@ -438,7 +438,7 @@ end
 script "js_origin_cost", type: "javascript" do
   parameters "ds_billing_centers", "ds_dates", "ds_dimensions", "param_bill_connect_id", "param_origin_filter", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // Get all billing center IDs from top-level billing centers
   var top_level_bcs = _.filter(ds_billing_centers, function(bc) {
     return bc.parent_id == null
@@ -453,7 +453,7 @@ script "js_origin_cost", type: "javascript" do
     "dimensions": [
       // "availability_zone", // Not a dimension that maps to CBI dimension
       // "bill_entity", // Not a dimension that maps to CBI dimension
-      "bill_source",
+      // "bill_source", // Not a dimension that maps to CBI dimension
       // "billing_account", // Not a dimension that maps to CBI dimension
       "category",
       // "database_edition", // Not a dimension that maps to CBI dimension
@@ -527,7 +527,7 @@ script "js_origin_cost", type: "javascript" do
   var request = {
     auth: "auth_flexera",
     host: rs_optima_host,
-    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select", // We only need aggregated, but must use /costs/select because aggregated limited to 10 dimensions
     verb: 'POST',
     body_fields: payload,
     headers: {
@@ -558,7 +558,7 @@ end
 script "js_destination_cost", type: "javascript" do
   parameters "ds_billing_centers", "ds_dates", "ds_tag_dimensions_used_in_rbd_rules", "param_bill_connect_id", "param_origin_filter", "param_destination_filter", "param_destination_group", "param_destination_method", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // Get all billing center IDs from top-level billing centers
   var top_level_bcs = _.filter(ds_billing_centers, function(bc) {
     return bc.parent_id == null
@@ -621,7 +621,7 @@ script "js_destination_cost", type: "javascript" do
     "start_at": ds_dates['start_date']
   }
 
-  if (_.contains(payload.dimension, "usage_unit")) {
+  if (_.contains(payload.dimensions, "usage_unit")) {
     // Usage Unit is required for Usage Amount
     payload.metrics.push("usage_amount")
   }
@@ -682,6 +682,7 @@ script "js_cleaned_costs", type: "javascript" do
     // Check if eventLast was old than delaySecondsBetweenSample ago
     if (eventLast == null || (now - eventLast) > delaySecondsBetweenSample*1000) {
       eventLast = now
+      console.log(log_entry) // Excluded from console.log test
     }
   }
 
@@ -765,6 +766,7 @@ script "js_calculated_proportions", type: "javascript" do
     // Check if eventLast was old than delaySecondsBetweenSample ago
     if (eventLast == null || (now - eventLast) > delaySecondsBetweenSample*1000) {
       eventLast = now
+      console.log(log_entry) // Excluded from console.log test
     }
   }
 
@@ -906,7 +908,7 @@ script "js_cbi_optima_headers", type: "javascript" do
   result "ds_cbi_optima_headers"
   code <<-'EOS'
   // CBI Dimenions/Headers mapped to Dimension IDs from Flexera Cost API
-  // https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBIDefaultFormat.htm
+  // https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/common-bill-ingestion-default-format
   var ds_cbi_optima_headers = {
     "CloudVendorAccountID": "vendor_account",
     "CloudVendorAccountName": "vendor_account_name",
@@ -952,6 +954,7 @@ script "js_cbi_csv_rows", type: "javascript" do
     // Check if eventLast was old than delaySecondsBetweenSample ago
     if (eventLast == null || (now - eventLast) > delaySecondsBetweenSample*1000) {
       eventLast = now
+      console.log(log_entry) // Excluded from console.log test
     }
   }
 
@@ -1035,6 +1038,7 @@ script "js_cbi_csv", type: "javascript" do
     // Check if eventLast was old than delaySecondsBetweenSample ago
     if (eventLast == null || (now - eventLast) > delaySecondsBetweenSample*1000) {
       eventLast = now
+      console.log(log_entry) // Excluded from console.log test
     }
   }
 
@@ -1126,7 +1130,7 @@ end
 script "js_pending_bill_uploads", type: "javascript" do
   parameters "ds_existing_bill_uploads"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.filter(ds_existing_bill_uploads, function(item) {
     return item["status"] != "complete" && item["status"] != "aborted"
   })
@@ -1164,7 +1168,7 @@ end
 script "js_aborted_pending_bill_uploads_done", type: "javascript" do
   parameters "ds_abort_pending_bill_uploads"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = { abortedUploads: (ds_abort_pending_bill_uploads.length != 0).toString() }
 EOS
 end
@@ -1178,7 +1182,7 @@ end
 script "js_cbi_create_bill_upload", type: "javascript" do
   parameters "ds_dates", "ds_bill_connect", "ds_aborted_pending_bill_uploads_done", "param_bill_connect_id", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   // $ds_aborted_pending_bill_uploads_done not used in the request
   // Referenced here to ensure those requests to cancel existing bill uploads runs before ds_cbi_create_bill_upload
 
@@ -1209,7 +1213,7 @@ end
 script "js_cbi_upload_file", type: "javascript" do
   parameters "ds_cbi_csv", "ds_cbi_create_bill_upload", "ds_dates", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     verb: "POST",
@@ -1232,7 +1236,7 @@ end
 script "js_cbi_commit", type: "javascript" do
   parameters "ds_cbi_upload_file", "ds_cbi_create_bill_upload", "rs_org_id", "rs_optima_host"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     verb: "POST",

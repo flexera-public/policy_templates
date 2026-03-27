@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.6.7
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v0.6.6
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v0.6.5
 
 - Updated label of email parameter to "Email Addresses" to match other policy templates. Functionality unchanged.

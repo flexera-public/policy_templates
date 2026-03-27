@@ -1,14 +1,14 @@
 name "Google Open Buckets"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for Google Cloud Storage buckets that are open to the public. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/google/public_buckets) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Checks for Google Cloud Storage buckets that are open to the public. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/google/public_buckets) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/tree/master/security/google/public_buckets"
 category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "3.2.4",
+  version: "3.3.0",
   provider: "Google",
   service: "Storage",
   policy_set: "Open Buckets",
@@ -96,6 +96,24 @@ parameter "param_exclusion_labels_boolean" do
   default "Any"
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -139,7 +157,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -182,36 +200,52 @@ end
 
 datasource "ds_google_projects" do
   request do
-    auth $auth_google
-    pagination $pagination_google
-    host "cloudresourcemanager.googleapis.com"
-    path "/v1/projects/"
-    query "filter", "(lifecycleState:ACTIVE)"
-    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
-    # Forces `ds_is_deleted` datasource to run first during policy execution
-    header "Meta-Flexera", val($ds_is_deleted, "path")
+    run_script $js_google_projects, $ds_is_deleted, $param_projects_ignore_sys, $param_projects_ignore_app
   end
   result do
     encoding "json"
     collect jmes_path(response, "projects[*]") do
-      field "number", jmes_path(col_item, "projectNumber")
       field "id", jmes_path(col_item, "projectId")
       field "name", jmes_path(col_item, "name")
+      field "labels", jmes_path(col_item, "labels")
     end
   end
 end
 
+script "js_google_projects", type: "javascript" do
+  parameters "ds_is_deleted", "param_projects_ignore_sys", "param_projects_ignore_app"
+  result "request"
+  code <<-'EOS'
+  query = []
+  if (param_projects_ignore_sys == "Yes") { query.push("-projectId:sys-") }
+  if (param_projects_ignore_app == "Yes") { query.push("-projectId:app-") }
+
+  var request = {
+    auth: "auth_google",
+    pagination: "pagination_google",
+    host: "cloudresourcemanager.googleapis.com",
+    path: "/v3/projects:search",
+    query_params: { "query": query.join(" ") },
+    // Header Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    // Forces `ds_is_deleted` datasource to run first during policy execution
+    headers: {
+      "Meta-Flexera": ds_is_deleted["path"]
+    }
+  }
+EOS
+end
+
 datasource "ds_google_projects_filtered" do
-  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list, $param_projects_ignore_sys, $param_projects_ignore_app
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
 end
 
 script "js_google_projects_filtered", type: "javascript" do
-  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list", "param_projects_ignore_sys", "param_projects_ignore_app"
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_projects_list.length > 0) {
-    filtered = _.filter(ds_google_projects, function(project) {
-      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name']) || _.contains(param_projects_list, project['number'])
+    result = _.filter(ds_google_projects, function(project) {
+      include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name'])
 
       if (param_projects_allow_or_deny == "Deny") {
         include_project = !include_project
@@ -220,12 +254,8 @@ script "js_google_projects_filtered", type: "javascript" do
       return include_project
     })
   } else {
-    filtered = ds_google_projects
+    result = ds_google_projects
   }
-
-  result = _.reject(filtered, function(project) {
-    return (project['id'].substring(0, 4) == "sys-" && param_projects_ignore_sys == "Yes") || (project['id'].substring(0, 4) == "app-" && param_projects_ignore_app == "Yes")
-  })
 EOS
 end
 
@@ -259,7 +289,6 @@ datasource "ds_storage_buckets" do
           field "id", jmes_path(col_item, "id")
         end
       end
-      field "projectNumber", val(iter_item, "number")
       field "projectId", val(iter_item, "id")
       field "projectName", val(iter_item, "name")
     end
@@ -273,7 +302,7 @@ end
 script "js_storage_buckets_label_filtered", type: "javascript" do
   parameters "ds_storage_buckets", "param_exclusion_labels", "param_exclusion_labels_boolean"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   comparators = _.map(param_exclusion_labels, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -350,7 +379,7 @@ end
 script "js_storage_buckets_region_filtered", type: "javascript" do
   parameters "ds_storage_buckets_label_filtered", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_regions_list.length > 0) {
     result = _.filter(ds_storage_buckets_label_filtered, function(resource) {
       include_resource = _.contains(param_regions_list, resource['region'])
@@ -394,20 +423,21 @@ datasource "ds_storage_buckets_with_iam" do
     field "updated", val(iter_item, "updated")
     field "bucketPolicyOnly", val(iter_item, "bucketPolicyOnly")
     field "acl", val(iter_item, "acl")
-    field "projectNumber", val(iter_item, "projectNumber")
     field "projectId", val(iter_item, "projectId")
     field "projectName", val(iter_item, "projectName")
   end
 end
 
 datasource "ds_open_storage_buckets" do
-  run_script $js_open_storage_buckets, $ds_storage_buckets_with_iam, $ds_applied_policy
+  run_script $js_open_storage_buckets, $ds_storage_buckets_with_iam, $ds_applied_policy, $param_incident_csv
 end
 
 script "js_open_storage_buckets", type: "javascript" do
-  parameters "ds_storage_buckets_with_iam", "ds_applied_policy"
+  parameters "ds_storage_buckets_with_iam", "ds_applied_policy", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   result = []
 
   _.each(ds_storage_buckets_with_iam, function(bucket) {
@@ -447,13 +477,13 @@ script "js_open_storage_buckets", type: "javascript" do
         selfLink: bucket['selfLink'],
         timeCreated: bucket['timeCreated'],
         updated: bucket['updated'],
-        projectNumber: bucket['projectNumber'],
         accountID: bucket['projectId'],
         accountName: bucket['projectName'],
         tags: labels.join(', '),
         bucketPolicyOnly: bucketPolicyOnly,
         rule_list: rule_list.join(', '),
-        policy_name: ds_applied_policy['name']
+        policy_name: ds_applied_policy['name'],
+        csv_message: csv_message
       })
     }
   })
@@ -470,6 +500,7 @@ end
 policy "pol_open_storage_buckets" do
   validate_each $ds_open_storage_buckets do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Open Storage Buckets Found"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     hash_exclude "tags"
@@ -480,9 +511,6 @@ policy "pol_open_storage_buckets" do
       end
       field "accountName" do
         label "Project Name"
-      end
-      field "projectNumber" do
-        label "Project Number"
       end
       field "resourceID" do
         label "Resource ID"
@@ -524,7 +552,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 ###############################################################################
@@ -575,7 +606,7 @@ end
 script "js_make_terminate_request", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],

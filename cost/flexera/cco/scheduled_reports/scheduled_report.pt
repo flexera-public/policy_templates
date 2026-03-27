@@ -1,14 +1,14 @@
 name "Scheduled Report"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy allows you to configure scheduled reports that will provide summaries of cloud cost. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_reports/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This policy allows you to configure scheduled reports that will provide summaries of cloud cost. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_reports/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_reports/"
 severity "low"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "4.0.4",
+  version: "4.1.1",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -153,6 +153,24 @@ parameter "param_percent_change_alert_direction" do
   default "Increase"
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -176,7 +194,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -224,7 +242,7 @@ end
 
 script "js_data_tables", type:"javascript" do
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = {
     cost_metrics: {
       "Unamortized Unblended": "cost_nonamortized_unblended_adj",
@@ -277,7 +295,7 @@ end
 script "js_flexera_domain", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   domain_table = {
     "api.optima.flexeraeng.com": "app.flexera.com",
     "api.optima-eu.flexeraeng.com": "app.flexera.eu",
@@ -313,7 +331,7 @@ end
 script "js_cost_dimension_table", type: "javascript" do
   parameters "ds_cost_dimensions"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = {}
 
   _.each(ds_cost_dimensions, function(item) {
@@ -329,7 +347,7 @@ end
 script "js_graph_dimension", type: "javascript" do
   parameters "ds_cost_dimension_table", "ds_data_tables", "param_dimension_graph", "param_dimension_graph_custom"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = { id: "category", name: "Category" }
 
   if (param_dimension_graph == 'Custom') {
@@ -386,7 +404,7 @@ end
 script "js_filtered_bcs", type: "javascript" do
   parameters "ds_billing_centers", "param_billing_centers"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_billing_centers.length > 0) {
     result = _.filter(ds_billing_centers, function(bc) {
       return _.contains(param_billing_centers, bc['name']) || _.contains(param_billing_centers, bc['name'].toLowerCase()) || _.contains(param_billing_centers, bc['id'])
@@ -430,7 +448,7 @@ end
 script "js_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   symbol = "$"
   symbol_native = "$"
   code = "USD"
@@ -466,7 +484,7 @@ end
 script "js_cost_request_list", type: "javascript" do
   parameters "ds_filtered_bcs", "ds_graph_dimension", "ds_cost_dimension_table", "ds_data_tables", "param_cost_metric", "param_date_range", "param_ignore_current_month", "param_billing_term", "param_dimension_filter", "param_dimension_filter_boolean"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Function to take date object or YYYY-MM formatted string and move it backwards or forwards by month
   function move_month(date_string, amount) {
     clean_date = new Date(date_string).toISOString()
@@ -1140,16 +1158,24 @@ end
 policy "pol_scheduled_report" do
   validate $ds_generated_report do
     summary_template "{{ data.policyName }}: {{ rs_org_name }} (Organization ID: {{ rs_org_id }})"
-    detail_template <<-EOS
+    detail_template <<-'EOS'
 # {{ data.policyName }}: {{ rs_org_name }} (Organization ID: {{ rs_org_id }})
-**Date Created:** {{ data.today }}\\
-**Date Range (Months):** {{ parameters.param_date_range }}\\
-**Billing Term:** {{ parameters.param_billing_term }}\\
-**Cost Metric:** {{ parameters.param_cost_metric }}\\
-**Graph Dimension:** {{ data.graphDimension }}\\
-**Billing Centers:** {{ data.billingCenters }}\\
-**Filter:** {{ data.filterMessage }}\\
-**Bill Currency:** {{ data.currencyCode }}\\
+**Date Created:** {{ data.today }}
+
+**Date Range (Months):** {{ parameters.param_date_range }}
+
+**Billing Term:** {{ parameters.param_billing_term }}
+
+**Cost Metric:** {{ parameters.param_cost_metric }}
+
+**Graph Dimension:** {{ data.graphDimension }}
+
+**Billing Centers:** {{ data.billingCenters }}
+
+**Filter:** {{ data.filterMessage }}
+
+**Bill Currency:** {{ data.currencyCode }}
+
 ![Spending Overview Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartCategories }}&{{ data.chartColors }}&{{ data.chartKeyLocation }}&{{ data.chartExtension }} "Spending Overview Chart")
 ### For more detailed cost information, see [Dashboards](https://{{ data.domain }}/orgs/{{ rs_org_id }}/optima/dashboards) or [Tabular View](https://{{ data.domain }}/orgs/{{ rs_org_id }}/optima/tabular-view).
 For more information on this report, please view the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_reports).
@@ -1185,7 +1211,7 @@ For more information on this report, please view the [README](https://github.com
 
   validate $ds_generated_report do
     summary_template "Cost Alert for {{ data.policyName }}: {{ rs_org_name }} (Organization ID: {{ rs_org_id }})"
-    detail_template <<-EOS
+    detail_template <<-'EOS'
 # Cost Alert for {{ data.policyName }}: {{ rs_org_name }} (Organization ID: {{ rs_org_id }})
 **Date Created:** {{ data.today }}\\
 **Date Range (Months):** {{ parameters.param_date_range }}\\
@@ -1250,5 +1276,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

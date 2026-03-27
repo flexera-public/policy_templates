@@ -1,14 +1,14 @@
 name "AWS Unencrypted RDS Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Reports AWS RDS instances that are unencrypted with the option to terminate them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/rds_unencrypted) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports AWS RDS instances that are unencrypted with the option to terminate them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/rds_unencrypted) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/tree/master/security/aws/rds_unencrypted"
 category "Security"
 severity "medium"
 default_frequency "daily"
 info(
-  version: "4.1.4",
+  version: "4.2.0",
   provider: "AWS",
   service: "RDS",
   policy_set: "CIS",
@@ -85,6 +85,24 @@ parameter "param_automatic_action" do
   default []
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -116,7 +134,7 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
 	    api: "api.flexera.com",
@@ -197,6 +215,92 @@ datasource "ds_cloud_vendor_accounts" do
   end
 end
 
+# Get AWS account info fallback
+datasource "ds_billing_centers_aws_acc" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs_aws_acc" do
+  run_script $js_top_level_bcs_aws_acc, $ds_billing_centers_aws_acc
+end
+
+script "js_top_level_bcs_aws_acc", type: "javascript" do
+  parameters "ds_billing_centers_aws_acc"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers_aws_acc, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_cloud_vendor_accounts_fallback" do
+  request do
+    run_script $js_cloud_vendor_accounts_fallback, $ds_top_level_bcs_aws_acc, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "id", jmes_path(col_item, "dimensions.vendor_account")
+      field "name", jmes_path(col_item, "dimensions.vendor_account_name")
+    end
+  end
+end
+
+script "js_cloud_vendor_accounts_fallback", type: "javascript" do
+  parameters "ds_top_level_bcs_aws_acc", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      dimensions: ["vendor_account", "vendor_account_name"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs_aws_acc
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
@@ -215,18 +319,29 @@ datasource "ds_get_caller_identity" do
 end
 
 datasource "ds_aws_account" do
-  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_cloud_vendor_accounts_fallback, $ds_get_caller_identity
 end
 
 script "js_aws_account", type:"javascript" do
-  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  parameters "ds_cloud_vendor_accounts", "ds_cloud_vendor_accounts_fallback", "ds_get_caller_identity"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.find(ds_cloud_vendor_accounts, function(account) {
     return account['id'] == ds_get_caller_identity[0]['account']
   })
 
-  // This is in case the API does not return the relevant account info
+  // This is in case the Flexera List Cloud Accounts API does not return the relevant account info
+  if (result == undefined) {
+    result = _.find(ds_cloud_vendor_accounts_fallback, function(account) {
+      return account['id'] == ds_get_caller_identity[0]['account']
+    })
+
+    if (result) {
+      result["tags"] = {}
+    }
+  }
+
+  // This is in case both the Flexera List Cloud Accounts API and the Flexera Cost data do not return the relevant account info
   if (result == undefined) {
     result = {
       id: ds_get_caller_identity[0]['account'],
@@ -266,7 +381,7 @@ end
 script "js_regions", type:"javascript" do
   parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_regions_list.length > 0) {
@@ -316,7 +431,7 @@ end
 script "js_rds_instances_set", type: "javascript" do
   parameters "region"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   end_date = new Date()
   end_date = end_date.toISOString()
 
@@ -358,7 +473,7 @@ end
 script "js_resource_tags", type: "javascript" do
   parameters "instanceArn", "region"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   end_date = new Date()
   end_date = end_date.toISOString()
 
@@ -390,7 +505,7 @@ end
 script "js_rds_instances", type: "javascript" do
   parameters "ds_rds_instances_set", "ds_resource_tags", "ds_aws_instance_type_map", "ds_aws_account", "ds_applied_policy", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
     if (item.indexOf('==') != -1) {
       return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
@@ -521,16 +636,19 @@ EOS
 end
 
 datasource "ds_bad_rds_instances" do
-  run_script $js_bad_rds_instances, $ds_rds_instances
+  run_script $js_bad_rds_instances, $ds_rds_instances, $param_incident_csv
 end
 
 script "js_bad_rds_instances", type: "javascript" do
-  parameters "ds_rds_instances"
+  parameters "ds_rds_instances", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   result = _.filter(ds_rds_instances, function(db) {
     return db['storageEncrypted'] == 'false' && db['deletionProtection'] == 'false' && db['state'] == 'available'
   })
+  _.each(result, function(item) { item['csv_message'] = csv_message })
 EOS
 end
 
@@ -541,6 +659,7 @@ end
 policy "pol_bad_rds_instances" do
   validate_each $ds_bad_rds_instances do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Unencrypted RDS Instances Found"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_terminate
@@ -623,7 +742,10 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end
 
 escalation "esc_terminate" do
@@ -740,7 +862,7 @@ end
 script "js_make_terminate_request", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   var request = {
     auth: "auth_flexera",
     host: ds_flexera_api_hosts["flexera"],

@@ -1,5 +1,13 @@
 # Changelog
 
+## v5.2.3
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v5.2.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v5.2.1
 
 - Fixed issue that was preventing the policy template from being updated in the catalog. Functionality unchanged.

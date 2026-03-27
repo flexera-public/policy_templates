@@ -14,6 +14,18 @@ The policy template includes the estimated savings. The estimated savings is rec
 
 If the Flexera organization is configured to use a currency other than the one the [Azure Billing API](https://learn.microsoft.com/en-us/rest/api/billing/billing-accounts/list?view=rest-billing-2024-04-01&tabs=HTTP) returns, the savings values will be converted using the exchange rate at the time that the policy executes. If the policy is unable to obtain the currency code from the [Azure Billing API](https://learn.microsoft.com/en-us/rest/api/billing/billing-accounts/list?view=rest-billing-2024-04-01&tabs=HTTP) due to the Azure credential lacking the `Microsoft.Billing/billingAccounts/read` permission, values will not be converted and will be presumed to already be in the currency the Flexera organization is configured to use.
 
+### Break Even Point
+
+The [break even point](https://www.prosperops.com/blog/reserved-instance-management-101-calculate-your-ri-break-even-point/) in months is calculated using the following formula:
+
+(1 - ((costWithNoReservedInstances - totalCostWithReservedInstances) / costWithNoReservedInstances)) * termMonths
+
+- *costWithNoReservedInstances* - The cost of the instance without a reservation.
+- *totalCostWithReservedInstances* - The total cost of both the instance and the reservation if the reservation is purchased.
+- *termMonths* - The number of months in the reservation term (12 or 36 for 1 and 3 year reservations respectively).
+
+These values are obtained from the [Azure Consumption API](https://learn.microsoft.com/en-us/rest/api/consumption/reservation-recommendations/list?view=rest-consumption-2024-08-01&tabs=HTTP).
+
 ## Input Parameters
 
 - *Email Addresses* - A list of email addresses to notify
@@ -38,18 +50,18 @@ If the Flexera organization is configured to use a currency other than the one t
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
-- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
+- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Billing/billingAccounts/read`*
   - `Microsoft.Consumption/reservationRecommendations/read`
 
   \* Only needed for currency conversion. Policy will still function without this permission but will provide a warning in the incident description about this.
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
 
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
