@@ -18,9 +18,9 @@ Policy templates combine a Ruby-like block syntax (for datasource definitions, H
 ### Option A — Install from Location (Recommended for Development)
 
 1. Open the command palette (`Cmd+Shift+P` on macOS, `Ctrl+Shift+P` on Windows/Linux)
-2. Type **Developer: Install Extension from Location...**
-3. Navigate to and select the `tools/flexera-policy-template-vscode-extension/` folder
-4. Reload the window when prompted
+1. Type **Developer: Install Extension from Location...**
+1. Navigate to and select the `tools/flexera-policy-template-vscode-extension/` folder
+1. Reload the window when prompted
 
 ### Option B — Install from VSIX Package
 

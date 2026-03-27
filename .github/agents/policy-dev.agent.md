@@ -1430,7 +1430,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/",
-               switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+      switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
     ignore_status [404]
   end
   result do
@@ -1533,11 +1533,11 @@ end
 ```
 datasource "ds_terminate_self" do
   request do
-    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
+    run_script $js_terminate_self, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
   end
 end
 
-script "js_make_terminate_request", type: "javascript" do
+script "js_terminate_self", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
   code <<-'EOS'
@@ -1802,6 +1802,31 @@ script "js_billing_request", type: "javascript" do   # used by ds_billing_data A
 end
 ```
 
+### `run_script` Parameter Order
+
+`run_script` arguments (and the matching `parameters` declaration in the script) must follow this fixed order:
+
+```
+run_script $js_name, [val(iter_item, "field")], [datasources...], [parameters...], [variables...], [raw values...]
+```
+
+1. The script reference itself (`$js_name`) — always first
+1. `val(iter_item, ...)` expressions — if the datasource uses `iterate`, the iter_item value(s) come next
+1. Datasource arguments (`$ds_*`) — all datasource references grouped together
+1. Parameter arguments (`$param_*`) — all parameter references grouped together
+1. Built-in runtime variables (`rs_org_id`, `rs_optima_host`, `policy_id`, etc.)
+1. Raw literal values (strings, numbers) — last
+
+**Wrong** (param before last datasource):
+```
+run_script $js_example, $ds_one, $ds_two, $param_filter, $ds_three
+```
+
+**Correct** (all datasources before all params):
+```
+run_script $js_example, $ds_one, $ds_two, $ds_three, $param_filter
+```
+
 ### Heredoc `EOS` Delimiter Alignment
 
 The closing `EOS` delimiter must be **left-aligned at column 0** for `code <<-'EOS'` script blocks. It must **never** be indented, regardless of the indentation of the surrounding `script` block:
@@ -1939,6 +1964,20 @@ some code
 ```
 
 **MD047 — Files must end with a single newline character.** Ensure there is a newline at the very end of every Markdown file.
+
+**MD029 — Ordered list item prefix style.** Always use `1.` for every item in every ordered list — do not use sequential numbers (`1. 2. 3.`). Markdown renderers handle the actual display numbering automatically:
+
+```markdown
+<!-- Wrong -->
+1. First item
+2. Second item
+3. Third item
+
+<!-- Correct -->
+1. First item
+1. Second item
+1. Third item
+```
 
 **MD060 — Table separator rows must use `| --- |` style (with spaces), not `|---|` (compact).** The separator row must match the spaced style used in the header and data rows:
 
