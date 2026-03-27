@@ -58,6 +58,126 @@ You are an expert Flexera policy template developer working in the `flexera-publ
 
 When documentation is unclear, use existing policy templates in this repository as examples.
 
+## Flexera Cloud Cost Optimization (CCO)
+
+Flexera Cloud Cost Optimization (CCO) is Flexera One's FinOps product. It ingests cloud billing data from cloud providers (AWS, Azure, GCP, Oracle, Databricks, and others via Common Bill Ingestion/CBI), enabling cost allocation, waste identification, and detailed cloud spend analysis. Policy templates in the `cost/` category integrate tightly with CCO.
+
+### Architecture & Key Concepts
+
+- **Bill ingestion**: Flexera ingests cloud billing data on a rolling basis. Native connectors exist for AWS CUR, Azure EA/MCA, GCP billing exports, Oracle Cloud, Databricks, and others. Custom or private-cloud billing data can be ingested via **Common Bill Ingestion (CBI)**, a generic CSV-based pipeline.
+- **Billing Centers**: Organizational units for allocating cloud costs. All cost policy templates query billing centers to scope their data. Top-level billing centers aggregate all spend; child billing centers represent sub-allocations (e.g., per team, per project). Most templates use `ds_billing_centers` to retrieve top-level billing centers and pass their IDs to the Bill Analysis API.
+- **Cloud Vendor Accounts**: Mappings from cloud account/subscription/project IDs to human-friendly names. Retrieved via the FinOps Analytics API (`/finops-analytics/v1/orgs/{org_id}/cloud-vendor-accounts`). Used to populate `accountName` on incident rows.
+- **Regional API hosts**: CCO APIs are hosted per region. The `rs_optima_host` built-in variable resolves to the org's correct host:
+  - `api.optima.flexeraeng.com` — US (default)
+  - `api.optima-eu.flexeraeng.com` — EU
+  - `api.optima-apac.flexeraeng.com` — APAC
+  - Always use `rs_optima_host` directly (not `ds_flexera_api_hosts`) for the Optima/bill-analysis endpoints.
+
+### Bill Analysis API
+
+The primary API for querying cost data is the **Bill Analysis API**:
+
+```
+POST https://{rs_optima_host}/bill-analysis/orgs/{org_id}/costs/select
+Api-Version: 0.1
+```
+
+**Request body:**
+```json
+{
+  "dimensions": ["vendor_account", "vendor_account_name", "resource_id", "region"],
+  "granularity": "day",
+  "start_at": "YYYY-MM-DD",
+  "end_at": "YYYY-MM-DD",
+  "metrics": ["cost_amortized_unblended_adj"],
+  "billing_center_ids": ["bc_id_1", "bc_id_2"]
+}
+```
+
+**Key dimensions:**
+
+| Dimension | Description |
+|---|---|
+| `vendor_account` | Cloud account / subscription / project ID |
+| `vendor_account_name` | Human-friendly name for the account |
+| `resource_id` | Cloud resource identifier |
+| `region` | Cloud provider region |
+| `service` | Cloud service name (e.g., `"AmazonEC2"`, `"Microsoft.Compute"`) |
+| `resource_type` | Resource type (e.g., `"t3.large"`) |
+| `usage_type` | Billing usage type |
+| `line_item_type` | Type of billing line item |
+| `charge_type` | Charge classification (e.g., `"Usage"`, `"Tax"`) |
+
+**Key metrics:**
+
+| Metric | Description |
+|---|---|
+| `cost_amortized_unblended_adj` | Amortized cost — reservations/savings plans spread over the usage period. Most commonly used. |
+| `cost_nonamortized_unblended_adj` | Non-amortized (on-demand) cost. |
+| `cost_list_price` | List/public price before discounts. |
+
+The `_adj` suffix means Flexera has applied any **Price Book** adjustments (discounts, markups) configured for the org.
+
+**Response**: An array of objects where each object has a `dimensions` map and a `metrics` map. Use `jmes_path(col_item, "dimensions.vendor_account")` and `jmes_path(col_item, "metrics.cost_amortized_unblended_adj")` to extract values.
+
+**Date range**: Most templates use a rolling 30-day window ending today. Build dates in JavaScript:
+```javascript
+var end_date = new Date(); end_date.setDate(end_date.getDate() - 1)
+var start_date = new Date(); start_date.setDate(start_date.getDate() - 31)
+```
+
+### Currency
+
+The org's configured currency code is retrieved from:
+```
+GET /bill-analysis/orgs/{org_id}/settings/currency_code
+host: rs_optima_host
+Api-Version: 0.1
+```
+
+Always use the `ds_currency_reference` + `ds_currency_code` + `ds_currency` boilerplate (copy from `cost/aws/old_snapshots/aws_delete_old_snapshots.pt`) to convert the currency code to a display symbol and thousands separator. This exposes `ds_currency['symbol']` and `ds_currency['separator']` for formatting dollar amounts.
+
+### Total Potential Savings & Recommendations Integration
+
+When a cost policy template produces incidents, CCO scrapes those incidents to populate the **Total Potential Savings** chart and recommendation tables. For this integration to work:
+
+**Required `info()` block fields** (for recommendations-capable templates):
+```
+info(
+  ...
+  recommendation_type: "Usage Reduction",  # or "Rate Reduction"
+  provider:            "AWS",              # cloud provider: "AWS", "Azure", "Google", etc.
+  policy_set:          "Unused Volumes",   # groups similar policies across providers
+)
+```
+
+**Required incident export fields** used for billing center assignment and recommendations:
+- `savings` — numeric monthly savings estimate (number, not a string)
+- `accountID` — cloud account / Azure subscription / GCP project ID
+- `tags` — array of `"key=value"` strings; CCO uses these to route recommendations to the right billing center
+- `resourceID` — cloud resource identifier
+
+Optional but important: `accountName`, `resourceGroup` (Azure), `region`, `resourceType`, `recommendationDetails`, `service`.
+
+CCO uses `accountID`, `resourceGroup`, and `tags` to determine which Billing Center "owns" each recommendation. If these are wrong or missing, recommendations won't appear for the correct org or billing center.
+
+### Pure CCO Templates vs. Hybrid Templates
+
+- **Pure CCO templates** query only the Bill Analysis API — they identify issues purely from billing data (e.g., Extended Support charges appearing as line items in the bill). No cloud provider API calls. See `cost/aws/extended_support/aws_extended_support.pt` as an example.
+- **Hybrid templates** combine CCO billing data with cloud provider API data — they look up resource details, usage metrics, or configuration from cloud APIs and join that with billing data to compute savings and produce richer incident reports. Most `cost/` templates are hybrid.
+
+### bill_analysis vs. finops_analytics vs. optima APIs
+
+The codebase uses three related Flexera API families for cost data:
+
+| API | Base URL | Usage |
+|---|---|---|
+| **Bill Analysis** | `rs_optima_host/bill-analysis/...` | Primary: cost queries, billing center listing, currency code |
+| **FinOps Analytics** | `flexera_host/finops-analytics/v1/...` | Cloud vendor account name lookups |
+| **Optima Recommendations** | `rs_optima_host/optima/...` | Reading/writing recommendation objects directly (uncommon) |
+
+Prefer Bill Analysis for cost queries. Use FinOps Analytics for account/subscription name lookups.
+
 ## Tools
 
 You have access to the command line `fpt` tool with the following useful commands:
