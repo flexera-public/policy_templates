@@ -1,0 +1,588 @@
+name "Azure End-of-Life Resources"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports Azure virtual machines running end-of-life operating systems. Includes resources that are no longer receiving security updates as well as those still under Microsoft's Extended Security Updates (ESU) program. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/azure/eol_resources) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/security/azure/eol_resources"
+category "Security"
+severity "high"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Deprecated Resources"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_report_scope" do
+  type "string"
+  category "Policy Settings"
+  label "Report Scope"
+  description "Whether to report all end-of-life resources or only those no longer receiving any security updates. Resources 'Under Extended Security Updates' are still receiving Microsoft security patches (at additional cost when not hosted in Azure) and may be excluded based on this setting."
+  allowed_values "All End-of-Life Resources", "Only Resources Without Active Security Updates"
+  default "All End-of-Life Resources"
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to report on. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter resources containing any of the specified tags or only those that contain all of them."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", policy_id])
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "name", jmes_path(response, "name")
+  end
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-'EOS'
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) ||
+                             _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_azure_regions_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_azure_esu_os_versions" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/azure_esu_os_versions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_azure_regions_table" do
+  run_script $js_azure_regions_table, $ds_azure_regions_reference
+end
+
+script "js_azure_regions_table", type: "javascript" do
+  parameters "ds_azure_regions_reference"
+  result "result"
+  code <<-'EOS'
+  result = {}
+
+  _.each(ds_azure_regions_reference, function(region) {
+    result[region['region']] = region['name']
+    result[region['name']] = region['region']
+  })
+EOS
+end
+
+datasource "ds_azure_virtual_machines" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version", "2023-07-01"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionID", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "location", jmes_path(col_item, "location")
+      field "tags", jmes_path(col_item, "tags")
+      field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "publisher", jmes_path(col_item, "properties.storageProfile.imageReference.publisher")
+      field "offer", jmes_path(col_item, "properties.storageProfile.imageReference.offer")
+      field "sku", jmes_path(col_item, "properties.storageProfile.imageReference.sku")
+      field "imageVersion", jmes_path(col_item, "properties.storageProfile.imageReference.version")
+      field "imageId", jmes_path(col_item, "properties.storageProfile.imageReference.id")
+    end
+  end
+end
+
+datasource "ds_esu_resources" do
+  run_script $js_esu_resources, $ds_azure_virtual_machines, $ds_applied_policy, $ds_azure_regions_table, $ds_azure_esu_os_versions, $param_regions_allow_or_deny, $param_regions_list, $param_exclusion_tags, $param_exclusion_tags_boolean, $param_incident_csv, $param_report_scope
+end
+
+script "js_esu_resources", type: "javascript" do
+  parameters "ds_azure_virtual_machines", "ds_applied_policy", "ds_azure_regions_table", "ds_azure_esu_os_versions", "param_regions_allow_or_deny", "param_regions_list", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_incident_csv", "param_report_scope"
+  result "result"
+  code <<-'EOS'
+  // Lookup table of known end-of-life OS versions detectable via Azure Marketplace image reference.
+  // Detection is based on the image publisher and either SKU or offer substring matching.
+  // Note: VMs created from custom images, managed images, or shared image gallery images
+  // may not be detected if their image reference does not match these known patterns.
+  var csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
+  // Build tag comparators for exclusion tag filtering
+  var comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  var allow_deny_test = { "Allow": true, "Deny": false }
+
+  var result = []
+
+  _.each(ds_azure_virtual_machines, function(vm) {
+    // Skip VMs with no standard Marketplace image reference; they cannot be reliably detected
+    if (!vm['publisher'] && !vm['offer'] && !vm['sku']) { return }
+
+    // Region filtering — support both shorthand ("eastus") and pretty name ("East US")
+    if (param_regions_list.length > 0) {
+      var region_match = _.contains(param_regions_list, vm['location']) || _.contains(param_regions_list, ds_azure_regions_table[vm['location']])
+      if (region_match != allow_deny_test[param_regions_allow_or_deny]) { return }
+    }
+
+    // Tag exclusion filtering — Azure tags are flat {key: value} objects
+    if (param_exclusion_tags.length > 0) {
+      var resource_tags = {}
+      if (typeof(vm['tags']) == 'object' && vm['tags'] != null) {
+        _.each(_.keys(vm['tags']), function(key) {
+          resource_tags[key] = vm['tags'][key]
+        })
+      }
+
+      var found_tags = []
+      _.each(comparators, function(comparator) {
+        var resource_tag = resource_tags[comparator['key']]
+        if (comparator['comparison'] == 'key' && resource_tag != undefined) { found_tags.push(comparator['string']) }
+        if (comparator['comparison'] == '==' && resource_tag == comparator['value']) { found_tags.push(comparator['string']) }
+        if (comparator['comparison'] == '!=' && resource_tag != comparator['value']) { found_tags.push(comparator['string']) }
+        if (comparator['comparison'] == '=~' && resource_tag != undefined && comparator['value'].test(resource_tag)) { found_tags.push(comparator['string']) }
+        if (comparator['comparison'] == '!~' && (resource_tag == undefined || !comparator['value'].test(resource_tag))) { found_tags.push(comparator['string']) }
+      })
+
+      var excluded = false
+      if (param_exclusion_tags_boolean == 'Any') { excluded = found_tags.length > 0 }
+      else { excluded = found_tags.length == comparators.length }
+
+      if (excluded) { return }
+    }
+
+    // Match VM image reference against the ESU lookup table
+    var publisher = (vm['publisher'] || "").toLowerCase()
+    var offer = (vm['offer'] || "").toLowerCase()
+    var sku = (vm['sku'] || "").toLowerCase()
+
+    var esu_match = null
+    _.each(ds_azure_esu_os_versions, function(entry) {
+      if (esu_match) { return }
+      if (publisher != entry['publisher'].toLowerCase()) { return }
+      if (entry['sku_contains'] && sku.indexOf(entry['sku_contains'].toLowerCase()) == -1) { return }
+      if (entry['offer_contains'] && offer.indexOf(entry['offer_contains'].toLowerCase()) == -1) { return }
+      esu_match = entry
+    })
+
+    if (!esu_match) { return }
+
+    // Filter by report scope: if user only wants Only Resources Without Active Security Updates,
+    // skip resources that are currently under Extended Security Updates
+    if (param_report_scope == "Only Resources Without Active Security Updates" && esu_match['esu_status'] == "Under Extended Security Updates") { return }
+
+    // Build flat tags display string
+    var tags = []
+    if (typeof(vm['tags']) == 'object' && vm['tags'] != null) {
+      _.each(_.keys(vm['tags']), function(key) {
+        tags.push(key + "=" + vm['tags'][key])
+      })
+    }
+
+    var recommendationDetails = [
+      "Upgrade or migrate Azure virtual machine ", vm['name'],
+      " in Azure Subscription ", vm['subscriptionName'],
+      " (", vm['subscriptionID'], ")",
+      " from ", esu_match['os_name'],
+      " to a currently supported operating system version."
+    ].join('')
+
+    result.push({
+      accountID: vm['subscriptionID'],
+      accountName: vm['subscriptionName'],
+      resourceID: vm['id'],
+      resourceName: vm['name'],
+      region: vm['location'],
+      tags: tags.join(', '),
+      osType: vm['osType'],
+      publisher: vm['publisher'],
+      offer: vm['offer'],
+      sku: vm['sku'],
+      osVersion: esu_match['os_name'],
+      eolDate: esu_match['eol_date'],
+      esuEndDate: esu_match['esu_end_date'],
+      esuStatus: esu_match['esu_status'],
+      recommendationDetails: recommendationDetails,
+      service: "Compute",
+      policy_name: ds_applied_policy['name'],
+      csv_message: csv_message
+    })
+  })
+EOS
+end
+
+datasource "ds_get_parent_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
+    ignore_status [404]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
+  result "result"
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_terminate_self, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
+  end
+end
+
+script "js_terminate_self", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: "/policy/v1/orgs/" + rs_org_id + "/projects/" + rs_project_id + "/applied-policies" + (policy_id ? "/" + policy_id : ""),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
+  result "result"
+  code 'result = { path: "/" }'
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_esu_resources" do
+  validate_each $ds_esu_resources do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure End-of-Life Resources Found"
+    detail_template <<-'EOS'
+The following Azure virtual machines are running end-of-life operating systems. These resources should be upgraded or migrated to a supported operating system version to reduce security risk.
+
+{{ with index data 0 }}{{ .csv_message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    hash_exclude "tags"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "osType" do
+        label "OS Type"
+      end
+      field "publisher" do
+        label "Image Publisher"
+      end
+      field "offer" do
+        label "Image Offer"
+      end
+      field "sku" do
+        label "Image SKU"
+      end
+      field "osVersion" do
+        label "OS Version"
+      end
+      field "eolDate" do
+        label "End of Life Date"
+      end
+      field "esuEndDate" do
+        label "ESU End Date"
+      end
+      field "esuStatus" do
+        label "ESU Status"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
+end
