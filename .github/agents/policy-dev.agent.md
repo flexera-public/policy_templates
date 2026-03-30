@@ -1092,6 +1092,8 @@ For cost templates, the `ds_currency` datasource (fetched from the Flexera billi
 
 ### Escalations
 
+A single `esc_email` escalation block is shared across **all** `validate_each` (and `validate`) blocks in the policy that report on cloud resources. Only specialty incidents — such as the AWS region-error `validate $ds_identify_errors` block — use their own dedicated escalation (e.g. `esc_email_errors_identified`) because those incidents have different email behaviour (no table attachment, no CSV, etc.). Do **not** create duplicate `esc_email_*` blocks that are structurally identical; reference the same `$esc_email` escalation from every standard incident block.
+
 ```
 escalation "esc_email" do
   automatic true
@@ -1897,7 +1899,7 @@ All versions must use three period-separated integers (`MAJOR.MINOR.PATCH`):
 - **MINOR** — new non-breaking functionality (e.g. a new parameter whose default preserves existing behavior).
 - **PATCH** — bug fixes and minor non-functional changes.
 
-**When to bump the version:** Only bump the version (and add a CHANGELOG entry) when the change is ready to commit. If you are iterating on a template across multiple requests in the same working session and no changes have been committed to Git yet, do **not** bump the version or update the CHANGELOG between iterations — wait until the work is complete and ready to commit. You can check whether any changes have been committed with `git log --oneline -1` and `git status`.
+**When to bump the version:** Any change to a `.pt` file — functional or not — **must** be accompanied by a version bump and a CHANGELOG entry. Only bump the version once per commit: if you are iterating on a template across multiple requests in the same working session and no changes have been committed to Git yet, do **not** bump the version or update the CHANGELOG between iterations — wait until the work is complete and ready to commit. You can check whether any changes have been committed with `git log --oneline -1` and `git status`.
 
 ## README Requirements
 
@@ -2133,6 +2135,46 @@ Every CHANGELOG must use exactly this format, with the most recent version first
 ```
 
 Describe changes in terms of user-visible impact. Avoid coding jargon and do not reference internal code changes.
+
+## Deprecating a Policy Template
+
+When a policy template is superseded by a newer one and should no longer be actively maintained, mark it as deprecated. **Do not unpublish it** (i.e. do not add `publish: "false"`) — deprecated templates remain in the catalog so that existing users can still find and apply them.
+
+**Three changes are required:**
+
+**1. `short_description`** — Prefix with the standard deprecated warning banner:
+
+```
+short_description "**Deprecated: This policy template is no longer being updated. Please see [README](https://github.com/flexera-public/policy_templates/tree/master/CATEGORY/PROVIDER/POLICY_NAME/) for more details.**  <original short description here>"
+```
+
+**2. `info()` block** — Add `deprecated: "true"` as the last field:
+
+```
+info(
+  version: "X.Y.Z",
+  provider: "...",
+  service: "...",
+  ...
+  deprecated: "true"
+)
+```
+
+**3. README** — Add a `## Deprecated` section immediately after the `# Title` heading and before `## What It Does`. This section should explain why the template is deprecated and where users should go instead:
+
+```markdown
+# Policy Template Name
+
+## Deprecated
+
+This policy template is no longer being updated. It has been superseded by the [Replacement Template](https://github.com/flexera-public/policy_templates/tree/master/CATEGORY/PROVIDER/REPLACEMENT) policy template, which provides <brief description of improvements>. <Optional: mention alternative if user has specific needs.>
+
+## What It Does
+```
+
+See `cost/google/object_storage_optimization/README.md` as a canonical example of this format.
+
+**Do bump the version and add a CHANGELOG entry** when adding a deprecation notice — it is a change to the `.pt` file and all `.pt` file changes require a version bump.
 
 ## Automation Files
 

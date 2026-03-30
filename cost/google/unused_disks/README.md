@@ -1,10 +1,12 @@
 # Google Unused Disks
 
+## Deprecated
+
+This policy template is no longer being updated. It has been superseded by the [Google Rightsize Persistent Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_persistent_disks) policy template, which provides both unused disk deletion recommendations and disk type rightsizing recommendations based on Cloud Monitoring utilization metrics. If you prefer recommendations produced directly by the Google Recommender service rather than Flexera, use the [Google Idle Persistent Disk Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/idle_persistent_disk_recommendations) policy template instead.
+
 ## What It Does
 
 This policy template reports on unused Google persistent disks and, optionally, deletes them. A persistent disk is considered unused if it is currently detached and has been detached for a user-specified number of days.
-
-NOTE: Estimated savings will only appear if you are using [Google Detailed Billing](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/google/) to ingest Google Cloud costs into Flexera CCO. If you have not configured Flexera One to ingest detailed billing information from Google, or prefer to receive recommendations produced by the Google Recommender service rather than Flexera, please use the [Google Idle Persistent Disk Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/idle_persistent_disk_recommendations) policy template instead of this one.
 
 ### Policy Savings Details
 
