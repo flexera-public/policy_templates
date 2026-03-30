@@ -1518,15 +1518,24 @@ datasource "ds_cloud_vendor_accounts" do
 end
 ```
 
-For Meta Policy support, include these boilerplate datasources. Use `$ds_parent_policy_terminated` in every `check` line:
+For Meta Policy support, the complete Meta Policy block **must be placed at the very bottom of the policy template file**, after the `# Escalations` section. It must begin with the exact comment `# Meta Policy [alpha]` (the compiler checks for this string). Never place any part of this block earlier in the file — not in the `# Datasources & Scripts` section and not before the `# Policy` section.
+
+The canonical Meta Policy section (copy verbatim):
 
 ```
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
 datasource "ds_get_parent_policy" do
   request do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
-    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
-    ignore_status [404]
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
   end
   result do
     encoding "json"
@@ -1534,6 +1543,10 @@ datasource "ds_get_parent_policy" do
   end
 end
 
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
 datasource "ds_parent_policy_terminated" do
   run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
 end
@@ -1542,10 +1555,12 @@ script "js_parent_policy_terminated", type: "javascript" do
   parameters "ds_get_parent_policy", "meta_parent_policy_id"
   result "result"
   code <<-'EOS'
-    result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
 EOS
 end
 ```
+
+Use `$ds_parent_policy_terminated` in every `check` line in the `# Policy` section.
 
 ### Provider Boilerplate Datasources
 
@@ -1623,28 +1638,37 @@ datasource "ds_google_projects" do
 end
 ```
 
-**`ds_terminate_self` + `ds_is_deleted`** — Meta Policy self-termination: `ds_terminate_self` issues `DELETE` when `$ds_parent_policy_terminated` is true, otherwise `GET`. `ds_is_deleted` produces sentinel `{ path: "/" }` to enforce evaluation order:
+**`ds_terminate_self` + `ds_is_deleted`** — Meta Policy self-termination: `ds_terminate_self` issues `DELETE` when `$ds_parent_policy_terminated` is true, otherwise `GET`. `ds_is_deleted` produces sentinel `{ path: "/" }` to enforce evaluation order. These belong in the `# Meta Policy [alpha]` section at the bottom of the file:
 
 ```
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
 datasource "ds_terminate_self" do
   request do
-    run_script $js_terminate_self, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
   end
 end
 
-script "js_terminate_self", type: "javascript" do
+script "js_make_terminate_request", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
   code <<-'EOS'
-    request = {
-      auth: "auth_flexera",
-      host: ds_flexera_api_hosts["flexera"],
-      path: "/policy/v1/orgs/" + rs_org_id + "/projects/" + rs_project_id + "/applied-policies" + (policy_id ? "/" + policy_id : ""),
-      verb: ds_parent_policy_terminated ? "DELETE" : "GET"
-    }
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
 EOS
 end
 
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
 datasource "ds_is_deleted" do
   run_script $js_is_deleted, $ds_terminate_self
 end
@@ -1652,7 +1676,7 @@ end
 script "js_is_deleted", type: "javascript" do
   parameters "ds_terminate_self"
   result "result"
-  code 'result = { path: "/" }'
+  code 'result = { path: "/"}'
 end
 ```
 
