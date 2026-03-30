@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.7.3
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v2.7.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v2.7.1
 
 - Fixed issue where incident would never include results.

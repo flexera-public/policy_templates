@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.3.4
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v3.3.3
+
+- Updated API call for listing Google Projects to speed up policy execution and reduce the number of paginated requests.
+- Incident table no longer includes Project Number. This is not supported by the above API and only has limited utility.
+
+## v3.3.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v3.3.1
 
 - Policy now only fetches active recommendations from Google Cloud Recommender API.

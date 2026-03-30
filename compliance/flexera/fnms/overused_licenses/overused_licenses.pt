@@ -1,14 +1,14 @@
 name "ITAM Overused Licenses"
 rs_pt_ver 20180301
 type "policy"
-short_description "Looks up software licenses and reports in email any licenses that are overused. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/fnms/overused_licenses) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Looks up software licenses and reports in email any licenses that are overused. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/fnms/overused_licenses) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/fnms/overused_licenses"
 severity "medium"
 category "Compliance"
 default_frequency "daily"
 info(
-  version: "2.4.5",
+  version: "2.5.0",
   provider: "Flexera",
   service: "IT Asset Management",
   policy_set: "IT Asset Management",
@@ -22,7 +22,7 @@ info(
 parameter "param_email" do
   type "list"
   category "Policy Settings"
-  label "Email addresses of the recipients you wish to notify"
+  label "Email Addresses"
   description "A list of email address(es) to notify"
   default []
 end
@@ -33,6 +33,24 @@ parameter "param_percentage" do
   label "Percentage of License Usage"
   description "The percentage of available licenses in use to consider a license overused"
   default 90
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -77,7 +95,7 @@ end
 script "js_licenses", type: "javascript" do
   parameters "ds_license_attributes", "ds_license_entitlements"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   license_attributes = []
   license_entitlements = []
 
@@ -121,18 +139,21 @@ EOS
 end
 
 datasource "ds_overused_licenses" do
-  run_script $js_overused_licenses, $ds_licenses, $param_percentage
+  run_script $js_overused_licenses, $ds_licenses, $param_percentage, $param_incident_csv
 end
 
 script "js_overused_licenses", type: "javascript" do
-  parameters "ds_licenses", "param_percentage"
+  parameters "ds_licenses", "param_percentage", "param_incident_csv"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   result = []
 
   _.each(ds_licenses, function(license) {
     if (license['consumption'] > param_percentage || license['consumption'] == "N/A") {
-        result.push(license)
+      license.csv_message = csv_message
+      result.push(license)
     }
   })
 EOS
@@ -145,6 +166,7 @@ end
 policy "pol_overused_licenses" do
   validate $ds_overused_licenses do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Overused License(s) Found"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check eq(size(data), 0)
     escalate $esc_email
     export do
@@ -191,5 +213,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Sends incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

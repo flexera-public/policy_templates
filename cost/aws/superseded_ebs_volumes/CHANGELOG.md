@@ -1,5 +1,25 @@
 # Changelog
 
+## v6.5.5
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v6.5.4
+
+- Fixed a bug introduced in v6.5.3 that would cause "Cannot access member 'result' of undefined", if the AWS account info does not exist in Flexera.
+
+## v6.5.3
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
+## v6.5.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v6.5.1
+
+- Updated email escalation declaration for new "Errors Identified" incident to prevent error `failed make a CSV attachment with data: unable to collect csv data from nil export`
+
 ## v6.5.0
 
 - Policy now continues execution for accessible regions when some regions return permission errors

@@ -1,0 +1,492 @@
+name "AWS Rule-Based Dimension From Account Tags (AWS Organizations API)"
+rs_pt_ver 20180301
+type "policy"
+short_description "Creates and/or updates individual Rule-Based Dimensions based on AWS Account tags. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/aws/aws_rbd_from_org_tag/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/automation/aws/aws_rbd_from_org_tag"
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: "Automation",
+  publish: "false",
+  hide_skip_approvals: "true",
+  skip_permissions: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_tag_list" do
+  type "list"
+  category "Policy Settings"
+  label "Tag Keys"
+  description "A list of AWS account tag keys to build Rule-Based Dimensions from. Multiple tags can be specified for a single dimension by placing a single entry with each tag key separated by a semicolon (;) character. See README for more info."
+  # No default value, user input required
+end
+
+parameter "param_name_list" do
+  type "list"
+  category "Policy Settings"
+  label "Dimension Names"
+  description "A list of names to give the Rule-Based Dimensions in the Flexera platform. Enter names in the same order as the tag keys in the 'Tag Keys' field. Dimension names will be derived from tag keys directly if this list is left empty."
+  default []
+end
+
+parameter "param_effective_date" do
+  type "string"
+  category "Policy Settings"
+  label "Effective Date"
+  description "Year/month you want rules to start applying in YYYY-MM format"
+  default "2010-01"
+end
+
+parameter "param_normalize_case" do
+  type "string"
+  category "Policy Settings"
+  label "Lowercase Values"
+  description "Whether or not to normalize all values by converting them to lowercase. Note that, if the same value appears multiple times with different casing, and this option is disabled, the rule-based dimension will be rejected and this policy template will fail."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS credential."
+  tags "provider=aws"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credential."
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws_organizations" do
+  get_page_marker do
+    body_path jmes_path(response, "NextToken")
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+end
+
+# Get AWS Organizations account metadata
+datasource "ds_aws_org_accounts_raw" do
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_organizations
+    verb "POST"
+    host "organizations.us-east-1.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "X-Amz-Target", "AWSOrganizationsV20161128.ListAccounts"
+    header "Content-Type", "application/x-amz-json-1.1"
+    body "{}"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Accounts") do
+      field "id", jmes_path(col_item, "Id")
+      field "name", jmes_path(col_item, "Name")
+      field "status", jmes_path(col_item, "Status")
+    end
+  end
+end
+
+datasource "ds_aws_org_accounts_in_scope" do
+  run_script $js_aws_org_accounts_in_scope, $ds_aws_org_accounts_raw
+end
+
+script "js_aws_org_accounts_in_scope", type: "javascript" do
+  parameters "accounts"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(accounts, function(account) {
+    return typeof(account["id"]) == "string" && account["id"].trim() != ""
+  })
+EOS
+end
+
+# Get AWS Organizations account tags
+datasource "ds_aws_org_account_tags" do
+  batch true
+  iterate $ds_aws_org_accounts_in_scope
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_organizations
+    verb "POST"
+    host "organizations.us-east-1.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "X-Amz-Target", "AWSOrganizationsV20161128.ListTagsForResource"
+    header "Content-Type", "application/x-amz-json-1.1"
+    body_field "ResourceId", val(iter_item, "id")
+  end
+  result do
+    encoding "json"
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "tags_unsorted", jmes_path(response, "Tags")
+  end
+end
+
+datasource "ds_cloud_vendor_accounts_normalized" do
+  run_script $js_cloud_vendor_accounts_normalized, $ds_aws_org_account_tags
+end
+
+script "js_cloud_vendor_accounts_normalized", type: "javascript" do
+  parameters "accounts"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  getIterator(accounts).Each(function(account) {
+    if (!account || typeof(account) != "object") {
+      return
+    }
+
+    if (typeof(account["id"]) != "string" || account["id"].trim() == "") {
+      return
+    }
+
+    tags = {}
+
+    if (_.isArray(account["tags_unsorted"])) {
+      _.each(account["tags_unsorted"], function(tag) {
+        key = String(tag["Key"] || "").toLowerCase().trim()
+
+        if (key != "") {
+          tags[key] = String(tag["Value"] || "").trim()
+        }
+      })
+    }
+
+    result.push({
+      id: account["id"],
+      name: account["name"],
+      tags: tags
+    })
+  })
+EOS
+end
+
+datasource "ds_new_rules" do
+  run_script $js_new_rules, $ds_cloud_vendor_accounts_normalized, $param_name_list, $param_tag_list, $param_effective_date, $param_normalize_case
+end
+
+script "js_new_rules", type: "javascript" do
+  parameters "accounts", "param_name_list", "param_tag_list", "param_effective_date", "param_normalize_case"
+  result "result"
+  code <<-'EOS'
+  rule_lists = []
+
+  _.each(param_tag_list, function(tag, index) {
+    rbd_name = tag.replace('.', ' ').replace('-', ' ')
+    rbd_name = rbd_name.replace(/\W/g, " ").trim()
+
+    // Use user-specified name instead of user provided one
+    if (param_tag_list.length == param_name_list.length) { rbd_name = param_name_list[index] }
+
+    rbd_id = "rbd_" + rbd_name.toLowerCase().replace(/\s+/g, '').replace(/\W/g, "").replace('.', '').replace('-', '').trim()
+
+    tag_keys = _.map(tag.split(';'), function(key) { return key.toLowerCase().trim() })
+
+    rules = []
+
+    _.each(accounts, function(account) {
+      if (typeof(account['id']) == 'string' && account['id'] != '' && typeof(account['tags']) == 'object') {
+        value = null
+
+        _.each(tag_keys, function(key) {
+          if (typeof(account['tags'][key]) == 'string') {
+            if (account['tags'][key].trim() != '') { value = account['tags'][key].trim() }
+          }
+        })
+
+        if (value) {
+          if (param_normalize_case == "Yes") { value = value.toLowerCase() }
+
+          rules.push({
+            condition: { type: "dimension_equals", dimension: "vendor_account", value: account['id'] },
+            value: { text: value }
+          })
+        }
+      }
+    })
+
+    if (rules.length > 0) {
+      rule_lists.push({
+        id: rbd_id,
+        name: rbd_name,
+        effective_at: param_effective_date,
+        rules: rules
+      })
+    }
+  })
+
+  result = {
+    rule_lists: rule_lists,
+    dummy: "dummy"
+  }
+EOS
+end
+
+datasource "ds_existing_rbds" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions"])
+    # This is just to ensure that the new rules are generated before we gather existing RBDs
+    header "dummy", val($ds_new_rules, "dummy")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_existing_rbds_that_match" do
+  run_script $js_existing_rbds_that_match, $ds_existing_rbds, $ds_new_rules
+end
+
+script "js_existing_rbds_that_match", type: "javascript" do
+  parameters "ds_existing_rbds", "ds_new_rules"
+  result "result"
+  code <<-'EOS'
+  new_ids = _.pluck(ds_new_rules["rule_lists"], "id")
+  result = _.filter(ds_existing_rbds, function(rbd) { return _.contains(new_ids, rbd["id"]) })
+EOS
+end
+
+datasource "ds_existing_rbds_with_rules" do
+  iterate $ds_existing_rbds_that_match
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", $param_effective_date])
+    # We simply skip RBDs that don't have a ruleset with a conflicting date
+    ignore_status [ 400, 401, 403, 404, 429 ]
+  end
+  result do
+    encoding "json"
+    field "rules", jmes_path(response, "rules")
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+  end
+end
+
+datasource "ds_rbds" do
+  run_script $js_rbds, $ds_new_rules, $ds_existing_rbds, $ds_existing_rbds_with_rules, $ds_applied_policy
+end
+
+script "js_rbds", type: "javascript" do
+  parameters "ds_new_rules", "ds_existing_rbds", "ds_existing_rbds_with_rules", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  existing_rbd_ids = _.pluck(ds_existing_rbds, "id")
+
+  // Create rules that mark the beginning and end of the generated AWS rules.
+  start_block_value = "Start: " + ds_applied_policy["name"]
+  end_block_value = "End: " + ds_applied_policy["name"]
+
+  block_start_rule = {
+    condition: { dimension: "vendor_account", type: "dimension_equals", value: start_block_value },
+    value: { text: start_block_value }
+  }
+
+  block_end_rule = {
+    condition: { dimension: "vendor_account", type: "dimension_equals", value: end_block_value },
+    value: { text: end_block_value }
+  }
+
+  // Create tables to easily reference the existing rules and our generated rules by RBD ID
+  new_rules_table = {}
+  _.each(ds_new_rules["rule_lists"], function(rbd) { new_rules_table[rbd["id"]] = rbd })
+
+  existing_rules_table = {}
+  _.each(ds_existing_rbds_with_rules, function(rbd) { existing_rules_table[rbd["id"]] = rbd["rules"] })
+
+  result = []
+
+  // Build combined rule sets
+  _.each(_.keys(new_rules_table), function(rbd_id) {
+    rules = []
+
+    // Track whether we've found an existing block of generated rules or not.
+    // Also track whether we've replaced them with the newly generated rules
+    found_block = false
+    injected_rules = false
+
+    if (existing_rules_table[rbd_id]) {
+      _.each(existing_rules_table[rbd_id], function(rule) {
+        if (!found_block) {
+          // When we find the beginning of the existing block of generated rules,
+          // replace them with our new rules
+          if (rule["condition"]["value"] == start_block_value) {
+            found_block = true
+            injected_rules = true
+
+            rules.push(block_start_rule)
+            rules = rules.concat(new_rules_table[rbd_id]["rules"])
+            rules.push(block_end_rule)
+          } else {
+            rules.push(rule)
+          }
+        }
+
+        if (found_block && rule["condition"]["value"] == end_block_value) { found_block = false }
+      })
+    }
+
+    // If we never injected the rules because we never found an existing block of generated rules,
+    // add them now to the end of the rules instead.
+    if (!injected_rules) {
+      rules.push(block_start_rule)
+      rules = rules.concat(new_rules_table[rbd_id]["rules"])
+      rules.push(block_end_rule)
+    }
+
+    if (rules.length > 0) {
+      result.push({
+        id: rbd_id,
+        name: new_rules_table[rbd_id]["name"],
+        verb: _.contains(existing_rbd_ids, rbd_id) ? "PATCH" : "POST",
+        effective_at: new_rules_table[rbd_id]["effective_at"],
+        rules: rules
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_create_rbds" do
+  iterate $ds_rbds
+  request do
+    run_script $js_create_rbds, val(iter_item, "id"), val(iter_item, "verb"), val(iter_item, "name"), val($ds_flexera_api_hosts, "flexera"), rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_create_rbds", type: "javascript" do
+  parameters "rbd_id", "verb", "name", "api_host", "rs_org_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    verb: verb,
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id].join(''),
+    body_fields: { name: name }
+  }
+EOS
+end
+
+datasource "ds_apply_rbds" do
+  iterate $ds_rbds
+  request do
+    # ds_create_rbds is a parameter to ensure that it executes before ds_apply_rbds does
+    run_script $js_apply_rbds, val(iter_item, "id"), val(iter_item, "effective_at"), val(iter_item, "rules"), val($ds_flexera_api_hosts, "flexera"), $ds_create_rbds, rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_apply_rbds", type: "javascript" do
+  parameters "rbd_id", "effective_at", "rules", "api_host", "ds_create_rbds", "rs_org_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    verb: "PUT",
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id, "/rules/", effective_at].join(''),
+    body_fields: { rules: rules }
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_rbds" do
+  validate $ds_apply_rbds do
+    summary_template "RBDs Generated & Applied"
+    detail_template ""
+    check eq(0, 0)
+  end
+end

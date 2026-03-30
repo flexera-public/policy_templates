@@ -1,5 +1,22 @@
 # Changelog
 
+## v4.5.4
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v4.5.3
+
+- Updated API call for listing Google Projects to speed up policy execution and reduce the number of paginated requests.
+- Incident table no longer includes Project Number. This is not supported by the above API and only has limited utility.
+
+## v4.5.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v4.5.1
+
+- Policy now only fetches active recommendations from Google Cloud Recommender API.
+
 ## v4.5.0
 
 - Added new field to incident table to indicate the 'Payment Option' for recommendations.

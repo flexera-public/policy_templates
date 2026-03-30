@@ -1,7 +1,7 @@
 name "ITAM Ignored Recent Inventory Dates"
 rs_pt_ver 20180301
 type "policy"
-short_description "Looks for machines that are ignored but have been inventoried recently and sends the result as an email.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/fnms/ignored_recent_inventory_dates/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Looks for machines that are ignored but have been inventoried recently and sends the result as an email.  See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/fnms/ignored_recent_inventory_dates/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/tree/master/compliance/flexera/fnms/ignored_recent_inventory_dates/"
 severity "medium"
@@ -9,7 +9,7 @@ category "Compliance"
 default_frequency "weekly"
 
 info(
-  version: "2.4.4",
+  version: "2.5.0",
   provider: "Flexera",
   service: "IT Asset Management",
   policy_set: "IT Asset Management",
@@ -31,9 +31,27 @@ end
 parameter "param_days_active" do
   type "number"
   category "Policy Settings"
-  label "Days since last inventory"
+  label "Days Since Last Inventory"
   description "Number of days since Last Inventory"
   default 5
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
 end
 
 ###############################################################################
@@ -78,13 +96,15 @@ datasource "ds_inventories" do
 end
 
 datasource "ds_check_date" do
-  run_script $js_check_date, $ds_inventories, $param_days_active
+  run_script $js_check_date, $ds_inventories, $param_days_active, $param_incident_csv
 end
 
 script "js_check_date", type: "javascript" do
-  parameters "ds_inventories", "param_days_active"
+  parameters "ds_inventories", "param_days_active", "param_incident_csv"
   result "results"
-  code <<-EOF
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   var results = [];
   _.each(ds_inventories[0].values, function (asset) {
 
@@ -94,10 +114,11 @@ script "js_check_date", type: "javascript" do
     var daysDifference = parseInt(timeDifference / (1000 * 3600 * 24));
     if (daysDifference <= param_days_active) {
       asset.ignored = 1;
+      asset.csv_message = csv_message;
       results.push(asset);
     }
   });
-EOF
+EOS
 end
 
 ###############################################################################
@@ -107,6 +128,7 @@ end
 policy "pol_item" do
   validate_each $ds_check_date do
     summary_template "ITAM - Ignored active machines"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check eq(to_n(val(item, "ignored")), 0)
     escalate $esc_send_report
     export do
@@ -134,5 +156,8 @@ escalation "esc_send_report" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

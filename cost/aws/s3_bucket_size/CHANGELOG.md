@@ -1,5 +1,25 @@
 # Changelog
 
+## v4.0.2
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v4.0.1
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
+## v4.0.0
+
+- Policy incidents now list each bucket's size broken down by storage type (e.g., `StandardStorage`, `StandardIAStorage`, `StandardIASizeOverhead`, `GlacierStorage`).
+
+## v3.2.3
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v3.2.2
+
+- Resolved issue where bucket size statistics for some S3 buckets were not being captured.
+
 ## v3.2.1
 
 - Fixed issue where the policy would fail due to an undefined datasource.

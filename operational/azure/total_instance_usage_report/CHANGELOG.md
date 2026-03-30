@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.10
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v1.0.9
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v1.0.8
 
 - Fixed bug that caused all Azure resource families to be displayed as "undefined"

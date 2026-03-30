@@ -2,16 +2,16 @@
 
 ## What It Does
 
-This policy template retrieves arbitrary cost data from Azure Blob Storage that is in either the [Common Bill Ingestion Format](https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBIDefaultFormat.htm) or [FOCUS Format](https://docs.flexera.com/flexera/EN/Optima/FOCUS.htm) and sends it into Flexera Cloud Cost Optimization (CCO). Optionally, an email is sent indicating that this has happened.
+This policy template retrieves arbitrary cost data from Azure Blob Storage that is in either the [Common Bill Ingestion Format](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/common-bill-ingestion-default-format) or [FOCUS Format](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/) and sends it into Flexera Cloud Cost Optimization (CCO). Optionally, an email is sent indicating that this has happened.
 
-NOTE: This policy template is not intended for ingesting costs for Microsoft Azure itself; [Flexera's native Azure bill connection](https://docs.flexera.com/flexera/EN/Administration/BillConnectConfigs.htm#cloudsettings_4227273830_1189529) should be used for that. It is intended for ingesting arbitrary costs that just happen to be stored in Azure Blob Storage.
+NOTE: This policy template is not intended for ingesting costs for Microsoft Azure itself; [Flexera's native Azure bill connection](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/) should be used for that. It is intended for ingesting arbitrary costs that just happen to be stored in Azure Blob Storage.
 
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when billing data is uploaded
 - *Billing Month* - Month to upload costs for. Select `Specific Month` to specify a month.
 - *Specific Month* - Month to upload costs for in YYYY-MM format. Only relevant if `Specific Month` is selected for the Billing Month parameter.
-- *CBI (Common Bill Ingestion) Endpoint Type* - Whether costs are being sent to an endpoint for [Common Bill Ingestion Format](https://docs.flexera.com/flexera/EN/Optima/OptimaBillConnectConfigsCBIDefaultFormat.htm) or [FOCUS Format](https://docs.flexera.com/flexera/EN/Optima/FOCUS.htm).
+- *CBI (Common Bill Ingestion) Endpoint Type* - Whether costs are being sent to an endpoint for [Common Bill Ingestion Format](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/common-bill-ingestion-default-format) or [FOCUS Format](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/common-bill-ingestion/).
 - *CBI (Common Bill Ingestion) Endpoint ID* - The ID of CBI endpoint to create/use for ingested costs. Leave blank to have this generated and managed automatically. Ex: cbi-oi-optima-laborcosts
 - *Cloud Vendor* - The value the fixed cost should have for the `Cloud Vendor` dimension in Flexera CBI. Only has an effect when the CBI endpoint is first created. This is because the `Cloud Vendor` dimension isn't based on billing data but is configured for the CBI endpoint itself.
 - *Granularity* - Whether there will be one file per month of billing data, or one file per day of billing data.
@@ -28,16 +28,16 @@ NOTE: This policy template is not intended for ingesting costs for Microsoft Azu
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
-- [**Azure Storage Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121576) (*provider=azure_storage*). Note that a credential can be made with access to several storage accounts by setting `resource` to `https://storage.azure.com` in the Additional Parameters when creating this credential in Flexera One. This credential should have the following permissions for the storage account with the cost data:
+- [**Azure Storage Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure) (*provider=azure_storage*). Note that a credential can be made with access to several storage accounts by setting `resource` to `https://storage.azure.com` in the Additional Parameters when creating this credential in Flexera One. This credential should have the following permissions for the storage account with the cost data:
   - `Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read`
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
   - `csm_bill_upload_admin`
 
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 

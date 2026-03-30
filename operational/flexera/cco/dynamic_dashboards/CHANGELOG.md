@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.2
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v0.2.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v0.2.0
 
 - Added "Automatic Actions" parameter to allow automatic creation/updating of dashboards without manual approval

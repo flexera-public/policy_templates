@@ -1463,7 +1463,6 @@ def policy_missing_recommendation_fields?(file, file_lines, file_parsed, field_t
   return false
 end
 
-
 ### Improper Comma Spacing Test
 # Return false if all comma separated items have a space between them like so: one, two, three
 def policy_bad_comma_spacing?(file, file_lines)
@@ -1755,9 +1754,9 @@ def policy_invalid_heredoc_syntax?(file, file_lines)
       if quote == "'"
         # OK
       elsif quote == '"'
-        fail_message += "Line #{line_number}: Found <<-\"#{tag}\" which should be <<-'#{tag}'\n"
+        fail_message += "Line #{line_number}: Heredoc \<\<-\"#{tag}\" should be changed to \<\<-'#{tag}'\n"
       elsif quote == ''
-        fail_message += "Line #{line_number}: Found <<-#{tag} which should be <<-'#{tag}'\n"
+        fail_message += "Line #{line_number}: Heredoc \<\<-#{tag} should be changed to \<\<-'#{tag}'\n"
       end
     end
 

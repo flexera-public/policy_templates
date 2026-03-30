@@ -1,5 +1,21 @@
 # Changelog
 
+## v4.5.2
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v4.5.1
+
+- Fixed issue with "Estimated Break Even In Months" calculation.
+
+## v4.5.0
+
+- Added "Estimated Break Even In Months" to incident table.
+
+## v4.4.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v4.4.0
 
 - Added new parameter and field to incident table to indicate the 'Payment Option' for recommendations.

@@ -1,5 +1,25 @@
 # Changelog
 
+## v5.1.5
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v5.1.4
+
+- Fixed issue with `GetMetricData` API request when gathering CloudWatch metrics. Functionality unchanged.
+
+## v5.1.3
+
+- Fixed a bug introduced in v5.1.2 that would cause "Cannot access member 'result' of undefined", if the AWS account info does not exist in Flexera.
+
+## v5.1.2
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
+## v5.1.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v5.1.0
 
 - Added support for attaching CSV files to incident emails.

@@ -40,7 +40,7 @@ Policy templates require the correct permissions configured for your [Flexera Cr
 
 ### Policy Templates for Optimization
 
-These templates can generate savings estimates for your environment. The incidents they raise are scraped for recommendations for the [Cost Optimization](https://docs.flexera.com/flexera/EN/Optima/ViewPotentialSavings.htm#usingcco_3910196062_1188061) section of Flexera One.
+These templates can generate savings estimates for your environment. The incidents they raise are scraped for recommendations for the [Cost Optimization](https://docs.flexera.com/flexera-one/cloud/using-cloud-cost-optimization/viewing-potential-savings) section of Flexera One.
 
 #### AWS
 
@@ -50,6 +50,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Compute
 
+  * [AWS EC2 Compute Optimizer Recommendations](./cost/aws/ec2_compute_optimizer)
   * [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
   * [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
   * [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
@@ -81,6 +82,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Storage
 
+  * [AWS Idle FSx File Systems](./cost/aws/idle_fsx)
   * [AWS Old Snapshots](./cost/aws/old_snapshots)
   * [AWS S3 Buckets Without Intelligent Tiering](./cost/aws/s3_storage_policy)
   * [Turbonomic Delete Unattached Volumes Recommendations AWS](./cost/turbonomics/delete_unattached_volumes/aws)
@@ -314,6 +316,7 @@ These templates can generate savings estimates for your environment. The inciden
   * [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
   * [AWS Reserved Instances Coverage](./cost/aws/reserved_instances/coverage)
   * [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
+  * [AWS Savings Plan Purchase Analysis](./cost/aws/savings_plan/purchase_analysis)
   * [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
   * [AWS Savings Realized From Rate Reduction Purchases](./cost/aws/savings_realized)
   * [AWS Schedule Instance](./cost/aws/schedule_instance)
@@ -491,6 +494,7 @@ These templates can generate savings estimates for your environment. The inciden
   * [Dynamic Dashboards](./operational/flexera/cco/dynamic_dashboards)
   * [FinOps Dashboards](./operational/flexera/cco/finops_dashboards)
   * [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
+  * [MSP Invoiceable Spend Report](./operational/flexera/msp/msp_invoiceable_spend_report)
 
 * FlexNet Manager
 
@@ -508,6 +512,7 @@ These templates can generate savings estimates for your environment. The inciden
   * [Configure Custom Branding](./operational/flexera/flexeraone/custom_branding)
   * [Flexera One API Event Report](./operational/flexera/iam/api_event_report)
   * [Flexera One User Access Report](./operational/flexera/iam/iam_user_report)
+  * [Flexera User Groups from Billing Centers](./operational/flexera/iam/user_groups_from_billing_centers)
 
 * Kubernetes
 
@@ -517,11 +522,18 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Compute
 
+  * [Google Long Running VM Instances](./operational/google/long_running_instances)
   * [Google Overutilized VM Instances](./operational/google/overutilized_vms)
 
 * Tags
 
   * [Google Label Cardinality Report](./operational/google/label_cardinality)
+
+#### Oracle
+
+* Tags
+
+  * [Oracle Tag Cardinality Report](./operational/oracle/tag_cardinality)
 
 ### Policy Templates for SaaS Management
 

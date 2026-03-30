@@ -1,5 +1,22 @@
 # Changelog
 
+## v4.2.4
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v4.2.3
+
+- Updated API call for listing Google Projects to speed up policy execution and reduce the number of paginated requests.
+- Incident table no longer includes Project Number. This is not supported by the above API and only has limited utility.
+
+## v4.2.2
+
+- Fixed issue where incident would refer to VMs as "underutilized" instead of "long stopped".
+
+## v4.2.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v4.2.0
 
 - Added support for attaching CSV files to incident emails.

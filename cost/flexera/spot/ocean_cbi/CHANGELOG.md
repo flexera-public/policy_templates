@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.6
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v0.2.5
+
+- Updated URLs in policy template description. Functionality unchanged.
+
+## v0.2.4
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v0.2.3
 
 - Updated policy name from `Spot Ocean - Common Bill Ingest` to `Spot Ocean Common Bill Ingestion` to be consistent with other Common Bill Ingestion policies.

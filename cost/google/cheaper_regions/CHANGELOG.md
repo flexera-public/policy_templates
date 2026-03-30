@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.6
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v1.0.5
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
 ## v1.0.4
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
