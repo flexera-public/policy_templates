@@ -25,7 +25,7 @@ Total IOPS (read + write) and total throughput (read + write) utilization are ca
 
 If a disk is underutilized, the policy identifies the lowest-cost disk type (`pd-standard` < `pd-balanced` < `pd-ssd`) that can still fully accommodate the observed peak I/O workload, and recommends downgrading to that type. Only `pd-ssd` and `pd-balanced` disks are candidates for downgrade; `pd-standard` disks are already the lowest tier. `pd-extreme` and Hyperdisk types are not included in rightsizing recommendations due to their provisioned-IOPS billing model.
 
-The disk performance limits used for utilization calculations are based on [Google Cloud persistent disk documentation](https://cloud.google.com/compute/docs/disks/performance):
+The disk performance limits used for utilization calculations are based on [Google Cloud persistent disk documentation](https://docs.cloud.google.com/compute/docs/disks/performance):
 
 | Disk Type | Max IOPS (combined read+write) | Max Throughput |
 | --- | --- | --- |
