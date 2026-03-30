@@ -6,6 +6,100 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#4170](https://github.com/flexera-public/policy_templates/pull/4170): POL-1733 New Policy Template: Azure End-of-Life Resources
+
+*New Policy Template*
+
+#### Description
+
+> - Adds a new policy template `Azure End-of-Life Resources` to report Azure resources that are either EOL or under extended support.
+> - Adds new data file, `data/azure/azure_esu_os_versions.json`, to support the above. This will enable us to update the list over time without requiring users to update their applied policies.
+> - Improvements to policy development copilot agent.
+> - Improvements to Flexera Policy Template VSCode extension to expand functionality and fix issues.
+> - Improvements to some Dangerfile tests to eliminate false positives.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4170) for these details.
+- **Merged At**: 2026-03-27 18:55:51 UTC
+
+---
+
+### PR [#4164](https://github.com/flexera-public/policy_templates/pull/4164): POL-1732 Meta Policy Generator Fix
+
+#### Description
+
+> Fixes issue where meta policies generated are malformed under certain conditions. The bug was triggered by the child policy containing the line `export "instances" do` and was caused by a regex issue in the generator script.
+>
+
+#### Metadata
+
+- **Policies**: [Meta Parent: AWS Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/schedule_instance/README.md), [Meta Parent: Azure Data Lake Optimization](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/data_lake_optimization/README.md), [Meta Parent: Azure Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/schedule_instance/README.md), [Meta Parent: Google Schedule Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/google/schedule_instance/README.md)
+- **Merged At**: 2026-03-27 12:40:44 UTC
+
+---
+
+### PR [#4156](https://github.com/flexera-public/policy_templates/pull/4156): POL-1585 Meta Parent Updates
+
+#### Description
+
+> This PR makes several adjustments to meta parent policy templates:
+> - All requests to deprecated API endpoints have been replaced with modern counterparts.
+> - Policy code was rearranged to be more readable and more closely align to what we expect in other policy templates.
+> - Cloud workflow for creating, deleting, and updating policy templates was refactored for better error reporting and handling.
+> - Other small misc. improvements made.
+>
+> Note: Review can mostly just ignore the newly generated meta parents and focus on the 3 templates in the tools/ directory, since these are what are used to generate the meta parents.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4156) for these details.
+- **Merged At**: 2026-03-27 11:05:31 UTC
+
+---
+
+### PR [#4160](https://github.com/flexera-public/policy_templates/pull/4160): POL-1731 Copilot Agent & AWS Idle Lambda Functions
+
+*New Policy Template*
+
+#### Description
+
+> This adds a copilot agent, `.github/agents/policy-dev.agent.md`, for using Copilot CLI to develop policy templates. This agent was developed via a combination of manual work and use of Copilot CLI itself to expand and optimize its contents. It seems to work *very* well.
+>
+> This also adds a new policy template, `AWS Idle Lambda Functions`, generated entirely by Copilot CLI. It was reviewed thoroughly and tested, and small errors (mostly in formatting rather than ones that would meaningfully affect execution) were also corrected via Copilot along with instructions to modify the above `.github/agents/policy-dev.agent.md` file to prevent similar errors in the future.
+>
+> Some small Dangerfile changes were also made:
+>
+> - Spell check and outdated terminology checks were disabled explicitly for Copilot Agent files, since they may need to contain instructions that would violate these rules.
+> - This PR updates the Dangerfile test for bad URLs so that it doesn't incorrectly parse Markdown URLs by assuming the trailing ) is part of the URL. This was happening in edge cases where the markdown was immediately followed by punctuation, such as a period.
+> - This PR turns off (maybe temporarily) dead link testing in the textlinter. It keeps reporting valid links for a number of domains (not just Flexera) as dead. I suspect there may be some internet-wide blocking of Github requests for URLs going on that is causing this to not work as expected.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Idle Lambda Functions](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/idle_lambda_functions/README.md)
+- **Merged At**: 2026-03-27 11:05:24 UTC
+
+---
+
+### PR [#4150](https://github.com/flexera-public/policy_templates/pull/4150): POL-1730 Azure Savings Plan Recommendations: API Version Update
+
+*Minor Update*
+
+#### Description
+
+> Updates the `Azure Savings Plan Recommendations` policy template to use the latest version, "2025-03-01", for the Azure "Microsoft.CostManagement/benefitRecommendations" API endpoint. This is to ensure that all recommendations currently produced by Azure and made available by this endpoint are captured and reported.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Savings Plan Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/savings_plan/recommendations/README.md)
+- **Merged At**: 2026-03-23 12:52:23 UTC
+
+---
+
 ### PR [#4139](https://github.com/flexera-public/policy_templates/pull/4139): POL-1725 CSV Support for Security & ITAM/FNMS Policy Templates
 
 *Minor Update*
@@ -2121,116 +2215,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Oracle Cloud Advisor: Object Storage Without Lifecycle Management](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_lifecycle_mgmt/README.md)
 - **Merged At**: 2025-09-24 15:14:16 UTC
-
----
-
-### PR [#3570](https://github.com/flexera-public/policy_templates/pull/3570): POL-1628 New Policy: Oracle Cloud Advisor: Unattached Volumes
-
-*New Policy Template, Minor Update*
-
-#### Description
-
-> `Oracle Cloud Advisor: Unattached Volumes`
-> - New policy template
->
-> `Oracle Cloud Advisor: Rightsize Virtual Machines`
-> - Fixed issue where estimated savings value had all fractional values rounded away
->
-> `Oracle Cloud Advisor: Rightsize Base Database Service`
-> - Fixed issue where estimated savings value had all fractional values rounded away
->
-
-#### Metadata
-
-- **Policies**: [Oracle Cloud Advisor: Rightsize Base Database Service](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_rightsize_basedbs/README.md), [Oracle Cloud Advisor: Rightsize Virtual Machines](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_rightsize_vms/README.md), [Oracle Cloud Advisor: Unattached Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_unattached_volumes/README.md)
-- **Merged At**: 2025-09-23 15:37:12 UTC
-
----
-
-### PR [#3566](https://github.com/flexera-public/policy_templates/pull/3566): POL-1627 Oracle Cloud Advisor: Rightsize Base Database Service
-
-*New Policy Template, Minor Update*
-
-#### Description
-
-> Oracle Cloud Advisor: Rightsize Base Database Service
-> - New policy template to report cloud advisor recommendations for the Oracle Base Database Service
->
-> Oracle Cloud Advisor: Rightsize Virtual Machines
-> - Fixed issue where estimated savings value would sometimes be incorrectly inflated
->
-
-#### Metadata
-
-- **Policies**: [Oracle Cloud Advisor: Rightsize Base Database Service](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_rightsize_basedbs/README.md), [Oracle Cloud Advisor: Rightsize Virtual Machines](https://github.com/flexera-public/policy_templates/tree/master/cost/oracle/advisor_rightsize_vms/README.md)
-- **Merged At**: 2025-09-22 20:07:14 UTC
-
----
-
-### PR [#3550](https://github.com/flexera-public/policy_templates/pull/3550): POL-1600 Oracle Rightsizing VMs Improvements
-
-*Major Update, Minor Update*
-
-#### Description
-
-> - Multiple improvements for the `Oracle Cloud Advisor: Rightsize Virtual Machines` policy template based on user feedback.
-> - Improvements to the README for the `Oracle Cloud Common Bill Ingestion` policy template.
-> - Automation to gather and store Oracle credential permissions has been implemented.
->
-> Dead link warnings can be ignored; the links will be valid once this PR is merged.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3550) for these details.
-- **Merged At**: 2025-09-22 14:25:38 UTC
-
----
-
-### PR [#3552](https://github.com/flexera-public/policy_templates/pull/3552): POL-1626 Currency Conversion - Bring Adjustments Forward
-
-*Minor Update*
-
-#### Description
-
-> Added a parameter to bring adjustments forward to the `Currency Conversion` policy template. From the updated README:
->
-> - *Bring Adjustments Forward* - Whether to automatically fill months with no adjustments with the adjustments from the previous month.
->   - Example: You run this policy template in June 2025 and you choose to backfill starting in January 2025. You currently only have adjustment rules for January 2025 and March 2025.
->     - With this option enabled, the existing adjustment rules for January 2025 will be carried forward to February, and existing rules for March 2025 will be carried forward to April, May, and June.
->     - With this option disabled, the only adjustment rules for March, April, May, and June will be the currency conversion adjustment created by this policy template. This means, for those months, the rules configured for January 2025 and March 2025 respectively will no longer apply for those months when they did previously.
->
-> Also replaced a broken link in the README with a working one.
->
-> Also made some small tweaks to the ESLint YAML file so that JavaScript is linted by the same standards we use in policy templates.
->
-
-#### Metadata
-
-- **Policies**: [Currency Conversion](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/currency_conversion/README.md)
-- **Merged At**: 2025-09-17 20:51:32 UTC
-
----
-
-### PR [#3540](https://github.com/flexera-public/policy_templates/pull/3540): FOPTS-14803 Fixed Cloud Cost Anomaly Alerts PT Email
-
-*Bug Fix*
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> Resolved an issue causing Anomaly detection incident emails to render as plain text rather than HTML.
-> [cloud_cost_anomaly_alerts.pt](https://raw.githubusercontent.com/flexera-public/policy_templates/e1899b3fe33e0cedbbfc1f4072e827eed774ec9b/cost/flexera/cco/cloud_cost_anomaly_alerts/cloud_cost_anomaly_alerts.pt)
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
-> [https://flexera.atlassian.net/browse/FOPTS-14803](https://flexera.atlassian.net/browse/FOPTS-14803)
->
-
-#### Metadata
-
-- **Policies**: [Cloud Cost Anomaly Alerts](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/cloud_cost_anomaly_alerts/README.md)
-- **Merged At**: 2025-09-12 18:40:43 UTC
 
 ---
 
