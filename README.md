@@ -188,6 +188,7 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
   * [Google Old Snapshots](./cost/google/old_snapshots)
+  * [Google Rightsize Persistent Disks](./cost/google/rightsize_persistent_disks)
   * [Google Unused Disks](./cost/google/unused_disks)
   * [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/google)
 
