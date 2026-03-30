@@ -583,9 +583,9 @@ end
 
 # Monitoring stats for IOPS and throughput — one datasource per metric
 datasource "ds_disk_read_iops_stats" do
-  iterate $ds_google_projects_filtered
+  iterate $ds_zones_filtered
   request do
-    run_script $js_disk_stats, val(iter_item, "id"), $param_stats_lookback, "compute.googleapis.com/instance/disk/read_ops_count"
+    run_script $js_disk_stats, val(iter_item, "projectId"), val(iter_item, "zone"), $param_stats_lookback, "compute.googleapis.com/instance/disk/read_ops_count"
   end
   result do
     encoding "json"
@@ -595,9 +595,9 @@ datasource "ds_disk_read_iops_stats" do
 end
 
 datasource "ds_disk_write_iops_stats" do
-  iterate $ds_google_projects_filtered
+  iterate $ds_zones_filtered
   request do
-    run_script $js_disk_stats, val(iter_item, "id"), $param_stats_lookback, "compute.googleapis.com/instance/disk/write_ops_count"
+    run_script $js_disk_stats, val(iter_item, "projectId"), val(iter_item, "zone"), $param_stats_lookback, "compute.googleapis.com/instance/disk/write_ops_count"
   end
   result do
     encoding "json"
@@ -607,9 +607,9 @@ datasource "ds_disk_write_iops_stats" do
 end
 
 datasource "ds_disk_read_throughput_stats" do
-  iterate $ds_google_projects_filtered
+  iterate $ds_zones_filtered
   request do
-    run_script $js_disk_stats, val(iter_item, "id"), $param_stats_lookback, "compute.googleapis.com/instance/disk/read_bytes_count"
+    run_script $js_disk_stats, val(iter_item, "projectId"), val(iter_item, "zone"), $param_stats_lookback, "compute.googleapis.com/instance/disk/read_bytes_count"
   end
   result do
     encoding "json"
@@ -619,9 +619,9 @@ datasource "ds_disk_read_throughput_stats" do
 end
 
 datasource "ds_disk_write_throughput_stats" do
-  iterate $ds_google_projects_filtered
+  iterate $ds_zones_filtered
   request do
-    run_script $js_disk_stats, val(iter_item, "id"), $param_stats_lookback, "compute.googleapis.com/instance/disk/write_bytes_count"
+    run_script $js_disk_stats, val(iter_item, "projectId"), val(iter_item, "zone"), $param_stats_lookback, "compute.googleapis.com/instance/disk/write_bytes_count"
   end
   result do
     encoding "json"
@@ -631,13 +631,12 @@ datasource "ds_disk_write_throughput_stats" do
 end
 
 script "js_disk_stats", type: "javascript" do
-  parameters "projectId", "param_stats_lookback", "metric"
+  parameters "projectId", "zone", "param_stats_lookback", "metric"
   result "request"
   code <<-'EOS'
   group_by = [
     "group_by sliding(" + param_stats_lookback + "d), .mean",
     "group_by sliding(" + param_stats_lookback + "d), .max",
-    "group_by sliding(" + param_stats_lookback + "d), .min",
     "group_by sliding(" + param_stats_lookback + "d), .percentile(99)",
     "group_by sliding(" + param_stats_lookback + "d), .percentile(95)",
     "group_by sliding(" + param_stats_lookback + "d), .percentile(90)"
@@ -645,9 +644,11 @@ script "js_disk_stats", type: "javascript" do
 
   // Disk I/O metrics (read/write ops and bytes) are associated with the gce_instance
   // resource type, not gce_disk. They include a device_name label identifying the disk.
+  // Filter by zone to scope each query to a single zone, avoiding project-wide timeouts.
   query = [
     "fetch gce_instance",
     "metric " + metric,
+    "filter resource.zone = '" + zone + "'",
     "within " + param_stats_lookback + "d",
     "{ " + group_by + " }",
     "join"
@@ -663,7 +664,7 @@ script "js_disk_stats", type: "javascript" do
       "Content-Type": "application/json"
     },
     body_fields: { "query": query },
-    ignore_status: [403, 404]
+    ignore_status: [403, 404, 429, 503]
   }
 EOS
 end
@@ -707,13 +708,14 @@ script "js_parsed_disk_stats", type: "javascript" do
 
         if (item['pointData'] && item['pointData'].length > 0) {
           var values = item['pointData'][0]['values']
-          if (values && values.length >= 6) {
-            result[diskKey][prefix + 'Avg'] = Number(values[0]['doubleValue']) / divisor
-            result[diskKey][prefix + 'Max'] = Number(values[1]['doubleValue']) / divisor
-            result[diskKey][prefix + 'Min'] = Number(values[2]['doubleValue']) / divisor
-            result[diskKey][prefix + 'P99'] = Number(values[3]['doubleValue']) / divisor
-            result[diskKey][prefix + 'P95'] = Number(values[4]['doubleValue']) / divisor
-            result[diskKey][prefix + 'P90'] = Number(values[5]['doubleValue']) / divisor
+          if (values && values.length >= 5) {
+            // MQL returns doubleValue for mean/percentiles but int64Value for max on INT64 DELTA metrics.
+            // Check both to avoid silent NaN→null→0 coercion when only one key is present.
+            result[diskKey][prefix + 'Avg'] = Number(values[0]['doubleValue'] != undefined ? values[0]['doubleValue'] : values[0]['int64Value']) / divisor
+            result[diskKey][prefix + 'Max'] = Number(values[1]['doubleValue'] != undefined ? values[1]['doubleValue'] : values[1]['int64Value']) / divisor
+            result[diskKey][prefix + 'P99'] = Number(values[2]['doubleValue'] != undefined ? values[2]['doubleValue'] : values[2]['int64Value']) / divisor
+            result[diskKey][prefix + 'P95'] = Number(values[3]['doubleValue'] != undefined ? values[3]['doubleValue'] : values[3]['int64Value']) / divisor
+            result[diskKey][prefix + 'P90'] = Number(values[4]['doubleValue'] != undefined ? values[4]['doubleValue'] : values[4]['int64Value']) / divisor
           }
         }
       })
