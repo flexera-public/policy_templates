@@ -2,7 +2,7 @@
 
 ## v3.5.0
 
-- Billing Center dimensions now show Billing Center names instead of ids in the incident table.
+- Billing Center dimensions now show Billing Center names instead of IDs in the incident table.
 
 ## v3.4.4
 
