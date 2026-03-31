@@ -64,27 +64,6 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automat
 
 If you apply this policy template multiple times (e.g. with different CSV files or different RBD ID Filter values), each applied policy **must have a distinct name**. The policy uses sentinel rules containing the applied policy name to track which rules it manages. If two applied policies share the same name, their sentinel blocks will collide and overwrite each other.
 
-### Migration from Teradata Template
-
-Users of `teradata_rbd_tmp.pt` need to:
-
-1. Add a `||DIVIDER||` column to their CSV between the rule-dimension columns and the RBD columns.
-1. No changes are needed to the RBD output column names or cell values.
-
-**Before (Teradata format):**
-
-```csv
-vendor_account,rbd_business_area,rbd_customer
-123456789012,Engineering,Acme Corp
-```
-
-**After (new format):**
-
-```csv
-vendor_account,||DIVIDER||,rbd_business_area,rbd_customer
-123456789012,,Engineering,Acme Corp
-```
-
 ## Supported Clouds
 
 - Google
