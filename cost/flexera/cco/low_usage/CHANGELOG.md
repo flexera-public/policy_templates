@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.3
+
+- Limit the 'Days of Usage' parameter to a maximum of 31 days, matching the Flexera billing API's limitation.
+
 ## v3.2.2
 
 - Updated documentation link in policy description. Functionality unchanged.
