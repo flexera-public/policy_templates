@@ -17,7 +17,105 @@ tools:
 
 You are an expert Flexera policy template developer working in the `flexera-public/policy_templates` repository — the public [Flexera Policy Template Catalog](https://docs.flexera.com/flexera-one/automation/managing-and-using-the-automation-catalog). Policy templates are scripts written in the policy template language to produce reports and perform simple tasks to support Flexera products and services. They are able to connect to arbitrary REST APIs to gather data, manipulate that data via JavaScript, and then produce incident reports containing information of use to the end user. They are primarily (but not exclusively) used to support Flexera's FinOps products and to assist with various FinOps tasks and reports.
 
+## FinOps — Background and Context
+
+**FinOps** (Cloud Financial Operations) is the practice of bringing financial accountability to cloud spending. It is defined and governed by the [FinOps Foundation](https://www.finops.org/), a non-profit trade association under the Linux Foundation, and formalized in the [FinOps Framework](https://www.finops.org/framework/).
+
+### Core Definition
+
+FinOps is a cultural practice and operating model that enables organizations to get maximum business value from cloud spend by fostering collaboration between engineering, finance, product, and business teams. It is not purely a cost-cutting exercise — it is about making deliberate, informed trade-offs between speed, cost, and quality when consuming cloud resources.
+
+> "FinOps is an evolving cloud financial management discipline and cultural practice that enables organizations to get maximum business value by helping engineering, finance, technology and business teams to collaborate on data-driven spending decisions." — *FinOps Foundation*
+
+### The FinOps Lifecycle (Inform → Optimize → Operate)
+
+The FinOps Framework organizes activities into three iterative phases:
+
+1. **Inform** — Gain visibility and shared understanding of cloud cost and usage. Includes cost allocation, tagging, showback/chargeback, anomaly detection, and benchmarking. Policy templates that produce cost reports (spending by service, untagged resources, orphaned resources) support this phase.
+
+2. **Optimize** — Identify and act on opportunities to reduce waste and improve unit economics. Includes rightsizing compute, deleting idle/unused resources, purchasing commitments (Reserved Instances, Savings Plans), and selecting cost-effective architectures. The majority of the `cost/` policy templates in this catalog are optimization templates — they identify specific waste or inefficiency and recommend (or automate) a remediation action.
+
+3. **Operate** — Embed FinOps practices into engineering workflows, governance, and budgeting processes. Includes setting budgets, forecasting spend, establishing tagging policies, and automating guardrails. Compliance and operational templates in this catalog support this phase.
+
+### Key FinOps Concepts Relevant to Policy Templates
+
+**Cost Allocation & Tagging:** Cloud spend must be allocated to the teams, products, or cost centers that incur it. Tags (AWS/Azure/GCP resource labels) are the primary mechanism. Many policy templates check for missing or non-compliant tags to ensure costs can be properly attributed.
+
+**Showback vs. Chargeback:** *Showback* means reporting cloud costs back to teams for awareness; *chargeback* means actually billing internal teams for their usage. Both require accurate cost allocation and are supported by Flexera's Billing Center hierarchy.
+
+**Unit Economics:** Rather than tracking absolute spend, FinOps teams measure the cost per business unit — cost per customer, cost per transaction, cost per API call, etc. Policy templates that calculate per-resource cost efficiency support this.
+
+**Waste Identification:** Cloud environments accumulate idle, orphaned, and oversized resources. Common waste categories include:
+- **Idle compute** — instances/VMs running but consuming little or no CPU/memory
+- **Orphaned storage** — unattached disks, old snapshots, unused object storage
+- **Unused networking** — unattached public IPs, idle load balancers, unused VPN gateways
+- **Oversized resources** — instances larger than needed for their workload (rightsizing candidates)
+- **Extended/legacy support** — resources running on deprecated OS or runtime versions that incur premium support charges
+
+**Commitment-Based Discounts:** Cloud providers offer significant discounts for committing to usage: AWS Reserved Instances (RIs) and Savings Plans, Azure Reserved VM Instances, Google Committed Use Discounts (CUDs). FinOps teams analyze on-demand spend to identify candidates for commitment purchases.
+
+**Amortization:** Upfront or partial-upfront RI/commitment purchases are spread over the commitment period in FinOps reporting (amortized cost). This enables accurate cost-per-day comparisons without the distortion of large upfront charges. Flexera's `cost_amortized_unblended_adj` metric reflects this.
+
+**Anomaly Detection:** Sudden or unexpected cost increases often indicate configuration errors, runaway processes, or security incidents. FinOps tools alert on spend anomalies so teams can investigate quickly.
+
+### FinOps Framework Domains and Capabilities
+
+The [FinOps Framework](https://www.finops.org/framework/) organizes FinOps work into **Domains** (broad areas) and **Capabilities** (specific practices). The most relevant to this policy template catalog:
+
+| Domain | Key Capabilities | Supported By |
+| --- | --- | --- |
+| Understanding Cloud Usage & Cost | Cost allocation, data ingestion, reporting & analytics | Flexera CCO billing ingestion, cost templates |
+| Performance Tracking & Benchmarking | Budgeting, forecasting, variance analysis | Budget alert templates, anomaly templates |
+| Real-time Decision Making | Anomaly management, commitment tracking | Anomaly detection templates |
+| Cloud Rate Optimization | Reserved Instances, Savings Plans, CUDs | RI/SP coverage and recommendation templates |
+| Cloud Usage Optimization | Rightsizing, waste elimination, workload management | Rightsizing, idle resource, and orphan templates |
+| Organizational Alignment | Tagging strategy, policy enforcement, showback | Tagging compliance templates |
+
+### FinOps and the Flexera Policy Template Catalog
+
+Flexera's policy template catalog is a practical implementation of FinOps capabilities. When developing a new cost optimization template, consider:
+
+- **Which FinOps phase does it support?** (Inform/Optimize/Operate)
+- **What specific waste or inefficiency does it address?** Frame the problem in FinOps terms (idle resource, orphaned resource, untagged resource, rightsizing opportunity, commitment gap).
+- **What action should the FinOps practitioner take?** Recommendations should be clear, actionable, and quantified with an estimated savings figure.
+- **How confident is the savings estimate?** Use CCO billing data for cost-based estimates; use cloud API metrics (CPU, memory) for utilization-based estimates.
+- **Does it follow FinOps cultural principles?** Templates should inform and recommend, not blindly delete. Approval workflows (escalations without `automatic true`) give teams control; the `param_automatic_action` pattern provides opt-in automation for mature FinOps practitioners.
+
+### FinOps Terminology Quick Reference
+
+| Term | Meaning |
+| --- | --- |
+| **RI / Reserved Instance** | AWS commitment to use a specific instance type/size for 1 or 3 years in exchange for a discount (up to ~72% vs on-demand) |
+| **Savings Plan** | AWS flexible commitment (compute or EC2) that discounts usage regardless of instance family/region |
+| **CUD / Committed Use Discount** | Google equivalent of RIs — commit to a minimum spend or usage level for 1 or 3 years |
+| **Azure Reserved Instance** | Azure equivalent of AWS RIs — commit to a VM SKU for 1 or 3 years |
+| **On-Demand** | Standard pay-as-you-go pricing; no commitment; highest per-unit rate |
+| **Spot / Preemptible** | Spare capacity at deeply discounted rates; can be reclaimed by the provider with short notice |
+| **Rightsizing** | Changing a resource's size/type to better match its actual utilization |
+| **Chargeback** | Internal billing — teams are charged for their actual cloud consumption |
+| **Showback** | Reporting cloud costs to teams without actually charging them |
+| **Cost Allocation** | Assigning cloud costs to the business entity (team, product, project) that incurred them |
+| **Tagging / Labeling** | Metadata attached to cloud resources used for cost allocation and governance |
+| **Amortized Cost** | RI/commitment upfront fees spread over the usage period; gives a smoother daily cost view |
+| **Unblended Cost** | Actual per-resource charges as billed (not amortized); may show spiky RI upfront charges |
+| **Blended Cost** | AWS-specific: averaged cost across reserved and on-demand usage within a consolidated billing family |
+| **Net Cost** | Cost after applying all discounts, credits, and adjustments |
+| **Unit Economics** | Cost measured per business unit of output (e.g. cost per customer, per API call) |
+| **Cloud Waste** | Cloud resources that are idle, oversized, orphaned, or otherwise not delivering business value |
+| **FOCUS** | [FinOps Open Cost and Usage Specification](https://focus.finops.org/) — an open standard for cloud billing data interoperability |
+
 ## Resources
+
+**FinOps (Financial Operations for Cloud):**
+- https://www.finops.org/introduction/what-is-finops/
+- https://www.finops.org/framework/
+- https://www.finops.org/framework/capabilities/
+- https://www.finops.org/framework/domains/
+- https://www.finops.org/framework/maturity-model/
+- https://learn.finops.org/ (FinOps Foundation training & certification)
+
+**Flexera Cloud Cost Optimization (CCO):**
+- https://docs.flexera.com/flexera-one/partners/cloud-cost-optimization/
 
 **Policy template language & catalog:**
 - https://docs.flexera.com/flexera/en/Automation/AutomationGS.htm
@@ -32,7 +130,7 @@ You are an expert Flexera policy template developer working in the `flexera-publ
 - https://github.com/flexera-public/policy_sdk
 
 **Flexera REST APIs:**
-- https://developer.flexera.com/
+- https://developer.flexera.com/ (prefer these endpoints; use RightScale APIs only when no Flexera equivalent exists)
 - https://reference.rightscale.com/bill_analysis/
 - https://reference.rightscale.com/billing_center/
 - https://reference.rightscale.com/optima-bill/
@@ -54,6 +152,126 @@ You are an expert Flexera policy template developer working in the `flexera-publ
 - https://www.servicenow.com/docs/
 
 When documentation is unclear, use existing policy templates in this repository as examples.
+
+## Flexera Cloud Cost Optimization (CCO)
+
+Flexera Cloud Cost Optimization (CCO) is Flexera One's FinOps product. It ingests cloud billing data from cloud providers (AWS, Azure, GCP, Oracle, Databricks, and others via Common Bill Ingestion/CBI), enabling cost allocation, waste identification, and detailed cloud spend analysis. Policy templates in the `cost/` category integrate tightly with CCO.
+
+### Architecture & Key Concepts
+
+- **Bill ingestion**: Flexera ingests cloud billing data on a rolling basis. Native connectors exist for AWS CUR, Azure EA/MCA, GCP billing exports, Oracle Cloud, Databricks, and others. Custom or private-cloud billing data can be ingested via **Common Bill Ingestion (CBI)**, a generic CSV-based pipeline.
+- **Billing Centers**: Organizational units for allocating cloud costs. All cost policy templates query billing centers to scope their data. Top-level billing centers aggregate all spend; child billing centers represent sub-allocations (e.g., per team, per project). Most templates use `ds_billing_centers` to retrieve top-level billing centers and pass their IDs to the Bill Analysis API.
+- **Cloud Vendor Accounts**: Mappings from cloud account/subscription/project IDs to human-friendly names. Retrieved via the FinOps Analytics API (`/finops-analytics/v1/orgs/{org_id}/cloud-vendor-accounts`). Used to populate `accountName` on incident rows.
+- **Regional API hosts**: CCO APIs are hosted per region. The `rs_optima_host` built-in variable resolves to the org's correct host:
+  - `api.optima.flexeraeng.com` — US (default)
+  - `api.optima-eu.flexeraeng.com` — EU
+  - `api.optima-apac.flexeraeng.com` — APAC
+  - Always use `rs_optima_host` directly (not `ds_flexera_api_hosts`) for the Optima/bill-analysis endpoints.
+
+### Bill Analysis API
+
+The primary API for querying cost data is the **Bill Analysis API**:
+
+```
+POST https://{rs_optima_host}/bill-analysis/orgs/{org_id}/costs/select
+Api-Version: 0.1
+```
+
+**Request body:**
+```json
+{
+  "dimensions": ["vendor_account", "vendor_account_name", "resource_id", "region"],
+  "granularity": "day",
+  "start_at": "YYYY-MM-DD",
+  "end_at": "YYYY-MM-DD",
+  "metrics": ["cost_amortized_unblended_adj"],
+  "billing_center_ids": ["bc_id_1", "bc_id_2"]
+}
+```
+
+**Key dimensions:**
+
+| Dimension | Description |
+|---|---|
+| `vendor_account` | Cloud account / subscription / project ID |
+| `vendor_account_name` | Human-friendly name for the account |
+| `resource_id` | Cloud resource identifier |
+| `region` | Cloud provider region |
+| `service` | Cloud service name (e.g., `"AmazonEC2"`, `"Microsoft.Compute"`) |
+| `resource_type` | Resource type (e.g., `"t3.large"`) |
+| `usage_type` | Billing usage type |
+| `line_item_type` | Type of billing line item |
+| `charge_type` | Charge classification (e.g., `"Usage"`, `"Tax"`) |
+
+**Key metrics:**
+
+| Metric | Description |
+|---|---|
+| `cost_amortized_unblended_adj` | Amortized cost — reservations/savings plans spread over the usage period. Most commonly used. |
+| `cost_nonamortized_unblended_adj` | Non-amortized (on-demand) cost. |
+| `cost_list_price` | List/public price before discounts. |
+
+The `_adj` suffix means Flexera has applied any **Price Book** adjustments (discounts, markups) configured for the org.
+
+**Response**: An array of objects where each object has a `dimensions` map and a `metrics` map. Use `jmes_path(col_item, "dimensions.vendor_account")` and `jmes_path(col_item, "metrics.cost_amortized_unblended_adj")` to extract values.
+
+**Date range**: Most templates use a rolling 30-day window ending today. Build dates in JavaScript:
+```javascript
+var end_date = new Date(); end_date.setDate(end_date.getDate() - 1)
+var start_date = new Date(); start_date.setDate(start_date.getDate() - 31)
+```
+
+### Currency
+
+The org's configured currency code is retrieved from:
+```
+GET /bill-analysis/orgs/{org_id}/settings/currency_code
+host: rs_optima_host
+Api-Version: 0.1
+```
+
+Always use the `ds_currency_reference` + `ds_currency_code` + `ds_currency` boilerplate (copy from `cost/aws/old_snapshots/aws_delete_old_snapshots.pt`) to convert the currency code to a display symbol and thousands separator. This exposes `ds_currency['symbol']` and `ds_currency['separator']` for formatting dollar amounts.
+
+### Total Potential Savings & Recommendations Integration
+
+When a cost policy template produces incidents, CCO scrapes those incidents to populate the **Total Potential Savings** chart and recommendation tables. For this integration to work:
+
+**Required `info()` block fields** (for recommendations-capable templates):
+```
+info(
+  ...
+  recommendation_type: "Usage Reduction",  # or "Rate Reduction"
+  provider: "AWS",              # cloud provider: "AWS", "Azure", "Google", etc.
+  policy_set: "Unused Volumes",   # groups similar policies across providers
+)
+```
+
+**Required incident export fields** used for billing center assignment and recommendations:
+- `savings` — numeric monthly savings estimate (number, not a string)
+- `accountID` — cloud account / Azure subscription / GCP project ID
+- `tags` — array of `"key=value"` strings; CCO uses these to route recommendations to the right billing center
+- `resourceID` — cloud resource identifier
+
+Optional but important: `accountName`, `resourceGroup` (Azure), `region`, `resourceType`, `recommendationDetails`, `service`.
+
+CCO uses `accountID`, `resourceGroup`, and `tags` to determine which Billing Center "owns" each recommendation. If these are wrong or missing, recommendations won't appear for the correct org or billing center.
+
+### Pure CCO Templates vs. Hybrid Templates
+
+- **Pure CCO templates** query only the Bill Analysis API — they identify issues purely from billing data (e.g., Extended Support charges appearing as line items in the bill). No cloud provider API calls. See `cost/aws/extended_support/aws_extended_support.pt` as an example.
+- **Hybrid templates** combine CCO billing data with cloud provider API data — they look up resource details, usage metrics, or configuration from cloud APIs and join that with billing data to compute savings and produce richer incident reports. Most `cost/` templates are hybrid.
+
+### bill_analysis vs. finops_analytics vs. optima APIs
+
+The codebase uses three related Flexera API families for cost data:
+
+| API | Base URL | Usage |
+|---|---|---|
+| **Bill Analysis** | `rs_optima_host/bill-analysis/...` | Primary: cost queries, billing center listing, currency code |
+| **FinOps Analytics** | `flexera_host/finops-analytics/v1/...` | Cloud vendor account name lookups |
+| **Optima Recommendations** | `rs_optima_host/optima/...` | Reading/writing recommendation objects directly (uncommon) |
+
+Prefer Bill Analysis for cost queries. Use FinOps Analytics for account/subscription name lookups.
 
 ## Tools
 
@@ -130,14 +348,13 @@ info(
   service: "Storage",        # The provider service this policy targets
   policy_set: "",            # Grouping label for recommendations; must be non-blank for recommendation templates
   recommendation_type: "Usage Reduction",  # Required for recommendation templates: "Usage Reduction" or "Rate Reduction"; omit for non-cost templates
-  hide_skip_approvals: "true",  # Required for recommendation templates; hides "Skip Approval" UI button
-  publish: "false"           # Always start new templates as unpublished; remove or set "true" when ready
+  hide_skip_approvals: "true"  # Required for recommendation templates; hides "Skip Approval" UI button
 )
 ```
 
 The `short_description` must always end with links to the README and Flexera Automation docs using the exact pattern shown above.
 
-**`publish` field:** Set `publish: "false"` for templates under development. When a template is production-ready, either remove the `publish` field entirely or set it to `publish: "true"`. Templates with `publish: "false"` are not included in the public catalog and trigger the `UNPUBLISHED` PR label in Dangerfile checks.
+**`publish` field:** Omit the `publish` field from new templates — omitting it is equivalent to `publish: "true"` and means the template will appear in the public catalog. Only add `publish: "false"` if the user explicitly requests the template be kept unpublished. Templates with `publish: "false"` are not included in the public catalog and trigger the `UNPUBLISHED` PR label in Dangerfile checks.
 
 ## Policy Template Structure
 
@@ -275,7 +492,7 @@ datasource "ds_example" do
   result do
     encoding "json"
     collect jmes_path(response, "items[*]") do
-      field "id",   jmes_path(col_item, "Id")
+      field "id", jmes_path(col_item, "Id")
       field "name", jmes_path(col_item, "Name")
     end
   end
@@ -288,7 +505,7 @@ For AWS APIs that return XML (many older EC2/RDS endpoints), use `encoding "xml"
   result do
     encoding "xml"
     collect xpath(response, "//item") do
-      field "id",   xpath(col_item, "snapshotId/text()")
+      field "id", xpath(col_item, "snapshotId/text()")
       field "size", xpath(col_item, "volumeSize/text()")
     end
   end
@@ -315,7 +532,7 @@ datasource "ds_per_region" do
   result do
     encoding "json"
     collect jmes_path(response, "Items[*]") do
-      field "id",     jmes_path(col_item, "Id")
+      field "id", jmes_path(col_item, "Id")
       field "region", val(iter_item, "region")
     end
   end
@@ -330,7 +547,7 @@ Add `ignore_status [403, 404]` inside any `request do` block to suppress specifi
 # Single-object response — no collect
 result do
   encoding "json"
-  field "id",   jmes_path(response, "id")
+  field "id", jmes_path(response, "id")
   field "name", jmes_path(response, "name")
 end
 ```
@@ -348,8 +565,8 @@ datasource "ds_create_items" do
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/some/api/v1/orgs/", rs_org_id, "/items"])
     header "User-Agent", "RS Policies"
-    body_field "name",   val(iter_item, "name")           # individual JSON body fields
-    body_field "params", val(iter_item, "params")         # repeat for each field
+    body_field "name", val(iter_item, "name")    # individual JSON body fields
+    body_field "params", val(iter_item, "params")  # repeat for each field
   end
   result do
     encoding "json"
@@ -390,9 +607,9 @@ datasource "ds_billing_data" do
   result do
     encoding "json"
     collect jmes_path(response, "rows[*]") do
-      field "account_id",   jmes_path(col_item, "dimensions.vendor_account")
+      field "account_id", jmes_path(col_item, "dimensions.vendor_account")
       field "account_name", jmes_path(col_item, "dimensions.vendor_account_name")
-      field "cost",         jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
     end
   end
 end
@@ -405,22 +622,22 @@ script "js_billing_request", type: "javascript" do
     var start_date = new Date(); start_date.setDate(start_date.getDate() - 30)
 
     request = {
-      auth:   "auth_flexera",    // credential name as a string, NOT a $variable
-      host:   rs_optima_host,
-      verb:   "POST",
-      path:   "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+      auth: "auth_flexera",    // credential name as a string, NOT a $variable
+      host: rs_optima_host,
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
       body_fields: {
-        dimensions:          ["vendor_account", "vendor_account_name"],
-        granularity:         "day",
-        start_at:            start_date.toISOString().split("T")[0],
-        end_at:              end_date.toISOString().split("T")[0],
-        metrics:             ["cost_amortized_unblended_adj"],
-        billing_center_ids:  _.pluck(billing_centers, "id")
+        dimensions: ["vendor_account", "vendor_account_name"],
+        granularity: "day",
+        start_at: start_date.toISOString().split("T")[0],
+        end_at: end_date.toISOString().split("T")[0],
+        metrics: ["cost_amortized_unblended_adj"],
+        billing_center_ids: _.pluck(billing_centers, "id")
       },
       headers: { "Api-Version": "1.0", "User-Agent": "RS Policies" },
       ignore_status: [400]
     }
-  EOS
+EOS
 end
 ```
 
@@ -441,7 +658,7 @@ script "js_filter_items", type: "javascript" do
     result = _.filter(items, function(item) {
       return item.value > threshold
     })
-  EOS
+EOS
 end
 ```
 
@@ -516,7 +733,7 @@ script "js_filter_resources", type: "javascript" do
       if (param_exclusion_tags_boolean == 'Any') { return found_tags.length > 0 }
       return found_tags.length == comparators.length  // 'All'
     })
-  EOS
+EOS
 end
 ```
 
@@ -538,7 +755,7 @@ script "js_filter_regions", type: "javascript" do
     } else {
       result = regions  // empty list = no filter; include all regions
     }
-  EOS
+EOS
 end
 ```
 
@@ -575,7 +792,7 @@ script "js_filter_subscriptions", type: "javascript" do
     } else {
       result = subscriptions  // empty list = no filter; include all subscriptions
     }
-  EOS
+EOS
 end
 ```
 
@@ -611,7 +828,7 @@ script "js_filter_projects", type: "javascript" do
     } else {
       result = projects  // empty list = no filter; include all projects
     }
-  EOS
+EOS
 end
 ```
 
@@ -649,11 +866,11 @@ policy "pol_example" do
     escalate $esc_delete
     hash_exclude "tags", "savings"  # exclude volatile fields that would cause spurious incident re-triggers
     export do
-      resource_level true           # set true when each row represents a distinct cloud resource
-      field "id"     do label "Resource ID"   end
-      field "name"   do label "Resource Name" end
-      field "region" do label "Region"        end
-      field "display_id" do         # use 'path' to alias a field to a different source field
+      resource_level true  # set true when each row represents a distinct cloud resource
+      field "id" do label "Resource ID" end
+      field "name" do label "Resource Name" end
+      field "region" do label "Region" end
+      field "display_id" do  # use 'path' to alias a field to a different source field
         label "ID"
         path "id"
       end
@@ -969,6 +1186,8 @@ For cost templates, the `ds_currency` datasource (fetched from the Flexera billi
 
 ### Escalations
 
+A single `esc_email` escalation block is shared across **all** `validate_each` (and `validate`) blocks in the policy that report on cloud resources. Only specialty incidents — such as the AWS region-error `validate $ds_identify_errors` block — use their own dedicated escalation (e.g. `esc_email_errors_identified`) because those incidents have different email behaviour (no table attachment, no CSV, etc.). Do **not** create duplicate `esc_email_*` blocks that are structurally identical; reference the same `$esc_email` escalation from every standard incident block.
+
 ```
 escalation "esc_email" do
   automatic true
@@ -1029,11 +1248,11 @@ end
 # Choose ONE pattern that matches your provider; do NOT use both in the same template.
 define delete_one_item_aws($item) return $response do
   $response = http_request(
-    auth:    $$auth_aws,
-    https:   true,
-    verb:    "delete",
-    host:    "example.com",
-    href:    join(["/items/", $item["id"]]),
+    auth: $$auth_aws,
+    https: true,
+    verb: "delete",
+    host: "example.com",
+    href: join(["/items/", $item["id"]]),
     headers: { "Accept": "application/json" }
   )
 end
@@ -1041,8 +1260,8 @@ end
 # Pattern B — Google/Azure: shorthand method with a single full URL; no https: flag needed
 define delete_one_item_azure($item) return $response do
   $response = http_delete(
-    auth:    $$auth_google,
-    url:     join(["https://example.com/items/", $item["id"]]),
+    auth: $$auth_google,
+    url: join(["https://example.com/items/", $item["id"]]),
     headers: { "Accept": "application/json" }
   )
 end
@@ -1072,11 +1291,11 @@ define delete_one_item($item) return $response do
   $url = "https://example.com/items/" + $item["id"]
   task_label("DELETE " + $url)
   $response = http_request(
-    auth:  $$auth_aws,
+    auth: $$auth_aws,
     https: true,
-    verb:  "delete",
-    host:  "example.com",
-    href:  join(["/items/", $item["id"]])
+    verb: "delete",
+    host: "example.com",
+    href: join(["/items/", $item["id"]])
   )
   task_label("DELETE " + $url + " response: " + to_json($response))
 end
@@ -1225,12 +1444,12 @@ script "js_flexera_api_hosts", type: "javascript" do
   result "result"
   code <<-'EOS'
     host_table = {
-      "api.optima.flexeraeng.com":      { flexera: "api.flexera.com",  optima: "api.optima.flexeraeng.com" },
-      "api.optima-eu.flexeraeng.com":   { flexera: "api.flexera.eu",   optima: "api.optima-eu.flexeraeng.com" },
-      "api.optima-apac.flexeraeng.com": { flexera: "api.flexera.au",   optima: "api.optima-apac.flexeraeng.com" }
+      "api.optima.flexeraeng.com": { flexera: "api.flexera.com", optima: "api.optima.flexeraeng.com" },
+      "api.optima-eu.flexeraeng.com": { flexera: "api.flexera.eu", optima: "api.optima-eu.flexeraeng.com" },
+      "api.optima-apac.flexeraeng.com": { flexera: "api.flexera.au", optima: "api.optima-apac.flexeraeng.com" }
     }
     result = host_table[rs_optima_host]
-  EOS
+EOS
 end
 ```
 
@@ -1247,7 +1466,7 @@ datasource "ds_applied_policy" do
   end
   result do
     encoding "json"
-    field "id",   jmes_path(response, "id")
+    field "id", jmes_path(response, "id")
     field "name", jmes_path(response, "name")
   end
 end
@@ -1269,9 +1488,9 @@ datasource "ds_billing_centers" do
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
-      field "href",      jmes_path(col_item, "href")
-      field "id",        jmes_path(col_item, "id")
-      field "name",      jmes_path(col_item, "name")
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
       field "parent_id", jmes_path(col_item, "parent_id")
     end
   end
@@ -1291,7 +1510,7 @@ datasource "ds_cloud_vendor_accounts" do
   result do
     encoding "json"
     collect jmes_path(response, "values[*]") do
-      field "id",   jmes_path(col_item, "aws.accountId")   # use azure.subscriptionId, gcp.projectId etc. for other providers
+      field "id", jmes_path(col_item, "aws.accountId")  # use azure.subscriptionId, gcp.projectId etc. for other providers
       field "name", jmes_path(col_item, "name")
       field "tags", jmes_path(col_item, "tags")
     end
@@ -1299,16 +1518,24 @@ datasource "ds_cloud_vendor_accounts" do
 end
 ```
 
-For Meta Policy support, include these boilerplate datasources. Use `$ds_parent_policy_terminated` in every `check` line:
+For Meta Policy support, the complete Meta Policy block **must be placed at the very bottom of the policy template file**, after the `# Escalations` section. It must begin with the exact comment `# Meta Policy [alpha]` (the compiler checks for this string). Never place any part of this block earlier in the file — not in the `# Datasources & Scripts` section and not before the `# Policy` section.
+
+The canonical Meta Policy section (copy verbatim):
 
 ```
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
 datasource "ds_get_parent_policy" do
   request do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
-    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/",
-               switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id)])
-    ignore_status [404]
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
   end
   result do
     encoding "json"
@@ -1316,6 +1543,10 @@ datasource "ds_get_parent_policy" do
   end
 end
 
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
 datasource "ds_parent_policy_terminated" do
   run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
 end
@@ -1324,10 +1555,12 @@ script "js_parent_policy_terminated", type: "javascript" do
   parameters "ds_get_parent_policy", "meta_parent_policy_id"
   result "result"
   code <<-'EOS'
-    result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
-  EOS
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
 end
 ```
+
+Use `$ds_parent_policy_terminated` in every `check` line in the `# Policy` section.
 
 ### Provider Boilerplate Datasources
 
@@ -1374,8 +1607,8 @@ datasource "ds_azure_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "id",    jmes_path(col_item, "subscriptionId")
-      field "name",  jmes_path(col_item, "displayName")
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
       field "state", jmes_path(col_item, "state")
     end
   end
@@ -1398,16 +1631,19 @@ datasource "ds_google_projects" do
     encoding "json"
     collect jmes_path(response, "projects[*]") do
       field "number", jmes_path(col_item, "projectNumber")
-      field "id",     jmes_path(col_item, "projectId")
-      field "name",   jmes_path(col_item, "name")
+      field "id", jmes_path(col_item, "projectId")
+      field "name", jmes_path(col_item, "name")
     end
   end
 end
 ```
 
-**`ds_terminate_self` + `ds_is_deleted`** — Meta Policy self-termination: `ds_terminate_self` issues `DELETE` when `$ds_parent_policy_terminated` is true, otherwise `GET`. `ds_is_deleted` produces sentinel `{ path: "/" }` to enforce evaluation order:
+**`ds_terminate_self` + `ds_is_deleted`** — Meta Policy self-termination: `ds_terminate_self` issues `DELETE` when `$ds_parent_policy_terminated` is true, otherwise `GET`. `ds_is_deleted` produces sentinel `{ path: "/" }` to enforce evaluation order. These belong in the `# Meta Policy [alpha]` section at the bottom of the file:
 
 ```
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
 datasource "ds_terminate_self" do
   request do
     run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
@@ -1418,15 +1654,21 @@ script "js_make_terminate_request", type: "javascript" do
   parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
   result "request"
   code <<-'EOS'
-    request = {
-      auth: "auth_flexera",
-      host: ds_flexera_api_hosts["flexera"],
-      path: "/policy/v1/orgs/" + rs_org_id + "/projects/" + rs_project_id + "/applied-policies" + (policy_id ? "/" + policy_id : ""),
-      verb: ds_parent_policy_terminated ? "DELETE" : "GET"
-    }
-  EOS
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
 end
 
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
 datasource "ds_is_deleted" do
   run_script $js_is_deleted, $ds_terminate_self
 end
@@ -1434,7 +1676,7 @@ end
 script "js_is_deleted", type: "javascript" do
   parameters "ds_terminate_self"
   result "result"
-  code 'result = { path: "/" }'
+  code 'result = { path: "/"}'
 end
 ```
 
@@ -1679,6 +1921,94 @@ script "js_billing_request", type: "javascript" do   # used by ds_billing_data A
 end
 ```
 
+### `run_script` Parameter Order
+
+`run_script` arguments (and the matching `parameters` declaration in the script) must follow this fixed order:
+
+```
+run_script $js_name, [val(iter_item, "field")], [datasources...], [parameters...], [variables...], [raw values...]
+```
+
+1. The script reference itself (`$js_name`) — always first
+1. `val(iter_item, ...)` expressions — if the datasource uses `iterate`, the iter_item value(s) come next
+1. Datasource arguments (`$ds_*`) — all datasource references grouped together
+1. Parameter arguments (`$param_*`) — all parameter references grouped together
+1. Built-in runtime variables (`rs_org_id`, `rs_optima_host`, `policy_id`, etc.)
+1. Raw literal values (strings, numbers) — last
+
+**Wrong** (param before last datasource):
+```
+run_script $js_example, $ds_one, $ds_two, $param_filter, $ds_three
+```
+
+**Correct** (all datasources before all params):
+```
+run_script $js_example, $ds_one, $ds_two, $ds_three, $param_filter
+```
+
+### Heredoc `EOS` Delimiter Alignment
+
+The closing `EOS` delimiter must be **left-aligned at column 0** for `code <<-'EOS'` script blocks. It must **never** be indented, regardless of the indentation of the surrounding `script` block:
+
+**Wrong:**
+```
+script "js_example", type: "javascript" do
+  parameters "items"
+  result "result"
+  code <<-'EOS'
+    result = _.filter(items, function(item) { return item.value > 0 })
+  EOS
+end
+```
+
+**Correct:**
+```
+script "js_example", type: "javascript" do
+  parameters "items"
+  result "result"
+  code <<-'EOS'
+    result = _.filter(items, function(item) { return item.value > 0 })
+EOS
+end
+```
+
+The `detail_template <<-'EOS'` heredoc inside a `policy` block is the one exception — its closing `EOS` is indented to match the surrounding `validate_each` or `validate` block, typically 4 spaces:
+
+```
+policy "pol_example" do
+  validate_each $ds_items do
+    detail_template <<-'EOS'
+    **Details:** {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+  end
+end
+```
+
+### API-Level Filtering
+
+**Always filter data at the API level wherever the API supports it.** Only fall back to JavaScript filtering inside the policy template when the API does not provide the necessary filter capability. Fetching fewer records from the API reduces network transfer, memory usage, and JavaScript processing time.
+
+**General principle:** Before writing a JavaScript filter step, check the API documentation for query parameters, `$filter` expressions, or other server-side filtering mechanisms that can narrow the result set before it reaches the policy engine.
+
+**Common API-level filtering mechanisms by provider:**
+
+- **AWS**: Use `Filter.N.Name` / `Filter.N.Value.N` query parameters on `Describe*` calls wherever the service supports them. For example:
+  - `Filter.1.Name=instance-state-name&Filter.1.Value.1=running` — only return running instances
+  - `Filter.1.Name=tag-key&Filter.1.Value.1=Environment` — only return tagged resources
+  - Check the AWS API docs for the specific action — not all Describe calls support the same filters.
+
+- **Azure**: Use OData `$filter` query parameters where supported. Coverage varies significantly by API:
+  - Azure VM list (`/providers/Microsoft.Compute/virtualMachines`): only `location eq '{location}'` and `virtualMachineScaleSet/id eq '...'` are supported — publisher, osType, SKU, and other image properties **cannot** be filtered at the API level.
+  - Many other Azure APIs (Resource Graph, policy assignments, role assignments, etc.) support richer OData expressions.
+  - Use `statusOnly=true` on VM list calls only when you need instance-view status and do not need full VM properties.
+  - Do **not** request `$expand=instanceView` unless you specifically need live running-state data — it significantly increases response size and latency.
+
+- **Google**: Use the `filter` query parameter, which accepts a key:value or comparison expression depending on the API. For example:
+  - `filter=status:RUNNING` — only return running instances
+  - `filter=labels.env:production` — only return resources with a specific label
+
+**When restructuring is not worth it:** Some API-level filters (e.g., Azure VM `$filter=location eq 'xxx'`) would require changing the iteration pattern (e.g., iterating per subscription × location instead of per subscription). If the added complexity outweighs the benefit — especially when the allowed set of values is large or unknown — it is acceptable to fetch at the broader scope and filter in JavaScript. Document the reason in a comment.
+
 ## Versioning (Semantic Versioning)
 
 All versions must use three period-separated integers (`MAJOR.MINOR.PATCH`):
@@ -1687,7 +2017,125 @@ All versions must use three period-separated integers (`MAJOR.MINOR.PATCH`):
 - **MINOR** — new non-breaking functionality (e.g. a new parameter whose default preserves existing behavior).
 - **PATCH** — bug fixes and minor non-functional changes.
 
+**When to bump the version:** Any change to a `.pt` file — functional or not — **must** be accompanied by a version bump and a CHANGELOG entry. Only bump the version once per commit: if you are iterating on a template across multiple requests in the same working session and no changes have been committed to Git yet, do **not** bump the version or update the CHANGELOG between iterations — wait until the work is complete and ready to commit. You can check whether any changes have been committed with `git log --oneline -1` and `git status`.
+
 ## README Requirements
+
+### Markdown Linting
+
+All README files are linted with `mdl`. The `.mdlrc` in the repo root disables MD013 (line length), MD005 (list indentation), MD009 (trailing spaces), and MD024 (duplicate headings). All other rules are active. The most practically important rules for README authoring are listed below.
+
+**MD001 — Heading levels increment by one at a time.** Never skip a level (e.g., `##` directly to `####`):
+
+```markdown
+<!-- Wrong -->
+## Section
+#### Subsection
+
+<!-- Correct -->
+## Section
+### Subsection
+```
+
+**MD022 — Headings must be surrounded by blank lines.** Always leave a blank line before and after every heading:
+
+```markdown
+<!-- Wrong -->
+Some text.
+## Heading
+More text.
+
+<!-- Correct -->
+Some text.
+
+## Heading
+
+More text.
+```
+
+**MD025 — Only one top-level heading per file.** Each README has exactly one `#` heading at the top.
+
+**MD031 — Fenced code blocks must be surrounded by blank lines:**
+
+```markdown
+<!-- Wrong -->
+Some text.
+```bash
+command
+```
+More text.
+
+<!-- Correct -->
+Some text.
+
+```bash
+command
+```
+
+More text.
+```
+
+**MD032 — Lists must be surrounded by blank lines:**
+
+```markdown
+<!-- Wrong -->
+Some text.
+- item one
+- item two
+More text.
+
+<!-- Correct -->
+Some text.
+
+- item one
+- item two
+
+More text.
+```
+
+**MD040 — Fenced code blocks must declare a language.** Always specify the language after the opening fence. Use `markdown`, `bash`, `javascript`, `yaml`, `json`, or `text` as appropriate. Never leave the fence bare:
+
+```markdown
+<!-- Wrong -->
+```
+some code
+```
+
+<!-- Correct -->
+```bash
+some code
+```
+```
+
+**MD047 — Files must end with a single newline character.** Ensure there is a newline at the very end of every Markdown file.
+
+**MD029 — Ordered list item prefix style.** Always use `1.` for every item in every ordered list — do not use sequential numbers (`1. 2. 3.`). Markdown renderers handle the actual display numbering automatically:
+
+```markdown
+<!-- Wrong -->
+1. First item
+2. Second item
+3. Third item
+
+<!-- Correct -->
+1. First item
+1. Second item
+1. Third item
+```
+
+**MD060 — Table separator rows must use `| --- |` style (with spaces), not `|---|` (compact).** The separator row must match the spaced style used in the header and data rows:
+
+```markdown
+<!-- Wrong -->
+| Column 1 | Column 2 |
+|---|---|
+| value    | value    |
+
+<!-- Correct -->
+| Column 1 | Column 2 |
+| --- | --- |
+| value    | value    |
+```
 
 Every README must begin with `# Policy Template Name` and include the following sections **in this order**:
 
@@ -1784,8 +2232,11 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automat
 
 7. **Closing footnote** — the section must end (before the next `##` heading) with exactly:
    `The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.`
-7. `## Supported Clouds` — list of supported providers, or "All" for cloud-agnostic
-8. `## Cost` — whether this policy template incurs additional costs
+
+The remaining two required README sections (continuing the main list above):
+
+1. `## Supported Clouds` — list of supported providers, or "All" for cloud-agnostic
+1. `## Cost` — whether this policy template incurs additional costs
 
 ## CHANGELOG Requirements
 
@@ -1805,6 +2256,46 @@ Every CHANGELOG must use exactly this format, with the most recent version first
 ```
 
 Describe changes in terms of user-visible impact. Avoid coding jargon and do not reference internal code changes.
+
+## Deprecating a Policy Template
+
+When a policy template is superseded by a newer one and should no longer be actively maintained, mark it as deprecated. **Do not unpublish it** (i.e. do not add `publish: "false"`) — deprecated templates remain in the catalog so that existing users can still find and apply them.
+
+**Three changes are required:**
+
+**1. `short_description`** — Prefix with the standard deprecated warning banner:
+
+```
+short_description "**Deprecated: This policy template is no longer being updated. Please see [README](https://github.com/flexera-public/policy_templates/tree/master/CATEGORY/PROVIDER/POLICY_NAME/) for more details.**  <original short description here>"
+```
+
+**2. `info()` block** — Add `deprecated: "true"` as the last field:
+
+```
+info(
+  version: "X.Y.Z",
+  provider: "...",
+  service: "...",
+  ...
+  deprecated: "true"
+)
+```
+
+**3. README** — Add a `## Deprecated` section immediately after the `# Title` heading and before `## What It Does`. This section should explain why the template is deprecated and where users should go instead:
+
+```markdown
+# Policy Template Name
+
+## Deprecated
+
+This policy template is no longer being updated. It has been superseded by the [Replacement Template](https://github.com/flexera-public/policy_templates/tree/master/CATEGORY/PROVIDER/REPLACEMENT) policy template, which provides <brief description of improvements>. <Optional: mention alternative if user has specific needs.>
+
+## What It Does
+```
+
+See `cost/google/object_storage_optimization/README.md` as a canonical example of this format.
+
+**Do bump the version and add a CHANGELOG entry** when adding a deprecation notice — it is a change to the `.pt` file and all `.pt` file changes require a version bump.
 
 ## Automation Files
 
@@ -1842,31 +2333,27 @@ PRs are tested via [Dangerfile](https://danger.systems/guides/dangerfile). Run l
   - `UNPUBLISHED` — template has `publish: "false"` in its `info()` block
 - **No JSON/YAML inside policy directories** — data files must live under `data/`
 
-## Flexera APIs
-
-Prefer [developer.flexera.com](https://developer.flexera.com/) REST endpoints. Use RightScale APIs only when no Flexera equivalent exists.
-
 ## Your Responsibilities
 
 **Creating a new policy template:**
 1. Search for similar templates to use as reference
-2. Determine correct category/provider for directory path
-3. Write `.pt` file with `publish: "false"` in `info()` block
-4. Run `fpt check` and fix errors
-5. Write `README.md` and `CHANGELOG.md`
-6. Update `tools/policy_master_permission_generation/validated_policy_templates.yaml`
-7. Update `tools/meta_parent_policy_compiler/default_template_files.yaml` if Meta Policy supported
+1. Determine correct category/provider for directory path
+1. Write `.pt` file (omit `publish` field unless user requests unpublished)
+1. Run `fpt check` and fix errors
+1. Write `README.md` and `CHANGELOG.md`
+1. Update `tools/policy_master_permission_generation/validated_policy_templates.yaml`
+1. Update `tools/meta_parent_policy_compiler/default_template_files.yaml` if Meta Policy supported
 
 **Modifying an existing policy template:**
 1. Read existing `.pt`, README, and CHANGELOG
-2. Apply changes following style guide
-3. Bump version (MAJOR/MINOR/PATCH)
-4. Run `fpt check` and fix errors
-5. Update CHANGELOG and README as needed
+1. Apply changes following style guide
+1. Bump version (MAJOR/MINOR/PATCH)
+1. Run `fpt check` and fix errors
+1. Update CHANGELOG and README as needed
 
 **Reviewing a policy template:**
 1. Check style guide compliance
-2. Verify directory structure and file naming
-3. Validate semantic versioning
-4. Check for hardcoded secrets
-5. Verify `info()` block, README sections, and CHANGELOG format
+1. Verify directory structure and file naming
+1. Validate semantic versioning
+1. Check for hardcoded secrets
+1. Verify `info()` block, README sections, and CHANGELOG format

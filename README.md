@@ -76,6 +76,10 @@ These templates can generate savings estimates for your environment. The inciden
   * [AWS Unused Classic Load Balancers](./cost/aws/unused_clbs)
   * [AWS Unused Network Load Balancers](./cost/aws/unused_nlbs)
 
+* PaaS
+
+  * [AWS Idle Lambda Functions](./cost/aws/idle_lambda_functions)
+
 * RDS
 
   * [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
@@ -184,6 +188,7 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
   * [Google Old Snapshots](./cost/google/old_snapshots)
+  * [Google Rightsize Persistent Disks](./cost/google/rightsize_persistent_disks)
   * [Google Unused Disks](./cost/google/unused_disks)
   * [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/google)
 
@@ -644,6 +649,10 @@ These templates can generate savings estimates for your environment. The inciden
 * App Service
 
   * [Azure Web Apps Without Secure TLS](./security/azure/webapp_tls_version_support)
+
+* Compute
+
+  * [Azure End-of-Life Resources](./security/azure/eol_resources)
 
 * Identity & Access Management
 
