@@ -56,7 +56,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey/action`*
   - `Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read`*
 
-  * Provided by `Storage Blob Data Reader` role on the storage account or container
+  \* Provided by `Storage Blob Data Reader` role on the storage account or container
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
