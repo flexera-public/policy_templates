@@ -49,16 +49,16 @@ Vendor Account,Cloud Vendor,tag_app_code,||DIVIDER||,rbd_business_unit,rbd_cost_
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
-- [__Azure Storage Credential__](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=azure_storage*) which has the following permissions:
+- [**Azure Storage Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure) (*provider=azure_storage*) which has the following permissions:
   - `Storage Blob Data Reader` role on the storage account or container
 
-- [__Flexera Credential__](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1124048) (*provider=flexera*) which has the following Flexera One roles:
+- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
   - `policy_manager`
 
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ### Multiple Applied Policy Instances
 
@@ -69,15 +69,17 @@ If you apply this policy template multiple times (e.g. with different CSV files 
 Users of `teradata_rbd_tmp.pt` need to:
 
 1. Add a `||DIVIDER||` column to their CSV between the rule-dimension columns and the RBD columns.
-2. No changes are needed to the RBD output column names or cell values.
+1. No changes are needed to the RBD output column names or cell values.
 
 **Before (Teradata format):**
+
 ```csv
 vendor_account,rbd_business_area,rbd_customer
 123456789012,Engineering,Acme Corp
 ```
 
 **After (new format):**
+
 ```csv
 vendor_account,||DIVIDER||,rbd_business_area,rbd_customer
 123456789012,,Engineering,Acme Corp

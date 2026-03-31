@@ -64,26 +64,26 @@ These settings are only used when Drive ID is left empty.
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
-- [__Microsoft Graph Credential__](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=azure_graph*) which has the following Microsoft Graph API permissions:
+- [**Microsoft Graph Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) (*provider=azure_graph*) which has the following Microsoft Graph API permissions:
   - `Files.Read.All` (Application permission) — required for all modes
   - `Sites.Read.All` (Application permission) — required only for SharePoint mode
 
-- [__Flexera Credential__](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1124048) (*provider=flexera*) which has the following Flexera One roles:
+- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
   - `policy_manager`
 
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ### OneDrive Mode — Finding Your Drive ID
 
 To find your OneDrive drive ID, you can use the Microsoft Graph Explorer:
 
 1. Go to [Microsoft Graph Explorer](https://developer.microsoft.com/en-us/graph/graph-explorer)
-2. Sign in with your Microsoft account
-3. Run the query: `GET https://graph.microsoft.com/v1.0/me/drive`
-4. The `id` field in the response is your drive ID
+1. Sign in with your Microsoft account
+1. Run the query: `GET https://graph.microsoft.com/v1.0/me/drive`
+1. The `id` field in the response is your drive ID
 
 For a specific user's drive (with application permissions):
 `GET https://graph.microsoft.com/v1.0/users/{user-id}/drive`
