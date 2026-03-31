@@ -1536,7 +1536,7 @@ end
 
 ### Outdated Links
 # Return false if no outdated links are found
-def policy_outdated_links?(file, file_lines)
+def policy_outdated_links?(file, file_lines, added_files = [])
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has any outdated links..."
 
   fail_message = ""
@@ -1572,7 +1572,7 @@ def policy_outdated_links?(file, file_lines)
           else
             file_path = line.split("/master/")[1].split('"')[0]
 
-            if !File.exist?(file_path)
+            if !File.exist?(file_path) && !added_files.include?(file_path)
               fail_message += "Line #{datasource_line.to_s}: Datasource has invalid link to Github asset. The file `#{file_path}` does not appear to exist. Please make sure the `path` field points to a valid file.\n\n"
             end
           end

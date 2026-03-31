@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.5
+
+- Policy template deprecated. Please see [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/unused_disks) for more details.
+
 ## v0.2.4
 
 - Updated documentation link in policy description. Functionality unchanged.
