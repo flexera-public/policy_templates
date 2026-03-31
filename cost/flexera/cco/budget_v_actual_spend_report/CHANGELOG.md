@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6.0
+
+- Billing Center dimensions now show Billing Center names instead of ids in the incident table.
+
 ## v2.5.8
 
 - Updated documentation link in policy description. Functionality unchanged.
