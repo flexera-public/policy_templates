@@ -1096,6 +1096,19 @@ region → [resource-specific fields] → savings → savingsCurrency →
 [lookbackPeriod, threshold, metric fields] → service → resourceARN → id
 ```
 
+**Critical rule — keep all metric fields contiguous.** When a template reports multiple categories of utilization metrics (e.g. GPU utilization, GPU memory, CPU, memory), every metric field for every category must appear **together in one unbroken block**, ordered by category. Never interleave metric fields with non-metric fields (pricing, launch time, etc.). Example correct ordering for a GPU rightsizing template:
+
+```
+... savings → savingsCurrency → launchTime →
+gpuUtilMaximum → gpuUtilMinimum → ... → gpuUtilP90 →
+gpuMemPct → gpuMemUsedMiB →
+cpuMaximum → cpuMinimum → ... → cpuP90 →
+memMaximum → memMinimum → ... → memP90 →
+thresholdType → lookbackPeriod → service → resourceARN → id
+```
+
+Pricing context fields (`currentInstancePrice`, `newInstancePrice`) belong **before** the metric block, grouped with `savings` and `savingsCurrency`. Temporal fields (`launchTime`) also belong before the metric block. If you find yourself placing one metric field early (e.g. after a hardware spec field) and another late (e.g. after `launchTime`), that is a bug — move all metrics for that category into the single contiguous metric block.
+
 **Canonical export block example:**
 
 ```
@@ -1284,12 +1297,20 @@ end
   call log_event($item)                            # fire-and-forget; no return value needed
 ```
 
-**`task_label(msg)`:** Log HTTP operations to the execution audit trail. Pass HTTP verb + URL for easy failure diagnosis:
+**`task_label(msg)`:** Log HTTP operations to the execution audit trail. Every single-item action `define` must follow the **canonical Cloud Workflow action pattern** — no exceptions:
+
+1. Build a `$url` string from the full human-readable URL (before the request)
+2. `task_label("VERB " + $url)` immediately before the HTTP request
+3. Make the HTTP request
+4. `task_label("Action description response: " + $item["id"] + " " + to_json($response))` immediately after
+5. `$$all_responses << to_json({"req": "VERB " + $url, "resp": $response})` to accumulate the audit trail
+6. Check `$response["code"]`; raise on failure, log success with `task_label`
 
 ```
 define delete_one_item($item) return $response do
   $url = "https://example.com/items/" + $item["id"]
   task_label("DELETE " + $url)
+
   $response = http_request(
     auth: $$auth_aws,
     https: true,
@@ -1297,9 +1318,38 @@ define delete_one_item($item) return $response do
     host: "example.com",
     href: join(["/items/", $item["id"]])
   )
-  task_label("DELETE " + $url + " response: " + to_json($response))
+
+  task_label("Delete item response: " + $item["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response deleting item: " + $item["id"] + " " + to_json($response)
+  else
+    task_label("Delete item successful: " + $item["id"])
+  end
 end
 ```
+
+**Orchestrator defines** (those that call single-item defines in a loop) must initialize `$$all_responses` and `$$errors` at the top, then check errors at the end:
+
+```
+define delete_items($data) do
+  $$all_responses = []
+  $$errors = []
+
+  foreach $item in $data do
+    sub on_error: handle_error() do
+      call delete_one_item($item) retrieve $response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+```
+
+**Do not** use a separate `handle_response` helper define — inline the `$$all_responses <<` append directly in each action define as shown above.
 
 **`to_json($obj)`:** Serialize to JSON string. Use in `task_label` calls and error messages.
 
@@ -1321,15 +1371,7 @@ end
   end
 ```
 
-**Response code validation:** Check `$response["code"]` and `raise` on unexpected values. Success codes: `200`, `201`, `202`, `204`:
-
-```
-  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
-    raise "Unexpected response deleting item " + $item["id"] + ": " + to_json($response)
-  else
-    task_label("Successfully deleted item: " + $item["id"])
-  end
-```
+**Response code validation:** Check `$response["code"]` and `raise` on unexpected values as part of the canonical action pattern above. Common success codes: `200`, `201`, `202`, `204`. The error message must include `to_json($response)` so the full response body appears in the execution log:
 
 **`sleep($seconds)`:** Pause execution. Use in polling loops:
 
@@ -2093,17 +2135,17 @@ Some text.
 More text.
 ```
 
-**MD040 — Fenced code blocks must declare a language.** Always specify the language after the opening fence. Use `markdown`, `bash`, `javascript`, `yaml`, `json`, or `text` as appropriate. Never leave the fence bare:
+**MD040 — Fenced code blocks must declare a language.** Always specify the language after the opening fence. Use `markdown`, `bash`, `javascript`, `yaml`, `json`, or `text` as appropriate. Never leave the fence bare — this applies to **every** fenced block without exception, including pseudocode, formula blocks, config snippets, or any other content that doesn't fit a named language. Use `text` as the fallback for plain text, formulas, and pseudocode:
 
 ```markdown
-<!-- Wrong -->
+<!-- Wrong — bare fence -->
 ```
-some code
+required_vcpus = ceil(current_vcpus × cpu_pct / 100 × 1.5)
 ```
 
-<!-- Correct -->
-```bash
-some code
+<!-- Correct — use "text" for formulas/pseudocode -->
+```text
+required_vcpus = ceil(current_vcpus × cpu_pct / 100 × 1.5)
 ```
 ```
 
@@ -2184,6 +2226,25 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
   \* Only required for taking action (termination); the policy will still function in a read-only capacity without these permissions.
 
+  Example IAM Permission Policy:
+
+  ```json
+  {
+      "Version": "2012-10-17",
+      "Statement": [
+          {
+              "Effect": "Allow",
+              "Action": [
+                  "ec2:DescribeRegions",
+                  "ec2:DescribeInstances",
+                  "ec2:TerminateInstances"
+              ],
+              "Resource": "*"
+          }
+      ]
+  }
+  ```
+
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Compute/virtualMachines/read`
   - `Microsoft.Compute/virtualMachines/delete`*
@@ -2230,8 +2291,45 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automat
 
 6. **Action-only permissions** — suffix with `*` (or `†`, `‡`, `§`, `‖`, `¶` for additional distinctions). Every symbol used in the list **must** have a matching footnote line that starts with `  \* ` (or the respective symbol). Standard footnote text: `\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.`
 
-7. **Closing footnote** — the section must end (before the next `##` heading) with exactly:
-   `The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.`
+7. **AWS IAM JSON example** — every AWS credential block must include an `Example IAM Permission Policy:` line followed by a fenced `json` code block containing a valid IAM policy document with all permissions listed. Place it immediately after the footnote line(s) and before the next credential block or closing footnote. The JSON must include every permission listed above it (including action-only ones — omit the `*` suffix in the JSON). Example:
+
+```markdown
+  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
+
+  Example IAM Permission Policy:
+
+  ```json
+  {
+      "Version": "2012-10-17",
+      "Statement": [
+          {
+              "Effect": "Allow",
+              "Action": [
+                  "ec2:DescribeRegions",
+                  "ec2:DescribeInstances",
+                  "ec2:TerminateInstances"
+              ],
+              "Resource": "*"
+          }
+      ]
+  }
+  ```
+```
+
+8. **Closing footnote** — the sentence `The [Provider-Specific Credentials](...) page in the docs has detailed instructions...` must appear **immediately after the last credential block** (before any non-credential requirements and before the next `##` heading).
+
+9. **Non-credential requirements** — if the policy has additional requirements beyond credentials (e.g. a CloudWatch Agent plugin, an installed OS tool, an IAM instance profile), add them as a `###` subsection **after** the closing footnote and **before** the next `##` heading. Do **not** create a separate top-level `## Requirements` section; all prerequisites belong under `## Prerequisites`. Example:
+
+```markdown
+The [Provider-Specific Credentials](...) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
+### CloudWatch Agent Requirements
+
+The following must be in place on each instance before the policy can collect metrics:
+
+1. **CloudWatch Agent installed** — ...
+1. **NVIDIA GPU stats plugin enabled** — ...
+```
 
 The remaining two required README sections (continuing the main list above):
 

@@ -1,0 +1,2568 @@
+name "AWS Rightsize GPU EC2 Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "Check for GPU EC2 instances that have idle or underutilized GPU, CPU, and memory metrics and downsizes or terminates them after approval. Requires CloudWatch Agent with NVIDIA GPU metrics enabled. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_gpu_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_gpu_instances/"
+severity "low"
+category "Cost"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "AWS",
+  service: "Compute",
+  policy_set: "Rightsize Compute Instances",
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
+end
+
+parameter "param_stats_threshold" do
+  type "string"
+  category "Statistics"
+  label "Threshold Statistic"
+  description "Statistic to use when determining if a GPU instance is idle or underutilized. This applies to all four metrics: CPU, memory, GPU utilization, and GPU memory."
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
+  default "Average"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at CPU, memory, and GPU data for instances. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 90
+  default 30
+end
+
+parameter "param_safety_margin" do
+  type "number"
+  category "Statistics"
+  label "Rightsizing Safety Margin (%)"
+  description "The percentage of headroom to add on top of observed peak utilization when selecting a smaller instance type. A value of 50 means the recommended instance must handle 1.5x the observed workload. Higher values produce more conservative recommendations; lower values produce more aggressive ones. See the README for more details."
+  min_value 0
+  max_value 200
+  default 50
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Downsize Instances", "Stop Instances", "Terminate Instances"]
+  default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws_getmetricdata" do
+  get_page_marker do
+    body_path "NextToken"
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "api")
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+# Get AWS account info fallback
+datasource "ds_billing_centers_aws_acc" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs_aws_acc" do
+  run_script $js_top_level_bcs_aws_acc, $ds_billing_centers_aws_acc
+end
+
+script "js_top_level_bcs_aws_acc", type: "javascript" do
+  parameters "ds_billing_centers_aws_acc"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers_aws_acc, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_cloud_vendor_accounts_fallback" do
+  request do
+    run_script $js_cloud_vendor_accounts_fallback, $ds_top_level_bcs_aws_acc, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "id", jmes_path(col_item, "dimensions.vendor_account")
+      field "name", jmes_path(col_item, "dimensions.vendor_account_name")
+    end
+  end
+end
+
+script "js_cloud_vendor_accounts_fallback", type: "javascript" do
+  parameters "ds_top_level_bcs_aws_acc", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      dimensions: ["vendor_account", "vendor_account_name"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs_aws_acc
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_cloud_vendor_accounts_fallback, $ds_get_caller_identity
+end
+
+script "js_aws_account", type: "javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_cloud_vendor_accounts_fallback", "ds_get_caller_identity"
+  result "result"
+  code <<-'EOS'
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  if (result == undefined) {
+    result = _.find(ds_cloud_vendor_accounts_fallback, function(account) {
+      return account['id'] == ds_get_caller_identity[0]['account']
+    })
+
+    if (result) {
+      result["tags"] = {}
+    }
+  }
+
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type: "javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+# Full EC2 instance types data for GPU discovery and specs
+datasource "ds_aws_instance_types_map" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+# Filter to GPU instances only
+datasource "ds_gpu_instance_types" do
+  run_script $js_gpu_instance_types, $ds_aws_instance_types_map
+end
+
+script "js_gpu_instance_types", type: "javascript" do
+  parameters "ds_aws_instance_types_map"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_aws_instance_types_map, function(inst) {
+    return inst['gpu'] != null && inst['gpu'] != undefined && inst['gpu']['count'] > 0
+  })
+EOS
+end
+
+# EC2 on-demand pricing data for savings calculations
+datasource "ds_aws_instance_cost_map" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_pricing.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_describe_regions" do
+  request do
+    auth $auth_aws
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+datasource "ds_regions" do
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
+end
+
+script "js_regions", type: "javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-'EOS'
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+# List CloudWatch metric names to discover instances reporting metrics
+datasource "ds_cloudwatch_metric_names" do
+  run_script $js_cloudwatch_metric_names, $ds_regions
+end
+
+script "js_cloudwatch_metric_names", type: "javascript" do
+  parameters "ds_regions"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(ds_regions, function(reg) {
+    // Memory Utilization Metric Name for Linux instances
+    result.push({
+      "metricName": "mem_used_percent",
+      "region": reg["region"]
+    })
+
+    // Memory Utilization Metric Name for Windows instances
+    result.push({
+      "metricName": "Memory % Committed Bytes In Use",
+      "region": reg["region"]
+    })
+
+    // GPU compute utilization via CloudWatch Agent NVIDIA plugin
+    result.push({
+      "metricName": "nvidia_smi_utilization_gpu",
+      "region": reg["region"]
+    })
+  })
+EOS
+end
+
+datasource "ds_cloudwatch_metrics" do
+  iterate $ds_cloudwatch_metric_names
+  request do
+    run_script $js_cloudwatch_metrics, val(iter_item, "metricName"), val(iter_item, "region")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListMetricsResult/Metrics/member", "array") do
+      field "namespace", xpath(col_item, "Namespace")
+      field "metricName", xpath(col_item, "MetricName")
+      field "dimensions" do
+        collect xpath(col_item, "Dimensions/member", "array") do
+          field "name", xpath(col_item, "Name")
+          field "value", xpath(col_item, "Value")
+        end
+      end
+      field "region", val(iter_item, "region")
+    end
+  end
+end
+
+script "js_cloudwatch_metrics", type: "javascript" do
+  parameters "metric_name", "region"
+  result "request"
+  code <<-'EOS'
+  query_params = {
+    "Action": "ListMetrics",
+    "Version": "2010-08-01",
+    "Namespace": "CWAgent",
+    "MetricName": metric_name
+  }
+
+  var request = {
+    auth: "auth_aws",
+    host: "monitoring." + region + ".amazonaws.com",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies"
+    },
+    query_params: query_params,
+    ignore_status: [403, 401]
+  }
+EOS
+end
+
+# Build a map of instance ID to memory and GPU metric details for use in queries
+datasource "ds_cloudwatch_metrics_by_instance" do
+  run_script $js_cloudwatch_metrics_by_instance, $ds_cloudwatch_metrics
+end
+
+script "js_cloudwatch_metrics_by_instance", type: "javascript" do
+  parameters "ds_cloudwatch_metrics"
+  result "result"
+  code <<-'EOS'
+  result = {}
+
+  _.each(ds_cloudwatch_metrics, function(metric) {
+    var dims = metric.dimensions || []
+    var inst = _.find(dims, function(dim) { return dim.name == "InstanceId" })
+    if (!inst || !inst.value) return
+
+    var inst_id = inst.value
+
+    if (result[inst_id] == undefined) {
+      result[inst_id] = {
+        namespace: null,
+        metricName: null,
+        dimensions: null,
+        gpu: []
+      }
+    }
+
+    if (metric.metricName == 'nvidia_smi_utilization_gpu') {
+      // Find gpu_id dimension for the GPU index
+      var gpu_id_dim = _.find(dims, function(d) {
+        return d.name == 'gpu_id' || d.name == 'GPU' || d.name == 'gpuId'
+      })
+      var gpu_index = gpu_id_dim ? gpu_id_dim.value : '0'
+
+      // Avoid duplicate entries for the same GPU index on this instance
+      var already_added = _.find(result[inst_id].gpu, function(g) {
+        return g.index == gpu_index
+      })
+      if (!already_added) {
+        result[inst_id].gpu.push({
+          index: gpu_index,
+          dimensions: dims
+        })
+      }
+    } else {
+      // mem_used_percent or Memory % Committed Bytes In Use
+      result[inst_id].namespace = metric.namespace
+      result[inst_id].metricName = metric.metricName
+      result[inst_id].dimensions = metric.dimensions
+    }
+  })
+EOS
+end
+
+datasource "ds_region_check" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
+    path '/'
+    query 'Action', 'DescribeInstances'
+    query 'Version', '2016-11-15'
+    query 'MaxResults', '5'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
+    ignore_status [403, 401]
+  end
+  result do
+    encoding "xml"
+    field "region", val(iter_item, "region")
+    field "status", "OK"
+  end
+end
+
+datasource "ds_instance_sets" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
+    path '/'
+    query 'Action', 'DescribeInstances'
+    query 'Version', '2016-11-15'
+    query 'Filter.1.Name', 'instance-state-name'
+    query 'Filter.1.Value.1', 'running'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
+    ignore_status [403, 401]
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item", "array") do
+      field "instances_set" do
+        collect xpath(col_item, "instancesSet/item", "array") do
+          field "region", val(iter_item, "region")
+          field "instanceId", xpath(col_item, "instanceId")
+          field "imageId", xpath(col_item, "imageId")
+          field "resourceType", xpath(col_item, "instanceType")
+          field "platform", xpath(col_item, "platformDetails")
+          field "privateDnsName", xpath(col_item, "privateDnsName")
+          field "launchTime", xpath(col_item, "launchTime")
+          field "tags" do
+            collect xpath(col_item, "tagSet/item", "array") do
+              field "key", xpath(col_item, "key")
+              field "value", xpath(col_item, "value")
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
+# Filter to GPU instances only and apply tag exclusions
+datasource "ds_instances" do
+  run_script $js_instances, $ds_instance_sets, $ds_gpu_instance_types, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_instances", type: "javascript" do
+  parameters "ds_instance_sets", "ds_gpu_instance_types", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-'EOS'
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  // Build a set of GPU instance type names for filtering
+  gpu_type_names = _.pluck(ds_gpu_instance_types, "name")
+
+  result = []
+
+  _.each(ds_instance_sets, function(item) {
+    if (param_exclusion_tags.length > 0) {
+      filtered_instances = _.reject(item['instances_set'], function(resource) {
+        resource_tags = {}
+
+        if (typeof(resource['tags']) == 'object') {
+          _.each(resource['tags'], function(tag) {
+            resource_tags[tag['key']] = tag['value']
+          })
+        }
+
+        found_tags = []
+
+        _.each(comparators, function(comparator) {
+          comparison = comparator['comparison']
+          value = comparator['value']
+          string = comparator['string']
+          resource_tag = resource_tags[comparator['key']]
+
+          if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+          if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+          if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+          if (comparison == '=~') {
+            if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+          }
+
+          if (comparison == '!~') {
+            if (resource_tag == undefined) { found_tags.push(string) }
+            if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+          }
+        })
+
+        all_tags_found = found_tags.length == comparators.length
+        any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+        return all_tags_found || any_tags_found
+      })
+
+      result = result.concat(filtered_instances)
+    } else {
+      result = result.concat(item['instances_set'])
+    }
+  })
+
+  // Keep only GPU instances
+  result = _.filter(result, function(instance) {
+    return _.contains(gpu_type_names, instance["resourceType"])
+  })
+EOS
+end
+
+datasource "ds_identify_errors" do
+  run_script $js_identify_errors, $ds_regions, $ds_region_check, $ds_applied_policy, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_identify_errors", type: "javascript" do
+  parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
+  result "errors"
+  code <<-'EOS'
+  var errors = []
+
+  var region_responses = {}
+  _.each(ds_region_check, function(item) {
+    if (item.region) {
+      region_responses[item.region] = "OK"
+    }
+  })
+
+  var allowed_regions = _.keys(region_responses)
+
+  var forbidden_regions = []
+  _.each(ds_regions, function(region_obj) {
+    if (!_.contains(allowed_regions, region_obj.region)) {
+      forbidden_regions.push(region_obj.region)
+    }
+  })
+
+  if (forbidden_regions.length > 0) {
+    var regions_string = forbidden_regions.sort().join(", ")
+    var successful_regions = allowed_regions.sort().join(", ")
+    var filter_guidance = ""
+
+    if (param_regions_list.length > 0) {
+      filter_guidance = " You are currently using the 'Allow/Deny Regions List' parameter. "
+      filter_guidance += "You can update this list to exclude the inaccessible regions if appropriate."
+    } else {
+      filter_guidance = " You can use the 'Allow/Deny Regions List' parameter to exclude these regions from the policy scope."
+    }
+
+    errors.push(
+      "HTTP error received when attempting to describe EC2 instances in some AWS region(s).\n" +
+      "\n - Failed Regions: " + regions_string +
+      "\n - Successful Regions: " + successful_regions +
+      "\n\nThis typically indicates that the AWS credential does not have the required 'ec2:DescribeInstances' permission " +
+      "for these regions, or these regions may not be enabled in your AWS account. " +
+      "To resolve this issue: " +
+      "(1) Verify the AWS credential has 'ec2:DescribeInstances' permission for these regions, " +
+      "(2) Ensure these regions are enabled in your AWS account (some regions like opt-in regions require explicit enablement), or " +
+      "(3) Exclude these regions from policy evaluation using the region filter parameters." +
+      filter_guidance
+    )
+  }
+
+  errors = _.uniq(errors)
+
+  errors = _.map(errors, function(err) {
+    return { "error": err }
+  })
+
+  if (errors.length > 0) {
+    policy_name = "AWS Rightsize GPU EC2 Instances"
+    if (ds_applied_policy && ds_applied_policy.policy_template && ds_applied_policy.policy_template.name) {
+      policy_name = ds_applied_policy.policy_template.name
+    }
+    errors[0].policy_name = policy_name
+  }
+EOS
+end
+
+# Build CloudWatch queries for CPU, memory, GPU utilization, and GPU memory per instance
+datasource "ds_cloudwatch_queries" do
+  run_script $js_cloudwatch_queries, $ds_instances, $ds_cloudwatch_metrics_by_instance, $param_stats_lookback
+end
+
+script "js_cloudwatch_queries", type: "javascript" do
+  parameters "ds_instances", "ds_cloudwatch_metrics_by_instance", "param_stats_lookback"
+  result "result"
+  code <<-'EOS'
+  result = {}
+
+  _.each(ds_instances, function(instance) {
+    if (result[instance['region']] == undefined || result[instance['region']] == null) {
+      result[instance['region']] = []
+    }
+
+    var stats = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
+    var lookback = param_stats_lookback * 86400
+    var lookback_1d = 86400
+    var inst_norm = instance['instanceId'].replace('-', '_')
+
+    // Always query CPU utilization
+    _.each(stats, function(stat) {
+      var query = {
+        "Id": inst_norm + "_cpu" + stat,
+        "MetricStat": {
+          "Metric": {
+            "Namespace": "AWS/EC2",
+            "MetricName": "CPUUtilization",
+            "Dimensions": [
+              { "Name": "InstanceId", "Value": instance['instanceId'] }
+            ]
+          },
+          "Period": lookback,
+          "Stat": stat
+        },
+        "ReturnData": true
+      }
+
+      result[instance['region']].push(query)
+
+      var query_timeseries = _.clone(query)
+      query_timeseries.Id = query.Id + "_timeseries"
+      query_timeseries.MetricStat = _.clone(query.MetricStat)
+      query_timeseries.MetricStat.Period = lookback_1d
+      result[instance['region']].push(query_timeseries)
+    })
+
+    // Always query memory utilization
+    var metric_details = ds_cloudwatch_metrics_by_instance[instance['instanceId']]
+    var mem_metricname
+    var dimensions
+
+    if (metric_details != null && metric_details.metricName != null) {
+      mem_metricname = metric_details["metricName"]
+      dimensions = []
+      _.each(metric_details['dimensions'], function(dim) {
+        dimensions.push({ "Name": dim["name"], "Value": dim["value"] })
+      })
+    } else if (instance['platform'] && instance['platform'].indexOf("Windows") != -1) {
+      mem_metricname = "Memory % Committed Bytes In Use"
+      dimensions = [
+        { "Name": "ImageId", "Value": instance['imageId'] },
+        { "Name": "InstanceId", "Value": instance['instanceId'] },
+        { "Name": "InstanceType", "Value": instance['resourceType'] },
+        { "Name": "objectname", "Value": "Memory" }
+      ]
+    } else {
+      mem_metricname = "mem_used_percent"
+      dimensions = [
+        { "Name": "ImageId", "Value": instance['imageId'] },
+        { "Name": "InstanceId", "Value": instance['instanceId'] },
+        { "Name": "InstanceType", "Value": instance['resourceType'] }
+      ]
+    }
+
+    _.each(stats, function(stat) {
+      var query = {
+        "Id": inst_norm + "_mem" + stat,
+        "MetricStat": {
+          "Metric": {
+            "Namespace": "CWAgent",
+            "MetricName": mem_metricname,
+            "Dimensions": dimensions
+          },
+          "Period": lookback,
+          "Stat": stat
+        },
+        "ReturnData": true
+      }
+
+      result[instance['region']].push(query)
+
+      var query_timeseries = _.clone(query)
+      query_timeseries.Id = query.Id + "_timeseries"
+      query_timeseries.MetricStat = _.clone(query.MetricStat)
+      query_timeseries.MetricStat.Period = lookback_1d
+      result[instance['region']].push(query_timeseries)
+    })
+
+    // Query GPU utilization and GPU memory per GPU index if discovery data exists
+    if (metric_details && metric_details.gpu && metric_details.gpu.length > 0) {
+      _.each(metric_details.gpu, function(gpu_entry) {
+        var gpu_dims = _.map(gpu_entry.dimensions, function(dim) {
+          return { "Name": dim["name"], "Value": dim["value"] }
+        })
+
+        _.each(stats, function(stat) {
+          // GPU compute utilization query
+          var util_query = {
+            "Id": inst_norm + "_gpuutil" + gpu_entry.index + stat,
+            "MetricStat": {
+              "Metric": {
+                "Namespace": "CWAgent",
+                "MetricName": "nvidia_smi_utilization_gpu",
+                "Dimensions": gpu_dims
+              },
+              "Period": lookback,
+              "Stat": stat
+            },
+            "ReturnData": true
+          }
+          result[instance['region']].push(util_query)
+
+          // GPU memory used query (same dimensions as utilization)
+          var mem_query = {
+            "Id": inst_norm + "_gpumem" + gpu_entry.index + stat,
+            "MetricStat": {
+              "Metric": {
+                "Namespace": "CWAgent",
+                "MetricName": "nvidia_smi_memory_used",
+                "Dimensions": gpu_dims
+              },
+              "Period": lookback,
+              "Stat": stat
+            },
+            "ReturnData": true
+          }
+          result[instance['region']].push(mem_query)
+        })
+      })
+    }
+  })
+EOS
+end
+
+# Combine queries into 500 item blocks so we can make bulk requests to CloudWatch
+datasource "ds_instances_requests" do
+  run_script $js_instances_requests, $ds_cloudwatch_queries, $param_stats_lookback
+end
+
+script "js_instances_requests", type: "javascript" do
+  parameters "queries", "param_stats_lookback"
+  result "result"
+  code <<-'EOS'
+  result = []
+  query_block_size = 500
+
+  end_date = new Date()
+  end_date.setMinutes(0, 0, 0)
+  end_date = parseInt(end_date.getTime() / 1000)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date.setMinutes(0, 0, 0)
+  start_date = parseInt(start_date.getTime() / 1000)
+
+  _.each(Object.keys(queries), function(region) {
+    for (i = 0; i < queries[region].length; i += query_block_size) {
+      chunk = queries[region].slice(i, i + query_block_size)
+
+      result.push({
+        body: {
+          "StartTime": start_date,
+          "EndTime": end_date,
+          "MetricDataQueries": chunk
+        },
+        region: region
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_cloudwatch_data" do
+  iterate $ds_instances_requests
+  request do
+    run_script $js_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
+      field "timestamps", jmes_path(col_item, "Timestamps")
+    end
+  end
+end
+
+script "js_cloudwatch_data", type: "javascript" do
+  parameters "region", "body"
+  result "request"
+  code <<-'EOS'
+  api_wait = 5
+  var now = new Date().getTime()
+  while (new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  var request = {
+    auth: "auth_aws",
+    host: 'monitoring.' + region + '.amazonaws.com',
+    pagination: "pagination_aws_getmetricdata",
+    verb: "POST",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    },
+    query_params: {
+      'Version': '2010-08-01'
+    },
+    body: JSON.stringify(body)
+  }
+EOS
+end
+
+# Parse CloudWatch data into an object keyed by region and instance ID
+# GPU metrics are aggregated across GPU indices (max for utilization, sum for memory)
+datasource "ds_cloudwatch_data_sorted" do
+  run_script $js_cloudwatch_data_sorted, $ds_cloudwatch_data, $param_stats_threshold
+end
+
+script "js_cloudwatch_data_sorted", type: "javascript" do
+  parameters "ds_cloudwatch_data", "param_stats_threshold"
+  result "result"
+  code <<-'EOS'
+  result = {}
+
+  // Accumulate GPU metric values across indices for later aggregation
+  var gpu_accum = {}
+
+  _.each(ds_cloudwatch_data, function(item) {
+    var region = item['region']
+    var parts = item['id'].split('_')
+    var instance_name = parts[0] + '-' + parts[1]
+    var metric = parts[2]
+    var is_timeseries = item['id'].indexOf('timeseries') != -1
+
+    var value = item['values'][item['values'].length - 1]
+
+    if (result[region] == undefined) { result[region] = {} }
+    if (result[region][instance_name] == undefined) { result[region][instance_name] = {} }
+
+    if (!is_timeseries) {
+      if (metric.indexOf('gpuutil') == 0) {
+        // GPU utilization: aggregate = max across GPU indices
+        var stat = metric.slice(8)
+        var key = 'gpuUtil' + stat
+        var accum_key = region + '|' + instance_name + '|' + key
+        if (gpu_accum[accum_key] == undefined) {
+          gpu_accum[accum_key] = { values: [], type: 'max', region: region, inst: instance_name, key: key }
+        }
+        if (value != undefined) { gpu_accum[accum_key].values.push(value) }
+      } else if (metric.indexOf('gpumem') == 0) {
+        // GPU memory used: aggregate = sum across GPU indices
+        var stat = metric.slice(7)
+        var key = 'gpuMemUsed' + stat
+        var accum_key = region + '|' + instance_name + '|' + key
+        if (gpu_accum[accum_key] == undefined) {
+          gpu_accum[accum_key] = { values: [], type: 'sum', region: region, inst: instance_name, key: key }
+        }
+        if (value != undefined) { gpu_accum[accum_key].values.push(value) }
+      } else {
+        // CPU and memory scalar metrics
+        result[region][instance_name][metric] = value
+      }
+    } else {
+      // Timeseries (CPU and memory only; GPU has no timeseries variants)
+      if (metric.indexOf(param_stats_threshold) != -1) {
+        var metric_type = 'unknown'
+        if (metric.indexOf('cpu') != -1) { metric_type = 'cpu' }
+        else if (metric.indexOf('mem') != -1) { metric_type = 'mem' }
+
+        var stat_name = param_stats_threshold.toLowerCase()
+        var points = _.zip(item['timestamps'], item['values'])
+        points = _.map(points, function(pt) {
+          var r = { timestamp: pt[0] }
+          r[stat_name] = pt[1]
+          return r
+        })
+        points = _.sortBy(points, function(pt) { return pt['timestamp'] })
+
+        if (metric_type == 'cpu') {
+          result[region][instance_name]['cpuPoints'] = points
+        } else if (metric_type == 'mem') {
+          result[region][instance_name]['memPoints'] = points
+        }
+      }
+    }
+  })
+
+  // Aggregate GPU metrics across indices
+  _.each(gpu_accum, function(accum) {
+    if (accum.values.length > 0) {
+      var agg_val
+      if (accum.type == 'max') {
+        agg_val = _.max(accum.values)
+      } else {
+        agg_val = _.reduce(accum.values, function(memo, v) { return memo + v }, 0)
+      }
+
+      if (result[accum.region] && result[accum.region][accum.inst]) {
+        result[accum.region][accum.inst][accum.key] = agg_val
+      }
+    }
+  })
+EOS
+end
+
+datasource "ds_instance_costs" do
+  request do
+    run_script $js_instance_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceId", jmes_path(col_item, "dimensions.resource_id")
+      field "resourceType", jmes_path(col_item, "dimensions.resource_type")
+      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "adjustmentName", jmes_path(col_item, "dimensions.adjustment_name")
+      field "operatingSystem", jmes_path(col_item, "dimensions.operating_system")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_instance_costs", type: "javascript" do
+  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id", "vendor_account_name", "resource_type", "adjustment_name", "operating_system"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        type: "and",
+        expressions: [
+          {
+            dimension: "service",
+            type: "equal",
+            value: "AmazonEC2"
+          },
+          {
+            dimension: "resource_type",
+            type: "equal",
+            value: "Compute Instance"
+          },
+          {
+            dimension: "vendor_account",
+            type: "equal",
+            value: ds_aws_account['id']
+          },
+          {
+            type: "not",
+            expression: {
+              dimension: "adjustment_name",
+              type: "substring",
+              substring: "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_instance_costs_grouped" do
+  run_script $js_instance_costs_grouped, $ds_instance_costs
+end
+
+script "js_instance_costs_grouped", type: "javascript" do
+  parameters "ds_instance_costs"
+  result "result"
+  code <<-'EOS'
+  // Multiply a single day's cost by the average number of days in a month
+  cost_multiplier = 365.25 / 12
+
+  result = {}
+
+  _.each(ds_instance_costs, function(item) {
+    var id = item['resourceId'].toLowerCase()
+
+    if (result[id] == undefined) {
+      result[id] = { cost: 0.0, operatingSystem: null }
+    }
+
+    result[id].cost += item['cost'] * cost_multiplier
+
+    if (!result[id].operatingSystem && item['operatingSystem']) {
+      result[id].operatingSystem = item['operatingSystem']
+    }
+  })
+EOS
+end
+
+# Merge CloudWatch metrics with instance data
+# Only includes instances that have GPU CloudWatch data (nvidia_smi_utilization_gpu)
+datasource "ds_merged_metrics" do
+  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_currency, $param_stats_threshold, $param_stats_lookback, rs_org_id, rs_project_id
+end
+
+script "js_merged_metrics", type: "javascript" do
+  parameters "ds_cloudwatch_data_sorted", "ds_instances", "ds_aws_account", "ds_currency", "param_stats_threshold", "param_stats_lookback", "rs_org_id", "rs_project_id"
+  result "result"
+  code <<-'EOS'
+  function generateChartUrl(cpu_stats, mem_stats, stat_name, resource_name) {
+    if ((!cpu_stats || cpu_stats.length === 0) && (!mem_stats || mem_stats.length === 0)) {
+      return null
+    }
+
+    stat_name = stat_name.toLowerCase()
+
+    var timestamps = []
+    var cpuValues = []
+    var memValues = []
+
+    var maxPoints = 60
+    var step = 60
+    if (cpu_stats && cpu_stats.length > 0) {
+      step = Math.max(1, Math.floor(cpu_stats.length / maxPoints))
+    } else if (mem_stats && mem_stats.length > 0) {
+      step = Math.max(1, Math.floor(mem_stats.length / maxPoints))
+    }
+
+    if (cpu_stats && cpu_stats.length > 0) {
+      for (var i = 0; i < cpu_stats.length; i += step) {
+        if (cpu_stats[i] && cpu_stats[i].timestamp) {
+          var date = new Date(cpu_stats[i].timestamp * 1000)
+          timestamps.push(date.toISOString().split('T')[0])
+          cpuValues.push(_.isNumber(cpu_stats[i][stat_name]) ? Math.round(cpu_stats[i][stat_name] * 10) / 10 : "_")
+          if (mem_stats && mem_stats[i] && _.isNumber(mem_stats[i][stat_name])) {
+            memValues.push(Math.round(mem_stats[i][stat_name] * 10) / 10)
+          } else {
+            memValues.push("_")
+          }
+        }
+      }
+    }
+
+    var timeLabels = timestamps.join('|')
+    var cpuData = cpuValues.join(',')
+    var memData = memValues.join(',')
+    var lineColors = ["206BB6", "CF8F36"]
+    var stat_name_Proper = stat_name.charAt(0).toUpperCase() + stat_name.slice(1).toLowerCase()
+
+    var chartUrl = "https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id=" + rs_org_id + "&rs_project_id=" + rs_project_id
+    chartUrl += "&cht=lc"
+    chartUrl += "&chs=900x450"
+    chartUrl += "&chco=" + lineColors.join(',')
+    chartUrl += "&chxt=x,y"
+    chartUrl += "&chxs=0,000000,12,-1,lt,000000,s,min90"
+    chartUrl += "&chdl=" + encodeURIComponent("CPU Usage%25%20%20%20%20%20%20%20%20%20%20|Memory Usage%25")
+    chartUrl += "&chdlp=b"
+    chartUrl += "&chtt=" + encodeURIComponent(stat_name_Proper + "+Resource+Utilization|" + encodeURIComponent(resource_name))
+    chartUrl += "&chma=10,10,10,10"
+    chartUrl += "&chxr=1,0,100"
+    chartUrl += "&chls=" + encodeURIComponent("4|4")
+    chartUrl += "&chf=bg,s,FFFFFF00"
+    chartUrl += "&chg=" + encodeURIComponent("20,50,5,5,CECECE")
+    chartUrl += "&chxl=" + encodeURIComponent("0:|" + encodeURIComponent(timeLabels))
+    chartUrl += "&chd=" + encodeURIComponent("t:" + cpuData + "|" + memData)
+
+    return chartUrl
+  }
+
+  result = []
+
+  _.each(ds_instances, function(instance) {
+    var region = instance['region']
+    var id = instance['instanceId']
+
+    if (ds_cloudwatch_data_sorted[region] == undefined) return
+    if (ds_cloudwatch_data_sorted[region][id] == undefined) return
+
+    var cw = ds_cloudwatch_data_sorted[region][id]
+
+    // Only include instances that have GPU CloudWatch data
+    var has_gpu_util = false
+    _.each(['Average', 'Minimum', 'Maximum', 'p99', 'p95', 'p90'], function(stat) {
+      if (cw['gpuUtil' + stat] != undefined) { has_gpu_util = true }
+    })
+    if (!has_gpu_util) return
+
+    var tags = []
+    var resourceName = ""
+
+    if (instance['tags'] != undefined && instance['tags'] != null) {
+      _.each(instance['tags'], function(tag) {
+        tags.push([tag['key'], tag['value']].join('='))
+        if (tag['key'].toLowerCase() == 'name') { resourceName = tag['value'] }
+      })
+    }
+
+    var resourceARN = "arn:aws:ec2:" + region + ":" + ds_aws_account['id'] + ":instance/" + id
+
+    var merged_instance = {
+      "cpu_minimum": cw['cpuMinimum'] || null,
+      "cpu_average": cw['cpuAverage'] || null,
+      "cpu_maximum": cw['cpuMaximum'] || null,
+      "cpu_p90": cw['cpup90'] || null,
+      "cpu_p95": cw['cpup95'] || null,
+      "cpu_p99": cw['cpup99'] || null,
+      "mem_minimum": cw['memMinimum'] || null,
+      "mem_average": cw['memAverage'] || null,
+      "mem_maximum": cw['memMaximum'] || null,
+      "mem_p90": cw['memp90'] || null,
+      "mem_p95": cw['memp95'] || null,
+      "mem_p99": cw['memp99'] || null,
+      "gpu_util_minimum": cw['gpuUtilMinimum'] || null,
+      "gpu_util_average": cw['gpuUtilAverage'] || null,
+      "gpu_util_maximum": cw['gpuUtilMaximum'] || null,
+      "gpu_util_p90": cw['gpuUtilp90'] || null,
+      "gpu_util_p95": cw['gpuUtilp95'] || null,
+      "gpu_util_p99": cw['gpuUtilp99'] || null,
+      "gpu_mem_used_minimum": cw['gpuMemUsedMinimum'] || null,
+      "gpu_mem_used_average": cw['gpuMemUsedAverage'] || null,
+      "gpu_mem_used_maximum": cw['gpuMemUsedMaximum'] || null,
+      "gpu_mem_used_p90": cw['gpuMemUsedp90'] || null,
+      "gpu_mem_used_p95": cw['gpuMemUsedp95'] || null,
+      "gpu_mem_used_p99": cw['gpuMemUsedp99'] || null,
+      "region": region,
+      "id": id,
+      "resourceARN": resourceARN,
+      "resourceID": id,
+      "platform": instance['platform'],
+      "service": "EC2",
+      "privateDnsName": instance['privateDnsName'],
+      "launchTime": instance['launchTime'],
+      "hostname": instance['privateDnsName'] ? instance['privateDnsName'].split('.')[0] : "",
+      "tags": tags.join(', '),
+      "resourceType": instance['resourceType'],
+      "savings": null,
+      "accountID": ds_aws_account['id'],
+      "accountName": ds_aws_account['name'],
+      "savingsCurrency": ds_currency['symbol'],
+      "thresholdType": param_stats_threshold,
+      "lookbackPeriod": param_stats_lookback,
+      "resourceName": resourceName,
+      "underutil_message": "",
+      "idle_message": "",
+      "underutil_total_savings": "",
+      "idle_total_savings": "",
+      "policy_name": ""
+    }
+
+    var resource_identifier = merged_instance["resourceName"] ? merged_instance["resourceName"] + " (" + merged_instance["resourceID"] + ")" : merged_instance["resourceID"]
+    merged_instance["chartUrl"] = generateChartUrl(cw['cpuPoints'], cw['memPoints'], param_stats_threshold, resource_identifier)
+
+    if (_.isString(merged_instance["chartUrl"])) {
+      merged_instance["chartUrlField"] = resource_identifier + " Utilization Chart||" + merged_instance["chartUrl"] + "&from_pt=true"
+    }
+
+    result.push(merged_instance)
+  })
+EOS
+end
+
+datasource "ds_idle_and_underutil_instances" do
+  run_script $js_idle_and_underutil_instances, $ds_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_gpu_instance_types, $ds_aws_instance_cost_map, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_safety_margin, $param_incident_csv, rs_org_id, rs_project_id
+end
+
+script "js_idle_and_underutil_instances", type: "javascript" do
+  parameters "ds_instances", "ds_merged_metrics", "ds_instance_costs_grouped", "ds_gpu_instance_types", "ds_aws_instance_cost_map", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_safety_margin", "param_incident_csv", "rs_org_id", "rs_project_id"
+  result "result"
+  code <<-'EOS'
+  // Hard-coded thresholds for GPU rightsizing
+  var IDLE_THRESHOLD = 5    // All 4 metrics below 5% -> recommend termination
+  var SAFETY_FACTOR = 1 + (param_safety_margin / 100)  // e.g. 50% margin -> 1.5x
+
+  function formatNumber(number, separator) {
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  var threshold_statistic = param_stats_threshold.toLowerCase()
+
+  // Build GPU instance type lookup maps
+  var gpu_types_by_name = {}
+  _.each(ds_gpu_instance_types, function(inst) {
+    gpu_types_by_name[inst.name] = inst
+  })
+
+  // Build map of GPU family -> list of instances sorted by vCPUs ascending
+  var instances_by_family = {}
+  _.each(ds_gpu_instance_types, function(inst) {
+    var fam = inst.family
+    if (instances_by_family[fam] == undefined) { instances_by_family[fam] = [] }
+    instances_by_family[fam].push(inst)
+  })
+  _.each(instances_by_family, function(insts, fam) {
+    instances_by_family[fam] = _.sortBy(insts, function(i) { return i.cpu.vcpus })
+  })
+
+  var underutil_total_savings = 0.0
+  var idle_total_savings = 0.0
+  var underutil_list = []
+  var idle_list = []
+
+  _.each(ds_merged_metrics, function(instance) {
+    var id = instance['id'].toLowerCase()
+    var region = instance['region']
+    var current_type = instance['resourceType']
+
+    // Get monthly CCO cost
+    var total_cost = 0.0
+    if (ds_instance_costs_grouped[id] != undefined) {
+      total_cost = ds_instance_costs_grouped[id].cost
+    }
+
+    // Get utilization values using the configured threshold statistic
+    var cpu_pct = instance['cpu_' + threshold_statistic]
+    var mem_pct = instance['mem_' + threshold_statistic]
+    var gpu_util = instance['gpu_util_' + threshold_statistic]
+    var gpu_mem_used_mib = instance['gpu_mem_used_' + threshold_statistic]
+
+    // Skip instances missing any metric
+    if (cpu_pct == null || cpu_pct == undefined) return
+    if (mem_pct == null || mem_pct == undefined) return
+    if (gpu_util == null || gpu_util == undefined) return
+    if (gpu_mem_used_mib == null || gpu_mem_used_mib == undefined) return
+
+    // Get current instance GPU specs
+    var current_specs = gpu_types_by_name[current_type]
+    if (!current_specs) return
+
+    var gpu_mem_pct = 0
+    if (current_specs.gpu && current_specs.gpu.totalGpuMemoryInMiB > 0) {
+      gpu_mem_pct = gpu_mem_used_mib / current_specs.gpu.totalGpuMemoryInMiB * 100
+    }
+
+    // Determine operating system for pricing lookup
+    var operating_system = null
+    if (ds_instance_costs_grouped[id] != undefined && ds_instance_costs_grouped[id].operatingSystem) {
+      operating_system = ds_instance_costs_grouped[id].operatingSystem
+    }
+
+    if (!operating_system) {
+      var plat = instance['platform'] || ''
+      if (plat.indexOf('Windows') != -1) {
+        operating_system = 'Windows'
+      } else if (plat.indexOf('Red Hat') != -1) {
+        operating_system = 'RHEL'
+      } else if (plat.indexOf('SUSE') != -1) {
+        operating_system = 'SUSE'
+      } else {
+        operating_system = 'Linux'
+      }
+    }
+
+    // IDLE check: all four metrics below the idle threshold
+    var is_idle = cpu_pct < IDLE_THRESHOLD && mem_pct < IDLE_THRESHOLD && gpu_util < IDLE_THRESHOLD && gpu_mem_pct < IDLE_THRESHOLD
+
+    if (is_idle) {
+      instance["savings"] = parseFloat(parseFloat(total_cost).toFixed(3))
+      instance["recommendationType"] = "Terminate"
+      instance["newResourceType"] = "Terminate GPU EC2 Instance"
+      instance["gpuCount"] = current_specs.gpu ? current_specs.gpu.count : null
+      instance["newGpuCount"] = null
+      instance["gpuMemMiB"] = current_specs.gpu ? current_specs.gpu.memoryInMiB : null
+      instance["totalGpuMemMiB"] = current_specs.gpu ? current_specs.gpu.totalGpuMemoryInMiB : null
+      instance["gpuMemPct"] = parseFloat(gpu_mem_pct.toFixed(2))
+      instance["gpuMemUsedMiB"] = parseFloat(gpu_mem_used_mib.toFixed(2))
+      instance["currentInstancePrice"] = null
+      instance["newInstancePrice"] = null
+
+      if (ds_aws_instance_cost_map[region] && ds_aws_instance_cost_map[region][current_type] && ds_aws_instance_cost_map[region][current_type][operating_system]) {
+        instance["currentInstancePrice"] = ds_aws_instance_cost_map[region][current_type][operating_system]['pricePerUnit']
+      }
+
+      var recommendationDetails = [
+        "Terminate GPU EC2 instance ", instance["resourceID"], " ",
+        "in AWS Account ", instance["accountName"], " ",
+        "(", instance["accountID"], ")"
+      ].join('')
+
+      if (_.isString(instance["chartUrl"])) {
+        instance["chartUrlField"] = instance["resourceID"] + " Utilization Chart||" + instance["chartUrl"]
+        recommendationDetails += "\n\n![Utilization Chart](" + instance["chartUrl"] + "&from_pt=true)"
+      }
+
+      instance["recommendationDetails"] = recommendationDetails
+
+      if (instance['savings'] >= param_min_savings) {
+        idle_total_savings += total_cost
+        idle_list.push(instance)
+      }
+    } else {
+      // DOWNSIZE check: find the smallest same-family GPU instance satisfying all constraints
+      var current_vcpus = current_specs.cpu.vcpus
+
+      var required_vcpus = Math.ceil(current_vcpus * cpu_pct / 100 * SAFETY_FACTOR)
+      var required_ram_mib = Math.ceil(current_specs.memory.sizeInMiB * mem_pct / 100 * SAFETY_FACTOR)
+      var required_gpu_count = Math.max(1, Math.ceil(current_specs.gpu.count * gpu_util / 100 * SAFETY_FACTOR))
+      var required_gpu_mem_mib = Math.ceil(gpu_mem_used_mib * SAFETY_FACTOR)
+
+      var family = current_specs.family
+      var candidates = instances_by_family[family] || []
+      var new_instance = null
+
+      _.each(candidates, function(candidate) {
+        if (new_instance) return
+        if (candidate.cpu.vcpus >= current_vcpus) return
+        if (candidate.cpu.vcpus < required_vcpus) return
+        if (candidate.memory.sizeInMiB < required_ram_mib) return
+        if (candidate.gpu.count < required_gpu_count) return
+        if (candidate.gpu.totalGpuMemoryInMiB < required_gpu_mem_mib) return
+        new_instance = candidate
+      })
+
+      if (new_instance) {
+        var new_type = new_instance.name
+
+        // Pricing-based savings calculation with vCPU ratio fallback
+        var current_price = null
+        var new_price = null
+
+        if (ds_aws_instance_cost_map[region]) {
+          if (ds_aws_instance_cost_map[region][current_type] && ds_aws_instance_cost_map[region][current_type][operating_system]) {
+            current_price = ds_aws_instance_cost_map[region][current_type][operating_system]['pricePerUnit']
+          }
+          if (ds_aws_instance_cost_map[region][new_type] && ds_aws_instance_cost_map[region][new_type][operating_system]) {
+            new_price = ds_aws_instance_cost_map[region][new_type][operating_system]['pricePerUnit']
+          }
+        }
+
+        var savings_multiplier = 0.0
+        if (current_price != null && new_price != null && current_price > 0) {
+          savings_multiplier = 1 - new_price / current_price
+        } else {
+          // Fallback: vCPU count ratio as cost proxy
+          savings_multiplier = 1 - new_instance.cpu.vcpus / current_vcpus
+        }
+
+        var savings = total_cost * Math.max(0, savings_multiplier)
+
+        instance["savings"] = parseFloat(savings.toFixed(3))
+        instance["recommendationType"] = "Downsize"
+        instance["newResourceType"] = new_type
+        instance["gpuCount"] = current_specs.gpu ? current_specs.gpu.count : null
+        instance["newGpuCount"] = new_instance.gpu ? new_instance.gpu.count : null
+        instance["gpuMemMiB"] = current_specs.gpu ? current_specs.gpu.memoryInMiB : null
+        instance["totalGpuMemMiB"] = current_specs.gpu ? current_specs.gpu.totalGpuMemoryInMiB : null
+        instance["gpuMemPct"] = parseFloat(gpu_mem_pct.toFixed(2))
+        instance["gpuMemUsedMiB"] = parseFloat(gpu_mem_used_mib.toFixed(2))
+        instance["currentInstancePrice"] = current_price
+        instance["newInstancePrice"] = new_price
+
+        var recommendationDetails = [
+          "Change instance type of GPU EC2 instance ", instance["resourceID"], " ",
+          "in AWS Account ", instance["accountName"], " ",
+          "(", instance["accountID"], ") ",
+          "from ", current_type, " ",
+          "to ", new_type
+        ].join('')
+
+        if (_.isString(instance["chartUrl"])) {
+          instance["chartUrlField"] = instance["resourceID"] + " Utilization Chart||" + instance["chartUrl"]
+          recommendationDetails += "\n\n![Utilization Chart](" + instance["chartUrl"] + "&from_pt=true)"
+        }
+
+        instance["recommendationDetails"] = recommendationDetails
+
+        if (instance['savings'] >= param_min_savings) {
+          underutil_total_savings += savings
+          underutil_list.push(instance)
+        }
+      }
+    }
+  })
+
+  // Build summary messages
+  var csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
+  var gpu_instances_total = ds_instances.length
+  var gpu_instances_with_metrics = ds_merged_metrics.length
+
+  var idle_instances_total = idle_list.length.toString()
+  var underutil_instances_total = underutil_list.length.toString()
+  var idle_pct = (idle_list.length / gpu_instances_with_metrics * 100).toFixed(2) + '%'
+  var underutil_pct = (underutil_list.length / gpu_instances_with_metrics * 100).toFixed(2) + '%'
+
+  underutil_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(underutil_total_savings).toFixed(2), ds_currency['separator'])
+  idle_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), ds_currency['separator'])
+
+  var metric_window = "CPU, memory, GPU compute utilization, and GPU memory usage were analyzed over the last " + param_stats_lookback.toString() + " days using the '" + param_stats_threshold + "' statistic.\n\n"
+
+  var applied_policy_url = "https://" + ds_flexera_api_hosts["ui"]
+  if (_.isString(ds_applied_policy['policyAggregateId'])) {
+    applied_policy_url = applied_policy_url + "/orgs/" + rs_org_id + "/automation/applied-policies?policyId=" + ds_applied_policy['policyAggregateId']
+  } else {
+    applied_policy_url = applied_policy_url + "/orgs/" + rs_org_id + "/automation/applied-policies/projects/" + rs_project_id + "?policyId=" + ds_applied_policy['id']
+  }
+
+  var disclaimer = "The above settings can be modified by editing the [" + ds_applied_policy['name'] + "](" + applied_policy_url + ") applied policy and changing the appropriate parameters.\n\n"
+
+  var algo_note = "Instances are flagged for downsizing when the smallest instance in the same GPU family that can handle the current workload (with a " + param_safety_margin + "% safety margin, i.e. " + SAFETY_FACTOR.toFixed(2) + "x) is smaller than the current instance type. " +
+    "This approach accounts for the non-monotonic relationship between instance size and GPU count within GPU instance families " +
+    "(e.g., a g5.12xlarge has 4 GPUs at 48 vCPUs while adjacent sizes have 1 GPU).\n\n"
+
+  var metrics_note = "Note: Only GPU instances with CloudWatch Agent GPU metrics (nvidia_smi_utilization_gpu) reporting to CloudWatch are analyzed. " +
+    "Instances without GPU metrics are excluded.\n\n"
+
+  var idle_findings = [
+    "Out of ", gpu_instances_total.toString(), " GPU EC2 instances discovered, ",
+    gpu_instances_with_metrics.toString(), " have GPU CloudWatch metrics. ",
+    "Of those, ", idle_instances_total, " (", idle_pct, ") are idle and recommended for termination. ",
+    "An instance is considered idle when its CPU, memory, GPU compute utilization, and GPU memory utilization (", param_stats_threshold.toLowerCase(), ") are all below ", IDLE_THRESHOLD.toString(), "%. "
+  ].join('')
+
+  var underutil_findings = [
+    "Out of ", gpu_instances_total.toString(), " GPU EC2 instances discovered, ",
+    gpu_instances_with_metrics.toString(), " have GPU CloudWatch metrics. ",
+    "Of those, ", underutil_instances_total, " (", underutil_pct, ") are underutilized and recommended for downsizing. "
+  ].join('')
+
+  var idle_message = idle_findings + metric_window + metrics_note + disclaimer + csv_message
+  var underutil_message = underutil_findings + algo_note + metric_window + metrics_note + disclaimer + csv_message
+
+  // Sort by descending savings
+  idle_list = _.sortBy(idle_list, function(item) { return item['savings'] * -1 })
+  underutil_list = _.sortBy(underutil_list, function(item) { return item['savings'] * -1 })
+
+  var dummy_entry = {
+    "recommendationType": "",
+    "underutil_message": "",
+    "idle_message": "",
+    "underutil_total_savings": "",
+    "idle_total_savings": "",
+    "tags": "",
+    "savings": "",
+    "savingsCurrency": "",
+    "cpu_maximum": "",
+    "cpu_minimum": "",
+    "cpu_average": "",
+    "cpu_p99": "",
+    "cpu_p95": "",
+    "cpu_p90": "",
+    "mem_maximum": "",
+    "mem_minimum": "",
+    "mem_average": "",
+    "mem_p99": "",
+    "mem_p95": "",
+    "mem_p90": "",
+    "gpu_util_maximum": "",
+    "gpu_util_minimum": "",
+    "gpu_util_average": "",
+    "gpu_util_p99": "",
+    "gpu_util_p95": "",
+    "gpu_util_p90": "",
+    "gpu_mem_used_maximum": "",
+    "gpu_mem_used_minimum": "",
+    "gpu_mem_used_average": "",
+    "gpu_mem_used_p99": "",
+    "gpu_mem_used_p95": "",
+    "gpu_mem_used_p90": "",
+    "gpuMemPct": "",
+    "gpuMemUsedMiB": "",
+    "currentInstancePrice": "",
+    "newInstancePrice": ""
+  }
+
+  idle_list.push(dummy_entry)
+  underutil_list.push(dummy_entry)
+
+  if (idle_list.length > 0) {
+    idle_list[0]['idle_message'] = idle_message
+    idle_list[0]['idle_total_savings'] = idle_total_savings
+    idle_list[0]['policy_name'] = ds_applied_policy['name']
+  }
+
+  if (underutil_list.length > 0) {
+    underutil_list[0]['underutil_message'] = underutil_message
+    underutil_list[0]['underutil_total_savings'] = underutil_total_savings
+    underutil_list[0]['policy_name'] = ds_applied_policy['name']
+  }
+
+  result = {
+    idle_list: idle_list,
+    underutil_list: underutil_list
+  }
+EOS
+end
+
+datasource "ds_underutil_instances" do
+  run_script $js_split_incidents, $ds_idle_and_underutil_instances, "underutil_list"
+end
+
+datasource "ds_idle_instances" do
+  run_script $js_split_incidents, $ds_idle_and_underutil_instances, "idle_list"
+end
+
+script "js_split_incidents", type: "javascript" do
+  parameters "ds_idle_and_underutil_instances", "incident"
+  result "result"
+  code "result = ds_idle_and_underutil_instances[incident]"
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_utilization" do
+  validate_each $ds_underutil_instances do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Underutilized GPU EC2 Instances Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .underutil_total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .underutil_message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Downsize"))
+    escalate $esc_email
+    escalate $esc_downsize_instances
+    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "mem_maximum", "mem_minimum", "mem_average", "mem_p99", "mem_p95", "mem_p90", "gpu_util_maximum", "gpu_util_minimum", "gpu_util_average", "gpu_util_p99", "gpu_util_p95", "gpu_util_p90", "gpu_mem_used_maximum", "gpu_mem_used_minimum", "gpu_mem_used_average", "gpu_mem_used_p99", "gpu_mem_used_p95", "gpu_mem_used_p90", "gpuMemPct", "gpuMemUsedMiB", "currentInstancePrice", "newInstancePrice"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "gpuCount" do
+        label "GPU Count"
+      end
+      field "newGpuCount" do
+        label "Recommended GPU Count"
+      end
+      field "gpuMemMiB" do
+        label "GPU Memory Per GPU (MiB)"
+      end
+      field "totalGpuMemMiB" do
+        label "Total GPU Memory (MiB)"
+      end
+      field "currentInstancePrice" do
+        label "Current Instance Hourly List Price"
+      end
+      field "newInstancePrice" do
+        label "Recommended Instance Hourly List Price"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "launchTime" do
+        label "Launch Time"
+      end
+      field "gpuUtilMaximum" do
+        label "GPU Utilization Maximum %"
+        path "gpu_util_maximum"
+      end
+      field "gpuUtilMinimum" do
+        label "GPU Utilization Minimum %"
+        path "gpu_util_minimum"
+      end
+      field "gpuUtilAverage" do
+        label "GPU Utilization Average %"
+        path "gpu_util_average"
+      end
+      field "gpuUtilP99" do
+        label "GPU Utilization p99"
+        path "gpu_util_p99"
+      end
+      field "gpuUtilP95" do
+        label "GPU Utilization p95"
+        path "gpu_util_p95"
+      end
+      field "gpuUtilP90" do
+        label "GPU Utilization p90"
+        path "gpu_util_p90"
+      end
+      field "gpuMemPct" do
+        label "GPU Memory Utilization %"
+      end
+      field "gpuMemUsedMiB" do
+        label "GPU Memory Used (MiB)"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+        path "cpu_maximum"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+        path "cpu_minimum"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+        path "cpu_average"
+      end
+      field "cpuP99" do
+        label "CPU p99"
+        path "cpu_p99"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+        path "cpu_p95"
+      end
+      field "cpuP90" do
+        label "CPU p90"
+        path "cpu_p90"
+      end
+      field "memMaximum" do
+        label "Memory Maximum %"
+        path "mem_maximum"
+      end
+      field "memMinimum" do
+        label "Memory Minimum %"
+        path "mem_minimum"
+      end
+      field "memAverage" do
+        label "Memory Average %"
+        path "mem_average"
+      end
+      field "memP99" do
+        label "Memory p99"
+        path "mem_p99"
+      end
+      field "memP95" do
+        label "Memory p95"
+        path "mem_p95"
+      end
+      field "memP90" do
+        label "Memory p90"
+        path "mem_p90"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "resourceARN" do
+        label "Resource ARN"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+      field "chartUrlField" do
+        label "Utilization Chart External Link"
+        format "link-external"
+      end
+    end
+  end
+
+  validate_each $ds_idle_instances do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Idle GPU EC2 Instances Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .idle_total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .idle_message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Terminate"))
+    escalate $esc_email
+    escalate $esc_stop_instances
+    escalate $esc_terminate_instances
+    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "mem_maximum", "mem_minimum", "mem_average", "mem_p99", "mem_p95", "mem_p90", "gpu_util_maximum", "gpu_util_minimum", "gpu_util_average", "gpu_util_p99", "gpu_util_p95", "gpu_util_p90", "gpu_mem_used_maximum", "gpu_mem_used_minimum", "gpu_mem_used_average", "gpu_mem_used_p99", "gpu_mem_used_p95", "gpu_mem_used_p90", "gpuMemPct", "gpuMemUsedMiB", "currentInstancePrice", "newInstancePrice"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "gpuCount" do
+        label "GPU Count"
+      end
+      field "gpuMemMiB" do
+        label "GPU Memory Per GPU (MiB)"
+      end
+      field "totalGpuMemMiB" do
+        label "Total GPU Memory (MiB)"
+      end
+      field "currentInstancePrice" do
+        label "Current Instance Hourly List Price"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "launchTime" do
+        label "Launch Time"
+      end
+      field "gpuUtilMaximum" do
+        label "GPU Utilization Maximum %"
+        path "gpu_util_maximum"
+      end
+      field "gpuUtilMinimum" do
+        label "GPU Utilization Minimum %"
+        path "gpu_util_minimum"
+      end
+      field "gpuUtilAverage" do
+        label "GPU Utilization Average %"
+        path "gpu_util_average"
+      end
+      field "gpuUtilP99" do
+        label "GPU Utilization p99"
+        path "gpu_util_p99"
+      end
+      field "gpuUtilP95" do
+        label "GPU Utilization p95"
+        path "gpu_util_p95"
+      end
+      field "gpuUtilP90" do
+        label "GPU Utilization p90"
+        path "gpu_util_p90"
+      end
+      field "gpuMemPct" do
+        label "GPU Memory Utilization %"
+      end
+      field "gpuMemUsedMiB" do
+        label "GPU Memory Used (MiB)"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+        path "cpu_maximum"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+        path "cpu_minimum"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+        path "cpu_average"
+      end
+      field "cpuP99" do
+        label "CPU p99"
+        path "cpu_p99"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+        path "cpu_p95"
+      end
+      field "cpuP90" do
+        label "CPU p90"
+        path "cpu_p90"
+      end
+      field "memMaximum" do
+        label "Memory Maximum %"
+        path "mem_maximum"
+      end
+      field "memMinimum" do
+        label "Memory Minimum %"
+        path "mem_minimum"
+      end
+      field "memAverage" do
+        label "Memory Average %"
+        path "mem_average"
+      end
+      field "memP99" do
+        label "Memory p99"
+        path "mem_p99"
+      end
+      field "memP95" do
+        label "Memory p95"
+        path "mem_p95"
+      end
+      field "memP90" do
+        label "Memory p90"
+        path "mem_p90"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "resourceARN" do
+        label "Resource ARN"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+      field "chartUrlField" do
+        label "Utilization Chart External Link"
+        format "link-external"
+      end
+    end
+  end
+
+  validate $ds_identify_errors do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to retrieve EC2 instance data from one or more AWS regions due to permission or configuration errors.
+
+    **Error Details:**
+
+    {{ range data -}}
+      - {{ .error }}
+    {{ end }}
+
+    **Recommended Actions:**
+
+    1. Verify that the AWS credential has the 'ec2:DescribeInstances' permission for all regions where the policy should execute
+    2. Ensure that the required AWS regions are enabled in your AWS account (some regions require explicit opt-in)
+    3. Consider updating the 'Allow/Deny Regions List' parameter to exclude regions that are not accessible or not relevant to your use case
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email_errors_identified" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
+end
+
+escalation "esc_downsize_instances" do
+  automatic contains($param_automatic_action, "Downsize Instances")
+  label "Downsize Instances"
+  description "Approval to downsize all selected GPU instances"
+  run "downsize_instances", data
+end
+
+escalation "esc_stop_instances" do
+  automatic contains($param_automatic_action, "Stop Instances")
+  label "Stop Instances"
+  description "Approval to stop all selected GPU instances"
+  run "stop_instances", data
+end
+
+escalation "esc_terminate_instances" do
+  automatic contains($param_automatic_action, "Terminate Instances")
+  label "Terminate Instances"
+  description "Approval to terminate all selected GPU instances"
+  run "terminate_instances", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define stop_instances($data) do
+  $$all_responses = []
+  $$errors = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
+
+      if $initial_state != "terminated" && $initial_state != "pending"
+        if $initial_state != "stopped"
+          call stop_instance($instance)
+        end
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define downsize_instances($data) do
+  $$all_responses = []
+  $$errors = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      if $instance["newResourceType"] != "Terminate GPU EC2 Instance"
+        call get_instance_state($instance) retrieve $initial_state
+        if $initial_state != "terminated" && $initial_state != "pending"
+          if $initial_state != "stopped"
+            call stop_instance($instance)
+          end
+          call resize_instance($instance)
+          if $initial_state == "running"
+            call start_instance($instance)
+          end
+        end
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define terminate_instances($data) do
+  $$all_responses = []
+  $$errors = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call get_instance_state($instance) retrieve $initial_state
+
+      if $initial_state != "terminated" && $initial_state != "pending"
+        call terminate_instance($instance)
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define start_instance($instance) return $response do
+  $url = "https://ec2." + $instance["region"] + ".amazonaws.com/?Action=StartInstances&Version=2016-11-15&InstanceId.1=" + $instance["id"]
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "StartInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  task_label("Start EC2 instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response starting EC2 instance: " + $instance["id"] + " " + to_json($response)
+  else
+    task_label("Start EC2 instance successful: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+    while $instance_state != "running" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for start - instance state: " + $instance["id"] + " " + $instance_state)
+      sleep(10)
+    end
+    task_label("Start EC2 instance completed: " + $instance["id"])
+  end
+end
+
+define stop_instance($instance) return $response do
+  $url = "https://ec2." + $instance["region"] + ".amazonaws.com/?Action=StopInstances&Version=2016-11-15&InstanceId.1=" + $instance["id"]
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "StopInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  task_label("Stop EC2 instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response stopping EC2 instance: " + $instance["id"] + " " + to_json($response)
+  else
+    task_label("Stop EC2 instance successful: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+    while $instance_state != "stopped" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for stop - instance state: " + $instance["id"] + " " + $instance_state)
+      sleep(10)
+    end
+    task_label("Stop EC2 instance completed: " + $instance["id"])
+  end
+end
+
+define resize_instance($instance) return $response do
+  $url = "https://ec2." + $instance["region"] + ".amazonaws.com/?Action=ModifyInstanceAttribute&Version=2016-11-15&InstanceId=" + $instance["id"] + "&InstanceType.Value=" + $instance["newResourceType"]
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "ModifyInstanceAttribute",
+      "Version": "2016-11-15",
+      "InstanceId": $instance["id"],
+      "InstanceType.Value": $instance["newResourceType"]
+    }
+  )
+
+  task_label("Modify EC2 instance type response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response modifying EC2 instance type: " + $instance["id"] + " " + to_json($response)
+  else
+    task_label("Modify EC2 instance type successful: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+    while $instance_state != "stopped" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for stopped - instance state: " + $instance["id"] + " " + $instance_state)
+      sleep(10)
+    end
+    task_label("Modify EC2 instance type completed: " + $instance["id"])
+  end
+end
+
+define terminate_instance($instance) return $response do
+  $url = "https://ec2." + $instance["region"] + ".amazonaws.com/?Action=TerminateInstances&Version=2016-11-15&InstanceId.1=" + $instance["id"]
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "TerminateInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  task_label("Terminate EC2 instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response terminating EC2 instance: " + $instance["id"] + " " + to_json($response)
+  else
+    task_label("Terminate EC2 instance successful: " + $instance["id"])
+    call get_instance_state($instance) retrieve $instance_state
+    while $instance_state != "terminated" do
+      call get_instance_state($instance) retrieve $instance_state
+      task_label("Waiting for terminated - instance state: " + $instance["id"] + " " + $instance_state)
+      sleep(10)
+    end
+    task_label("Terminate EC2 instance completed: " + $instance["id"])
+  end
+end
+
+define get_instance_state($instance) return $instance_state do
+  $url = "https://ec2." + $instance["region"] + ".amazonaws.com/?Action=DescribeInstanceStatus&Version=2016-11-15&IncludeAllInstances=true&InstanceId.1=" + $instance["id"]
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "DescribeInstanceStatus",
+      "Version": "2016-11-15",
+      "IncludeAllInstances": "true",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  task_label("Describe EC2 instance status response: " + $instance["id"] + " " + to_json($response))
+  $instance_state = $response["body"]["DescribeInstanceStatusResponse"]["instanceStatusSet"]["item"]["instanceState"]["name"]
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_parent_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
+  result "result"
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
+  end
+end
+
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
+  result "result"
+  code 'result = { path: "/"}'
+end
