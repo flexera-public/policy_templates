@@ -44,7 +44,7 @@ The following policy actions are taken on any resources found to be out of compl
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:
-  - `resourcemanager.projects.get`
+  - `resourcemanager.projects.search`
   - `resourcemanager.projects.update`*
   - `compute.disks.list`
   - `compute.disks.setLabels`*
@@ -52,7 +52,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `compute.externalVpnGateways.setLabels`*
   - `compute.images.list`
   - `compute.images.setLabels`*
-  - `compute.instances.list`
+  - `compute.instances.aggregatedList`
   - `compute.instances.setLabels`*
   - `compute.snapshots.list`
   - `compute.snapshots.setLabels`*

@@ -10,7 +10,7 @@ The intended use of this policy template is to enable the user to quickly identi
 
 - *Email Addresses* - A list of email addresses to notify.
 - *Cost Metric* - The cost metric to use when assessing usage.
-- *Days of Usage* - How many days of past usage to consider when assessing spend.
+- *Days of Usage* - How many days of past usage to consider when assessing spend. The maximum is 31 days, as Flexera only retains usage data for up to 31 days.
 - *Allow/Deny Billing Centers* - Allow or Deny entered Billing Centers.
 - *Allow/Deny Billing Center List* - A list of allowed or denied Billing Center names/IDs. Leave blank to run report across entire Flexera organization.
 - *Low Account Spend Threshold* - Threshold to consider the user-specified dimension to be low spend. Only values with spend lower than this number will be reported.
@@ -29,6 +29,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
+  - `policy_viewer`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 

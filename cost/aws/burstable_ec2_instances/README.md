@@ -50,10 +50,8 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 - [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
   - `sts:GetCallerIdentity`
   - `cloudwatch:GetMetricData`
-  - `cloudwatch:ListMetrics`
   - `ec2:DescribeRegions`
   - `ec2:DescribeInstances`
-  - `ec2:DescribeTags`
   - `ec2:DescribeInstanceStatus`*
   - `ec2:ModifyInstanceAttribute`*
   - `ec2:StartInstances`*
@@ -72,10 +70,8 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
               "Action": [
                   "sts:GetCallerIdentity",
                   "cloudwatch:GetMetricData",
-                  "cloudwatch:ListMetrics",
                   "ec2:DescribeRegions",
                   "ec2:DescribeInstances",
-                  "ec2:DescribeTags",
                   "ec2:DescribeInstanceStatus",
                   "ec2:ModifyInstanceAttribute",
                   "ec2:StartInstances",

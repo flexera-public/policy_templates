@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This Policy Template scans all S3 buckets in your AWS account and identifies buckets that don't have [S3 Intelligent Tiering](https://docs.aws.amazon.com/AmazonS3/latest/userguide/intelligent-tiering-overview.html) enabled. An incident is created listing all non-compliant buckets, with the option to enable Intelligent Tiering after approval, or automatically for any non-compliant buckets.
+This Policy Template scans all S3 buckets in your AWS account and identifies buckets that don't have [S3 Intelligent Tiering](https://docs.aws.amazon.com/AmazonS3/latest/userguide/intelligent-tiering-overview.html) enabled. An incident is created listing all non-compliant buckets.
 
 **S3 Intelligent Tiering** automatically moves your data between different storage tiers based on access patterns, optimizing costs without performance impact. This feature is ideal for data with unpredictable access patterns and can provide significant cost savings with zero operational overhead.
 
@@ -32,17 +32,12 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Exclusion Tags: Any / All* - Whether to filter buckets containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
-- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
-
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
-For example if a user selects the "Enable Intelligent Tiering" action while applying the policy template, all the buckets that didn't satisfy the policy condition will have Intelligent Tiering enabled.
 
 ## Policy Actions
 
 The following policy actions can be taken on any resources found to be out of compliance.
 
 - Sends an email notification
-- Enable Intelligent Tiering on S3 buckets
 
 ## Prerequisites
 
@@ -54,13 +49,11 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 - [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
   - `sts:GetCallerIdentity`
+  - `ec2:DescribeRegions`
   - `s3:ListAllMyBuckets`
   - `s3:GetBucketLocation`
   - `s3:GetBucketTagging`
   - `s3:GetIntelligentTieringConfiguration`
-  - `s3:PutLifecycleConfiguration`*
-
-  \* Only required for taking action (Enable Intelligent Tiering); the policy will still function in a read-only capacity without these permissions.
 
   Example IAM Permission Policy:
 
@@ -71,12 +64,12 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
           {
               "Effect": "Allow",
               "Action": [
+                  "sts:GetCallerIdentity",
+                  "ec2:DescribeRegions",
                   "s3:ListAllMyBuckets",
                   "s3:GetBucketLocation",
                   "s3:GetBucketTagging",
-                  "s3:GetIntelligentTieringConfiguration",
-                  "sts:GetCallerIdentity",
-                  "s3:PutLifecycleConfiguration"
+                  "s3:GetIntelligentTieringConfiguration"
               ],
               "Resource": "*"
           }
@@ -86,6 +79,10 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
+  - `policy_viewer`
+  - `policy_manager`*
+
+  \* Only required for meta-policy self-termination; not required if not using the meta parent of this policy template.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 

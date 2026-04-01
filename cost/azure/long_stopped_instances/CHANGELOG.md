@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1.6
+
+- Category of policy template updated to "Cost". Functionality unchanged.
+
 ## v6.1.5
 
 - Updated documentation link in policy description. Functionality unchanged.

@@ -60,14 +60,11 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `ec2:DescribeSnapshots`
   - `ec2:DeregisterImage`*
   - `ec2:DeleteSnapshot`*
-  - `rds:DescribeDBInstances`
   - `rds:DescribeDBSnapshots`
-  - `rds:DescribeDBClusters`
   - `rds:DescribeDBClusterSnapshots`
   - `rds:DeleteDBClusterSnapshot`*
   - `rds:DeleteDBSnapshot`*
   - `sts:GetCallerIdentity`
-  - `cloudtrail:LookupEvents`
 
   \* Only required for taking action (deletion); the policy will still function in a read-only capacity without these permissions.
 
@@ -85,14 +82,11 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
                   "ec2:DescribeSnapshots",
                   "ec2:DeregisterImage",
                   "ec2:DeleteSnapshot",
-                  "rds:DescribeDBInstances",
                   "rds:DescribeDBSnapshots",
-                  "rds:DescribeDBClusters",
                   "rds:DescribeDBClusterSnapshots",
                   "rds:DeleteDBSnapshot",
                   "rds:DeleteDBClusterSnapshot",
-                  "sts:GetCallerIdentity",
-                  "cloudtrail:LookupEvents"
+                  "sts:GetCallerIdentity"
               ],
               "Resource": "*"
           }
