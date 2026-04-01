@@ -45,35 +45,25 @@ Using the associated APIs, labels for Google Projects and for the following reso
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:
-  - `resourcemanager.projects.get`
-  - `resourcemanager.projects.list`
-  - `bigquery.datasets.get`
+  - `resourcemanager.projects.search`
   - `bigquery.datasets.list`
-  - `bigquery.tables.get`
   - `bigquery.tables.list`
-  - `cloudsql.instances.get`
   - `cloudsql.instances.list`
-  - `compute.addresses.get`
-  - `compute.addresses.list`
-  - `compute.disks.get`
-  - `compute.disks.list`
-  - `compute.images.get`
+  - `compute.addresses.aggregatedList`
+  - `compute.disks.aggregatedList`
   - `compute.images.list`
-  - `compute.instances.get`
-  - `compute.instances.list`
-  - `compute.snapshots.get`
+  - `compute.instances.aggregatedList`
   - `compute.snapshots.list`
-  - `compute.storagePools.get`
-  - `compute.storagePools.list`
-  - `compute.vpnGateways.get`
-  - `compute.vpnGateways.list`
-  - `compute.vpnTunnels.get`
-  - `compute.vpnTunnels.list`
-  - `storage.buckets.get`
+  - `compute.storagePools.aggregatedList`
+  - `compute.vpnGateways.aggregatedList`
+  - `compute.vpnTunnels.aggregatedList`
   - `storage.buckets.list`
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
-  - `billing_center_viewer`
+  - `policy_viewer`
+  - `policy_manager`*
+
+  \* Only required for meta-policy self-termination; not required if not using the meta parent of this policy template.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 

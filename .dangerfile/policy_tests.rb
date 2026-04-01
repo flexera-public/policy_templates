@@ -129,6 +129,36 @@ def policy_bad_directory?(file)
   fail_message.empty? ? false : fail_message.strip
 end
 
+### Wrong Category for Directory test
+# Verify that the category field matches the top-level directory the policy is in
+def policy_wrong_category_for_directory?(file, file_parsed)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template category matches its directory..."
+
+  fail_message = ""
+
+  dir_to_category = {
+    "compliance"  => "Compliance",
+    "cost"        => "Cost",
+    "operational" => "Operational",
+    "security"    => "Security",
+    "saas"        => "SaaS Management"
+  }
+
+  base_dir = file.split('/')[0]
+
+  if dir_to_category.key?(base_dir)
+    expected_category = dir_to_category[base_dir]
+    actual_category = file_parsed.parsed_category
+
+    if actual_category && actual_category != expected_category
+      fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Policy Template category `#{actual_category}` does not match its directory. Policies in the `#{base_dir}/` directory should have `category \"#{expected_category}\"`."
+    end
+  end
+
+  return fail_message.strip if !fail_message.empty?
+  return false
+end
+
 ### README Name Match test
 # Verify that the policy template name field matches first line of README
 def policy_readme_correct_name?(file, file_parsed)

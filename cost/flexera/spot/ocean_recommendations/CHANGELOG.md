@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.1
+
+- Category of policy template updated to "Cost". Functionality unchanged.
+
 ## v0.3.0
 
 - Improved incident report formatting to use currency from Flexera Org
