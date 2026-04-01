@@ -436,8 +436,8 @@ The following guidelines should be used for `datasource` blocks:
   1. `scheme`
   1. `host`
   1. `path`
-  1. `header`
   1. `query`
+  1. `header`
   1. `body` / `body_field`
   1. `ignore_status`
 
