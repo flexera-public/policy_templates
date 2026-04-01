@@ -842,15 +842,111 @@ end
 
 ### Policy Block
 
-`summary_template` and `detail_template` use [Go template](https://pkg.go.dev/text/template) syntax. `data` is the slice of incident rows:
+#### summary_template and detail_template
 
-| Expression | Meaning |
+The `summary_template` and `detail_template` fields accept content that mixes **Go template syntax** (for injecting incident data) with **Markdown** (for formatting). The policy engine renders the Go template expressions first to produce a Markdown string, then renders that Markdown for display.
+
+**Documentation:**
+- Go Template syntax: https://pkg.go.dev/text/template and https://github.com/flexera-public/policy_engine_training/blob/main/lessons/18_go_template/README.md
+- Markdown reference: https://www.markdownguide.org/basic-syntax/
+
+**⚠️ Do NOT use HTML in `summary_template` or `detail_template`.** HTML is not legitimately supported by the policy engine. Some HTML may render correctly when an incident is emailed, but the raw HTML code will be displayed as-is when viewing the incident in the Flexera One UI. Always use Markdown equivalents instead.
+
+##### Go Template Syntax
+
+Go templates use `{{ }}` delimiters. Inside a policy template, the top-level context variable is `data` — the slice of incident rows.
+
+**Core expressions:**
+
+| Expression | Description |
 |---|---|
-| `{{ len data }}` | Number of violation rows in the incident |
-| `{{ with index data 0 }}{{ .field_name }}{{ end }}` | Access a field from the first row (safe — renders nothing if empty) |
-| `{{ range data -}}\n  - {{ .field }}\n{{ end -}}` | Iterate all rows; `-` trims surrounding whitespace |
+| `{{ .FieldName }}` | Output the value of `FieldName` on the current context object |
+| `{{ len data }}` | Number of items in `data` (i.e. number of incident rows) |
+| `{{ index data 0 }}` | Access the first element of `data` by index |
+| `{{ with index data 0 }}...{{ end }}` | Render the block only if `data[0]` exists; `.` inside is `data[0]` |
+| `{{ range data }}...{{ end }}` | Iterate over every item in `data`; `.` inside is the current item |
+| `{{ if .Field }}...{{ else }}...{{ end }}` | Conditional — renders `if` block when `.Field` is truthy |
+| `{{ .Field \| printf "%.2f" }}` | Pipeline — pass a value through a function |
 
-`{{ .policy_name }}` and `{{ .message }}` are populated by the final JavaScript transform. Always use `with index data 0` to safely handle empty datasources.
+**Whitespace trimming:** Add `-` inside the delimiters to trim adjacent whitespace/newlines:
+- `{{- .Field }}` — trim whitespace before the expression
+- `{{ .Field -}}` — trim whitespace after the expression
+- `{{- range data -}}` — trim both sides
+
+**Common patterns used in catalog templates:**
+
+```
+# Safe single-field access (renders nothing if data is empty — always use this pattern):
+{{ with index data 0 }}{{ .policy_name }}{{ end }}
+
+# Count of incident rows:
+{{ len data }} Resources Found
+
+# Iterate to build a list:
+{{ range data -}}
+  - {{ .resourceID }} ({{ .region }})
+{{ end -}}
+
+# Conditional section:
+{{ with index data 0 }}{{ if .message }}{{ .message }}{{ end }}{{ end }}
+
+# Numeric formatting via printf:
+{{ with index data 0 }}Total Savings: {{ .total_savings }}{{ end }}
+```
+
+**Built-in runtime variables available in `detail_template`:**
+
+| Variable | Description |
+|---|---|
+| `rs_org_id` | Flexera organization ID |
+| `rs_project_id` | Flexera project ID |
+
+These are useful for building Image Charts proxy URLs directly in the `detail_template` without JavaScript (see the Image Charts section).
+
+##### Markdown Formatting
+
+The content rendered by Go template expressions is interpreted as Markdown. Use standard Markdown constructs:
+
+| Construct | Syntax | Notes |
+|---|---|---|
+| **Bold** | `**text**` | Use for emphasis on key values |
+| *Italic* | `*text*` | Use sparingly |
+| `Inline code` | `` `text` `` | Use for resource IDs, field names, values |
+| Heading | `## Heading` | Use `##` or `###` inside detail_template; never `#` (reserved for page title) |
+| Unordered list | `- item` | Must have blank line before/after the list |
+| Ordered list | `1. item` | Use `1.` for every item; renderer handles numbering |
+| Link | `[label](url)` | External links open in new tab in most clients |
+| Image | `![alt](url)` | Used to embed Image Charts; `alt` is the fallback text |
+| Blockquote | `> text` | Use for callouts or warnings |
+| Horizontal rule | `---` | Separates sections |
+| Table | `\| col \| col \|` | Pipe-separated; include separator row `\| --- \| --- \|` |
+
+**Key Markdown rules for `detail_template`:**
+- Leave a blank line before and after lists and headings — Markdown requires this to render correctly.
+- Do not use HTML. Tags like `<b>`, `<br>`, `<ul>`, `<table>` will not render as intended.
+- The `{{ .message }}` field set in the final JavaScript transform typically contains a pre-formatted multi-line Markdown string. Embed it with `{{ with index data 0 }}{{ .message }}{{ end }}`.
+
+##### Standard Templates
+
+**`summary_template`** — single-line string (no heredoc); always use this pattern:
+
+```
+summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Items Found"
+```
+
+**`detail_template`** — multi-line heredoc; always embed `{{ .message }}` from the final JS transform:
+
+```
+detail_template <<-'EOS'
+**Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+{{ with index data 0 }}{{ .message }}{{ end }}
+EOS
+```
+
+`{{ .policy_name }}` and `{{ .message }}` are populated by the final JavaScript transform. Always use `with index data 0` to safely handle the case where `data` is empty.
+
+`data` is the slice of incident rows:
 
 ```
 policy "pol_example" do
