@@ -39,7 +39,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `sts:GetCallerIdentity`
   - `ce:StartCommitmentPurchaseAnalysis`
   - `ce:GetCommitmentPurchaseAnalysis`
-  - `ce:ListCommitmentPurchaseAnalyses`
 
   Example IAM Permission Policy:
 
@@ -52,8 +51,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
               "Action": [
                   "sts:GetCallerIdentity",
                   "ce:StartCommitmentPurchaseAnalysis",
-                  "ce:GetCommitmentPurchaseAnalysis",
-                  "ce:ListCommitmentPurchaseAnalyses"
+                  "ce:GetCommitmentPurchaseAnalysis"
               ],
               "Resource": "*"
           }
@@ -63,6 +61,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
+  - `policy_viewer`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 

@@ -72,10 +72,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) to use with this policy, the following information is needed:
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.Resources/subscriptions/read`
   - `Microsoft.Sql/servers/read`
   - `Microsoft.Sql/servers/databases/read`
-  - `Microsoft.Sql/servers/databases/metrics/read`
-  - `Microsoft.Sql/servers/databases/update`*
+  - `Microsoft.Sql/servers/databases/write`*
   - `Microsoft.Sql/servers/databases/delete`*
   - `Microsoft.Insights/metrics/read`
 
@@ -83,6 +83,10 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
+  - `policy_viewer`
+  - `policy_manager`*
+
+  \* Only required for meta-policy self-termination; not required if not using the meta parent of this policy template.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 

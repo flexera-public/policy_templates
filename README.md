@@ -169,7 +169,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Spot Security
 
-  * [Spot Security - Compliance Report](./compliance/flexera/spot/security_report)
+  * [Spot Security - Compliance Report](./security/flexera/spot/security_report)
 
 #### Google
 
@@ -260,6 +260,10 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Azure Policy Audit](./compliance/azure/azure_policy_audit)
 
+* Storage Accounts
+
+  * [Azure Deprecated Storage Accounts](./compliance/azure/deprecated_storage_accounts)
+
 * N/A
 
   * [Azure Regulatory Compliance](./compliance/azure/compliance_score)
@@ -315,7 +319,6 @@ These templates can generate savings estimates for your environment. The inciden
 * Compute
 
   * [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
-  * [AWS EC2 Instances Time Stopped Report](./operational/aws/ec2_stopped_report)
   * [AWS EKS Clusters Without Spot Instances](./cost/aws/eks_without_spot)
   * [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration)
   * [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
@@ -325,10 +328,6 @@ These templates can generate savings estimates for your environment. The inciden
   * [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
   * [AWS Savings Realized From Rate Reduction Purchases](./cost/aws/savings_realized)
   * [AWS Schedule Instance](./cost/aws/schedule_instance)
-
-* Marketplace
-
-  * [AWS New Marketplace Products](./operational/aws/marketplace_new_products)
 
 * Storage
 
@@ -344,7 +343,6 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Compute
 
-  * [Azure Compute Instances Time Powered Off Report](./operational/azure/compute_poweredoff_report)
   * [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
   * [Azure Expiring Savings Plans](./cost/azure/savings_plan/expiration)
   * [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
@@ -352,10 +350,6 @@ These templates can generate savings estimates for your environment. The inciden
   * [Azure Savings Plan Utilization](./cost/azure/savings_plan/utilization)
   * [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
   * [Azure Schedule Instance](./cost/azure/schedule_instance)
-
-* Marketplace
-
-  * [Azure New Marketplace Products](./operational/azure/marketplace_new_products)
 
 * Network
 
@@ -376,7 +370,6 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Storage Accounts
 
-  * [Azure Deprecated Storage Accounts](./compliance/azure/deprecated_storage_accounts)
   * [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management)
 
 #### Flexera
@@ -403,6 +396,10 @@ These templates can generate savings estimates for your environment. The inciden
   * [Common Bill Ingestion from Azure Blob Storage](./cost/flexera/cco/cbi_ingestion_azure_blob)
   * [Fixed Cost Common Bill Ingestion](./cost/flexera/cco/fixed_cost_cbi)
   * [Percentage Cost Common Bill Ingestion](./cost/flexera/cco/percentage_cost_cbi)
+
+* Kubernetes
+
+  * [Spot Ocean Common Bill Ingestion](./cost/flexera/spot/ocean_cbi)
 
 * Spot Eco
 
@@ -441,11 +438,16 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Compute
 
+  * [AWS EC2 Instances Time Stopped Report](./operational/aws/ec2_stopped_report)
   * [AWS Long Running Instances](./operational/aws/long_running_instances)
   * [AWS Overutilized EC2 Instances](./operational/aws/overutilized_ec2_instances)
   * [AWS Scheduled EC2 Events](./operational/aws/scheduled_ec2_events)
   * [AWS Usage Forecast - Instance Time Used](./operational/aws/total_instance_usage_forecast)
   * [AWS Usage Report - Instance Time Used](./operational/aws/total_instance_usage_report)
+
+* Marketplace
+
+  * [AWS New Marketplace Products](./operational/aws/marketplace_new_products)
 
 * PaaS
 
@@ -466,10 +468,15 @@ These templates can generate savings estimates for your environment. The inciden
 * Compute
 
   * [Azure Bring-Your-Own-License (BYOL) Report](./operational/azure/byol_report)
+  * [Azure Compute Instances Time Powered Off Report](./operational/azure/compute_poweredoff_report)
   * [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
   * [Azure Overutilized Compute Instances](./operational/azure/overutilized_compute_instances)
   * [Azure Usage Report - Instance Time Used](./operational/azure/total_instance_usage_report)
   * [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
+
+* Marketplace
+
+  * [Azure New Marketplace Products](./operational/azure/marketplace_new_products)
 
 * PaaS
 
@@ -518,10 +525,6 @@ These templates can generate savings estimates for your environment. The inciden
   * [Flexera One API Event Report](./operational/flexera/iam/api_event_report)
   * [Flexera One User Access Report](./operational/flexera/iam/iam_user_report)
   * [Flexera User Groups from Billing Centers](./operational/flexera/iam/user_groups_from_billing_centers)
-
-* Kubernetes
-
-  * [Spot Ocean Common Bill Ingestion](./cost/flexera/spot/ocean_cbi)
 
 #### Google
 

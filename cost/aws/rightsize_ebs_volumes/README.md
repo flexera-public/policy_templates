@@ -79,10 +79,15 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) to use with this policy, the following information is needed:
 
 - [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
+  - `sts:GetCallerIdentity`
   - `ec2:DescribeRegions`
   - `ec2:DescribeVolumes`
+  - `cloudwatch:GetMetricData`
+  - `ec2:CreateSnapshot`*
   - `ec2:ModifyVolume`*
-  - `pricing:GetProducts`
+  - `ec2:DeleteVolume`*
+  - `ec2:DetachVolume`*
+  - `ec2:DescribeSnapshots`*
 
   \* Only required for taking action (upgrading to GP3); the policy will still function in a read-only capacity without these permissions.
 
@@ -95,10 +100,15 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
           {
               "Effect": "Allow",
               "Action": [
-                  "ec2:DescribeRegions",
-                  "ec2:DescribeVolumes",
-                  "ec2:ModifyVolume",
-                  "pricing:GetProducts"
+                "sts:GetCallerIdentity",
+                "ec2:DescribeRegions",
+                "ec2:DescribeVolumes",
+                "cloudwatch:GetMetricData",
+                "ec2:CreateSnapshot",
+                "ec2:ModifyVolume",
+                "ec2:DeleteVolume",
+                "ec2:DetachVolume",
+                "ec2:DescribeSnapshots"
               ],
               "Resource": "*"
           }

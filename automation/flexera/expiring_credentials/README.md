@@ -28,6 +28,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `credential_viewer`
   - `iam_admin`*
+  - `policy_viewer`
 
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 

@@ -74,7 +74,6 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 - [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
   - `sts:GetCallerIdentity`
-  - `cloudwatch:GetMetricStatistics`
   - `cloudwatch:GetMetricData`
   - `ec2:DescribeRegions`
   - `rds:DescribeDBInstances`
@@ -95,10 +94,10 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
               "Effect": "Allow",
               "Action": [
                   "sts:GetCallerIdentity",
-                  "cloudwatch:GetMetricStatistics",
                   "cloudwatch:GetMetricData",
                   "ec2:DescribeRegions",
                   "rds:DescribeDBInstances",
+                  "rds:DescribeOrderableDBInstanceOptions",
                   "rds:ListTagsForResource",
                   "rds:ModifyDBInstance",
                   "rds:DeleteDBInstance"
@@ -111,6 +110,10 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
+  - `policy_viewer`
+  - `policy_manager`*
+
+  \* Only required for meta-policy self-termination; not required if not using the meta parent of this policy template.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
