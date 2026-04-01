@@ -1617,6 +1617,92 @@ def policy_bad_comma_spacing?(file, file_lines)
   fail_message.empty? ? false : fail_message.strip
 end
 
+### Parameter Category Order Test
+# Return message if parameter categories are in the wrong order
+# Rules: "Policy Settings" must be first, "Incident Settings" must be last,
+#        "Actions" must come after "Filters"
+def policy_bad_param_category_order?(file, file_lines)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has parameter categories in the wrong order..."
+
+  fail_message = ""
+
+  # Collect unique category sequence (in first-appearance order)
+  in_param = false
+  unique_cats = []
+  file_lines.each do |line|
+    stripped = line.strip
+
+    if stripped.match?(/^parameter\s+"/)
+      in_param = true
+    end
+
+    if in_param
+      if stripped == "end"
+        in_param = false
+      elsif stripped.start_with?("category ")
+        m = stripped.match(/category\s+"([^"]+)"/)
+        if m
+          cat = m[1]
+          unique_cats << cat unless unique_cats.include?(cat)
+        end
+      end
+    end
+  end
+
+  return false if unique_cats.empty?
+
+  # Rule 1: "Policy Settings" must be first if present
+  if unique_cats.include?("Policy Settings") && unique_cats.first != "Policy Settings"
+    fail_message += "\"Policy Settings\" should be the first parameter category but appears after: #{unique_cats[0..unique_cats.index('Policy Settings') - 1].join(', ')}\n"
+  end
+
+  # Rule 2: "Incident Settings" must be last if present
+  if unique_cats.include?("Incident Settings") && unique_cats.last != "Incident Settings"
+    after = unique_cats[(unique_cats.rindex("Incident Settings") + 1)..]
+    fail_message += "\"Incident Settings\" should be the last parameter category but is followed by: #{after.join(', ')}\n"
+  end
+
+  # Rule 3: "Actions" must come after "Filters" if both present
+  if unique_cats.include?("Actions") && unique_cats.include?("Filters")
+    if unique_cats.index("Actions") < unique_cats.index("Filters")
+      fail_message += "\"Actions\" parameter category should come after \"Filters\" but appears before it.\n"
+    end
+  end
+
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#parameters)] Parameter categories are in the wrong order.\n\n" + fail_message if !fail_message.empty?
+
+  fail_message.empty? ? false : fail_message.strip
+end
+
+### Summary Template Policy Name Test
+# Return message if summary_template is missing {{ .policy_name }} when ds_applied_policy is present
+def policy_summary_template_missing_policy_name?(file, file_lines, file_parsed)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has a summary_template missing {{ .policy_name }}..."
+
+  # Only applies if ds_applied_policy datasource is present
+  return false unless file_lines.any? { |line| line.strip.match?(/^datasource\s+"ds_applied_policy"/) }
+
+  # Check if summary_template uses {{ .policy_name }}
+  in_summary = false
+  summary_lines = []
+  file_lines.each do |line|
+    stripped = line.strip
+    if stripped.start_with?("summary_template") && !in_summary
+      in_summary = true
+    end
+    summary_lines << stripped if in_summary
+    in_summary = false if in_summary && !stripped.start_with?("summary_template") && stripped != ""
+  end
+
+  # Simple check: does the file contain {{ .policy_name }} anywhere near summary_template?
+  file_text = file_lines.join("\n")
+  return false if file_text.include?("{{ .policy_name }}") || file_text.include?("{{.policy_name}}")
+
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#policy)] `summary_template` should include `{{ .policy_name }}` when `ds_applied_policy` is present. Example: `\"{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Resources Found\"`"
+
+  fail_message
+end
+
 ### Outdated Links
 # Return false if no outdated links are found
 def policy_outdated_links?(file, file_lines, added_files = [])

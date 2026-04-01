@@ -393,6 +393,13 @@ The following guidelines should be used for `parameters` blocks:
   - Should always be included for every parameter.
   - Should be used to group similar parameters together.
   - _Example_: `Filters`
+  - The following categories are standard and should be used when appropriate. Other categories may be used when these don't fit.
+    - `Policy Settings` — General policy configuration (credentials, regions, etc.)
+    - `Filters` — Parameters that filter which resources are included or excluded
+    - `Statistics` — Parameters that control how statistics or lookback periods are calculated
+    - `Actions` — Parameters that control what actions the policy template takes
+    - `Incident Settings` — Parameters that control email notifications and incident table behavior
+  - When using multiple categories, they should be ordered as above. `Policy Settings` should always be the first category and `Incident Settings` should always be the last. `Actions` should always come after `Filters`.
 
 - __label__
   - A very short description of the parameter.
@@ -440,6 +447,9 @@ The following guidelines should be used for `datasource` blocks:
   1. `header`
   1. `body` / `body_field`
   1. `ignore_status`
+
+- For requests to non-Flexera APIs, always include the `User-Agent` request header to identify the caller:
+  - _Example_: `header "User-Agent", "RS Policies"`
 
 #### Example
 
@@ -535,8 +545,8 @@ The following guidelines should be used for the `policy` block:
   1. `export`
 
 - For the `summary_template` field:
-  - Should include the applied policy name and describe the thing the incident is reporting. If relevant, it should also indicate the number of resources being reported in the incident.
-    - Example: "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Old Snapshots Found"
+  - Should include the applied policy name (via `{{ .policy_name }}`) and describe the thing the incident is reporting. If relevant, it should also indicate the number of resources being reported in the incident (via `{{ len data }}`). The `{{ .policy_name }}` value requires a `ds_applied_policy` datasource to be present in the template.
+    - Example: `"{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Old Snapshots Found"`
   - Should _not_ contain escape characters, such as `\n` and `\t`. These will cause the incident email to render incorrectly as raw HTML code.
   - Should _not_ make use of a heredoc, such as `<<-EOS`, for the same reason.
 

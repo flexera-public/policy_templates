@@ -550,6 +550,12 @@ changed_pt_files.each do |file|
     # Raise warning if improper spacing between comma-separated items found
     test = policy_bad_comma_spacing?(file, file_lines); warnings << test if test
 
+    # Raise warning if parameter categories are in the wrong order
+    test = policy_bad_param_category_order?(file, file_lines); warnings << test if test
+
+    # Raise warning if summary_template is missing {{ .policy_name }} when ds_applied_policy is present
+    test = policy_summary_template_missing_policy_name?(file, file_lines, file_parsed); warnings << test if test
+
     # Raise warning if heredoc or escape characters are found in policy summary_template field
     test = policy_summary_escape_character?(file, file_lines); warnings << test if test
 
