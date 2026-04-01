@@ -1197,6 +1197,123 @@ Always add `"savings"`, `"savingsCurrency"`, `"total_savings"`, and `"message"` 
 
 For cost templates, the `ds_currency` datasource (fetched from the Flexera billing API) provides the org's currency symbol. Copy the boilerplate from a reference template such as `cost/aws/old_snapshots/aws_delete_old_snapshots.pt`.
 
+### Image Charts Integration
+
+[Image Charts](https://documentation.image-charts.com/) is a chart-as-a-URL service that renders PNG chart images from URL query parameters — no JavaScript library or server-side rendering needed. Policy templates use it to embed utilization charts directly inside incident `detail_template` markdown and inside `recommendationDetails` fields.
+
+#### The Flexera Proxy URL
+
+Policy templates do **not** call the public Image Charts API directly. Instead, they use a Flexera-hosted authenticated proxy:
+
+```
+https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id=<ORG_ID>&rs_project_id=<PROJECT_ID>&...chart params...
+```
+
+The proxy validates the request against the Flexera org/project before forwarding it to Image Charts. This means:
+
+- **`rs_org_id` and `rs_project_id` must always be the first two query parameters**, immediately after `ic-function?`. Never omit them; the proxy will reject requests without them.
+- Pass `rs_org_id` and `rs_project_id` as script `parameters` so they are available inside `code` blocks — they cannot be referenced directly inside JavaScript.
+- The remaining parameters are standard Image Charts parameters documented at https://documentation.image-charts.com/.
+
+#### Building a Chart URL in JavaScript
+
+Build the URL using string concatenation. Put long data/label parameters last to make the configuration parameters easier to scan and troubleshoot:
+
+```javascript
+function generateChartUrl(cpuData, memData, statName, resourceName) {
+  var chartUrl = "https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id=" + rs_org_id + "&rs_project_id=" + rs_project_id;
+  chartUrl += "&cht=lc";                                                      // Chart type: lc = line chart
+  chartUrl += "&chs=900x450";                                                 // Chart size (width x height in pixels; max width 999)
+  chartUrl += "&chco=FF0000,0000FF";                                          // Line colors (comma-separated hex, no # prefix)
+  chartUrl += "&chxt=x,y";                                                    // Show both axes
+  chartUrl += "&chxs=0,000000,12,-1,lt,000000,s,min90";                       // X-axis: rotate labels 90°, skip overlapping
+  chartUrl += "&chdl=" + encodeURIComponent("CPU Usage%25|Memory Usage%25");  // Legend labels (pipe-separated)
+  chartUrl += "&chdlp=b";                                                     // Legend position: b = bottom
+  chartUrl += "&chtt=" + encodeURIComponent(statName + "+Utilization|" + encodeURIComponent(resourceName));  // Chart title
+  chartUrl += "&chma=10,10,10,10";                                            // Margins (left, right, top, bottom in px)
+  chartUrl += "&chxr=1,0,100";                                                // Y-axis range: min 0, max 100
+  chartUrl += "&chls=" + encodeURIComponent("4|4");                           // Line thickness (pipe-separated per series)
+  chartUrl += "&chf=bg,s,FFFFFF00";                                           // Background: transparent
+  chartUrl += "&chg=" + encodeURIComponent("20,50,5,5,CECECE");               // Gridlines: dashed grey
+  chartUrl += "&chxl=" + encodeURIComponent("0:|" + encodeURIComponent(timeLabels));  // X-axis labels
+  chartUrl += "&chd=" + encodeURIComponent("t:" + cpuData + "|" + memData);   // Chart data — put last for easier debugging
+  return chartUrl;
+}
+```
+
+**Always `encodeURIComponent`** any parameter value that contains characters that could break URL parsing: labels (`chdl`), titles (`chtt`), axis labels (`chxl`), line styles (`chls`), gridlines (`chg`), and data (`chd`). Hex colors and simple numeric ranges do not need encoding.
+
+#### Common Image Charts Parameters
+
+| Parameter | Description | Example |
+| --- | --- | --- |
+| `cht` | Chart type | `lc` (line), `bvs` (vertical bar stacked), `bhs` (horizontal bar stacked), `p` (pie) |
+| `chs` | Chart dimensions (width×height in px; max 999px wide) | `900x450` |
+| `chco` | Series colors (comma-separated hex, no `#`) | `FF0000,0000FF,00AA00` |
+| `chxt` | Visible axes | `x,y` |
+| `chxs` | Axis style (per axis; see docs) | `0,000000,12,-1,lt,000000,s,min90` |
+| `chdl` | Legend labels (pipe-separated) | `CPU%25\|Memory%25` |
+| `chdlp` | Legend position | `b` = bottom, `r` = right |
+| `chtt` | Chart title (pipe separates lines) | `Resource+Utilization\|instance-id` |
+| `chma` | Chart margins (left, right, top, bottom px) | `10,10,10,10` |
+| `chxr` | Axis range (index,min,max) | `1,0,100` (y-axis 0–100) |
+| `chls` | Line thickness per series (pipe-separated) | `4\|4` |
+| `chf` | Background fill | `bg,s,FFFFFF00` = transparent |
+| `chg` | Gridlines | `20,50,5,5,CECECE` = dashed grey |
+| `chxl` | Axis tick labels | `0:\|Jan\|Feb\|Mar` |
+| `chd` | Chart data | `t:10,20,30\|40,50,60` (text format, pipe-separates series) |
+
+For the full parameter reference, see https://documentation.image-charts.com/.
+
+#### Embedding Charts in Incidents
+
+There are two places charts appear in an incident:
+
+**1. Inside `recommendationDetails`** — embed as a markdown image so the chart renders inline in the incident detail view. Always append `&from_pt=true` as the **last** query parameter:
+
+```javascript
+if (_.isString(instance["chartUrl"])) {
+  // &from_pt=true must be the LAST query parameter. When the policy engine renders markdown
+  // in some email/browser clients, a trailing ')' from the image syntax ![alt](url) can be
+  // appended to the URL. Placing from_pt=true last absorbs that stray ')' as a harmless value.
+  recommendationDetails += "\n\n![Utilization Chart](" + instance["chartUrl"] + "&from_pt=true)"
+}
+```
+
+**2. In the export block table** — provide a clickable link. Construct a `chartUrlField` string in `"Display Name||URL"` format (the `link-external` format), with `&from_pt=true` on the URL, and declare the export field with `format "link-external"`:
+
+```javascript
+if (_.isString(instance["chartUrl"])) {
+  instance["chartUrlField"] = instance["resourceName"] + " Utilization Chart||" + instance["chartUrl"] + "&from_pt=true"
+}
+```
+
+```
+field "chartUrlField" do
+  label "Utilization Chart External Link"
+  format "link-external"
+end
+```
+
+Place `chartUrlField` as the **last** field in the `export do` block (after the `id` alias field).
+
+**In `detail_template` (for CCO spend charts)** — embed directly using a Go template expression, with the chart parameters pre-built as datasource fields:
+
+```
+![Spending Overview Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ data.chartType }}&{{ data.chartData }} "Chart Title")
+```
+
+Note: When embedding in a `detail_template` heredoc (not JavaScript), `rs_org_id` and `rs_project_id` are available as Go template variables. Do **not** use `&from_pt=true` in `detail_template` embeds — it is only needed in JavaScript-built URLs inside `recommendationDetails`.
+
+#### Summary of Rules
+
+1. **Always use the Flexera proxy** (`api.image-charts-auth.flexeraeng.com/ic-function`) — never call the public Image Charts API directly.
+2. **`rs_org_id` and `rs_project_id` must be the first two parameters** in every proxy URL.
+3. **Always `encodeURIComponent`** labels, titles, axis labels, gridline specs, line styles, and chart data.
+4. **Always append `&from_pt=true` as the last parameter** on any chart URL embedded via JavaScript (in `recommendationDetails` or `chartUrlField`).
+5. **Put `chd` (chart data) last** in the URL for readability — it's the longest parameter and putting it last makes the config params easier to scan.
+6. **`chartUrlField` is always the last export field**, declared with `format "link-external"`.
+
 ### Escalations
 
 A single `esc_email` escalation block is shared across **all** `validate_each` (and `validate`) blocks in the policy that report on cloud resources. Only specialty incidents — such as the AWS region-error `validate $ds_identify_errors` block — use their own dedicated escalation (e.g. `esc_email_errors_identified`) because those incidents have different email behaviour (no table attachment, no CSV, etc.). Do **not** create duplicate `esc_email_*` blocks that are structurally identical; reference the same `$esc_email` escalation from every standard incident block.

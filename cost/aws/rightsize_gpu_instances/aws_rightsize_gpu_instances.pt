@@ -665,7 +665,6 @@ script "js_cloudwatch_metrics", type: "javascript" do
 EOS
 end
 
-# Build a map of instance ID to memory and GPU metric details for use in queries
 datasource "ds_cloudwatch_metrics_by_instance" do
   run_script $js_cloudwatch_metrics_by_instance, $ds_cloudwatch_metrics
 end
@@ -677,43 +676,31 @@ script "js_cloudwatch_metrics_by_instance", type: "javascript" do
   result = {}
 
   _.each(ds_cloudwatch_metrics, function(metric) {
-    var dims = metric.dimensions || []
-    var inst = _.find(dims, function(dim) { return dim.name == "InstanceId" })
+    dims = metric.dimensions || []
+    inst = _.find(dims, function(dim) { return dim.name == "InstanceId" })
     if (!inst || !inst.value) return
 
-    var inst_id = inst.value
+    inst_id = inst.value
 
-    if (result[inst_id] == undefined) {
-      result[inst_id] = {
-        namespace: null,
-        metricName: null,
-        dimensions: null,
-        gpu: []
-      }
+    if (!result[inst_id]) {
+      result[inst_id] = { mem: null, gpuDimensions: [] }
     }
 
-    if (metric.metricName == 'nvidia_smi_utilization_gpu') {
-      // Find gpu_id dimension for the GPU index
-      var gpu_id_dim = _.find(dims, function(d) {
-        return d.name == 'gpu_id' || d.name == 'GPU' || d.name == 'gpuId'
-      })
-      var gpu_index = gpu_id_dim ? gpu_id_dim.value : '0'
-
-      // Avoid duplicate entries for the same GPU index on this instance
-      var already_added = _.find(result[inst_id].gpu, function(g) {
-        return g.index == gpu_index
-      })
-      if (!already_added) {
-        result[inst_id].gpu.push({
-          index: gpu_index,
-          dimensions: dims
-        })
+    if (metric.metricName == 'mem_used_percent' || metric.metricName == 'Memory % Committed Bytes In Use') {
+      result[inst_id]['mem'] = {
+        namespace: metric.namespace,
+        metricName: metric.metricName,
+        dimensions: metric.dimensions
       }
-    } else {
-      // mem_used_percent or Memory % Committed Bytes In Use
-      result[inst_id].namespace = metric.namespace
-      result[inst_id].metricName = metric.metricName
-      result[inst_id].dimensions = metric.dimensions
+    } else if (metric.metricName == 'nvidia_smi_utilization_gpu') {
+      var gpu_index = '0'
+      _.each(dims, function(dim) {
+        if (dim.name == 'index') { gpu_index = dim.value }
+      })
+      var existing = _.find(result[inst_id]['gpuDimensions'], function(g) { return g.index == gpu_index })
+      if (!existing) {
+        result[inst_id]['gpuDimensions'].push({ index: gpu_index, dimensions: metric.dimensions })
+      }
     }
   })
 EOS
@@ -1041,15 +1028,36 @@ script "js_identify_errors", type: "javascript" do
 EOS
 end
 
-# Build CloudWatch queries for CPU, memory, GPU utilization, and GPU memory per instance
 datasource "ds_cloudwatch_queries" do
-  run_script $js_cloudwatch_queries, $ds_instances, $ds_cloudwatch_metrics_by_instance, $param_stats_lookback
+  run_script $js_cloudwatch_queries, $ds_instances, $ds_cloudwatch_metrics_by_instance, $param_stats_idle_threshold_gpu_value, $param_stats_idle_threshold_cpu_value, $param_stats_underutil_threshold_gpu_value, $param_stats_underutil_threshold_cpu_value, $param_stats_lookback
 end
 
 script "js_cloudwatch_queries", type: "javascript" do
-  parameters "ds_instances", "ds_cloudwatch_metrics_by_instance", "param_stats_lookback"
+  parameters "ds_instances", "ds_cloudwatch_metrics_by_instance", "param_stats_idle_threshold_gpu_value", "param_stats_idle_threshold_cpu_value", "param_stats_underutil_threshold_gpu_value", "param_stats_underutil_threshold_cpu_value", "param_stats_lookback"
   result "result"
   code <<-'EOS'
+  // Set CPU threshold for CloudWatch call
+  var param_avg_cpu = -1
+
+  if (param_stats_underutil_threshold_cpu_value != -1) {
+    param_avg_cpu = param_stats_underutil_threshold_cpu_value
+  } else {
+    if (param_stats_idle_threshold_cpu_value != -1) {
+      param_avg_cpu = param_stats_idle_threshold_cpu_value
+    }
+  }
+
+  // Set GPU threshold for CloudWatch call
+  var param_avg_gpu = -1
+
+  if (param_stats_underutil_threshold_gpu_value != -1) {
+    param_avg_gpu = param_stats_underutil_threshold_gpu_value
+  } else {
+    if (param_stats_idle_threshold_gpu_value != -1) {
+      param_avg_gpu = param_stats_idle_threshold_gpu_value
+    }
+  }
+
   result = {}
 
   _.each(ds_instances, function(instance) {
@@ -1057,131 +1065,76 @@ script "js_cloudwatch_queries", type: "javascript" do
       result[instance['region']] = []
     }
 
-    var stats = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
-    var lookback = param_stats_lookback * 86400
-    var lookback_1d = 86400
-    var inst_norm = instance['instanceId'].replace('-', '_')
+    stats = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
+    lookback = param_stats_lookback * 86400
+    lookback_1d = 86400
 
-    // Always query CPU utilization
-    _.each(stats, function(stat) {
-      var query = {
-        "Id": inst_norm + "_cpu" + stat,
-        "MetricStat": {
-          "Metric": {
-            "Namespace": "AWS/EC2",
-            "MetricName": "CPUUtilization",
-            "Dimensions": [
-              { "Name": "InstanceId", "Value": instance['instanceId'] }
-            ]
+    // Only query for CPU usage if we're actually checking it
+    if (param_avg_cpu != -1) {
+      _.each(stats, function(stat) {
+        query = {
+          "Id": instance['instanceId'].replace('-', '_') + "_cpu" + stat,
+          "MetricStat": {
+            "Metric": {
+              "Namespace": "AWS/EC2",
+              "MetricName": "CPUUtilization",
+              "Dimensions": [
+                { "Name": "InstanceId", "Value": instance['instanceId'] }
+              ]
+            },
+            "Period": lookback,
+            "Stat": stat
           },
-          "Period": lookback,
-          "Stat": stat
-        },
-        "ReturnData": true
-      }
+          "ReturnData": true
+        }
 
-      result[instance['region']].push(query)
+        result[instance['region']].push(query)
 
-      var query_timeseries = _.clone(query)
-      query_timeseries.Id = query.Id + "_timeseries"
-      query_timeseries.MetricStat = _.clone(query.MetricStat)
-      query_timeseries.MetricStat.Period = lookback_1d
-      result[instance['region']].push(query_timeseries)
-    })
-
-    // Always query memory utilization
-    var metric_details = ds_cloudwatch_metrics_by_instance[instance['instanceId']]
-    var mem_metricname
-    var dimensions
-
-    if (metric_details != null && metric_details.metricName != null) {
-      mem_metricname = metric_details["metricName"]
-      dimensions = []
-      _.each(metric_details['dimensions'], function(dim) {
-        dimensions.push({ "Name": dim["name"], "Value": dim["value"] })
+        query_timeseries = _.clone(query)
+        query_timeseries.Id = query.Id + "_timeseries"
+        query_timeseries.MetricStat.Period = lookback_1d
+        result[instance['region']].push(query_timeseries)
       })
-    } else if (instance['platform'] && instance['platform'].indexOf("Windows") != -1) {
-      mem_metricname = "Memory % Committed Bytes In Use"
-      dimensions = [
-        { "Name": "ImageId", "Value": instance['imageId'] },
-        { "Name": "InstanceId", "Value": instance['instanceId'] },
-        { "Name": "InstanceType", "Value": instance['resourceType'] },
-        { "Name": "objectname", "Value": "Memory" }
-      ]
-    } else {
-      mem_metricname = "mem_used_percent"
-      dimensions = [
-        { "Name": "ImageId", "Value": instance['imageId'] },
-        { "Name": "InstanceId", "Value": instance['instanceId'] },
-        { "Name": "InstanceType", "Value": instance['resourceType'] }
-      ]
     }
 
-    _.each(stats, function(stat) {
-      var query = {
-        "Id": inst_norm + "_mem" + stat,
-        "MetricStat": {
-          "Metric": {
-            "Namespace": "CWAgent",
-            "MetricName": mem_metricname,
-            "Dimensions": dimensions
-          },
-          "Period": lookback,
-          "Stat": stat
-        },
-        "ReturnData": true
+    // Only query for GPU usage if we're actually checking it
+    if (param_avg_gpu != -1) {
+      metric_details = ds_cloudwatch_metrics_by_instance[instance['instanceId']]
+
+      if (metric_details != null && metric_details['gpuDimensions'] && metric_details['gpuDimensions'].length > 0) {
+        _.each(metric_details['gpuDimensions'], function(gpu_entry) {
+          var dimensions = []
+          _.each(gpu_entry['dimensions'], function(dim) {
+            dimensions.push({
+              "Name": dim["name"],
+              "Value": dim["value"]
+            })
+          })
+
+          _.each(stats, function(stat) {
+            query = {
+              "Id": instance['instanceId'].replace('-', '_') + "_gpu" + gpu_entry.index + stat,
+              "MetricStat": {
+                "Metric": {
+                  "Namespace": "CWAgent",
+                  "MetricName": "nvidia_smi_utilization_gpu",
+                  "Dimensions": dimensions
+                },
+                "Period": lookback,
+                "Stat": stat
+              },
+              "ReturnData": true
+            }
+
+            result[instance['region']].push(query)
+
+            query_timeseries = _.clone(query)
+            query_timeseries.Id = query.Id + "_timeseries"
+            query_timeseries.MetricStat.Period = lookback_1d
+            result[instance['region']].push(query_timeseries)
+          })
+        })
       }
-
-      result[instance['region']].push(query)
-
-      var query_timeseries = _.clone(query)
-      query_timeseries.Id = query.Id + "_timeseries"
-      query_timeseries.MetricStat = _.clone(query.MetricStat)
-      query_timeseries.MetricStat.Period = lookback_1d
-      result[instance['region']].push(query_timeseries)
-    })
-
-    // Query GPU utilization and GPU memory per GPU index if discovery data exists
-    if (metric_details && metric_details.gpu && metric_details.gpu.length > 0) {
-      _.each(metric_details.gpu, function(gpu_entry) {
-        var gpu_dims = _.map(gpu_entry.dimensions, function(dim) {
-          return { "Name": dim["name"], "Value": dim["value"] }
-        })
-
-        _.each(stats, function(stat) {
-          // GPU compute utilization query
-          var util_query = {
-            "Id": inst_norm + "_gpuutil" + gpu_entry.index + stat,
-            "MetricStat": {
-              "Metric": {
-                "Namespace": "CWAgent",
-                "MetricName": "nvidia_smi_utilization_gpu",
-                "Dimensions": gpu_dims
-              },
-              "Period": lookback,
-              "Stat": stat
-            },
-            "ReturnData": true
-          }
-          result[instance['region']].push(util_query)
-
-          // GPU memory used query (same dimensions as utilization)
-          var mem_query = {
-            "Id": inst_norm + "_gpumem" + gpu_entry.index + stat,
-            "MetricStat": {
-              "Metric": {
-                "Namespace": "CWAgent",
-                "MetricName": "nvidia_smi_memory_used",
-                "Dimensions": gpu_dims
-              },
-              "Period": lookback,
-              "Stat": stat
-            },
-            "ReturnData": true
-          }
-          result[instance['region']].push(mem_query)
-        })
-      })
     }
   })
 EOS
@@ -1271,8 +1224,7 @@ script "js_cloudwatch_data", type: "javascript" do
 EOS
 end
 
-# Parse CloudWatch data into an object keyed by region and instance ID
-# GPU metrics are aggregated across GPU indices (max for utilization, sum for memory)
+# PARSE CLOUDWATCH DATA INTO JAVASCRIPT OBJECT
 datasource "ds_cloudwatch_data_sorted" do
   run_script $js_cloudwatch_data_sorted, $ds_cloudwatch_data, $param_stats_threshold
 end
@@ -1283,198 +1235,78 @@ script "js_cloudwatch_data_sorted", type: "javascript" do
   code <<-'EOS'
   result = {}
 
-  // Accumulate GPU metric values across indices for later aggregation
-  var gpu_accum = {}
-
   _.each(ds_cloudwatch_data, function(item) {
-    var region = item['region']
-    var parts = item['id'].split('_')
-    var instance_name = parts[0] + '-' + parts[1]
-    var metric = parts[2]
-    var is_timeseries = item['id'].indexOf('timeseries') != -1
+    region = item['region']
+    instance_name = item['id'].split('_')[0] + '-' + item['id'].split('_')[1]
+    metric = item['id'].split('_')[2]
+    is_timeseries = item['id'].indexOf('timeseries') != -1
 
-    var value = item['values'][item['values'].length - 1]
+    var metric_type = 'unknown'
+    if (metric.indexOf('cpu') != -1) {
+      metric_type = 'cpu'
+    } else if (metric.indexOf('gpu') != -1) {
+      metric_type = 'gpu'
+    }
+
+    value = item['values'][item['values'].length - 1]
 
     if (result[region] == undefined) { result[region] = {} }
     if (result[region][instance_name] == undefined) { result[region][instance_name] = {} }
 
     if (!is_timeseries) {
-      if (metric.indexOf('gpuutil') == 0) {
-        // GPU utilization: aggregate = max across GPU indices
-        var stat = metric.slice(8)
-        var key = 'gpuUtil' + stat
-        var accum_key = region + '|' + instance_name + '|' + key
-        if (gpu_accum[accum_key] == undefined) {
-          gpu_accum[accum_key] = { values: [], type: 'max', region: region, inst: instance_name, key: key }
+      if (metric_type == 'gpu') {
+        // Strip the numeric index from the metric ID to get the canonical stat key
+        // e.g. "gpu0Average" -> "gpuAverage", "gpu1p99" -> "gpup99"
+        var stat_key = metric.replace(/^gpu\d+/, 'gpu')
+        // Take the MAXIMUM utilization across all GPU indices
+        if (result[region][instance_name][stat_key] == undefined || value > result[region][instance_name][stat_key]) {
+          result[region][instance_name][stat_key] = value
         }
-        if (value != undefined) { gpu_accum[accum_key].values.push(value) }
-      } else if (metric.indexOf('gpumem') == 0) {
-        // GPU memory used: aggregate = sum across GPU indices
-        var stat = metric.slice(7)
-        var key = 'gpuMemUsed' + stat
-        var accum_key = region + '|' + instance_name + '|' + key
-        if (gpu_accum[accum_key] == undefined) {
-          gpu_accum[accum_key] = { values: [], type: 'sum', region: region, inst: instance_name, key: key }
-        }
-        if (value != undefined) { gpu_accum[accum_key].values.push(value) }
       } else {
-        // CPU and memory scalar metrics
         result[region][instance_name][metric] = value
       }
     } else {
-      // Timeseries (CPU and memory only; GPU has no timeseries variants)
       if (metric.indexOf(param_stats_threshold) != -1) {
-        var metric_type = 'unknown'
-        if (metric.indexOf('cpu') != -1) { metric_type = 'cpu' }
-        else if (metric.indexOf('mem') != -1) { metric_type = 'mem' }
-
         var stat_name = param_stats_threshold.toLowerCase()
         var points = _.zip(item['timestamps'], item['values'])
-        points = _.map(points, function(pt) {
-          var r = { timestamp: pt[0] }
-          r[stat_name] = pt[1]
+        points = _.map(points, function(p) {
+          var r = { timestamp: p[0] }
+          r[stat_name] = p[1]
           return r
         })
-        points = _.sortBy(points, function(pt) { return pt['timestamp'] })
-
+        points = _.sortBy(points, function(p) {
+          return p['timestamp']
+        })
         if (metric_type == 'cpu') {
           result[region][instance_name]['cpuPoints'] = points
-        } else if (metric_type == 'mem') {
-          result[region][instance_name]['memPoints'] = points
+        } else if (metric_type == 'gpu') {
+          // For GPU timeseries, merge across indices by taking max at each timestamp
+          if (!result[region][instance_name]['gpuPoints']) {
+            result[region][instance_name]['gpuPoints'] = points
+          } else {
+            var existing_points = result[region][instance_name]['gpuPoints']
+            var merged = []
+            var min_len = Math.min(existing_points.length, points.length)
+            for (var pi = 0; pi < min_len; pi++) {
+              var ep = existing_points[pi]
+              var np = points[pi]
+              var merged_point = { timestamp: ep.timestamp }
+              var ep_val = ep[stat_name]
+              var np_val = np[stat_name]
+              if (ep_val == undefined) { merged_point[stat_name] = np_val }
+              else if (np_val == undefined) { merged_point[stat_name] = ep_val }
+              else { merged_point[stat_name] = Math.max(ep_val, np_val) }
+              merged.push(merged_point)
+            }
+            result[region][instance_name]['gpuPoints'] = merged
+          }
         }
       }
     }
   })
-
-  // Aggregate GPU metrics across indices
-  _.each(gpu_accum, function(accum) {
-    if (accum.values.length > 0) {
-      var agg_val
-      if (accum.type == 'max') {
-        agg_val = _.max(accum.values)
-      } else {
-        agg_val = _.reduce(accum.values, function(memo, v) { return memo + v }, 0)
-      }
-
-      if (result[accum.region] && result[accum.region][accum.inst]) {
-        result[accum.region][accum.inst][accum.key] = agg_val
-      }
-    }
-  })
 EOS
 end
 
-datasource "ds_instance_costs" do
-  request do
-    run_script $js_instance_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "rows[*]") do
-      field "resourceId", jmes_path(col_item, "dimensions.resource_id")
-      field "resourceType", jmes_path(col_item, "dimensions.resource_type")
-      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
-      field "adjustmentName", jmes_path(col_item, "dimensions.adjustment_name")
-      field "operatingSystem", jmes_path(col_item, "dimensions.operating_system")
-      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
-    end
-  end
-end
-
-script "js_instance_costs", type: "javascript" do
-  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
-  result "request"
-  code <<-'EOS'
-  end_date = new Date()
-  end_date.setDate(end_date.getDate() - 2)
-  end_date = end_date.toISOString().split('T')[0]
-
-  start_date = new Date()
-  start_date.setDate(start_date.getDate() - 3)
-  start_date = start_date.toISOString().split('T')[0]
-
-  var request = {
-    auth: "auth_flexera",
-    host: rs_optima_host,
-    verb: "POST",
-    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
-    body_fields: {
-      dimensions: ["resource_id", "vendor_account_name", "resource_type", "adjustment_name", "operating_system"],
-      granularity: "day",
-      start_at: start_date,
-      end_at: end_date,
-      metrics: ["cost_amortized_unblended_adj"],
-      billing_center_ids: ds_top_level_bcs,
-      limit: 100000,
-      filter: {
-        type: "and",
-        expressions: [
-          {
-            dimension: "service",
-            type: "equal",
-            value: "AmazonEC2"
-          },
-          {
-            dimension: "resource_type",
-            type: "equal",
-            value: "Compute Instance"
-          },
-          {
-            dimension: "vendor_account",
-            type: "equal",
-            value: ds_aws_account['id']
-          },
-          {
-            type: "not",
-            expression: {
-              dimension: "adjustment_name",
-              type: "substring",
-              substring: "Shared"
-            }
-          }
-        ]
-      }
-    },
-    headers: {
-      'User-Agent': "RS Policies",
-      'Api-Version': "1.0"
-    },
-    ignore_status: [400]
-  }
-EOS
-end
-
-datasource "ds_instance_costs_grouped" do
-  run_script $js_instance_costs_grouped, $ds_instance_costs
-end
-
-script "js_instance_costs_grouped", type: "javascript" do
-  parameters "ds_instance_costs"
-  result "result"
-  code <<-'EOS'
-  // Multiply a single day's cost by the average number of days in a month
-  cost_multiplier = 365.25 / 12
-
-  result = {}
-
-  _.each(ds_instance_costs, function(item) {
-    var id = item['resourceId'].toLowerCase()
-
-    if (result[id] == undefined) {
-      result[id] = { cost: 0.0, operatingSystem: null }
-    }
-
-    result[id].cost += item['cost'] * cost_multiplier
-
-    if (!result[id].operatingSystem && item['operatingSystem']) {
-      result[id].operatingSystem = item['operatingSystem']
-    }
-  })
-EOS
-end
-
-# Merge CloudWatch metrics with instance data
-# Only includes instances that have GPU CloudWatch data (nvidia_smi_utilization_gpu)
 datasource "ds_merged_metrics" do
   run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_currency, $param_stats_threshold, $param_stats_lookback, rs_org_id, rs_project_id
 end
@@ -1483,170 +1315,155 @@ script "js_merged_metrics", type: "javascript" do
   parameters "ds_cloudwatch_data_sorted", "ds_instances", "ds_aws_account", "ds_currency", "param_stats_threshold", "param_stats_lookback", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
-  function generateChartUrl(cpu_stats, mem_stats, stat_name, resource_name) {
-    if ((!cpu_stats || cpu_stats.length === 0) && (!mem_stats || mem_stats.length === 0)) {
-      return null
+  function generateChartUrl(cpu_stats, gpu_stats, stat_name, resource_name) {
+    if ((!cpu_stats || cpu_stats.length === 0) && (!gpu_stats || gpu_stats.length === 0)) {
+      return null;
     }
 
     stat_name = stat_name.toLowerCase()
 
-    var timestamps = []
-    var cpuValues = []
-    var memValues = []
+    var timestamps = [];
+    var cpuValues = [];
+    var gpuValues = [];
 
-    var maxPoints = 60
+    var maxPoints = 60;
     var step = 60
     if (cpu_stats && cpu_stats.length > 0) {
-      step = Math.max(1, Math.floor(cpu_stats.length / maxPoints))
-    } else if (mem_stats && mem_stats.length > 0) {
-      step = Math.max(1, Math.floor(mem_stats.length / maxPoints))
+      step = Math.max(1, Math.floor(cpu_stats.length / maxPoints));
+    } else if (gpu_stats && gpu_stats.length > 0) {
+      step = Math.max(1, Math.floor(gpu_stats.length / maxPoints));
     }
 
     if (cpu_stats && cpu_stats.length > 0) {
       for (var i = 0; i < cpu_stats.length; i += step) {
         if (cpu_stats[i] && cpu_stats[i].timestamp) {
-          var date = new Date(cpu_stats[i].timestamp * 1000)
-          timestamps.push(date.toISOString().split('T')[0])
-          cpuValues.push(_.isNumber(cpu_stats[i][stat_name]) ? Math.round(cpu_stats[i][stat_name] * 10) / 10 : "_")
-          if (mem_stats && mem_stats[i] && _.isNumber(mem_stats[i][stat_name])) {
-            memValues.push(Math.round(mem_stats[i][stat_name] * 10) / 10)
+          var date = new Date(cpu_stats[i].timestamp * 1000);
+          timestamps.push(date.toISOString().split('T')[0]);
+
+          cpuValues.push(_.isNumber(cpu_stats[i][stat_name]) ? Math.round(cpu_stats[i][stat_name] * 10) / 10 : "_");
+
+          if (gpu_stats && gpu_stats[i] && _.isNumber(gpu_stats[i][stat_name])) {
+            gpuValues.push(Math.round(gpu_stats[i][stat_name] * 10) / 10);
           } else {
-            memValues.push("_")
+            gpuValues.push("_");
           }
         }
       }
     }
 
-    var timeLabels = timestamps.join('|')
-    var cpuData = cpuValues.join(',')
-    var memData = memValues.join(',')
-    var lineColors = ["206BB6", "CF8F36"]
-    var stat_name_Proper = stat_name.charAt(0).toUpperCase() + stat_name.slice(1).toLowerCase()
+    var timeLabels = timestamps.join('|');
+    var cpuData = cpuValues.join(',');
+    var gpuData = gpuValues.join(',');
 
-    var chartUrl = "https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id=" + rs_org_id + "&rs_project_id=" + rs_project_id
-    chartUrl += "&cht=lc"
-    chartUrl += "&chs=900x450"
-    chartUrl += "&chco=" + lineColors.join(',')
-    chartUrl += "&chxt=x,y"
-    chartUrl += "&chxs=0,000000,12,-1,lt,000000,s,min90"
-    chartUrl += "&chdl=" + encodeURIComponent("CPU Usage%25%20%20%20%20%20%20%20%20%20%20|Memory Usage%25")
-    chartUrl += "&chdlp=b"
-    chartUrl += "&chtt=" + encodeURIComponent(stat_name_Proper + "+Resource+Utilization|" + encodeURIComponent(resource_name))
-    chartUrl += "&chma=10,10,10,10"
-    chartUrl += "&chxr=1,0,100"
-    chartUrl += "&chls=" + encodeURIComponent("4|4")
-    chartUrl += "&chf=bg,s,FFFFFF00"
-    chartUrl += "&chg=" + encodeURIComponent("20,50,5,5,CECECE")
-    chartUrl += "&chxl=" + encodeURIComponent("0:|" + encodeURIComponent(timeLabels))
-    chartUrl += "&chd=" + encodeURIComponent("t:" + cpuData + "|" + memData)
+    var lineColors = [
+      "206BB6",
+      "CF8F36"
+    ]
 
-    return chartUrl
+    var stat_name_Proper = stat_name.charAt(0).toUpperCase() + stat_name.slice(1).toLowerCase();
+
+    var chartUrl = "https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id="+rs_org_id+"&rs_project_id="+rs_project_id;
+    chartUrl += "&cht=lc";
+    chartUrl += "&chs=900x450";
+    chartUrl += "&chco=" + lineColors.join(',');
+    chartUrl += "&chxt=x,y";
+    chartUrl += "&chxs=0,000000,12,-1,lt,000000,s,min90";
+    chartUrl += "&chdl="+encodeURIComponent("CPU Usage%25|GPU Usage%25");
+    chartUrl += "&chdlp=b";
+    chartUrl += "&chtt="+encodeURIComponent(stat_name_Proper+"+Resource+Utilization|" + encodeURIComponent(resource_name));
+    chartUrl += "&chma=10,10,10,10";
+    chartUrl += "&chxr=1,0,100";
+    chartUrl += "&chls="+encodeURIComponent("4|4");
+    chartUrl += "&chf=bg,s,FFFFFF00";
+    chartUrl += "&chg="+encodeURIComponent("20,50,5,5,CECECE");
+    chartUrl += "&chxl="+encodeURIComponent("0:|" + encodeURIComponent(timeLabels));
+    chartUrl += "&chd="+encodeURIComponent("t:" + cpuData + "|" + gpuData);
+
+    return chartUrl;
   }
 
   result = []
 
   _.each(ds_instances, function(instance) {
-    var region = instance['region']
-    var id = instance['instanceId']
+    region = instance['region']
+    id = instance['instanceId']
 
-    if (ds_cloudwatch_data_sorted[region] == undefined) return
-    if (ds_cloudwatch_data_sorted[region][id] == undefined) return
+    if (ds_cloudwatch_data_sorted[region] != undefined) {
+      if (ds_cloudwatch_data_sorted[region][id] != undefined) {
+        tags = []
+        resourceName = ""
 
-    var cw = ds_cloudwatch_data_sorted[region][id]
+        if (instance['tags'] != undefined && instance['tags'] != null) {
+          _.each(instance['tags'], function(tag) {
+            tags.push([tag['key'], tag['value']].join('='))
 
-    // Only include instances that have GPU CloudWatch data
-    var has_gpu_util = false
-    _.each(['Average', 'Minimum', 'Maximum', 'p99', 'p95', 'p90'], function(stat) {
-      if (cw['gpuUtil' + stat] != undefined) { has_gpu_util = true }
-    })
-    if (!has_gpu_util) return
+            if (tag['key'].toLowerCase() == 'name') {
+              resourceName = tag['value']
+            }
+          })
+        }
 
-    var tags = []
-    var resourceName = ""
+        resourceARN = "arn:aws:ec2:" + region + ":" + ds_aws_account['id'] + ":instance/" + id
 
-    if (instance['tags'] != undefined && instance['tags'] != null) {
-      _.each(instance['tags'], function(tag) {
-        tags.push([tag['key'], tag['value']].join('='))
-        if (tag['key'].toLowerCase() == 'name') { resourceName = tag['value'] }
-      })
+        merged_instance = {
+          "cpu_minimum": ds_cloudwatch_data_sorted[region][id]['cpuMinimum'] || null,
+          "cpu_average": ds_cloudwatch_data_sorted[region][id]['cpuAverage'] || null,
+          "cpu_maximum": ds_cloudwatch_data_sorted[region][id]['cpuMaximum'] || null,
+          "cpu_p90": ds_cloudwatch_data_sorted[region][id]['cpup90'] || null,
+          "cpu_p95": ds_cloudwatch_data_sorted[region][id]['cpup95'] || null,
+          "cpu_p99": ds_cloudwatch_data_sorted[region][id]['cpup99'] || null,
+          "gpu_minimum": ds_cloudwatch_data_sorted[region][id]['gpuMinimum'] || null,
+          "gpu_average": ds_cloudwatch_data_sorted[region][id]['gpuAverage'] || null,
+          "gpu_maximum": ds_cloudwatch_data_sorted[region][id]['gpuMaximum'] || null,
+          "gpu_p90": ds_cloudwatch_data_sorted[region][id]['gpup90'] || null,
+          "gpu_p95": ds_cloudwatch_data_sorted[region][id]['gpup95'] || null,
+          "gpu_p99": ds_cloudwatch_data_sorted[region][id]['gpup99'] || null,
+          "region": region,
+          "id": id,
+          "resourceARN": resourceARN,
+          "resourceID": id,
+          "platform": instance['platform'],
+          "service": "EC2",
+          "privateDnsName": instance['privateDnsName'],
+          "launchTime": instance['launchTime'],
+          "hostname": instance['privateDnsName'].split('.')[0],
+          "tags": tags.join(', '),
+          "resourceType": instance['resourceType'],
+          "savings": null,
+          "accountID": ds_aws_account['id'],
+          "accountName": ds_aws_account['name'],
+          "savingsCurrency": ds_currency['symbol'],
+          "thresholdType": param_stats_threshold,
+          "lookbackPeriod": param_stats_lookback,
+          "resourceName": resourceName,
+          "underutil_message": "",
+          "idle_message": "",
+          "underutil_total_savings": "",
+          "idle_total_savings": "",
+          "policy_name": ""
+        }
+
+        var resource_identifier = merged_instance["resourceName"] ? merged_instance["resourceName"] + " ("+merged_instance["resourceID"]+")" : merged_instance["resourceID"]
+        merged_instance["chartUrl"] = generateChartUrl(ds_cloudwatch_data_sorted[region][id]['cpuPoints'], ds_cloudwatch_data_sorted[region][id]['gpuPoints'], param_stats_threshold, resource_identifier);
+        if (_.isString(merged_instance["chartUrl"])) {
+          merged_instance["chartUrlField"] = resource_identifier+" Utilization Chart||" + merged_instance["chartUrl"] + "&from_pt=true"
+        }
+
+        result.push(merged_instance)
+      }
     }
-
-    var resourceARN = "arn:aws:ec2:" + region + ":" + ds_aws_account['id'] + ":instance/" + id
-
-    var merged_instance = {
-      "cpu_minimum": cw['cpuMinimum'] || null,
-      "cpu_average": cw['cpuAverage'] || null,
-      "cpu_maximum": cw['cpuMaximum'] || null,
-      "cpu_p90": cw['cpup90'] || null,
-      "cpu_p95": cw['cpup95'] || null,
-      "cpu_p99": cw['cpup99'] || null,
-      "mem_minimum": cw['memMinimum'] || null,
-      "mem_average": cw['memAverage'] || null,
-      "mem_maximum": cw['memMaximum'] || null,
-      "mem_p90": cw['memp90'] || null,
-      "mem_p95": cw['memp95'] || null,
-      "mem_p99": cw['memp99'] || null,
-      "gpu_util_minimum": cw['gpuUtilMinimum'] || null,
-      "gpu_util_average": cw['gpuUtilAverage'] || null,
-      "gpu_util_maximum": cw['gpuUtilMaximum'] || null,
-      "gpu_util_p90": cw['gpuUtilp90'] || null,
-      "gpu_util_p95": cw['gpuUtilp95'] || null,
-      "gpu_util_p99": cw['gpuUtilp99'] || null,
-      "gpu_mem_used_minimum": cw['gpuMemUsedMinimum'] || null,
-      "gpu_mem_used_average": cw['gpuMemUsedAverage'] || null,
-      "gpu_mem_used_maximum": cw['gpuMemUsedMaximum'] || null,
-      "gpu_mem_used_p90": cw['gpuMemUsedp90'] || null,
-      "gpu_mem_used_p95": cw['gpuMemUsedp95'] || null,
-      "gpu_mem_used_p99": cw['gpuMemUsedp99'] || null,
-      "region": region,
-      "id": id,
-      "resourceARN": resourceARN,
-      "resourceID": id,
-      "platform": instance['platform'],
-      "service": "EC2",
-      "privateDnsName": instance['privateDnsName'],
-      "launchTime": instance['launchTime'],
-      "hostname": instance['privateDnsName'] ? instance['privateDnsName'].split('.')[0] : "",
-      "tags": tags.join(', '),
-      "resourceType": instance['resourceType'],
-      "savings": null,
-      "accountID": ds_aws_account['id'],
-      "accountName": ds_aws_account['name'],
-      "savingsCurrency": ds_currency['symbol'],
-      "thresholdType": param_stats_threshold,
-      "lookbackPeriod": param_stats_lookback,
-      "resourceName": resourceName,
-      "underutil_message": "",
-      "idle_message": "",
-      "underutil_total_savings": "",
-      "idle_total_savings": "",
-      "policy_name": ""
-    }
-
-    var resource_identifier = merged_instance["resourceName"] ? merged_instance["resourceName"] + " (" + merged_instance["resourceID"] + ")" : merged_instance["resourceID"]
-    merged_instance["chartUrl"] = generateChartUrl(cw['cpuPoints'], cw['memPoints'], param_stats_threshold, resource_identifier)
-
-    if (_.isString(merged_instance["chartUrl"])) {
-      merged_instance["chartUrlField"] = resource_identifier + " Utilization Chart||" + merged_instance["chartUrl"] + "&from_pt=true"
-    }
-
-    result.push(merged_instance)
   })
 EOS
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_gpu_instance_types, $ds_aws_instance_cost_map, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_safety_margin, $param_incident_csv, rs_org_id, rs_project_id
+  run_script $js_idle_and_underutil_instances, $ds_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $param_stats_idle_threshold_gpu_value, $param_stats_idle_threshold_cpu_value, $param_stats_underutil_threshold_gpu_value, $param_stats_underutil_threshold_cpu_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_incident_csv, rs_org_id, rs_project_id
 end
 
-script "js_idle_and_underutil_instances", type: "javascript" do
-  parameters "ds_instances", "ds_merged_metrics", "ds_instance_costs_grouped", "ds_gpu_instance_types", "ds_aws_instance_cost_map", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_safety_margin", "param_incident_csv", "rs_org_id", "rs_project_id"
+script "js_idle_and_underutil_instances", type:"javascript" do
+  parameters "ds_instances", "ds_merged_metrics", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "param_stats_idle_threshold_gpu_value", "param_stats_idle_threshold_cpu_value", "param_stats_underutil_threshold_gpu_value", "param_stats_underutil_threshold_cpu_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_incident_csv", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
-  // Hard-coded thresholds for GPU rightsizing
-  var IDLE_THRESHOLD = 5    // All 4 metrics below 5% -> recommend termination
-  var SAFETY_FACTOR = 1 + (param_safety_margin / 100)  // e.g. 50% margin -> 1.5x
-
   function formatNumber(number, separator) {
     formatted_number = "0"
 
@@ -1655,10 +1472,12 @@ script "js_idle_and_underutil_instances", type: "javascript" do
 
       if (separator) {
         withSeparator = ""
+
         for (var i = 0; i < formatted_number.length; i++) {
           if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
           withSeparator += formatted_number[i]
         }
+
         formatted_number = withSeparator
       }
 
@@ -1669,255 +1488,235 @@ script "js_idle_and_underutil_instances", type: "javascript" do
     return formatted_number
   }
 
-  var threshold_statistic = param_stats_threshold.toLowerCase()
+  threshold_statistic = param_stats_threshold.toLowerCase()
 
-  // Build GPU instance type lookup maps
-  var gpu_types_by_name = {}
-  _.each(ds_gpu_instance_types, function(inst) {
-    gpu_types_by_name[inst.name] = inst
-  })
+  checking_gpu = param_stats_underutil_threshold_gpu_value != -1 || param_stats_idle_threshold_gpu_value != -1
+  checking_cpu = param_stats_underutil_threshold_cpu_value != -1 || param_stats_idle_threshold_cpu_value != -1
 
-  // Build map of GPU family -> list of instances sorted by vCPUs ascending
-  var instances_by_family = {}
-  _.each(ds_gpu_instance_types, function(inst) {
-    var fam = inst.family
-    if (instances_by_family[fam] == undefined) { instances_by_family[fam] = [] }
-    instances_by_family[fam].push(inst)
-  })
-  _.each(instances_by_family, function(insts, fam) {
-    instances_by_family[fam] = _.sortBy(insts, function(i) { return i.cpu.vcpus })
-  })
+  underutil_total_savings = 0.0
+  idle_total_savings = 0.0
 
-  var underutil_total_savings = 0.0
-  var idle_total_savings = 0.0
-  var underutil_list = []
-  var idle_list = []
+  underutil_list = []
+  idle_list = []
 
-  _.each(ds_merged_metrics, function(instance) {
-    var id = instance['id'].toLowerCase()
-    var region = instance['region']
-    var current_type = instance['resourceType']
+  var underutil_analysis_message = ""
+  var idle_analysis_message = ""
+  var lookback_message = ""
 
-    // Get monthly CCO cost
-    var total_cost = 0.0
-    if (ds_instance_costs_grouped[id] != undefined) {
-      total_cost = ds_instance_costs_grouped[id].cost
-    }
+  if (checking_cpu || checking_gpu) {
+    _.each(ds_merged_metrics, function(instance) {
+      id = instance['id'].toLowerCase()
 
-    // Get utilization values using the configured threshold statistic
-    var cpu_pct = instance['cpu_' + threshold_statistic]
-    var mem_pct = instance['mem_' + threshold_statistic]
-    var gpu_util = instance['gpu_util_' + threshold_statistic]
-    var gpu_mem_used_mib = instance['gpu_mem_used_' + threshold_statistic]
+      total_cost = 0.0
+      if (ds_instance_costs_grouped[id] != undefined) { total_cost = ds_instance_costs_grouped[id] }
 
-    // Skip instances missing any metric
-    if (cpu_pct == null || cpu_pct == undefined) return
-    if (mem_pct == null || mem_pct == undefined) return
-    if (gpu_util == null || gpu_util == undefined) return
-    if (gpu_mem_used_mib == null || gpu_mem_used_mib == undefined) return
+      cpu_value = instance['cpu_' + threshold_statistic]
+      gpu_value = instance['gpu_' + threshold_statistic]
 
-    // Get current instance GPU specs
-    var current_specs = gpu_types_by_name[current_type]
-    if (!current_specs) return
+      is_idle = false
+      is_underutil = false
 
-    var gpu_mem_pct = 0
-    if (current_specs.gpu && current_specs.gpu.totalGpuMemoryInMiB > 0) {
-      gpu_mem_pct = gpu_mem_used_mib / current_specs.gpu.totalGpuMemoryInMiB * 100
-    }
+      is_idle_gpu = checking_gpu && gpu_value != null && gpu_value < param_stats_idle_threshold_gpu_value
+      is_underutil_gpu = checking_gpu && gpu_value != null && gpu_value < param_stats_underutil_threshold_gpu_value
+      is_idle_cpu = checking_cpu && cpu_value != null && cpu_value < param_stats_idle_threshold_cpu_value
+      is_underutil_cpu = checking_cpu && cpu_value != null && cpu_value < param_stats_underutil_threshold_cpu_value
 
-    // Determine operating system for pricing lookup
-    var operating_system = null
-    if (ds_instance_costs_grouped[id] != undefined && ds_instance_costs_grouped[id].operatingSystem) {
-      operating_system = ds_instance_costs_grouped[id].operatingSystem
-    }
+      if (!checking_gpu) { is_idle = is_idle_cpu }
+      if (!checking_gpu) { is_underutil = is_underutil_cpu }
 
-    if (!operating_system) {
-      var plat = instance['platform'] || ''
-      if (plat.indexOf('Windows') != -1) {
-        operating_system = 'Windows'
-      } else if (plat.indexOf('Red Hat') != -1) {
-        operating_system = 'RHEL'
-      } else if (plat.indexOf('SUSE') != -1) {
-        operating_system = 'SUSE'
-      } else {
-        operating_system = 'Linux'
-      }
-    }
+      if (!checking_cpu) { is_idle = is_idle_gpu }
+      if (!checking_cpu) { is_underutil = is_underutil_gpu }
 
-    // IDLE check: all four metrics below the idle threshold
-    var is_idle = cpu_pct < IDLE_THRESHOLD && mem_pct < IDLE_THRESHOLD && gpu_util < IDLE_THRESHOLD && gpu_mem_pct < IDLE_THRESHOLD
-
-    if (is_idle) {
-      instance["savings"] = parseFloat(parseFloat(total_cost).toFixed(3))
-      instance["recommendationType"] = "Terminate"
-      instance["newResourceType"] = "Terminate AWS GPU EC2 Instance"
-      instance["gpuCount"] = current_specs.gpu ? current_specs.gpu.count : null
-      instance["newGpuCount"] = null
-      instance["gpuMemMiB"] = current_specs.gpu ? current_specs.gpu.memoryInMiB : null
-      instance["totalGpuMemMiB"] = current_specs.gpu ? current_specs.gpu.totalGpuMemoryInMiB : null
-      instance["gpuMemPct"] = parseFloat(gpu_mem_pct.toFixed(2))
-      instance["gpuMemUsedMiB"] = parseFloat(gpu_mem_used_mib.toFixed(2))
-      instance["currentInstancePrice"] = null
-      instance["newInstancePrice"] = null
-
-      if (ds_aws_instance_cost_map[region] && ds_aws_instance_cost_map[region][current_type] && ds_aws_instance_cost_map[region][current_type][operating_system]) {
-        instance["currentInstancePrice"] = ds_aws_instance_cost_map[region][current_type][operating_system]['pricePerUnit']
-      }
-
-      var recommendationDetails = [
-        "Terminate AWS GPU EC2 instance ", instance["resourceID"], " ",
-        "in AWS Account ", instance["accountName"], " ",
-        "(", instance["accountID"], ")"
-      ].join('')
-
-      if (_.isString(instance["chartUrl"])) {
-        instance["chartUrlField"] = instance["resourceID"] + " Utilization Chart||" + instance["chartUrl"]
-        recommendationDetails += "\n\n![Utilization Chart](" + instance["chartUrl"] + "&from_pt=true)"
-      }
-
-      instance["recommendationDetails"] = recommendationDetails
-
-      if (instance['savings'] >= param_min_savings) {
-        idle_total_savings += total_cost
-        idle_list.push(instance)
-      }
-    } else {
-      // DOWNSIZE check: find the smallest same-family GPU instance satisfying all constraints
-      var current_vcpus = current_specs.cpu.vcpus
-
-      var required_vcpus = Math.ceil(current_vcpus * cpu_pct / 100 * SAFETY_FACTOR)
-      var required_ram_mib = Math.ceil(current_specs.memory.sizeInMiB * mem_pct / 100 * SAFETY_FACTOR)
-      var required_gpu_count = Math.max(1, Math.ceil(current_specs.gpu.count * gpu_util / 100 * SAFETY_FACTOR))
-      var required_gpu_mem_mib = Math.ceil(gpu_mem_used_mib * SAFETY_FACTOR)
-
-      var family = current_specs.family
-      var candidates = instances_by_family[family] || []
-      var new_instance = null
-
-      _.each(candidates, function(candidate) {
-        if (new_instance) return
-        if (candidate.cpu.vcpus >= current_vcpus) return
-        if (candidate.cpu.vcpus < required_vcpus) return
-        if (candidate.memory.sizeInMiB < required_ram_mib) return
-        if (candidate.gpu.count < required_gpu_count) return
-        if (candidate.gpu.totalGpuMemoryInMiB < required_gpu_mem_mib) return
-        new_instance = candidate
-      })
-
-      if (new_instance) {
-        var new_type = new_instance.name
-
-        // Pricing-based savings calculation with vCPU ratio fallback
-        var current_price = null
-        var new_price = null
-
-        if (ds_aws_instance_cost_map[region]) {
-          if (ds_aws_instance_cost_map[region][current_type] && ds_aws_instance_cost_map[region][current_type][operating_system]) {
-            current_price = ds_aws_instance_cost_map[region][current_type][operating_system]['pricePerUnit']
-          }
-          if (ds_aws_instance_cost_map[region][new_type] && ds_aws_instance_cost_map[region][new_type][operating_system]) {
-            new_price = ds_aws_instance_cost_map[region][new_type][operating_system]['pricePerUnit']
-          }
-        }
-
-        var savings_multiplier = 0.0
-        if (current_price != null && new_price != null && current_price > 0) {
-          savings_multiplier = 1 - new_price / current_price
+      if (checking_cpu && checking_gpu) {
+        if (param_stats_check_both == "Both GPU and CPU") {
+          is_idle = is_idle_cpu && is_idle_gpu
+          is_underutil = is_underutil_cpu && is_underutil_gpu
         } else {
-          // Fallback: vCPU count ratio as cost proxy
-          savings_multiplier = 1 - new_instance.cpu.vcpus / current_vcpus
+          is_idle = is_idle_cpu || is_idle_gpu
+          is_underutil = is_underutil_cpu || is_underutil_gpu
         }
+      }
 
-        var savings = total_cost * Math.max(0, savings_multiplier)
+      instance["newResourceType"] = null
 
-        instance["savings"] = parseFloat(savings.toFixed(3))
-        instance["recommendationType"] = "Downsize"
-        instance["newResourceType"] = new_type
-        instance["gpuCount"] = current_specs.gpu ? current_specs.gpu.count : null
-        instance["newGpuCount"] = new_instance.gpu ? new_instance.gpu.count : null
-        instance["gpuMemMiB"] = current_specs.gpu ? current_specs.gpu.memoryInMiB : null
-        instance["totalGpuMemMiB"] = current_specs.gpu ? current_specs.gpu.totalGpuMemoryInMiB : null
-        instance["gpuMemPct"] = parseFloat(gpu_mem_pct.toFixed(2))
-        instance["gpuMemUsedMiB"] = parseFloat(gpu_mem_used_mib.toFixed(2))
-        instance["currentInstancePrice"] = current_price
-        instance["newInstancePrice"] = new_price
+      if (is_idle) {
+        instance["savings"] = parseFloat(parseFloat(total_cost).toFixed(3))
+        instance["recommendationType"] = "Terminate"
+        instance["threshold"] = param_stats_idle_threshold_cpu_value
+        instance["gpuThreshold"] = param_stats_idle_threshold_gpu_value
 
-        var recommendationDetails = [
-          "Change instance type of AWS GPU EC2 instance ", instance["resourceID"], " ",
+        recommendationDetails = [
+          "Terminate EC2 instance ", instance["resourceID"], " ",
           "in AWS Account ", instance["accountName"], " ",
-          "(", instance["accountID"], ") ",
-          "from ", current_type, " ",
-          "to ", new_type
-        ].join('')
-
+          "(", instance["accountID"], ")"
+        ]
         if (_.isString(instance["chartUrl"])) {
-          instance["chartUrlField"] = instance["resourceID"] + " Utilization Chart||" + instance["chartUrl"]
-          recommendationDetails += "\n\n![Utilization Chart](" + instance["chartUrl"] + "&from_pt=true)"
+          instance["chartUrlField"] = instance["resourceID"]+" Utilization Chart||" + instance["chartUrl"] + "&from_pt=true"
+          recommendationDetails.push("\n\n![Utilization Chart](" + instance["chartUrl"] + "&from_pt=true)")
         }
 
-        instance["recommendationDetails"] = recommendationDetails
+        instance["recommendationDetails"] = recommendationDetails.join('')
+        instance["newResourceType"] = "Terminate AWS GPU EC2 Instance"
 
         if (instance['savings'] >= param_min_savings) {
-          underutil_total_savings += savings
-          underutil_list.push(instance)
+          idle_total_savings += total_cost
+          idle_list.push(instance)
+        }
+      } else if (is_underutil) {
+        instance["recommendationType"] = "Downsize"
+        instance["threshold"] = param_stats_underutil_threshold_cpu_value
+        instance["gpuThreshold"] = param_stats_underutil_threshold_gpu_value
+
+        if (ds_aws_instance_size_map[instance['resourceType']]) {
+          instance["newResourceType"] = ds_aws_instance_size_map[instance['resourceType']]['down']
+        }
+
+        savings = total_cost - (total_cost / 2)
+        instance["savings"] = Math.round(savings * 1000) / 1000
+
+        recommendationDetails = [
+          "Change instance type of EC2 instance ", instance["resourceID"], " ",
+          "in AWS Account ", instance["accountName"], " ",
+          "(", instance["accountID"], ") ",
+          "from ", instance["resourceType"], " ",
+          "to ", instance["newResourceType"]
+        ]
+        if (_.isString(instance["chartUrl"])) {
+          instance["chartUrlField"] = instance["resourceID"]+" Utilization Chart||" + instance["chartUrl"] + "&from_pt=true"
+          recommendationDetails.push("\n\n![Utilization Chart](" + instance["chartUrl"] + "&from_pt=true)")
+        }
+
+        instance["recommendationDetails"] = recommendationDetails.join('')
+
+        if (instance["newResourceType"] != null && instance["newResourceType"] != undefined) {
+          if (instance['savings'] >= param_min_savings) {
+            underutil_total_savings += savings
+            underutil_list.push(instance)
+          }
         }
       }
-    }
-  })
-
-  // Build summary messages
-  var csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
-
-  var gpu_instances_total = ds_instances.length
-  var gpu_instances_with_metrics = ds_merged_metrics.length
-
-  var idle_instances_total = idle_list.length.toString()
-  var underutil_instances_total = underutil_list.length.toString()
-  var idle_pct = (idle_list.length / gpu_instances_with_metrics * 100).toFixed(2) + '%'
-  var underutil_pct = (underutil_list.length / gpu_instances_with_metrics * 100).toFixed(2) + '%'
-
-  underutil_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(underutil_total_savings).toFixed(2), ds_currency['separator'])
-  idle_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), ds_currency['separator'])
-
-  var metric_window = "CPU, memory, GPU compute utilization, and GPU memory usage were analyzed over the last " + param_stats_lookback.toString() + " days using the '" + param_stats_threshold + "' statistic.\n\n"
-
-  var applied_policy_url = "https://" + ds_flexera_api_hosts["ui"]
-  if (_.isString(ds_applied_policy['policyAggregateId'])) {
-    applied_policy_url = applied_policy_url + "/orgs/" + rs_org_id + "/automation/applied-policies?policyId=" + ds_applied_policy['policyAggregateId']
-  } else {
-    applied_policy_url = applied_policy_url + "/orgs/" + rs_org_id + "/automation/applied-policies/projects/" + rs_project_id + "?policyId=" + ds_applied_policy['id']
+    })
   }
 
-  var disclaimer = "The above settings can be modified by editing the [" + ds_applied_policy['name'] + "](" + applied_policy_url + ") applied policy and changing the appropriate parameters.\n\n"
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
-  var algo_note = "Instances are flagged for downsizing when the smallest instance in the same GPU family that can handle the current workload (with a " + param_safety_margin + "% safety margin, i.e. " + SAFETY_FACTOR.toFixed(2) + "x) is smaller than the current instance type. " +
-    "This approach accounts for the non-monotonic relationship between instance size and GPU count within GPU instance families " +
-    "(e.g., a g5.12xlarge has 4 GPUs at 48 vCPUs while adjacent sizes have 1 GPU).\n\n"
+  if (checking_cpu || checking_gpu) {
+    instances_total = ds_instances.length.toString()
+    underutil_instances_total = underutil_list.length.toString()
+    underutil_instances_percentage = (underutil_instances_total / instances_total * 100).toFixed(2).toString() + '%'
+    idle_instances_total = idle_list.length.toString()
+    idle_instances_percentage = (idle_instances_total / instances_total * 100).toFixed(2).toString() + '%'
 
-  var metrics_note = "Note: Only GPU instances with CloudWatch Agent GPU metrics (nvidia_smi_utilization_gpu) reporting to CloudWatch are analyzed. " +
-    "Instances without GPU metrics are excluded.\n\n"
+    underutil_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(underutil_total_savings).toFixed(2), ds_currency['separator'])
+    idle_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), ds_currency['separator'])
 
-  var idle_findings = [
-    "Out of ", gpu_instances_total.toString(), " GPU EC2 instances discovered, ",
-    gpu_instances_with_metrics.toString(), " have GPU CloudWatch metrics. ",
-    "Of those, ", idle_instances_total, " (", idle_pct, ") are idle and recommended for termination. ",
-    "An instance is considered idle when its CPU, memory, GPU compute utilization, and GPU memory utilization (", param_stats_threshold.toLowerCase(), ") are all below ", IDLE_THRESHOLD.toString(), "%. "
-  ].join('')
+    underutil_findings = [
+      "Out of ", instances_total, " GPU EC2 instances analyzed, ",
+      underutil_instances_total, " (", underutil_instances_percentage,
+      ") are underutilized and recommended for downsizing. "
+    ].join('')
 
-  var underutil_findings = [
-    "Out of ", gpu_instances_total.toString(), " GPU EC2 instances discovered, ",
-    gpu_instances_with_metrics.toString(), " have GPU CloudWatch metrics. ",
-    "Of those, ", underutil_instances_total, " (", underutil_pct, ") are underutilized and recommended for downsizing. "
-  ].join('')
+    idle_findings = [
+      "Out of ", instances_total, " GPU EC2 instances analyzed, ",
+      idle_instances_total, " (", idle_instances_percentage,
+      ") are idle and recommended for termination. "
+    ].join('')
 
-  var idle_message = idle_findings + metric_window + metrics_note + disclaimer + csv_message
-  var underutil_message = underutil_findings + algo_note + metric_window + metrics_note + disclaimer + csv_message
+    if (checking_cpu && checking_gpu) {
+      message_boolean = "or"
 
-  // Sort by descending savings
+      if (param_stats_check_both == "Both GPU and CPU") {
+        message_boolean = "and"
+      }
+
+      underutil_analysis_message = [
+        "A GPU EC2 instance is considered underutilized if its CPU usage (",
+        param_stats_threshold.toLowerCase(), ") is below ",
+        param_stats_underutil_threshold_cpu_value, "% ", message_boolean,
+        " its GPU usage (", param_stats_threshold.toLowerCase(),
+        ") is below ", param_stats_underutil_threshold_gpu_value,
+        "% but its CPU usage is still above or equal to ",
+        param_stats_idle_threshold_cpu_value, "% ", message_boolean,
+        " its GPU usage is still above or equal to ",
+        param_stats_idle_threshold_gpu_value, "%. "
+      ].join('')
+
+      idle_analysis_message = [
+        "A GPU EC2 instance is considered idle if its CPU usage (",
+        param_stats_threshold.toLowerCase(), ") is below ",
+        param_stats_idle_threshold_cpu_value, "% ", message_boolean,
+        " its GPU usage (", param_stats_threshold.toLowerCase(),
+        ") is below ", param_stats_idle_threshold_gpu_value, "%. "
+      ].join('')
+
+      lookback_message = [
+        "CPU and GPU usage was analyzed over the last ",
+        param_stats_lookback.toString(), " days.\n\n"
+      ].join('')
+    }
+
+    if (checking_cpu && !checking_gpu) {
+      underutil_analysis_message = [
+        "A GPU EC2 instance is considered underutilized if its CPU usage (",
+        param_stats_threshold.toLowerCase(), ") is below ",
+        param_stats_underutil_threshold_cpu_value,
+        "% but its CPU usage is still above or equal to ",
+        param_stats_idle_threshold_cpu_value, "%. "
+      ].join('')
+
+      idle_analysis_message = [
+        "A GPU EC2 instance is considered idle if its CPU usage (",
+        param_stats_threshold.toLowerCase(), ") is below ",
+        param_stats_idle_threshold_cpu_value, "%. "
+      ].join('')
+
+      lookback_message = [
+        "CPU usage was analyzed over the last ",
+        param_stats_lookback.toString() + " days.\n\n"
+      ].join('')
+    }
+
+    if (!checking_cpu && checking_gpu) {
+      underutil_analysis_message = [
+        "A GPU EC2 instance is considered underutilized if its GPU usage (",
+        param_stats_threshold.toLowerCase(), ") is below ",
+        param_stats_underutil_threshold_gpu_value,
+        "% but its GPU usage is still above or equal to ",
+        param_stats_idle_threshold_gpu_value, "%. "
+      ].join('')
+
+      idle_analysis_message = [
+        "A GPU EC2 instance is considered idle if its GPU usage (",
+        param_stats_threshold.toLowerCase(), ") is below ",
+        param_stats_idle_threshold_gpu_value, "%. "
+      ].join('')
+
+      lookback_message = [
+        "GPU usage was analyzed over the last ",
+        param_stats_lookback.toString() + " days.\n\n"
+      ].join('')
+    }
+
+    var applied_policy_url = "https://" + ds_flexera_api_hosts["ui"]
+    if (_.isString(ds_applied_policy['policyAggregateId'])) {
+      applied_policy_url = applied_policy_url + "/orgs/" + rs_org_id + "/automation/applied-policies?policyId=" + ds_applied_policy['policyAggregateId'];
+    } else {
+      applied_policy_url = applied_policy_url + "/orgs/" + rs_org_id + "/automation/applied-policies/projects/" + rs_project_id + "?policyId=" + ds_applied_policy['id'];
+    }
+
+    disclaimer = "The above settings can be modified by editing the [" + ds_applied_policy['name'] + "](" + applied_policy_url + ") applied policy and changing the appropriate parameters.\n\n"
+
+    underutil_message = underutil_findings + underutil_analysis_message + lookback_message + disclaimer + csv_message
+    idle_message = idle_findings + idle_analysis_message + lookback_message + disclaimer + csv_message
+  } else {
+    underutil_message = "No results were found because all CPU and GPU parameters were set to -1 when this policy was applied. Please terminate and reapply this policy with one of these settings enabled."
+    idle_message = underutil_message
+  }
+
   idle_list = _.sortBy(idle_list, function(item) { return item['savings'] * -1 })
   underutil_list = _.sortBy(underutil_list, function(item) { return item['savings'] * -1 })
 
-  var dummy_entry = {
+  dummy_entry = {
     "recommendationType": "",
     "underutil_message": "",
     "idle_message": "",
@@ -1932,40 +1731,32 @@ script "js_idle_and_underutil_instances", type: "javascript" do
     "cpu_p99": "",
     "cpu_p95": "",
     "cpu_p90": "",
-    "mem_maximum": "",
-    "mem_minimum": "",
-    "mem_average": "",
-    "mem_p99": "",
-    "mem_p95": "",
-    "mem_p90": "",
-    "gpu_util_maximum": "",
-    "gpu_util_minimum": "",
-    "gpu_util_average": "",
-    "gpu_util_p99": "",
-    "gpu_util_p95": "",
-    "gpu_util_p90": "",
-    "gpu_mem_used_maximum": "",
-    "gpu_mem_used_minimum": "",
-    "gpu_mem_used_average": "",
-    "gpu_mem_used_p99": "",
-    "gpu_mem_used_p95": "",
-    "gpu_mem_used_p90": "",
-    "gpuMemPct": "",
-    "gpuMemUsedMiB": "",
-    "currentInstancePrice": "",
-    "newInstancePrice": ""
+    "gpu_maximum": "",
+    "gpu_minimum": "",
+    "gpu_average": "",
+    "gpu_p99": "",
+    "gpu_p95": "",
+    "gpu_p90": ""
   }
 
   idle_list.push(dummy_entry)
   underutil_list.push(dummy_entry)
 
   if (idle_list.length > 0) {
+    idle_list = _.map(idle_list, function(row) {
+      row.recommendationDetails = row.recommendationDetails + "\n\n" + idle_analysis_message + lookback_message + disclaimer || '';
+      return row;
+    });
     idle_list[0]['idle_message'] = idle_message
     idle_list[0]['idle_total_savings'] = idle_total_savings
     idle_list[0]['policy_name'] = ds_applied_policy['name']
   }
 
   if (underutil_list.length > 0) {
+    underutil_list = _.map(underutil_list, function(row) {
+      row.recommendationDetails = row.recommendationDetails + "\n\n" + underutil_analysis_message + lookback_message + disclaimer || '';
+      return row;
+    });
     underutil_list[0]['underutil_message'] = underutil_message
     underutil_list[0]['underutil_total_savings'] = underutil_total_savings
     underutil_list[0]['policy_name'] = ds_applied_policy['name']
@@ -1986,7 +1777,7 @@ datasource "ds_idle_instances" do
   run_script $js_split_incidents, $ds_idle_and_underutil_instances, "idle_list"
 end
 
-script "js_split_incidents", type: "javascript" do
+script "js_split_incidents", type:"javascript" do
   parameters "ds_idle_and_underutil_instances", "incident"
   result "result"
   code "result = ds_idle_and_underutil_instances[incident]"
@@ -2007,7 +1798,7 @@ policy "pol_utilization" do
     check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Downsize"))
     escalate $esc_email
     escalate $esc_downsize_instances
-    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "mem_maximum", "mem_minimum", "mem_average", "mem_p99", "mem_p95", "mem_p90", "gpu_util_maximum", "gpu_util_minimum", "gpu_util_average", "gpu_util_p99", "gpu_util_p95", "gpu_util_p90", "gpu_mem_used_maximum", "gpu_mem_used_minimum", "gpu_mem_used_average", "gpu_mem_used_p99", "gpu_mem_used_p95", "gpu_mem_used_p90", "gpuMemPct", "gpuMemUsedMiB", "currentInstancePrice", "newInstancePrice"
+    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "gpu_maximum", "gpu_minimum", "gpu_average", "gpu_p99", "gpu_p95", "gpu_p90"
     export do
       resource_level true
       field "accountID" do
@@ -2043,24 +1834,6 @@ policy "pol_utilization" do
       field "hostname" do
         label "Hostname"
       end
-      field "gpuCount" do
-        label "GPU Count"
-      end
-      field "newGpuCount" do
-        label "Recommended GPU Count"
-      end
-      field "gpuMemMiB" do
-        label "GPU Memory Per GPU (MiB)"
-      end
-      field "totalGpuMemMiB" do
-        label "Total GPU Memory (MiB)"
-      end
-      field "currentInstancePrice" do
-        label "Current Instance Hourly List Price"
-      end
-      field "newInstancePrice" do
-        label "Recommended Instance Hourly List Price"
-      end
       field "savings" do
         label "Estimated Monthly Savings"
       end
@@ -2069,36 +1842,6 @@ policy "pol_utilization" do
       end
       field "launchTime" do
         label "Launch Time"
-      end
-      field "gpuUtilMaximum" do
-        label "GPU Utilization Maximum %"
-        path "gpu_util_maximum"
-      end
-      field "gpuUtilMinimum" do
-        label "GPU Utilization Minimum %"
-        path "gpu_util_minimum"
-      end
-      field "gpuUtilAverage" do
-        label "GPU Utilization Average %"
-        path "gpu_util_average"
-      end
-      field "gpuUtilP99" do
-        label "GPU Utilization p99"
-        path "gpu_util_p99"
-      end
-      field "gpuUtilP95" do
-        label "GPU Utilization p95"
-        path "gpu_util_p95"
-      end
-      field "gpuUtilP90" do
-        label "GPU Utilization p90"
-        path "gpu_util_p90"
-      end
-      field "gpuMemPct" do
-        label "GPU Memory Utilization %"
-      end
-      field "gpuMemUsedMiB" do
-        label "GPU Memory Used (MiB)"
       end
       field "cpuMaximum" do
         label "CPU Maximum %"
@@ -2124,32 +1867,38 @@ policy "pol_utilization" do
         label "CPU p90"
         path "cpu_p90"
       end
-      field "memMaximum" do
-        label "Memory Maximum %"
-        path "mem_maximum"
+      field "gpuMaximum" do
+        label "GPU Maximum %"
+        path "gpu_maximum"
       end
-      field "memMinimum" do
-        label "Memory Minimum %"
-        path "mem_minimum"
+      field "gpuMinimum" do
+        label "GPU Minimum %"
+        path "gpu_minimum"
       end
-      field "memAverage" do
-        label "Memory Average %"
-        path "mem_average"
+      field "gpuAverage" do
+        label "GPU Average %"
+        path "gpu_average"
       end
-      field "memP99" do
-        label "Memory p99"
-        path "mem_p99"
+      field "gpuP99" do
+        label "GPU p99"
+        path "gpu_p99"
       end
-      field "memP95" do
-        label "Memory p95"
-        path "mem_p95"
+      field "gpuP95" do
+        label "GPU p95"
+        path "gpu_p95"
       end
-      field "memP90" do
-        label "Memory p90"
-        path "mem_p90"
+      field "gpuP90" do
+        label "GPU p90"
+        path "gpu_p90"
       end
       field "thresholdType" do
         label "Threshold Statistic"
+      end
+      field "threshold" do
+        label "CPU Threshold"
+      end
+      field "gpuThreshold" do
+        label "GPU Threshold"
       end
       field "lookbackPeriod" do
         label "Look Back Period (Days)"
@@ -2170,7 +1919,6 @@ policy "pol_utilization" do
       end
     end
   end
-
   validate_each $ds_idle_instances do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Idle GPU EC2 Instances Found"
     detail_template <<-'EOS'
@@ -2182,7 +1930,7 @@ policy "pol_utilization" do
     escalate $esc_email
     escalate $esc_stop_instances
     escalate $esc_terminate_instances
-    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "mem_maximum", "mem_minimum", "mem_average", "mem_p99", "mem_p95", "mem_p90", "gpu_util_maximum", "gpu_util_minimum", "gpu_util_average", "gpu_util_p99", "gpu_util_p95", "gpu_util_p90", "gpu_mem_used_maximum", "gpu_mem_used_minimum", "gpu_mem_used_average", "gpu_mem_used_p99", "gpu_mem_used_p95", "gpu_mem_used_p90", "gpuMemPct", "gpuMemUsedMiB", "currentInstancePrice", "newInstancePrice"
+    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "gpu_maximum", "gpu_minimum", "gpu_average", "gpu_p99", "gpu_p95", "gpu_p90"
     export do
       resource_level true
       field "accountID" do
@@ -2218,18 +1966,6 @@ policy "pol_utilization" do
       field "hostname" do
         label "Hostname"
       end
-      field "gpuCount" do
-        label "GPU Count"
-      end
-      field "gpuMemMiB" do
-        label "GPU Memory Per GPU (MiB)"
-      end
-      field "totalGpuMemMiB" do
-        label "Total GPU Memory (MiB)"
-      end
-      field "currentInstancePrice" do
-        label "Current Instance Hourly List Price"
-      end
       field "savings" do
         label "Estimated Monthly Savings"
       end
@@ -2238,36 +1974,6 @@ policy "pol_utilization" do
       end
       field "launchTime" do
         label "Launch Time"
-      end
-      field "gpuUtilMaximum" do
-        label "GPU Utilization Maximum %"
-        path "gpu_util_maximum"
-      end
-      field "gpuUtilMinimum" do
-        label "GPU Utilization Minimum %"
-        path "gpu_util_minimum"
-      end
-      field "gpuUtilAverage" do
-        label "GPU Utilization Average %"
-        path "gpu_util_average"
-      end
-      field "gpuUtilP99" do
-        label "GPU Utilization p99"
-        path "gpu_util_p99"
-      end
-      field "gpuUtilP95" do
-        label "GPU Utilization p95"
-        path "gpu_util_p95"
-      end
-      field "gpuUtilP90" do
-        label "GPU Utilization p90"
-        path "gpu_util_p90"
-      end
-      field "gpuMemPct" do
-        label "GPU Memory Utilization %"
-      end
-      field "gpuMemUsedMiB" do
-        label "GPU Memory Used (MiB)"
       end
       field "cpuMaximum" do
         label "CPU Maximum %"
@@ -2293,32 +1999,38 @@ policy "pol_utilization" do
         label "CPU p90"
         path "cpu_p90"
       end
-      field "memMaximum" do
-        label "Memory Maximum %"
-        path "mem_maximum"
+      field "gpuMaximum" do
+        label "GPU Maximum %"
+        path "gpu_maximum"
       end
-      field "memMinimum" do
-        label "Memory Minimum %"
-        path "mem_minimum"
+      field "gpuMinimum" do
+        label "GPU Minimum %"
+        path "gpu_minimum"
       end
-      field "memAverage" do
-        label "Memory Average %"
-        path "mem_average"
+      field "gpuAverage" do
+        label "GPU Average %"
+        path "gpu_average"
       end
-      field "memP99" do
-        label "Memory p99"
-        path "mem_p99"
+      field "gpuP99" do
+        label "GPU p99"
+        path "gpu_p99"
       end
-      field "memP95" do
-        label "Memory p95"
-        path "mem_p95"
+      field "gpuP95" do
+        label "GPU p95"
+        path "gpu_p95"
       end
-      field "memP90" do
-        label "Memory p90"
-        path "mem_p90"
+      field "gpuP90" do
+        label "GPU p90"
+        path "gpu_p90"
       end
       field "thresholdType" do
         label "Threshold Statistic"
+      end
+      field "threshold" do
+        label "CPU Threshold"
+      end
+      field "gpuThreshold" do
+        label "GPU Threshold"
       end
       field "lookbackPeriod" do
         label "Look Back Period (Days)"
@@ -2343,7 +2055,7 @@ policy "pol_utilization" do
   validate $ds_identify_errors do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
     detail_template <<-'EOS'
-    The policy was unable to retrieve EC2 instance data from one or more AWS regions due to permission or configuration errors.
+    The policy was unable to retrieve GPU EC2 instance data from one or more AWS regions due to permission or configuration errors.
 
     **Error Details:**
 
@@ -2356,6 +2068,10 @@ policy "pol_utilization" do
     1. Verify that the AWS credential has the 'ec2:DescribeInstances' permission for all regions where the policy should execute
     2. Ensure that the required AWS regions are enabled in your AWS account (some regions require explicit opt-in)
     3. Consider updating the 'Allow/Deny Regions List' parameter to exclude regions that are not accessible or not relevant to your use case
+
+    **Additional Information:**
+
+    If certain regions should be excluded from this policy's scope, you can configure the region filter parameters to prevent these errors from appearing in future policy runs.
     EOS
     check eq(size(data), 0)
     escalate $esc_email_errors_identified
