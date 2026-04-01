@@ -2,6 +2,8 @@
 # https://danger.systems/reference.html
 # Tests located in .dangerfile directory
 
+POLICY_CATEGORY_DIRS = %w[automation/ compliance/ cost/ operational/ saas/ security/].freeze
+
 ###############################################################################
 # Required Libraries
 ###############################################################################
@@ -22,6 +24,16 @@ require_relative '.dangerfile/code_tests'
 require_relative '.dangerfile/readme_tests'
 require_relative '.dangerfile/changelog_tests'
 require_relative '.dangerfile/policy_tests'
+
+###############################################################################
+# Helpers
+###############################################################################
+
+def emit_results(file, failures, warnings, messages)
+  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" unless failures.empty?
+  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" unless warnings.empty?
+  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" unless messages.empty?
+end
 
 ###############################################################################
 # File Sorting
@@ -50,11 +62,11 @@ changed_pt_files = changed_files.select{ |file| file.end_with?(".pt") && !file.e
 # Changed Meta Policy Template files.
 changed_meta_pt_files = changed_files.select{ |file| file.end_with?("meta_parent.pt") }
 # Changed README files.
-changed_readme_files = changed_files.select{ |file| file.end_with?("/README.md") && (file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/")) }
+changed_readme_files = changed_files.select{ |file| file.end_with?("/README.md") && POLICY_CATEGORY_DIRS.any? { |dir| file.start_with?(dir) } }
 # Changed Changelog files.
 changed_changelog_files = changed_files.select{ |file| file.end_with?("/CHANGELOG.md") }
 # Changed MD files other than the above.
-changed_misc_md_files = changed_files.select{ |file| file.end_with?(".md") && !file.end_with?("/CHANGELOG.md") && !file.end_with?("HEADER.md") && !file.end_with?("FOOTER.md") && !file.start_with?("HISTORY.md") && !(file.end_with?("/README.md") && (file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/"))) }
+changed_misc_md_files = changed_files.select{ |file| file.end_with?(".md") && !file.end_with?("/CHANGELOG.md") && !file.end_with?("HEADER.md") && !file.end_with?("FOOTER.md") && !file.start_with?("HISTORY.md") && !(file.end_with?("/README.md") && POLICY_CATEGORY_DIRS.any? { |dir| file.start_with?(dir) }) }
 # Changed JSON files.
 changed_json_files = changed_files.select{ |file| file.end_with?(".json") }
 # Changed YAML files.
@@ -94,7 +106,7 @@ modified_important_files = changed_dangerfiles + changed_dot_files + changed_con
 modified_important_files = modified_important_files.join("\n")
 
 # Consolidate changed files into a single warning to save space
-warn "### **Important Files Modified**\n\nPlease make sure these modifications were intentional and have been tested. These files are necessary for configuring the Github repository and managing automation.\n\n" + modified_important_files.strip if !modified_important_files.empty?
+warn "### **Important Files Modified**\n\nPlease make sure these modifications were intentional and have been tested. These files are necessary for configuring the Github repository and managing automation.\n\n" + modified_important_files.strip unless modified_important_files.empty?
 
 ###############################################################################
 # All Files Testing
@@ -114,9 +126,7 @@ changed_files.each do |file|
   # test = general_textlint?(file); warnings << test if test
 
   # Output final list of failures and warnings
-  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
-  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
+  emit_results(file, failures, warnings, messages)
 end
 
 ###############################################################################
@@ -134,9 +144,7 @@ changed_rb_files.each do |file|
   messages = []
 
   # Preread file to avoid reading it multiple times for each method
-  file_text = File.read(file)
   file_lines = File.readlines(file)
-  file_diff = git.diff_for_file(file)
 
   # Raise warning if outdated terminology found
   test = general_outdated_terminology?(file, file_lines); warnings << test if test
@@ -148,9 +156,7 @@ changed_rb_files.each do |file|
   #test = code_rubocop_problems?(file); warn test if test
 
   # Output final list of failures and warnings
-  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
-  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
+  emit_results(file, failures, warnings, messages)
 end
 
 ###############################################################################
@@ -168,9 +174,7 @@ changed_py_files.each do |file|
   messages = []
 
   # Preread file to avoid reading it multiple times for each method
-  file_text = File.read(file)
   file_lines = File.readlines(file)
-  file_diff = git.diff_for_file(file)
 
   # Raise warning if outdated terminology found
   test = general_outdated_terminology?(file, file_lines); warnings << test if test
@@ -179,9 +183,7 @@ changed_py_files.each do |file|
   test = code_python_errors?(file); failures << test if test
 
   # Output final list of failures and warnings
-  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
-  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
+  emit_results(file, failures, warnings, messages)
 end
 
 ###############################################################################
@@ -198,9 +200,7 @@ changed_json_files.each do |file|
   messages = []
 
   # Preread file to avoid reading it multiple times for each method
-  file_text = File.read(file)
   file_lines = File.readlines(file)
-  file_diff = git.diff_for_file(file)
 
   # Raise warning if outdated terminology found
   test = general_outdated_terminology?(file, file_lines); warnings << test if test
@@ -212,9 +212,7 @@ changed_json_files.each do |file|
   test = code_json_errors?(file); failures << test if test
 
   # Output final list of failures and warnings
-  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
-  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
+  emit_results(file, failures, warnings, messages)
 end
 
 puts Time.now.strftime("%H:%M:%S.%L") + " * Testing all changed YAML files..."
@@ -227,9 +225,7 @@ changed_yaml_files.each do |file|
   messages = []
 
   # Preread file to avoid reading it multiple times for each method
-  file_text = File.read(file)
   file_lines = File.readlines(file)
-  file_diff = git.diff_for_file(file)
 
   # Raise warning if outdated terminology found
   test = general_outdated_terminology?(file, file_lines); warnings << test if test
@@ -241,9 +237,7 @@ changed_yaml_files.each do |file|
   test = code_yaml_errors?(file); failures << test if test
 
   # Output final list of failures and warnings
-  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
-  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
+  emit_results(file, failures, warnings, messages)
 end
 
 ###############################################################################
@@ -261,7 +255,6 @@ changed_readme_files.each do |file|
   messages = []
 
   # Preread file to avoid reading it multiple times for each method
-  file_text = File.read(file)
   file_lines = File.readlines(file)
   file_diff = git.diff_for_file(file)
 
@@ -293,9 +286,7 @@ changed_readme_files.each do |file|
   end
 
   # Output final list of failures and warnings
-  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
-  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
+  emit_results(file, failures, warnings, messages)
 end
 
 ###############################################################################
@@ -313,7 +304,6 @@ changed_changelog_files.each do |file|
   messages = []
 
   # Preread file to avoid reading it multiple times for each method
-  file_text = File.read(file)
   file_lines = File.readlines(file)
   file_diff = git.diff_for_file(file)
 
@@ -330,9 +320,7 @@ changed_changelog_files.each do |file|
   end
 
   # Output final list of failures and warnings
-  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
-  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
+  emit_results(file, failures, warnings, messages)
 end
 
 ###############################################################################
@@ -350,7 +338,6 @@ changed_misc_md_files.each do |file|
   messages = []
 
   # Preread file to avoid reading it multiple times for each method
-  file_text = File.read(file)
   file_lines = File.readlines(file)
   file_diff = git.diff_for_file(file)
 
@@ -367,9 +354,7 @@ changed_misc_md_files.each do |file|
   test = general_bad_markdown?(file); failures << test if test
 
   # Output final list of failures and warnings
-  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
-  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
+  emit_results(file, failures, warnings, messages)
 end
 
 ###############################################################################
@@ -405,6 +390,9 @@ changed_pt_files.each do |file|
 
   # Raise error if policy template is deprecated but missing deprecated field in info() block
   test = policy_missing_deprecated_field?(file, file_parsed); failures << test if test
+
+  # Raise warning if deprecated policy template is missing ## Deprecated section in README
+  test = policy_readme_missing_deprecated_section?(file, file_parsed); warnings << test if test
 
   # Raise error if policy template changed but changelog has not been
   test = policy_unmodified_changelog?(file, changed_changelog_files); failures << test if test
@@ -442,6 +430,9 @@ changed_pt_files.each do |file|
     # Raise error if policy template short_description is missing valid README link
     test = policy_bad_readme_link?(file, file_parsed); failures << test if test
 
+    # Raise warning if policy template short_description is missing a link to docs.flexera.com
+    test = policy_short_description_missing_docs_link?(file, file_parsed); warnings << test if test
+
     # Raise message if policy template won't be published
     test = policy_unpublished?(file, file_parsed); messages << test if test
 
@@ -464,23 +455,23 @@ changed_pt_files.each do |file|
     test = policy_defunct_metadata?(file, file_lines); failures << test if test
 
     # Raise errors or warnings if bad metadata is found
-    test = policy_bad_metadata?(file, file_parsed, "name"); failures << test if test
-    test = policy_bad_metadata?(file, file_parsed, "short_description"); failures << test if test
-    test = policy_bad_metadata?(file, file_parsed, "long_description"); failures << test if test
-    test = policy_bad_metadata?(file, file_parsed, "doc_link"); failures << test if test
-    test = policy_bad_metadata?(file, file_parsed, "category"); failures << test if test
+    %w[name short_description long_description doc_link category default_frequency severity].each do |field|
+      test = policy_bad_metadata?(file, file_parsed, field); failures << test if test
+    end
+    info_metadata_bad = policy_bad_metadata?(file, file_parsed, "info")
+    failures << info_metadata_bad if info_metadata_bad
+
+    # Raise errors if policy category is wrong
     test = policy_wrong_category_for_directory?(file, file_parsed); failures << test if test
-    test = policy_bad_metadata?(file, file_parsed, "default_frequency"); failures << test if test
-    test = policy_bad_metadata?(file, file_parsed, "severity"); failures << test if test
-    test = policy_bad_metadata?(file, file_parsed, "info"); failures << test if test
 
     # Raise errors or warnings if bad info block metadata is found
-    if !test
+    unless info_metadata_bad
       # Test for missing fields
       info_test = policy_missing_info_field?(file, file_parsed, "version"); failures << info_test if info_test
       info_test = policy_missing_info_field?(file, file_parsed, "provider"); failures << info_test if info_test
       info_test = policy_missing_info_field?(file, file_parsed, "service"); warnings << info_test if info_test
       info_test = policy_missing_info_field?(file, file_parsed, "policy_set"); warnings << info_test if info_test
+      info_test = policy_missing_info_field?(file, file_parsed, "hide_skip_approvals"); warnings << info_test if info_test
 
       # Test for invalidly abbreviated fields
       info_test = policy_abbreviated_info_field?(file, file_parsed); failures << info_test if info_test
@@ -496,43 +487,24 @@ changed_pt_files.each do |file|
     test = policy_sections_out_of_order?(file, file_lines); failures << test if test
 
     # Raise error of code blocks exist in policy template that aren't used anywhere
-    test = policy_orphaned_blocks?(file, file_lines, "parameter"); failures << test if test
-    test = policy_orphaned_blocks?(file, file_lines, "credentials"); failures << test if test
-    test = policy_orphaned_blocks?(file, file_lines, "pagination"); failures << test if test
-    test = policy_orphaned_blocks?(file, file_lines, "datasource"); failures << test if test
-    test = policy_orphaned_blocks?(file, file_lines, "script"); failures << test if test
-    test = policy_orphaned_blocks?(file, file_lines, "escalation"); failures << test if test
-    test = policy_orphaned_blocks?(file, file_lines, "define"); failures << test if test
+    %w[parameter credentials pagination datasource script escalation define].each do |block_type|
+      test = policy_orphaned_blocks?(file, file_lines, block_type); failures << test if test
+    end
 
     # Raise error if policy template blocks are not grouped together by type
     test = policy_blocks_ungrouped?(file, file_lines); failures << test if test
 
     # Report on missing policy template section comments
-    test = policy_missing_section_comments?(file, file_text, "parameter"); failures << test if test
-    test = policy_missing_section_comments?(file, file_text, "credentials"); failures << test if test
-    test = policy_missing_section_comments?(file, file_text, "pagination"); failures << test if test
-    test = policy_missing_section_comments?(file, file_text, "datasource"); failures << test if test
-    test = policy_missing_section_comments?(file, file_text, "policy"); failures << test if test
-    test = policy_missing_section_comments?(file, file_text, "escalation"); failures << test if test
-    test = policy_missing_section_comments?(file, file_text, "cwf"); failures << test if test
+    %w[parameter credentials pagination datasource policy escalation cwf].each do |section|
+      test = policy_missing_section_comments?(file, file_text, section); failures << test if test
+    end
 
-    # Report on code blocks with their names in single quotes
-    test = policy_block_name_single_quotes?(file, file_lines, "parameter"); failures << test if test
-    test = policy_block_name_single_quotes?(file, file_lines, "credentials"); failures << test if test
-    test = policy_block_name_single_quotes?(file, file_lines, "pagination"); failures << test if test
-    test = policy_block_name_single_quotes?(file, file_lines, "datasource"); failures << test if test
-    test = policy_block_name_single_quotes?(file, file_lines, "script"); failures << test if test
-    test = policy_block_name_single_quotes?(file, file_lines, "policy"); failures << test if test
-    test = policy_block_name_single_quotes?(file, file_lines, "escalation"); failures << test if test
-
-    # Report on invalidly named code blocks
-    test = policy_bad_block_name?(file, file_lines, "parameter"); failures << test if test
-    test = policy_bad_block_name?(file, file_lines, "credentials"); failures << test if test
-    test = policy_bad_block_name?(file, file_lines, "pagination"); failures << test if test
-    test = policy_bad_block_name?(file, file_lines, "datasource"); failures << test if test
-    test = policy_bad_block_name?(file, file_lines, "script"); failures << test if test
-    test = policy_bad_block_name?(file, file_lines, "policy"); failures << test if test
-    test = policy_bad_block_name?(file, file_lines, "escalation"); failures << test if test
+    # Report on code blocks with their names in single quotes, bad names, and incorrect field order
+    %w[parameter credentials pagination datasource script policy escalation].each do |block_type|
+      test = policy_block_name_single_quotes?(file, file_lines, block_type); failures << test if test
+      test = policy_bad_block_name?(file, file_lines, block_type); failures << test if test
+      test = policy_block_fields_incorrect_order?(file, file_lines, block_type); failures << test if test
+    end
 
     # Report on invalid/deprecated code blocks
     test = policy_deprecated_code_blocks?(file, file_lines, "permission"); warnings << test if test
@@ -566,20 +538,14 @@ changed_pt_files.each do |file|
     # Raise error if run_script statements with incorrect parameter ordering are found
     test = policy_run_script_incorrect_order?(file, file_lines); failures << test if test
 
-    # Raise error if code blocks have fields in improper order
-    test = policy_block_fields_incorrect_order?(file, file_lines, "parameter"); failures << test if test
-    test = policy_block_fields_incorrect_order?(file, file_lines, "credentials"); failures << test if test
-    test = policy_block_fields_incorrect_order?(file, file_lines, "pagination"); failures << test if test
-    test = policy_block_fields_incorrect_order?(file, file_lines, "datasource"); failures << test if test
-    test = policy_block_fields_incorrect_order?(file, file_lines, "script"); failures << test if test
-    test = policy_block_fields_incorrect_order?(file, file_lines, "policy"); failures << test if test
-    test = policy_block_fields_incorrect_order?(file, file_lines, "escalation"); failures << test if test
-
     # Raise error if recommendation policy template is missing required export fields
     test = policy_missing_recommendation_fields?(file, file_lines, file_parsed, "required"); failures << test if test
 
     # Raise warning if recommendation policy template is missing recommended export fields
     test = policy_missing_recommendation_fields?(file, file_lines, file_parsed, "recommended"); warnings << test if test
+
+    # Raise warning if recommendation policy template is missing required hash_exclude fields
+    test = policy_missing_hash_excludes?(file, file_lines, file_parsed); warnings << test if test
 
     # Raise error if policy template has outdated links
     test = policy_outdated_links?(file, file_lines, git.added_files); failures << test if test
@@ -589,6 +555,12 @@ changed_pt_files.each do |file|
 
     # Raise warning if improper spacing between comma-separated items found
     test = policy_bad_comma_spacing?(file, file_lines); warnings << test if test
+
+    # Raise warning if parameter categories are in the wrong order
+    test = policy_bad_param_category_order?(file, file_lines); warnings << test if test
+
+    # Raise warning if summary_template is missing {{ .policy_name }} when ds_applied_policy is present
+    test = policy_summary_template_missing_policy_name?(file, file_lines, file_parsed); warnings << test if test
 
     # Raise warning if heredoc or escape characters are found in policy summary_template field
     test = policy_summary_escape_character?(file, file_lines); warnings << test if test
@@ -612,9 +584,7 @@ changed_pt_files.each do |file|
   end
 
   # Output final list of failures and warnings
-  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
-  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
+  emit_results(file, failures, warnings, messages)
 end
 
 ###############################################################################
@@ -638,7 +608,5 @@ changed_meta_pt_files.each do |file|
   test = policy_fpt_syntax_error?(file, "meta"); failures << test if test
 
   # Output final list of failures and warnings
-  fail "### **#{file}**\n\n#{failures.join("\n\n---\n\n")}" if !failures.empty?
-  warn "### **#{file}**\n\n#{warnings.join("\n\n---\n\n")}" if !warnings.empty?
-  message "### **#{file}**\n\n#{messages.join("\n\n---\n\n")}" if !messages.empty?
+  emit_results(file, failures, warnings, messages)
 end

@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "3.4.4",
+  version: "3.5.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -316,14 +316,49 @@ script "js_filtered_reports", type: "javascript" do
 EOS
 end
 
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_billing_center_table" do
+  run_script $js_billing_center_table, $ds_billing_centers
+end
+
+script "js_billing_center_table", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  _.each(ds_billing_centers, function(bc) { result[bc['id']] = bc['name'] })
+EOS
+end
+
 datasource "ds_aggregated" do
-  run_script $js_aggregated, $ds_filtered_reports, $ds_currency, $ds_dimensions, $param_threshold_percentage, $param_type, $param_budget_name_id, $param_filter, f1_app_host
+  run_script $js_aggregated, $ds_filtered_reports, $ds_currency, $ds_dimensions, $ds_billing_center_table, $param_threshold_percentage, $param_type, $param_budget_name_id, $param_filter, f1_app_host
 end
 
 script "js_aggregated", type: "javascript" do
-  parameters "ds_filtered_reports", "ds_currency", "ds_dimensions", "param_threshold_percentage", "param_type", "param_budget_name_id", "param_filter", "f1_app_host"
+  parameters "ds_filtered_reports", "ds_currency", "ds_dimensions", "ds_billing_center_table", "param_threshold_percentage", "param_type", "param_budget_name_id", "param_filter", "f1_app_host"
   result "result"
   code <<-'EOS'
+  function convert_bc_name(id) {
+    return ds_billing_center_table[id] ? ds_billing_center_table[id] : id
+  }
+
   function forecasted(curr) {
     now = new Date()
     day = now.getUTCDate() - 1
@@ -338,12 +373,12 @@ script "js_aggregated", type: "javascript" do
     vals = []
 
     _.each(dimensions_ids, function(k) {
-      if (dimensions[k] && (k != "is_budgeted" || dimensions_ids.length == 1)) { vals.push(dimensions[k]) }
+      if (dimensions[k] && (k != "is_budgeted" || dimensions_ids.length == 1)) { vals.push(convert_bc_name(dimensions[k])) }
     })
 
     if (!vals.length && dimensions["is_budgeted"]) { return dimensions["is_budgeted"] }
 
-    return vals.join("|")
+    return vals.join(" | ")
   }
 
   function get_dimension_names(dimensions_ids) {

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.0
+
+- Added graceful error handling for inaccessible AWS regions
+
 ## v0.5.0
 
 - Added parameter to filter results for resources with or without GPUs.
