@@ -275,7 +275,7 @@ def policy_short_description_missing_docs_link?(file, file_parsed)
   short_description = file_parsed.parsed_short_description
 
   if short_description && !short_description.empty?
-    fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Policy template `short_description` is missing a link to the Flexera documentation. Please add a link to `docs.flexera.com` in the `short_description`, for example:\n\n`...and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more.`" unless short_description.include?("docs.flexera.com")
+    fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Policy template `short_description` is missing a link to the Flexera documentation. Please add a link to `docs.flexera.com` in the `short_description`, for example:\n\n`...and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more.`" unless short_description.match?(%r{https?://docs\.flexera\.com(/|\z)})
   end
 
   fail_message.empty? ? false : fail_message.strip
@@ -434,7 +434,7 @@ def policy_bad_metadata?(file, file_parsed, field_name)
   if field_name == "doc_link"
     fail_message += "Please add a doc_link field with a valid URL.\n\n" if !doc_link
     fail_message += "Please add a valid URL to the doc_link field.\n\n" if doc_link && doc_link == ""
-    fail_message += "The `doc_link` field should be a link to the policy template on GitHub. Please set it to the URL of the policy template's directory on `github.com`.\n\n" if doc_link && !doc_link.empty? && !doc_link.include?("github.com")
+    fail_message += "The `doc_link` field should be a link to the policy template on GitHub. Please set it to the URL of the policy template's directory on `github.com`.\n\n" if doc_link && !doc_link.empty? && !doc_link.match?(%r{https?://github\.com(/|\z)})
   end
 
   if field_name == "category"
