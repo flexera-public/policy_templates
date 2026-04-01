@@ -388,6 +388,9 @@ changed_pt_files.each do |file|
   # Raise error if policy template is deprecated but missing deprecated field in info() block
   test = policy_missing_deprecated_field?(file, file_parsed); failures << test if test
 
+  # Raise warning if deprecated policy template is missing ## Deprecated section in README
+  test = policy_readme_missing_deprecated_section?(file, file_parsed); warnings << test if test
+
   # Raise error if policy template changed but changelog has not been
   test = policy_unmodified_changelog?(file, changed_changelog_files); failures << test if test
 
@@ -424,6 +427,9 @@ changed_pt_files.each do |file|
     # Raise error if policy template short_description is missing valid README link
     test = policy_bad_readme_link?(file, file_parsed); failures << test if test
 
+    # Raise warning if policy template short_description is missing a link to docs.flexera.com
+    test = policy_short_description_missing_docs_link?(file, file_parsed); warnings << test if test
+
     # Raise message if policy template won't be published
     test = policy_unpublished?(file, file_parsed); messages << test if test
 
@@ -459,6 +465,7 @@ changed_pt_files.each do |file|
       info_test = policy_missing_info_field?(file, file_parsed, "provider"); failures << info_test if info_test
       info_test = policy_missing_info_field?(file, file_parsed, "service"); warnings << info_test if info_test
       info_test = policy_missing_info_field?(file, file_parsed, "policy_set"); warnings << info_test if info_test
+      info_test = policy_missing_info_field?(file, file_parsed, "hide_skip_approvals"); warnings << info_test if info_test
 
       # Test for invalidly abbreviated fields
       info_test = policy_abbreviated_info_field?(file, file_parsed); failures << info_test if info_test
@@ -530,6 +537,9 @@ changed_pt_files.each do |file|
 
     # Raise warning if recommendation policy template is missing recommended export fields
     test = policy_missing_recommendation_fields?(file, file_lines, file_parsed, "recommended"); warnings << test if test
+
+    # Raise warning if recommendation policy template is missing required hash_exclude fields
+    test = policy_missing_hash_excludes?(file, file_lines, file_parsed); warnings << test if test
 
     # Raise error if policy template has outdated links
     test = policy_outdated_links?(file, file_lines, git.added_files); failures << test if test

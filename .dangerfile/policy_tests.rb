@@ -82,6 +82,28 @@ def policy_missing_deprecated_field?(file, file_parsed)
   fail_message.empty? ? false : fail_message.strip
 end
 
+### Deprecated README Section test
+# Return false if deprecated policy template has a ## Deprecated section in the README
+def policy_readme_missing_deprecated_section?(file, file_parsed)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether deprecated Policy Template file has a Deprecated section in the README..."
+
+  fail_message = ""
+
+  info = file_parsed.parsed_info
+
+  if !info[:deprecated].nil? && info[:deprecated].downcase == "true"
+    readme_path = File.join(File.dirname(file), "README.md")
+
+    if File.exist?(readme_path)
+      readme_lines = File.readlines(readme_path, encoding: "UTF-8").map(&:chomp)
+      has_deprecated_section = readme_lines.any? { |line| line.start_with?("## Deprecated") }
+      fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#deprecating-a-policy-template)] Policy template is marked as deprecated but the README is missing a `## Deprecated` section. Please add a `## Deprecated` section immediately after the title heading that explains why the template is deprecated and points users to alternatives." unless has_deprecated_section
+    end
+  end
+
+  fail_message.empty? ? false : fail_message.strip
+end
+
 ### Nested Directory test
 # Return false if policy is correctly sorted within the directory structure
 def policy_bad_directory?(file)
@@ -243,6 +265,22 @@ def policy_bad_readme_link?(file, file_parsed)
   fail_message.empty? ? false : fail_message.strip
 end
 
+### Short Description Docs Link test
+# Return false if short_description contains a link to docs.flexera.com
+def policy_short_description_missing_docs_link?(file, file_parsed)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file short_description contains a link to docs.flexera.com..."
+
+  fail_message = ""
+
+  short_description = file_parsed.parsed_short_description
+
+  if short_description && !short_description.empty?
+    fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#metadata)] Policy template `short_description` is missing a link to the Flexera documentation. Please add a link to `docs.flexera.com` in the `short_description`, for example:\n\n`...and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more.`" unless short_description.include?("docs.flexera.com")
+  end
+
+  fail_message.empty? ? false : fail_message.strip
+end
+
 ### Publish test
 # Return false if policy info block is missing publish field or publish is set to a value other than "false"
 def policy_unpublished?(file, file_parsed)
@@ -396,6 +434,7 @@ def policy_bad_metadata?(file, file_parsed, field_name)
   if field_name == "doc_link"
     fail_message += "Please add a doc_link field with a valid URL.\n\n" if !doc_link
     fail_message += "Please add a valid URL to the doc_link field.\n\n" if doc_link && doc_link == ""
+    fail_message += "The `doc_link` field should be a link to the policy template on GitHub. Please set it to the URL of the policy template's directory on `github.com`.\n\n" if doc_link && !doc_link.empty? && !doc_link.include?("github.com")
   end
 
   if field_name == "category"
@@ -471,6 +510,10 @@ def policy_missing_info_field?(file, file_parsed, field_name)
 
     if field_name == "policy_set"
       fail_message += "Should this include policy_set in the info field?\n\n" if info[:policy_set].nil?
+    end
+
+    if field_name == "hide_skip_approvals"
+      fail_message += "Should this include hide_skip_approvals in the info field?\n\n" if info[:hide_skip_approvals].nil?
     end
   end
 
@@ -1412,6 +1455,124 @@ def policy_missing_recommendation_fields?(file, file_lines, file_parsed, field_t
   end
 
   fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#policy)] Recommendation policy has export that is missing #{field_type} fields. These fields are scraped by the Flexera platform for dashboards:\n\n" + fail_message if !fail_message.empty?
+
+  fail_message.empty? ? false : fail_message.strip
+end
+
+### Missing Hash Exclude test
+# Return false if recommendation policy template has appropriate hash_exclude fields.
+# Volatile fields that change frequently without indicating a meaningful state change
+# should be excluded so they don't trigger spurious incident re-opens.
+def policy_missing_hash_excludes?(file, file_lines, file_parsed)
+  puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether recommendation Policy Template file has appropriate hash_exclude fields..."
+
+  fail_message = ""
+
+  info = file_parsed.parsed_info
+
+  return false if info[:recommendation_type].nil?
+
+  # Savings/message fields: required in hash_exclude when the export contains savings data
+  savings_volatile = ["savings", "savingsCurrency", "message", "total_savings"]
+
+  # Metric/tag fields: required in hash_exclude only when present in the export block
+  conditional_volatile = [
+    "tags",
+    "cpuMaximum", "cpuMinimum", "cpuAverage", "cpuP99", "cpuP95", "cpuP90",
+    "memMaximum", "memMinimum", "memAverage", "memP99", "memP95", "memP90"
+  ]
+
+  # Collect the line ranges of each validate_each block
+  validate_each_blocks = []
+  block_start = nil
+  depth = 0
+
+  file_lines.each_with_index do |line, index|
+    stripped = line.strip
+
+    if block_start.nil? && stripped.match?(/^validate_each\s+/)
+      block_start = index
+      depth = 0
+    end
+
+    unless block_start.nil?
+      depth += 1 if stripped.end_with?(" do") || stripped == "do"
+      if stripped == "end"
+        depth -= 1
+        if depth <= 0
+          validate_each_blocks << [block_start, index]
+          block_start = nil
+        end
+      end
+    end
+  end
+
+  problems = []
+
+  validate_each_blocks.each do |start_idx, end_idx|
+    block_lines = file_lines[start_idx..end_idx]
+    block_start_line = start_idx + 1
+
+    # Skip blocks without an export — they don't carry recommendation data
+    next unless block_lines.any? { |l| l.strip.start_with?("export do") }
+
+    # Collect hash_exclude field names from this block
+    hash_excludes = []
+    block_lines.each do |line|
+      hash_excludes += line.strip.scan(/"([^"]+)"/).flatten if line.strip.start_with?("hash_exclude ")
+    end
+
+    # Collect export field names from this block
+    export_fields = []
+    in_export = false
+    in_field_block = false
+
+    block_lines.each do |line|
+      stripped = line.strip
+
+      if stripped.start_with?("export ") && stripped.end_with?(" do")
+        in_export = true
+        in_field_block = false
+        next
+      end
+
+      next unless in_export
+
+      if stripped == "end"
+        if in_field_block
+          in_field_block = false
+        else
+          in_export = false
+        end
+        next
+      end
+
+      if stripped.start_with?("field ")
+        fname = stripped.split('"')[1]
+        export_fields << fname if fname
+        in_field_block = true if stripped.end_with?(" do")
+      end
+    end
+
+    missing = []
+
+    # Check savings/message fields when this is a savings-bearing block
+    if export_fields.include?("savings") || export_fields.include?("savingsCurrency")
+      savings_volatile.each { |f| missing << f unless hash_excludes.include?(f) }
+    end
+
+    # Check metric/tag fields when present in the export
+    conditional_volatile.each do |f|
+      missing << f if export_fields.include?(f) && !hash_excludes.include?(f)
+    end
+
+    problems << "Line #{block_start_line}: Missing from hash_exclude: #{missing.join(', ')}" if missing.any?
+  end
+
+  if problems.any?
+    fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#policy)] Recommendation policy template has `validate_each` blocks with volatile fields not listed in `hash_exclude`. These fields change between runs without indicating a meaningful state change and will cause spurious incident re-triggers if not excluded:\n\n"
+    fail_message += problems.join("\n")
+  end
 
   fail_message.empty? ? false : fail_message.strip
 end
