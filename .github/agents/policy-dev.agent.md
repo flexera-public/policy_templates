@@ -1054,7 +1054,7 @@ The Flexera platform scrapes incident export data to populate the Total Potentia
 | `resourceID` | `"Resource ID"` | string | ✅ | Unique cloud resource identifier (ID, not full ARN). |
 | `resourceName` | `"Resource Name"` | string | ✅ | Human-friendly resource name. |
 | `tags` | `"Resource Tags"` | string | ✅ | Comma-separated `key=value` pairs. Build with `tags.join(', ')`. **Do NOT store as a raw array.** |
-| `recommendationDetails` | `"Recommendation"` | string | ✅ | Human-readable action description. |
+| `recommendationDetails` | `"Recommendation"` | string | ✅ | Human-readable action description. Must explicitly name the cloud provider (e.g. "Terminate AWS GPU EC2 instance …", "Delete Azure VM …"). Never omit the provider name. |
 | `region` | `"Region"` | string | ✅ | Cloud provider region. |
 | `state` | `"State"` | string | when applicable | Resource state, e.g. `"Active"`, `"unattached"`. |
 | `resourceType` | descriptive, e.g. `"Resource Type"`, `"Instance Size"` | string | when applicable | Current instance type, volume type, runtime, etc. Label is context-dependent. |

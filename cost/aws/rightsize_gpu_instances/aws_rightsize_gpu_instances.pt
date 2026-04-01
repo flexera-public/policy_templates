@@ -1,11 +1,11 @@
 name "AWS Rightsize GPU EC2 Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for GPU EC2 instances that have idle or underutilized GPU, CPU, and memory metrics and downsizes or terminates them after approval. Requires CloudWatch Agent with NVIDIA GPU metrics enabled. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_gpu_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+short_description "Reports on GPU EC2 instances that are idle or underutilized and recommends termination or downsizing. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_gpu_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
 long_description ""
-doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_gpu_instances/"
-severity "low"
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_gpu_instances"
 category "Cost"
+severity "low"
 default_frequency "weekly"
 info(
   version: "0.1.0",
@@ -45,21 +45,72 @@ parameter "param_min_savings" do
   default 0
 end
 
-parameter "param_exclusion_tags" do
-  type "list"
-  category "Filters"
-  label "Exclusion Tags"
-  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
-  default []
+parameter "param_stats_threshold" do
+  type "string"
+  category "Statistics"
+  label "Threshold Statistic"
+  description "Statistic to use when determining if an instance is idle/underutilized"
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
+  default "Average"
 end
 
-parameter "param_exclusion_tags_boolean" do
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at CPU and/or GPU data for instances. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 90
+  default 30
+end
+
+parameter "param_stats_idle_threshold_gpu_value" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance GPU Threshold (%)"
+  description "The GPU utilization threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore GPU utilization."
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_underutil_threshold_gpu_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance GPU Threshold (%)"
+  description "The GPU utilization threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore GPU utilization."
+  min_value -1
+  max_value 100
+  default 40
+end
+
+parameter "param_stats_idle_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore CPU utilization."
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_underutil_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization."
+  min_value -1
+  max_value 100
+  default 40
+end
+
+parameter "param_stats_check_both" do
   type "string"
-  category "Filters"
-  label "Exclusion Tags: Any / All"
-  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
-  allowed_values "Any", "All"
-  default "Any"
+  category "Statistics"
+  label "Idle/Utilized for both GPU/CPU or either"
+  description "Set whether an instance should be considered idle and/or underutilized only if both GPU and CPU are under the thresholds or if either GPU or CPU are under. Note: this parameter is only valid when at least one GPU Utilization threshold and one CPU Utilization threshold is NOT set to -1"
+  allowed_values "Both GPU and CPU", "Either GPU or CPU"
+  default "Either GPU or CPU"
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -80,33 +131,21 @@ parameter "param_regions_list" do
   default []
 end
 
-parameter "param_stats_threshold" do
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
   type "string"
-  category "Statistics"
-  label "Threshold Statistic"
-  description "Statistic to use when determining if a GPU instance is idle or underutilized. This applies to all four metrics: CPU, memory, GPU utilization, and GPU memory."
-  allowed_values "Average", "Maximum", "p99", "p95", "p90"
-  default "Average"
-end
-
-parameter "param_stats_lookback" do
-  type "number"
-  category "Statistics"
-  label "Statistic Lookback Period"
-  description "How many days back to look at CPU, memory, and GPU data for instances. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
-  min_value 1
-  max_value 90
-  default 30
-end
-
-parameter "param_safety_margin" do
-  type "number"
-  category "Statistics"
-  label "Rightsizing Safety Margin (%)"
-  description "The percentage of headroom to add on top of observed peak utilization when selecting a smaller instance type. A value of 50 means the recommended instance must handle 1.5x the observed workload. Higher values produce more conservative recommendations; lower values produce more aggressive ones. See the README for more details."
-  min_value 0
-  max_value 200
-  default 50
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_automatic_action" do
@@ -120,8 +159,8 @@ end
 
 parameter "param_incident_csv" do
   type "string"
-  category "Incident Settings"
-  label "Attach CSV To Incident Email"
+  category "Policy Settings"
+  label "Attach Incident CSV"
   description "Whether or not to attach the results as a CSV file to the incident email."
   allowed_values "true", "false"
   default "false"
@@ -129,8 +168,8 @@ end
 
 parameter "param_incident_table_size" do
   type "number"
-  category "Incident Settings"
-  label "Incident Table Rows for Email Body (#)"
+  category "Policy Settings"
+  label "Incident Table Size"
   description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
   allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
   default 100000
@@ -466,37 +505,44 @@ script "js_currency", type: "javascript" do
 EOS
 end
 
-# Full EC2 instance types data for GPU discovery and specs
-datasource "ds_aws_instance_types_map" do
+datasource "ds_aws_instance_size_map" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_aws_instance_types" do
   request do
     host "raw.githubusercontent.com"
     path "/flexera-public/policy_templates/master/data/aws/aws_ec2_instance_types.json"
     header "User-Agent", "RS Policies"
   end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "gpu_count", jmes_path(col_item, "gpu.count")
+    end
+  end
 end
 
-# Filter to GPU instances only
-datasource "ds_gpu_instance_types" do
-  run_script $js_gpu_instance_types, $ds_aws_instance_types_map
+datasource "ds_gpu_instance_type_names" do
+  run_script $js_gpu_instance_type_names, $ds_aws_instance_types
 end
 
-script "js_gpu_instance_types", type: "javascript" do
-  parameters "ds_aws_instance_types_map"
+script "js_gpu_instance_type_names", type: "javascript" do
+  parameters "ds_aws_instance_types"
   result "result"
   code <<-'EOS'
-  result = _.filter(ds_aws_instance_types_map, function(inst) {
-    return inst['gpu'] != null && inst['gpu'] != undefined && inst['gpu']['count'] > 0
+  result = []
+  _.each(ds_aws_instance_types, function(inst) {
+    if (inst['gpu_count'] && inst['gpu_count'] > 0) {
+      result.push(inst['name'])
+    }
   })
 EOS
-end
-
-# EC2 on-demand pricing data for savings calculations
-datasource "ds_aws_instance_cost_map" do
-  request do
-    host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_pricing.json"
-    header "User-Agent", "RS Policies"
-  end
 end
 
 datasource "ds_describe_regions" do
@@ -731,13 +777,116 @@ datasource "ds_instance_sets" do
   end
 end
 
+datasource "ds_instance_costs" do
+  request do
+    run_script $js_instance_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceId", jmes_path(col_item, "dimensions.resource_id")
+      field "resourceType", jmes_path(col_item, "dimensions.resource_type")
+      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "adjustmentName", jmes_path(col_item, "dimensions.adjustment_name")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_instance_costs", type: "javascript" do
+  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id", "vendor_account_name", "resource_type", "adjustment_name"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        type: "and",
+        expressions: [
+          {
+            dimension: "service",
+            type: "equal",
+            value: "AmazonEC2"
+          },
+          {
+            dimension: "resource_type",
+            type: "equal",
+            value: "Compute Instance"
+          },
+          {
+            dimension: "vendor_account",
+            type: "equal",
+            value: ds_aws_account['id']
+          },
+          {
+            type: "not",
+            expression: {
+              dimension: "adjustment_name",
+              type: "substring",
+              substring: "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_instance_costs_grouped" do
+  run_script $js_instance_costs_grouped, $ds_instance_costs
+end
+
+script "js_instance_costs_grouped", type: "javascript" do
+  parameters "ds_instance_costs"
+  result "result"
+  code <<-'EOS'
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_instance_costs, function(item) {
+    id = item['resourceId'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
 # Filter to GPU instances only and apply tag exclusions
 datasource "ds_instances" do
-  run_script $js_instances, $ds_instance_sets, $ds_gpu_instance_types, $param_exclusion_tags, $param_exclusion_tags_boolean
+  run_script $js_instances, $ds_instance_sets, $ds_gpu_instance_type_names, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_instances", type: "javascript" do
-  parameters "ds_instance_sets", "ds_gpu_instance_types", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  parameters "ds_instance_sets", "ds_gpu_instance_type_names", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -761,15 +910,14 @@ script "js_instances", type: "javascript" do
       return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
     }
 
+    // If = is present but none of the above are, assume user error and that the user intended ==
     if (item.indexOf('=') != -1) {
       return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
     }
 
+    // Assume we're just testing for a key if none of the comparators are found
     return { comparison: 'key', key: item, value: null, string: item }
   })
-
-  // Build a set of GPU instance type names for filtering
-  gpu_type_names = _.pluck(ds_gpu_instance_types, "name")
 
   result = []
 
@@ -818,9 +966,9 @@ script "js_instances", type: "javascript" do
     }
   })
 
-  // Keep only GPU instances
+  // Filter to GPU instances only
   result = _.filter(result, function(instance) {
-    return _.contains(gpu_type_names, instance["resourceType"])
+    return _.contains(ds_gpu_instance_type_names, instance['resourceType'])
   })
 EOS
 end
@@ -864,7 +1012,7 @@ script "js_identify_errors", type: "javascript" do
     }
 
     errors.push(
-      "HTTP error received when attempting to describe EC2 instances in some AWS region(s).\n" +
+      "HTTP error received when attempting to describe GPU EC2 instances in some AWS region(s).\n" +
       "\n - Failed Regions: " + regions_string +
       "\n - Successful Regions: " + successful_regions +
       "\n\nThis typically indicates that the AWS credential does not have the required 'ec2:DescribeInstances' permission " +
@@ -1602,7 +1750,7 @@ script "js_idle_and_underutil_instances", type: "javascript" do
     if (is_idle) {
       instance["savings"] = parseFloat(parseFloat(total_cost).toFixed(3))
       instance["recommendationType"] = "Terminate"
-      instance["newResourceType"] = "Terminate GPU EC2 Instance"
+      instance["newResourceType"] = "Terminate AWS GPU EC2 Instance"
       instance["gpuCount"] = current_specs.gpu ? current_specs.gpu.count : null
       instance["newGpuCount"] = null
       instance["gpuMemMiB"] = current_specs.gpu ? current_specs.gpu.memoryInMiB : null
@@ -1617,7 +1765,7 @@ script "js_idle_and_underutil_instances", type: "javascript" do
       }
 
       var recommendationDetails = [
-        "Terminate GPU EC2 instance ", instance["resourceID"], " ",
+        "Terminate AWS GPU EC2 instance ", instance["resourceID"], " ",
         "in AWS Account ", instance["accountName"], " ",
         "(", instance["accountID"], ")"
       ].join('')
@@ -1695,7 +1843,7 @@ script "js_idle_and_underutil_instances", type: "javascript" do
         instance["newInstancePrice"] = new_price
 
         var recommendationDetails = [
-          "Change instance type of GPU EC2 instance ", instance["resourceID"], " ",
+          "Change instance type of AWS GPU EC2 instance ", instance["resourceID"], " ",
           "in AWS Account ", instance["accountName"], " ",
           "(", instance["accountID"], ") ",
           "from ", current_type, " ",
@@ -2287,7 +2435,7 @@ define downsize_instances($data) do
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      if $instance["newResourceType"] != "Terminate GPU EC2 Instance"
+      if $instance["newResourceType"] != "Terminate AWS GPU EC2 Instance"
         call get_instance_state($instance) retrieve $initial_state
         if $initial_state != "terminated" && $initial_state != "pending"
           if $initial_state != "stopped"
