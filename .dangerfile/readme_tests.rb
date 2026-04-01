@@ -9,12 +9,7 @@
 # Utility method. Returns true if README is for a deprecated policy
 def readme_deprecated?(file, file_lines)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether README file is deprecated..."
-
-  file_lines.each do |line|
-    return true if line.start_with?("## Deprecated")
-  end
-
-  return false
+  file_lines.any? { |line| line.start_with?("## Deprecated") }
 end
 
 ### Missing README Sections
@@ -43,18 +38,18 @@ def readme_missing_sections?(file, file_lines)
     cost_found = true if line.strip == "## Cost"
   end
 
-  fail_message += "```# Policy Name```\n" if !name_found
-  fail_message += "```## What It Does```\n" if !what_it_does_found
-  fail_message += "```## Input Parameters```\n" if !input_parameters_found
-  fail_message += "```## Policy Actions```\n" if !policy_actions_found
-  fail_message += "```## Prerequisites```\n" if !prerequisites_found
-  fail_message += "```## Supported Clouds```\n" if !supported_clouds_found
-  fail_message += "```## Cost```\n" if !cost_found
+  fail_message += "```# Policy Name```\n" unless name_found
+  fail_message += "```## What It Does```\n" unless what_it_does_found
+  fail_message += "```## Input Parameters```\n" unless input_parameters_found
+  fail_message += "```## Policy Actions```\n" unless policy_actions_found
+  fail_message += "```## Prerequisites```\n" unless prerequisites_found
+  fail_message += "```## Supported Clouds```\n" unless supported_clouds_found
+  fail_message += "```## Cost```\n" unless cost_found
 
-  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#readmemd)] README.md is missing required sections. Please make sure the following sections exist and are indicated with the below markdown. Spelling, spacing, and capitalization should conform to the below:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#readmemd)] README.md is missing required sections. Please make sure the following sections exist and are indicated with the below markdown. Spelling, spacing, and capitalization should conform to the below:\n\n" + fail_message unless fail_message.empty?
 
-  return fail_message.strip if !fail_message.empty?
-  return false
+  return false if fail_message.empty?
+  fail_message.strip
 end
 
 ### Out of order README Sections
@@ -98,50 +93,110 @@ def readme_sections_out_of_order?(file, file_lines)
     cost_found = true if line.strip == "## Cost"
 
     if !what_it_does_raised && what_it_does_found && !name_found
-      fail_message += "Line #{line_number.to_s}: What It Does out of order.\n"
+      fail_message += "Line #{line_number}: What It Does out of order.\n"
       what_it_does_raised = true
     end
 
     if !how_it_works_raised && how_it_works_found && (!name_found || !what_it_does_found)
-      fail_message += "Line #{line_number.to_s}: How It Works out of order.\n"
+      fail_message += "Line #{line_number}: How It Works out of order.\n"
       how_it_works_raised = true
     end
 
     if !policy_savings_raised && policy_savings_found && (!name_found || !what_it_does_found)
-      fail_message += "Line #{line_number.to_s}: Policy Savings Details out of order.\n"
+      fail_message += "Line #{line_number}: Policy Savings Details out of order.\n"
       policy_savings_raised = true
     end
 
     if !input_parameters_raised && input_parameters_found && (!name_found || !what_it_does_found)
-      fail_message += "Line #{line_number.to_s}: Input Parameters out of order.\n"
+      fail_message += "Line #{line_number}: Input Parameters out of order.\n"
       input_parameters_raised = true
     end
 
     if !policy_actions_raised && policy_actions_found && (!name_found || !what_it_does_found || !input_parameters_found)
-      fail_message += "Line #{line_number.to_s}: Policy Actions out of order.\n"
+      fail_message += "Line #{line_number}: Policy Actions out of order.\n"
       policy_actions_raised = true
     end
 
     if !prerequisites_raised && prerequisites_found && (!name_found || !what_it_does_found || !input_parameters_found || !policy_actions_found)
-      fail_message += "Line #{line_number.to_s}: Prerequisites out of order.\n"
+      fail_message += "Line #{line_number}: Prerequisites out of order.\n"
       prerequisites_raised = true
     end
 
     if !supported_clouds_raised && supported_clouds_found && (!name_found || !what_it_does_found || !input_parameters_found || !policy_actions_found || !prerequisites_found)
-      fail_message += "Line #{line_number.to_s}: Supported Clouds out of order.\n"
+      fail_message += "Line #{line_number}: Supported Clouds out of order.\n"
       supported_clouds_raised = true
     end
 
     if !cost_raised && cost_found && (!name_found || !what_it_does_found || !input_parameters_found || !policy_actions_found || !prerequisites_found)
-      fail_message += "Line #{line_number.to_s}: Cost out of order.\n"
+      fail_message += "Line #{line_number}: Cost out of order.\n"
       cost_raised = true
     end
   end
 
-  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#readmemd)] README.md sections are out of order. Sections should be in the following order: Policy Name, What It Does, How It Works, Policy Savings Details, Input Parameters, Policy Actions, Prerequisites, Supported Clouds, Cost\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#readmemd)] README.md sections are out of order. Sections should be in the following order: Policy Name, What It Does, How It Works, Policy Savings Details, Input Parameters, Policy Actions, Prerequisites, Supported Clouds, Cost\n\n" + fail_message unless fail_message.empty?
 
-  return fail_message.strip if !fail_message.empty?
-  return false
+  return false if fail_message.empty?
+  fail_message.strip
+end
+
+# Footnote symbols used in permission lists
+CREDENTIAL_FOOTNOTE_SYMBOLS = ["*", "\u2020", "\u2021", "\u00a7", "\u2016", "\u00b6"].freeze
+
+# Helper: validates the permission list within a credential section of a README.
+# permission_text  - array of lines collected for this provider's credential section
+# permission_line  - line number of the first line of permission_text (for error reporting)
+# perm_tester      - regex that each permission item string must match
+# provider_name    - e.g. "AWS", "Azure", "Google", "Flexera" (used in error messages)
+# examples         - array of example permission strings shown in error messages
+# skip_list_check  - when true, skip the "no permission list found" error (Alibaba case)
+# Returns a fail_message fragment (empty string if no issues found).
+def validate_permission_list(permission_text, permission_line, perm_tester, provider_name, examples, skip_list_check: false)
+  fail_message = ""
+  footnote_symbols = CREDENTIAL_FOOTNOTE_SYMBOLS.each_with_object({}) { |sym, h| h[sym] = false }
+  permission_list_found = 0
+
+  permission_text.each_with_index do |line, index|
+    line_number = index + permission_line
+
+    permission_list_found = 1 if index == 1 && line.start_with?("  - ")
+
+    if permission_list_found == 1
+      if !line.start_with?("  - ")
+        permission_list_found = 2
+      else
+        CREDENTIAL_FOOTNOTE_SYMBOLS.each { |sym| footnote_symbols[sym] = true if line.strip.end_with?(sym) }
+
+        permission_action = line.split("  - ")[1]
+        if permission_action.nil? || !permission_action.match?(perm_tester)
+          fail_message += "Line #{line_number}: #{provider_name} permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
+          examples.each_with_index { |ex, i| fail_message += "```#{ex}```\n"; fail_message += "\n" if i == examples.length - 1 }
+        end
+      end
+    end
+  end
+
+  footnote_symbols.each do |symbol, found|
+    next unless found
+
+    if symbol == "*"
+      unless permission_text.any? { |l| l.strip.start_with?("\\*") }
+        fail_message += "Permission list contains a permission with an asterisk (*), but no corresponding footnote explaining it. Please add a footnote starting with `  \\* ` like so:\n\n"
+        fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
+      end
+    else
+      unless permission_text.any? { |l| l.strip.start_with?(symbol) }
+        fail_message += "Permission list contains a permission with a #{symbol} symbol, but no corresponding footnote explaining it. Please add a footnote starting with `  #{symbol} ` like so:\n\n"
+        fail_message += "```  #{symbol} Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
+      end
+    end
+  end
+
+  if permission_list_found == 0 && !skip_list_check
+    fail_message += "#{provider_name} permission list missing or formatted incorrectly. Please ensure there is a list of permissions beneath the #{provider_name} permission statement. Each list item should begin with [space][space][hyphen][space] like so:\n\n"
+    examples.each_with_index { |ex, i| fail_message += "```#{ex}```\n"; fail_message += "\n" if i == examples.length - 1 }
+  end
+
+  fail_message
 end
 
 ### README Credentials formatting
@@ -188,8 +243,8 @@ def readme_invalid_credentials?(file, file_lines)
 
     if line_number == prereq_line_number + 2
       expected_credential_message = "This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s)."
-      if !line.start_with?(expected_credential_message)
-        fail_message += "Line #{line_number.to_s}: README has invalid description for credentials section or description is not correctly located two lines below `## Prerequisites`. Credentials section should contain the following description text before the credential list:\n\n"
+      unless line.start_with?(expected_credential_message)
+        fail_message += "Line #{line_number}: README has invalid description for credentials section or description is not correctly located two lines below `## Prerequisites`. Credentials section should contain the following description text before the credential list:\n\n"
         fail_message += "```"+expected_credential_message+"```\n\n"
       end
     end
@@ -231,7 +286,7 @@ def readme_invalid_credentials?(file, file_lines)
     flexera_permission_text << line if flexera_permission_scanning
   end
 
-  if !credential_footnote
+  unless credential_footnote
     fail_message += "Permissions section missing footnote. Please make sure the following footnote is at the end of the permissions section of the README:\n\n"
     fail_message += "```The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.```\n\n"
   end
@@ -252,278 +307,72 @@ def readme_invalid_credentials?(file, file_lines)
   end
 
   if aws_permission_line
-    aws_json_tester = /^\s{2}```json\n\s{2}\{\n\s{6}"Version": "2012-10-17",\n\s{6}"Statement": \[\n\s{10}\{\n\s{14}"Effect": "Allow",\n\s{14}"Action": \[\n[\s\S]*?\n\s{10}\}\n\s{6}\]\n\s{2}\}\n\s{2}```$/
+    aws_perm_tester = /`[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*:[a-zA-Z0-9]+`(?:[\*\u2020\u2021\u00a7\u2016\u00b6]+)?$/
+    aws_examples = [
+      "  - `rds:DeleteDBSnapshot`*",
+      "  - `ec2:TerminateInstances`\u2020",
+      "  - `sts:GetCallerIdentity` ",
+      "  - `cloudtrail:LookupEvents` "
+    ]
+    is_alibaba = aws_permission_text[0].start_with?("- [**Alibaba Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*)")
 
-    # JSON Test currently disabled pending decision on whether to include this in READMEs going forward
-
-    # if !readme_text.match?(aws_json_tester)
-    #   fail_message += "AWS permission JSON example missing or formatted incorrectly. JSON example should be formatted [like so](https://raw.githubusercontent.com/flexera-public/policy_templates/master/.dangerfile/examples/AWS_PERMISSION_JSON.md).\n\n"
-    # end
-
-    if !aws_permission_text[0].start_with?("- [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:") && !aws_permission_text[0].start_with?("- [**Alibaba Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*)")
-      fail_message += "Line #{aws_permission_line.to_s}: AWS permission statement does not use the standard text. Please make sure AWS permissions begin with the following text followed by a list:\n\n"
+    unless aws_permission_text[0].start_with?("- [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:") || is_alibaba
+      fail_message += "Line #{aws_permission_line}: AWS permission statement does not use the standard text. Please make sure AWS permissions begin with the following text followed by a list:\n\n"
       fail_message += "```- [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:```\n\n"
     end
 
-    aws_perm_tester = /`[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*:[a-zA-Z0-9]+`(?:[\*\u2020\u2021\u00a7\u2016\u00b6]+)?$/
-
-    # Hash to track the presence of each footnote symbol in the permission list
-    footnote_symbols = { "*" => false,  "†" => false, "‡" => false, "§" => false, "‖" => false, "¶" => false }
-    permission_list_found = 0
-
-    aws_permission_text.each_with_index do |line, index|
-      line_number = index + aws_permission_line
-
-      permission_list_found = 1 if index == 1 && line.start_with?("  - ")
-
-      if permission_list_found == 1
-        if !line.start_with?("  - ")
-          permission_list_found = 2
-        else
-          footnote_symbols["*"] = true if line.strip.end_with?("*")
-          footnote_symbols["†"] = true if line.strip.end_with?("\u2020")
-          footnote_symbols["‡"] = true if line.strip.end_with?("\u2021")
-          footnote_symbols["§"] = true if line.strip.end_with?("\u00a7")
-          footnote_symbols["‖"] = true if line.strip.end_with?("\u2016")
-          footnote_symbols["¶"] = true if line.strip.end_with?("\u00b6")
-
-          permission_action = line.split("  - ")[1]
-
-          if permission_action.nil? || !permission_action.match?(aws_perm_tester)
-            fail_message += "Line #{line_number.to_s}: AWS permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
-            fail_message += "```  - `rds:DeleteDBSnapshot`*```\n"
-            fail_message += "```  - `ec2:TerminateInstances`†```\n"
-            fail_message += "```  - `sts:GetCallerIdentity` ```\n"
-            fail_message += "```  - `cloudtrail:LookupEvents` ```\n\n"
-          end
-        end
-      end
-    end
-
-    # Check for missing footnotes for any symbols that were found in the permissions list
-    footnote_symbols.each do |symbol, found|
-      next unless found # Only check if the symbol was found in the permission list
-
-      # Search for corresponding footnote explanation
-      if symbol == "*"
-        if !aws_permission_text.any? { |line| line.strip.start_with?("\\*") }
-          fail_message += "Permission list contains a permission with an asterisk (*), but no corresponding footnote explaining it. Please add a footnote starting with `  \\* ` like so:\n\n"
-          fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
-        end
-      else
-        if !aws_permission_text.any? { |line| line.strip.start_with?(symbol) }
-          fail_message += "Permission list contains a permission with a #{symbol} symbol, but no corresponding footnote explaining it. Please add a footnote starting with `  #{symbol} ` like so:\n\n"
-          fail_message += "```  #{symbol} Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
-        end
-      end
-    end
-
-    # Check if no permission list was found
-    if permission_list_found == 0 && !aws_permission_text[0].start_with?("- [**Alibaba Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*)")
-      fail_message += "AWS permission list missing or formatted incorrectly. Please ensure there is a list of permissions beneath the AWS permission statement. Each list item should begin with [space][space][hyphen][space] like so:\n\n"
-      fail_message += "```  - `rds:DeleteDBSnapshot`*```\n"
-      fail_message += "```  - `ec2:TerminateInstances`†```\n"
-      fail_message += "```  - `sts:GetCallerIdentity` ```\n"
-      fail_message += "```  - `cloudtrail:LookupEvents` ```\n\n"
-    end
+    fail_message += validate_permission_list(aws_permission_text, aws_permission_line, aws_perm_tester, "AWS", aws_examples, skip_list_check: is_alibaba)
   end
 
   if azure_permission_line
-    if !azure_permission_text[0].start_with?("- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:") && !azure_permission_text[0].start_with?("- [**Azure Storage Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure) (*provider=azure_storage*)")
-      fail_message += "Line #{azure_permission_line.to_s}: Azure permission statement does not use the standard text. Please make sure Azure permissions begin with the following text followed by a list:\n\n"
+    azure_perm_tester = /^`Microsoft\.(?:[a-zA-Z]+|\*)\/(?:[a-zA-Z]+|\*)\/(?:[a-zA-Z]+|\*)(?:\/(?:[a-zA-Z]+|\*))*`(?:[\*\u2020\u2021\u00a7\u2016\u00b6]+)?$/
+    azure_examples = [
+      "  - `Microsoft.Compute/snapshots/delete`*",
+      "  - `Microsoft.Compute/snapshots/read` ",
+      "  - `Microsoft.Insights/metrics/read` "
+    ]
+
+    unless azure_permission_text[0].start_with?("- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:") || azure_permission_text[0].start_with?("- [**Azure Storage Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure) (*provider=azure_storage*)")
+      fail_message += "Line #{azure_permission_line}: Azure permission statement does not use the standard text. Please make sure Azure permissions begin with the following text followed by a list:\n\n"
       fail_message += "```- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:```\n\n"
     end
 
-    azure_perm_tester = /^`Microsoft\.(?:[a-zA-Z]+|\*)\/(?:[a-zA-Z]+|\*)\/(?:[a-zA-Z]+|\*)(?:\/(?:[a-zA-Z]+|\*))*`(?:[\*\u2020\u2021\u00a7\u2016\u00b6]+)?$/
-
-    # Hash to track the presence of each footnote symbol in the permission list
-    footnote_symbols = { "*" => false,  "†" => false, "‡" => false, "§" => false, "‖" => false, "¶" => false }
-    permission_list_found = 0
-
-    azure_permission_text.each_with_index do |line, index|
-      line_number = index + azure_permission_line
-
-      permission_list_found = 1 if index == 1 && line.start_with?("  - ")
-
-      if permission_list_found == 1
-        if !line.start_with?("  - ")
-          permission_list_found = 2
-        else
-          footnote_symbols["*"] = true if line.strip.end_with?("*")
-          footnote_symbols["†"] = true if line.strip.end_with?("\u2020")
-          footnote_symbols["‡"] = true if line.strip.end_with?("\u2021")
-          footnote_symbols["§"] = true if line.strip.end_with?("\u00a7")
-          footnote_symbols["‖"] = true if line.strip.end_with?("\u2016")
-          footnote_symbols["¶"] = true if line.strip.end_with?("\u00b6")
-
-          permission_action = line.split("  - ")[1]
-          if permission_action.nil? || !permission_action.match?(azure_perm_tester)
-            fail_message += "Line #{line_number.to_s}: Azure permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
-            fail_message += "```  - `Microsoft.Compute/snapshots/delete`*```\n"
-            fail_message += "```  - `Microsoft.Compute/snapshots/read` ```\n"
-            fail_message += "```  - `Microsoft.Insights/metrics/read` ```\n\n"
-          end
-        end
-      end
-    end
-
-    # Check for missing footnotes for any symbols that were found in the permissions list
-    footnote_symbols.each do |symbol, found|
-      next unless found # Only check if the symbol was found in the permission list
-
-      # Search for corresponding footnote explanation
-      if symbol == "*"
-        if !azure_permission_text.any? { |line| line.strip.start_with?("\\*") }
-          fail_message += "Permission list contains a permission with an asterisk (*), but no corresponding footnote explaining it. Please add a footnote starting with `  \\* ` like so:\n\n"
-          fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
-        end
-      else
-        if !azure_permission_text.any? { |line| line.strip.start_with?(symbol) }
-          fail_message += "Permission list contains a permission with a #{symbol} symbol, but no corresponding footnote explaining it. Please add a footnote starting with `  #{symbol} ` like so:\n\n"
-          fail_message += "```  #{symbol} Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
-        end
-      end
-    end
-
-    # Check if no permission list was found
-    if permission_list_found == 0
-      fail_message += "Azure permission list missing or formatted incorrectly. Please ensure there is a list of permissions beneath the Azure permission statement. Each list item should begin with [space][space][hyphen][space] like so:\n\n"
-      fail_message += "```  - `Microsoft.Compute/snapshots/delete`*```\n"
-      fail_message += "```  - `Microsoft.Compute/snapshots/read` ```\n"
-      fail_message += "```  - `Microsoft.Insights/metrics/read` ```\n\n"
-    end
+    fail_message += validate_permission_list(azure_permission_text, azure_permission_line, azure_perm_tester, "Azure", azure_examples)
   end
 
   if google_permission_line
-    if !google_permission_text[0].start_with?("- [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:")
-      fail_message += "Line #{google_permission_line.to_s}: Google permission statement does not use the standard text. Please make sure Google permissions begin with the following text followed by a list:\n\n"
+    google_perm_tester = /^`[a-zA-Z]+\.[a-zA-Z]+\.[a-zA-Z]+(?:\.[a-zA-Z]+)*`(?:[\*\u2020\u2021\u00a7\u2016\u00b6]+)?$/
+    google_examples = [
+      "  - `resourcemanager.projects.get`*",
+      "  - `recommender.computeInstanceMachineTypeRecommendations.list`\u2020",
+      "  - `compute.regions.list` ",
+      "  - `billing.resourceCosts.get` "
+    ]
+
+    unless google_permission_text[0].start_with?("- [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:")
+      fail_message += "Line #{google_permission_line}: Google permission statement does not use the standard text. Please make sure Google permissions begin with the following text followed by a list:\n\n"
       fail_message += "```- [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:```\n\n"
     end
 
-    google_perm_tester = /^`[a-zA-Z]+\.[a-zA-Z]+\.[a-zA-Z]+(?:\.[a-zA-Z]+)*`(?:[\*\u2020\u2021\u00a7\u2016\u00b6]+)?$/
-
-    # Hash to track the presence of each footnote symbol in the permission list
-    footnote_symbols = { "*" => false,  "†" => false, "‡" => false, "§" => false, "‖" => false, "¶" => false }
-    permission_list_found = 0
-
-    google_permission_text.each_with_index do |line, index|
-      line_number = index + google_permission_line
-
-      permission_list_found = 1 if index == 1 && line.start_with?("  - ")
-
-      if permission_list_found == 1
-        if !line.start_with?("  - ")
-          permission_list_found = 2
-        else
-          footnote_symbols["*"] = true if line.strip.end_with?("*")
-          footnote_symbols["†"] = true if line.strip.end_with?("\u2020")
-          footnote_symbols["‡"] = true if line.strip.end_with?("\u2021")
-          footnote_symbols["§"] = true if line.strip.end_with?("\u00a7")
-          footnote_symbols["‖"] = true if line.strip.end_with?("\u2016")
-          footnote_symbols["¶"] = true if line.strip.end_with?("\u00b6")
-
-          if !line.split("  - ")[1].match?(google_perm_tester)
-            fail_message += "Line #{line_number.to_s}: Google permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
-            fail_message += "```  - `resourcemanager.projects.get`*```\n"
-            fail_message += "```  - `recommender.computeInstanceMachineTypeRecommendations.list`†```\n"
-            fail_message += "```  - `compute.regions.list` ```\n"
-            fail_message += "```  - `billing.resourceCosts.get` ```\n\n"
-          end
-        end
-      end
-    end
-
-    # Check for missing footnotes for any symbols that were found in the permissions list
-    footnote_symbols.each do |symbol, found|
-      next unless found # Only check if the symbol was found in the permission list
-
-      # Search for corresponding footnote explanation
-      if symbol == "*"
-        if !google_permission_text.any? { |line| line.strip.start_with?("\\*") }
-          fail_message += "Permission list contains a permission with an asterisk (*), but no corresponding footnote explaining it. Please add a footnote starting with `  \\* ` like so:\n\n"
-          fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
-        end
-      else
-        if !google_permission_text.any? { |line| line.strip.start_with?(symbol) }
-          fail_message += "Permission list contains a permission with a #{symbol} symbol, but no corresponding footnote explaining it. Please add a footnote starting with `  #{symbol} ` like so:\n\n"
-          fail_message += "```  #{symbol} Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
-        end
-      end
-    end
-
-    # Check if no permission list was found
-    if permission_list_found == 0
-      fail_message += "Google permission list missing or formatted incorrectly. Please ensure there is a list of permissions beneath the Google permission statement. Each list item should begin with [space][space][hyphen][space] like so:\n\n"
-      fail_message += "```  - `resourcemanager.projects.get`*```\n"
-      fail_message += "```  - `recommender.computeInstanceMachineTypeRecommendations.list`†```\n"
-      fail_message += "```  - `compute.regions.list` ```\n"
-      fail_message += "```  - `billing.resourceCosts.get` ```\n\n"
-    end
+    fail_message += validate_permission_list(google_permission_text, google_permission_line, google_perm_tester, "Google", google_examples)
   end
 
   if flexera_permission_line
-    if !flexera_permission_text[0].start_with?("- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:")
-      fail_message += "Line #{flexera_permission_line.to_s}: Flexera permission statement does not use the standard text. Please make sure Flexera permissions begin with the following text followed by a list:\n\n"
+    flexera_perm_tester = /^`[a-zA-Z0-9\-_\.]+`(?:[\*\u2020\u2021\u00a7\u2016\u00b6]+)?$/
+    flexera_examples = [
+      "  - `billing_center_viewer`*"
+    ]
+
+    unless flexera_permission_text[0].start_with?("- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:")
+      fail_message += "Line #{flexera_permission_line}: Flexera permission statement does not use the standard text. Please make sure Flexera permissions begin with the following text followed by a list:\n\n"
       fail_message += "```- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:```\n\n"
     end
 
-    flexera_perm_tester = /^`[a-zA-Z0-9\-_\.]+`(?:[\*\u2020\u2021\u00a7\u2016\u00b6]+)?$/
-
-    # Hash to track the presence of each footnote symbol in the permission list
-    footnote_symbols = { "*" => false,  "†" => false, "‡" => false, "§" => false, "‖" => false, "¶" => false }
-    permission_list_found = 0
-
-    flexera_permission_text.each_with_index do |line, index|
-      line_number = index + flexera_permission_line
-
-      permission_list_found = 1 if index == 1 && line.start_with?("  - ")
-
-      if permission_list_found == 1
-        if !line.start_with?("  - ")
-          permission_list_found = 2
-        else
-          footnote_symbols["*"] = true if line.strip.end_with?("*")
-          footnote_symbols["†"] = true if line.strip.end_with?("\u2020")
-          footnote_symbols["‡"] = true if line.strip.end_with?("\u2021")
-          footnote_symbols["§"] = true if line.strip.end_with?("\u00a7")
-          footnote_symbols["‖"] = true if line.strip.end_with?("\u2016")
-          footnote_symbols["¶"] = true if line.strip.end_with?("\u00b6")
-
-          if !line.split("  - ")[1].match?(flexera_perm_tester)
-            fail_message += "Line #{line_number.to_s}: Flexera permission list item formatted incorrectly. Please make sure all list items are formatted like the following examples:\n\n"
-            fail_message += "```  - `billing_center_viewer`*```\n\n"
-          end
-        end
-      end
-    end
-
-    # Check for missing footnotes for any symbols that were found in the permissions list
-    footnote_symbols.each do |symbol, found|
-      next unless found # Only check if the symbol was found in the permission list
-
-      # Search for corresponding footnote explanation
-      if symbol == "*"
-        if !flexera_permission_text.any? { |line| line.strip.start_with?("\\*") }
-          fail_message += "Permission list contains a permission with an asterisk (*), but no corresponding footnote explaining it. Please add a footnote starting with `  \\* ` like so:\n\n"
-          fail_message += "```  \\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
-        end
-      else
-        if !flexera_permission_text.any? { |line| line.strip.start_with?(symbol) }
-          fail_message += "Permission list contains a permission with a #{symbol} symbol, but no corresponding footnote explaining it. Please add a footnote starting with `  #{symbol} ` like so:\n\n"
-          fail_message += "```  #{symbol} Only required for taking action; the policy will still function in a read-only capacity without these permissions.```\n"
-        end
-      end
-    end
-
-    # Check if no permission list was found
-    if permission_list_found == 0
-      fail_message += "Flexera permission list missing or formatted incorrectly. Please ensure there is a list of permissions beneath the Flexera permission statement. Each list item should begin with [space][space][hyphen][space] like so:\n\n"
-      fail_message += "```  - `billing_center_viewer`*```\n\n"
-    end
+    fail_message += validate_permission_list(flexera_permission_text, flexera_permission_line, flexera_perm_tester, "Flexera", flexera_examples)
   end
 
-  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#prerequisites)] README.md has problems with how credential permissions are presented:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#prerequisites)] README.md has problems with how credential permissions are presented:\n\n" + fail_message unless fail_message.empty?
 
-  return fail_message.strip if !fail_message.empty?
-  return false
+  return false if fail_message.empty?
+  fail_message.strip
 end
