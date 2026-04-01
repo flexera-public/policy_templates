@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.6.0
+
+- Added graceful error handling for inaccessible AWS regions
+
 ## v6.5.4
 
 - Updated documentation link in policy description. Functionality unchanged.
