@@ -64,6 +64,55 @@ parameter "param_stats_lookback" do
   default 30
 end
 
+parameter "param_stats_safety_factor" do
+  type "number"
+  category "Statistics"
+  label "Rightsizing Safety Factor"
+  description "A multiplier applied to the peak utilization when computing the required resources for a rightsized instance. For example, a value of 1.5 means the recommended instance type must be able to handle 1.5 times the observed peak utilization. Set a higher value for more headroom."
+  min_value 1
+  default 1.5
+end
+
+parameter "param_stats_cpu_idle" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance CPU Threshold (%)"
+  description "The CPU utilization threshold at or below which an instance is considered idle and recommended for termination. Set to -1 to disable idle detection based on CPU utilization."
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_mem_idle" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance Memory Threshold (%)"
+  description "The memory utilization threshold at or below which an instance is considered idle and recommended for termination. Set to -1 to disable idle detection based on memory utilization. Note: If memory metrics are unavailable, this check is skipped automatically."
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_gpu_idle" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance GPU Utilization Threshold (%)"
+  description "The GPU compute utilization threshold at or below which an instance is considered idle. Set to -1 to disable idle detection based on GPU compute utilization. Note: An instance is only flagged as idle when all enabled metric checks pass."
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_gpu_mem_idle" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance GPU Memory Threshold (%)"
+  description "The GPU memory utilization threshold at or below which an instance is considered idle. Set to -1 to disable idle detection based on GPU memory utilization. Note: If GPU memory metrics are unavailable, this check is skipped automatically."
+  min_value -1
+  max_value 100
+  default 5
+end
+
 parameter "param_regions_allow_or_deny" do
   type "string"
   category "Filters"
@@ -80,6 +129,15 @@ parameter "param_regions_list" do
   description "A list of allowed or denied regions. See the README for more details"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
+end
+
+parameter "param_min_age" do
+  type "number"
+  category "Filters"
+  label "Minimum Instance Age (Days)"
+  description "The minimum age in days that an instance must be before it is considered for rightsizing or termination recommendations. This helps avoid false positives for recently launched instances that may not yet have established typical utilization patterns. Set to 0 to evaluate instances of any age."
+  min_value 0
+  default 7
 end
 
 parameter "param_exclusion_tags" do
@@ -474,23 +532,6 @@ datasource "ds_aws_instance_types" do
   end
 end
 
-datasource "ds_gpu_instance_type_names" do
-  run_script $js_gpu_instance_type_names, $ds_aws_instance_types
-end
-
-script "js_gpu_instance_type_names", type: "javascript" do
-  parameters "ds_aws_instance_types"
-  result "result"
-  code <<-'EOS'
-  result = []
-  _.each(ds_aws_instance_types, function(inst) {
-    if (inst['gpu'] && inst['gpu']['count'] && inst['gpu']['count'] > 0) {
-      result.push(inst['name'])
-    }
-  })
-EOS
-end
-
 datasource "ds_gpu_instance_types" do
   run_script $js_gpu_instance_types, $ds_aws_instance_types
 end
@@ -503,6 +544,14 @@ script "js_gpu_instance_types", type: "javascript" do
     return inst['gpu'] && inst['gpu']['count'] && inst['gpu']['count'] > 0
   })
 EOS
+end
+
+datasource "ds_aws_instance_prices" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_pricing.json"
+    header "User-Agent", "RS Policies"
+  end
 end
 
 datasource "ds_describe_regions" do
@@ -847,11 +896,11 @@ end
 
 # Filter to GPU instances only and apply tag exclusions
 datasource "ds_instances" do
-  run_script $js_instances, $ds_instance_sets, $ds_gpu_instance_type_names, $param_exclusion_tags, $param_exclusion_tags_boolean
+  run_script $js_instances, $ds_instance_sets, $ds_gpu_instance_types, $param_exclusion_tags, $param_exclusion_tags_boolean, $param_min_age
 end
 
 script "js_instances", type: "javascript" do
-  parameters "ds_instance_sets", "ds_gpu_instance_type_names", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  parameters "ds_instance_sets", "ds_gpu_instance_types", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_min_age"
   result "result"
   code <<-'EOS'
   comparators = _.map(param_exclusion_tags, function(item) {
@@ -932,9 +981,21 @@ script "js_instances", type: "javascript" do
   })
 
   // Filter to GPU instances only
+  var gpu_instance_type_names = _.pluck(ds_gpu_instance_types, 'name')
   result = _.filter(result, function(instance) {
-    return _.contains(ds_gpu_instance_type_names, instance['resourceType'])
+    return _.contains(gpu_instance_type_names, instance['resourceType'])
   })
+
+  // Filter out instances younger than param_min_age days
+  if (param_min_age > 0) {
+    var now = new Date()
+    var min_age_ms = param_min_age * 86400 * 1000
+    result = _.filter(result, function(instance) {
+      if (!instance['launchTime']) { return true }
+      var launch = new Date(instance['launchTime'])
+      return (now - launch) >= min_age_ms
+    })
+  }
 EOS
 end
 
@@ -1110,6 +1171,15 @@ script "js_cloudwatch_queries", type: "javascript" do
           }
 
           result[instance['region']].push(query)
+
+          // Add daily timeseries for GPU index 0 only (used in chart)
+          if (gpu_entry.index == '0') {
+            var query_timeseries = _.clone(query)
+            query_timeseries.Id = query.Id + "_timeseries"
+            query_timeseries.MetricStat = _.clone(query.MetricStat)
+            query_timeseries.MetricStat.Period = lookback_1d
+            result[instance['region']].push(query_timeseries)
+          }
         })
       })
     }
@@ -1297,6 +1367,8 @@ script "js_cloudwatch_data_sorted", type: "javascript" do
         points = _.sortBy(points, function(p) { return p['timestamp'] })
         if (metric.indexOf('cpu') != -1) {
           result[region][instance_name]['cpuPoints'] = points
+        } else if (metric.indexOf('gpuutil') != -1) {
+          result[region][instance_name]['gpuUtilPoints'] = points
         } else if (metric.indexOf('mem') != -1) {
           result[region][instance_name]['memPoints'] = points
         }
@@ -1314,8 +1386,8 @@ script "js_merged_metrics", type: "javascript" do
   parameters "ds_cloudwatch_data_sorted", "ds_instances", "ds_aws_account", "ds_currency", "param_stats_threshold", "param_stats_lookback", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
-  function generateChartUrl(cpu_stats, mem_stats, stat_name, resource_name, rs_org_id, rs_project_id) {
-    if ((!cpu_stats || cpu_stats.length === 0) && (!mem_stats || mem_stats.length === 0)) {
+  function generateChartUrl(cpu_stats, mem_stats, gpu_stats, stat_name, resource_name, rs_org_id, rs_project_id) {
+    if ((!cpu_stats || cpu_stats.length === 0) && (!mem_stats || mem_stats.length === 0) && (!gpu_stats || gpu_stats.length === 0)) {
       return null
     }
 
@@ -1324,6 +1396,7 @@ script "js_merged_metrics", type: "javascript" do
     var timestamps = []
     var cpuValues = []
     var memValues = []
+    var gpuValues = []
 
     var maxPoints = 60
     var step = 1
@@ -1340,31 +1413,33 @@ script "js_merged_metrics", type: "javascript" do
         timestamps.push(date.toISOString().split('T')[0])
         cpuValues.push((cpu_stats && cpu_stats[i] && _.isNumber(cpu_stats[i][stat_name])) ? Math.round(cpu_stats[i][stat_name] * 10) / 10 : '_')
         memValues.push((mem_stats && mem_stats[i] && _.isNumber(mem_stats[i][stat_name])) ? Math.round(mem_stats[i][stat_name] * 10) / 10 : '_')
+        gpuValues.push((gpu_stats && gpu_stats[i] && _.isNumber(gpu_stats[i][stat_name])) ? Math.round(gpu_stats[i][stat_name] * 10) / 10 : '_')
       }
     }
 
     var timeLabels = timestamps.join('|')
     var cpuData = cpuValues.join(',')
     var memData = memValues.join(',')
+    var gpuData = gpuValues.join(',')
 
     var stat_name_Proper = stat_name.charAt(0).toUpperCase() + stat_name.slice(1)
 
     var chartUrl = 'https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id=' + rs_org_id + '&rs_project_id=' + rs_project_id
     chartUrl += '&cht=lc'
     chartUrl += '&chs=900x450'
-    chartUrl += '&chco=206BB6,CF8F36'
+    chartUrl += '&chco=206BB6,CF8F36,00AA44'
     chartUrl += '&chxt=x,y'
     chartUrl += '&chxs=0,000000,12,-1,lt,000000,s,min90'
-    chartUrl += '&chdl=' + encodeURIComponent('CPU Usage%25|Memory Usage%25')
+    chartUrl += '&chdl=' + encodeURIComponent('CPU Usage%25|Memory Usage%25|GPU Util%25')
     chartUrl += '&chdlp=b'
     chartUrl += '&chtt=' + encodeURIComponent(stat_name_Proper + '+Resource+Utilization|' + encodeURIComponent(resource_name))
     chartUrl += '&chma=10,10,10,10'
     chartUrl += '&chxr=1,0,100'
-    chartUrl += '&chls=' + encodeURIComponent('4|4')
+    chartUrl += '&chls=' + encodeURIComponent('4|4|4')
     chartUrl += '&chf=bg,s,FFFFFF00'
     chartUrl += '&chg=' + encodeURIComponent('20,50,5,5,CECECE')
     chartUrl += '&chxl=' + encodeURIComponent('0:|' + encodeURIComponent(timeLabels))
-    chartUrl += '&chd=' + encodeURIComponent('t:' + cpuData + '|' + memData)
+    chartUrl += '&chd=' + encodeURIComponent('t:' + cpuData + '|' + memData + '|' + gpuData)
 
     return chartUrl
   }
@@ -1414,33 +1489,33 @@ script "js_merged_metrics", type: "javascript" do
     var resourceARN = 'arn:aws:ec2:' + region + ':' + ds_aws_account['id'] + ':instance/' + id
 
     var resource_identifier = resourceName ? resourceName + ' (' + id + ')' : id
-    var chartUrl = generateChartUrl(cw['cpuPoints'], cw['memPoints'], param_stats_threshold, resource_identifier, rs_org_id, rs_project_id)
+    var chartUrl = generateChartUrl(cw['cpuPoints'], cw['memPoints'], cw['gpuUtilPoints'], param_stats_threshold, resource_identifier, rs_org_id, rs_project_id)
 
     var merged_instance = {
-      cpu_minimum: cw['cpuMinimum'] != undefined ? cw['cpuMinimum'] : null,
-      cpu_average: cw['cpuAverage'] != undefined ? cw['cpuAverage'] : null,
-      cpu_maximum: cw['cpuMaximum'] != undefined ? cw['cpuMaximum'] : null,
-      cpu_p90: cw['cpup90'] != undefined ? cw['cpup90'] : null,
-      cpu_p95: cw['cpup95'] != undefined ? cw['cpup95'] : null,
-      cpu_p99: cw['cpup99'] != undefined ? cw['cpup99'] : null,
-      mem_minimum: cw['memMinimum'] != undefined ? cw['memMinimum'] : null,
-      mem_average: cw['memAverage'] != undefined ? cw['memAverage'] : null,
-      mem_maximum: cw['memMaximum'] != undefined ? cw['memMaximum'] : null,
-      mem_p90: cw['memp90'] != undefined ? cw['memp90'] : null,
-      mem_p95: cw['memp95'] != undefined ? cw['memp95'] : null,
-      mem_p99: cw['memp99'] != undefined ? cw['memp99'] : null,
-      gpu_util_minimum: cw['gpuUtilMinimum'] != undefined ? cw['gpuUtilMinimum'] : null,
-      gpu_util_average: cw['gpuUtilAverage'] != undefined ? cw['gpuUtilAverage'] : null,
-      gpu_util_maximum: cw['gpuUtilMaximum'] != undefined ? cw['gpuUtilMaximum'] : null,
-      gpu_util_p90: cw['gpuUtilp90'] != undefined ? cw['gpuUtilp90'] : null,
-      gpu_util_p95: cw['gpuUtilp95'] != undefined ? cw['gpuUtilp95'] : null,
-      gpu_util_p99: cw['gpuUtilp99'] != undefined ? cw['gpuUtilp99'] : null,
-      gpu_mem_used_minimum: cw['gpuMemUsedMinimum'] != undefined ? cw['gpuMemUsedMinimum'] : null,
-      gpu_mem_used_average: cw['gpuMemUsedAverage'] != undefined ? cw['gpuMemUsedAverage'] : null,
-      gpu_mem_used_maximum: cw['gpuMemUsedMaximum'] != undefined ? cw['gpuMemUsedMaximum'] : null,
-      gpu_mem_used_p90: cw['gpuMemUsedp90'] != undefined ? cw['gpuMemUsedp90'] : null,
-      gpu_mem_used_p95: cw['gpuMemUsedp95'] != undefined ? cw['gpuMemUsedp95'] : null,
-      gpu_mem_used_p99: cw['gpuMemUsedp99'] != undefined ? cw['gpuMemUsedp99'] : null,
+      cpuMinimum: cw['cpuMinimum'] != undefined ? cw['cpuMinimum'] : null,
+      cpuAverage: cw['cpuAverage'] != undefined ? cw['cpuAverage'] : null,
+      cpuMaximum: cw['cpuMaximum'] != undefined ? cw['cpuMaximum'] : null,
+      cpuP90: cw['cpup90'] != undefined ? cw['cpup90'] : null,
+      cpuP95: cw['cpup95'] != undefined ? cw['cpup95'] : null,
+      cpuP99: cw['cpup99'] != undefined ? cw['cpup99'] : null,
+      memMinimum: cw['memMinimum'] != undefined ? cw['memMinimum'] : null,
+      memAverage: cw['memAverage'] != undefined ? cw['memAverage'] : null,
+      memMaximum: cw['memMaximum'] != undefined ? cw['memMaximum'] : null,
+      memP90: cw['memp90'] != undefined ? cw['memp90'] : null,
+      memP95: cw['memp95'] != undefined ? cw['memp95'] : null,
+      memP99: cw['memp99'] != undefined ? cw['memp99'] : null,
+      gpuUtilMinimum: cw['gpuUtilMinimum'] != undefined ? cw['gpuUtilMinimum'] : null,
+      gpuUtilAverage: cw['gpuUtilAverage'] != undefined ? cw['gpuUtilAverage'] : null,
+      gpuUtilMaximum: cw['gpuUtilMaximum'] != undefined ? cw['gpuUtilMaximum'] : null,
+      gpuUtilP90: cw['gpuUtilp90'] != undefined ? cw['gpuUtilp90'] : null,
+      gpuUtilP95: cw['gpuUtilp95'] != undefined ? cw['gpuUtilp95'] : null,
+      gpuUtilP99: cw['gpuUtilp99'] != undefined ? cw['gpuUtilp99'] : null,
+      gpuMemUsedMinimum: cw['gpuMemUsedMinimum'] != undefined ? cw['gpuMemUsedMinimum'] : null,
+      gpuMemUsedAverage: cw['gpuMemUsedAverage'] != undefined ? cw['gpuMemUsedAverage'] : null,
+      gpuMemUsedMaximum: cw['gpuMemUsedMaximum'] != undefined ? cw['gpuMemUsedMaximum'] : null,
+      gpuMemUsedP90: cw['gpuMemUsedp90'] != undefined ? cw['gpuMemUsedp90'] : null,
+      gpuMemUsedP95: cw['gpuMemUsedp95'] != undefined ? cw['gpuMemUsedp95'] : null,
+      gpuMemUsedP99: cw['gpuMemUsedp99'] != undefined ? cw['gpuMemUsedp99'] : null,
       region: region,
       id: id,
       resourceID: id,
@@ -1482,11 +1557,11 @@ EOS
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_gpu_instance_types, $ds_currency, $ds_applied_policy, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_incident_csv, rs_org_id, rs_project_id
+  run_script $js_idle_and_underutil_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_gpu_instance_types, $ds_aws_instance_prices, $ds_currency, $ds_applied_policy, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_incident_csv, $param_stats_safety_factor, $param_stats_cpu_idle, $param_stats_mem_idle, $param_stats_gpu_idle, $param_stats_gpu_mem_idle, rs_org_id, rs_project_id
 end
 
 script "js_idle_and_underutil_instances", type: "javascript" do
-  parameters "ds_merged_metrics", "ds_instance_costs_grouped", "ds_gpu_instance_types", "ds_currency", "ds_applied_policy", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_incident_csv", "rs_org_id", "rs_project_id"
+  parameters "ds_merged_metrics", "ds_instance_costs_grouped", "ds_gpu_instance_types", "ds_aws_instance_prices", "ds_currency", "ds_applied_policy", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_incident_csv", "param_stats_safety_factor", "param_stats_cpu_idle", "param_stats_mem_idle", "param_stats_gpu_idle", "param_stats_gpu_mem_idle", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
   function formatNumber(number, separator) {
@@ -1507,24 +1582,28 @@ script "js_idle_and_underutil_instances", type: "javascript" do
     return formatted_number
   }
 
-  var IDLE_THRESHOLD = 5
-  var SAFETY_FACTOR = 1.5
+  function getInstancePrice(pricing, region, instance_type, platform) {
+    if (!pricing || !pricing[region]) { return null }
+    if (!pricing[region][instance_type]) { return null }
+    var entry = pricing[region][instance_type]
+    var os_key = 'Linux'
+    if (platform && platform.indexOf('Windows') != -1) { os_key = 'Windows' }
+    else if (platform && platform.indexOf('Red Hat') != -1) { os_key = 'RHEL' }
+    else if (platform && platform.indexOf('SUSE') != -1) { os_key = 'SUSE' }
+    if (!entry[os_key]) { os_key = 'Linux' }
+    if (!entry[os_key]) { return null }
+    return entry[os_key]['pricePerUnit']
+  }
 
-  var threshold_statistic = param_stats_threshold.toLowerCase()
+  var SAFETY_FACTOR = param_stats_safety_factor
+
+  var ts = param_stats_threshold.charAt(0).toUpperCase() + param_stats_threshold.slice(1)
 
   // Build GPU instance type lookup maps
   var gpu_types_by_name = {}
-  var instances_by_family = {}
 
   _.each(ds_gpu_instance_types, function(inst) {
     gpu_types_by_name[inst['name']] = inst
-    var fam = inst['family']
-    if (!instances_by_family[fam]) { instances_by_family[fam] = [] }
-    instances_by_family[fam].push(inst)
-  })
-
-  _.each(Object.keys(instances_by_family), function(fam) {
-    instances_by_family[fam] = _.sortBy(instances_by_family[fam], function(i) { return i['cpu']['vcpus'] })
   })
 
   var underutil_total_savings = 0.0
@@ -1537,36 +1616,47 @@ script "js_idle_and_underutil_instances", type: "javascript" do
 
   _.each(ds_merged_metrics, function(instance) {
     var id = instance['resourceID']
+    var region = instance['region']
     var total_cost = 0.0
     if (ds_instance_costs_grouped[id.toLowerCase()] != undefined) { total_cost = ds_instance_costs_grouped[id.toLowerCase()] }
 
     var current_specs = gpu_types_by_name[instance['resourceType']]
     if (!current_specs) { return }
 
-    var cpu_pct = instance['cpu_' + threshold_statistic]
-    var mem_pct = instance['mem_' + threshold_statistic]
-    var gpu_util = instance['gpu_util_' + threshold_statistic]
-    var gpu_mem_used_mib = instance['gpu_mem_used_' + threshold_statistic]
+    var cpu_pct = instance['cpu' + ts]
+    var mem_pct = instance['mem' + ts]
+    var gpu_util = instance['gpuUtil' + ts]
+    var gpu_mem_used_mib = instance['gpuMemUsed' + ts]
 
-    // Skip instances with insufficient CloudWatch data for decision
+    // Require CPU and GPU data (GPU is the critical metric for this policy)
     if (cpu_pct == null || cpu_pct == undefined) { return }
-    if (mem_pct == null || mem_pct == undefined) { return }
     if (gpu_util == null || gpu_util == undefined) { return }
-    if (gpu_mem_used_mib == null || gpu_mem_used_mib == undefined) { return }
 
     var total_gpu_mem_mib = current_specs['gpu']['totalGpuMemoryInMiB']
-    var gpu_mem_pct = total_gpu_mem_mib > 0 ? (gpu_mem_used_mib / total_gpu_mem_mib * 100) : 0
+    var gpu_mem_pct = null
+    if (gpu_mem_used_mib != null && gpu_mem_used_mib != undefined && total_gpu_mem_mib > 0) {
+      gpu_mem_pct = gpu_mem_used_mib / total_gpu_mem_mib * 100
+    }
 
     instance['gpuUtil'] = gpu_util
-    instance['gpuMemPct'] = parseFloat(gpu_mem_pct.toFixed(2))
+    instance['gpuMemPct'] = gpu_mem_pct != null ? parseFloat(gpu_mem_pct.toFixed(2)) : null
     instance['gpuMemUsedMiB'] = gpu_mem_used_mib
     instance['totalGpuMemMiB'] = total_gpu_mem_mib
     instance['gpuCount'] = current_specs['gpu']['count']
 
+    var current_price = getInstancePrice(ds_aws_instance_prices, region, instance['resourceType'], instance['platform'])
+
     var recommendationDetails = ''
 
-    // Idle check: all 4 metrics below IDLE_THRESHOLD
-    var is_idle = cpu_pct < IDLE_THRESHOLD && mem_pct < IDLE_THRESHOLD && gpu_util < IDLE_THRESHOLD && gpu_mem_pct < IDLE_THRESHOLD
+    // Idle check using configurable thresholds; -1 means disabled
+    var passes_cpu_idle = param_stats_cpu_idle < 0 || cpu_pct < param_stats_cpu_idle
+    var passes_mem_idle = param_stats_mem_idle < 0 || mem_pct == null || mem_pct < param_stats_mem_idle
+    var passes_gpu_idle = param_stats_gpu_idle < 0 || gpu_util < param_stats_gpu_idle
+    var passes_gpu_mem_idle = param_stats_gpu_mem_idle < 0 || gpu_mem_pct == null || gpu_mem_pct < param_stats_gpu_mem_idle
+
+    // Must have at least one threshold enabled for idle detection to fire
+    var idle_checks_enabled = param_stats_cpu_idle >= 0 || param_stats_mem_idle >= 0 || param_stats_gpu_idle >= 0 || param_stats_gpu_mem_idle >= 0
+    var is_idle = idle_checks_enabled && passes_cpu_idle && passes_mem_idle && passes_gpu_idle && passes_gpu_mem_idle
 
     if (is_idle) {
       instance['savings'] = parseFloat(parseFloat(total_cost).toFixed(3))
@@ -1574,7 +1664,7 @@ script "js_idle_and_underutil_instances", type: "javascript" do
       instance['newResourceType'] = null
       instance['newGpuCount'] = null
 
-      recommendationDetails = 'Terminate EC2 GPU instance ' + id + ' in AWS Account ' + instance['accountName'] + ' (' + instance['accountID'] + ')'
+      recommendationDetails = 'Terminate AWS GPU EC2 instance ' + id + ' in AWS Account ' + instance['accountName'] + ' (' + instance['accountID'] + ')'
       if (instance['chartUrl']) {
         instance['chartUrlField'] = id + ' Utilization Chart||' + instance['chartUrl'] + '&from_pt=true'
         recommendationDetails += '\n\n![Utilization Chart](' + instance['chartUrl'] + '&from_pt=true)'
@@ -1586,38 +1676,52 @@ script "js_idle_and_underutil_instances", type: "javascript" do
         idle_list.push(instance)
       }
     } else {
-      // Rightsizing: compute required resources
+      // Rightsizing: compute required resources based on observed utilization
       var current_vcpus = current_specs['cpu']['vcpus']
       var required_vcpus = Math.ceil(current_vcpus * cpu_pct / 100 * SAFETY_FACTOR)
-      var required_ram_mib = Math.ceil(current_specs['memory']['sizeInMiB'] * mem_pct / 100 * SAFETY_FACTOR)
+      var required_ram_mib = (mem_pct != null && mem_pct != undefined)
+        ? Math.ceil(current_specs['memory']['sizeInMiB'] * mem_pct / 100 * SAFETY_FACTOR)
+        : 0
       var required_gpu_count = Math.max(1, Math.ceil(current_specs['gpu']['count'] * gpu_util / 100 * SAFETY_FACTOR))
-      var required_gpu_mem_mib = Math.ceil(gpu_mem_used_mib * SAFETY_FACTOR)
+      var required_gpu_mem_mib = (gpu_mem_used_mib != null)
+        ? Math.ceil(gpu_mem_used_mib * SAFETY_FACTOR)
+        : 0
 
-      var family_instances = instances_by_family[current_specs['family']] || []
-      var new_instance = null
+      // Search all GPU instance types for cheapest option that meets requirements
+      var candidate_instances = []
 
-      _.each(family_instances, function(inst) {
-        if (new_instance) { return }
-        if (inst['cpu']['vcpus'] >= current_vcpus) { return }
+      _.each(ds_gpu_instance_types, function(inst) {
+        if (inst['name'] == instance['resourceType']) { return }
+        var candidate_price = getInstancePrice(ds_aws_instance_prices, region, inst['name'], instance['platform'])
+        if (candidate_price == null || candidate_price == 0) { return }
+        if (current_price != null && candidate_price >= current_price) { return }
         if (inst['cpu']['vcpus'] < required_vcpus) { return }
-        if (inst['memory']['sizeInMiB'] < required_ram_mib) { return }
+        if (required_ram_mib > 0 && inst['memory']['sizeInMiB'] < required_ram_mib) { return }
         if (!inst['gpu'] || inst['gpu']['count'] < required_gpu_count) { return }
-        if (!inst['gpu'] || inst['gpu']['totalGpuMemoryInMiB'] < required_gpu_mem_mib) { return }
-        new_instance = inst
+        if (required_gpu_mem_mib > 0 && (!inst['gpu'] || inst['gpu']['totalGpuMemoryInMiB'] < required_gpu_mem_mib)) { return }
+        candidate_instances.push({ inst: inst, price: candidate_price })
       })
 
-      if (new_instance) {
+      candidate_instances = _.sortBy(candidate_instances, function(c) { return c.price })
+
+      var best = candidate_instances.length > 0 ? candidate_instances[0] : null
+
+      if (best) {
+        var new_instance = best.inst
         instance['recommendationType'] = 'Downsize'
         instance['newResourceType'] = new_instance['name']
         instance['newGpuCount'] = new_instance['gpu']['count']
 
-        var savings = total_cost * (1 - new_instance['cpu']['vcpus'] / current_vcpus)
+        // Calculate savings using list price ratio applied to CCO cost
+        var savings = (current_price != null && current_price > 0 && best.price != null)
+          ? total_cost * (1 - best.price / current_price)
+          : 0
         instance['savings'] = parseFloat(savings.toFixed(3))
 
         var current_gpu_mem_gib = Math.round(total_gpu_mem_mib / 1024)
         var new_gpu_mem_gib = Math.round(new_instance['gpu']['totalGpuMemoryInMiB'] / 1024)
 
-        recommendationDetails = 'Change instance type of EC2 GPU instance ' + id + ' in AWS Account ' + instance['accountName'] + ' (' + instance['accountID'] + ') from ' + instance['resourceType'] + ' (' + current_specs['gpu']['count'] + ' GPU(s), ' + current_gpu_mem_gib + ' GiB GPU memory) to ' + new_instance['name'] + ' (' + new_instance['gpu']['count'] + ' GPU(s), ' + new_gpu_mem_gib + ' GiB GPU memory)'
+        recommendationDetails = 'Change instance type of AWS GPU EC2 instance ' + id + ' in AWS Account ' + instance['accountName'] + ' (' + instance['accountID'] + ') from ' + instance['resourceType'] + ' (' + current_specs['gpu']['count'] + ' GPU(s), ' + current_gpu_mem_gib + ' GiB GPU memory) to ' + new_instance['name'] + ' (' + new_instance['gpu']['count'] + ' GPU(s), ' + new_gpu_mem_gib + ' GiB GPU memory)'
         if (instance['chartUrl']) {
           instance['chartUrlField'] = id + ' Utilization Chart||' + instance['chartUrl'] + '&from_pt=true'
           recommendationDetails += '\n\n![Utilization Chart](' + instance['chartUrl'] + '&from_pt=true)'
@@ -1639,9 +1743,9 @@ script "js_idle_and_underutil_instances", type: "javascript" do
 
   var instances_analyzed = gpu_instances_with_metrics.toString()
 
-  var underutil_message = 'Out of ' + gpu_instances_total + ' GPU EC2 instances analyzed (' + instances_analyzed + ' had GPU CloudWatch metrics), ' + underutil_list.length + ' are underutilized and recommended for downsizing. An instance is considered underutilized when the ' + param_stats_threshold + ' statistic for all of CPU utilization, memory utilization, GPU compute utilization, and GPU memory utilization can be satisfied by a smaller instance type in the same GPU family with a 1.5x safety margin. ' + csv_message
+  var underutil_message = 'Out of ' + gpu_instances_total + ' GPU EC2 instances analyzed (' + instances_analyzed + ' had GPU CloudWatch metrics), ' + underutil_list.length + ' are underutilized and recommended for downsizing. An instance is considered underutilized when the ' + param_stats_threshold + ' statistic for CPU utilization and GPU compute utilization can be satisfied by a cheaper GPU instance type with a ' + param_stats_safety_factor + 'x safety margin. The recommended instance type is the cheapest GPU instance (across all GPU families available in the region) that meets the computed resource requirements. ' + csv_message
 
-  var idle_message = 'Out of ' + gpu_instances_total + ' GPU EC2 instances analyzed (' + instances_analyzed + ' had GPU CloudWatch metrics), ' + idle_list.length + ' are idle and recommended for termination. An instance is considered idle when the ' + param_stats_threshold + ' statistic for ALL of CPU utilization, memory utilization, GPU compute utilization, and GPU memory utilization are below 5%. ' + csv_message
+  var idle_message = 'Out of ' + gpu_instances_total + ' GPU EC2 instances analyzed (' + instances_analyzed + ' had GPU CloudWatch metrics), ' + idle_list.length + ' are idle and recommended for termination. An instance is considered idle when all enabled metric checks indicate idleness: CPU utilization below ' + param_stats_cpu_idle + '% (if enabled), memory utilization below ' + param_stats_mem_idle + '% (if enabled and available), GPU compute utilization below ' + param_stats_gpu_idle + '% (if enabled), and GPU memory utilization below ' + param_stats_gpu_mem_idle + '% (if enabled and available). ' + csv_message
 
   var policy_name = ds_applied_policy['name'] || 'AWS Rightsize GPU EC2 Instances'
 
@@ -1667,9 +1771,10 @@ script "js_idle_and_underutil_instances", type: "javascript" do
     savings: 0,
     savingsCurrency: ds_currency['symbol'],
     tags: '',
-    cpu_maximum: null, cpu_minimum: null, cpu_average: null, cpu_p99: null, cpu_p95: null, cpu_p90: null,
-    mem_maximum: null, mem_minimum: null, mem_average: null, mem_p99: null, mem_p95: null, mem_p90: null,
-    gpu_util_maximum: null, gpu_util_minimum: null, gpu_util_average: null, gpu_util_p99: null, gpu_util_p95: null, gpu_util_p90: null,
+    cpuMaximum: null, cpuMinimum: null, cpuAverage: null, cpuP99: null, cpuP95: null, cpuP90: null,
+    memMaximum: null, memMinimum: null, memAverage: null, memP99: null, memP95: null, memP90: null,
+    gpuUtilMaximum: null, gpuUtilMinimum: null, gpuUtilAverage: null, gpuUtilP99: null, gpuUtilP95: null, gpuUtilP90: null,
+    gpuMemUsedMaximum: null, gpuMemUsedMinimum: null, gpuMemUsedAverage: null, gpuMemUsedP99: null, gpuMemUsedP95: null, gpuMemUsedP90: null,
     gpuMemPct: null, gpuMemUsedMiB: null
   }
 
@@ -1683,9 +1788,10 @@ script "js_idle_and_underutil_instances", type: "javascript" do
     savings: 0,
     savingsCurrency: ds_currency['symbol'],
     tags: '',
-    cpu_maximum: null, cpu_minimum: null, cpu_average: null, cpu_p99: null, cpu_p95: null, cpu_p90: null,
-    mem_maximum: null, mem_minimum: null, mem_average: null, mem_p99: null, mem_p95: null, mem_p90: null,
-    gpu_util_maximum: null, gpu_util_minimum: null, gpu_util_average: null, gpu_util_p99: null, gpu_util_p95: null, gpu_util_p90: null,
+    cpuMaximum: null, cpuMinimum: null, cpuAverage: null, cpuP99: null, cpuP95: null, cpuP90: null,
+    memMaximum: null, memMinimum: null, memAverage: null, memP99: null, memP95: null, memP90: null,
+    gpuUtilMaximum: null, gpuUtilMinimum: null, gpuUtilAverage: null, gpuUtilP99: null, gpuUtilP95: null, gpuUtilP90: null,
+    gpuMemUsedMaximum: null, gpuMemUsedMinimum: null, gpuMemUsedAverage: null, gpuMemUsedP99: null, gpuMemUsedP95: null, gpuMemUsedP90: null,
     gpuMemPct: null, gpuMemUsedMiB: null
   }
 
@@ -1728,7 +1834,7 @@ policy "pol_utilization" do
     check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Downsize"))
     escalate $esc_email
     escalate $esc_downsize_instances
-    hash_exclude "message", "total_savings", "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "mem_maximum", "mem_minimum", "mem_average", "mem_p99", "mem_p95", "mem_p90", "gpu_util_maximum", "gpu_util_minimum", "gpu_util_average", "gpu_util_p99", "gpu_util_p95", "gpu_util_p90", "gpuMemPct", "gpuMemUsedMiB"
+    hash_exclude "message", "total_savings", "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpuMaximum", "cpuMinimum", "cpuAverage", "cpuP99", "cpuP95", "cpuP90", "memMaximum", "memMinimum", "memAverage", "memP99", "memP95", "memP90", "gpuUtilMaximum", "gpuUtilMinimum", "gpuUtilAverage", "gpuUtilP99", "gpuUtilP95", "gpuUtilP90", "gpuMemUsedMaximum", "gpuMemUsedMinimum", "gpuMemUsedAverage", "gpuMemUsedP99", "gpuMemUsedP95", "gpuMemUsedP90", "gpuMemPct", "gpuMemUsedMiB"
     export do
       resource_level true
       field "accountID" do
@@ -1781,87 +1887,84 @@ policy "pol_utilization" do
       end
       field "cpuMaximum" do
         label "CPU Maximum %"
-        path "cpu_maximum"
       end
       field "cpuMinimum" do
         label "CPU Minimum %"
-        path "cpu_minimum"
       end
       field "cpuAverage" do
         label "CPU Average %"
-        path "cpu_average"
       end
       field "cpuP99" do
         label "CPU p99"
-        path "cpu_p99"
       end
       field "cpuP95" do
         label "CPU p95"
-        path "cpu_p95"
       end
       field "cpuP90" do
         label "CPU p90"
-        path "cpu_p90"
       end
       field "memMaximum" do
         label "Memory Maximum %"
-        path "mem_maximum"
       end
       field "memMinimum" do
         label "Memory Minimum %"
-        path "mem_minimum"
       end
       field "memAverage" do
         label "Memory Average %"
-        path "mem_average"
       end
       field "memP99" do
         label "Memory p99"
-        path "mem_p99"
       end
       field "memP95" do
         label "Memory p95"
-        path "mem_p95"
       end
       field "memP90" do
         label "Memory p90"
-        path "mem_p90"
       end
       field "gpuUtilMaximum" do
         label "GPU Utilization Maximum %"
-        path "gpu_util_maximum"
       end
       field "gpuUtilMinimum" do
         label "GPU Utilization Minimum %"
-        path "gpu_util_minimum"
       end
       field "gpuUtilAverage" do
         label "GPU Utilization Average %"
-        path "gpu_util_average"
       end
       field "gpuUtilP99" do
         label "GPU Utilization p99 %"
-        path "gpu_util_p99"
       end
       field "gpuUtilP95" do
         label "GPU Utilization p95 %"
-        path "gpu_util_p95"
       end
       field "gpuUtilP90" do
         label "GPU Utilization p90 %"
-        path "gpu_util_p90"
       end
       field "gpuMemPct" do
         label "GPU Memory Utilization %"
-        path "gpuMemPct"
       end
       field "gpuMemUsedMiB" do
         label "GPU Memory Used (MiB)"
-        path "gpuMemUsedMiB"
+      end
+      field "gpuMemUsedMaximum" do
+        label "GPU Memory Used Maximum (MiB)"
+      end
+      field "gpuMemUsedMinimum" do
+        label "GPU Memory Used Minimum (MiB)"
+      end
+      field "gpuMemUsedAverage" do
+        label "GPU Memory Used Average (MiB)"
+      end
+      field "gpuMemUsedP99" do
+        label "GPU Memory Used p99 (MiB)"
+      end
+      field "gpuMemUsedP95" do
+        label "GPU Memory Used p95 (MiB)"
+      end
+      field "gpuMemUsedP90" do
+        label "GPU Memory Used p90 (MiB)"
       end
       field "totalGpuMemMiB" do
         label "Total GPU Memory (MiB)"
-        path "totalGpuMemMiB"
       end
       field "thresholdType" do
         label "Threshold Statistic"
@@ -1896,7 +1999,7 @@ policy "pol_utilization" do
     escalate $esc_email
     escalate $esc_stop_instances
     escalate $esc_terminate_instances
-    hash_exclude "message", "total_savings", "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "mem_maximum", "mem_minimum", "mem_average", "mem_p99", "mem_p95", "mem_p90", "gpu_util_maximum", "gpu_util_minimum", "gpu_util_average", "gpu_util_p99", "gpu_util_p95", "gpu_util_p90", "gpuMemPct", "gpuMemUsedMiB"
+    hash_exclude "message", "total_savings", "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpuMaximum", "cpuMinimum", "cpuAverage", "cpuP99", "cpuP95", "cpuP90", "memMaximum", "memMinimum", "memAverage", "memP99", "memP95", "memP90", "gpuUtilMaximum", "gpuUtilMinimum", "gpuUtilAverage", "gpuUtilP99", "gpuUtilP95", "gpuUtilP90", "gpuMemUsedMaximum", "gpuMemUsedMinimum", "gpuMemUsedAverage", "gpuMemUsedP99", "gpuMemUsedP95", "gpuMemUsedP90", "gpuMemPct", "gpuMemUsedMiB"
     export do
       resource_level true
       field "accountID" do
@@ -1943,87 +2046,84 @@ policy "pol_utilization" do
       end
       field "cpuMaximum" do
         label "CPU Maximum %"
-        path "cpu_maximum"
       end
       field "cpuMinimum" do
         label "CPU Minimum %"
-        path "cpu_minimum"
       end
       field "cpuAverage" do
         label "CPU Average %"
-        path "cpu_average"
       end
       field "cpuP99" do
         label "CPU p99"
-        path "cpu_p99"
       end
       field "cpuP95" do
         label "CPU p95"
-        path "cpu_p95"
       end
       field "cpuP90" do
         label "CPU p90"
-        path "cpu_p90"
       end
       field "memMaximum" do
         label "Memory Maximum %"
-        path "mem_maximum"
       end
       field "memMinimum" do
         label "Memory Minimum %"
-        path "mem_minimum"
       end
       field "memAverage" do
         label "Memory Average %"
-        path "mem_average"
       end
       field "memP99" do
         label "Memory p99"
-        path "mem_p99"
       end
       field "memP95" do
         label "Memory p95"
-        path "mem_p95"
       end
       field "memP90" do
         label "Memory p90"
-        path "mem_p90"
       end
       field "gpuUtilMaximum" do
         label "GPU Utilization Maximum %"
-        path "gpu_util_maximum"
       end
       field "gpuUtilMinimum" do
         label "GPU Utilization Minimum %"
-        path "gpu_util_minimum"
       end
       field "gpuUtilAverage" do
         label "GPU Utilization Average %"
-        path "gpu_util_average"
       end
       field "gpuUtilP99" do
         label "GPU Utilization p99 %"
-        path "gpu_util_p99"
       end
       field "gpuUtilP95" do
         label "GPU Utilization p95 %"
-        path "gpu_util_p95"
       end
       field "gpuUtilP90" do
         label "GPU Utilization p90 %"
-        path "gpu_util_p90"
       end
       field "gpuMemPct" do
         label "GPU Memory Utilization %"
-        path "gpuMemPct"
       end
       field "gpuMemUsedMiB" do
         label "GPU Memory Used (MiB)"
-        path "gpuMemUsedMiB"
+      end
+      field "gpuMemUsedMaximum" do
+        label "GPU Memory Used Maximum (MiB)"
+      end
+      field "gpuMemUsedMinimum" do
+        label "GPU Memory Used Minimum (MiB)"
+      end
+      field "gpuMemUsedAverage" do
+        label "GPU Memory Used Average (MiB)"
+      end
+      field "gpuMemUsedP99" do
+        label "GPU Memory Used p99 (MiB)"
+      end
+      field "gpuMemUsedP95" do
+        label "GPU Memory Used p95 (MiB)"
+      end
+      field "gpuMemUsedP90" do
+        label "GPU Memory Used p90 (MiB)"
       end
       field "totalGpuMemMiB" do
         label "Total GPU Memory (MiB)"
-        path "totalGpuMemMiB"
       end
       field "thresholdType" do
         label "Threshold Statistic"
@@ -2147,7 +2247,7 @@ define downsize_instances($data) do
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      if $instance["newResourceType"] != "Terminate AWS GPU EC2 Instance"
+      if $instance["newResourceType"] != null
         call get_instance_state($instance) retrieve $initial_state
         if $initial_state != "terminated" && $initial_state != "pending"
           if $initial_state != "stopped"

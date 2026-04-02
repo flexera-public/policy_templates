@@ -1260,6 +1260,8 @@ export do
 end
 ```
 
+**`path` preference** — Use `path` only when the export field name must differ from the data field name (e.g., the required `id` field with `path "resourceID"`, or mapping a raw API field like `runtime` to the canonical `resourceType`). When possible, name fields in the datasource JavaScript transform using the same camelCase names as the export fields — this keeps the export block clean and avoids hidden aliasing. For example, write `cpuMaximum`, `memAverage`, `gpuUtilP90` as the JavaScript object keys so that no `path` is needed in the export block. Never add `path` when its value already equals the field name — that is redundant and should be omitted.
+
 **`hash_exclude` minimum** — always exclude these volatile fields that change without indicating a meaningful state change. Extend as needed for utilization metrics or age fields:
 
 ```
@@ -2546,7 +2548,15 @@ The following must be in place on each instance before the policy can collect me
 
 The remaining two required README sections (continuing the main list above):
 
-1. `## Supported Clouds` — list of supported providers, or "All" for cloud-agnostic
+1. `## Supported Clouds` — a bulleted list of the cloud provider(s) or platform(s) the template targets. Use the canonical short names as they appear across the catalog:
+   - `- AWS` — Amazon Web Services (never "Amazon Web Services")
+   - `- Azure` — Microsoft Azure
+   - `- Google` — Google Cloud Platform
+   - `- Oracle` — Oracle Cloud Infrastructure
+   - `- Alibaba Cloud` — Alibaba Cloud
+   - `- ServiceNow` — ServiceNow (SaaS templates)
+   - `- Flexera` — Flexera-platform templates (FSM, SaaS management, etc.)
+   - `- All` — cloud-agnostic templates that work across all providers
 1. `## Cost` — whether this policy template incurs additional costs
 
 ## CHANGELOG Requirements
