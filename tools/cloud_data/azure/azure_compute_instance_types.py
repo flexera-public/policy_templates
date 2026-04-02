@@ -79,6 +79,9 @@ with open("./data/azure/instance_types.json", 'r') as f:
 data = []
 
 for item in sku_dicts:
+    if item.get("resource_type") != "virtualMachines":
+        continue
+
     if item.get("name", "None") != "None" and item.get("tier", "None") != "None":
         # Extract the relevant fields from the SKU
         details = {
