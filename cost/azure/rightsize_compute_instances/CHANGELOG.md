@@ -1,5 +1,10 @@
 # Changelog
 
+## v6.4.0
+
+- Added `Current Instance Local Disk` and `Recommended Instance Local Disk` fields to incident export to inform users whether local disk support will change as a result of the recommended action.
+- Added `Filter Recommendations That Change Local Disk` parameter to allow users to exclude downsize recommendations where the recommended instance type has a different local disk configuration than the current instance type.
+
 ## v6.3.2
 
 - Updated documentation link in policy description. Functionality unchanged.
