@@ -265,7 +265,12 @@ datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
-    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", policy_id])
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "name", jmes_path(response, "name")
   end
 end
 
@@ -287,48 +292,9 @@ datasource "ds_cloud_vendor_accounts" do
   end
 end
 
-# Get AWS account info fallback
-datasource "ds_billing_centers_aws_acc" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
-    query "view", "allocation_table"
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "href", jmes_path(col_item, "href")
-      field "id", jmes_path(col_item, "id")
-      field "name", jmes_path(col_item, "name")
-      field "parent_id", jmes_path(col_item, "parent_id")
-    end
-  end
-end
-
-# Gather top level billing center IDs for when we pull cost data
-datasource "ds_top_level_bcs_aws_acc" do
-  run_script $js_top_level_bcs_aws_acc, $ds_billing_centers_aws_acc
-end
-
-script "js_top_level_bcs_aws_acc", type: "javascript" do
-  parameters "ds_billing_centers_aws_acc"
-  result "result"
-  code <<-'EOS'
-  filtered_bcs = _.filter(ds_billing_centers_aws_acc, function(bc) {
-    return bc['parent_id'] == null || bc['parent_id'] == undefined
-  })
-
-  result = _.compact(_.pluck(filtered_bcs, 'id'))
-EOS
-end
-
 datasource "ds_cloud_vendor_accounts_fallback" do
   request do
-    run_script $js_cloud_vendor_accounts_fallback, $ds_top_level_bcs_aws_acc, rs_org_id, rs_optima_host
+    run_script $js_cloud_vendor_accounts_fallback, $ds_top_level_bcs, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -340,7 +306,7 @@ datasource "ds_cloud_vendor_accounts_fallback" do
 end
 
 script "js_cloud_vendor_accounts_fallback", type: "javascript" do
-  parameters "ds_top_level_bcs_aws_acc", "rs_org_id", "rs_optima_host"
+  parameters "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
   end_date = new Date()
@@ -362,7 +328,7 @@ script "js_cloud_vendor_accounts_fallback", type: "javascript" do
       start_at: start_date,
       end_at: end_date,
       metrics: ["cost_amortized_unblended_adj"],
-      billing_center_ids: ds_top_level_bcs_aws_acc
+      billing_center_ids: ds_top_level_bcs
     },
     headers: {
       'User-Agent': "RS Policies",
@@ -962,10 +928,7 @@ script "js_instances", type: "javascript" do
             if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
           }
 
-          if (comparison == '!~') {
-            if (resource_tag == undefined) { found_tags.push(string) }
-            if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
-          }
+          if (comparison == '!~' && (resource_tag == undefined || !value.test(resource_tag))) { found_tags.push(string) }
         })
 
         all_tags_found = found_tags.length == comparators.length
@@ -1059,8 +1022,8 @@ script "js_identify_errors", type: "javascript" do
 
   if (errors.length > 0) {
     policy_name = "AWS Rightsize GPU EC2 Instances"
-    if (ds_applied_policy && ds_applied_policy.policy_template && ds_applied_policy.policy_template.name) {
-      policy_name = ds_applied_policy.policy_template.name
+    if (ds_applied_policy && ds_applied_policy['name']) {
+      policy_name = ds_applied_policy['name']
     }
     errors[0].policy_name = policy_name
   }
@@ -1676,6 +1639,9 @@ script "js_idle_and_underutil_instances", type: "javascript" do
         idle_list.push(instance)
       }
     } else {
+      // Rightsizing requires a known current price to calculate savings and filter candidates
+      if (current_price == null) { return }
+
       // Rightsizing: compute required resources based on observed utilization
       var current_vcpus = current_specs['cpu']['vcpus']
       var required_vcpus = Math.ceil(current_vcpus * cpu_pct / 100 * SAFETY_FACTOR)
@@ -1694,7 +1660,7 @@ script "js_idle_and_underutil_instances", type: "javascript" do
         if (inst['name'] == instance['resourceType']) { return }
         var candidate_price = getInstancePrice(ds_aws_instance_prices, region, inst['name'], instance['platform'])
         if (candidate_price == null || candidate_price == 0) { return }
-        if (current_price != null && candidate_price >= current_price) { return }
+        if (candidate_price >= current_price) { return }
         if (inst['cpu']['vcpus'] < required_vcpus) { return }
         if (required_ram_mib > 0 && inst['memory']['sizeInMiB'] < required_ram_mib) { return }
         if (!inst['gpu'] || inst['gpu']['count'] < required_gpu_count) { return }
