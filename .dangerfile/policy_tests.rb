@@ -1502,11 +1502,14 @@ def policy_missing_hash_excludes?(file, file_lines, file_parsed)
 
   return false if info[:recommendation_type].nil?
 
-  # Savings/message fields: required in hash_exclude when the export contains savings data
-  savings_volatile = ["savings", "savingsCurrency", "message", "total_savings"]
+  # Savings fields: required in hash_exclude when the export contains savings data
+  savings_volatile = ["savings", "savingsCurrency"]
 
-  # Metric/tag fields: required in hash_exclude only when present in the export block
+  # Fields required in hash_exclude only when present in the export block.
+  # message/total_savings are conventional names but templates may use different names,
+  # so only flag them when they explicitly appear as field names or path values in the export.
   conditional_volatile = [
+    "message", "total_savings",
     "tags",
     "cpuMaximum", "cpuMinimum", "cpuAverage", "cpuP99", "cpuP95", "cpuP90",
     "memMaximum", "memMinimum", "memAverage", "memP99", "memP95", "memP90"
@@ -1552,25 +1555,27 @@ def policy_missing_hash_excludes?(file, file_lines, file_parsed)
       hash_excludes += line.strip.scan(/"([^"]+)"/).flatten if line.strip.start_with?("hash_exclude ")
     end
 
-    # Collect export field names from this block
-    export_fields = []
+    # Collect export fields with their path values: { field_name => path_value_or_nil }
+    # When a field has a 'path' declaration, hash_exclude uses the path value (the underlying
+    # data key), not the export field name alias.
+    export_field_paths = {}
     in_export = false
-    in_field_block = false
+    current_field = nil
 
     block_lines.each do |line|
       stripped = line.strip
 
       if stripped.start_with?("export ") && stripped.end_with?(" do")
         in_export = true
-        in_field_block = false
+        current_field = nil
         next
       end
 
       next unless in_export
 
       if stripped == "end"
-        if in_field_block
-          in_field_block = false
+        if current_field
+          current_field = nil
         else
           in_export = false
         end
@@ -1579,21 +1584,36 @@ def policy_missing_hash_excludes?(file, file_lines, file_parsed)
 
       if stripped.start_with?("field ")
         fname = stripped.split('"')[1]
-        export_fields << fname if fname
-        in_field_block = true if stripped.end_with?(" do")
+        if fname
+          export_field_paths[fname] = nil
+          current_field = stripped.end_with?(" do") ? fname : nil
+        end
+      elsif current_field && stripped.start_with?("path ")
+        path_val = stripped.split('"')[1]
+        export_field_paths[current_field] = path_val if path_val
       end
     end
 
+    export_field_names = export_field_paths.keys
+
     missing = []
 
-    # Check savings/message fields when this is a savings-bearing block
-    if export_fields.include?("savings") || export_fields.include?("savingsCurrency")
-      savings_volatile.each { |f| missing << f unless hash_excludes.include?(f) }
+    # Check savings fields when this is a savings-bearing block.
+    # Use the effective key (path value if set, otherwise field name) to look up in hash_exclude.
+    if export_field_names.include?("savings") || export_field_names.include?("savingsCurrency")
+      savings_volatile.each do |f|
+        effective_key = export_field_paths.key?(f) ? (export_field_paths[f] || f) : f
+        missing << f unless hash_excludes.include?(effective_key)
+      end
     end
 
-    # Check metric/tag fields when present in the export
+    # Check conditional fields when present in the export.
+    # Use the effective key so that aliased fields (e.g. field "cpuMaximum" / path "cpu_maximum")
+    # are matched against what actually appears in hash_exclude.
     conditional_volatile.each do |f|
-      missing << f if export_fields.include?(f) && !hash_excludes.include?(f)
+      next unless export_field_names.include?(f)
+      effective_key = export_field_paths[f] || f
+      missing << f unless hash_excludes.include?(effective_key)
     end
 
     problems << "Line #{block_start_line}: Missing from hash_exclude: #{missing.join(', ')}" if missing.any?
