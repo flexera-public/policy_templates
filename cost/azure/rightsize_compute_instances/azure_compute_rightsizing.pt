@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "6.3.2",
+  version: "6.4.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -113,6 +113,15 @@ parameter "param_exclude_databricks" do
   description "Whether or not to filter virtual machines used for Azure Databricks from the results. If set to \"Yes\", virtual machines for Azure Databricks will not be included in the results."
   allowed_values "Yes", "No"
   default "No"
+end
+
+parameter "param_local_disk_filter" do
+  type "string"
+  category "Filters"
+  label "Filter Recommendations That Change Local Disk"
+  description "Whether to exclude downsize recommendations where the recommended instance type has a different local disk configuration than the current instance type. Set to \"Exclude\" to filter out downsize recommendations where local disk support changes."
+  allowed_values "Include All", "Exclude"
+  default "Include All"
 end
 
 parameter "param_stats_idle_threshold_cpu_value" do
@@ -1308,12 +1317,35 @@ script "js_azure_disk_count_table", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_compute_instance_types" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/azure_compute_instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_azure_local_disk_table" do
+  run_script $js_azure_local_disk_table, $ds_azure_compute_instance_types
+end
+
+script "js_azure_local_disk_table", type: "javascript" do
+  parameters "ds_azure_compute_instance_types"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  _.each(ds_azure_compute_instance_types, function(item) {
+    if (item['name'] != undefined) { result[item['name']] = item['localDisk'] }
+  })
+EOS
+end
+
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_stats_interval, $ds_azure_disk_count_table, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_exclude_databricks, $param_downsize_multiple, $param_incident_csv, rs_org_id, rs_project_id
+  run_script $js_idle_and_underutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_stats_interval, $ds_azure_disk_count_table, $ds_azure_local_disk_table, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_exclude_databricks, $param_downsize_multiple, $param_local_disk_filter, $param_incident_csv, rs_org_id, rs_project_id
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_stats_interval", "ds_azure_disk_count_table", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_exclude_databricks", "param_downsize_multiple", "param_incident_csv", "rs_org_id", "rs_project_id"
+  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_stats_interval", "ds_azure_disk_count_table", "ds_azure_local_disk_table", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_exclude_databricks", "param_downsize_multiple", "param_local_disk_filter", "param_incident_csv", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -1510,8 +1542,24 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
         if (instance["newResourceType"] != null && instance["newResourceType"] != undefined) {
           if (savings >= param_min_savings) {
-            underutil_total_savings += savings
-            underutil_list.push(instance)
+            // Exclude downsize if local disk support changes and user has opted into filtering
+            var include_instance = true
+
+            if (param_local_disk_filter == "Exclude") {
+              var current_disk = ds_azure_local_disk_table[instance['resourceType']]
+              var new_disk = ds_azure_local_disk_table[instance['newResourceType']]
+
+              if (current_disk !== null && current_disk !== undefined &&
+                  new_disk !== null && new_disk !== undefined &&
+                  current_disk !== new_disk) {
+                include_instance = false
+              }
+            }
+
+            if (include_instance) {
+              underutil_total_savings += savings
+              underutil_list.push(instance)
+            }
           }
         }
       }
@@ -1680,6 +1728,26 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     underutil_list[0]['policy_name'] = ds_applied_policy['name']
   }
 
+  // Look up local disk support for current and recommended instance types
+  function getLocalDiskLabel(instanceType) {
+    var local_disk = ds_azure_local_disk_table[instanceType]
+    if (local_disk === true) { return "Yes" }
+    if (local_disk === false) { return "No" }
+    return "Unknown"
+  }
+
+  idle_list = _.map(idle_list, function(instance) {
+    instance['currentInstanceLocalDisk'] = getLocalDiskLabel(instance['resourceType'])
+    instance['newInstanceLocalDisk'] = "N/A"
+    return instance
+  })
+
+  underutil_list = _.map(underutil_list, function(instance) {
+    instance['currentInstanceLocalDisk'] = getLocalDiskLabel(instance['resourceType'])
+    instance['newInstanceLocalDisk'] = getLocalDiskLabel(instance['newResourceType'])
+    return instance
+  })
+
   result = {
     idle_list: idle_list,
     underutil_list: underutil_list
@@ -1710,7 +1778,9 @@ script "js_underutilized_instances", type: "javascript" do
     "cpu_average": "",
     "mem_maximum": "",
     "mem_minimum": "",
-    "mem_average": ""
+    "mem_average": "",
+    "currentInstanceLocalDisk": "",
+    "newInstanceLocalDisk": ""
   }]
 
   result = ds_idle_and_underutil_instances["underutil_list"].concat(result)
@@ -1740,7 +1810,9 @@ script "js_idle_instances", type: "javascript" do
     "cpu_average": "",
     "mem_maximum": "",
     "mem_minimum": "",
-    "mem_average": ""
+    "mem_average": "",
+    "currentInstanceLocalDisk": "",
+    "newInstanceLocalDisk": ""
   }]
 
   result = ds_idle_and_underutil_instances["idle_list"].concat(result)
@@ -1792,6 +1864,12 @@ policy "pol_utilization" do
       end
       field "newResourceType" do
         label "Recommended Instance Size"
+      end
+      field "currentInstanceLocalDisk" do
+        label "Current Instance Local Disk"
+      end
+      field "newInstanceLocalDisk" do
+        label "Recommended Instance Local Disk"
       end
       field "resourceKind" do
         label "Resource Kind"
@@ -1937,6 +2015,12 @@ policy "pol_utilization" do
       end
       field "newResourceType" do
         label "Recommended Instance Size"
+      end
+      field "currentInstanceLocalDisk" do
+        label "Current Instance Local Disk"
+      end
+      field "newInstanceLocalDisk" do
+        label "Recommended Instance Local Disk"
       end
       field "resourceKind" do
         label "Resource Kind"

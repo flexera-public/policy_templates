@@ -87,11 +87,20 @@ for item in sku_dicts:
             "size": item.get("size", "None"),
             "family": item.get("family", "None"),
             "superseded": "None",
+            "localDisk": None,
             "specs": { "nfu": isf_table.get(item.get("name"), None) }
         }
 
         for capability in item.get("capabilities", []):
             details["specs"][capability.get("name")] = capability.get("value", "None")
+
+        # Derive localDisk from MaxResourceVolumeMB: true if > 0, false if == 0, null if absent
+        max_resource_volume = details["specs"].get("MaxResourceVolumeMB")
+        if max_resource_volume is not None:
+            try:
+                details["localDisk"] = int(max_resource_volume) > 0
+            except (ValueError, TypeError):
+                details["localDisk"] = None
 
         if details["name"] in manual_data and "superseded" in manual_data[details["name"]]:
             details["superseded"] = manual_data[details["name"]]["superseded"]
