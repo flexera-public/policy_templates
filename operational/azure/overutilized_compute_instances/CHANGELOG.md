@@ -1,11 +1,5 @@
 # Changelog
 
-<<<<<<< HEAD
-## v0.2.0
-
-- Added support for recommendations across resource type families.
-- Policy template now uses dynamically updated list of instance types.
-=======
 ## v0.2.2
 
 - Updated documentation link in policy description. Functionality unchanged.
@@ -33,7 +27,6 @@
 ## v0.1.1
 
 - Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
->>>>>>> master
 
 ## v0.1.0
 
