@@ -75,8 +75,7 @@ def main():
         ] if not val
     ]
     if missing:
-        print(f"ERROR: Missing required environment variables: {', '.join(missing)}")
-        sys.exit(1)
+        sys.exit("ERROR: Missing required environment variables: " + ", ".join(missing))
 
     os.makedirs(os.path.dirname(OUTPUT_FILENAME), exist_ok=True)
 
