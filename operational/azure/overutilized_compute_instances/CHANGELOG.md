@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.3
+
+- Updated instance type data source from `data/azure/instance_types.json` to `data/azure/azure_compute_instance_types.json`. Functionality unchanged.
+
 ## v0.2.2
 
 - Updated documentation link in policy description. Functionality unchanged.

@@ -1,4 +1,8 @@
-#encoding: UTF-8
+# frozen_string_literal: true
+# encoding: UTF-8
+# Parses validated policy templates to extract credential permissions from their READMEs,
+# then generates JSON, YAML, CSV, and PDF permission documents in data/policy_permissions_list/.
+
 require 'json'
 require 'fileutils'
 require 'yaml'
@@ -8,12 +12,12 @@ require 'base64'
 
 # Code for generating HTML for a PDF
 def generate_pdf_html(values)
-  html_content = ""
+  html_content = +""
 
   values.sort_by { |v| v["name"] }.each do |value|
     next unless value[:providers]
 
-    html_content += "<h3>#{value["name"]} <span style=\"font-size:70%;font-weight:normal;\">#{value["version"]}</span></h3>"
+    html_content << "<h3>#{value["name"]} <span style=\"font-size:70%;font-weight:normal;\">#{value["version"]}</span></h3>"
 
     value[:providers].sort_by { |v| v[:name] }.each do |provider|
       provider_name = ""
@@ -47,25 +51,25 @@ def generate_pdf_html(values)
       not_required = provider[:permissions].select { |p| !p["required"] }
 
       if required.length > 0
-        html_content += "<p><b>#{provider_name} Required Permissions:</b><br>"
+        html_content << "<p><b>#{provider_name} Required Permissions:</b><br>"
 
         required.sort_by { |v| v["name"] }.each do |permission|
           read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:65%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:65%;\">Write</span></i>"
-          html_content += "#{permission["name"]}  #{read_only}<br>"
+          html_content << "#{permission["name"]}  #{read_only}<br>"
         end
       end
 
       if not_required.length > 0
-        html_content += "<p><b>#{provider_name} Optional Permissions:</b><br>"
+        html_content << "<p><b>#{provider_name} Optional Permissions:</b><br>"
 
         not_required.sort_by { |v| v["name"] }.each do |permission|
           read_only = permission["read_only"] ? "<i><span style=\"color:green;font-size:65%;\">Read Only</span></i>" : "<i><span style=\"color:red;font-size:65%;\">Write</span></i>"
-          html_content += "#{permission["name"]}  #{read_only}<br>"
+          html_content << "#{permission["name"]}  #{read_only}<br>"
         end
       end
     end
 
-    html_content += "<hr>"
+    html_content << "<hr>"
   end
 
   return html_content
@@ -110,11 +114,6 @@ EOS
   pdf.to_file("#{permissions_list_dir}/#{filename}.pdf")
 end
 
-# List of Policy Templates
-# Open YAML and parse validated_policy_templates[] array
-pt_files_yaml = YAML.load_file("./tools/policy_master_permission_generation/validated_policy_templates.yaml")
-pt_files = pt_files_yaml["validated_policy_templates"]
-
 class Readme
 	attr_accessor :path, :credentials
 
@@ -132,28 +131,6 @@ class PolicyTemplate
     @path = path
     @version = version
   end
-end
-
-readme_files = []
-
-pt_files.each do |pt|
-  # Get the README file for each Policy Template
-  readme_files += Dir.glob("#{File.dirname(pt)}/[Rr][Ee][Aa][Dd][Mm][Ee]*")
-end
-
-# Initialize arrays to store README array of objects and Policy Template array of objects
-policy_templates = []
-readmes = []
-
-# Process Policy Template files
-pt_files.each do |file|
-  pt_content = File.read(file)
-  pt_name = pt_content.match(/name "([^"]+)"/)&.captures&.first
-
-  pt_version_match = pt_content.match(/version:\s*\"([^\"]+)\"/)
-  pt_version = pt_version_match[1] if pt_version_match
-
-  policy_templates << PolicyTemplate.new(pt_name, file, pt_version) if pt_name
 end
 
 # Process README files
@@ -309,186 +286,215 @@ def extract_permissions_from_readme(readme_content)
   policy_credentials
 end
 
-readme_files.each do |path|
-  begin
-    readme_content = File.read(path)
-    # ignore non-UTF-8 characters in readmes
-    # readme_content.force_encoding('ISO-8859-1')
-    readme_content.force_encoding('utf-8')
-    readme_content.encode('utf-8', replace: nil)
+if $PROGRAM_NAME == __FILE__
+  # List of Policy Templates
+  # Open YAML and parse validated_policy_templates[] array
+  pt_files_yaml = YAML.load_file("./tools/policy_master_permission_generation/validated_policy_templates.yaml")
+  pt_files = pt_files_yaml["validated_policy_templates"]
 
-    policy_credentials = extract_permissions_from_readme(readme_content)
+  readme_files = []
 
-    readmes << Readme.new(path, credentials: policy_credentials)
-  rescue => e
-    puts "Error processing file: #{path}"
-    puts e.message
+  pt_files.each do |pt|
+    # Get the README file for each Policy Template
+    readme_files += Dir.glob("#{File.dirname(pt)}/[Rr][Ee][Aa][Dd][Mm][Ee]*")
   end
-end
 
-# Create JSON structure for Master Policy Permissions Document
-master_policy_permissions_doc = {}
-values = []
+  # Initialize arrays to store README array of objects and Policy Template array of objects
+  policy_templates = []
+  readmes = []
 
-readmes.each do |readme|
-  # Match READMEs with Policy Templates based on paths
-  matching_template = policy_templates.find { |template| readme.path.gsub("/README.md", "") == File.dirname(template.path) }
+  # Process Policy Template files
+  pt_files.each do |file|
+    pt_content = File.read(file)
+    pt_name = pt_content.match(/name "([^"]+)"/)&.captures&.first
 
-  if matching_template
-    policy_template_details = {
-      "id" => matching_template.path,
-      "name" => matching_template.name,
-      "version" => matching_template.version
-    }
+    pt_version_match = pt_content.match(/version:\s*\"([^\"]+)\"/)
+    pt_version = pt_version_match[1] if pt_version_match
 
-    if readme.credentials
-      cred_providers = []
+    policy_templates << PolicyTemplate.new(pt_name, file, pt_version) if pt_name
+  end
 
-      readme.credentials.each do |cred|
-        cred_providers.push({ name: cred[:provider] })
-      end
+  readme_files.each do |path|
+    begin
+      readme_content = File.read(path)
+      # ignore non-UTF-8 characters in readmes
+      # readme_content.force_encoding('ISO-8859-1')
+      readme_content.force_encoding('utf-8')
+      readme_content.encode('utf-8', replace: nil)
 
-      cred_providers = cred_providers.uniq
+      policy_credentials = extract_permissions_from_readme(readme_content)
 
-      cred_providers.each do |provider|
-        cred_values = readme.credentials.select { |cred| cred[:provider] == provider[:name] }
+      readmes << Readme.new(path, credentials: policy_credentials)
+    rescue => e
+      puts "Error processing file: #{path}"
+      puts e.message
+    end
+  end
 
-        cred_permissions = []
-        cred_roles = []
-        cred_apis = []
+  # Create JSON structure for Master Policy Permissions Document
+  master_policy_permissions_doc = {}
+  values = []
 
-        cred_values.each do |credential|
-          if credential[:permission]
+  readmes.each do |readme|
+    # Match READMEs with Policy Templates based on paths
+    matching_template = policy_templates.find { |template| readme.path.gsub("/README.md", "") == File.dirname(template.path) }
 
-            permission_list = {
-              "name" => credential[:permission],
-              "read_only" => credential[:read_only],
-              "required" => credential[:required]
-            }
+    if matching_template
+      policy_template_details = {
+        "id" => matching_template.path,
+        "name" => matching_template.name,
+        "version" => matching_template.version
+      }
 
-            permission_list["description"] = credential[:description] if credential[:description]
+      if readme.credentials
+        cred_providers = []
 
-            cred_permissions.push(permission_list)
-          elsif credential[:role]
-            role_list = {
-              "name" => credential[:role],
-              "read_only" => credential[:read_only],
-              "required" => credential[:required]
-            }
-
-            role_list["description"] = credential[:description] if credential[:description]
-
-            cred_roles.push(role_list)
-          end
+        readme.credentials.each do |cred|
+          cred_providers.push({ name: cred[:provider] })
         end
 
-        provider[:permissions] = cred_permissions if cred_permissions.any?
-        provider[:roles] = cred_roles if cred_roles.any?
+        cred_providers = cred_providers.uniq
+
+        cred_providers.each do |provider|
+          cred_values = readme.credentials.select { |cred| cred[:provider] == provider[:name] }
+
+          cred_permissions = []
+          cred_roles = []
+          cred_apis = []
+
+          cred_values.each do |credential|
+            if credential[:permission]
+
+              permission_list = {
+                "name" => credential[:permission],
+                "read_only" => credential[:read_only],
+                "required" => credential[:required]
+              }
+
+              permission_list["description"] = credential[:description] if credential[:description]
+
+              cred_permissions.push(permission_list)
+            elsif credential[:role]
+              role_list = {
+                "name" => credential[:role],
+                "read_only" => credential[:read_only],
+                "required" => credential[:required]
+              }
+
+              role_list["description"] = credential[:description] if credential[:description]
+
+              cred_roles.push(role_list)
+            end
+          end
+
+          provider[:permissions] = cred_permissions if cred_permissions.any?
+          provider[:roles] = cred_roles if cred_roles.any?
+        end
+
+        policy_template_details[:providers] = cred_providers if cred_providers.any?
       end
 
-      policy_template_details[:providers] = cred_providers if cred_providers.any?
-    end
-
-    # Push each policy template permission details to the 'values' array
-    values.push(policy_template_details)
-  end
-end
-
-# Sort values by id
-# Opted for id over name, because sometimes the name of a PT does change but the filename (id) very rarely changes
-values.sort_by! { |value| value["id"] }
-
-master_policy_permissions_doc[:values] = values
-puts values
-
-# Read existing JSON file to determine if we need to update assets.
-# Exit the script if we do not need to generate new assets.
-# Needed because the PDFs will always be "different" even if permissions have not changed.
-existing_json_path = "./data/policy_permissions_list/master_policy_permissions_list.json"
-
-if File.exist?(existing_json_path)
-  existing_json = File.read(existing_json_path)
-
-  if existing_json == JSON.pretty_generate(master_policy_permissions_doc)
-    puts "\nNo changes detected in policy permissions. Files not generated."
-    exit
-  end
-end
-
-# Create '.data/policy_permissions_list' directory
-# permissions_list_dir = "./dist"
-permissions_list_dir = "./data/policy_permissions_list"
-FileUtils.mkdir_p(permissions_list_dir) unless Dir.exist?(permissions_list_dir)
-
-# Create JSON document in '.data/policy_permissions_list' directory
-File.open("#{permissions_list_dir}/master_policy_permissions_list.json", "w") do |f|
-  f.write(JSON.pretty_generate(master_policy_permissions_doc))
-end
-
-# Create YAML document in '.data/policy_permissions_list' directory
-File.open("#{permissions_list_dir}/master_policy_permissions_list.yaml", "w") do |f|
-  # Write YAML document
-  f.write(master_policy_permissions_doc.to_yaml)
-end
-
-# Create CSV document in '.data/policy_permissions_list' directory
-CSV.open("#{permissions_list_dir}/master_policy_permissions_list.csv", "w") do |f|
-  # Write CSV headers
-  f << [ "Name", "Version", "Provider", "Permission/Role", "Required", "Read Only" ]
-
-  # Write CSV rows
-  values.sort_by { |v| v["name"] }.each do |value|
-    next unless value[:providers]
-
-    # Iterate through each provider and permission to create rows
-    value[:providers].each do |provider|
-      provider_name = ""
-
-      case provider[:name]
-      when "aws"
-        provider_name = "AWS"
-      when "azure_rm"
-        provider_name = "Azure Resource Manager"
-      when "azure_storage"
-        provider_name = "Azure Storage"
-      when "azure_ea_china"
-        provider_name = "Azure China Enterprise Agreement"
-      when "azure_graph"
-        provider_name = "Microsoft Graph"
-      when "gce"
-        provider_name = "Google Cloud"
-      when "oracle"
-        provider_name = "Oracle Cloud"
-      when "flexera"
-        provider_name = "Flexera"
-      when "turbonomic"
-        provider_name = "Turbonomic"
-      when "github"
-        provider_name = "GitHub"
-      when "servicenow"
-        provider_name = "ServiceNow"
-      when "okta"
-        provider_name = "Okta"
-      end
-
-      provider[:permissions].each do |permission|
-        f << [value["name"], value["version"], provider_name, permission["name"], permission["required"], permission["read_only"]]
-      end
+      # Push each policy template permission details to the 'values' array
+      values.push(policy_template_details)
     end
   end
+
+  # Sort values by id
+  # Opted for id over name, because sometimes the name of a PT does change but the filename (id) very rarely changes
+  values.sort_by! { |value| value["id"] }
+
+  master_policy_permissions_doc[:values] = values
+  puts values
+
+  # Read existing JSON file to determine if we need to update assets.
+  # Exit the script if we do not need to generate new assets.
+  # Needed because the PDFs will always be "different" even if permissions have not changed.
+  existing_json_path = "./data/policy_permissions_list/master_policy_permissions_list.json"
+
+  if File.exist?(existing_json_path)
+    existing_json = File.read(existing_json_path)
+
+    if existing_json == JSON.pretty_generate(master_policy_permissions_doc)
+      puts "\nNo changes detected in policy permissions. Files not generated."
+      exit
+    end
+  end
+
+  # Create '.data/policy_permissions_list' directory
+  # permissions_list_dir = "./dist"
+  permissions_list_dir = "./data/policy_permissions_list"
+  FileUtils.mkdir_p(permissions_list_dir) unless Dir.exist?(permissions_list_dir)
+
+  # Create JSON document in '.data/policy_permissions_list' directory
+  File.open("#{permissions_list_dir}/master_policy_permissions_list.json", "w") do |f|
+    f.write(JSON.pretty_generate(master_policy_permissions_doc))
+  end
+
+  # Create YAML document in '.data/policy_permissions_list' directory
+  File.open("#{permissions_list_dir}/master_policy_permissions_list.yaml", "w") do |f|
+    # Write YAML document
+    f.write(master_policy_permissions_doc.to_yaml)
+  end
+
+  # Create CSV document in '.data/policy_permissions_list' directory
+  CSV.open("#{permissions_list_dir}/master_policy_permissions_list.csv", "w") do |f|
+    # Write CSV headers
+    f << [ "Name", "Version", "Provider", "Permission/Role", "Required", "Read Only" ]
+
+    # Write CSV rows
+    values.sort_by { |v| v["name"] }.each do |value|
+      next unless value[:providers]
+
+      # Iterate through each provider and permission to create rows
+      value[:providers].each do |provider|
+        provider_name = ""
+
+        case provider[:name]
+        when "aws"
+          provider_name = "AWS"
+        when "azure_rm"
+          provider_name = "Azure Resource Manager"
+        when "azure_storage"
+          provider_name = "Azure Storage"
+        when "azure_ea_china"
+          provider_name = "Azure China Enterprise Agreement"
+        when "azure_graph"
+          provider_name = "Microsoft Graph"
+        when "gce"
+          provider_name = "Google Cloud"
+        when "oracle"
+          provider_name = "Oracle Cloud"
+        when "flexera"
+          provider_name = "Flexera"
+        when "turbonomic"
+          provider_name = "Turbonomic"
+        when "github"
+          provider_name = "GitHub"
+        when "servicenow"
+          provider_name = "ServiceNow"
+        when "okta"
+          provider_name = "Okta"
+        end
+
+        provider[:permissions].each do |permission|
+          f << [value["name"], value["version"], provider_name, permission["name"], permission["required"], permission["read_only"]]
+        end
+      end
+    end
+  end
+
+  # Create PDF documents in '.data/policy_permissions_list' directory
+  logo_svg = Base64.strict_encode64(File.read('tools/policy_master_permission_generation/flexera_logo.svg'))
+  font = Base64.strict_encode64(File.binread('tools/policy_master_permission_generation/source-sans-pro-regular.ttf'))
+
+  aws_values = values.select { |v| v["name"].include?("AWS") || v["name"].include?("Amazon") }
+  azure_values = values.select { |v| v["name"].include?("Azure") || v["name"].include?("AKS") || v["name"].include?("Microsoft") }
+  google_values = values.select { |v| v["name"].include?("Google") || v["name"].include?("GCP") || v["name"].include?("GCE") }
+  oracle_values = values.select { |v| v["name"].include?("Oracle") || v["name"].include?("OCI") }
+
+  generate_pdf(values, "Master", "master_policy_permissions_list", permissions_list_dir, logo_svg, font)
+  generate_pdf(aws_values, "AWS", "master_policy_permissions_list_aws", permissions_list_dir, logo_svg, font)
+  generate_pdf(azure_values, "Azure", "master_policy_permissions_list_azure", permissions_list_dir, logo_svg, font)
+  generate_pdf(google_values, "Google", "master_policy_permissions_list_google", permissions_list_dir, logo_svg, font)
+  generate_pdf(oracle_values, "Oracle", "master_policy_permissions_list_oracle", permissions_list_dir, logo_svg, font)
 end
-
-# Create PDF documents in '.data/policy_permissions_list' directory
-logo_svg = Base64.strict_encode64(File.read('tools/policy_master_permission_generation/flexera_logo.svg'))
-font = Base64.strict_encode64(File.binread('tools/policy_master_permission_generation/source-sans-pro-regular.ttf'))
-
-aws_values = values.select { |v| v["name"].include?("AWS") || v["name"].include?("Amazon") }
-azure_values = values.select { |v| v["name"].include?("Azure") || v["name"].include?("AKS") || v["name"].include?("Microsoft") }
-google_values = values.select { |v| v["name"].include?("Google") || v["name"].include?("GCP") || v["name"].include?("GCE") }
-oracle_values = values.select { |v| v["name"].include?("Oracle") || v["name"].include?("OCI") }
-
-generate_pdf(values, "Master", "master_policy_permissions_list", permissions_list_dir, logo_svg, font)
-generate_pdf(aws_values, "AWS", "master_policy_permissions_list_aws", permissions_list_dir, logo_svg, font)
-generate_pdf(azure_values, "Azure", "master_policy_permissions_list_azure", permissions_list_dir, logo_svg, font)
-generate_pdf(google_values, "Google", "master_policy_permissions_list_google", permissions_list_dir, logo_svg, font)
-generate_pdf(oracle_values, "Oracle", "master_policy_permissions_list_oracle", permissions_list_dir, logo_svg, font)

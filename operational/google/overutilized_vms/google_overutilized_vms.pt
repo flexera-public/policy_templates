@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.3",
+  version: "0.2.4",
   provider: "Google",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -737,31 +737,65 @@ script "js_machinetypes", type: "javascript" do
 EOS
 end
 
-datasource "ds_google_instance_size_map" do
+datasource "ds_google_instance_sizes" do
   request do
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/google/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/google/google_compute_instance_types.json"
     header "User-Agent", "RS Policies"
   end
 end
 
 datasource "ds_instances_normalized" do
-  run_script $js_instances_normalized, $ds_instances_region_filtered, $ds_machinetypes, $ds_google_instance_size_map
+  run_script $js_instances_normalized, $ds_instances_region_filtered, $ds_machinetypes, $ds_google_instance_sizes
 end
 
 script "js_instances_normalized", type: "javascript" do
-  parameters "ds_instances_region_filtered", "ds_machinetypes", "ds_google_instance_size_map"
+  parameters "ds_instances_region_filtered", "ds_machinetypes", "ds_google_instance_sizes"
   result "result"
   code <<-'EOS'
+  // Build lookup tables from the instance types data, mirroring the rightsizing template pattern
+  types_by_machinetype = {}
+  types_by_family = {}
+
+  _.each(ds_google_instance_sizes, function(size) {
+    types_by_machinetype[size['name']] = size
+
+    if (types_by_family[size['family']] == undefined) { types_by_family[size['family']] = [] }
+    types_by_family[size['family']].push(size)
+  })
+
   result = _.map(ds_instances_region_filtered, function(instance) {
     new_instance = {}
     _.each(_.keys(instance), function(key) { new_instance[key] = instance[key] })
 
     core_count = 1
     new_instance['resourceType'] = _.last(instance['machineType'].split('/'))
+    new_instance['family'] = new_instance['resourceType'].split('-')[0]
 
-    if (new_instance['resourceType'] && ds_google_instance_size_map[new_instance['resourceType']] && ds_google_instance_size_map[new_instance['resourceType']]['up']) {
-      new_instance['newResourceType'] = ds_google_instance_size_map[new_instance['resourceType']]['up']
+    // Find the next larger instance type in the same family.
+    // Candidates are sorted by guestCpus ascending (smallest step up first), with
+    // memory-to-cpu ratio as a tiebreaker to stay within the same sub-series
+    // (e.g. n2-standard-* vs n2-highmem-*).
+    if (types_by_machinetype[new_instance['resourceType']] && types_by_family[new_instance['family']]) {
+      current_type = types_by_machinetype[new_instance['resourceType']]
+      current_cores = current_type['specs']['guestCpus']
+      current_ratio = current_cores > 0 ? current_type['specs']['memoryGb'] / current_cores : 0
+
+      candidates = _.filter(types_by_family[new_instance['family']], function(type) {
+        return type['specs']['guestCpus'] > current_cores
+      })
+
+      if (candidates.length > 0) {
+        candidates = candidates.slice().sort(function(a, b) {
+          if (a['specs']['guestCpus'] != b['specs']['guestCpus']) {
+            return a['specs']['guestCpus'] - b['specs']['guestCpus']
+          }
+          var aRatioDiff = Math.abs(a['specs']['memoryGb'] / a['specs']['guestCpus'] - current_ratio)
+          var bRatioDiff = Math.abs(b['specs']['memoryGb'] / b['specs']['guestCpus'] - current_ratio)
+          return aRatioDiff - bRatioDiff
+        })
+        new_instance['newResourceType'] = candidates[0]['name']
+      }
     }
 
     if (ds_machinetypes[new_instance['resourceType']]) {

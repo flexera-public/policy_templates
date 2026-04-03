@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "6.4.0",
+  version: "6.4.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -1252,14 +1252,6 @@ script "js_instance_costs_grouped", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_instance_size_map" do
-  request do
-    host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/azure/instance_types.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
 datasource "ds_azure_regions_for_instance_sizes" do
   run_script $js_azure_regions_for_instance_sizes, $ds_azure_instances_metrics_organized
 end
@@ -1336,6 +1328,56 @@ script "js_azure_local_disk_table", type: "javascript" do
   result = {}
   _.each(ds_azure_compute_instance_types, function(item) {
     if (item['name'] != undefined) { result[item['name']] = item['localDisk'] }
+  })
+EOS
+end
+
+datasource "ds_azure_instance_size_map" do
+  run_script $js_azure_instance_size_map, $ds_azure_compute_instance_types
+end
+
+script "js_azure_instance_size_map", type: "javascript" do
+  parameters "ds_azure_compute_instance_types"
+  result "result"
+  code <<-'EOS'
+  // Build lookup table keyed by instance name
+  result = {}
+  _.each(ds_azure_compute_instance_types, function(instance) {
+    if (instance['name'] != undefined) {
+      result[instance['name']] = {
+        down: null,
+        vcpu: parseInt(instance['specs']['vCPUs']),
+        memory: parseFloat(instance['specs']['MemoryGB'])
+      }
+    }
+  })
+
+  // Derive 'down' pointers by finding the next-smaller instance within the same family.
+  // For each instance, candidates must have strictly fewer vCPUs.
+  // Among candidates with the most vCPUs (smallest step down), the one with the
+  // closest memory-to-vCPU ratio is chosen. This keeps regular and memory-optimized
+  // sub-series separate (e.g. Standard_A4_v2 -> Standard_A2_v2, not Standard_A2m_v2).
+  _.each(ds_azure_compute_instance_types, function(instance) {
+    if (instance['name'] == undefined) { return }
+
+    var currentVcpu = parseInt(instance['specs']['vCPUs'])
+    var currentMemory = parseFloat(instance['specs']['MemoryGB'])
+    var currentRatio = currentVcpu > 0 ? currentMemory / currentVcpu : 0
+    var family = instance['family']
+
+    var candidates = _.filter(ds_azure_compute_instance_types, function(other) {
+      return other['name'] != undefined && other['family'] == family && parseInt(other['specs']['vCPUs']) < currentVcpu
+    })
+
+    if (candidates.length > 0) {
+      candidates = _.sortBy(candidates, function(c) {
+        var cVcpu = parseInt(c['specs']['vCPUs'])
+        var cRatio = cVcpu > 0 ? parseFloat(c['specs']['MemoryGB']) / cVcpu : 0
+        return -cVcpu * 1000000 + Math.abs(cRatio - currentRatio) * 1000
+      })
+
+      result[instance['name']]['down'] = candidates[0]['name']
+    }
   })
 EOS
 end

@@ -8,7 +8,7 @@ category "Compliance"
 severity "medium"
 default_frequency "weekly"
 info(
-  version: "3.1.3",
+  version: "3.1.4",
   provider: "AWS",
   service: "RDS",
   policy_set: "",
@@ -200,13 +200,37 @@ datasource "ds_applied_policy" do
   end
 end
 
-# Get AWS RDS instance sizes
-datasource "ds_aws_instance_size_map" do
+# Get AWS instance size data for vCPU lookups
+datasource "ds_aws_instance_types_map" do
   request do
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_instance_types.json"
     header "User-Agent", "RS Policies"
   end
+end
+
+datasource "ds_aws_instance_size_map" do
+  run_script $js_aws_instance_size_map, $ds_aws_instance_types_map
+end
+
+script "js_aws_instance_size_map", type: "javascript" do
+  parameters "ds_aws_instance_types_map"
+  result "result"
+  code <<-'EOS'
+  // Build lookup table keyed by instance name with 'vcpu' field.
+  // RDS instance types use a 'db.' prefix (e.g. 'db.m5.large') but share the same
+  // underlying hardware as EC2 types. Both bare EC2 names and db.-prefixed RDS names
+  // are included so that lookups work for both EC2 and RDS resourceType values.
+  result = {}
+
+  _.each(ds_aws_instance_types_map, function(instance) {
+    if (instance['name'] != undefined) {
+      var vcpu = instance['cpu']['vcpus']
+      result[instance['name']] = { vcpu: vcpu }
+      result['db.' + instance['name']] = { vcpu: vcpu }
+    }
+  })
+EOS
 end
 
 # Get AWS account info
