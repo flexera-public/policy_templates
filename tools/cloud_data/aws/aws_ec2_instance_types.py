@@ -1,3 +1,13 @@
+#!/usr/bin/env python3
+"""
+Fetches all EC2 instance types from the AWS DescribeInstanceTypes API and merges
+them with manual supplementary data (burst info, NFUs, supersession).
+
+Produces: data/aws/aws_ec2_instance_types.json
+Usage: python3 aws_ec2_instance_types.py
+  (Run from the root of the policy_templates repository.)
+"""
+
 import requests
 import json
 import xmltodict
@@ -215,17 +225,17 @@ def extract_properties(item):
     }
 
 
+# Built once at module load; avoids reconstructing on every call to calculate_size_rank.
+_SIZE_RANKS = {
+    "nano": 1, "micro": 2, "small": 4, "medium": 8,
+    "large": 16, "xlarge": 32,
+    **{f"{i}xlarge": i * 32 for i in range(2, 513)},
+}
+
+
 def calculate_size_rank(size):
     """Calculate size rank based on instance size."""
-    sizes = {
-        "nano": 1, "micro": 2, "small": 4, "medium": 8,
-        "large": 16, "xlarge": 32
-    }
-    # Add computed sizes for 2xlarge through 512xlarge
-    for i in range(2, 513):
-        sizes[f"{i}xlarge"] = i * 32
-    
-    return sizes.get(size, "None")
+    return _SIZE_RANKS.get(size, "None")
 
 
 def load_manual_data(filepath='./data/aws/instance_types.json'):

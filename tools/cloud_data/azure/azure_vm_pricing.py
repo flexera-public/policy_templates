@@ -1,108 +1,119 @@
-# Instructions for updating the price list:
-#   (1) Download the flexera-public/policy_templates repository locally.
-#   (2) Create a new local branch of the repository.
-#   (3) Run this Python script. It should replace azure_vm_pricing.json with a new updated file.
-#       Note: Working directory should be the *root* directory of the repository.
-#   (4) Add and commit the new file, push it to the repository, and then make a pull request.
+#!/usr/bin/env python3
+"""
+Fetches Azure VM on-demand and DevTest (AHUB) retail prices from the Azure Price API.
+
+Produces: data/azure/azure_vm_pricing.json
+Usage: python3 azure_vm_pricing.py
+  (Run from the root of the policy_templates repository.)
+"""
 
 import requests
 import json
 import os
 
-print("Gathering Consumption data from Azure Price API...")
+OUTPUT_FILENAME = "data/azure/azure_vm_pricing.json"
+API_URL = "https://prices.azure.com/api/retail/prices"
 
-output_filename = f'data/azure/azure_vm_pricing.json'
 
-api_url = "https://prices.azure.com/api/retail/prices"
-query = "serviceName eq 'Virtual Machines' and priceType eq 'Consumption'"
-response = requests.get(api_url, params={'$filter': query})
-json_data = response.json()
+def fetch_all_prices(api_url, query):
+    """Fetch all pages of results for the given OData filter query.
 
-price_list = json_data['Items']
-nextPage = json_data['NextPageLink']
+    Returns a flat list of all items across all pages.
+    """
+    response = requests.get(api_url, params={'$filter': query})
+    json_data = response.json()
 
-while(nextPage):
-  response = requests.get(nextPage)
-  json_data = response.json()
-  nextPage = json_data['NextPageLink']
-  price_list.extend(json_data['Items'])
+    price_list = json_data['Items']
+    next_page = json_data['NextPageLink']
 
-final_list = {}
+    # Follow pagination links until exhausted
+    while next_page:
+        response = requests.get(next_page)
+        json_data = response.json()
+        next_page = json_data['NextPageLink']
+        price_list.extend(json_data['Items'])
 
-print("Processing Consumption data from Azure Price API...")
+    return price_list
 
-for item in price_list:
-  region = item['location']
-  instanceType = item['armSkuName']
-  sku = item['productId']
-  pricePerUnit = item['retailPrice']
-  productName = item['productName']
-  meterName = item['meterName']
-  operatingSystem = ""
 
-  if "Windows" in productName:
-    operatingSystem = "Windows"
-  else:
-    operatingSystem = "Linux"
+def main():
+    os.makedirs(os.path.dirname(OUTPUT_FILENAME), exist_ok=True)
 
-  if region != "" and instanceType != "" and operatingSystem != "" and sku != "":
-    if not ("Spot" in meterName or "Low Priority" in meterName or "Expired" in meterName or
-            "Free" in meterName or "Promo" in meterName or "SPECIAL" in meterName):
-      if not region in final_list:
-        final_list[region] = {}
+    print("Gathering Consumption data from Azure Price API...")
+    consumption_items = fetch_all_prices(
+        API_URL,
+        "serviceName eq 'Virtual Machines' and priceType eq 'Consumption'"
+    )
 
-      if not instanceType in final_list[region]:
-        final_list[region][instanceType] = {}
+    final_list = {}
 
-      final_list[region][instanceType][operatingSystem] = {
-        "sku": sku,
-        "pricePerUnit": pricePerUnit,
-        "pricePerUnitAHUB": None
-      }
+    print("Processing Consumption data from Azure Price API...")
+    for item in consumption_items:
+        region = item['location']
+        instanceType = item['armSkuName']
+        sku = item['productId']
+        pricePerUnit = item['retailPrice']
+        productName = item['productName']
+        meterName = item['meterName']
+        operatingSystem = ""
 
-print("Gathering DevTestConsumption (AHUB) data from Azure Price API...")
+        if "Windows" in productName:
+            operatingSystem = "Windows"
+        else:
+            operatingSystem = "Linux"
 
-query = "serviceName eq 'Virtual Machines' and priceType eq 'DevTestConsumption'"
-response = requests.get(api_url, params={'$filter': query})
-json_data = json.loads(response.text)
+        if region != "" and instanceType != "" and operatingSystem != "" and sku != "":
+            if not ("Spot" in meterName or "Low Priority" in meterName or "Expired" in meterName or
+                    "Free" in meterName or "Promo" in meterName or "SPECIAL" in meterName):
+                if not region in final_list:
+                    final_list[region] = {}
 
-price_list = json_data['Items']
-nextPage = json_data['NextPageLink']
+                if not instanceType in final_list[region]:
+                    final_list[region][instanceType] = {}
 
-while(nextPage):
-  response = requests.get(nextPage)
-  json_data = json.loads(response.text)
-  nextPage = json_data['NextPageLink']
-  price_list.extend(json_data['Items'])
+                final_list[region][instanceType][operatingSystem] = {
+                    "sku": sku,
+                    "pricePerUnit": pricePerUnit,
+                    "pricePerUnitAHUB": None
+                }
 
-print("Processing DevTestConsumption (AHUB) data from Azure Price API...")
+    print("Gathering DevTestConsumption (AHUB) data from Azure Price API...")
+    dev_test_items = fetch_all_prices(
+        API_URL,
+        "serviceName eq 'Virtual Machines' and priceType eq 'DevTestConsumption'"
+    )
 
-for item in price_list:
-  region = item['location']
-  instanceType = item['armSkuName']
-  sku = item['productId']
-  pricePerUnit = item['retailPrice']
-  productName = item['productName']
-  meterName = item['meterName']
-  operatingSystem = ""
+    print("Processing DevTestConsumption (AHUB) data from Azure Price API...")
+    for item in dev_test_items:
+        region = item['location']
+        instanceType = item['armSkuName']
+        sku = item['productId']
+        pricePerUnit = item['retailPrice']
+        productName = item['productName']
+        meterName = item['meterName']
+        operatingSystem = ""
 
-  if "Windows" in productName:
-    operatingSystem = "Windows"
-  else:
-    operatingSystem = "Linux"
+        if "Windows" in productName:
+            operatingSystem = "Windows"
+        else:
+            operatingSystem = "Linux"
 
-  if region != "" and instanceType != "" and operatingSystem != "" and sku != "":
-    if not ("Spot" in meterName or "Low Priority" in meterName or "Expired" in meterName or
-            "Free" in meterName or "Promo" in meterName or "SPECIAL" in meterName):
-      if region in final_list:
-        if instanceType in final_list[region]:
-          if operatingSystem in final_list[region][instanceType]:
-            final_list[region][instanceType][operatingSystem]["pricePerUnitAHUB"] = pricePerUnit
+        if region != "" and instanceType != "" and operatingSystem != "" and sku != "":
+            if not ("Spot" in meterName or "Low Priority" in meterName or "Expired" in meterName or
+                    "Free" in meterName or "Promo" in meterName or "SPECIAL" in meterName):
+                # Only update AHUB price if the entry was already created from Consumption data
+                if region in final_list:
+                    if instanceType in final_list[region]:
+                        if operatingSystem in final_list[region][instanceType]:
+                            final_list[region][instanceType][operatingSystem]["pricePerUnitAHUB"] = pricePerUnit
 
-print("Writing results to file...")
+    print("Writing results to file...")
 
-price_file = open(output_filename, "w")
-price_file.write(json.dumps(final_list, sort_keys=True, indent=2))
-price_file.close()
+    with open(OUTPUT_FILENAME, "w") as f:
+        f.write(json.dumps(final_list, sort_keys=True, indent=2))
 
-print("DONE!")
+    print("DONE!")
+
+
+if __name__ == "__main__":
+    main()
