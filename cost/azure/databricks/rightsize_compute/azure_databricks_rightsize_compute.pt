@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.6.2",
+  version: "0.6.3",
   provider: "Azure",
   service: "Databricks",
   policy_set: "Databricks",
@@ -631,12 +631,78 @@ script "js_lookback_time_formats", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_instance_size_map" do
+datasource "ds_azure_instance_types_raw" do
   request do
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/azure/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/azure/azure_compute_instance_types.json"
     header "User-Agent", "RS Policies"
   end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "family", jmes_path(col_item, "family")
+      field "vcpu", jmes_path(col_item, "specs.vCPUs")
+      field "memory", jmes_path(col_item, "specs.MemoryGB")
+    end
+  end
+end
+
+datasource "ds_azure_instance_size_map" do
+  run_script $js_azure_instance_size_map, $ds_azure_instance_types_raw
+end
+
+script "js_azure_instance_size_map", type: "javascript" do
+  parameters "ds_azure_instance_types_raw"
+  result "result"
+  code <<-'EOS'
+  // Build lookup table keyed by instance name with 'down' field.
+  // Instances are grouped by family. For each instance, 'down' is the candidate
+  // with the most vCPUs that is still strictly fewer than the current instance.
+  // Ties in vCPU count are broken by closest memory-to-vCPU ratio, which keeps
+  // regular and memory-optimized sub-series (e.g. Standard_D4_v3 vs Standard_D4s_v3)
+  // in separate chains within the same family.
+  result = {}
+
+  families = {}
+
+  _.each(ds_azure_instance_types_raw, function(instance) {
+    if (instance['name'] != undefined && instance['vcpu'] != undefined) {
+      if (families[instance['family']] == undefined) {
+        families[instance['family']] = []
+      }
+      families[instance['family']].push(instance)
+    }
+  })
+
+  _.each(families, function(members, family) {
+    _.each(members, function(instance) {
+      var vcpu = parseInt(instance['vcpu'])
+      var mem = parseFloat(instance['memory'])
+      var memRatio = vcpu > 0 ? mem / vcpu : 0
+
+      var candidates = _.filter(members, function(other) {
+        return parseInt(other['vcpu']) < vcpu
+      })
+
+      var down = null
+
+      if (candidates.length > 0) {
+        candidates.sort(function(a, b) {
+          var aVcpu = parseInt(a['vcpu'])
+          var bVcpu = parseInt(b['vcpu'])
+          if (aVcpu != bVcpu) { return bVcpu - aVcpu }
+          var aRatioDiff = Math.abs(parseFloat(a['memory']) / aVcpu - memRatio)
+          var bRatioDiff = Math.abs(parseFloat(b['memory']) / bVcpu - memRatio)
+          return aRatioDiff - bRatioDiff
+        })
+        down = candidates[0]['name']
+      }
+
+      result[instance['name']] = { down: down }
+    })
+  })
+EOS
 end
 
 datasource "ds_azure_skus" do
@@ -1467,6 +1533,21 @@ script "js_idle_and_underutil_instances", type: "javascript" do
         }
         vm["memoryThreshold"] = param_stats_idle_threshold_mem_value
         vm["cpuThreshold"] = param_stats_idle_threshold_cpu_value
+        vm["cpuMinimum"] = vm.metricsForPeriod["cpu_minimum"]
+        vm["cpuAverage"] = vm.metricsForPeriod["cpu_average"]
+        vm["cpuMaximum"] = vm.metricsForPeriod["cpu_maximum"]
+        vm["cpuP90"] = vm.metricsForPeriod["cpu_p90"]
+        vm["cpuP95"] = vm.metricsForPeriod["cpu_p95"]
+        vm["cpuP99"] = vm.metricsForPeriod["cpu_p99"]
+        vm["cpuMeasurementCount"] = vm.metricsForPeriod["cpu_measurement_count"]
+        vm["memMinimum"] = vm.metricsForPeriod["memory_minimum_percent"]
+        vm["memAverage"] = vm.metricsForPeriod["memory_average_percent"]
+        vm["memMaximum"] = vm.metricsForPeriod["memory_maximum_percent"]
+        vm["memP90"] = vm.metricsForPeriod["memory_p90_percent"]
+        vm["memP95"] = vm.metricsForPeriod["memory_p95_percent"]
+        vm["memP99"] = vm.metricsForPeriod["memory_p99_percent"]
+        vm["memMeasurementCount"] = vm.metricsForPeriod["memory_measurement_count"]
+        vm["memTotalBytes"] = vm.metricsForPeriod["memory_total"]
         idle_list.push(vm)
       } else if (is_underutil) { // If not idle, check see if the resource is below the lower "idle" threshold
         // Get the downsize instance type
@@ -1506,16 +1587,21 @@ script "js_idle_and_underutil_instances", type: "javascript" do
         }
         vm["memoryThreshold"] = param_stats_underutil_threshold_mem_value
         vm["cpuThreshold"] = param_stats_underutil_threshold_cpu_value
-
-        // To reduce the incident size, we can drop any metricsForPeriod fields that are not needed in the final incident
-        // These fields picked are the ones declared down below in the export fields of the incident
-        metricsForPeriod = _.pick(vm.metricsForPeriod, [
-          "cpu_minimum", "cpu_average", "cpu_maximum", "cpu_p90", "cpu_p95", "cpu_p99", "cpu_measurement_count",
-          "memory_minimum_percent", "memory_average_percent", "memory_maximum_percent", "memory_p90_percent", "memory_p95_percent", "memory_p99_percent", "memory_measurement_count", "memory_total"
-        ])
-        // Overwrite the metricsForPeriod with the reduced set
-        vm["metricsForPeriod"] = metricsForPeriod
-
+        vm["cpuMinimum"] = vm.metricsForPeriod["cpu_minimum"]
+        vm["cpuAverage"] = vm.metricsForPeriod["cpu_average"]
+        vm["cpuMaximum"] = vm.metricsForPeriod["cpu_maximum"]
+        vm["cpuP90"] = vm.metricsForPeriod["cpu_p90"]
+        vm["cpuP95"] = vm.metricsForPeriod["cpu_p95"]
+        vm["cpuP99"] = vm.metricsForPeriod["cpu_p99"]
+        vm["cpuMeasurementCount"] = vm.metricsForPeriod["cpu_measurement_count"]
+        vm["memMinimum"] = vm.metricsForPeriod["memory_minimum_percent"]
+        vm["memAverage"] = vm.metricsForPeriod["memory_average_percent"]
+        vm["memMaximum"] = vm.metricsForPeriod["memory_maximum_percent"]
+        vm["memP90"] = vm.metricsForPeriod["memory_p90_percent"]
+        vm["memP95"] = vm.metricsForPeriod["memory_p95_percent"]
+        vm["memP99"] = vm.metricsForPeriod["memory_p99_percent"]
+        vm["memMeasurementCount"] = vm.metricsForPeriod["memory_measurement_count"]
+        vm["memTotalBytes"] = vm.metricsForPeriod["memory_total"]
         underutil_list.push(vm)
       }
     }
@@ -1761,6 +1847,7 @@ EOS
     EOS
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceId"), ""))
     escalate $esc_email
+    hash_exclude "message", "savings", "savingsCurrency", "cpuMaximum", "cpuMinimum", "cpuAverage", "cpuP99", "cpuP95", "cpuP90", "memMaximum", "memMinimum", "memAverage", "memP99", "memP95", "memP90"
     export do
       resource_level true
       field "savings" do
@@ -1835,63 +1922,48 @@ EOS
       end
       field "cpuMinimum" do
         label "CPU Used % (Minimum)"
-        path "metricsForPeriod.cpu_minimum"
       end
       field "cpuAverage" do
         label "CPU Used % (Average)"
-        path "metricsForPeriod.cpu_average"
       end
       field "cpuMaximum" do
         label "CPU Used % (Maximum)"
-        path "metricsForPeriod.cpu_maximum"
       end
       field "cpuP90" do
         label "CPU Used % (p90)"
-        path "metricsForPeriod.cpu_p90"
       end
       field "cpuP95" do
         label "CPU Used % (p95)"
-        path "metricsForPeriod.cpu_p95"
       end
       field "cpuP99" do
         label "CPU Used % (p99)"
-        path "metricsForPeriod.cpu_p99"
       end
       field "cpuMeasurementCount" do
         label "CPU Measurements Count during Time Period"
-        path "metricsForPeriod.cpu_measurement_count"
       end
       field "memMinimum" do
         label "Memory Used % (Minimum)"
-        path "metricsForPeriod.memory_minimum_percent"
       end
       field "memAverage" do
         label "Memory Used % (Average)"
-        path "metricsForPeriod.memory_average_percent"
       end
       field "memMaximum" do
         label "Memory Used % (Maximum)"
-        path "metricsForPeriod.memory_maximum_percent"
       end
       field "memP90" do
         label "Memory Used % (p90)"
-        path "metricsForPeriod.memory_p90_percent"
       end
       field "memP95" do
         label "Memory Used % (p95)"
-        path "metricsForPeriod.memory_p95_percent"
       end
       field "memP99" do
         label "Memory Used % (p99)"
-        path "metricsForPeriod.memory_p99_percent"
       end
       field "memMeasurementCount" do
         label "Memory Measurement Count during Time Period"
-        path "metricsForPeriod.memory_measurement_count"
       end
       field "memTotalBytes" do
         label "Memory Total Bytes Available"
-        path "metricsForPeriod.memory_total"
       end
       field "thresholdType" do
         label "Threshold Statistic"
@@ -1927,6 +1999,7 @@ EOS
     EOS
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceId"), ""))
     escalate $esc_email
+    hash_exclude "message", "savings", "savingsCurrency", "cpuMaximum", "cpuMinimum", "cpuAverage", "cpuP99", "cpuP95", "cpuP90", "memMaximum", "memMinimum", "memAverage", "memP99", "memP95", "memP90"
     export do
       resource_level true
       field "savings" do
@@ -2001,63 +2074,48 @@ EOS
       end
       field "cpuMinimum" do
         label "CPU Used % (Minimum)"
-        path "metricsForPeriod.cpu_minimum"
       end
       field "cpuAverage" do
         label "CPU Used % (Average)"
-        path "metricsForPeriod.cpu_average"
       end
       field "cpuMaximum" do
         label "CPU Used % (Maximum)"
-        path "metricsForPeriod.cpu_maximum"
       end
       field "cpuP90" do
         label "CPU Used % (p90)"
-        path "metricsForPeriod.cpu_p90"
       end
       field "cpuP95" do
         label "CPU Used % (p95)"
-        path "metricsForPeriod.cpu_p95"
       end
       field "cpuP99" do
         label "CPU Used % (p99)"
-        path "metricsForPeriod.cpu_p99"
       end
       field "cpuMeasurementCount" do
         label "CPU Measurements Count during Time Period"
-        path "metricsForPeriod.cpu_measurement_count"
       end
       field "memMinimum" do
         label "Memory Used % (Minimum)"
-        path "metricsForPeriod.memory_minimum_percent"
       end
       field "memAverage" do
         label "Memory Used % (Average)"
-        path "metricsForPeriod.memory_average_percent"
       end
       field "memMaximum" do
         label "Memory Used % (Maximum)"
-        path "metricsForPeriod.memory_maximum_percent"
       end
       field "memP90" do
         label "Memory Used % (p90)"
-        path "metricsForPeriod.memory_p90_percent"
       end
       field "memP95" do
         label "Memory Used % (p95)"
-        path "metricsForPeriod.memory_p95_percent"
       end
       field "memP99" do
         label "Memory Used % (p99)"
-        path "metricsForPeriod.memory_p99_percent"
       end
       field "memMeasurementCount" do
         label "Memory Measurement Count during Time Period"
-        path "metricsForPeriod.memory_measurement_count"
       end
       field "memTotalBytes" do
         label "Memory Total Bytes Available"
-        path "metricsForPeriod.memory_total"
       end
       field "thresholdType" do
         label "Threshold Statistic"
