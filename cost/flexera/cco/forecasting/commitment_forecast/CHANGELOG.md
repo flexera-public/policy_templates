@@ -1,6 +1,6 @@
 # Changelog
 
-## v4.1.0
+## v4.0.8
 
 - Fixed error that occurred when the specified date range was longer than 1 year.
 
