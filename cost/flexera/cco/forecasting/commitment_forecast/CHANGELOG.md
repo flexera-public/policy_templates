@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.0
+
+- Fixed error that occurred when the specified date range was longer than 1 year.
+
 ## v4.0.7
 
 - Updated documentation link in policy description. Functionality unchanged.
