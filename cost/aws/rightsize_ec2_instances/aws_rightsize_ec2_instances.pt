@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.7.0",
+  version: "5.7.1",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -1308,11 +1308,40 @@ EOS
 end
 
 datasource "ds_aws_instance_size_map" do
-  request do
-    host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/aws/instance_types.json"
-    header "User-Agent", "RS Policies"
-  end
+  run_script $js_aws_instance_size_map, $ds_aws_instance_types_map
+end
+
+script "js_aws_instance_size_map", type: "javascript" do
+  parameters "ds_aws_instance_types_map"
+  result "result"
+  code <<-'EOS'
+  // Build lookup table keyed by instance name with 'down' field.
+  // Instances are grouped by family and sorted by size_rank ascending.
+  // Each instance's 'down' pointer is the next smaller instance in the same family.
+  // Metal instances (size_rank == null) are excluded from the sizing chain.
+  result = {}
+
+  families = {}
+
+  _.each(ds_aws_instance_types_map, function(instance) {
+    if (instance['name'] != undefined && instance['size_rank'] != null) {
+      if (families[instance['family']] == undefined) {
+        families[instance['family']] = []
+      }
+      families[instance['family']].push(instance)
+    }
+  })
+
+  _.each(families, function(members, family) {
+    members.sort(function(a, b) { return a['size_rank'] - b['size_rank'] })
+
+    _.each(members, function(instance, idx) {
+      result[instance['name']] = {
+        down: idx > 0 ? members[idx - 1]['name'] : null
+      }
+    })
+  })
+EOS
 end
 
 datasource "ds_merged_metrics" do
