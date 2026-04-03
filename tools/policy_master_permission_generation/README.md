@@ -30,3 +30,26 @@ This script parses the `README.md` files for each Policy Template and generates 
    # Push changes to github for review;
    # git push .....
    ```
+
+## Identifying Missing Templates
+
+A companion script, [`generate_missing_permission_list.rb`](./generate_missing_permission_list.rb), identifies policy template files in the repository that are not yet present in `validated_policy_templates.yaml`. It writes two output files:
+
+- `data/policy_permissions_list/missing_policy_templates.json`
+- `data/policy_permissions_list/missing_policy_templates.yaml`
+
+Run from the repository root:
+
+```sh
+ruby tools/policy_master_permission_generation/generate_missing_permission_list.rb
+```
+
+## Automated Workflows
+
+### Generate Policy Master Permissions
+
+There is an automated [GitHub Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-policy-master-permissions-json.yaml) that runs every time a push to the master branch modifies a `.pt` file or any file in this directory. It runs `generate_policy_master_permissions.rb` and automatically opens a pull request with the updated permissions data files, which can be approved by the Policy Template Maintainers.
+
+### Generate Missing Templates List
+
+There is a second automated [GitHub Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-policy-master-permission-missing-templates.yaml) that runs every time the [Test Policies](https://github.com/flexera-public/policy_templates/actions/workflows/test-policies.yaml) workflow completes successfully against master. It runs `generate_missing_permission_list.rb` and automatically opens a pull request with the updated list of policy templates not yet covered by the permissions process.

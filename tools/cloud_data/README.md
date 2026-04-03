@@ -16,8 +16,9 @@ There are automated workflows that run once per week for each script and automat
 ### Instance Types Workflows
 
 - [AWS EC2 Instance Types Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-aws-ec2-instance-types-json.yaml)
-- [Azure VM Instance Types Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-azure-compute-instance-types-json.yaml)
-- [Google VM Instance Types Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-gcp-vm-pricing-json.yaml)
+- [Azure Compute Instance Types Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-azure-compute-instance-types-json.yaml)
+- [Azure VM Families Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-azure-vm-families-json.yaml)
+- [Google Compute Instance Types Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-gcp-compute-instance-types-json.yaml)
 
 ### Pricing Workflows
 
