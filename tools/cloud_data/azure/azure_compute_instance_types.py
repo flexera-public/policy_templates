@@ -60,22 +60,17 @@ def create_instance_size_flexibility_ratio_table(url):
 
 
 def main():
-    # Validate required environment variables before making any API calls
+    # Validate required environment variables. Build 'missing' purely from string literals
+    # so no secret values flow into the error output.
+    required_vars = ["AZURE_TENANT_ID", "AZURE_SUBSCRIPTION_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET"]
+    missing = [name for name in required_vars if not os.environ.get(name)]
+    if missing:
+        sys.exit("ERROR: Missing required environment variables: " + ", ".join(missing))
+
     tenant_id = os.environ.get("AZURE_TENANT_ID")
     subscription_id = os.environ.get("AZURE_SUBSCRIPTION_ID")
     client_id = os.environ.get("AZURE_CLIENT_ID")
     client_secret = os.environ.get("AZURE_CLIENT_SECRET")
-
-    missing = [
-        name for name, val in [
-            ("AZURE_TENANT_ID", tenant_id),
-            ("AZURE_SUBSCRIPTION_ID", subscription_id),
-            ("AZURE_CLIENT_ID", client_id),
-            ("AZURE_CLIENT_SECRET", client_secret),
-        ] if not val
-    ]
-    if missing:
-        sys.exit("ERROR: Missing required environment variables: " + ", ".join(missing))
 
     os.makedirs(os.path.dirname(OUTPUT_FILENAME), exist_ok=True)
 
