@@ -1,5 +1,29 @@
 # Changelog
 
+## v2.6.5
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v2.6.4
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v2.6.3
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v2.6.2
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v2.6.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v2.6.0
+
+- Added support for Azure CSP and Azure MCA Enterprise account types.
+
 ## v2.5.3
 
 - Fixed error that caused some incident fields to show invalid negative values for memory statistics for recently rightsized instances. Functionality unchanged.
@@ -40,7 +64,7 @@
 
 ## v2.0
 
-- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
+- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials)
 - General code cleanup and optimization
 
 ## v1.1

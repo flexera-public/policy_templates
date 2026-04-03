@@ -1,14 +1,14 @@
 name "Budget vs Actual Spend Report"
 rs_pt_ver 20180301
 type "policy"
-short_description "Emails a report comparing budget vs actual spend to stakeholders. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_v_actual_spend_report/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Emails a report comparing budget vs actual spend to stakeholders. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_v_actual_spend_report/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/budget_v_actual_spend_report/"
 severity "medium"
 category "Cost"
-tenancy "single"
 default_frequency "daily"
 info(
-  version: "2.5.3",
+  version: "2.6.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -86,19 +86,31 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
       flexera: "api.flexera.com",
-      fsm: "api.fsm.flexeraeng.com"
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
       flexera: "api.flexera.eu",
-      fsm: "api.fsm-eu.flexeraeng.com"
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
       flexera: "api.flexera.au",
-      fsm: "api.fsm-apac.flexeraeng.com"
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
     }
   }
 
@@ -154,7 +166,7 @@ end
 script "js_dimensions", type: "javascript" do
   parameters "ds_get_dimensions"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
     var result = {};
     _.each(ds_get_dimensions, function(dimension) {
       result[dimension.id] = dimension.name;
@@ -169,7 +181,7 @@ end
 script "js_filters", type: "javascript" do
   parameters "ds_dimensions", "param_filter"
   result "results"
-  code <<-EOS
+  code <<-'EOS'
   var results = {}
   var ds_dimensions_inverted = _.invert(ds_dimensions);
   _.each(param_filter, function (filter_item) {
@@ -211,7 +223,7 @@ end
 script "js_filtered_budgets", type: "javascript" do
   parameters "budgets", "budget_name_id"
   result "results"
-  code <<-EOS
+  code <<-'EOS'
   var currDate = new Date();
   budget_name_id = budget_name_id.trim();
   var results =
@@ -252,7 +264,7 @@ end
 script "js_reports", type: "javascript" do
   parameters "budget", "ds_flexera_api_hosts", "param_unbudgeted", "rs_org_id"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
   function fmtDate(yearMonth) {
     var d = new Date(yearMonth);
     return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
@@ -279,14 +291,49 @@ script "js_reports", type: "javascript" do
   EOS
 end
 
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_billing_center_table" do
+  run_script $js_billing_center_table, $ds_billing_centers
+end
+
+script "js_billing_center_table", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  _.each(ds_billing_centers, function(bc) { result[bc['id']] = bc['name'] })
+EOS
+end
+
 datasource "ds_aggregated_report" do
-  run_script $js_aggregated_report, $ds_reports, $ds_currency_code, $ds_currency_reference, $ds_dimensions, $ds_filters, $param_budget_name_id, $param_report_type, f1_app_host
+  run_script $js_aggregated_report, $ds_reports, $ds_currency_code, $ds_currency_reference, $ds_dimensions, $ds_filters, $ds_billing_center_table, $param_budget_name_id, $param_report_type, f1_app_host
 end
 
 script "js_aggregated_report", type: "javascript" do
-  parameters "reports", "currency_code", "currency_reference", "ds_dimensions", "filters", "budget_name_id", "report_type", "f1_app_host"
+  parameters "reports", "currency_code", "currency_reference", "ds_dimensions", "filters", "ds_billing_center_table", "budget_name_id", "report_type", "f1_app_host"
   result "results"
-  code <<-EOS
+  code <<-'EOS'
+  function convert_bc_name(id) {
+    return ds_billing_center_table[id] ? ds_billing_center_table[id] : id
+  }
+
   var invalid = [];
   var reportData = [];
   var currentDate = new Date();
@@ -304,13 +351,13 @@ script "js_aggregated_report", type: "javascript" do
     var vals = [];
     _.each(dimensionsIDs, function (k) {
       if (dimensions[k] && (k != "is_budgeted" || dimensionsIDs.length == 1)){
-        vals.push(dimensions[k]);
+        vals.push(convert_bc_name(dimensions[k]));
       }
     })
     if (!vals.length && dimensions["is_budgeted"]) {
       return dimensions["is_budgeted"];
     }
-    return vals.join("|");
+    return vals.join(" | ");
   }
 
   function get_dimm_names(dimensionsIDs) {
@@ -370,7 +417,7 @@ script "js_aggregated_report", type: "javascript" do
       });
     }
     if (!cumulativeAmount[item.group]) {
-      cumulativeAmount[item.group] = { 
+      cumulativeAmount[item.group] = {
         budget: 0,
         spend: 0,
         };
@@ -466,7 +513,7 @@ end
 policy "pol_budget_alert" do
   validate $ds_aggregated_report do
     summary_template "Budget Alerts: Invalid Budget Name or ID: {{parameters.param_budget_name_id}}"
-    detail_template <<-EOS
+    detail_template <<-'EOS'
   The following provided budget Name or ID is invalid or the budget refers to prior periods:
   \n
   - {{parameters.param_budget_name_id}}
@@ -478,7 +525,7 @@ EOS
 
   validate $ds_aggregated_report do
     summary_template "{{with index data.reportData 0}}{{ .name }}{{end}}: {{parameters.param_report_type}} Budget vs Actual Spend Report"
-    detail_template <<-EOS
+    detail_template <<-'EOS'
   # {{with index data.reportData 0}}{{ .name }}{{end}}: {{parameters.param_report_type}} Budget vs Actual Spend Report
 
   Currency: **{{with index data.reportData 0}}{{ .currency }}{{end}}**

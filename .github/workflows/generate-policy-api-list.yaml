@@ -1,0 +1,54 @@
+name: Generate Policy API List
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  # Trigger this workflow on pushes to master that affect relevant files
+  push:
+    branches:
+      - master
+    paths:
+      - '**/*.pt'
+      - 'tools/policy_api_list_generation/**'
+
+  # Workflow dispatch trigger allows manually running workflow
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  policy-api-list:
+    name: "Generate Policy API List"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.13.2
+
+      - name: Generate Policy API List
+        working-directory: tools/policy_api_list_generation
+        run: |
+          python3 policy_api_list_generator.py
+
+      - name: Create Pull Request
+        id: cpr
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "Update Policy API List"
+          title: "Update Policy API List"
+          body: "Update Policy API List from GitHub Actions Workflow [${{ github.workflow }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          branch: "task/update-policy-api-list"
+          delete-branch: true
+          labels: "automation"
+
+      - name: Check outputs
+        if: ${{ steps.cpr.outputs.pull-request-number }}
+        run: |
+          echo "Pull Request Number - ${{ steps.cpr.outputs.pull-request-number }}"
+          echo "Pull Request URL - ${{ steps.cpr.outputs.pull-request-url }}"

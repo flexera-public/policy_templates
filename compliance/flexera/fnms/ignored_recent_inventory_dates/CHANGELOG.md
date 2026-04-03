@@ -1,5 +1,25 @@
 # Changelog
 
+## v2.5.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v2.4.6
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v2.4.5
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v2.4.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v2.4.3
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v2.4.2
 
 - Updated names of code blocks to align with current formatting standards. Functionality unchanged.

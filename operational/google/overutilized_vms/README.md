@@ -12,7 +12,7 @@ This policy template checks all Google VM instances in the account for CPU usage
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy template has the following input parameters:
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Allow/Deny Projects* - Whether to treat Allow/Deny Projects List parameter as allow or deny list. Has no effect if Allow/Deny Projects List is left empty.
@@ -31,10 +31,12 @@ This policy has the following input parameters required when launching the polic
 - *CPU Threshold (%)* - The CPU threshold at which to consider an instance to be overutilized and therefore be flagged for upsizing.
 - *Threshold Statistic* - Statistic to use when determining if an instance is overutilized.
 - *Statistic Lookback Period* - How many days back to look at CPU data for instances. This value cannot be set higher than 42 because Google does not retain metrics for longer than 42 days.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example, if a user selects the "Upsize VM Instances" action while applying the policy, all oversized VM instances will be upsized.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example, if a user selects the "Upsize VM Instances" action while applying the policy template, all oversized VM instances will be upsized.
 
 ## Policy Actions
 
@@ -45,14 +47,13 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
-- [**Google Cloud Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4083446696_1121577) (*provider=gce*) which has the following:
-  - `resourcemanager.projects.get`
-  - `monitoring.metricDescriptors.list`
+- [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:
+  - `resourcemanager.projects.search`
   - `monitoring.timeSeries.list`
-  - `compute.instances.list`
-  - `compute.instances.get`
+  - `compute.instances.aggregatedList`
+  - `compute.instances.get`*
   - `compute.instances.start`*
   - `compute.instances.stop`*
   - `compute.instances.setMachineType`*
@@ -60,10 +61,13 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `billing_center_viewer`
+- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
+  - `policy_viewer`
+  - `policy_manager`*
 
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+  \* Only required for meta-policy self-termination; not required if not using the meta parent of this policy template.
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 Additionally, this Policy Template requires that several APIs be enabled in your Google Cloud environment:
 

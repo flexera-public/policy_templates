@@ -1,5 +1,55 @@
 # Changelog
 
+## v6.1.6
+
+- Category of policy template updated to "Cost". Functionality unchanged.
+
+## v6.1.5
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v6.1.4
+
+- Policy no longer erroneously reports virtual machines in a "starting" state as stopped.
+
+## v6.1.3
+
+- Fixed an intermittent Azure Activity Log query failure caused by the start time exceeding the 90-day limit during policy execution.
+
+## v6.1.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v6.1.1
+
+- Fixed an issue where in some scenarios the `Estimated Monthly Savings` amount would be reflected in the incorrect currency.
+
+## v6.1.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v6.0.5
+
+- Updated API request for gathering instance costs to only gather costs specific to virtual machines and their disks. Functionality unchanged but policy template is now less likely to fail to report costs.
+
+## v6.0.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v6.0.3
+
+- Updated meta policy code to use newer Flexera API.
+- Updated incident table to ensure Account ID is properly scraped for Optimization dashboard.
+
+## v6.0.2
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v6.0.1
+
+- Fixed an error where multiple violations would be generated from the same instance.
+- Fixed an error where the policy fails due to not finding "PowerState" of an instance.
+
 ## v6.0.0
 
 - Corrected issue where policy template incorrectly calculated length of time an instance had been stopped for.

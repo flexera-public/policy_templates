@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.1.6
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v1.1.5
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v1.1.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v1.1.3
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v1.1.2
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v1.1.1
 
 - Minor code improvements to conform with current standards. Functionality unchanged.

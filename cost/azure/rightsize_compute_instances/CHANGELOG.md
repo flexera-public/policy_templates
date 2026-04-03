@@ -1,5 +1,50 @@
 # Changelog
 
+## v6.4.0
+
+- Added `Current Instance Local Disk` and `Recommended Instance Local Disk` fields to incident export to inform users whether local disk support will change as a result of the recommended action.
+- Added `Filter Recommendations That Change Local Disk` parameter to allow users to exclude downsize recommendations where the recommended instance type has a different local disk configuration than the current instance type.
+
+## v6.3.2
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v6.3.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v6.3.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v6.2.5
+
+- Updated API request for gathering instance costs to only gather costs specific to virtual machines. Functionality unchanged but policy template is now less likely to fail to report costs.
+
+## v6.2.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v6.2.3
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v6.2.2
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v6.2.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v6.2.0
+
+- Adds utilization chart for each resource to the result if metrics are available
+
+## v6.1.3
+
+- Code refactored to improve performance by gathering metrics in batched requests.
+
 ## v6.1.2
 
 - Fixed incorrect calculation for memory related fields "Memory Average %", "Memory p90", Memory p95", and "Memory p99".

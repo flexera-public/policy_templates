@@ -1,8 +1,11 @@
 import requests
+import csv
 import json
 import os
+import re
 from azure.identity import ClientSecretCredential
 from azure.mgmt.compute import ComputeManagementClient
+from io import StringIO
 
 def remove_duplicates(data):
     seen = set()
@@ -44,12 +47,41 @@ sku_dicts = [sku.as_dict() for sku in skus]
 
 print(f"Retrieved {len(sku_dicts)} instance types.")
 
+# Retrieve the instance size flexibility ratio table from Azure
+isf_url = 'https://aka.ms/isf'
+def create_instance_size_flexibility_ratio_table(url):
+    isf_table = {}
+    try:
+        response = requests.get(url)
+        response.raise_for_status()  # Raise an exception for bad status codes
+
+        csv_content = StringIO(response.text)
+        reader = csv.DictReader(csv_content)
+
+        for row in reader:
+            key = row['ArmSkuName']
+            value = row['Ratio']
+            isf_table[key] = value
+
+        return isf_table
+
+    except Exception as e:
+        print(f"Error creating instance size flexibility table: {e}")
+        return {}
+
+isf_table = create_instance_size_flexibility_ratio_table(isf_url)
+if isf_table:
+    print(f"Retrieved instance size flexibility table for {len(isf_table)} instance types.")
+
 with open("./data/azure/instance_types.json", 'r') as f:
     manual_data = json.load(f)
 
 data = []
 
 for item in sku_dicts:
+    if item.get("resource_type") != "virtualMachines":
+        continue
+
     if item.get("name", "None") != "None" and item.get("tier", "None") != "None":
         # Extract the relevant fields from the SKU
         details = {
@@ -58,14 +90,26 @@ for item in sku_dicts:
             "size": item.get("size", "None"),
             "family": item.get("family", "None"),
             "superseded": "None",
-            "specs": {}
+            "localDisk": None,
+            "specs": { "nfu": isf_table.get(item.get("name"), None) }
         }
 
         for capability in item.get("capabilities", []):
             details["specs"][capability.get("name")] = capability.get("value", "None")
 
+        # Derive localDisk from MaxResourceVolumeMB: true if > 0, false if == 0, null if absent
+        max_resource_volume = details["specs"].get("MaxResourceVolumeMB")
+        if max_resource_volume is not None:
+            try:
+                details["localDisk"] = int(max_resource_volume) > 0
+            except (ValueError, TypeError):
+                details["localDisk"] = None
+
         if details["name"] in manual_data and "superseded" in manual_data[details["name"]]:
             details["superseded"] = manual_data[details["name"]]["superseded"]
+
+        if details["name"] in manual_data and "nfu" in manual_data[details["name"]]:
+            details["specs"]["nfu"] = manual_data[details["name"]]["nfu"]
 
         data.append(details)
 

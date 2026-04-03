@@ -1,5 +1,62 @@
 # Changelog
 
+## v8.6.5
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v8.6.4
+
+- Fixed a bug introduced in v8.6.3 that would cause "Cannot access member 'result' of undefined", if the AWS account info does not exist in Flexera.
+
+## v8.6.3
+
+- Added fallback mechanism for retrieving AWS account information when the Flexera List Cloud Accounts API does not return relevant account info.
+
+## v8.6.2
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v8.6.1
+
+- Updated email escalation declaration for new "Errors Identified" incident to prevent error `failed make a CSV attachment with data: unable to collect csv data from nil export`
+
+## v8.6.0
+
+- Policy now continues execution for accessible regions when some regions return permission errors
+- Added separate incident report to identify regions with access issues and provide remediation guidance
+
+## v8.5.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v8.4.10
+
+- Updated label of email parameter to "Email Addresses" to match other policy templates. Functionality unchanged.
+
+## v8.4.9
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v8.4.8
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v8.4.7
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v8.4.6
+
+- Fixed issue that caused RDS DB snapshots to be reported with overinflated estimated savings. Added additional context around these snapshots to the incident description.
+
+## v8.4.5
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v8.4.4
+
+- Corrected incorrect filtering of RDS DB snapshots. The policy was previously only considering the most recent snapshot for each DB instance, leading to missed older snapshots. The logic has been updated to include all snapshots.
+
 ## v8.4.3
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
@@ -99,7 +156,7 @@
 
 ## v4.0
 
-- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
+- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials)
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
 

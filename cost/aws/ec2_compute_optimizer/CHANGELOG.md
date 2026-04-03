@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.6.0
+
+- Added graceful error handling for inaccessible AWS regions
+
+## v0.5.0
+
+- Added parameter to filter results for resources with or without GPUs.
+
+## v0.4.2
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v0.4.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v0.4.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v0.3.6
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v0.3.5
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v0.3.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v0.3.3
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v0.3.2
 
 - Fixed issue with numeric currency values sometimes showing 'undefined' instead of currency separators

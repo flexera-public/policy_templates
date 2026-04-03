@@ -1,13 +1,14 @@
 name "Flexera One API Event Report"
 rs_pt_ver 20180301
 type "policy"
-short_description "Reports Flexera API events for the user-specified amount of time. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/iam/api_event_report) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Reports Flexera API events for the user-specified amount of time. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/iam/api_event_report) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
 long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/iam/api_event_report"
 category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.0",
+  version: "0.2.0",
   provider: "Flexera",
   service: "Identity & Access Management",
   policy_set: "Identity & Access Management"
@@ -77,6 +78,24 @@ parameter "param_response_type" do
   default ["Good", "Bad"]
 end
 
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -105,16 +124,6 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-# Get applied policy metadata for use later
-datasource "ds_applied_policy" do
-  request do
-    auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
-  end
-end
-
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -123,27 +132,45 @@ end
 script "js_flexera_api_hosts", type: "javascript" do
   parameters "rs_optima_host"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
-      grs: "grs-front.iam-us-east-1.flexeraeng.com"
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
-      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com"
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
-      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com"
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
     }
   }
 
   result = host_table[rs_optima_host]
 EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
 end
 
 datasource "ds_api_timestamp_filter" do
@@ -153,7 +180,7 @@ end
 script "js_api_timestamp_filter", type: "javascript" do
   parameters "param_days_back"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   date = new Date()
   date.setDate(date.getDate() - param_days_back)
   result = { filter: ["(timestamp ge '", date.toISOString(), "')"].join('') }
@@ -198,7 +225,7 @@ end
 script "js_api_events_url_filtered", type: "javascript" do
   parameters "ds_api_events", "param_url_allow_or_deny", "param_url_filter_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_url_filter_list.length > 0) {
     result = _.filter(ds_api_events, function(event) {
       include_event = false
@@ -224,7 +251,7 @@ end
 script "js_api_events_email_filtered", type: "javascript" do
   parameters "ds_api_events_url_filtered", "param_email_allow_or_deny", "param_email_filter_list"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   if (param_email_filter_list.length > 0) {
     result = _.filter(ds_api_events_url_filtered, function(event) {
       include_event = false
@@ -245,7 +272,7 @@ end
 script "js_api_events_status_filtered", type: "javascript" do
   parameters "ds_api_events_email_filtered", "param_response_type"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.filter(ds_api_events_email_filtered, function(event) {
     include_event = false
     code_letter = event['responseCode'].toString().substring(0, 1)
@@ -259,13 +286,15 @@ EOS
 end
 
 datasource "ds_api_events_report" do
-  run_script $js_api_events_report, $ds_api_events_status_filtered, $ds_applied_policy, $param_days_back
+  run_script $js_api_events_report, $ds_api_events_status_filtered, $ds_applied_policy, $param_days_back, $param_incident_csv
 end
 
 script "js_api_events_report", type: "javascript" do
-  parameters "ds_api_events_status_filtered", "ds_applied_policy", "param_days_back"
+  parameters "ds_api_events_status_filtered", "ds_applied_policy", "param_days_back", "param_incident_csv"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
   result = _.map(ds_api_events_status_filtered, function(event) {
     return {
       timestamp: event['timestamp'],
@@ -278,7 +307,8 @@ script "js_api_events_report", type: "javascript" do
       request: [ event['requestVerb'], event['requestPath'] ].join(' '),
       response: [ event['responseCode'], event['responseStatus'] ].join(' '),
       days_back: param_days_back,
-      policy_name: ds_applied_policy["name"]
+      policy_name: ds_applied_policy["name"],
+      csv_message: csv_message
     }
   })
 
@@ -293,6 +323,7 @@ end
 policy "pol_api_events_report" do
   validate_each $ds_api_events_report do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Last {{ with index data 0 }}{{ .days_back }}{{ end }} Days"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check eq(val(item, "id"), "")
     escalate $esc_email
     export do
@@ -336,5 +367,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

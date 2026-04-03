@@ -1,5 +1,39 @@
 # Changelog
 
+## v4.1.1
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v4.1.0
+
+- Added support for attaching CSV files to incident emails.
+- Fixed issue where incident was missing line breaks.
+
+## v4.0.5
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v4.0.4
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v4.0.3
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v4.0.2
+
+- Fixed issue with "Ignore Current Month" when "Month" granularity is used.
+
+## v4.0.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v4.0.0
+
+- Added option to ignore current month when reporting.
+- Added ability to select an arbitrary number of months (up to 12) instead of preselected options.
+
 ## v3.5.2
 
 - Fixed a bug that prevented the policy incident from being created when `Billing Term` parameter was set to `Week`.
@@ -48,7 +82,7 @@
 
 ## v2.0
 
-- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
+- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials)
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
 
 ## v1.26

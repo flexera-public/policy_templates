@@ -1,40 +1,50 @@
-name: Generate Policy Master Permissions JSON
+name: Generate Policy Master Permissions Assets
 
 permissions:
   contents: write
   pull-requests: write
 
 on:
-  # Trigger this workflow on pushes to master
+  # Trigger this workflow on pushes to master that affect relevant files
   push:
     branches:
       - master
-      - POL-918-create-master-policy-perm-list-continued
-
+    paths:
+      - '**/*.pt'
+      - 'tools/policy_master_permission_generation/**'
 
   # Workflow dispatch trigger allows manually running workflow
   workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   master-policy-permissions:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0 # Speed up checkout by not fetching history
+        uses: actions/checkout@v4
 
-      - name: Set up Ruby
+      - name: Install needed Ubuntu packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wkhtmltopdf
+
+      - name: Install Ruby
         uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true # runs 'bundle install' and caches installed gems automatically
 
       - name: Run Generate Policy Master Permissions Script
         id: policy_permissions_json
         run: |
-          ruby tools/policy_master_permission_generation/generate_policy_master_permissions.rb
+          bundle exec ruby tools/policy_master_permission_generation/generate_policy_master_permissions.rb
 
       - name: Create Pull Request
         id: cpr
-        uses: peter-evans/create-pull-request@v4
+        uses: peter-evans/create-pull-request@v7
         with:
           commit-message: "Update Policy Master Permissions List"
           title: "Update Policy Master Permissions List"

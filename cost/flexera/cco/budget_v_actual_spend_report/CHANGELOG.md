@@ -1,5 +1,29 @@
 # Changelog
 
+## v2.6.0
+
+- Billing Center dimensions now show Billing Center names instead of IDs in the incident table.
+
+## v2.5.8
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v2.5.7
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v2.5.6
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v2.5.5
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v2.5.4
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v2.5.3
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.

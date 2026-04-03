@@ -1,5 +1,41 @@
 # Changelog
 
+## v2.1.3
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v2.1.2
+
+- Fixed an issue where applied policy would fail due to an undefined variable.
+
+## v2.1.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v2.1.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v2.0.9
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v2.0.8
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v2.0.7
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v2.0.6
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v2.0.5
+
+- Minor change to policy template `short_description`. Functionality unchanged.
+
 ## v2.0.4
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.

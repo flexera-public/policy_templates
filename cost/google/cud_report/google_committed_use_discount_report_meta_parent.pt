@@ -2,12 +2,14 @@ name "Meta Parent: Google Committed Use Discount Report"
 rs_pt_ver 20180301
 type "policy"
 short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Google Committed Use Discount Report](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_report) Policies."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md"
 severity "low"
 category "Meta"
-default_frequency "15 minutes"
+default_frequency "hourly"
 info(
   provider: "Google",
-  version: "3.1.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "3.2.3", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "true",
   deprecated: "false",
   hide_skip_approvals: "true"
@@ -68,7 +70,45 @@ parameter "param_template_source" do
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
 
+parameter "param_combined_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Consolidated Incident Email"
+  description "Whether or not to attach the results as a CSV file to the consolidated incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_combined_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Consolidated Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the consolidated incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
 ## Child Policy Parameters
+parameter "param_projects_ignore_sys" do
+  type "string"
+  category "Filters"
+  label "Ignore System Projects"
+  description "Whether or not to automatically ignore system projects in child policies e.g. projects whose id begins with 'sys-'. Default value of 'Yes' is recommended."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+
+
+parameter "param_projects_ignore_app" do
+  type "string"
+  category "Filters"
+  label "Ignore Google Apps Script Projects"
+  description "Whether or not to automatically ignore Google Apps Script projects in child policies e.g. projects whose id begins with 'app-'. Default value of 'Yes' is recommended."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+
+
 parameter "param_regions_allow_or_deny" do
   type "string"
   category "Filters"
@@ -98,6 +138,7 @@ end
 ###############################################################################
 # Authentication
 ###############################################################################
+
 credentials "auth_google" do
   schemes "oauth2"
   label "Google"
@@ -129,18 +170,44 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
 # Get Applied Parent Policy Details
 datasource "ds_self_policy_information" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", policy_id])
   end
   result do
     encoding "json"
     field "name", jmes_path(response, "name")
-    field "creator_id", jmes_path(response, "created_by.id")
+    field "creator_id", jmes_path(response, "createdBy.id")
     field "credentials", jmes_path(response, "credentials")
     field "options", jmes_path(response, "options")
   end
@@ -153,11 +220,11 @@ end
 script "js_child_policy_options", type: "javascript" do
   parameters "ds_self_policy_information"
   result "options"
-  code <<-EOS
+  code <<-'EOS'
   // Filter Options that are not appropriate for Child Policy
   var options = _.map(ds_self_policy_information.options, function(option){
     // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes", param_policy_schedule are exclusion to Meta Parent Policy Parameters
-    if (!_.contains(["param_combined_incident_email", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
+    if (!_.contains(["param_combined_incident_email", "param_combined_incident_csv", "param_combined_incident_table_size", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
       return { "name": option.name, "value": option.value };
     }
   });
@@ -176,7 +243,7 @@ end
 script "js_child_policy_options_map", type: "javascript" do
   parameters "ds_child_policy_options"
   result "options"
-  code <<-EOS
+  code <<-'EOS'
   function format_options_keyvalue(options) {
     var options_keyvalue_map = {};
     _.each(options, function(option) {
@@ -195,7 +262,7 @@ end
 script "js_format_self", type: "javascript" do
   parameters "ds_self_policy_information", "ds_child_policy_options_map"
   result "formatted"
-  code <<-EOS
+  code <<-'EOS'
   var formatted = {
     "name": ds_self_policy_information["name"],
     "creator_id": ds_self_policy_information["creator_id"],
@@ -205,21 +272,21 @@ script "js_format_self", type: "javascript" do
   EOS
 end
 
-# Get Pulished Policy Details
+# Get Published Policy Details
 datasource "ds_get_published_child_policy_information" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/orgs/", rs_org_id, "/published_templates"])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/published-templates"])
   end
   result do
     encoding "json"
-    collect jmes_path(response, "items[*]") do
+    collect jmes_path(response, "values[*]") do
       field "name", jmes_path(col_item, "name")
-      field "created_by", jmes_path(col_item, "created_by.email")
-      field "href", jmes_path(col_item, "href")
-      field "short_description", jmes_path(col_item, "short_description")
+      field "created_by", jmes_path(col_item, "createdBy.email")
+      field "short_description", jmes_path(col_item, "shortDescription")
+      field "ref", jmes_path(col_item, "ref")
+      field "href", join(["/policy/v1/orgs/", rs_org_id, "/published-templates/", jmes_path(col_item, "id")])
     end
   end
 end
@@ -232,7 +299,7 @@ end
 script "js_published_child_policy_information", type: "javascript" do
   parameters "ds_get_published_child_policy_information"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.filter(ds_get_published_child_policy_information, function(item) {
     return item['name'] == "Google Committed Use Discount Report" && item['created_by'] == "support@flexera.com"
   })
@@ -243,16 +310,16 @@ end
 datasource "ds_get_project_child_policy_information" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/policy_templates"])
-    header "Api-Version", "1.0"
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/policy-templates"])
   end
   result do
     encoding "json"
-    collect jmes_path(response, "items[*]") do
+    collect jmes_path(response, "values[*]") do
       field "name", jmes_path(col_item, "name")
-      field "href", jmes_path(col_item, "href")
-      field "short_description", jmes_path(col_item, "short_description")
+      field "short_description", jmes_path(col_item, "shortDescription")
+      field "ref", jmes_path(col_item, "ref")
+      field "href", join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/policy-templates/", jmes_path(col_item, "id")])
     end
   end
 end
@@ -265,7 +332,7 @@ end
 script "js_project_child_policy_information", type: "javascript" do
   parameters "ds_get_project_child_policy_information"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = _.filter(ds_get_project_child_policy_information, function(item) {
     return item['name'] == "Google Committed Use Discount Report"
   })
@@ -276,7 +343,7 @@ datasource "ds_get_billing_centers" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
     query "view", "allocation_table"
@@ -286,10 +353,10 @@ datasource "ds_get_billing_centers" do
     encoding "json"
     # Select the Billing Centers that have "parent_id" undefined or "" (i.e. top-level Billing Centers)
     collect jq(response, '.[] | select(.parent_id == null)' ) do
-      field "href", jq(col_item,".href")
-      field "id", jq(col_item,".id")
-      field "name", jq(col_item,".name")
-      field "parent_id", jq(col_item,".parent_id")
+      field "href", jq(col_item, ".href")
+      field "id", jq(col_item, ".id")
+      field "name", jq(col_item, ".name")
+      field "parent_id", jq(col_item, ".parent_id")
     end
   end
 end
@@ -302,8 +369,8 @@ datasource "ds_get_google_projects" do
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
-      field "projectID", jmes_path(col_item,"dimensions.vendor_account")
-      field "projectName", jmes_path(col_item,"dimensions.vendor_account_name")
+      field "projectID", jmes_path(col_item, "dimensions.vendor_account")
+      field "projectName", jmes_path(col_item, "dimensions.vendor_account_name")
     end
   end
 end
@@ -311,7 +378,7 @@ end
 script "js_make_billing_center_request", type: "javascript" do
   parameters "rs_org_id", "rs_optima_host", "billing_centers_unformatted", "param_dimension_filter_includes", "param_dimension_filter_excludes"
   result "request"
-  code <<-EOS
+  code <<-'EOS'
 
   billing_centers_formatted = []
 
@@ -396,37 +463,37 @@ script "js_make_billing_center_request", type: "javascript" do
     },
     "summarized": true
   }
+
   var request = {
-    auth:  'auth_flexera',
-    host:  rs_optima_host,
+    auth: 'auth_flexera',
+    host: rs_optima_host,
     scheme: 'https',
     verb: 'POST',
-    path:  "/bill-analysis/orgs/"+ rs_org_id + "/costs/aggregated",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
     headers: {
       "API-Version": "1.0",
       "Content-Type":"application/json"
     },
     body: JSON.stringify(body)
   }
-  EOS
+EOS
 end
 
 # Get Child policies
 datasource "ds_get_existing_policies" do
   request do
     auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies"])
-    header "Api-Version", "1.0"
-    query "meta_parent_policy_id", policy_id
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies"])
+    query "filter", join(["metaParentPolicyId eq '", policy_id, "'"])
   end
   result do
     encoding "json"
-    collect jmes_path(response, "items[*]") do
+    collect jmes_path(response, "values[*]") do
       field "name", jmes_path(col_item, "name")
       field "applied_policy_id", jmes_path(col_item, "id")
       field "options", jmes_path(col_item, "options")
-      field "updated_at", jmes_path(col_item, "updated_at")
+      field "updated_at", jmes_path(col_item, "updatedAt")
       field "status", jmes_path(col_item, "status")
     end
   end
@@ -463,7 +530,7 @@ end
 script "js_format_existing_policies_incidents", type: "javascript" do
   parameters "unformatted"
   result "formatted"
-  code <<-EOS
+  code <<-'EOS'
   formatted={}
 
   _.each(unformatted, function(incident) {
@@ -487,7 +554,7 @@ end
 script "js_format_existing_policies", type: "javascript" do
   parameters "ds_get_existing_policies", "ds_format_incidents"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   function format_options_keyvalue(options) {
     var options_keyvalue_map = {};
     _.each(options, function(option) {
@@ -509,21 +576,25 @@ script "js_format_existing_policies", type: "javascript" do
 
     incident = null
     incident2 = null
+    incident3 = null
     incidents = ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]]
 
     if (incidents != undefined) {
       incident = ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]][0]
       incident2 = ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]][1]
+      incident3 = ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]][2]
     }
 
     if (formatted[projectID] == undefined) {
       formatted[projectID] = {
-        "applied_policy_id":ds_get_existing_policies[x]["applied_policy_id"],
-        "applied_policy_name":ds_get_existing_policies[x]["name"],
-        "status":ds_get_existing_policies[x]["status"],
-        "updated_at":ds_get_existing_policies[x]["updated_at"],
+        "accountID": projectID,
+        "applied_policy_id": ds_get_existing_policies[x]["applied_policy_id"],
+        "applied_policy_name": ds_get_existing_policies[x]["name"],
+        "status": ds_get_existing_policies[x]["status"],
+        "updated_at": ds_get_existing_policies[x]["updated_at"],
         "incident": incident,
         "incident2": incident2,
+        "incident3": incident3,
         "options": options
       }
       tracking[projectID] = false
@@ -535,29 +606,35 @@ script "js_format_existing_policies", type: "javascript" do
 
       if (currDate > newDate) {
         duplicates.push({
-          "applied_policy_id":ds_get_existing_policies[x]["applied_policy_id"],
-          "applied_policy_name":ds_get_existing_policies[x]["name"],
-          "status":ds_get_existing_policies[x]["status"],
-          "updated_at":ds_get_existing_policies[x]["updated_at"],
+          "accountID": projectID,
+          "applied_policy_id": ds_get_existing_policies[x]["applied_policy_id"],
+          "applied_policy_name": ds_get_existing_policies[x]["name"],
+          "status": ds_get_existing_policies[x]["status"],
+          "updated_at": ds_get_existing_policies[x]["updated_at"],
           "incident": incident,
-          "incident2": incident2
+          "incident2": incident2,
+          "incident3": incident3
         })
       } else {
         duplicates.push({
-          "applied_policy_id":current["applied_policy_id"],
-          "applied_policy_name":current["applied_policy_name"],
-          "status":current["status"],
-          "updated_at":current["updated_at"],
+          "accountID": projectID,
+          "applied_policy_id": current["applied_policy_id"],
+          "applied_policy_name": current["applied_policy_name"],
+          "status": current["status"],
+          "updated_at": current["updated_at"],
           "incident": current["incident"],
-          "incident2": current["incident2"]
+          "incident2": current["incident2"],
+          "incident3": current["incident3"]
         })
         formatted[projectID] = {
-          "applied_policy_id":ds_get_existing_policies[x]["applied_policy_id"],
-          "applied_policy_name":ds_get_existing_policies[x]["name"],
-          "status":ds_get_existing_policies[x]["status"],
-          "updated_at":ds_get_existing_policies[x]["updated_at"],
+          "accountID": projectID,
+          "applied_policy_id": ds_get_existing_policies[x]["applied_policy_id"],
+          "applied_policy_name": ds_get_existing_policies[x]["name"],
+          "status": ds_get_existing_policies[x]["status"],
+          "updated_at": ds_get_existing_policies[x]["updated_at"],
           "incident": incident,
           "incident2": incident2,
+          "incident3": incident3,
           "options": options
         }
 
@@ -572,7 +649,7 @@ script "js_format_existing_policies", type: "javascript" do
 end
 
 datasource "ds_take_in_parameters" do
-  run_script $js_take_in_parameters, $ds_get_google_projects, $ds_format_self, first($ds_published_child_policy_information), first($ds_project_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $param_template_source, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
+  run_script $js_take_in_parameters, $ds_get_google_projects, $ds_format_self, first($ds_published_child_policy_information), first($ds_project_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $ds_flexera_api_hosts, $param_template_source, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
 end
 
 # hardcode template href with id from catalog
@@ -585,9 +662,17 @@ end
 # param_exclude_tags and param_allowed_regions are arrays. I'm doing an update on the order changing but the values remaining the same.
 # If we only want to do an update on the values changing we could sort before doing the equality check.
 script "js_take_in_parameters", type: "javascript" do
-  parameters "ds_get_google_projects", "ds_format_self", "ds_published_child_policy_information", "ds_project_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "param_template_source", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
+  parameters "ds_get_google_projects", "ds_format_self", "ds_published_child_policy_information", "ds_project_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "ds_flexera_api_hosts", "param_template_source", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
   result "grid_and_cwf"
-  code <<-EOS
+  code <<-'EOS'
+  frequency = "FREQ=" + param_policy_schedule.toUpperCase()
+
+  // Convert "15 minutes" defaultFrequency to RRULE "FREQ=MINUTELY;INTERVAL=15"
+  if (param_policy_schedule.toLowerCase() == "15 minutes") {
+    frequency = "FREQ=MINUTELY;INTERVAL=15"
+  }
+
+  flexera_host = ds_flexera_api_hosts["flexera"]
 
   // Set Child Policy Information based on param_template_source value
   if (param_template_source == "Published Catalog Template") {
@@ -609,6 +694,7 @@ script "js_take_in_parameters", type: "javascript" do
 
   function add_to_grid(ep, action) {
     policy_status={
+      "accountID": ep["accountID"],
       "id": ep["applied_policy_id"],
       "policy_name": ep["applied_policy_name"] + '||' + applied_policy_url_prefix + ep["applied_policy_id"],
       "meta_policy_status": action,
@@ -632,10 +718,21 @@ script "js_take_in_parameters", type: "javascript" do
       summary_parts = ep.incident2.summary.split(':')
       summary = summary_parts[summary_parts.length - 1].trim()
 
-      policy_status["incident_summary"] = summary + '||' + incident_url_prefix + ep.incident2.incident_id;
-      policy_status["incident_state"] = ep.incident2.state;
+      policy_status["incident2_summary"] = summary + '||' + incident_url_prefix + ep.incident2.incident_id;
+      policy_status["incident2_state"] = ep.incident2.state;
       policy_status["incident2_violation_data_count"] = ep.incident2.violation_data_count;
       policy_status["incident2_last_update"] = ep.incident2.updated_at;
+    }
+
+    if (ep.incident3 != null && ep.incident3 != undefined) {
+      // Remove policy name from summary when applicable
+      summary_parts = ep.incident3.summary.split(':')
+      summary = summary_parts[summary_parts.length - 1].trim()
+
+      policy_status["incident3_summary"] = summary + '||' + incident_url_prefix + ep.incident3.incident_id;
+      policy_status["incident3_state"] = ep.incident3.state;
+      policy_status["incident3_violation_data_count"] = ep.incident3.violation_data_count;
+      policy_status["incident3_last_update"] = ep.incident3.updated_at;
     }
 
     grid_and_cwf.grid.push(policy_status);
@@ -652,16 +749,16 @@ script "js_take_in_parameters", type: "javascript" do
 
   for (x=0; x<ds_get_google_projects.length; x++) {
     cur = ds_get_google_projects[x];
-    cur_projectID = cur.projectID;
+    cur_account_id = cur.projectID;
 
     // Name and description do not vary between create or updates so defining them here
-    name = child_policy_information.name + ": " + cur.projectName + " (" + cur_projectID + ") (child policy)";
-    description = child_policy_information.name + " policy applied by [" + ds_format_self.name + "](" + applied_policy_url_prefix + meta_parent_policy_id + ") to Google Project **" + cur.projectName +"** (`" + cur_projectID + "`).  " + child_policy_information.short_description;
+    name = child_policy_information.name + ": " + cur.projectName + " (" + cur_account_id + ") (child policy)";
+    description = child_policy_information.name + " policy applied by [" + ds_format_self.name + "](" + applied_policy_url_prefix + meta_parent_policy_id + ") to Google Project **" + cur.projectName +"** (`" + cur_account_id + "`).  " + child_policy_information.short_description;
 
     // Check if child policy exists for current Project ID
-    if ( ! _.contains(_.keys(ds_format_existing_policies.formatted), cur_projectID) ) {
+    if ( ! _.contains(_.keys(ds_format_existing_policies.formatted), cur_account_id) ) {
       // Child Policy does not exist and should be created
-      console.log("Child Policy for Subscription ID: "+cur_projectID+" does not exist and should be created");
+      console.log("Child Policy for Subscription ID: "+cur_account_id+" does not exist and should be created");
 
       // Use the options from the parent policy in "name value" list format
       options = _.toArray(ds_child_policy_options);
@@ -669,28 +766,35 @@ script "js_take_in_parameters", type: "javascript" do
       // Set param_projects_list values for this child policy
       options.push({
         "name": "param_projects_list",
-        "value": [cur_projectID],
+        "value": [cur_account_id],
       });
 
       if (grid_and_cwf.to_create.length < max_actions) {
         grid_and_cwf.to_create.push({
-          "name" : name,
-          "description" : description,
-          "credentials" : ds_format_self.credentials,
-          "options" : options,
-          "frequency" : param_policy_schedule,
+          "accountID": cur_account_id,
+          "name": name,
+          "description": description,
+          "credentials": ds_format_self.credentials,
+          "options": options,
+          "frequency": frequency,
           "meta_parent_policy_id": meta_parent_policy_id,
-          "template_href": child_policy_information.href
+          "template_ref": child_policy_information.ref,
+          "template_href": child_policy_information.href,
+          "flexera_host": flexera_host
         })
+
         policy_status={
+          "accountID": cur_account_id,
           "policy_name": name,
           "meta_policy_status": "creating policy",
           "policy_status": "",
           "policy_last_update": "",
         }
+
         grid_and_cwf.grid.push(policy_status)
       } else {
         policy_status={
+          "accountID": cur_account_id,
           "policy_name": name,
           "meta_policy_status": "policy to be created",
           "policy_status": "",
@@ -699,10 +803,10 @@ script "js_take_in_parameters", type: "javascript" do
         grid_and_cwf.grid.push(policy_status)
       }
     } else {
-      console.log("Child Policy for "+cur_projectID+" does exist for current project ID and may need to be updated or deleted");
+      console.log("Child Policy for "+cur_account_id+" does exist for current project ID and may need to be updated or deleted");
       // Child Policy does exist for current project ID and may need to be updated or deleted
       // Assume by default we should keep it and not update it
-      should_keep[cur_projectID] = true;
+      should_keep[cur_account_id] = true;
       should_update = false;
 
       // Use the options from the parent policy in "name value" list format
@@ -711,14 +815,14 @@ script "js_take_in_parameters", type: "javascript" do
       // Set param_projects_list values for this child policy
       options.push({
         "name": "param_projects_list",
-        "value": [cur_projectID],
+        "value": [cur_account_id],
       });
 
       // Check if child policy params match parent policy params
       _.each(ds_format_self.options, function(value, key) {
         // If any child and parent param values do not match, mark the child policy as should_update
-        if ( !_.isEqual(value, ds_format_existing_policies["formatted"][cur_projectID]["options"][key]) ) {
-          console.log("Child Policy Param does not match Parent Policy and should be updated. "+key+" does not match "+value+"!="+ds_format_existing_policies["formatted"][cur_projectID]["options"][key]);
+        if ( !_.isEqual(value, ds_format_existing_policies["formatted"][cur_account_id]["options"][key]) ) {
+          console.log("Child Policy Param does not match Parent Policy and should be updated. "+key+" does not match "+value+"!="+ds_format_existing_policies["formatted"][cur_account_id]["options"][key]);
           should_update = true;
         }
       });
@@ -728,27 +832,29 @@ script "js_take_in_parameters", type: "javascript" do
         // Child policy needs to be updated
         if (grid_and_cwf.to_update.length < max_actions) {
           // Child policy needs to be updated and is within the max_actions limit
-          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[cur_projectID]="+JSON.stringify(ds_format_existing_policies.formatted[cur_projectID]));
-          add_to_grid(ds_format_existing_policies.formatted[cur_projectID], "updating")
-          name = ds_format_existing_policies.formatted[cur_projectID].applied_policy_name
+          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[cur_account_id]="+JSON.stringify(ds_format_existing_policies.formatted[cur_account_id]));
+          add_to_grid(ds_format_existing_policies.formatted[cur_account_id], "updating")
+          name = ds_format_existing_policies.formatted[cur_account_id].applied_policy_name
           // Add to_update
           grid_and_cwf.to_update.push({
-            "applied_policy_id": ds_format_existing_policies.formatted[cur_projectID].applied_policy_id,
-            "name" : name,
-            "description" : description,
-            "credentials" : ds_format_self.credentials,
-            "options" : options,
-            "frequency" : param_policy_schedule,
+            "accountID": cur_account_id,
+            "applied_policy_id": ds_format_existing_policies.formatted[cur_account_id].applied_policy_id,
+            "name": name,
+            "description": description,
+            "credentials": ds_format_self.credentials,
+            "options": options,
+            "frequency": frequency,
+            "flexera_host": flexera_host
           })
         } else {
           // Child policy needs to be updated but is outside the max_actions limit
           // Add to grid but do not add to to_update
-          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[cur_projectID]="+JSON.stringify(ds_format_existing_policies.formatted[cur_projectID]));
-          add_to_grid(ds_format_existing_policies.formatted[cur_projectID], "to be updated");
+          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[cur_account_id]="+JSON.stringify(ds_format_existing_policies.formatted[cur_account_id]));
+          add_to_grid(ds_format_existing_policies.formatted[cur_account_id], "to be updated");
         }
       } else {
         // Child policy does not need to be updated
-        add_to_grid(ds_format_existing_policies.formatted[cur_projectID], "running");
+        add_to_grid(ds_format_existing_policies.formatted[cur_account_id], "running");
       }
     }
   }
@@ -758,7 +864,13 @@ script "js_take_in_parameters", type: "javascript" do
     console.log("Should keep "+account_id+"="+keep);
     if (!keep) {
       if (grid_and_cwf.to_delete.length < max_actions) {
-        grid_and_cwf.to_delete.push({"id":ds_format_existing_policies.formatted[account_id].applied_policy_id, "name": ds_format_existing_policies.formatted[account_id].applied_policy_name})
+        grid_and_cwf.to_delete.push({
+          "accountID": account_id,
+          "id": ds_format_existing_policies.formatted[account_id].applied_policy_id,
+          "name": ds_format_existing_policies.formatted[account_id].applied_policy_name,
+          "flexera_host": flexera_host
+        })
+
         add_to_grid(ds_format_existing_policies.formatted[account_id], "terminating")
       } else {
         add_to_grid(ds_format_existing_policies.formatted[account_id], "to be terminated")
@@ -769,6 +881,91 @@ script "js_take_in_parameters", type: "javascript" do
   EOS
 end
 
+datasource "ds_children_in_error" do
+  run_script $js_children_in_error, $ds_take_in_parameters
+end
+
+script "js_children_in_error", type: "javascript" do
+  parameters "ds_take_in_parameters"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_take_in_parameters["grid"], function(item) {
+    return item["policy_status"] == "error"
+  })
+EOS
+end
+
+datasource "ds_children_with_error_details" do
+  iterate $ds_children_in_error
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", val(iter_item, 'id')])
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    field "error", jmes_path(response, "error")
+    field "errored_at", jmes_path(response, "erroredAt")
+    field "accountID", val(iter_item, "accountID")
+    field "id", val(iter_item, "id")
+    field "policy_name", val(iter_item, "policy_name")
+    field "meta_policy_status", val(iter_item, "meta_policy_status")
+    field "policy_status", val(iter_item, "policy_status")
+    field "policy_last_update", val(iter_item, "policy_last_update")
+  end
+end
+
+datasource "ds_children_with_error_details_cleaned" do
+  run_script $js_children_with_error_details_cleaned, $ds_children_with_error_details, $ds_children_in_error, $ds_take_in_parameters, $ds_flexera_api_hosts
+end
+
+script "js_children_with_error_details_cleaned", type: "javascript" do
+  parameters "ds_children_with_error_details", "ds_children_in_error", "ds_take_in_parameters", "ds_flexera_api_hosts"
+  result "result"
+  code <<-'EOS'
+  reported_errors = _.map(ds_children_with_error_details, function(item) {
+    error = typeof(item["error"]) == 'string' ? item["error"].replace(/:\\n/g, ': ').replace(/:\n/g, ': ').replace(/\\n/g, '; ').replace(/\n/g, '; ').replace(/{/g, '').replace(/}/g, '') : "Unknown"
+    errored_at = typeof(item["errored_at"]) == 'string' ? item["errored_at"] : "Unknown"
+
+    return {
+      accountID: item["accountID"],
+      id: item["id"],
+      policy_name: item["policy_name"],
+      meta_policy_status: item["meta_policy_status"],
+      policy_status: item["policy_status"],
+      policy_last_update: item["policy_last_update"],
+      error: error,
+      errored_at: errored_at,
+      flexera_host: ds_flexera_api_hosts["flexera"]
+    }
+  })
+
+  unreported_error_list = _.reject(ds_children_in_error, function(item) {
+    return _.contains(_.pluck(reported_errors, 'id'), item['id'])
+  })
+
+  unreported_errors = _.map(unreported_error_list, function(item) {
+    return {
+      accountID: item["accountID"],
+      id: item["id"],
+      policy_name: item["policy_name"],
+      meta_policy_status: item["meta_policy_status"],
+      policy_status: item["policy_status"],
+      policy_last_update: item["policy_last_update"],
+      error: "Unknown",
+      errored_at: "Unknown",
+      flexera_host: ds_flexera_api_hosts["flexera"]
+    }
+  })
+
+  result = {
+    grid: _.sortBy(reported_errors.concat(unreported_errors), 'id'),
+    parent_policy: ds_take_in_parameters["parent_policy"]
+  }
+EOS
+end
+
 datasource "ds_only_grid" do
   run_script $js_only_grid, $ds_take_in_parameters
 end
@@ -776,7 +973,7 @@ end
 script "js_only_grid", type: "javascript" do
   parameters "results"
   result "only_grid"
-  code <<-EOS
+  code <<-'EOS'
     only_grid = results.grid
   EOS
 end
@@ -788,7 +985,7 @@ end
 script "js_only_create", type: "javascript" do
   parameters "results"
   result "only_create"
-  code <<-EOS
+  code <<-'EOS'
     only_create = results.to_create
   EOS
 end
@@ -800,7 +997,7 @@ end
 script "js_only_update", type: "javascript" do
   parameters "results"
   result "only_update"
-  code <<-EOS
+  code <<-'EOS'
     only_update = results.to_update
   EOS
 end
@@ -812,7 +1009,7 @@ end
 script "js_only_delete", type: "javascript" do
   parameters "results"
   result "only_delete"
-  code <<-EOS
+  code <<-'EOS'
     only_delete = results.to_delete
   EOS
 end
@@ -838,7 +1035,7 @@ end
 script "js_ds_google_cuds_report_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
@@ -854,7 +1051,9 @@ EOS
 end
 
 
-
+###############################################################################
+# Policy
+###############################################################################
 
 # Summary and a conditional incident which will show up if any policy is being applied, updated or deleted.
 # Minimum of 1 incident, max of four
@@ -875,9 +1074,6 @@ policy "policy_scheduled_report" do
       end
       field "accountName" do
         label "Project Name"
-      end
-      field "projectNumber" do
-        label "Project Number"
       end
       field "resourceName" do
         label "Name"
@@ -917,6 +1113,9 @@ EOS
     check false
     export "grid" do
       resource_level true
+      field "accountID" do
+        label "Google Project ID"
+      end
       field "id" do
         label "Applied Policy ID"
       end
@@ -959,72 +1158,338 @@ EOS
       field "incident2_last_update" do
         label "Incident 2 Last Update"
       end
+      field "incident3_summary" do
+        label "Incident 3 Summary"
+        format "link-external"
+      end
+      field "incident3_state" do
+        label "Incident 3 State"
+      end
+      field "incident3_violation_data_count" do
+        label "Incident 3 Violation Count"
+      end
+      field "incident3_last_update" do
+        label "Incident 3 Last Update"
+      end
     end
   end
 
   # Create Child Policies Incident Check
   validate $ds_to_create do
     summary_template "Policies being created"
-    detail_template <<-EOS
-    Policies Being Created:
-
-    | Applied Policy |
-    | --------------- |
-    {{ range data -}}
-    | {{ .name }} |
-    {{ end -}}
-    EOS
+    detail_template "Policies being created:"
     escalate $create_policies
-    check eq(size(data),0)
+    check eq(size(data), 0)
+    export do
+      resource_level false
+      field "accountID" do
+        label "Google Project ID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "template_href" do
+        label "Template HREF"
+      end
+      field "frequency" do
+        label "Frequency"
+      end
+      field "meta_parent_policy_id" do
+        label "Meta Parent Policy ID"
+      end
+      field "credentials" do
+        label "Credentials"
+      end
+      field "options" do
+        label "Options"
+      end
+      field "template_ref" do
+        label "Template Ref #"
+      end
+      field "flexera_host" do
+        label "Flexera Host"
+      end
+    end
   end
 
   # Update Child Policies Incident Check
   validate $ds_to_update do
     summary_template "Policies being updated"
-    detail_template <<-EOS
-    Policies Being Updated:
-
-    | Applied Policy |
-    | --------------- |
-    {{ range data -}}
-    | {{ .name }} |
-    {{ end -}}
-    EOS
+    detail_template "Policies being updated:"
     escalate $update_policies
-    check eq(size(data),0)
+    check eq(size(data), 0)
+    export do
+      resource_level false
+      field "accountID" do
+        label "Google Project ID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "applied_policy_id" do
+        label "Applied Policy ID"
+      end
+      field "options" do
+        label "Options"
+      end
+      field "flexera_host" do
+        label "Flexera Host"
+      end
+    end
   end
 
   # Delete Child Policies Incident Check
   validate $ds_to_delete do
     summary_template "Policies being deleted"
-    detail_template <<-EOS
-    Policies being Deleted:
-
-    | Applied Policy |
-    | --------------- |
-    {{ range data -}}
-    | {{ .name }} |
-    {{ end -}}
-    EOS
+    detail_template "Policies being deleted:"
     escalate $delete_policies
-    check eq(size(data),0)
+    check eq(size(data), 0)
+    export do
+      resource_level false
+      field "accountID" do
+        label "Google Project ID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "id" do
+        label "Applied Policy ID"
+      end
+      field "flexera_host" do
+        label "Flexera Host"
+      end
+    end
+  end
+
+  # Children in Error State
+  validate $ds_children_with_error_details_cleaned do
+    summary_template "Policies in error"
+    detail_template <<-EOS
+Child policies with errors for **{{ data.parent_policy.name }}**
+
+Child policies can be terminated from the incident page by selecting them and clicking the 'Delete Child Policies' option. New child policies will be created the next time the meta parent policy executes.
+EOS
+    check eq(size(val(data, "grid")), 0)
+    escalate $delete_policies_from_ui
+    export "grid" do
+      resource_level true
+      field "accountID" do
+        label "Google Project ID"
+      end
+      field "id" do
+        label "Applied Policy ID"
+      end
+      field "policy_name" do
+        label "Applied Policy Name"
+        format "link-external"
+      end
+      field "meta_policy_status" do
+        label "Meta Child Policy Status"
+      end
+      field "policy_status" do
+        label "Policy Status"
+      end
+      field "policy_last_update" do
+        label "Policy Last Update"
+      end
+      field "errored_at" do
+        label "Error Time"
+      end
+      field "error" do
+        label "Error Message"
+      end
+      field "flexera_host" do
+        label "Flexera Host"
+      end
+    end
   end
 end
 
-# Begin Shared Functions for Child Actions from Consolidated Incident
+###############################################################################
+# Escalations
+###############################################################################
+
+
+# Used only for emailing the combined child incident if so desired
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_combined_incident_email do
+    attach_export_table $param_combined_incident_csv
+    body_table_max_rows $param_combined_incident_table_size
+  end
+end
+
+escalation "delete_policies_from_ui" do
+  automatic false
+  label "Delete Child Policies"
+  description "Approval to delete selected child policies. New child policies will be created the next time the meta parent executes."
+  run "delete_applied_policies", data, rs_org_id, rs_project_id
+end
+
+escalation "create_policies" do
+  run "create_applied_policies", data, rs_org_id, rs_project_id
+end
+
+escalation "update_policies" do
+  run "update_applied_policies", data, rs_org_id, rs_project_id
+end
+
+escalation "delete_policies" do
+  run "delete_applied_policies", data, rs_org_id, rs_project_id
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+# Workflows for creating, updating, and deleting applied policies
+define create_applied_policies($data, $rs_org_id, $rs_project_id) return $all_responses do
+  $$all_responses = []
+
+  foreach $item in $data do
+    sub on_error: handle_error() do
+      call create_applied_policy($item, $rs_org_id, $rs_project_id) retrieve $create_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define update_applied_policies($data, $rs_org_id, $rs_project_id) return $all_responses do
+  $$all_responses = []
+
+  foreach $item in $data do
+    sub on_error: handle_error() do
+      call update_applied_policy($item, $rs_org_id, $rs_project_id) retrieve $update_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_applied_policies($data, $rs_org_id, $rs_project_id) return $all_responses do
+  $$all_responses = []
+
+  foreach $item in $data do
+    sub on_error: handle_error() do
+      call delete_applied_policy($item, $rs_org_id, $rs_project_id) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define create_applied_policy($item, $rs_org_id, $rs_project_id) return $response do
+  $host = $item["flexera_host"]
+  $href = join(["/policy/v1/orgs/", $rs_org_id, "/projects/", $rs_project_id, "/applied-policies"])
+  $url = $host + $href
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_flexera,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    body: {
+      "name": $item["name"],
+      "description": $item["description"],
+      "templateRef": $item["template_ref"],
+      "options": $item["options"],
+      "credentials": $item["credentials"],
+      "metaParentPolicyId": $item["meta_parent_policy_id"],
+      "schedule": { "rrule": $item["frequency"] }
+    }
+  )
+
+  task_label("Create applied policy response: " + $item["name"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 201 && $response["code"] != 200
+    raise "Unexpected response creating applied policy: "+ $item["name"] + " " + to_json($response)
+  else
+    task_label("Create applied policy successful: " + $item["name"])
+  end
+end
+
+define update_applied_policy($item, $rs_org_id, $rs_project_id) return $response do
+  $host = $item["flexera_host"]
+  $href = join(["/policy/v1/orgs/", $rs_org_id, "/projects/", $rs_project_id, "/applied-policies/", $item["applied_policy_id"]])
+  $url = $host + $href
+  task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_flexera,
+    https: true,
+    verb: "patch",
+    host: $host,
+    href: $href,
+    body: {
+      "options": $item["options"]
+    }
+  )
+
+  task_label("Update applied policy response: " + $item["applied_policy_id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 201 && $response["code"] != 200
+    raise "Unexpected response updating applied policy: "+ $item["applied_policy_id"] + " " + to_json($response)
+  else
+    task_label("Update applied policy successful: " + $item["applied_policy_id"])
+  end
+end
+
+define delete_applied_policy($item, $rs_org_id, $rs_project_id) return $response do
+  $host = $item["flexera_host"]
+  $href = join(["/policy/v1/orgs/", $rs_org_id, "/projects/", $rs_project_id, "/applied-policies/", $item["id"]])
+  $url = $host + $href
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_flexera,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href
+  )
+
+  task_label("Delete applied policy response: " + $item["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 201 && $response["code"] != 200
+    raise "Unexpected response deleting applied policy: "+ $item["id"] + " " + to_json($response)
+  else
+    task_label("Delete applied policy successful: " + $item["id"])
+  end
+end
+
+# Shared Functions for Child Actions from Consolidated Incident
 define groupByIncidentID($data) return $incidents do
   # Empty hash to store incidents is incident_id
   $incidents = {}
 
   task_label("Grouping items by Incident ID")
   $index = 1
+
   foreach $item in $data do
-    task_label("Grouping items by Incident ID. "+to_s($index)+"/"+to_s(size($data)))
+    task_label("Grouping items by Incident ID. " + to_s($index) + "/" + to_s(size($data)))
+    $index = $index + 1
+
     if !$incidents[$item["incident_id"]]
-      #task_label("Grouping items by Incident ID. "+to_s($index)+"/"+to_s(size($data))". New Incident: "+$item["incident_id"])
       $incidents[$item["incident_id"]] = {"id": $item["incident_id"], "resource_ids": []}
     end
-    #task_label("Grouping items by Incident ID. "+to_s($index)+"/"+to_s(size($data))". Appending Resource: "+$item["id"])
+
     # Append resource id to the list for the incident
     $incidents[$item["incident_id"]]["resource_ids"] = $incidents[$item["incident_id"]]["resource_ids"] + [$item["id"]]
   end
@@ -1048,14 +1513,15 @@ define child_run_action($data, $governance_host, $rs_project_id, $action_label, 
 
   # If we made it here, all actions completed successfully
   # Celebrate Success!
-  task_label("All \""+$action_label+"\" actions completed successfully!")
+  task_label("All \"" + $action_label + "\" actions completed successfully!")
 end
 
 define runActions($incidents, $action_label, $governance_host, $rs_project_id, $action_options) do
   foreach $id in keys($incidents) do
     sub on_error: handle_error() do
       $incident = $incidents[$id]
-      task_label("Triggering action \""+$action_label+"\" on "+size($incident["resource_ids"])+" count resources via incident "+$incident["id"])
+      task_label("Triggering action \"" + $action_label + "\" on " + size($incident["resource_ids"]) + " count resources via incident " + $incident["id"])
+
       $request = {
         auth: $$auth_flexera,
         verb: "get",
@@ -1065,12 +1531,16 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id, $
         headers: { "Api-Version": "1.0" },
         query_strings: { "view": "extended" }
       }
+
       $response = http_request($request)
+
       $$debug << to_json({
         "request": $request,
         "response": $response
       })
+
       $action_id = ""
+
       foreach $action in $response["body"]["available_actions"] do
         # If we have not already found the action id, and the label matches, set the action id
         # The first check is to prevent looking through the entire list if we already have the id
@@ -1078,9 +1548,11 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id, $
           $action_id = $action["id"]
         end
       end
+
       if $action_id == ""
         raise "Could not find action id for \""+$action_label+"\" response="+to_json($response)
       end
+
       # Now we are reach to trigger the action
       $request = {
         auth: $$auth_flexera,
@@ -1091,15 +1563,17 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id, $
         headers: { "Api-Version": "1.0" },
         body: { "options":[{ "name": "ids",  "value": $incident["resource_ids"] }] }
       }
+
       # If the action has parameters, add them to the request body
-      if type($action_options) == "array" && size($action_options) > 0
-        $request["body"]["options"] = $request["body"]["options"] + $action_options
-      end
+      $request["body"]["options"] = $request["body"]["options"] + $action_options
+
       $response = http_request($request)
+
       $$debug << to_json({
         "request": $request,
         "response": $response
       })
+
       # Get the action status from response header
       $action_location = $response["headers"]["Location"]
 
@@ -1107,6 +1581,7 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id, $
       $action_status = ""
       $loop_count = 0
       $loop_endtime = now() + (3600*2) # 2 hours from now
+
       # [ queued, aborted, pending, running, completed, failed, denied ]
       while ($action_status !~ /^(aborted|completed|failed|denied)/) && (now() <= $loop_endtime) do
         # Using Loop Count to slowly increment the sleep time
@@ -1115,6 +1590,7 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id, $
         task_label("action_status=\""+$action_status+"\" Sleeping for "+to_s($loop_count)+" seconds")
         sleep($loop_count)
         task_label("action_status=\""+$action_status+"\" Getting action status")
+
         $request = {
           auth: $$auth_flexera,
           verb: "get",
@@ -1124,13 +1600,17 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id, $
           headers: { "Api-Version": "1.0" },
           query_strings: { "view": "extended" }
         }
+
         $response = http_request($request)
+
         $$debug << to_json({
           "request": $request,
           "response": $response
         })
+
         $action_status = $response["body"]["status"]
       end
+
       if ($action_status != "completed")
         # Check if we are out of time first
         if (now() > $loop_endtime)
@@ -1140,131 +1620,21 @@ define runActions($incidents, $action_label, $governance_host, $rs_project_id, $
           raise "action_status=\""+$action_status+"\" Action did not complete as expected. action_status_json="+to_json($response)
         end
       end
+
       # If we made it here, the action completed successfully
       task_label("action_status=\""+$action_status+"\" Action completed successfully")
     end
   end
 end
-# End Shared Functions for Child Actions from Consolidated Incident
 
 # CWF function to handle errors
 define handle_error() do
   if !$$errors
     $$errors = []
   end
+
   $$errors << $_error["type"] + ": " + $_error["message"]
   # We check for errors at the end, and raise them all together
   # Skip errors handled by this definition
   $_error_behavior = "skip"
-end
-
-# Used only for emailing the combined child incident if so desired
-escalation "esc_email" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_combined_incident_email
-end
-
-escalation "create_policies" do
-  run "create_applied_policies", data, rs_governance_host, rs_project_id
-end
-
-# if name !=null
-define create_applied_policies($data, $governance_host, $rs_project_id) return $responses do
-  $responses = []
-  $$debug = []
-  $item_index = 0
-  $item_total = size($data)
-  foreach $item in $data do
-    $item_index = $item_index + 1
-    $status = to_s("("+$item_index+"/"+$item_total+")")
-    task_label($status+" Creating Applied Policy with Options: " + to_json($item["options"]))
-    $response = http_request(
-      auth: $$auth_flexera,
-      verb: "post",
-      https: true,
-      host: $governance_host,
-      href: join(["/api/governance/projects/", $rs_project_id, "/applied_policies"]),
-      headers: { "Api-Version": "1.0" },
-      body: {
-        "name": $item["name"],
-        "description": $item["description"],
-        "template_href": $item["template_href"],
-        "frequency": $item["frequency"],
-        "options": $item["options"],
-        "credentials": $item["credentials"],
-        "meta_parent_policy_id": $item["meta_parent_policy_id"]
-      }
-    )
-    $responses << $response
-    $$debug << to_json({
-      "response": $response,
-      "item": $item,
-      "governance_host": $governance_host
-    })
-  end
-end
-
-escalation "update_policies" do
-  run "update_applied_policies", data, rs_governance_host, rs_project_id
-end
-
-define update_applied_policies($data, $governance_host, $rs_project_id) return $responses do
-  $responses = []
-  $$debug = []
-  $item_index = 0
-  $item_total = size($data)
-  foreach $item in $data do
-    $item_index = $item_index + 1
-    $status = to_s("("+$item_index+"/"+$item_total+")")
-    task_label($status+" Updating Applied Policy with Options: " + to_json($item["options"]))
-    $response = http_request(
-      auth: $$auth_flexera,
-      verb: "patch",
-      https: true,
-      host: $governance_host,
-      href: join(["/api/governance/projects/", $rs_project_id, "/applied_policies/", $item["applied_policy_id"]]),
-      headers: { "Api-Version": "1.0" },
-      body: {
-        "options": $item["options"]
-      }
-    )
-    $responses << $response
-    $$debug << to_json({
-      "response": $response,
-      "item": $item,
-      "governance_host": $governance_host
-    })
-  end
-end
-
-escalation "delete_policies" do
-  run "delete_applied_policies", data, rs_governance_host, rs_project_id
-end
-
-define delete_applied_policies($data, $governance_host, $rs_project_id) return $responses do
-  $responses = []
-  $$debug = []
-  $item_index = 0
-  $item_total = size($data)
-  foreach $item in $data do
-    $item_index = $item_index + 1
-    $status = to_s("("+$item_index+"/"+$item_total+")")
-    task_label($status+" Deleting Applied Policy: " + $item["id"])
-    $response = http_request(
-      auth: $$auth_flexera,
-      verb: "delete",
-      https: true,
-      host: $governance_host,
-      href: join(["/api/governance/projects/", $rs_project_id, "/applied_policies/", $item["id"]]),
-      headers: { "Api-Version": "1.0" }
-    )
-    $responses << $response
-    $$debug << to_json({
-      "response": $response,
-      "item": $item,
-      "governance_host": $governance_host
-    })
-  end
 end

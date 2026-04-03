@@ -1,13 +1,21 @@
 # AWS Savings Realized From Rate Reduction Purchases
 
+## Deprecated
+
+This policy template is no longer being updated. The more accurate "Savings" and "Savings Percent" cost metrics now available natively in Flexera CCO, in conjunction with the [Dashboards](https://docs.flexera.com/flexera-one/cloud/using-cloud-cost-optimization/accessing-the-cloud-dashboard/) and [Tabular View](https://docs.flexera.com/flexera-one/cloud/using-cloud-cost-optimization/tabular-view) feature, should be used instead.
+
 ## What It Does
 
 This policy template produces a report with chart showing the total savings realized from using AWS Reservations, Savings Plans, and Spot Instances. This report can either be for the entire organization or specific Billing Centers. Optionally, this report can be emailed.
 
+## Example Incident
+
+![Example Incident](example.png "Example Incident")
+
 ## How It Works
 
 - Data is obtained from Flexera's stored cloud cost data via the [Flexera Bill Analysis API](https://reference.rightscale.com/bill_analysis/)
-- This policy uses [savings metric](https://docs.flexera.com/flexera/EN/Optima/TabularView.htm#tabularview_3352643092_1192596) calculated as difference between list price and cost.
+- This policy template uses [savings metric](https://docs.flexera.com/flexera-one/cloud/using-cloud-cost-optimization/tabular-view) calculated as difference between list price and cost.
 
 ## Input Parameters
 
@@ -23,14 +31,15 @@ This policy template produces a report with chart showing the total savings real
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 ### Credential configuration
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
+  - `policy_viewer`
 
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 

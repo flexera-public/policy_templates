@@ -1,5 +1,47 @@
 # Changelog
 
+## v6.1.2
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v6.1.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v6.1.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v6.0.6
+
+- Fixed bug that was causing metrics for DTU database to be empty.
+
+## v6.0.5
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v6.0.4
+
+- Updated meta policy code to use newer Flexera API. Functionality unchanged.
+
+## v6.0.3
+
+- Fixed bug that was causing Maximum, Minimum to not get selected correctly
+- Fixed bug that was preventing region filter from working
+
+## v6.0.2
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v6.0.1
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
+## v6.0.0
+
+- Policy template now distinguishes between vCore-model and DTU-model databases and checks CPU and DTU metrics to determine usage for each purchase model respectively.
+- Fixed issue where policy template would report new recommendations if a metric other than cpuAverage had changed for an existing recommendation.
+
 ## v5.5.3
 
 - Added batch processing for large datasources as a performance enhancement (reduces memory usage) with no changes to logic or functionality.

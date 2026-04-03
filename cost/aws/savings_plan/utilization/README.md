@@ -8,7 +8,7 @@ This Policy Template leverages the [AWS Savings Plans Utilization API](https://d
 
 ## How It Works
 
-- This policy uses [AWS Savings Plans Utilization API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetSavingsPlansUtilization.html) to retrieve Savings Plan Utilization data.
+- This policy template uses [AWS Savings Plans Utilization API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetSavingsPlansUtilization.html) to retrieve Savings Plan Utilization data.
 - That data is used to produce a pie chart showing Used Commitment, Unused Commitment and Utilization for each Savings Plan.
 
 ## Input Parameters
@@ -17,6 +17,8 @@ This Policy Template leverages the [AWS Savings Plans Utilization API](https://d
 - *Look Back Period (Days)* - Specify the number of days of past usage to analyze.
 - *Utilization Threshold* - Specify the minimum Savings Plan Utilization threshold as a percentage that should result in an alert.
 - *Savings Plan ARNs* - The unique Amazon Resource Names (ARNs) for particular Savings Plans to report on. Leave blank to report on all Savings Plans.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 
@@ -24,9 +26,9 @@ This Policy Template leverages the [AWS Savings Plans Utilization API](https://d
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
-- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+- [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
   - `ce:GetSavingsPlansUtilization`
   - `savingsplans:DescribeSavingsPlans`
 
@@ -48,10 +50,11 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   }
   ```
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
+  - `policy_viewer`
 
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
@@ -59,4 +62,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Cost
 
-This policy template does not incur any cloud costs.
+This policy template makes use of AWS Cost Explorer APIs. Please review [AWS's documentation](https://aws.amazon.com/aws-cost-management/aws-cost-explorer/pricing/) on the cost of using these APIs.

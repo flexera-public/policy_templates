@@ -2,16 +2,16 @@
 
 ## Deprecated
 
-This policy is no longer being updated. Due to the scales involved, per-object analysis and recommendations are not useful in most situations. Instead, [lifecycle rules](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lifecycle-mgmt.html) should be utilized to manage object storage spend. The [AWS S3 Buckets Without Lifecycle Configuration](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_lifecycle) and [AWS S3 Buckets Without Intelligent Tiering](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy) policy templates can be used to identify storage accounts that do not have lifecycle rules or intelligent tiering enabled.
+This policy template is no longer being updated. Due to the scales involved, per-object analysis and recommendations are not useful in most situations. Instead, [lifecycle rules](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lifecycle-mgmt.html) should be utilized to manage object storage spend. The [AWS S3 Buckets Without Lifecycle Configuration](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_lifecycle) and [AWS S3 Buckets Without Intelligent Tiering](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_storage_policy) policy templates can be used to identify storage accounts that do not have lifecycle rules or intelligent tiering enabled.
 
 ## What It Does
 
-This policy checks S3 buckets for objects to move to the 'Glacier' or 'Deep Archive' storage classes based on object age. The user can opt to either delete the objects or move them to the recommended storage class.
+This policy template checks S3 buckets for objects to move to the 'Glacier' or 'Deep Archive' storage classes based on object age. The user can opt to either delete the objects or move them to the recommended storage class.
 
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws)
 - *Bucket List* - A list of S3 buckets to assess objects in. Leave blank to assess all buckets.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Buckets not in an allowed region will be ignored and their objects will not be assessed.
@@ -21,7 +21,7 @@ This policy checks S3 buckets for objects to move to the 'Glacier' or 'Deep Arch
 - *Deep Archive Age Threshold (Days)* - Time in days since object was last modified to change storage class to Deep Archive. Not applicable if 'Glacier' is selected for New Storage Class.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action. For example if a user selects the "Delete S3 Objects" action while applying the policy, all of the S3 objects that didn't satisfy the policy condition will be deleted.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action. For example if a user selects the "Delete S3 Objects" action while applying the policy template, all of the S3 objects that didn't satisfy the policy condition will be deleted.
 
 ## Policy Actions
 
@@ -31,9 +31,9 @@ Please note that the "Automatic Actions" parameter contains a list of action(s) 
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
-- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+- [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
   - `sts:GetCallerIdentity`
   - `s3:ListAllMyBuckets`
   - `s3:GetBucketLocation`
@@ -69,10 +69,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   }
   ```
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
 
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 

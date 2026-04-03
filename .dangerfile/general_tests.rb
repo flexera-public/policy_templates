@@ -16,20 +16,41 @@ def general_textlint?(file)
   `node_modules/.bin/textlint #{file} 1> textlint.log`
 
   if $?.exitstatus != 0
-    error_list = `cat textlint.log`.split("\n")
-    error_list.shift(2) # Remove first line since it just links to the filename in the local filesystem
-    error_list = error_list.join("\n\n")
+    # Read the combined output
+    raw = File.read("textlint.log")
+    ansi_stripped = raw.gsub(/\e\[[0-9;]*m/, "") # Strip ANSI color codes so emptiness checks work
+    error_list = ansi_stripped.split("\n")
 
-    fail_message = "Textlint errors found:\n\n#{error_list}"
+    # Ignore known false positives and lines that don't report errors
+    filtered_list = error_list.reject do |line|
+      line.strip.empty? ||
+      line.strip == file ||
+      line.start_with?("✖ ") ||
+      line.include?('/home/runner/work/policy_templates/') ||
+      line.include?('awebdomain.com') ||
+      line.include?('example.com') ||
+      line.include?('/settings/secrets/actions')
+    end
+
+    unless filtered_list.empty?
+      filtered_list = filtered_list.join("\n\n")
+      fail_message = "Textlint errors found:\n\n#{filtered_list}"
+
+      if filtered_list.include?('no-dead-link')
+        fail_message += "\n\nNote: URLs that redirect may be reported as dead links. Updating the URLs accordingly will resolve such issues."
+      end
+    end
   end
 
-  return fail_message.strip if !fail_message.empty?
-  return false
+  return false if fail_message.empty?
+  fail_message.strip
 end
 
 ### Spell check test
 # Run the Danger spell checker on a file
 def general_spellcheck?(file)
+  return false if file.start_with?(".github/agents/")
+
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing file using aspell spell checker..."
 
   fail_message = ""
@@ -52,16 +73,18 @@ def general_spellcheck?(file)
 
   if system(command)
     error_list = `cat aspell.log`
-    fail_message = "Spelling errors found:\n\n#{error_list}" if !error_list.strip.empty?
+    fail_message = "Spelling errors found:\n\n#{error_list}" unless error_list.strip.empty?
   end
 
-  return fail_message.strip if !fail_message.empty?
-  return false
+  return false if fail_message.empty?
+  fail_message.strip
 end
 
 ### Markdown lint test
 # Return false if linter finds no problems
 def general_bad_markdown?(file)
+  return false if file.start_with?(".github/agents/")
+
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing file using markdown linter..."
 
   # Adjust testing based on which file we're doing
@@ -75,27 +98,37 @@ def general_bad_markdown?(file)
   when ".github/PULL_REQUEST_TEMPLATE.md"
     mdl = `mdl -r "~MD002","~MD007","~MD013" #{file}`
   else
-    mdl = `mdl -r "~MD007","~MD013" #{file}`
+    mdl = `mdl -r "~MD007","~MD013","~MD024" #{file}`
   end
 
   # Return the problems found if the mdl file is not empty. Otherwise, return false
-  return "Markdown syntax errors found:\n\n#{mdl}" if !mdl.empty?
-  return false
+  return false if mdl.empty?
+  "Markdown syntax errors found:\n\n#{mdl}"
 end
 
 ### Bad URL test
 # Return false if no invalid URLs are found.
 def general_bad_urls?(file, file_diff)
+  return false if file.start_with?(".github/agents/")
+
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing file for bad or invalid URLs..."
 
   # List of hosts to ignore in the analysis
   exclude_hosts = [
-    'api.loganalytics.io',          'management.azure.com',
-    'management.core.windows.net',  'login.microsoftonline.com',
-    'oauth2.googleapis.com',        'www.googleapis.com',
-    'image-charts.com',             'graph.microsoft.com',
-    'www.w3.org',                   'tempuri.org',
-    'us-3.rightscale.com',          'us-4.rightscale.com'
+    'api.loganalytics.io',
+    'management.azure.com',
+    'management.core.windows.net',
+    'login.microsoftonline.com',
+    'oauth2.googleapis.com',
+    'www.googleapis.com',
+    'image-charts.com',
+    'graph.microsoft.com',
+    'www.w3.org',
+    'tempuri.org',
+    'us-3.rightscale.com',
+    'us-4.rightscale.com',
+    'gh.io',
+    'storage.azure.com' # Not a legitimate URL but used in request headers for generating Azure tokens
   ]
 
   regex = /(^\+)/
@@ -111,7 +144,16 @@ def general_bad_urls?(file, file_diff)
           next if exclude_hosts.include?(url.scan(URI.regexp)[0][3])
 
           # Clean up URL string and convert it into a proper URI object
-          url_string = url.to_s.gsub(/[!@#$%^&*(),.?":{}|<>]/,'')
+          # Handle markdown image link syntax: [![alt](image-url)](link-url)
+          # Split on ]( to separate the image URL from the link URL
+          url_parts = url.to_s.split('](')
+          # Use the first URL (image) if there are multiple, otherwise use the whole string
+          url_string = url_parts[0]
+          # Remove any trailing ] or ) that might be left over from markdown syntax,
+          # along with any punctuation that may follow (e.g. [text](https://url/). where
+          # URI.extract captures the closing ) and trailing . as part of the URL)
+          url_string = url_string.gsub(/[\]\)][.,;:!?]*$/, '')
+
           url = URI(url_string)
 
           # Check for a valid host. Skip URLs that are dynamicly constructed and may not have a valid hostname.
@@ -133,45 +175,47 @@ def general_bad_urls?(file, file_diff)
           end
 
           # Return error details if a proper response code was not received
-          if response.code !~ /200|302/
-            fail_message += "Line: #{line_number.to_s}\nURL: #{url_string}\nResponse Code: #{response.code}\n\n"
+          unless response.code =~ /200|302/
+            fail_message += "Line: #{line_number}\nURL: #{url_string}\nResponse Code: #{response.code}\n\n"
           end
         end
       end
     end
   end
 
-  fail_message = "Bad URLs found:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "Bad URLs found:\n\n" + fail_message unless fail_message.empty?
 
-  return fail_message.strip if !fail_message.empty?
-  return false
+  return false if fail_message.empty?
+  fail_message.strip
 end
 
 ### Outdated Terminology test
 # Return false if no outdated terminology, such as RightScale, is found in the file
 def general_outdated_terminology?(file, file_lines)
+  return false if file.start_with?(".github/agents/")
+
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing file for outdated terminology..."
 
   fail_message = ""
 
   # Exclude files not worth checking
-  if !file.include?("Dangerfile") && !file.include?(".dangerfile") && !file.start_with?("data/") && !file.start_with?("tools/")
+  unless file.include?("Dangerfile") || file.include?(".dangerfile") || file.start_with?("data/") || file.start_with?("tools/")
     file_lines.each_with_index do |line, index|
       line_number = index + 1
       test_line = line.strip.downcase
 
       if test_line.include?(" rs ") || test_line.include?(" rightscale ")
-        fail_message += "Line #{line_number.to_s}: Reference to `RightScale` found. Recommended replacements: `Flexera`, `Flexera CCO`, `Flexera Automation`\n\n"
+        fail_message += "Line #{line_number}: Reference to `RightScale` found. Recommended replacements: `Flexera`, `Flexera CCO`, `Flexera Automation`\n\n"
       end
 
       if test_line.include?(" optima ")
-        fail_message += "Line #{line_number.to_s}: Reference to `Optima` found. Recommended replacements: `Flexera`, `Flexera CCO`, `Cloud Cost Optimization`\n\n"
+        fail_message += "Line #{line_number}: Reference to `Optima` found. Recommended replacements: `Flexera`, `Flexera CCO`, `Cloud Cost Optimization`\n\n"
       end
     end
   end
 
-  fail_message = "Outdated terminology found. Please remove references to defunct internal names for products or services:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#general-style-guidelines)] Outdated terminology found. Please remove references to defunct internal names for products or services:\n\n" + fail_message unless fail_message.empty?
 
-  return fail_message.strip if !fail_message.empty?
-  return false
+  return false if fail_message.empty?
+  fail_message.strip
 end

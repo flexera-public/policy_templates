@@ -8,6 +8,10 @@ This policy can be used for automated "reporting" use-cases, as well as "alertin
 
 *Note: Any cost data that is less than 3 days old will be incomplete. This is because cloud cost data is not imported into Flexera CCO in real time.*
 
+## Example Incident
+
+![Example Incident](example.png "Example Incident")
+
 ## Input Parameters
 
 - *Email Addresses* - Email addresses of the recipients you wish to send the scheduled report to.
@@ -17,13 +21,16 @@ This policy can be used for automated "reporting" use-cases, as well as "alertin
 - *Graph Dimension Value Count* - The number of values to display on the graph for the selected dimension. The top N values will be displayed based on the cost metric selected. Enter 0 to display all values. Warning: Displaying all values may result in a graph that is difficult to interpret.
 - *Filter Dimensions* - Specify the names of the dimensions you wish to filter the costs by along with their values in dimension=value format. These can be built-in dimensions, Custom Tags or Custom Rule-Based Dimensions. Spelling and capitalization must match what is shown in the Flexera CCO platform. Examples: Environment=Production, Cost Owner=John Doe
 - *Filter Functionality* - Whether to filter for costs that meet all of the criteria specified in `Filter Dimensions` or costs that meet any of the criteria. Only applicable if at least two values are entered for `Filter Dimensions`.
-- *Date Range* - Select the Date Range options you'd like to display on the graph in the report.
+- *Date Range (Months)* - Select how many months back you'd like to display on the graph in the report.
+- *Ignore Current Month* - Whether or not to ignore the current month and begin reporting from the previous month instead.
 - *Billing Term* - Select the unit of time you'd like to display on the graph in the report. The report will split costs along the option selected. For example, if `Week` is selected, the costs will be split out by week along the graph's X axis and in the incident report.
 - *Billing Center List* - List of Billing Center Name(s) or ID(s) you want to report on. Leave blank to select all top level Billing Centers.
 - *Percent Change Threshold Value* - The threshold (in percent) for the percent change in cost between time period(s) that will trigger the report. Default of 0 will send the report every time based on the applied policy schedule.
 - *Percent Change Consecutive Threshold* - The number of consecutive time period(s) where there was a percent change in cost between time period(s) that will trigger the report. Default of `0` will send the report every time based on the applied policy schedule.
 - *Percent Change Alert Metric* - The metric to use for the percent change alert. Percent Change from Previous Time Period Daily Average is recommended to normalize between Month periods. This has no affect if Billing Term is set to 'Day'.
 - *Percent Change Alert Direction* - Select the direction of percent change that will trigger the report.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
 ## Policy Actions
 
@@ -31,16 +38,17 @@ This policy can be used for automated "reporting" use-cases, as well as "alertin
 
 ## Prerequisites
 
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 ### Credential configuration
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+For administrators [creating and managing credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) to use with this policy, the following information is needed:
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
+  - `policy_viewer`
 
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 

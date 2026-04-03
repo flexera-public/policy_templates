@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.8.2
+
+- Updated documentation link in policy description. Functionality unchanged.
+
+## v0.8.1
+
+- Updated heredocs in policy template code to conform to best practices. Functionality unchanged.
+
+## v0.8.0
+
+- Added support for Oracle recommendations.
+- Added support for additional recommendations for AWS, Azure, and Google.
+
+## v0.7.0
+
+- Added support for attaching CSV files to incident emails.
+
+## v0.6.3
+
+- Updated API requests to use newer Flexera API. Functionality unchanged.
+
+## v0.6.2
+
+- Added `doc_link` field to policy template metadata for future UI enhancements. Functionality unchanged.
+
 ## v0.6.1
 
 - Added `hide_skip_approvals` field to the info section. It dynamically controls "Skip Action Approvals" visibility.
