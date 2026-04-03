@@ -1,48 +1,53 @@
+#!/usr/bin/env python3
 """
-This script retrieves pricing data from Google Cloud's Cloud Billing Catalog API
-and lists Compute Engine machine types along with an approximate per-hour list price.
-The cost is calculated as:
-    cost = (number of vCPUs * vCPU price) + (memory in GB * memory price)
+Retrieves Google Cloud Compute Engine VM pricing from the Cloud Billing Catalog API
+and computes approximate per-hour list prices for each machine type in us-central1-a.
 
-Instead of printing the information to the console, the script collects the data into
-a dictionary where each key is the machine type (e.g., 'n4-standard-2') and the value is
-the computed cost per hour. The dictionary is then saved as a nicely formatted JSON file at:
-    tools/cloud_data/google/google_vm_pricing.json
+Cost formula: (vCPUs * vCPU_price) + (memory_GB * memory_price)
 
-Prices are specific to the zone us-central1-a
+Produces: data/google/google_vm_pricing.json
+Usage: python3 google_vm_pricing.py
+  (Run from the root of the policy_templates repository.)
+
+Requires Google Application Default Credentials to be configured.
 """
 
 import os
 import json
+import google.auth
 from google.cloud import billing_v1
 from google.cloud import compute_v1
 
+OUTPUT_FILENAME = "data/google/google_vm_pricing.json"
+
+
 def money_to_float(money):
-    """Converts a Money object to a float."""
+    """Converts a Money protobuf object to a Python float."""
     return money.units + money.nanos / 1e9
 
-def get_pricing_for_component(billing_client, component_keyword):
-    """
-    Retrieves the list price and the associated SKU for a pricing component (e.g., 'vCPU' or 'Memory').
-    It searches the SKU descriptions for the specified keyword.
-    """
-    service_name = "services/6F81-5844-456A"  # Compute Engine service id
+
+def get_component_prices(billing_client):
+    """Retrieve vCPU and Memory list prices in a single pass through the SKU catalog."""
+    service_name = "services/6F81-5844-456A"  # Compute Engine service ID
+    vcpu_price = vcpu_sku = mem_price = mem_sku = None
     for sku in billing_client.list_skus(parent=service_name):
-        # Consider only on-demand (list price) SKUs.
         if sku.category.usage_type != "OnDemand":
             continue
-        # Search the description for the desired component.
-        if component_keyword.lower() in sku.description.lower():
-            if not sku.pricing_info:
-                continue
-            pricing_expression = sku.pricing_info[0].pricing_expression
-            if not pricing_expression.tiered_rates:
-                continue
-            # Using the first tiered rate as the list price.
-            rate = pricing_expression.tiered_rates[0]
-            price = money_to_float(rate.unit_price)
-            return price, sku.name  # Return both the unit price and the internal SKU id
-    return None, None
+        if not sku.pricing_info or not sku.pricing_info[0].pricing_expression.tiered_rates:
+            continue
+        desc_lower = sku.description.lower()
+        rate = sku.pricing_info[0].pricing_expression.tiered_rates[0]
+        price = money_to_float(rate.unit_price)
+        if vcpu_price is None and "vcpu" in desc_lower:
+            vcpu_price = price
+            vcpu_sku = sku.name
+        elif mem_price is None and "memory" in desc_lower:
+            mem_price = price
+            mem_sku = sku.name
+        if vcpu_price is not None and mem_price is not None:
+            break  # Both found — no need to continue iterating
+    return vcpu_price, vcpu_sku, mem_price, mem_sku
+
 
 def list_machine_types(project, zone):
     """
@@ -60,29 +65,30 @@ def list_machine_types(project, zone):
         })
     return result
 
+
 def main():
-    # Initialize the Cloud Billing Catalog client.
+    # Initialize the Cloud Billing Catalog client
     billing_client = billing_v1.CloudCatalogClient()
 
-    # Retrieve pricing information for vCPU and Memory.
-    vcpu_price, vcpu_sku = get_pricing_for_component(billing_client, "vCPU")
-    mem_price, mem_sku = get_pricing_for_component(billing_client, "Memory")
+    # Retrieve pricing information for vCPU and Memory in a single SKU pass
+    vcpu_price, vcpu_sku, mem_price, mem_sku = get_component_prices(billing_client)
 
     if vcpu_price is None or mem_price is None:
         print("Could not retrieve pricing for vCPU and/or Memory.")
         return
 
-    # Specify your project and zone.
-    project = "sales-engineering-buyer"  # Replace with your actual project id
-    zone = "us-central1-a"       # Change if needed
+    # Derive the GCP project from application default credentials
+    credentials, project = google.auth.default()
 
-    # Retrieve machine types from Compute Engine.
+    zone = "us-central1-a"
+
+    # Retrieve machine types from Compute Engine
     machine_types = list_machine_types(project, zone)
     if not machine_types:
         print("No machine types found for the specified zone.")
         return
 
-    # Build dictionary where key is machine type and value is its approximate cost per hour.
+    # Build dictionary where key is machine type and value is its approximate cost per hour
     pricing_dict = {}
     for machine in machine_types:
         name = machine["name"]
@@ -91,16 +97,15 @@ def main():
         cost = (vcpus * vcpu_price) + (memory_gb * mem_price)
         pricing_dict[name] = round(cost, 4)  # rounded to 4 decimal places
 
-    # Define file path and ensure the directory exists.
-    output_path = "data/google/google_vm_pricing.json"
-    output_dir = os.path.dirname(output_path)
-    os.makedirs(output_dir, exist_ok=True)
+    # Define file path and ensure the directory exists
+    os.makedirs(os.path.dirname(OUTPUT_FILENAME), exist_ok=True)
 
-    # Write the pricing dictionary to the JSON file with nice formatting.
-    with open(output_path, "w") as json_file:
+    # Write the pricing dictionary to the JSON file with nice formatting
+    with open(OUTPUT_FILENAME, "w") as json_file:
         json.dump(pricing_dict, json_file, indent=2)
 
-    print(f"Pricing information saved to {output_path}")
+    print(f"Pricing information saved to {OUTPUT_FILENAME}")
+
 
 if __name__ == "__main__":
     main()

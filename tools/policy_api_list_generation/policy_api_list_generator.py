@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Extract REST API calls from Flexera Policy Templates.
 
@@ -3649,8 +3650,7 @@ def main():
     args = parser.parse_args()
 
     # Get the repository root directory (two levels up from script location)
-    script_path = Path(__file__).resolve() if '__file__' in globals() else Path.cwd()
-    repo_root = script_path.parent.parent.parent if '__file__' in globals() else Path.cwd()
+    repo_root = Path(__file__).resolve().parent.parent.parent
 
     # Path to active policy list
     active_policy_list_file = repo_root / 'data' / 'active_policy_list' / 'active_policy_list.json'

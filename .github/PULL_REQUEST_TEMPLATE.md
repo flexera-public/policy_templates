@@ -2,10 +2,6 @@
 
 <!-- Describe what this change achieves below -->
 
-### Issues Resolved
-
-<!-- List any existing issues this PR resolves below -->
-
 ### Link to Example Applied Policy
 
 <!-- URL to the Applied Policy that was used for dev/testing below -->

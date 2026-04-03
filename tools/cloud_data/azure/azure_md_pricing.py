@@ -113,9 +113,15 @@ def main():
     def sort_by_tier(disk_type):
         if "PROVISIONED" in disk_type:
             return disk_type
-        tier, rep = disk_type.split("_")
-        tier_num = int(tier[1:])
-        return tier[0] + "{:02d}".format(tier_num) + "_" + rep
+        # Use split("_", 1) so disk types with multiple underscores (e.g. P4_ZONE_LRS)
+        # don't cause a "too many values to unpack" ValueError. Fall back to plain
+        # alphabetical sort for any format that doesn't match the expected P/E/S<N> pattern.
+        try:
+            tier, rep = disk_type.split("_", 1)
+            tier_num = int(tier[1:])
+            return tier[0] + "{:02d}".format(tier_num) + "_" + rep
+        except (ValueError, IndexError):
+            return disk_type
 
     for region_name in sorted(region_price_map):
         disk_map = region_price_map[region_name]
