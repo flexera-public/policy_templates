@@ -2113,6 +2113,22 @@ some code
 
 **MD047 — Files must end with a single newline character.** Ensure there is a newline at the very end of every Markdown file.
 
+**MD014 — Do not use `$` prompt prefixes in shell code blocks unless output is also shown.** When a code block contains only commands with no output, omit the leading `$`. The `$` prefix is only appropriate when the block interleaves commands and their output so the reader can distinguish them:
+
+```markdown
+<!-- Wrong — $ prefix with no output shown -->
+```bash
+$ ruby my_script.rb
+$ git add .
+```
+
+<!-- Correct — no $ prefix when showing commands only -->
+```bash
+ruby my_script.rb
+git add .
+```
+```
+
 **MD029 — Ordered list item prefix style.** Always use `1.` for every item in every ordered list — do not use sequential numbers (`1. 2. 3.`). Markdown renderers handle the actual display numbering automatically:
 
 ```markdown
