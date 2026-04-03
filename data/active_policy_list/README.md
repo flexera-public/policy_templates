@@ -2,8 +2,8 @@
 
 This JSON file contains a list of all published policies in the catalog and their metadata. This list is generated through automation every time a pull request is merged into the repository.
 
-- [Rakefile](https://github.com/flexera-public/policy_templates/blob/master/tools/active_policy_list_generation/Rakefile) used for generating this asset.
-- [Github Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/update-active-policy-list.yaml) to run the above Rakefile when a pull request is merged.
+- [generate_active_policy_list.rb](https://github.com/flexera-public/policy_templates/blob/master/tools/active_policy_list_generation/generate_active_policy_list.rb) used for generating this asset.
+- [Github Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/update-active-policy-list.yaml) to run the above script when a pull request is merged.
 - [active_policy_list.json](active_policy_list.json) - The generated JSON file containing list of all policy templates that should be published to the catalog.
 
 ## Generally Recommended Policy Templates List
