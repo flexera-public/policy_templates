@@ -1,3 +1,9 @@
+# frozen_string_literal: true
+
+# Generates meta parent policy templates from child policy template files.
+# Reads child .pt files and populates placeholder values in the appropriate
+# cloud-provider meta parent template (aws/azure/google/custom).
+
 require "json"
 require "yaml"
 
@@ -35,43 +41,61 @@ def child_missing_requirements(file_path, file_contents)
   end
 end
 
-# Check parameters and set things accordingly
-invalid_parameters() if ARGV[0] == nil
-invalid_parameters() if ARGV[0] == "--from-list" && ARGV[1] == nil
-invalid_parameters() if ARGV[0] == "--target-policy" && ARGV[1] == nil
-invalid_parameters() if ARGV[0] == "--target-policy" && ARGV[2] != "aws" && ARGV[2] != "azure" && ARGV[2] != "google" && ARGV[2] != "custom"
-invalid_parameters() if ARGV[0] == "--target-policy" && ARGV[2] == "custom" && ARGV[3] == nil
+# Parameters excluded from meta parent templates (used by meta policy automation).
+# Substring matching is used, so "param_project" also excludes param_projects_*.
+# Note: param_projects_ignore_sys and param_projects_ignore_app are re-added with
+# adjusted content in compile_meta_parent_policy.
+EXCLUDED_PARAMS = %w[
+  param_incident_csv
+  param_incident_table_size
+  param_email
+  param_aws_account_number
+  param_subscription_allowed_list
+  param_subscriptions_list
+  param_subscriptions_allow_or_deny
+  param_project
+  param_projects_list
+  param_projects_allow_or_deny
+  param_schedule
+].freeze
 
-bad_file_path(ARGV[1]) if ARGV[0] == "--from-list" && !File.exist?(ARGV[1])
-bad_file_path(ARGV[1]) if ARGV[0] == "--target-policy" && !File.exist?(ARGV[1])
-bad_file_path(ARGV[3]) if ARGV[0] == "--target-policy" && ARGV[2] == "custom" && !File.exist?(ARGV[3])
+if $PROGRAM_NAME == __FILE__
+  # Check parameters and set things accordingly
+  invalid_parameters() if ARGV[0] == nil
+  invalid_parameters() if ARGV[0] == "--from-list" && ARGV[1] == nil
+  invalid_parameters() if ARGV[0] == "--target-policy" && ARGV[1] == nil
+  invalid_parameters() if ARGV[0] == "--target-policy" && ARGV[2] != "aws" && ARGV[2] != "azure" && ARGV[2] != "google" && ARGV[2] != "custom"
+  invalid_parameters() if ARGV[0] == "--target-policy" && ARGV[2] == "custom" && ARGV[3] == nil
 
-specified_parent_pt_path = nil
+  bad_file_path(ARGV[1]) if ARGV[0] == "--from-list" && !File.exist?(ARGV[1])
+  bad_file_path(ARGV[1]) if ARGV[0] == "--target-policy" && !File.exist?(ARGV[1])
+  bad_file_path(ARGV[3]) if ARGV[0] == "--target-policy" && ARGV[2] == "custom" && !File.exist?(ARGV[3])
 
-if ARGV[0] == "--from-list"
-  child_policy_template_files_yaml = YAML.load_file(ARGV[1])
-  child_policy_template_files = child_policy_template_files_yaml["policy_templates"]
-elsif ARGV[0] == "--target-policy"
-  child_policy_template_files = [ ARGV[1] ]
+  specified_parent_pt_path = nil
 
-  if ARGV[2] == "aws"
-    specified_parent_pt_path = "aws_meta_parent.pt.template"
-  elsif ARGV[2] == "azure"
-    specified_parent_pt_path = "azure_meta_parent.pt.template"
-  elsif ARGV[2] == "google"
-    specified_parent_pt_path = "google_meta_parent.pt.template"
-  elsif ARGV[2] == "custom"
-    specified_parent_pt_path = ARGV[3]
+  if ARGV[0] == "--from-list"
+    child_policy_template_files_yaml = YAML.load_file(ARGV[1])
+    child_policy_template_files = child_policy_template_files_yaml["policy_templates"]
+  elsif ARGV[0] == "--target-policy"
+    child_policy_template_files = [ ARGV[1] ]
+
+    if ARGV[2] == "aws"
+      specified_parent_pt_path = "aws_meta_parent.pt.template"
+    elsif ARGV[2] == "azure"
+      specified_parent_pt_path = "azure_meta_parent.pt.template"
+    elsif ARGV[2] == "google"
+      specified_parent_pt_path = "google_meta_parent.pt.template"
+    elsif ARGV[2] == "custom"
+      specified_parent_pt_path = ARGV[3]
+    end
   end
-end
 
 # Compile Meta Parent Policy Definition
 # This function takes a child policy template file path
 # as input and outputs a meta parent policy definition
 def compile_meta_parent_policy(file_path, specified_parent_pt_path)
   print("Reading child  policy template: "+file_path+"\n") # Intentional extra space after child so the Read/Write output lines up
-  file = File.open(file_path, "rb")
-  pt = file.read
+  pt = File.binread(file_path)
 
   # Exit with error if child policy template is missing required components
   child_missing_requirements(file_path, pt)
@@ -101,16 +125,8 @@ def compile_meta_parent_policy(file_path, specified_parent_pt_path)
   enable_child_schedule_options_scan = pt.scan(/enable_child_schedule_options: "(.*?)"/)
   enable_child_schedule_options = "false"
   enable_child_schedule_options = enable_child_schedule_options_scan[0][0] if !enable_child_schedule_options_scan.empty?
-  # print("Name: #{name}\n")
-  # print("Description: #{description}\n")
-  # print("\n###########################\n")
-
   # Get the parameters
   parameters = pt.scan(/^parameter ".*?" do.*?^end/m)
-
-  # print("Parameters:\n")
-  # print(parameters.join("\n---------\n"))
-  # print("\n###########################\n")
 
   # Get the credentials
   credentials = pt.scan(/^credentials ".*?" do.*?^end/m)
@@ -172,20 +188,6 @@ end
       esc = esc.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_ESC_PARAMETER_ACTION_OPTIONS__", "$action_options = []")
     end
     escalation_blocks_parent.push(esc)
-    # Print the compiled escalation and parameters strings if exist
-    # Helpful for debugging
-    # if !esc_parameters.empty?
-    #   print("\n###########################\n")
-    #   print("Escalation Parameters:\n")
-    #   print(esc_parameters)
-    #   print("\n###########################\n")
-    #   print ("Escalation Names:\n")
-    #   print(esc_parameter_names)
-    #   print("\n###########################\n")
-    #   print("Compiled Escalation:\n")
-    #   print(esc)
-    #   sleep(10)
-    # end
   end
 
 
@@ -233,10 +235,6 @@ end
   checks = pt.scan(/^\s+validate.*?do.*?^  end/m).select { |check| check.include?("export ") }
 
   checks.each do |validate_block|
-    # Print Raw Validate Block as a String
-    # print("Raw Validate Block:\n")
-    # print(validate_block)
-    # print("\n---\n")
     # From validate block, capture the escalate lines
     escalations_child = validate_block.scan(/escalate \$.*\n^/)
     escalations_parent = []
@@ -248,9 +246,6 @@ end
 
     # From validate block, capture the export block
     export_block = validate_block.scan(/export.*?do.*?^  end/m)
-    # print("Export Block: \n")
-    # print(export_block)
-    # print("\n---\n")
     # From the export block, capture the field blocks
     fields = [] # Provide a default value, which is no fields declared
     # Check if export_block is length > 0
@@ -268,9 +263,6 @@ end
       field.strip!
       # Add 6 spaces to the beginning of each field to make it align with the policy.validate.export.<field> in the meta parent
       field = "      " + field
-      # print("Field: \n")
-      # print(export_block)
-      # print("\n---\n")
     end
     # Append the incident_id field to the fields array
     # This holds the child policy incident ID, and can be used for actions from the meta parent
@@ -280,17 +272,12 @@ end
     # From each validate block, capture the summary_template and detail_template
     summary_template = validate_block.scan(/summary_template\s+\"(.*?)\"/m)
     summary_template = validate_block.scan(/summary_template\s+<<-EOS\s+(.*?)EOS/m) if summary_template.empty?
-    # print("Summary Template:\n")
-    # print(summary_template)
     # From the summary template, capture the longest string that contains only letters and spaces
     summary_template_from_pt = summary_template[0][0]
     # Remove any strings matching {{.*}} from summary template
     # These can cause mismatch in identifying the real summary template string
     summary_template_from_pt.gsub!(/{{.*?}}/, "")
     summary_template_search_string = summary_template_from_pt.scan(/[a-zA-Z0-9 \s]+/).max_by(&:length).strip
-    # print("Summary Template Search String:\n")
-    # print(summary_template_search_string)
-    # print("\n------------------\n")
 
     # Get the datasource name from the validate block
     datasource_name = validate_block.scan(/(?:validate|validate_each)\s(.*?)\s+do/m)[0][0]
@@ -319,8 +306,6 @@ end
     consolidated_indidents_datasources.push(output_ds)
     consolidated_incidents_checks.push(output_incident)
   end
-  # print("Credentials:\n")
-  # print(credentials.join("\n---------\n"))
 
   # Replace Placeholders from Meta Parent Policy Template with values from Child Policy Template
   parent_pt_path = "aws_meta_parent.pt.template"
@@ -343,7 +328,7 @@ end
   # Exit with error if the template does not exist
   bad_file_path(parent_pt_path) if !File.exist?(parent_pt_path)
 
-  parent_pt = File.open(parent_pt_path, "rb").read
+  parent_pt = File.binread(parent_pt_path)
   # Copy the parent_pt to output_pt so we can manipulate it safely
   output_pt = parent_pt
   output_pt_path = File.basename(file_path).split(".")[0] + "_meta_parent.pt"
@@ -381,7 +366,7 @@ end
 
   parameters.each do |param|
     # Filter out parameters that we don't want the user to manage because they are used by our meta policy automation
-    param.include?("param_incident_csv") || param.include?("param_incident_table_size") || param.include?("param_email") || param.include?("param_aws_account_number") || param.include?("param_subscription_allowed_list") || param.include?("param_subscriptions_list") || param.include?("param_subscriptions_allow_or_deny") || param.include?("param_project") || param.include?("param_projects_list") || param.include?("param_projects_allow_or_deny") || param.include?("param_schedule") ? nil : output_pt_params.push(param)
+    output_pt_params.push(param) unless EXCLUDED_PARAMS.any? { |excl| param.include?(excl) }
 
     if param.include?("param_projects_ignore_sys")
       adjusted_param = <<EOF
@@ -428,13 +413,12 @@ EOF
   # The output file will be written to the same directory as the child policy template
   outfile_path = File.dirname(file_path) + "/" + output_pt_path
   print("Writing parent policy template: "+outfile_path+"\n")
-  outfile = File.open(outfile_path, "w")
-  outfile.puts(output_pt)
-  outfile.close
+  File.open(outfile_path, "w") { |f| f.puts(output_pt) }
 end
 # End Compile Meta Parent Policy Template Definition
 
-# Loop through all Policy Templates specified
-child_policy_template_files.each do |child_policy_template|
-  compile_meta_parent_policy(child_policy_template, specified_parent_pt_path)
+  # Loop through all Policy Templates specified
+  child_policy_template_files.each do |child_policy_template|
+    compile_meta_parent_policy(child_policy_template, specified_parent_pt_path)
+  end
 end
