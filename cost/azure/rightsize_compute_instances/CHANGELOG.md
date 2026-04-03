@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.4.1
+
+- Updated instance type data source from `data/azure/instance_types.json` to `data/azure/azure_compute_instance_types.json`. Functionality unchanged.
+
 ## v6.4.0
 
 - Added `Current Instance Local Disk` and `Recommended Instance Local Disk` fields to incident export to inform users whether local disk support will change as a result of the recommended action.
