@@ -1,0 +1,103 @@
+# frozen_string_literal: true
+
+# Generates the active policy list JSON consumed by the Public Policy Catalog.
+# Scans all policy template (.pt) files in the repository and builds a JSON
+# catalog of every published, versioned policy template. For each template it
+# fetches the date of the most recent commit from the GitHub API and records it
+# alongside the template's metadata.
+# Output is written to dist/active-policy-list.json (relative to the repo root).
+# The CI workflow copies this to data/active_policy_list/active_policy_list.json.
+
+require 'json'
+require 'fileutils'
+require 'octokit'
+require 'uri'
+require 'time'
+require_relative '../../.dangerfile/policy_parser'
+
+abort "ERROR: GITHUB_API_TOKEN environment variable is not set." unless ENV["GITHUB_API_TOKEN"]
+
+repo_name = "flexera-public/policy_templates"
+branch = "master"
+github_client = Octokit::Client.new(access_token: ENV["GITHUB_API_TOKEN"])
+
+# Build a flat list of all recommended policy template names from the data file.
+generally_recommended_templates = JSON.parse(
+  File.read('data/active_policy_list/generally_recommended_templates.json')
+)
+generally_recommended_template_names = generally_recommended_templates.flat_map { |_key, names| names }
+
+FileUtils.mkdir_p 'dist'
+file_list = []
+
+Dir['**/*.pt'].each do |file|
+  dir = file.split('/')[0...-1].join('/')
+  change_log = File.join(dir, 'CHANGELOG.md')
+  readme = File.join(dir, 'README.md')
+  updated_at = nil
+
+  pp = PolicyParser.new
+  pp.parse(file)
+
+  if pp.parsed_info
+    version = pp.parsed_info[:version]
+    provider = pp.parsed_info[:provider]
+    service = pp.parsed_info[:service]
+    policy_set = pp.parsed_info[:policy_set]
+    recommendation_type = pp.parsed_info[:recommendation_type]
+    publish = pp.parsed_info[:publish]
+    deprecated = pp.parsed_info[:deprecated]
+    hide_skip_approvals = pp.parsed_info[:hide_skip_approvals]
+
+    # 'publish' defaults to true unless explicitly set to false
+    publish = !(publish == 'false' || publish == false)
+    # 'deprecated' defaults to false unless explicitly set to true
+    deprecated = deprecated == 'true' || deprecated == true
+    # 'hide_skip_approvals' defaults to false unless explicitly set to true
+    hide_skip_approvals = hide_skip_approvals == 'true' || hide_skip_approvals == true
+  end
+
+  # Fall back to extracting version from the long description if not set in the header
+  if version.nil? && pp.parsed_long_description =~ /Version/
+    version = pp.parsed_long_description.split(':').last.strip.chomp('"')
+  end
+
+  # Skip policies with no version, a placeholder version, or publish: false
+  if !version || version == '0.0' || !publish
+    puts "Skipping #{pp.parsed_name} because publish flag set to a value other than 'true'"
+  else
+    # Fetch the date of the most recent commit touching this file
+    commits = github_client.commits(repo_name, branch, path: file)
+    updated_at = (commits.first.commit.committer&.date || commits.first.commit.author&.date).utc.iso8601 unless commits.empty?
+
+    generally_recommended = generally_recommended_template_names.include?(pp.parsed_name) && !deprecated
+
+    puts "Adding #{pp.parsed_name}"
+
+    file_list << {
+      "name": pp.parsed_name,
+      "file_name": file,
+      "version": version,
+      "change_log": change_log,
+      "description": pp.parsed_short_description,
+      "category": pp.parsed_category,
+      "severity": pp.parsed_severity,
+      "readme": readme,
+      "provider": provider,
+      "service": service,
+      "policy_set": policy_set,
+      "recommendation_type": recommendation_type,
+      "updated_at": updated_at,
+      "generally_recommended": generally_recommended,
+      "deprecated": deprecated,
+      "hide_skip_approvals": hide_skip_approvals
+    }
+  end
+end
+
+# Sort by name to minimize diffs between runs
+file_list.sort_by! { |pt| pt[:name] }
+
+policies = { "policies": file_list }
+
+File.open('dist/active-policy-list.json', 'w') { |f| f.write(JSON.pretty_generate(policies) + "\n") }

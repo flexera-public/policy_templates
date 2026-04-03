@@ -1,10 +1,10 @@
 # Active Policy List Generation
 
-A Rake task that generates the active policy list JSON file consumed by the Flexera Public Policy Catalog.
+A Ruby script that generates the active policy list JSON file consumed by the Flexera Public Policy Catalog.
 
 ## Overview
 
-The `generate_policy_list` task scans all policy template (`.pt`) files in the repository and builds a JSON catalog of every published, versioned policy template. For each template it fetches the date of the most recent commit from the GitHub API and records it alongside the template's metadata.
+The `generate_active_policy_list.rb` script scans all policy template (`.pt`) files in the repository and builds a JSON catalog of every published, versioned policy template. For each template it fetches the date of the most recent commit from the GitHub API and records it alongside the template's metadata.
 
 Output is written to `dist/active-policy-list.json`. The automated workflow then copies this file to `data/active_policy_list/active_policy_list.json` and opens a pull request.
 
@@ -13,7 +13,7 @@ Output is written to `dist/active-policy-list.json`. The automated workflow then
 Run from the repository root:
 
 ```bash
-bundle exec rake -f tools/active_policy_list_generation/Rakefile generate_policy_list
+bundle exec ruby tools/active_policy_list_generation/generate_active_policy_list.rb
 ```
 
 The `GITHUB_API_TOKEN` environment variable must be set to a GitHub personal access token or the `GITHUB_TOKEN` secret provided by GitHub Actions.

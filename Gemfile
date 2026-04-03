@@ -1,6 +1,5 @@
 source "https://rubygems.org"
 
-gem "rake", "~> 13.2"
 gem "json", "~> 2.10"
 gem "jsonlint", "~> 0.4"
 gem "yaml", "~> 0.4"
