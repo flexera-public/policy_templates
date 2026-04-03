@@ -7,6 +7,10 @@ from googleapiclient.discovery import build
 output_filename = 'data/google/google_compute_instance_types.json'
 os.makedirs(os.path.dirname(output_filename), exist_ok=True)
 
+# Load manual data from the legacy instance_types.json for fields not available via API
+with open('data/google/instance_types.json', 'r') as f:
+    manual_data = json.load(f)
+
 def list_all_machine_types():
     print("Gathering data from Google API...")
 
@@ -75,6 +79,7 @@ for item in machine_types:
             "family": family,
             "variant": variant,
             "description": item.get("description", "None"),
+            "superseded": manual_data.get(name, {}).get("superseded"),
             "zones": [ zone ],
             "specs": {
                 "guestCpus": item.get("guestCpus", "None"),

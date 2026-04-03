@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.6.2",
+  version: "0.6.3",
   provider: "Azure",
   service: "Databricks",
   policy_set: "Databricks",
@@ -631,12 +631,78 @@ script "js_lookback_time_formats", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_instance_size_map" do
+datasource "ds_azure_instance_types_raw" do
   request do
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/azure/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/azure/azure_compute_instance_types.json"
     header "User-Agent", "RS Policies"
   end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "family", jmes_path(col_item, "family")
+      field "vcpu", jmes_path(col_item, "specs.vCPUs")
+      field "memory", jmes_path(col_item, "specs.MemoryGB")
+    end
+  end
+end
+
+datasource "ds_azure_instance_size_map" do
+  run_script $js_azure_instance_size_map, $ds_azure_instance_types_raw
+end
+
+script "js_azure_instance_size_map", type: "javascript" do
+  parameters "ds_azure_instance_types_raw"
+  result "result"
+  code <<-'EOS'
+  // Build lookup table keyed by instance name with 'down' field.
+  // Instances are grouped by family. For each instance, 'down' is the candidate
+  // with the most vCPUs that is still strictly fewer than the current instance.
+  // Ties in vCPU count are broken by closest memory-to-vCPU ratio, which keeps
+  // regular and memory-optimized sub-series (e.g. Standard_D4_v3 vs Standard_D4s_v3)
+  // in separate chains within the same family.
+  result = {}
+
+  families = {}
+
+  _.each(ds_azure_instance_types_raw, function(instance) {
+    if (instance['name'] != undefined && instance['vcpu'] != undefined) {
+      if (families[instance['family']] == undefined) {
+        families[instance['family']] = []
+      }
+      families[instance['family']].push(instance)
+    }
+  })
+
+  _.each(families, function(members, family) {
+    _.each(members, function(instance) {
+      var vcpu = parseInt(instance['vcpu'])
+      var mem = parseFloat(instance['memory'])
+      var memRatio = vcpu > 0 ? mem / vcpu : 0
+
+      var candidates = _.filter(members, function(other) {
+        return parseInt(other['vcpu']) < vcpu
+      })
+
+      var down = null
+
+      if (candidates.length > 0) {
+        candidates.sort(function(a, b) {
+          var aVcpu = parseInt(a['vcpu'])
+          var bVcpu = parseInt(b['vcpu'])
+          if (aVcpu != bVcpu) { return bVcpu - aVcpu }
+          var aRatioDiff = Math.abs(parseFloat(a['memory']) / aVcpu - memRatio)
+          var bRatioDiff = Math.abs(parseFloat(b['memory']) / bVcpu - memRatio)
+          return aRatioDiff - bRatioDiff
+        })
+        down = candidates[0]['name']
+      }
+
+      result[instance['name']] = { down: down }
+    })
+  })
+EOS
 end
 
 datasource "ds_azure_skus" do
