@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.2",
+  version: "0.2.3",
   provider: "Azure",
   service: "Compute",
   policy_set: "Overutilized Compute Instances",
@@ -1016,12 +1016,67 @@ script "js_instance_costs_grouped", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_instance_size_map" do
+datasource "ds_azure_instance_types_raw" do
   request do
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/azure/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/azure/azure_compute_instance_types.json"
     header "User-Agent", "RS Policies"
   end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "family", jmes_path(col_item, "family")
+      field "vcpu", jmes_path(col_item, "specs.vCPUs")
+      field "memory", jmes_path(col_item, "specs.MemoryGB")
+    end
+  end
+end
+
+datasource "ds_azure_instance_size_map" do
+  run_script $js_azure_instance_size_map, $ds_azure_instance_types_raw
+end
+
+script "js_azure_instance_size_map", type: "javascript" do
+  parameters "ds_azure_instance_types_raw"
+  result "result"
+  code <<-'EOS'
+  // Build a lookup table keyed by instance name
+  result = {}
+  _.each(ds_azure_instance_types_raw, function(instance) {
+    result[instance['name']] = {
+      up: null,
+      vcpu: parseInt(instance['vcpu']),
+      memory: parseFloat(instance['memory'])
+    }
+  })
+
+  // Derive 'up' pointers by finding the next-larger instance within the same family.
+  // For each instance, candidates must have strictly more vCPUs.
+  // Among candidates with the fewest vCPUs (smallest step up), the one with the
+  // closest memory-to-vCPU ratio is chosen. This keeps regular and memory-optimized
+  // sub-series separate (e.g. Standard_A2_v2 -> Standard_A4_v2, not Standard_A2m_v2).
+  _.each(ds_azure_instance_types_raw, function(instance) {
+    var currentVcpu = parseInt(instance['vcpu'])
+    var currentMemory = parseFloat(instance['memory'])
+    var currentRatio = currentVcpu > 0 ? currentMemory / currentVcpu : 0
+    var family = instance['family']
+
+    var candidates = _.filter(ds_azure_instance_types_raw, function(other) {
+      return other['family'] == family && parseInt(other['vcpu']) > currentVcpu
+    })
+
+    if (candidates.length > 0) {
+      candidates = _.sortBy(candidates, function(c) {
+        var cVcpu = parseInt(c['vcpu'])
+        var cRatio = cVcpu > 0 ? parseFloat(c['memory']) / cVcpu : 0
+        return cVcpu * 1000000 + Math.abs(cRatio - currentRatio) * 1000
+      })
+
+      result[instance['name']]['up'] = candidates[0]['name']
+    }
+  })
+EOS
 end
 
 datasource "ds_azure_regions_for_instance_sizes" do

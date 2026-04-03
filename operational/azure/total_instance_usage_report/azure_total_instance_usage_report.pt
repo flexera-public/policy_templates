@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "monthly"
 info(
-  version: "1.0.10",
+  version: "1.0.11",
   provider: "Azure",
   service: "Compute",
   policy_set: "Usage Report",
@@ -291,12 +291,45 @@ script "js_usage_data", type: "javascript" do
   EOS
 end
 
-datasource "ds_azure_instance_size_map" do
+datasource "ds_azure_instance_types_raw" do
   request do
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/azure/instance_types.json"
+    path "/flexera-public/policy_templates/master/data/azure/azure_compute_instance_types.json"
     header "User-Agent", "RS Policies"
   end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "nfu", jmes_path(col_item, "specs.nfu")
+      field "vcpu", jmes_path(col_item, "specs.vCPUs")
+      field "memory", jmes_path(col_item, "specs.MemoryGB")
+    end
+  end
+end
+
+datasource "ds_azure_instance_size_map" do
+  run_script $js_azure_instance_size_map, $ds_azure_instance_types_raw
+end
+
+script "js_azure_instance_size_map", type: "javascript" do
+  parameters "ds_azure_instance_types_raw"
+  result "result"
+  code <<-'EOS'
+  // Build lookup table keyed by instance name with nfu, vcpu, and memory fields.
+  // These are read by js_instance_units_per_family via the instance_unit mapping:
+  // { "Normalized Instance Count": "nfu", "vCPUs": "vcpu", "Memory (GiB)": "memory" }
+  result = {}
+  _.each(ds_azure_instance_types_raw, function(instance) {
+    if (instance['name'] != undefined) {
+      result[instance['name']] = {
+        nfu: instance['nfu'],
+        vcpu: parseInt(instance['vcpu']),
+        memory: instance['memory']
+      }
+    }
+  })
+EOS
 end
 
 datasource "ds_azure_instance_families" do
