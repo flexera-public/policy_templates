@@ -2097,6 +2097,26 @@ Some text.
 More text.
 ```
 
+**MD014 — Dollar signs used before commands without showing output.** In `bash` code blocks, do not prefix commands with `$` unless the block also shows the command's output (i.e. interleaves prompt lines with output lines). Commands that run without displayed output should have no prefix:
+
+```markdown
+<!-- Wrong — $ prefix with no output shown -->
+```bash
+$ ruby tools/my_script.rb
+```
+
+<!-- Correct — no prefix when output is not shown -->
+```bash
+ruby tools/my_script.rb
+```
+
+<!-- Correct — $ prefix is fine when output follows -->
+```bash
+$ ruby tools/my_script.rb
+Script completed: 42 templates processed.
+```
+```
+
 **MD040 — Fenced code blocks must declare a language.** Always specify the language after the opening fence. Use `markdown`, `bash`, `javascript`, `yaml`, `json`, or `text` as appropriate. Never leave the fence bare:
 
 ```markdown
