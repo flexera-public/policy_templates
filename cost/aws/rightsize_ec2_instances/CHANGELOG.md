@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.7.1
+
+- Updated instance type data source from `data/aws/instance_types.json` to `data/aws/aws_ec2_instance_types.json`. Functionality unchanged.
+
 ## v5.7.0
 
 - Added support for filtering GPU instances from the policy incident via a new `Filter GPU Instances` parameter.
