@@ -2,6 +2,7 @@
 
 ## v0.6.3
 
+- Added `hash_exclude` directives to idle and underutilized incident blocks to prevent spurious incident re-opens when savings estimates or utilization metrics change between runs.
 - Updated instance type data source from `data/azure/instance_types.json` to `data/azure/azure_compute_instance_types.json`. Instance size ordering now uses vCPU count and memory-to-vCPU ratio from the new data file to derive downsize recommendations.
 
 ## v0.6.2
