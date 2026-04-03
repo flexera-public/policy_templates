@@ -1,16 +1,14 @@
 # frozen_string_literal: true
-
 # Checks if the generated CloudFormation template differs from the most recent
 # versioned release and, if so, copies it as the next minor version.
 
-# frozen_string_literal: true
 require "json"
 require "time"
 require "pathname"
 require "digest"
 require "fileutils"
 
-# Returns true if two files have identical content (compared via SHA-256 hash).
+# Method to test if two files are identical
 def files_match?(file1, file2)
   Digest::SHA256.file(file1).hexdigest == Digest::SHA256.file(file2).hexdigest
 end
@@ -20,7 +18,7 @@ if $PROGRAM_NAME == __FILE__
   release_dir = "./releases"
   local_file_path = "./FlexeraAutomationPolicies.template"
 
-  # Get a list of all versioned template files in the releases directory
+  # Get a list of all template files in the directory
   files = Dir.entries(release_dir).select { |file| file =~ /FlexeraAutomationPolicies_v(\d+\.\d+\.\d+)\.template$/ }
 
   # Extract version numbers and map them to their corresponding files
@@ -29,7 +27,9 @@ if $PROGRAM_NAME == __FILE__
     [file, match[1]] if match
   end.compact
 
-  abort("No versioned release files found in #{release_dir}") if file_versions.empty?
+  if file_versions.empty?
+    abort("No versioned release files found in #{release_dir}")
+  end
 
   # Find the most recent version
   most_recent = file_versions.max_by { |_, version| Gem::Version.new(version) }

@@ -1,10 +1,4 @@
 # frozen_string_literal: true
-
-# Generates AWS CloudFormation templates granting per-policy-template IAM permissions
-# by reading the active policy list and master permissions JSON data files.
-
-# frozen_string_literal: true
-# frozen_string_literal: true
 # Generates AWS CloudFormation templates with IAM policies for Flexera Automation
 # based on the active policy list and master policy permissions list JSON files.
 
@@ -72,7 +66,7 @@ end
 
 # Method for generating template
 def create_template(perm_list, template_path)
-  # Create mutable strings to insert into template (use << for O(n) appends)
+  # Create strings to insert into template
   parameter_groups = +""
   parameter_labels = +""
   parameter_group_definitions = +""

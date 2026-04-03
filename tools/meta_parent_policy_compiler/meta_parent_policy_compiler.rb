@@ -59,37 +59,6 @@ EXCLUDED_PARAMS = %w[
   param_schedule
 ].freeze
 
-if $PROGRAM_NAME == __FILE__
-  # Check parameters and set things accordingly
-  invalid_parameters() if ARGV[0] == nil
-  invalid_parameters() if ARGV[0] == "--from-list" && ARGV[1] == nil
-  invalid_parameters() if ARGV[0] == "--target-policy" && ARGV[1] == nil
-  invalid_parameters() if ARGV[0] == "--target-policy" && ARGV[2] != "aws" && ARGV[2] != "azure" && ARGV[2] != "google" && ARGV[2] != "custom"
-  invalid_parameters() if ARGV[0] == "--target-policy" && ARGV[2] == "custom" && ARGV[3] == nil
-
-  bad_file_path(ARGV[1]) if ARGV[0] == "--from-list" && !File.exist?(ARGV[1])
-  bad_file_path(ARGV[1]) if ARGV[0] == "--target-policy" && !File.exist?(ARGV[1])
-  bad_file_path(ARGV[3]) if ARGV[0] == "--target-policy" && ARGV[2] == "custom" && !File.exist?(ARGV[3])
-
-  specified_parent_pt_path = nil
-
-  if ARGV[0] == "--from-list"
-    child_policy_template_files_yaml = YAML.load_file(ARGV[1])
-    child_policy_template_files = child_policy_template_files_yaml["policy_templates"]
-  elsif ARGV[0] == "--target-policy"
-    child_policy_template_files = [ ARGV[1] ]
-
-    if ARGV[2] == "aws"
-      specified_parent_pt_path = "aws_meta_parent.pt.template"
-    elsif ARGV[2] == "azure"
-      specified_parent_pt_path = "azure_meta_parent.pt.template"
-    elsif ARGV[2] == "google"
-      specified_parent_pt_path = "google_meta_parent.pt.template"
-    elsif ARGV[2] == "custom"
-      specified_parent_pt_path = ARGV[3]
-    end
-  end
-
 # Compile Meta Parent Policy Definition
 # This function takes a child policy template file path
 # as input and outputs a meta parent policy definition
@@ -416,6 +385,37 @@ EOF
   File.open(outfile_path, "w") { |f| f.puts(output_pt) }
 end
 # End Compile Meta Parent Policy Template Definition
+
+if $PROGRAM_NAME == __FILE__
+  # Check parameters and set things accordingly
+  invalid_parameters() if ARGV[0] == nil
+  invalid_parameters() if ARGV[0] == "--from-list" && ARGV[1] == nil
+  invalid_parameters() if ARGV[0] == "--target-policy" && ARGV[1] == nil
+  invalid_parameters() if ARGV[0] == "--target-policy" && ARGV[2] != "aws" && ARGV[2] != "azure" && ARGV[2] != "google" && ARGV[2] != "custom"
+  invalid_parameters() if ARGV[0] == "--target-policy" && ARGV[2] == "custom" && ARGV[3] == nil
+
+  bad_file_path(ARGV[1]) if ARGV[0] == "--from-list" && !File.exist?(ARGV[1])
+  bad_file_path(ARGV[1]) if ARGV[0] == "--target-policy" && !File.exist?(ARGV[1])
+  bad_file_path(ARGV[3]) if ARGV[0] == "--target-policy" && ARGV[2] == "custom" && !File.exist?(ARGV[3])
+
+  specified_parent_pt_path = nil
+
+  if ARGV[0] == "--from-list"
+    child_policy_template_files_yaml = YAML.load_file(ARGV[1])
+    child_policy_template_files = child_policy_template_files_yaml["policy_templates"]
+  elsif ARGV[0] == "--target-policy"
+    child_policy_template_files = [ ARGV[1] ]
+
+    if ARGV[2] == "aws"
+      specified_parent_pt_path = "aws_meta_parent.pt.template"
+    elsif ARGV[2] == "azure"
+      specified_parent_pt_path = "azure_meta_parent.pt.template"
+    elsif ARGV[2] == "google"
+      specified_parent_pt_path = "google_meta_parent.pt.template"
+    elsif ARGV[2] == "custom"
+      specified_parent_pt_path = ARGV[3]
+    end
+  end
 
   # Loop through all Policy Templates specified
   child_policy_template_files.each do |child_policy_template|
