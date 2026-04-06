@@ -944,6 +944,8 @@ end
 
 4. **`esc_email_errors_identified`** escalation — simple email with no table attachment.
 
+**Probe endpoint selection:** The `ds_region_check` probe must use an API endpoint whose result-limit parameter accepts small values (e.g. `MaxResults=5`). **Do not probe RDS `DescribeDBInstances`** — that action uses `MaxRecords` (not `MaxResults`), which requires a minimum value of 20 and returns an API error for smaller values. When the template's primary service uses a restrictive API (e.g. RDS), probe a different service such as ElastiCache (`DescribeCacheClusters`) or EC2 (`DescribeNatGateways`) instead, since both accept `MaxResults` with values as small as 5. The convention across existing catalog templates is `query "MaxResults", "5"`.
+
 ```
 # 1. Probe each region for accessibility
 datasource "ds_region_check" do
@@ -2287,6 +2289,44 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automat
 
 7. **Closing footnote** — the section must end (before the next `##` heading) with exactly:
    `The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.`
+
+8. **AWS credential JSON example** — whenever an AWS credential (`provider=aws`) is listed in `## Prerequisites`, the credential block **must** include a `### Credential configuration` subsection immediately after the credential list (before the closing footnote). This subsection provides an IAM policy JSON example for administrators. The format is:
+
+   ```markdown
+   ### Credential configuration
+
+   For administrators [creating and managing credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) to use with this policy, the following information is needed:
+
+   - [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
+     - `ec2:DescribeRegions`
+     - `rds:DescribeDBInstances`
+     - `rds:ListTagsForResource`*
+
+     \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
+
+     Example IAM Permission Policy:
+
+     ```json
+     {
+         "Version": "2012-10-17",
+         "Statement": [
+             {
+                 "Effect": "Allow",
+                 "Action": [
+                     "ec2:DescribeRegions",
+                     "rds:DescribeDBInstances",
+                     "rds:ListTagsForResource"
+                 ],
+                 "Resource": "*"
+             }
+         ]
+     }
+     ```
+   ```
+
+   - The `### Credential configuration` subsection appears **inside `## Prerequisites`**, immediately before the `The [Provider-Specific Credentials]...` closing footnote.
+   - The JSON example must list **all** permissions from the credential block (including action-only ones — those should still appear in the JSON so the administrator can apply full permissions as needed).
+   - The `Resource: "*"` is standard for all AWS service actions in this catalog.
 
 The remaining two required README sections (continuing the main list above):
 
