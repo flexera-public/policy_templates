@@ -496,19 +496,14 @@ EOS
 end
 
 datasource "ds_regions_to_query" do
-  run_script $js_regions_to_query, $ds_regions, $param_upcoming_days
+  run_script $js_regions_to_query, $ds_regions
 end
 
 script "js_regions_to_query", type: "javascript" do
-  parameters "ds_regions", "param_upcoming_days"
+  parameters "ds_regions"
   result "result"
   code <<-'EOS'
-  // Only query AWS resource APIs when checking for upcoming extended support
-  if (param_upcoming_days > 0) {
-    result = ds_regions
-  } else {
-    result = []
-  }
+  result = ds_regions
 EOS
 end
 
@@ -541,9 +536,6 @@ script "js_identify_errors", type: "javascript" do
   result "errors"
   code <<-'EOS'
   var errors = []
-
-  // If no regions were queried (param_upcoming_days == 0), no errors to report
-  if (ds_regions_to_query.length == 0) { errors = [] }
 
   if (ds_regions_to_query.length > 0) {
     var region_responses = {}
@@ -712,25 +704,27 @@ datasource "ds_elasticache_clusters" do
   end
 end
 
-datasource "ds_upcoming_extended_support_resources" do
-  run_script $js_upcoming_extended_support_resources, $ds_rds_instances, $ds_eks_clusters, $ds_elasticache_clusters, $ds_aws_extended_support_dates, $ds_cloud_vendor_accounts, $ds_currency, $param_upcoming_days
+datasource "ds_all_extended_support_resources" do
+  run_script $js_all_extended_support_resources, $ds_rds_instances, $ds_eks_clusters, $ds_elasticache_clusters, $ds_aws_extended_support_dates, $ds_flexera_cco_data_filtered, $ds_cloud_vendor_accounts, $ds_currency, $param_upcoming_days
 end
 
-script "js_upcoming_extended_support_resources", type: "javascript" do
-  parameters "ds_rds_instances", "ds_eks_clusters", "ds_elasticache_clusters", "ds_aws_extended_support_dates", "ds_cloud_vendor_accounts", "ds_currency", "param_upcoming_days"
+script "js_all_extended_support_resources", type: "javascript" do
+  parameters "ds_rds_instances", "ds_eks_clusters", "ds_elasticache_clusters", "ds_aws_extended_support_dates", "ds_flexera_cco_data_filtered", "ds_cloud_vendor_accounts", "ds_currency", "param_upcoming_days"
   result "result"
   code <<-'EOS'
   result = []
 
-  if (param_upcoming_days > 0) {
   var today = new Date()
   today.setHours(0, 0, 0, 0)
   var today_ms = today.getTime()
 
-  var cutoff = new Date()
-  cutoff.setDate(cutoff.getDate() + param_upcoming_days)
-  cutoff.setHours(23, 59, 59, 999)
-  var cutoff_ms = cutoff.getTime()
+  var cutoff_ms = today_ms
+  if (param_upcoming_days > 0) {
+    var cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() + param_upcoming_days)
+    cutoff.setHours(23, 59, 59, 999)
+    cutoff_ms = cutoff.getTime()
+  }
 
   var hours_per_month = 24 * 30.44
 
@@ -739,11 +733,50 @@ script "js_upcoming_extended_support_resources", type: "javascript" do
     if (acct['id']) { account_name_map[acct['id']] = acct['name'] }
   })
 
+  // Build a CCO cost lookup keyed by resource identifier for joining later.
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  var cost_multiplier = 365.25 / 12
+  var cco_cost_lookup = {}
+
+  _.each(ds_flexera_cco_data_filtered, function(item) {
+    if (!item['resource_id']) { return }
+    var rid = item['resource_id']
+    var monthly = item['cost'] * cost_multiplier
+
+    // Index by full resource_id and lowercased version
+    cco_cost_lookup[rid] = (cco_cost_lookup[rid] || 0) + monthly
+    var rid_lower = rid.toLowerCase()
+    if (rid_lower !== rid) {
+      cco_cost_lookup[rid_lower] = (cco_cost_lookup[rid_lower] || 0) + monthly
+    }
+
+    // Index by last colon-delimited segment to handle ARN-formatted IDs
+    var last_seg = rid.split(':').pop().toLowerCase()
+    if (last_seg && last_seg !== rid_lower) {
+      cco_cost_lookup[last_seg] = (cco_cost_lookup[last_seg] || 0) + monthly
+    }
+  })
+
+  function getCCOCost(arn, identifier) {
+    if (arn) {
+      var cost = cco_cost_lookup[arn] || cco_cost_lookup[arn.toLowerCase()] || null
+      if (cost == null) {
+        var last_seg = arn.split(':').pop().toLowerCase()
+        cost = cco_cost_lookup[last_seg] || null
+      }
+      if (cost != null) { return cost }
+    }
+    if (identifier) {
+      return cco_cost_lookup[identifier] || cco_cost_lookup[identifier.toLowerCase()] || null
+    }
+    return null
+  }
+
   function extractAccountId(arn) {
     if (!arn) { return '' }
     var parts = arn.split(':')
-    if (parts.length > 4) { return parts[4] }
-    return ''
+    return parts.length > 4 ? parts[4] : ''
   }
 
   function versionMatches(resource_version, data_version) {
@@ -766,11 +799,11 @@ script "js_upcoming_extended_support_resources", type: "javascript" do
     return found
   }
 
-  function isUpcoming(date_string) {
-    var date = new Date(date_string)
-    date.setHours(0, 0, 0, 0)
-    var date_ms = date.getTime()
-    return date_ms > today_ms && date_ms <= cutoff_ms
+  function classifyResource(start_date_string) {
+    var start_ms = new Date(start_date_string).setHours(0, 0, 0, 0)
+    if (start_ms <= today_ms) { return 'Currently Under Extended Support' }
+    if (start_ms <= cutoff_ms) { return 'Upcoming Extended Support' }
+    return null
   }
 
   function daysUntil(date_string) {
@@ -783,8 +816,7 @@ script "js_upcoming_extended_support_resources", type: "javascript" do
   // Uses the standard AWS instance size naming convention; falls back to 2 for unknown types.
   function getVcpuCount(instance_class) {
     if (!instance_class) { return 2 }
-    var parts = instance_class.toLowerCase().split('.')
-    var size = parts[parts.length - 1]
+    var size = instance_class.toLowerCase().split('.').pop()
     var size_vcpu_map = {
       "nano": 2, "micro": 2, "small": 2, "medium": 2, "large": 2,
       "xlarge": 4, "2xlarge": 8, "4xlarge": 16, "8xlarge": 32,
@@ -797,37 +829,47 @@ script "js_upcoming_extended_support_resources", type: "javascript" do
     return 2
   }
 
+  function estimateMonthlyCost(entry, resource) {
+    var hourly_rate = entry['hourly_rate'] || 0
+    if (entry['service'] == 'RDS') {
+      return Math.round(hourly_rate * getVcpuCount(resource['instanceClass']) * hours_per_month * 1000) / 1000
+    }
+    if (entry['service'] == 'ElastiCache') {
+      return Math.round(hourly_rate * (parseInt(resource['numCacheNodes'], 10) || 1) * hours_per_month * 1000) / 1000
+    }
+    return Math.round(hourly_rate * hours_per_month * 1000) / 1000
+  }
+
   _.each(ds_rds_instances, function(instance) {
     var entry = findEntry('RDS', instance['engine'], instance['engineVersion'])
     if (!entry) { return }
-    if (!isUpcoming(entry['extended_support_start'])) { return }
+    var status = classifyResource(entry['extended_support_start'])
+    if (!status) { return }
+    if (status == 'Upcoming Extended Support' && param_upcoming_days == 0) { return }
 
     var account_id = extractAccountId(instance['arn'])
-    var days = daysUntil(entry['extended_support_start'])
-    var hourly_rate = entry['hourly_rate'] || 0.12
-    var vcpu_count = getVcpuCount(instance['instanceClass'])
-    var estimated_savings = Math.round(hourly_rate * vcpu_count * hours_per_month * 1000) / 1000
+    var actual_cost = getCCOCost(instance['arn'], instance['identifier'])
+    var savings = actual_cost !== null
+      ? Math.round(actual_cost * 1000) / 1000
+      : estimateMonthlyCost(entry, instance)
 
     result.push({
       accountID: account_id,
       accountName: account_name_map[account_id] || account_id,
       resourceID: instance['identifier'],
-      resourceName: instance['identifier'],
       service: 'RDS',
       region: instance['region'],
       resourceType: instance['engine'] + ' ' + instance['engineVersion'],
       extendedSupportStart: entry['extended_support_start'],
       extendedSupportEnd: entry['extended_support_end'],
-      daysUntilExtendedSupport: days,
-      status: 'Upcoming Extended Support',
-      savings: estimated_savings,
+      daysUntilExtendedSupport: status == 'Currently Under Extended Support' ? 0 : daysUntil(entry['extended_support_start']),
+      status: status,
+      savings: savings,
+      hasCCOCost: actual_cost !== null,
       savingsCurrency: ds_currency['symbol'],
-      recommendationDetails: [
-        "Upgrade or migrate RDS instance ", instance['identifier'],
-        " from ", instance['engine'], " ", instance['engineVersion'],
-        " to a newer supported version before ", entry['extended_support_start'],
-        " to avoid extended support charges."
-      ].join('')
+      recommendationDetails: status == 'Currently Under Extended Support'
+        ? "Upgrade or migrate RDS instance " + instance['identifier'] + " from " + instance['engine'] + " " + instance['engineVersion'] + " to a newer supported version to stop incurring extended support charges."
+        : "Upgrade or migrate RDS instance " + instance['identifier'] + " from " + instance['engine'] + " " + instance['engineVersion'] + " to a newer supported version before " + entry['extended_support_start'] + " to avoid extended support charges."
     })
   })
 
@@ -835,33 +877,33 @@ script "js_upcoming_extended_support_resources", type: "javascript" do
     if (!cluster['version']) { return }
     var entry = findEntry('EKS', 'kubernetes', cluster['version'])
     if (!entry) { return }
-    if (!isUpcoming(entry['extended_support_start'])) { return }
+    var status = classifyResource(entry['extended_support_start'])
+    if (!status) { return }
+    if (status == 'Upcoming Extended Support' && param_upcoming_days == 0) { return }
 
     var account_id = extractAccountId(cluster['arn'])
-    var days = daysUntil(entry['extended_support_start'])
-    var hourly_rate = entry['hourly_rate'] || 0.60
-    var estimated_savings = Math.round(hourly_rate * hours_per_month * 1000) / 1000
+    var actual_cost = getCCOCost(cluster['arn'], cluster['name'])
+    var savings = actual_cost !== null
+      ? Math.round(actual_cost * 1000) / 1000
+      : estimateMonthlyCost(entry, cluster)
 
     result.push({
       accountID: account_id,
       accountName: account_name_map[account_id] || account_id,
       resourceID: cluster['name'],
-      resourceName: cluster['name'],
       service: 'EKS',
       region: cluster['region'],
       resourceType: 'Kubernetes ' + cluster['version'],
       extendedSupportStart: entry['extended_support_start'],
       extendedSupportEnd: entry['extended_support_end'],
-      daysUntilExtendedSupport: days,
-      status: 'Upcoming Extended Support',
-      savings: estimated_savings,
+      daysUntilExtendedSupport: status == 'Currently Under Extended Support' ? 0 : daysUntil(entry['extended_support_start']),
+      status: status,
+      savings: savings,
+      hasCCOCost: actual_cost !== null,
       savingsCurrency: ds_currency['symbol'],
-      recommendationDetails: [
-        "Upgrade EKS cluster ", cluster['name'],
-        " from Kubernetes ", cluster['version'],
-        " to a newer supported version before ", entry['extended_support_start'],
-        " to avoid extended support charges."
-      ].join('')
+      recommendationDetails: status == 'Currently Under Extended Support'
+        ? "Upgrade EKS cluster " + cluster['name'] + " from Kubernetes " + cluster['version'] + " to a newer supported version to stop incurring extended support charges."
+        : "Upgrade EKS cluster " + cluster['name'] + " from Kubernetes " + cluster['version'] + " to a newer supported version before " + entry['extended_support_start'] + " to avoid extended support charges."
     })
   })
 
@@ -869,70 +911,47 @@ script "js_upcoming_extended_support_resources", type: "javascript" do
     if (!cluster['engine'] || !cluster['engineVersion']) { return }
     var entry = findEntry('ElastiCache', cluster['engine'], cluster['engineVersion'])
     if (!entry) { return }
-    if (!isUpcoming(entry['extended_support_start'])) { return }
+    var status = classifyResource(entry['extended_support_start'])
+    if (!status) { return }
+    if (status == 'Upcoming Extended Support' && param_upcoming_days == 0) { return }
 
     var account_id = extractAccountId(cluster['arn'])
-    var days = daysUntil(entry['extended_support_start'])
-    var hourly_rate = entry['hourly_rate'] || 0.05
-    var num_nodes = parseInt(cluster['numCacheNodes'], 10) || 1
-    var estimated_savings = Math.round(hourly_rate * num_nodes * hours_per_month * 1000) / 1000
+    var actual_cost = getCCOCost(cluster['arn'], cluster['id'])
+    var savings = actual_cost !== null
+      ? Math.round(actual_cost * 1000) / 1000
+      : estimateMonthlyCost(entry, cluster)
 
     result.push({
       accountID: account_id,
       accountName: account_name_map[account_id] || account_id,
       resourceID: cluster['id'],
-      resourceName: cluster['id'],
       service: 'ElastiCache',
       region: cluster['region'],
       resourceType: cluster['engine'] + ' ' + cluster['engineVersion'],
       extendedSupportStart: entry['extended_support_start'],
       extendedSupportEnd: entry['extended_support_end'],
-      daysUntilExtendedSupport: days,
-      status: 'Upcoming Extended Support',
-      savings: estimated_savings,
+      daysUntilExtendedSupport: status == 'Currently Under Extended Support' ? 0 : daysUntil(entry['extended_support_start']),
+      status: status,
+      savings: savings,
+      hasCCOCost: actual_cost !== null,
       savingsCurrency: ds_currency['symbol'],
-      recommendationDetails: [
-        "Upgrade ElastiCache cluster ", cluster['id'],
-        " from ", cluster['engine'], " ", cluster['engineVersion'],
-        " to a newer supported version before ", entry['extended_support_start'],
-        " to avoid extended support charges."
-      ].join('')
+      recommendationDetails: status == 'Currently Under Extended Support'
+        ? "Upgrade ElastiCache cluster " + cluster['id'] + " from " + cluster['engine'] + " " + cluster['engineVersion'] + " to a newer supported version to stop incurring extended support charges."
+        : "Upgrade ElastiCache cluster " + cluster['id'] + " from " + cluster['engine'] + " " + cluster['engineVersion'] + " to a newer supported version before " + entry['extended_support_start'] + " to avoid extended support charges."
     })
   })
-
-  } // end if (param_upcoming_days > 0)
 EOS
 end
 
 datasource "ds_extended_support_resources" do
-  run_script $js_extended_support_resources, $ds_flexera_cco_data_filtered, $ds_upcoming_extended_support_resources, $ds_applied_policy, $ds_currency, $ds_regions_table, $param_min_savings, $param_incident_csv
+  run_script $js_extended_support_resources, $ds_all_extended_support_resources, $ds_applied_policy, $ds_currency, $param_min_savings, $param_incident_csv
 end
 
 script "js_extended_support_resources", type: "javascript" do
-  parameters "ds_flexera_cco_data_filtered", "ds_upcoming_extended_support_resources", "ds_applied_policy", "ds_currency", "ds_regions_table", "param_min_savings", "param_incident_csv"
+  parameters "ds_all_extended_support_resources", "ds_applied_policy", "ds_currency", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
-
-  // Parse engine/version from CCO usage_type field.
-  // RDS/ElastiCache pattern: "USE1-RDS:0014-MySQL8.0-ExtendedSupport"
-  // EKS alternative pattern: "USE1-AmazonEKS-ExtendedSupport:1.28"
-  function parseResourceType(usage_type) {
-    if (!usage_type) { return 'N/A' }
-
-    var match = usage_type.match(/:\d+-(.+?)-[Ee]xtended[Ss]upport/i)
-    if (match) {
-      var version_str = match[1]
-      version_str = version_str.replace(/^KubernetesVersion/, 'Kubernetes ')
-      version_str = version_str.replace(/([a-zA-Z])(\d)/, '$1 $2')
-      return version_str
-    }
-
-    match = usage_type.match(/EKS.+-[Ee]xtended[Ss]upport:(\d+\.\d+)/i)
-    if (match) { return 'Kubernetes ' + match[1] }
-
-    return 'N/A'
-  }
 
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -958,71 +977,34 @@ script "js_extended_support_resources", type: "javascript" do
     return formatted_number
   }
 
-  resources_object = {}
-
-  _.each(ds_flexera_cco_data_filtered, function(item) {
-    if (resources_object[item['resource_id']] == undefined) {
-      resources_object[item['resource_id']] = item
-    } else {
-      resources_object[item['resource_id']]['cost'] += item['cost']
-    }
-  })
-
   result = []
+  var total_savings = 0
 
-  // Multiply a single day's cost by the average number of days in a month.
-  // The 0.25 is to account for leap years for extra precision.
-  cost_multiplier = 365.25 / 12
+  _.each(ds_all_extended_support_resources, function(resource) {
+    // Apply min_savings only to resources where we have actual CCO cost data.
+    // Resources without CCO cost data (estimated savings) always pass the filter.
+    if (resource['hasCCOCost'] && resource['savings'] < param_min_savings) { return }
 
-  total_savings = 0
+    total_savings += resource['savings'] || 0
 
-  _.each(_.keys(resources_object), function(id) {
-    resource = resources_object[id]
-    savings = Math.round(resource['cost'] * cost_multiplier * 1000) / 1000
-
-    if (savings >= param_min_savings) {
-      total_savings += resource['cost'] * cost_multiplier
-
-      recommendationDetails = [
-        "Upgrade or migrate AWS resource ", resource['resource_id'], " ",
-        "in AWS Account ", resource['vendor_account_name'], " ",
-        "(", resource['vendor_account'], ") ",
-        "to a newer resource type that is not in extended support."
-      ].join('')
-
-      result.push({
-        accountID: resource['vendor_account'],
-        accountName: resource['vendor_account_name'],
-        resourceID: resource['resource_id'],
-        service: resource['service'],
-        region: ds_regions_table[resource['region']] || resource['region'],
-        resourceType: parseResourceType(resource['usage_type']),
-        extendedSupportStart: 'N/A',
-        extendedSupportEnd: 'N/A',
-        daysUntilExtendedSupport: 0,
-        status: 'Currently Under Extended Support',
-        recommendationDetails: recommendationDetails,
-        savings: savings,
-        savingsCurrency: ds_currency['symbol'],
-        policy_name: ds_applied_policy['name'],
-        total_savings: 0,
-        csv_message: csv_message
-      })
-    }
-  })
-
-  var existing_ids = {}
-  _.each(result, function(item) { existing_ids[item['resourceID']] = true })
-
-  _.each(ds_upcoming_extended_support_resources, function(upcoming) {
-    if (!existing_ids[upcoming['resourceID']]) {
-      existing_ids[upcoming['resourceID']] = true
-      total_savings += upcoming['savings'] || 0
-      upcoming['policy_name'] = ds_applied_policy['name']
-      upcoming['total_savings'] = 0
-      upcoming['csv_message'] = csv_message
-      result.push(upcoming)
-    }
+    result.push({
+      accountID: resource['accountID'],
+      accountName: resource['accountName'],
+      resourceID: resource['resourceID'],
+      service: resource['service'],
+      region: resource['region'],
+      resourceType: resource['resourceType'],
+      extendedSupportStart: resource['extendedSupportStart'],
+      extendedSupportEnd: resource['extendedSupportEnd'],
+      daysUntilExtendedSupport: resource['daysUntilExtendedSupport'],
+      status: resource['status'],
+      recommendationDetails: resource['recommendationDetails'],
+      savings: resource['savings'],
+      savingsCurrency: resource['savingsCurrency'],
+      policy_name: ds_applied_policy['name'],
+      total_savings: 0,
+      csv_message: csv_message
+    })
   })
 
   if (result.length > 0) {
@@ -1097,7 +1079,7 @@ policy "pol_extended_support_resources" do
   validate $ds_identify_errors do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
     detail_template <<-'EOS'
-The policy was unable to access one or more AWS regions. This only affects the upcoming extended support check (when `Days Until Extended Support` is greater than 0).
+The policy was unable to access one or more AWS regions.
 
 **Error Details:**
 {{ range data -}}

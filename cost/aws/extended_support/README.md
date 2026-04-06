@@ -2,15 +2,14 @@
 
 ## What It Does
 
-This policy template checks the billing data stored in the Flexera CCO platform for AWS resources that are currently under extended support, and optionally uses AWS APIs to identify resources that will enter extended support within a user-specified number of days. These resources are outdated and AWS charges an extended support fee for continued use. A report is produced containing a list of these resources, and optionally, an email is sent with this report.
+This policy template uses the AWS APIs (RDS, EKS, and ElastiCache) to identify all resources running versions covered by AWS Extended Support. Extended support start and end dates are determined using the static reference data file at `data/aws/aws_extended_support_dates.json`. Resource-level billing data from the Flexera CCO platform is used to obtain actual extended support costs for resources already incurring those charges. These resources are outdated and AWS charges an extended support fee for continued use. A report is produced containing a list of these resources, and optionally, an email is sent with this report.
 
 ## How It Works
 
-- The policy pulls resource-level billing data from the Flexera CCO platform from 3 days ago. This data is filtered to just those resources with a `Usage Type` that contains the string `ExtendedSupport`. Data from 3 days ago is used to ensure that we have available, processed billing data to search through.
-- If the `Days Until Extended Support` parameter is set to a value greater than 0, the policy also queries the AWS APIs (RDS, EKS, and ElastiCache) for resources running versions that are scheduled to enter extended support within the specified number of days. Extended support start dates are determined using the static reference data file at `data/aws/aws_extended_support_dates.json`.
-- Results from both sources are combined into a single incident. Resources currently under extended support show actual cost data; resources approaching extended support show the upcoming start date and days remaining.
+- The policy queries the AWS APIs (RDS, EKS, and ElastiCache) across all opted-in regions to enumerate all running resources.
+- Each discovered resource's version is matched against the static reference data file at `data/aws/aws_extended_support_dates.json` to determine if it is currently under extended support or will enter extended support within the number of days specified by the `Days Until Extended Support` parameter.
+- The policy also pulls resource-level billing data from the Flexera CCO platform from 3 days ago, filtered to resources with a `Usage Type` that contains `ExtendedSupport`. This data is used only for obtaining actual costs for resources already incurring extended support charges. Data from 3 days ago is used to ensure that we have available, processed billing data to search through.
 - The above is filtered by account or region based on user parameters.
-- Finally, the data is normalized by combining costs for individual resources listed multiple times and extrapolating an estimated monthly cost from one day of billing data.
 
 ### Policy Savings Details
 
@@ -18,13 +17,13 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 The `Estimated Monthly Savings` is calculated differently depending on whether the resource is currently under extended support or approaching it:
 
-- For resources **currently under extended support** (identified via Flexera CCO billing data): the `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month. This reflects the actual extended support fee being charged.
-- For resources **approaching extended support** (identified via AWS APIs when the `Days Until Extended Support` parameter is greater than 0): the `Estimated Monthly Savings` is calculated using the AWS published Year 1 extended support hourly rates and resource-level data collected from the AWS APIs:
+- For resources **currently under extended support**: the policy first attempts to match the resource against Flexera CCO billing data. If a match is found, the `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month. This reflects the actual extended support fee currently being charged. If no CCO match is found (e.g., due to billing data lag), the estimated rate below is used as a fallback.
+- For resources **approaching extended support** (when the `Days Until Extended Support` parameter is greater than 0): the `Estimated Monthly Savings` is calculated using the AWS published Year 1 extended support hourly rates and resource-level data collected from the AWS APIs:
   - **RDS**: `$0.12 per vCPU-hour × estimated vCPU count × 24 hours × 30.44 days`. The vCPU count is estimated from the instance class (e.g. `db.m5.xlarge` → 4 vCPUs).
   - **EKS**: `$0.60 per cluster-hour × 24 hours × 30.44 days` (~$438/mo per cluster).
   - **ElastiCache**: `$0.05 per node-hour × number of cache nodes × 24 hours × 30.44 days`.
   - These estimates reflect the Year 1 extended support rate. AWS extended support rates double in Year 2 and double again in Year 3, so actual costs may be higher the longer a resource remains on an unsupported version.
-- Since the costs of resources currently under extended support are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
+- Since actual costs for resources currently under extended support are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
 
