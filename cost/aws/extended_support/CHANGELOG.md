@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.0
+
+- Added `Exclusion Tags` and `Exclusion Tags: Any / All` parameters to allow filtering resources by tag
+- Added `rds:ListTagsForResource` and `elasticache:ListTagsForResource` permissions to prerequisites
+
 ## v1.0.0
 
 - Policy template is now named `AWS Resources Under or Approaching Extended Support`.

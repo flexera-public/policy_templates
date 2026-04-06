@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "1.0.0",
+  version: "1.1.0",
   provider: "AWS",
   service: "All",
   policy_set: "Deprecated Resources",
@@ -94,6 +94,23 @@ parameter "param_regions_list" do
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. See the README for more details."
   default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter resources containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_incident_csv" do
@@ -494,20 +511,8 @@ script "js_regions", type: "javascript" do
 EOS
 end
 
-datasource "ds_regions_to_query" do
-  run_script $js_regions_to_query, $ds_regions
-end
-
-script "js_regions_to_query", type: "javascript" do
-  parameters "ds_regions"
-  result "result"
-  code <<-'EOS'
-  result = ds_regions
-EOS
-end
-
 datasource "ds_region_check" do
-  iterate $ds_regions_to_query
+  iterate $ds_regions
   request do
     auth $auth_aws
     host join(["elasticache.", val(iter_item, "region"), ".amazonaws.com"])
@@ -527,16 +532,16 @@ datasource "ds_region_check" do
 end
 
 datasource "ds_identify_errors" do
-  run_script $js_identify_errors, $ds_regions_to_query, $ds_region_check, $ds_applied_policy, $param_regions_allow_or_deny, $param_regions_list
+  run_script $js_identify_errors, $ds_regions, $ds_region_check, $ds_applied_policy, $param_regions_allow_or_deny, $param_regions_list
 end
 
 script "js_identify_errors", type: "javascript" do
-  parameters "ds_regions_to_query", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
+  parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
   result "errors"
   code <<-'EOS'
   var errors = []
 
-  if (ds_regions_to_query.length > 0) {
+  if (ds_regions.length > 0) {
     var region_responses = {}
     _.each(ds_region_check, function(item) {
       if (item.region) { region_responses[item.region] = "OK" }
@@ -545,7 +550,7 @@ script "js_identify_errors", type: "javascript" do
     var allowed_regions = _.keys(region_responses)
     var forbidden_regions = []
 
-    _.each(ds_regions_to_query, function(region_obj) {
+    _.each(ds_regions, function(region_obj) {
       if (!_.contains(allowed_regions, region_obj.region)) {
         forbidden_regions.push(region_obj.region)
       }
@@ -589,8 +594,25 @@ script "js_identify_errors", type: "javascript" do
 EOS
 end
 
+datasource "ds_regions_passing" do
+  run_script $js_regions_passing, $ds_regions, $ds_region_check
+end
+
+script "js_regions_passing", type: "javascript" do
+  parameters "ds_regions", "ds_region_check"
+  result "result"
+  code <<-'EOS'
+  var passing = {}
+  _.each(ds_region_check, function(item) {
+    if (item['region']) { passing[item['region']] = true }
+  })
+
+  result = _.filter(ds_regions, function(r) { return passing[r['region']] })
+EOS
+end
+
 datasource "ds_rds_instances" do
-  iterate $ds_regions_to_query
+  iterate $ds_regions_passing
   request do
     auth $auth_aws
     pagination $pagination_aws_marker
@@ -610,14 +632,91 @@ datasource "ds_rds_instances" do
       field "instanceClass", xpath(col_item, "DBInstanceClass")
       field "engine", xpath(col_item, "Engine")
       field "engineVersion", xpath(col_item, "EngineVersion")
-      field "status", xpath(col_item, "DBInstanceStatus")
       field "region", val(iter_item, "region")
     end
   end
 end
 
+datasource "ds_rds_instances_filtered" do
+  run_script $js_rds_instances_filtered, $ds_rds_instances, $ds_aws_extended_support_dates, $param_upcoming_days
+end
+
+script "js_rds_instances_filtered", type: "javascript" do
+  parameters "ds_rds_instances", "ds_aws_extended_support_dates", "param_upcoming_days"
+  result "result"
+  code <<-'EOS'
+  var today = new Date()
+  today.setHours(0, 0, 0, 0)
+  var today_ms = today.getTime()
+
+  var cutoff_ms = today_ms
+  if (param_upcoming_days > 0) {
+    var cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() + param_upcoming_days)
+    cutoff.setHours(23, 59, 59, 999)
+    cutoff_ms = cutoff.getTime()
+  }
+
+  function versionMatches(resource_version, data_version) {
+    if (!resource_version || !data_version) { return false }
+    if (resource_version == data_version) { return true }
+    if (resource_version.indexOf(data_version + '.') === 0) { return true }
+    return false
+  }
+
+  result = _.filter(ds_rds_instances, function(instance) {
+    var match = false
+    _.each(ds_aws_extended_support_dates, function(entry) {
+      if (match || entry['service'] != 'RDS') { return }
+      if (entry['engine'].toLowerCase() != (instance['engine'] || '').toLowerCase()) { return }
+      if (!versionMatches(instance['engineVersion'], entry['version'])) { return }
+      var start_ms = new Date(entry['extended_support_start']).setHours(0, 0, 0, 0)
+      if (start_ms <= cutoff_ms) { match = true }
+    })
+    return match
+  })
+EOS
+end
+
+datasource "ds_rds_tags" do
+  iterate $ds_rds_instances_filtered
+  request do
+    run_script $js_rds_tags, val(iter_item, "arn"), val(iter_item, "region")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListTagsForResourceResponse/ListTagsForResourceResult/TagList/Tag[*]", "array") do
+      field "resourceArn", val(iter_item, "arn")
+      field "key", xpath(col_item, "Key")
+      field "value", xpath(col_item, "Value")
+    end
+  end
+end
+
+script "js_rds_tags", type: "javascript" do
+  parameters "arn", "region"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_aws",
+    host: "rds." + region + ".amazonaws.com",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "text/xml"
+    },
+    query_params: {
+      "Action": "ListTagsForResource",
+      "ResourceName": arn,
+      "Version": "2014-10-31"
+    }
+  }
+EOS
+end
+
+
 datasource "ds_eks_cluster_list" do
-  iterate $ds_regions_to_query
+  iterate $ds_regions_passing
   request do
     auth $auth_aws
     pagination $pagination_eks
@@ -670,13 +769,13 @@ datasource "ds_eks_clusters" do
     field "name", jmes_path(response, "cluster.name")
     field "arn", jmes_path(response, "cluster.arn")
     field "version", jmes_path(response, "cluster.version")
-    field "status", jmes_path(response, "cluster.status")
+    field "tags", jmes_path(response, "cluster.tags")
     field "region", val(iter_item, "region")
   end
 end
 
 datasource "ds_elasticache_clusters" do
-  iterate $ds_regions_to_query
+  iterate $ds_regions_passing
   request do
     auth $auth_aws
     pagination $pagination_aws_marker
@@ -697,18 +796,95 @@ datasource "ds_elasticache_clusters" do
       field "engineVersion", xpath(col_item, "EngineVersion")
       field "cacheNodeType", xpath(col_item, "CacheNodeType")
       field "numCacheNodes", xpath(col_item, "NumCacheNodes")
-      field "status", xpath(col_item, "CacheClusterStatus")
       field "region", val(iter_item, "region")
     end
   end
 end
 
+datasource "ds_elasticache_clusters_filtered" do
+  run_script $js_elasticache_clusters_filtered, $ds_elasticache_clusters, $ds_aws_extended_support_dates, $param_upcoming_days
+end
+
+script "js_elasticache_clusters_filtered", type: "javascript" do
+  parameters "ds_elasticache_clusters", "ds_aws_extended_support_dates", "param_upcoming_days"
+  result "result"
+  code <<-'EOS'
+  var today = new Date()
+  today.setHours(0, 0, 0, 0)
+  var today_ms = today.getTime()
+
+  var cutoff_ms = today_ms
+  if (param_upcoming_days > 0) {
+    var cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() + param_upcoming_days)
+    cutoff.setHours(23, 59, 59, 999)
+    cutoff_ms = cutoff.getTime()
+  }
+
+  function versionMatches(resource_version, data_version) {
+    if (!resource_version || !data_version) { return false }
+    if (resource_version == data_version) { return true }
+    if (resource_version.indexOf(data_version + '.') === 0) { return true }
+    return false
+  }
+
+  result = _.filter(ds_elasticache_clusters, function(cluster) {
+    if (!cluster['engine'] || !cluster['engineVersion']) { return false }
+    var match = false
+    _.each(ds_aws_extended_support_dates, function(entry) {
+      if (match || entry['service'] != 'ElastiCache') { return }
+      if (entry['engine'].toLowerCase() != cluster['engine'].toLowerCase()) { return }
+      if (!versionMatches(cluster['engineVersion'], entry['version'])) { return }
+      var start_ms = new Date(entry['extended_support_start']).setHours(0, 0, 0, 0)
+      if (start_ms <= cutoff_ms) { match = true }
+    })
+    return match
+  })
+EOS
+end
+
+datasource "ds_elasticache_tags" do
+  iterate $ds_elasticache_clusters_filtered
+  request do
+    run_script $js_elasticache_tags, val(iter_item, "arn"), val(iter_item, "region")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListTagsForResourceResponse/ListTagsForResourceResult/TagList/Tag[*]", "array") do
+      field "resourceArn", val(iter_item, "arn")
+      field "key", xpath(col_item, "Key")
+      field "value", xpath(col_item, "Value")
+    end
+  end
+end
+
+script "js_elasticache_tags", type: "javascript" do
+  parameters "arn", "region"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_aws",
+    host: "elasticache." + region + ".amazonaws.com",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "text/xml"
+    },
+    query_params: {
+      "Action": "ListTagsForResource",
+      "ResourceName": arn,
+      "Version": "2015-02-02"
+    }
+  }
+EOS
+end
+
 datasource "ds_all_extended_support_resources" do
-  run_script $js_all_extended_support_resources, $ds_rds_instances, $ds_eks_clusters, $ds_elasticache_clusters, $ds_aws_extended_support_dates, $ds_flexera_cco_data_filtered, $ds_cloud_vendor_accounts, $ds_currency, $param_upcoming_days
+  run_script $js_all_extended_support_resources, $ds_rds_instances_filtered, $ds_rds_tags, $ds_eks_clusters, $ds_elasticache_clusters_filtered, $ds_elasticache_tags, $ds_aws_extended_support_dates, $ds_flexera_cco_data_filtered, $ds_cloud_vendor_accounts, $ds_currency, $param_upcoming_days, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_all_extended_support_resources", type: "javascript" do
-  parameters "ds_rds_instances", "ds_eks_clusters", "ds_elasticache_clusters", "ds_aws_extended_support_dates", "ds_flexera_cco_data_filtered", "ds_cloud_vendor_accounts", "ds_currency", "param_upcoming_days"
+  parameters "ds_rds_instances", "ds_rds_tags", "ds_eks_clusters", "ds_elasticache_clusters", "ds_elasticache_tags", "ds_aws_extended_support_dates", "ds_flexera_cco_data_filtered", "ds_cloud_vendor_accounts", "ds_currency", "param_upcoming_days", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
   result = []
@@ -731,6 +907,65 @@ script "js_all_extended_support_resources", type: "javascript" do
   _.each(ds_cloud_vendor_accounts, function(acct) {
     if (acct['id']) { account_name_map[acct['id']] = acct['name'] }
   })
+
+  function buildTagLookup(tag_list) {
+    var lookup = {}
+    _.each(tag_list, function(item) {
+      var arn = (item['resourceArn'] || '').toLowerCase()
+      if (!lookup[arn]) { lookup[arn] = {} }
+      lookup[arn][item['key']] = item['value']
+    })
+    return lookup
+  }
+
+  function formatTags(tag_map) {
+    if (!tag_map || typeof tag_map !== 'object') { return '' }
+    return _.map(_.keys(tag_map), function(k) { return k + '=' + tag_map[k] }).join(', ')
+  }
+
+  function getResourceName(tag_map, fallback) {
+    if (tag_map && tag_map['Name']) { return tag_map['Name'] }
+    return fallback
+  }
+
+  var rds_tag_lookup = buildTagLookup(ds_rds_tags)
+  var elasticache_tag_lookup = buildTagLookup(ds_elasticache_tags)
+
+  var comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+    if (item.indexOf('=~') != -1) {
+      var val = item.split('=~')[1]
+      return { comparison: '=~', key: item.split('=~')[0], value: new RegExp(val.slice(1, val.length - 1)), string: item }
+    }
+    if (item.indexOf('!~') != -1) {
+      var val = item.split('!~')[1]
+      return { comparison: '!~', key: item.split('!~')[0], value: new RegExp(val.slice(1, val.length - 1)), string: item }
+    }
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  function isExcluded(tag_map) {
+    if (param_exclusion_tags.length == 0) { return false }
+    var found_tags = []
+    _.each(comparators, function(c) {
+      var resource_tag = tag_map[c['key']]
+      if (c['comparison'] == 'key' && resource_tag != undefined) { found_tags.push(c['string']) }
+      if (c['comparison'] == '==' && resource_tag == c['value']) { found_tags.push(c['string']) }
+      if (c['comparison'] == '!=' && resource_tag != c['value']) { found_tags.push(c['string']) }
+      if (c['comparison'] == '=~' && resource_tag != undefined && c['value'].test(resource_tag)) { found_tags.push(c['string']) }
+      if (c['comparison'] == '!~' && (resource_tag == undefined || !c['value'].test(resource_tag))) { found_tags.push(c['string']) }
+    })
+    if (param_exclusion_tags_boolean == 'Any') { return found_tags.length > 0 }
+    return found_tags.length == comparators.length
+  }
 
   // Build a CCO cost lookup keyed by resource identifier for joining later.
   // Multiple a single day's cost by the average number of days in a month.
@@ -852,10 +1087,17 @@ script "js_all_extended_support_resources", type: "javascript" do
       ? Math.round(actual_cost * 1000) / 1000
       : estimateMonthlyCost(entry, instance)
 
+    var rds_tags = rds_tag_lookup[instance['arn'].toLowerCase()] || {}
+    if (isExcluded(rds_tags)) { return }
+    var resourceName = getResourceName(rds_tags, instance['identifier'])
+    var tagsString = formatTags(rds_tags)
+
     result.push({
       accountID: account_id,
       accountName: account_name_map[account_id] || account_id,
       resourceID: instance['identifier'],
+      resourceName: resourceName,
+      tags: tagsString,
       service: 'RDS',
       region: instance['region'],
       resourceType: instance['instanceClass'] || 'N/A',
@@ -887,10 +1129,17 @@ script "js_all_extended_support_resources", type: "javascript" do
       ? Math.round(actual_cost * 1000) / 1000
       : estimateMonthlyCost(entry, cluster)
 
+    var eks_tags = cluster['tags'] || {}
+    if (isExcluded(eks_tags)) { return }
+    var resourceName = getResourceName(eks_tags, cluster['name'])
+    var tagsString = formatTags(eks_tags)
+
     result.push({
       accountID: account_id,
       accountName: account_name_map[account_id] || account_id,
       resourceID: cluster['name'],
+      resourceName: resourceName,
+      tags: tagsString,
       service: 'EKS',
       region: cluster['region'],
       resourceType: 'EKS Cluster',
@@ -922,10 +1171,17 @@ script "js_all_extended_support_resources", type: "javascript" do
       ? Math.round(actual_cost * 1000) / 1000
       : estimateMonthlyCost(entry, cluster)
 
+    var ec_tags = elasticache_tag_lookup[cluster['arn'].toLowerCase()] || {}
+    if (isExcluded(ec_tags)) { return }
+    var resourceName = getResourceName(ec_tags, cluster['id'])
+    var tagsString = formatTags(ec_tags)
+
     result.push({
       accountID: account_id,
       accountName: account_name_map[account_id] || account_id,
       resourceID: cluster['id'],
+      resourceName: resourceName,
+      tags: tagsString,
       service: 'ElastiCache',
       region: cluster['region'],
       resourceType: cluster['cacheNodeType'] || 'N/A',
@@ -993,6 +1249,8 @@ script "js_extended_support_resources", type: "javascript" do
       accountID: resource['accountID'],
       accountName: resource['accountName'],
       resourceID: resource['resourceID'],
+      resourceName: resource['resourceName'],
+      tags: resource['tags'],
       service: resource['service'],
       region: resource['region'],
       resourceType: resource['resourceType'],
@@ -1030,7 +1288,7 @@ policy "pol_extended_support_resources" do
     EOS
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
-    hash_exclude "savings", "savingsCurrency", "daysUntilExtendedSupport", "total_savings"
+    hash_exclude "tags", "savings", "savingsCurrency", "daysUntilExtendedSupport", "total_savings"
     export do
       resource_level true
       field "accountID" do
@@ -1041,6 +1299,12 @@ policy "pol_extended_support_resources" do
       end
       field "resourceID" do
         label "Resource ID"
+      end
+      field "resourceName" do
+        label "Name"
+      end
+      field "tags" do
+        label "Tags"
       end
       field "recommendationDetails" do
         label "Recommendation"

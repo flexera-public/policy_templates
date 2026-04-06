@@ -40,6 +40,8 @@ This policy template has the following input parameters:
 - *Allow/Deny AWS Accounts List* - A list of allowed or denied AWS Account IDs/names. Leave blank to check all AWS Accounts.
 - *Allow/Deny Regions* - Whether to treat `Allow/Deny Regions List` parameter as allow or deny list. Has no effect if `Allow/Deny Regions List` is left empty.
 - *Allow/Deny Regions List* - A list of allowed or denied regions. Regions can be entered in shorthand format, such as `us-east-2`. Leave blank to check all AWS regions.
+- *Exclusion Tags* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details.
+- *Exclusion Tags: Any / All* - Whether to filter resources containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
@@ -59,12 +61,12 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 - [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
   - `ec2:DescribeRegions`
-  - `rds:DescribeDBInstances`*
-  - `eks:ListClusters`*
-  - `eks:DescribeCluster`*
-  - `elasticache:DescribeCacheClusters`*
-
-  \* Only required when the `Days Until Extended Support` parameter is set to a value greater than 0.
+  - `rds:DescribeDBInstances`
+  - `rds:ListTagsForResource`
+  - `eks:ListClusters`
+  - `eks:DescribeCluster`
+  - `elasticache:DescribeCacheClusters`
+  - `elasticache:ListTagsForResource`
 
   Example IAM Permission Policy:
 
@@ -77,9 +79,11 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
               "Action": [
                   "ec2:DescribeRegions",
                   "rds:DescribeDBInstances",
+                  "rds:ListTagsForResource",
                   "eks:ListClusters",
                   "eks:DescribeCluster",
-                  "elasticache:DescribeCacheClusters"
+                  "elasticache:DescribeCacheClusters",
+                  "elasticache:ListTagsForResource"
               ],
               "Resource": "*"
           }
