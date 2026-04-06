@@ -1,14 +1,14 @@
-name "AWS Resources Under Extended Support"
+name "AWS Resources Under or Approaching Extended Support"
 rs_pt_ver 20180301
 type "policy"
-short_description "Reports any AWS resources that are under extended support. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/extended_support) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+short_description "Reports any AWS resources that are under or approaching extended support. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/extended_support) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/extended_support"
 category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.3.3",
+  version: "1.0.0",
   provider: "AWS",
   service: "All",
   policy_set: "Deprecated Resources",
@@ -28,11 +28,28 @@ parameter "param_email" do
   default []
 end
 
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
 parameter "param_min_savings" do
   type "number"
   category "Policy Settings"
   label "Minimum Savings Threshold"
-  description "Minimum potential savings required to generate a recommendation"
+  description "Minimum potential savings required to generate a recommendation. Only applies to resources currently under extended support."
+  min_value 0
+  default 0
+end
+
+parameter "param_upcoming_days" do
+  type "number"
+  category "Policy Settings"
+  label "Days Until Extended Support"
+  description "Report resources that will enter extended support within this many days. Set to 0 to only report resources currently under extended support. Uses static reference data for RDS, EKS, and ElastiCache extended support schedules."
   min_value 0
   default 0
 end
@@ -101,11 +118,41 @@ end
 # Authentication
 ###############################################################################
 
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
 credentials "auth_flexera" do
   schemes "oauth2"
   label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws_marker" do
+  get_page_marker do
+    body_path "//Marker"
+  end
+  set_page_marker do
+    query "Marker"
+  end
+end
+
+pagination "pagination_eks" do
+  get_page_marker do
+    body_path "nextToken"
+  end
+  set_page_marker do
+    query "nextToken"
+  end
 end
 
 ###############################################################################
@@ -200,6 +247,23 @@ script "js_filtered_bcs", type: "javascript" do
     })
   }
 EOS
+end
+
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
 end
 
 datasource "ds_regions_reference" do
@@ -379,17 +443,445 @@ script "js_flexera_cco_data_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_aws_extended_support_dates" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/aws_extended_support_dates.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_describe_regions" do
+  request do
+    auth $auth_aws
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
+    header "User-Agent", "RS Policies"
+    # Header Meta-Flexera has no effect on datasource query, but is required for Meta Policies
+    # Forces ds_is_deleted datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+datasource "ds_regions" do
+  run_script $js_regions, $ds_describe_regions, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_regions", type: "javascript" do
+  parameters "ds_describe_regions", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-'EOS'
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+datasource "ds_regions_to_query" do
+  run_script $js_regions_to_query, $ds_regions, $param_upcoming_days
+end
+
+script "js_regions_to_query", type: "javascript" do
+  parameters "ds_regions", "param_upcoming_days"
+  result "result"
+  code <<-'EOS'
+  // Only query AWS resource APIs when checking for upcoming extended support
+  if (param_upcoming_days > 0) {
+    result = ds_regions
+  } else {
+    result = []
+  }
+EOS
+end
+
+datasource "ds_region_check" do
+  iterate $ds_regions_to_query
+  request do
+    auth $auth_aws
+    host join(["rds.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeDBInstances"
+    query "Version", "2014-10-31"
+    query "MaxRecords", "1"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
+    ignore_status [403, 401]
+  end
+  result do
+    encoding "xml"
+    field "region", val(iter_item, "region")
+    field "status", "OK"
+  end
+end
+
+datasource "ds_identify_errors" do
+  run_script $js_identify_errors, $ds_regions_to_query, $ds_region_check, $ds_applied_policy, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_identify_errors", type: "javascript" do
+  parameters "ds_regions_to_query", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
+  result "errors"
+  code <<-'EOS'
+  var errors = []
+
+  // If no regions were queried (param_upcoming_days == 0), no errors to report
+  if (ds_regions_to_query.length == 0) { errors = [] }
+
+  if (ds_regions_to_query.length > 0) {
+    var region_responses = {}
+    _.each(ds_region_check, function(item) {
+      if (item.region) { region_responses[item.region] = "OK" }
+    })
+
+    var allowed_regions = _.keys(region_responses)
+    var forbidden_regions = []
+
+    _.each(ds_regions_to_query, function(region_obj) {
+      if (!_.contains(allowed_regions, region_obj.region)) {
+        forbidden_regions.push(region_obj.region)
+      }
+    })
+
+    if (forbidden_regions.length > 0) {
+      var regions_string = forbidden_regions.sort().join(", ")
+      var successful_regions = allowed_regions.sort().join(", ")
+      var filter_guidance = ""
+
+      if (param_regions_list.length > 0) {
+        filter_guidance = " You are currently using the 'Allow/Deny Regions List' parameter. "
+        filter_guidance += "You can update this list to exclude the inaccessible regions if appropriate."
+      } else {
+        filter_guidance = " You can use the 'Allow/Deny Regions List' parameter to exclude these regions."
+      }
+
+      errors.push(
+        "HTTP error received when attempting to query resource information in some AWS region(s).\n" +
+        "\n - Failed Regions: " + regions_string +
+        "\n - Successful Regions: " + successful_regions +
+        "\n\nThis typically indicates that the AWS credential is missing one or more required " +
+        "permissions ('rds:DescribeDBInstances', 'eks:ListClusters', 'eks:DescribeCluster', " +
+        "'elasticache:DescribeCacheClusters') for these regions, or these regions may not be enabled." +
+        " To resolve: (1) Verify the credential has all required permissions, " +
+        "(2) Ensure these regions are opted-in in your AWS account, or " +
+        "(3) Exclude these regions using the region filter parameters." +
+        filter_guidance
+      )
+    }
+  }
+
+  errors = _.uniq(errors)
+  errors = _.map(errors, function(err) { return { "error": err } })
+
+  if (errors.length > 0) {
+    var policy_name = "AWS Resources Under or Approaching Extended Support"
+    if (ds_applied_policy && ds_applied_policy.name) { policy_name = ds_applied_policy.name }
+    errors[0].policy_name = policy_name
+  }
+EOS
+end
+
+datasource "ds_rds_instances" do
+  iterate $ds_regions_to_query
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_marker
+    host join(["rds.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeDBInstances"
+    query "Version", "2014-10-31"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
+    ignore_status [403, 401]
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeDBInstancesResponse/DescribeDBInstancesResult/DBInstances/DBInstance", "array") do
+      field "identifier", xpath(col_item, "DBInstanceIdentifier")
+      field "arn", xpath(col_item, "DBInstanceArn")
+      field "engine", xpath(col_item, "Engine")
+      field "engineVersion", xpath(col_item, "EngineVersion")
+      field "status", xpath(col_item, "DBInstanceStatus")
+      field "region", val(iter_item, "region")
+    end
+  end
+end
+
+datasource "ds_eks_cluster_list" do
+  iterate $ds_regions_to_query
+  request do
+    auth $auth_aws
+    pagination $pagination_eks
+    host join(["eks.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/clusters"
+    header "Accept", "application/json"
+    header "User-Agent", "RS Policies"
+    ignore_status [403, 401]
+  end
+  result do
+    encoding "json"
+    field "clusters", jmes_path(response, "clusters")
+    field "region", val(iter_item, "region")
+  end
+end
+
+datasource "ds_eks_cluster_list_flattened" do
+  run_script $js_eks_cluster_list_flattened, $ds_eks_cluster_list
+end
+
+script "js_eks_cluster_list_flattened", type: "javascript" do
+  parameters "ds_eks_cluster_list"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(ds_eks_cluster_list, function(item) {
+    var clusters = item['clusters']
+    if (clusters && clusters.length > 0) {
+      _.each(clusters, function(cluster_name) {
+        result.push({ region: item['region'], name: cluster_name })
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_eks_clusters" do
+  iterate $ds_eks_cluster_list_flattened
+  request do
+    auth $auth_aws
+    host join(["eks.", val(iter_item, "region"), ".amazonaws.com"])
+    path join(["/clusters/", val(iter_item, "name")])
+    header "Accept", "application/json"
+    header "User-Agent", "RS Policies"
+    ignore_status [403, 401, 404]
+  end
+  result do
+    encoding "json"
+    field "name", jmes_path(response, "cluster.name")
+    field "arn", jmes_path(response, "cluster.arn")
+    field "version", jmes_path(response, "cluster.version")
+    field "status", jmes_path(response, "cluster.status")
+    field "region", val(iter_item, "region")
+  end
+end
+
+datasource "ds_elasticache_clusters" do
+  iterate $ds_regions_to_query
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_marker
+    host join(["elasticache.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeCacheClusters"
+    query "Version", "2015-02-02"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
+    ignore_status [403, 401]
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeCacheClustersResponse/DescribeCacheClustersResult/CacheClusters/CacheCluster", "array") do
+      field "id", xpath(col_item, "CacheClusterId")
+      field "arn", xpath(col_item, "ARN")
+      field "engine", xpath(col_item, "Engine")
+      field "engineVersion", xpath(col_item, "EngineVersion")
+      field "status", xpath(col_item, "CacheClusterStatus")
+      field "region", val(iter_item, "region")
+    end
+  end
+end
+
+datasource "ds_upcoming_extended_support_resources" do
+  run_script $js_upcoming_extended_support_resources, $ds_rds_instances, $ds_eks_clusters, $ds_elasticache_clusters, $ds_aws_extended_support_dates, $ds_cloud_vendor_accounts, $ds_currency, $param_upcoming_days
+end
+
+script "js_upcoming_extended_support_resources", type: "javascript" do
+  parameters "ds_rds_instances", "ds_eks_clusters", "ds_elasticache_clusters", "ds_aws_extended_support_dates", "ds_cloud_vendor_accounts", "ds_currency", "param_upcoming_days"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (param_upcoming_days > 0) {
+  var today = new Date()
+  today.setHours(0, 0, 0, 0)
+  var today_ms = today.getTime()
+
+  var cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() + param_upcoming_days)
+  cutoff.setHours(23, 59, 59, 999)
+  var cutoff_ms = cutoff.getTime()
+
+  var account_name_map = {}
+  _.each(ds_cloud_vendor_accounts, function(acct) {
+    if (acct['id']) { account_name_map[acct['id']] = acct['name'] }
+  })
+
+  function extractAccountId(arn) {
+    if (!arn) { return '' }
+    var parts = arn.split(':')
+    if (parts.length > 4) { return parts[4] }
+    return ''
+  }
+
+  function versionMatches(resource_version, data_version) {
+    if (!resource_version || !data_version) { return false }
+    if (resource_version == data_version) { return true }
+    if (resource_version.indexOf(data_version + '.') === 0) { return true }
+    return false
+  }
+
+  function findEntry(service, engine, version) {
+    var found = null
+    _.each(ds_aws_extended_support_dates, function(entry) {
+      if (!found && entry['service'] == service) {
+        var engine_match = (engine == null) || (entry['engine'].toLowerCase() == engine.toLowerCase())
+        if (engine_match && versionMatches(version, entry['version'])) {
+          found = entry
+        }
+      }
+    })
+    return found
+  }
+
+  function isUpcoming(date_string) {
+    var date = new Date(date_string)
+    date.setHours(0, 0, 0, 0)
+    var date_ms = date.getTime()
+    return date_ms > today_ms && date_ms <= cutoff_ms
+  }
+
+  function daysUntil(date_string) {
+    var date = new Date(date_string)
+    date.setHours(0, 0, 0, 0)
+    return Math.ceil((date.getTime() - today_ms) / (1000 * 60 * 60 * 24))
+  }
+
+  _.each(ds_rds_instances, function(instance) {
+    var entry = findEntry('RDS', instance['engine'], instance['engineVersion'])
+    if (!entry) { return }
+    if (!isUpcoming(entry['extended_support_start'])) { return }
+
+    var account_id = extractAccountId(instance['arn'])
+    var days = daysUntil(entry['extended_support_start'])
+
+    result.push({
+      accountID: account_id,
+      accountName: account_name_map[account_id] || account_id,
+      resourceID: instance['identifier'],
+      service: 'RDS',
+      region: instance['region'],
+      resourceType: instance['engine'] + ' ' + instance['engineVersion'],
+      extendedSupportStart: entry['extended_support_start'],
+      extendedSupportEnd: entry['extended_support_end'],
+      daysUntilExtendedSupport: days,
+      status: 'Upcoming Extended Support',
+      savings: 0,
+      savingsCurrency: ds_currency['symbol'],
+      billing_center: 'N/A',
+      recommendationDetails: [
+        "Upgrade or migrate RDS instance ", instance['identifier'],
+        " from ", instance['engine'], " ", instance['engineVersion'],
+        " to a newer supported version before ", entry['extended_support_start'],
+        " to avoid extended support charges."
+      ].join('')
+    })
+  })
+
+  _.each(ds_eks_clusters, function(cluster) {
+    if (!cluster['version']) { return }
+    var entry = findEntry('EKS', 'kubernetes', cluster['version'])
+    if (!entry) { return }
+    if (!isUpcoming(entry['extended_support_start'])) { return }
+
+    var account_id = extractAccountId(cluster['arn'])
+    var days = daysUntil(entry['extended_support_start'])
+
+    result.push({
+      accountID: account_id,
+      accountName: account_name_map[account_id] || account_id,
+      resourceID: cluster['name'],
+      service: 'EKS',
+      region: cluster['region'],
+      resourceType: 'Kubernetes ' + cluster['version'],
+      extendedSupportStart: entry['extended_support_start'],
+      extendedSupportEnd: entry['extended_support_end'],
+      daysUntilExtendedSupport: days,
+      status: 'Upcoming Extended Support',
+      savings: 0,
+      savingsCurrency: ds_currency['symbol'],
+      billing_center: 'N/A',
+      recommendationDetails: [
+        "Upgrade EKS cluster ", cluster['name'],
+        " from Kubernetes ", cluster['version'],
+        " to a newer supported version before ", entry['extended_support_start'],
+        " to avoid extended support charges."
+      ].join('')
+    })
+  })
+
+  _.each(ds_elasticache_clusters, function(cluster) {
+    if (!cluster['engine'] || !cluster['engineVersion']) { return }
+    var entry = findEntry('ElastiCache', cluster['engine'], cluster['engineVersion'])
+    if (!entry) { return }
+    if (!isUpcoming(entry['extended_support_start'])) { return }
+
+    var account_id = extractAccountId(cluster['arn'])
+    var days = daysUntil(entry['extended_support_start'])
+
+    result.push({
+      accountID: account_id,
+      accountName: account_name_map[account_id] || account_id,
+      resourceID: cluster['id'],
+      service: 'ElastiCache',
+      region: cluster['region'],
+      resourceType: cluster['engine'] + ' ' + cluster['engineVersion'],
+      extendedSupportStart: entry['extended_support_start'],
+      extendedSupportEnd: entry['extended_support_end'],
+      daysUntilExtendedSupport: days,
+      status: 'Upcoming Extended Support',
+      savings: 0,
+      savingsCurrency: ds_currency['symbol'],
+      billing_center: 'N/A',
+      recommendationDetails: [
+        "Upgrade ElastiCache cluster ", cluster['id'],
+        " from ", cluster['engine'], " ", cluster['engineVersion'],
+        " to a newer supported version before ", entry['extended_support_start'],
+        " to avoid extended support charges."
+      ].join('')
+    })
+  })
+
+  } // end if (param_upcoming_days > 0)
+EOS
+end
+
 datasource "ds_extended_support_resources" do
-  run_script $js_extended_support_resources, $ds_flexera_cco_data_filtered, $ds_applied_policy, $ds_currency, $ds_billing_centers, $param_min_savings, $param_incident_csv
+  run_script $js_extended_support_resources, $ds_flexera_cco_data_filtered, $ds_upcoming_extended_support_resources, $ds_applied_policy, $ds_currency, $ds_billing_centers, $param_min_savings, $param_incident_csv
 end
 
 script "js_extended_support_resources", type: "javascript" do
-  parameters "ds_flexera_cco_data_filtered", "ds_applied_policy", "ds_currency", "ds_billing_centers", "param_min_savings", "param_incident_csv"
+  parameters "ds_flexera_cco_data_filtered", "ds_upcoming_extended_support_resources", "ds_applied_policy", "ds_currency", "ds_billing_centers", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
-  // Used for formatting numbers to look pretty
   function formatNumber(number, separator) {
     formatted_number = "0"
 
@@ -414,14 +906,12 @@ script "js_extended_support_resources", type: "javascript" do
     return formatted_number
   }
 
-  // Store Billing Center names to match them with their id
   bc_names = {}
 
   _.each(ds_billing_centers, function(bc) {
     bc_names[bc['id']] = bc['name']
   })
 
-  // Combine costs for individual resources with multiple line items
   resources_object = {}
 
   _.each(ds_flexera_cco_data_filtered, function(item) {
@@ -434,7 +924,7 @@ script "js_extended_support_resources", type: "javascript" do
 
   result = []
 
-  // Multiple a single day's cost by the average number of days in a month.
+  // Multiply a single day's cost by the average number of days in a month.
   // The 0.25 is to account for leap years for extra precision.
   cost_multiplier = 365.25 / 12
 
@@ -460,6 +950,11 @@ script "js_extended_support_resources", type: "javascript" do
         resourceID: resource['resource_id'],
         service: resource['service'],
         region: resource['region'],
+        resourceType: 'N/A',
+        extendedSupportStart: 'N/A',
+        extendedSupportEnd: 'N/A',
+        daysUntilExtendedSupport: 0,
+        status: 'Currently Under Extended Support',
         billing_center: bc_names[resource['billing_center_id']],
         recommendationDetails: recommendationDetails,
         savings: savings,
@@ -468,6 +963,19 @@ script "js_extended_support_resources", type: "javascript" do
         total_savings: 0,
         csv_message: csv_message
       })
+    }
+  })
+
+  var existing_ids = {}
+  _.each(result, function(item) { existing_ids[item['resourceID']] = true })
+
+  _.each(ds_upcoming_extended_support_resources, function(upcoming) {
+    if (!existing_ids[upcoming['resourceID']]) {
+      existing_ids[upcoming['resourceID']] = true
+      upcoming['policy_name'] = ds_applied_policy['name']
+      upcoming['total_savings'] = 0
+      upcoming['csv_message'] = csv_message
+      result.push(upcoming)
     }
   })
 
@@ -483,14 +991,14 @@ end
 
 policy "pol_extended_support_resources" do
   validate_each $ds_extended_support_resources do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Resources Under Extended Support Found"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Resources Under or Approaching Extended Support Found"
     detail_template <<-'EOS'
 **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}\n\n
 {{ with index data 0 }}{{ .csv_message }}{{ end }}
     EOS
-    check eq(val(item, "resourceID"), "")
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
-    hash_exclude "savings", "savingsCurrency"
+    hash_exclude "savings", "savingsCurrency", "daysUntilExtendedSupport", "total_savings"
     export do
       resource_level true
       field "billing_center" do
@@ -514,6 +1022,21 @@ policy "pol_extended_support_resources" do
       field "region" do
         label "Region"
       end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "extendedSupportStart" do
+        label "Extended Support Start Date"
+      end
+      field "extendedSupportEnd" do
+        label "Extended Support End Date"
+      end
+      field "daysUntilExtendedSupport" do
+        label "Days Until Extended Support"
+      end
       field "savings" do
         label "Estimated Monthly Savings"
       end
@@ -525,6 +1048,26 @@ policy "pol_extended_support_resources" do
         path "resourceID"
       end
     end
+  end
+
+  validate $ds_identify_errors do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+The policy was unable to access one or more AWS regions. This only affects the upcoming extended support check (when `Days Until Extended Support` is greater than 0).
+
+**Error Details:**
+{{ range data -}}
+  - {{ .error }}
+{{ end -}}
+
+**Recommended Actions:**
+
+1. Verify the AWS credential has the permissions listed in the Prerequisites section of the README for all regions where the policy should execute.
+1. Ensure any opt-in regions are enabled in your AWS account.
+1. Use the Allow/Deny Regions List parameter to exclude inaccessible regions.
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
+    escalate $esc_email_errors_identified
   end
 end
 
@@ -540,4 +1083,85 @@ escalation "esc_email" do
     attach_export_table $param_incident_csv
     body_table_max_rows $param_incident_table_size
   end
+end
+
+escalation "esc_email_errors_identified" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_parent_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
+  result "result"
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
+  end
+end
+
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
+  result "result"
+  code 'result = { path: "/"}'
 end
