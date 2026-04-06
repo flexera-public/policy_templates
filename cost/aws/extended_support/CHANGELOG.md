@@ -5,7 +5,7 @@
 - Policy template is now named `AWS Resources Under or Approaching Extended Support`.
 - Policy template now required an AWS credential and has a meta parent for use with multiple AWS accounts.
 - Added `Days Until Extended Support` parameter to report resources approaching extended support within a user-specified number of days.
-- Added `Resource Type`, `Status`, `Extended Support Start Date`, `Extended Support End Date`, and `Days Until Extended Support` fields to the incident export.
+- Added `Resource Type`, `Engine Version`, `Status`, `Extended Support Start Date`, `Extended Support End Date`, and `Days Until Extended Support` fields to the incident export.
 
 ## v0.3.3
 
