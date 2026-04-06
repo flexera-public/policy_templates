@@ -351,12 +351,12 @@ datasource "ds_flexera_cco_data" do
   result do
     encoding "json"
     collect jmes_path(response, "rows[*]") do
-      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
       field "vendor_account", jmes_path(col_item, "dimensions.vendor_account")
       field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
       field "service", jmes_path(col_item, "dimensions.service")
       field "region", jmes_path(col_item, "dimensions.region")
       field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "usage_type", jmes_path(col_item, "dimensions.usage_type")
       field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
     end
   end
@@ -381,12 +381,12 @@ script "js_flexera_cco_data", type: "javascript" do
     path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
     body_fields: {
       dimensions: [
-        "billing_center_id",
         "vendor_account",
         "vendor_account_name",
         "service",
         "region",
-        "resource_id"
+        "resource_id",
+        "usage_type"
       ],
       granularity: "day",
       start_at: start_date,
@@ -822,7 +822,6 @@ script "js_upcoming_extended_support_resources", type: "javascript" do
       status: 'Upcoming Extended Support',
       savings: estimated_savings,
       savingsCurrency: ds_currency['symbol'],
-      billing_center: 'N/A',
       recommendationDetails: [
         "Upgrade or migrate RDS instance ", instance['identifier'],
         " from ", instance['engine'], " ", instance['engineVersion'],
@@ -857,7 +856,6 @@ script "js_upcoming_extended_support_resources", type: "javascript" do
       status: 'Upcoming Extended Support',
       savings: estimated_savings,
       savingsCurrency: ds_currency['symbol'],
-      billing_center: 'N/A',
       recommendationDetails: [
         "Upgrade EKS cluster ", cluster['name'],
         " from Kubernetes ", cluster['version'],
@@ -893,7 +891,6 @@ script "js_upcoming_extended_support_resources", type: "javascript" do
       status: 'Upcoming Extended Support',
       savings: estimated_savings,
       savingsCurrency: ds_currency['symbol'],
-      billing_center: 'N/A',
       recommendationDetails: [
         "Upgrade ElastiCache cluster ", cluster['id'],
         " from ", cluster['engine'], " ", cluster['engineVersion'],
@@ -908,14 +905,34 @@ EOS
 end
 
 datasource "ds_extended_support_resources" do
-  run_script $js_extended_support_resources, $ds_flexera_cco_data_filtered, $ds_upcoming_extended_support_resources, $ds_applied_policy, $ds_currency, $ds_billing_centers, $param_min_savings, $param_incident_csv
+  run_script $js_extended_support_resources, $ds_flexera_cco_data_filtered, $ds_upcoming_extended_support_resources, $ds_applied_policy, $ds_currency, $ds_regions_table, $param_min_savings, $param_incident_csv
 end
 
 script "js_extended_support_resources", type: "javascript" do
-  parameters "ds_flexera_cco_data_filtered", "ds_upcoming_extended_support_resources", "ds_applied_policy", "ds_currency", "ds_billing_centers", "param_min_savings", "param_incident_csv"
+  parameters "ds_flexera_cco_data_filtered", "ds_upcoming_extended_support_resources", "ds_applied_policy", "ds_currency", "ds_regions_table", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
+  // Parse engine/version from CCO usage_type field.
+  // RDS/ElastiCache pattern: "USE1-RDS:0014-MySQL8.0-ExtendedSupport"
+  // EKS alternative pattern: "USE1-AmazonEKS-ExtendedSupport:1.28"
+  function parseResourceType(usage_type) {
+    if (!usage_type) { return 'N/A' }
+
+    var match = usage_type.match(/:\d+-(.+?)-[Ee]xtended[Ss]upport/i)
+    if (match) {
+      var version_str = match[1]
+      version_str = version_str.replace(/^KubernetesVersion/, 'Kubernetes ')
+      version_str = version_str.replace(/([a-zA-Z])(\d)/, '$1 $2')
+      return version_str
+    }
+
+    match = usage_type.match(/EKS.+-[Ee]xtended[Ss]upport:(\d+\.\d+)/i)
+    if (match) { return 'Kubernetes ' + match[1] }
+
+    return 'N/A'
+  }
 
   function formatNumber(number, separator) {
     formatted_number = "0"
@@ -940,12 +957,6 @@ script "js_extended_support_resources", type: "javascript" do
 
     return formatted_number
   }
-
-  bc_names = {}
-
-  _.each(ds_billing_centers, function(bc) {
-    bc_names[bc['id']] = bc['name']
-  })
 
   resources_object = {}
 
@@ -984,13 +995,12 @@ script "js_extended_support_resources", type: "javascript" do
         accountName: resource['vendor_account_name'],
         resourceID: resource['resource_id'],
         service: resource['service'],
-        region: resource['region'],
-        resourceType: 'N/A',
+        region: ds_regions_table[resource['region']] || resource['region'],
+        resourceType: parseResourceType(resource['usage_type']),
         extendedSupportStart: 'N/A',
         extendedSupportEnd: 'N/A',
         daysUntilExtendedSupport: 0,
         status: 'Currently Under Extended Support',
-        billing_center: bc_names[resource['billing_center_id']],
         recommendationDetails: recommendationDetails,
         savings: savings,
         savingsCurrency: ds_currency['symbol'],
@@ -1038,9 +1048,6 @@ policy "pol_extended_support_resources" do
     hash_exclude "savings", "savingsCurrency", "daysUntilExtendedSupport", "total_savings"
     export do
       resource_level true
-      field "billing_center" do
-        label "Billing Center"
-      end
       field "accountID" do
         label "Account ID"
       end
