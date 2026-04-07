@@ -14,8 +14,8 @@ The [ServiceNow Table API](https://docs.servicenow.com/bundle/washingtondc-api-r
 - *ServiceNow Instance Name* - Name of the instance in your ServiceNow domain. For example, *myinstance* if your ServiceNow domain is *myinstance.service-now.com*.
 - *ServiceNow Roles* - ServiceNow roles assigned to approval users.
 - *Approval Action Threshold (Days)* - Number of days without an approval action executed in ServiceNow to report a user.
-- *Incident Table Size* - Maximum number of rows to include in the incident table in the email. Larger values may cause email delivery issues.
-- *Attach Incident CSV* - Whether or not to attach a CSV of the incident data to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 
 ## Policy Actions
 

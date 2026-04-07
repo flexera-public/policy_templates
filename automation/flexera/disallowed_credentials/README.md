@@ -10,7 +10,7 @@ This policy template reports credentials in Flexera Automation that are not in a
 - *Credential Scope* - Whether to report on Organization-level or Project-level credentials. Select both to report both. Only Project-level credentials in the specific project this policy template is applied in will be reported.
 - *Credential Allow List* - The names/IDs of credentials that are allowed to exist in Flexera Automation. If a credential is not on this list, it will be reported as disallowed.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
-- *Incident Table Rows for Email Body* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 
 ## Policy Actions

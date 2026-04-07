@@ -26,8 +26,8 @@ This policy template utilizes Flexera Budgets to detect if budget expense has ex
 - *Filter Group By Dimensions* - Filter by dimension=value pairs. Dimensions are the visible dimensions in the Flexera One platform, such as Cloud Vendor, Resource Type, Service, etc. Values can be comma separated to filter by multiple values for the same dimension. Has no effect if the "Summarized" option is selected for the `Degree of Summarization` parameter. Examples: 'Cloud Vendor=AWS' 'Cloud Vendor Account=001234567890,004321876509' 'Category=Compute'
 - *Unbudgeted Spend* - parameter that allows including or excluding unbudgeted funds in the calculation
 - *Threshold Percentage* - Threshold to raise the alert if reached
-- *Incident Table Size* - Maximum number of rows to include in the incident table in the email. Larger values may cause email delivery issues.
-- *Attach Incident CSV* - Whether or not to attach a CSV of the incident data to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 
 ## Policy Actions
 

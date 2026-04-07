@@ -44,7 +44,7 @@ Updating an outdated policy is done as follows:
 - *Policy Templates To Report* - Whether to report outdated policy templates, deprecated policy templates, or both. Separate incidents will be raised/emailed if both are selected and found.
 - *Allow Automated Major Version Updates* - Whether to allow actions to automatically update outdated policy templates when there's been a major version change. This is not recommended in most cases.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
-- *Incident Table Rows for Email Body* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 
 Please note that updated policies applied by this policy template will show the user associated with the Flexera credential in the Automation platform as the individual responsible for applying the policy. This may be different than the user that applied the original policy.

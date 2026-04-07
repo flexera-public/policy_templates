@@ -10,7 +10,7 @@ This policy produces a report of assets stored in Flexera ITAM based on the spec
 - *Asset Status* - Only report assets with the selected status. Select 'All' to not filter results by asset status.
 - *Asset Type* - Only report assets of the selected type. Select 'All' to not filter results by asset type.
 - *Asset Location* - Only report assets in the specified location. Leave blank to not filter results by location.
-- *Incident Table Rows for Email Body* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 
 ## Policy Actions

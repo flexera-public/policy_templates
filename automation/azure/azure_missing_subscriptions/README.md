@@ -10,7 +10,7 @@ This policy template checks the stored Flexera CCO billing data for Azure from 3
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
 - *Report Selection* - Whether to report Subscriptions missing in the Azure API but present in CCO data, the opposite, or both.
 - *Subscriptions Ignore List* - A list of Subscription IDs/names to never include in the results. Leave blank to not filter results
-- *Incident Table Rows for Email Body* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 
 ## Policy Actions

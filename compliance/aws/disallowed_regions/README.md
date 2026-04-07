@@ -12,7 +12,7 @@ This policy template finds all AWS EC2 instances within a user-specified list of
 - *Disallow/Allow Regions* - Whether to allow or disallow the regions specified in the `Disallow/Allow Regions List` parameter. If set to "Allow", all EC2 instances outside of the listed regions will be considered out of compliance. If set to "Disallow", all EC2 instances within the listed regions will be considered out of compliance.
 - *Disallow/Allow Regions List* - A list of regions to disallow or allow. Example: us-east-1
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
-- *Incident Table Rows for Email Body* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
