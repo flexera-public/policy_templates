@@ -9,6 +9,8 @@ This policy template checks the stored Flexera CCO billing data for Google from 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Report Selection* - Whether to report Projects missing in the Google Cloud Resource Manager API but present in CCO data, the opposite, or both.
 - *Projects Ignore List* - A list of Project IDs/names to never include in the results. Leave blank to not filter results.
+- *Incident Table Rows for Email Body* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 
 ## Policy Actions
 

@@ -8,10 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "1.0.6",
-  provider: "AWS",
-  service: "All",
-  policy_set: "Cheaper Regions",
+  version: "1.1.0",
   hide_skip_approvals: "true"
 )
 
@@ -68,6 +65,24 @@ parameter "param_bc_list" do
   label "Allow/Deny Billing Center List"
   description "A list of allowed or denied Billing Center names/IDs. Leave blank to check all Billing Centers."
   default []
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Policy Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 20, 50, 100, 200, 500, 1000, 10000, 100000
+  default 20
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Policy Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "true"
 end
 
 ###############################################################################
@@ -395,13 +410,15 @@ EOS
 end
 
 datasource "ds_cheaper_regions" do
-  run_script $js_cheaper_regions, $ds_regions_sorted, $param_regions_allow_or_deny, $param_regions_list
+  run_script $js_cheaper_regions, $ds_regions_sorted, $param_regions_allow_or_deny, $param_regions_list, $param_incident_csv
 end
 
 script "js_cheaper_regions", type: "javascript" do
-  parameters "ds_regions_sorted", "param_regions_allow_or_deny", "param_regions_list"
+  parameters "ds_regions_sorted", "param_regions_allow_or_deny", "param_regions_list", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+
   result = _.filter(ds_regions_sorted, function(item) {
     return typeof(item['cheaper']) == 'string' && item['cheaper'] != ''
   })
@@ -415,6 +432,8 @@ script "js_cheaper_regions", type: "javascript" do
       }
     })
   }
+
+  if (result.length > 0) { result[0]['message'] = csv_message }
 EOS
 end
 
@@ -428,6 +447,7 @@ policy "pol_cheaper_regions" do
     detail_template <<-'EOS'
 ### Billing Period: {{ with index data 0 }}{{ .billing_period }}{{ end }}
 ### Billing Centers: {{ with index data 0 }}{{ .all_billing_centers }}{{ end }}
+{{ with index data 0 }}{{ .message }}{{ end }}
 EOS
     check eq(val(item, "id"), "")
     escalate $esc_email
@@ -475,5 +495,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

@@ -10,6 +10,8 @@ This policy template reports on any Flexera Cloud Cost Optimization bill connect
 - *Processing Time (Hours)* - Amount of time in hours to consider a bill connection in an error state if it has failed to complete processing of a bill.
 - *Bill Connection Ignore List* - A list of Bill Connection IDs to never check for errors or report on. Leave blank to check all Bill Connections.
 - *Report Connection With Zero Bills* - Whether or not to report any connections that have no available bills to process since this can sometimes indicate an error.
+- *Incident Table Rows for Email Body* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 
 ## Policy Actions
 
