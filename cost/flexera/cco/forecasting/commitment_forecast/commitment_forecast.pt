@@ -8,7 +8,7 @@ category "Cost"
 severity "medium"
 default_frequency "monthly"
 info(
-  version: "4.0.7",
+  version: "4.0.8",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Forecasting",
@@ -272,9 +272,49 @@ script "js_top_level_bcs", type: "javascript" do
 EOS
 end
 
+# Split the full date range into chunks of at most 12 months each, since the
+# /costs/aggregated API endpoint only supports 1 year of data per request.
+datasource "ds_date_ranges" do
+  run_script $js_date_ranges, $param_start_date, $param_end_date
+end
+
+script "js_date_ranges", type: "javascript" do
+  parameters "param_start_date", "param_end_date"
+  result "result"
+  code <<-'EOS'
+  var start_year = parseInt(param_start_date.split("-")[0])
+  var start_month = parseInt(param_start_date.split("-")[1])
+  var end_year = parseInt(param_end_date.split("-")[0])
+  var end_month = parseInt(param_end_date.split("-")[1])
+
+  // Represent dates as total months (year * 12 + month) for easy arithmetic
+  var start_total = start_year * 12 + start_month
+  var end_total = end_year * 12 + end_month
+
+  var result = []
+  var current_total = start_total
+
+  while (current_total < end_total) {
+    var chunk_end_total = Math.min(current_total + 12, end_total)
+
+    var cs_year = Math.floor((current_total - 1) / 12)
+    var cs_month = ((current_total - 1) % 12) + 1
+    var ce_year = Math.floor((chunk_end_total - 1) / 12)
+    var ce_month = ((chunk_end_total - 1) % 12) + 1
+
+    var cs_str = cs_year + "-" + (cs_month < 10 ? "0" + cs_month : "" + cs_month)
+    var ce_str = ce_year + "-" + (ce_month < 10 ? "0" + ce_month : "" + ce_month)
+
+    result.push({ start_at: cs_str, end_at: ce_str })
+    current_total = chunk_end_total
+  }
+EOS
+end
+
 datasource "ds_aggregated_costs" do
+  iterate $ds_date_ranges
   request do
-    run_script $js_aggregated_costs, $ds_top_level_bcs, $ds_cloud_vendor, $ds_cost_metric, $param_start_date, $param_end_date, rs_org_id, rs_optima_host
+    run_script $js_aggregated_costs, val(iter_item, "start_at"), val(iter_item, "end_at"), $ds_top_level_bcs, $ds_cloud_vendor, $ds_cost_metric, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -287,7 +327,7 @@ datasource "ds_aggregated_costs" do
 end
 
 script "js_aggregated_costs", type: "javascript" do
-  parameters "ds_top_level_bcs", "ds_cloud_vendor", "ds_cost_metric", "param_start_date", "param_end_date", "rs_org_id", "rs_optima_host"
+  parameters "start_at", "end_at", "ds_top_level_bcs", "ds_cloud_vendor", "ds_cost_metric", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
   var request = {
@@ -301,8 +341,8 @@ script "js_aggregated_costs", type: "javascript" do
       dimensions: [ "vendor" ],
       metrics: [ ds_cost_metric['id'] ],
       granularity: "month",
-      start_at: param_start_date,
-      end_at: param_end_date,
+      start_at: start_at,
+      end_at: end_at,
       filter: null
     }
   }

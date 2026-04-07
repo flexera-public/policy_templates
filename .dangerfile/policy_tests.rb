@@ -1745,8 +1745,10 @@ def policy_summary_template_missing_policy_name?(file, file_lines, file_parsed)
   end
 
   # Simple check: does the file contain {{ .policy_name }} anywhere near summary_template?
+  # Also accept {{ data.policy_name }} for templates that store policy_name in a data object
   file_text = file_lines.join("\n")
   return false if file_text.include?("{{ .policy_name }}") || file_text.include?("{{.policy_name}}")
+  return false if file_text.include?("{{ data.policy_name }}") || file_text.include?("{{data.policy_name}}")
 
   fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#policy)] `summary_template` should include `{{ .policy_name }}` when `ds_applied_policy` is present. Example: `\"{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Resources Found\"`"
 
