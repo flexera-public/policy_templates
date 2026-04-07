@@ -8,7 +8,7 @@ severity "medium"
 category "SaaS Management"
 default_frequency "weekly"
 info(
-  version: "3.0.6",
+  version: "3.1.0",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: "",
@@ -33,6 +33,25 @@ parameter "param_category" do
   label "Department"
   description "Department to report entitled SaaS users"
   # No default value, user input required
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Policy Settings"
+  label "Incident Table Size"
+  description "Maximum number of rows to include in the incident table in the email. Larger values may cause email delivery issues."
+  min_value 1
+  max_value 500
+  default 20
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Policy Settings"
+  label "Attach Incident CSV"
+  description "Whether or not to attach a CSV of the incident data to the incident email."
+  allowed_values "true", "false"
+  default "true"
 end
 
 ###############################################################################
@@ -151,17 +170,19 @@ EOS
 end
 
 datasource "ds_mp_agents_incident" do
-  run_script $js_mp_agents_incident, $ds_managed_product_agents, $ds_applied_policy
+  run_script $js_mp_agents_incident, $ds_managed_product_agents, $ds_applied_policy, $param_incident_csv
 end
 
 script "js_mp_agents_incident", type: "javascript" do
-  parameters "ds_managed_product_agents", "ds_applied_policy"
+  parameters "ds_managed_product_agents", "ds_applied_policy", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
   result = ds_managed_product_agents
 
   if (result.length > 0) {
     result[0]['policy_name'] = ds_applied_policy['name']
+    result[0]['message'] = csv_message
   }
 EOS
 end
@@ -173,6 +194,9 @@ end
 policy "pol_dept_app_users" do
   validate_each $ds_mp_agents_incident do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} SaaS Subscribers for {{ parameters.param_category }} Found"
+    detail_template <<-'EOS'
+    **Details:** {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
     check eq(val(item, "appName"), "")
     escalate $esc_email
     export do
@@ -206,5 +230,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

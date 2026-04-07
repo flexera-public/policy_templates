@@ -18,6 +18,8 @@ This policy template has the following input parameters:
 - *Email Addresses* - Email addresses of the recipients you wish to notify.
 - *Unsanctioned Application Names* - List of SaaS Application names that the policy will target for identifying unsanctioned spend. Note: if left blank, the policy will detect all unsanctioned spend.
 - *Number of Days Back* - Any unsanctioned expenses discovered during this time period will raise an incident.
+- *Incident Table Size* - Maximum number of rows to include in the incident table in the email. Larger values may cause email delivery issues.
+- *Attach Incident CSV* - Whether or not to attach a CSV of the incident data to the incident email.
 
 ## Policy Actions
 

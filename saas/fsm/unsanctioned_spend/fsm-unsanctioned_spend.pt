@@ -8,7 +8,7 @@ severity "medium"
 category "SaaS Management"
 default_frequency "weekly"
 info(
-  version: "3.1.7",
+  version: "3.2.0",
   provider: "Flexera",
   service: "SaaS Manager",
   policy_set: "",
@@ -41,6 +41,25 @@ parameter "param_days" do
   label "Number of Days Back"
   description "Unsanctioned expenses discovered during this time period will raise an incident"
   default 7
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Policy Settings"
+  label "Incident Table Size"
+  description "Maximum number of rows to include in the incident table in the email. Larger values may cause email delivery issues."
+  min_value 1
+  max_value 500
+  default 20
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Policy Settings"
+  label "Attach Incident CSV"
+  description "Whether or not to attach a CSV of the incident data to the incident email."
+  allowed_values "true", "false"
+  default "true"
 end
 
 ###############################################################################
@@ -154,13 +173,14 @@ EOS
 end
 
 datasource "ds_cleanup_expenses" do
-  run_script $js_cleanup_expenses, $ds_unsanctioned, $ds_applied_policy, $param_days, $param_unsanctioned_apps
+  run_script $js_cleanup_expenses, $ds_unsanctioned, $ds_applied_policy, $param_days, $param_unsanctioned_apps, $param_incident_csv
 end
 
 script "js_cleanup_expenses", type: "javascript" do
-  parameters "ds_unsanctioned", "ds_applied_policy", "param_days", "param_unsanctioned_apps"
+  parameters "ds_unsanctioned", "ds_applied_policy", "param_days", "param_unsanctioned_apps", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
   result = []
   date = new Date()
   date = date.setHours(param_days * -24)
@@ -187,6 +207,8 @@ script "js_cleanup_expenses", type: "javascript" do
   })
 
   result = _.sortBy(result, 'expenseDate').reverse()
+
+  if (result.length > 0) { result[0]['message'] = csv_message }
 EOS
 end
 
@@ -197,6 +219,9 @@ end
 policy "pol_fsm_unsanctioned_spend" do
   validate_each $ds_cleanup_expenses do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Unsanctioned Expenses Found"
+    detail_template <<-'EOS'
+    **Details:** {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
     check eq(val(item, "application"), "")
     escalate $esc_email
     export do
@@ -230,5 +255,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

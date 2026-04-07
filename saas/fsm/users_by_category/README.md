@@ -17,6 +17,8 @@ This policy template has the following input parameters:
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify
 - *Department* - Department to report on entitled SaaS subscription users
+- *Incident Table Size* - Maximum number of rows to include in the incident table in the email. Larger values may cause email delivery issues.
+- *Attach Incident CSV* - Whether or not to attach a CSV of the incident data to the incident email.
 
 ## Policy Actions
 

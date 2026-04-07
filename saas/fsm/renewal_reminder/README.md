@@ -15,6 +15,8 @@ This policy template has the following input parameters:
 - *Email Addresses* - Email addresses of the recipients you wish to notify
 - *Applications* - A list of application names and/or IDs to check. Leave blank to check all applications.
 - *Days Until Expiration* - The number of days before the license expires. All licenses set to expire in fewer days than the specified value will be included in the report.
+- *Incident Table Size* - Maximum number of rows to include in the incident table in the email. Larger values may cause email delivery issues.
+- *Attach Incident CSV* - Whether or not to attach a CSV of the incident data to the incident email.
 
 ## Policy Actions
 
