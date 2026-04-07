@@ -1,9 +1,5 @@
 # Changelog
 
-## v3.2.1
-
-- Fixed formatting of incident detail text.
-
 ## v3.2.0
 
 - Added `Incident Table Size` and `Attach Incident CSV` parameters to control incident email output
