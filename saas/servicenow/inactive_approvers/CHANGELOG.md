@@ -2,7 +2,7 @@
 
 ## v3.1.0
 
-- Added `Incident Table Rows for Email Body` and `Attach CSV To Incident Email` parameters.
+- Added `Incident Table Size` and `Attach Incident CSV` parameters to control email incident table row count and CSV attachment behavior.
 
 ## v3.0.6
 
