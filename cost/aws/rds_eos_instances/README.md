@@ -2,11 +2,12 @@
 
 ## What It Does
 
-This policy template identifies AWS RDS instances running MySQL or PostgreSQL that are approaching the end of standard support. It checks whether these instances match the list of currently supported versions and calculates an estimated cost for extended support, based on the notification period you specify.
+This policy template identifies AWS RDS instances running MySQL or PostgreSQL that are approaching the end of standard support. It checks whether these instances match the list of currently supported versions and calculates an estimated cost for extended support based on the notification period you specify.
 
 ## How It Works
 
-- This policy pulls *End of Support dates* from a manually maintained and updated list based on the AWS Release calendars
+- This policy pulls *End of Support dates* from a manually maintained and updated list based on the AWS Release calendars.
+- This policy template does not currently support Serverless deployments.
 - The calculations for extended support costs are provided by AWS. Refer to the links below for further information.
 - [AWS PostgreSQL] <https://docs.aws.amazon.com/AmazonRDS/latest/PostgreSQLReleaseNotes/postgresql-release-calendar.html>
 - [AWS MySQL] <https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/MySQL.Concepts.VersionMgmt.html#MySQL.Concepts.VersionMgmt.ReleaseCalendar>
@@ -26,7 +27,6 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 **Note:** Limitations
 
-- This policy template does not currently support Serverless deployments.
 - If you have a deployment not listed in a region in our list we will default to USD$0.10 per vCPU per running hour.
 
 ## Input Parameters
