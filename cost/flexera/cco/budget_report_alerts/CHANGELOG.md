@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.6.0
+
+- Added `Incident Table Size` and `Attach Incident CSV` parameters to control email incident table row count and CSV attachment behavior.
+
 ## v3.5.0
 
 - Billing Center dimensions now show Billing Center names instead of IDs in the incident table.

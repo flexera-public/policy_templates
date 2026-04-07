@@ -34,6 +34,8 @@ For more details on Flexera Cloud Cost Anomaly Detection, please see the [docume
 - *Window Size* - Window size to use for [Bollinger Bands](https://en.wikipedia.org/wiki/Bollinger_Bands)
 - *Standard Deviations* - Number of [standard deviations](https://en.wikipedia.org/wiki/Standard_deviation) for the [Bollinger Band](https://en.wikipedia.org/wiki/Bollinger_Bands)
 - *Sort Anomalies By* - Sort the anomalies by cost or variance before applying the limit. Default is Cost.
+- *Incident Table Size* - Maximum number of rows to include in the incident table in the email. Larger values may cause email delivery issues.
+- *Attach Incident CSV* - Whether or not to attach a CSV of the incident data to the incident email.
 
 ## Policy Actions
 
