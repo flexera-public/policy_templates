@@ -171,6 +171,19 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_flexera_policy" do
+  get_page_marker do
+    body_path "nextPage"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
 # Datasources
 ###############################################################################
 
@@ -487,6 +500,7 @@ end
 datasource "ds_get_existing_policies" do
   request do
     auth $auth_flexera
+    pagination $pagination_flexera_policy
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies"])
     query "filter", join(["metaParentPolicyId eq '", policy_id, "'"])
@@ -669,111 +683,106 @@ script "js_take_in_parameters", type: "javascript" do
   parameters "ds_get_aws_accounts", "ds_format_self", "ds_published_child_policy_information", "ds_project_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "ds_flexera_api_hosts", "param_template_source", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
   result "grid_and_cwf"
   code <<-'EOS'
-  frequency = "FREQ=" + param_policy_schedule.toUpperCase()
-
-  // Convert "15 minutes" defaultFrequency to RRULE "FREQ=MINUTELY;INTERVAL=15"
+  // Convert schedule label to iCal RRULE frequency string
+  var frequency = "FREQ=" + param_policy_schedule.toUpperCase()
   if (param_policy_schedule.toLowerCase() == "15 minutes") {
+    // Special case: "15 minutes" maps to a minutely interval rule
     frequency = "FREQ=MINUTELY;INTERVAL=15"
   }
 
-  flexera_host = ds_flexera_api_hosts["flexera"]
+  var flexera_host = ds_flexera_api_hosts["flexera"]
 
-  // Set Child Policy Information based on param_template_source value
+  // Select the child policy template source based on the user's parameter
+  var child_policy_information
   if (param_template_source == "Published Catalog Template") {
     child_policy_information = ds_published_child_policy_information
   } else {
     child_policy_information = ds_project_child_policy_information
   }
 
-  max_actions = 50;
+  // Maximum number of create/update/delete actions allowed per run
+  var max_actions = 50
 
-  grid_and_cwf={grid:[], to_create:[], to_update:[], to_delete:[], parent_policy:ds_format_self};
+  // Result object: status grid for the incident report + action lists for Cloud Workflow
+  var grid_and_cwf = {
+    grid: [],
+    to_create: [],
+    to_update: [],
+    to_delete: [],
+    parent_policy: ds_format_self
+  }
 
-  should_keep = ds_format_existing_policies.tracking;
+  // Copy tracking map from existing policies. Each key is an AWS account ID; value starts
+  // as false (meaning "candidate for deletion") and is set to true when the account is
+  // still present in the current AWS account list.
+  var should_keep = ds_format_existing_policies.tracking
 
-  // Construct UI URL prefixes for policy template summary
-  ui_url_prefix = "https://" + f1_app_host + "/orgs/" + rs_org_id;
-  applied_policy_url_prefix = ui_url_prefix + "/automation/applied-policies/projects/" + rs_project_id + "?noIndex=1&policyId=";
-  incident_url_prefix       = ui_url_prefix + "/automation/incidents/projects/" + rs_project_id + "?noIndex=1&incidentId=";
+  // Build UI URL prefixes used for deep-linking to policies and incidents in Flexera One
+  var ui_url_prefix = "https://" + f1_app_host + "/orgs/" + rs_org_id
+  var applied_policy_url_prefix = ui_url_prefix + "/automation/applied-policies/projects/" + rs_project_id + "?noIndex=1&policyId="
+  var incident_url_prefix = ui_url_prefix + "/automation/incidents/projects/" + rs_project_id + "?noIndex=1&incidentId="
 
+  // Append incident fields to a policy_status object using a named prefix.
+  // Strips the policy name prefix from the summary (everything before the last colon).
+  function add_incident_to_status(policy_status, incident, prefix) {
+    if (incident == null || incident == undefined) { return }
+    var summary_parts = incident.summary.split(':')
+    var summary = summary_parts[summary_parts.length - 1].trim()
+    policy_status[prefix + "summary"] = summary + '||' + incident_url_prefix + incident.incident_id
+    policy_status[prefix + "state"] = incident.state
+    policy_status[prefix + "violation_data_count"] = incident.violation_data_count
+    policy_status[prefix + "last_update"] = incident.updated_at
+  }
+
+  // Build a status grid row for an existing policy and append it to grid_and_cwf.grid.
+  // 'action' is a human-readable string describing the meta-policy action being taken.
   function add_to_grid(ep, action) {
-    policy_status={
+    var policy_status = {
       "accountID": ep["accountID"],
       "id": ep["applied_policy_id"],
       "policy_name": ep["applied_policy_name"] + '||' + applied_policy_url_prefix + ep["applied_policy_id"],
       "meta_policy_status": action,
       "policy_status": ep["status"],
-      "policy_last_update": ep["updated_at"],
-    };
-
-    if (ep.incident != null && ep.incident != undefined) {
-      // Remove policy name from summary when applicable
-      summary_parts = ep.incident.summary.split(':')
-      summary = summary_parts[summary_parts.length - 1].trim()
-
-      policy_status["incident_summary"] = summary + '||' + incident_url_prefix + ep.incident.incident_id;
-      policy_status["incident_state"] = ep.incident.state;
-      policy_status["incident_violation_data_count"] = ep.incident.violation_data_count;
-      policy_status["incident_last_update"] = ep.incident.updated_at;
+      "policy_last_update": ep["updated_at"]
     }
-
-    if (ep.incident2 != null && ep.incident2 != undefined) {
-      // Remove policy name from summary when applicable
-      summary_parts = ep.incident2.summary.split(':')
-      summary = summary_parts[summary_parts.length - 1].trim()
-
-      policy_status["incident2_summary"] = summary + '||' + incident_url_prefix + ep.incident2.incident_id;
-      policy_status["incident2_state"] = ep.incident2.state;
-      policy_status["incident2_violation_data_count"] = ep.incident2.violation_data_count;
-      policy_status["incident2_last_update"] = ep.incident2.updated_at;
-    }
-
-    if (ep.incident3 != null && ep.incident3 != undefined) {
-      // Remove policy name from summary when applicable
-      summary_parts = ep.incident3.summary.split(':')
-      summary = summary_parts[summary_parts.length - 1].trim()
-
-      policy_status["incident3_summary"] = summary + '||' + incident_url_prefix + ep.incident3.incident_id;
-      policy_status["incident3_state"] = ep.incident3.state;
-      policy_status["incident3_violation_data_count"] = ep.incident3.violation_data_count;
-      policy_status["incident3_last_update"] = ep.incident3.updated_at;
-    }
-
-    grid_and_cwf.grid.push(policy_status);
+    add_incident_to_status(policy_status, ep.incident, "incident_")
+    add_incident_to_status(policy_status, ep.incident2, "incident2_")
+    add_incident_to_status(policy_status, ep.incident3, "incident3_")
+    grid_and_cwf.grid.push(policy_status)
   }
 
-  for (x=0; x<ds_format_existing_policies.duplicates.length; x++) {
+  // Schedule duplicate child policies (same account applied more than once) for deletion.
+  // ds_format_existing_policies retains only the newest copy in 'formatted'; the rest are duplicates.
+  _.each(ds_format_existing_policies.duplicates, function(duplicate) {
     if (grid_and_cwf.to_delete.length < max_actions) {
-      grid_and_cwf.to_delete.push({"id":ds_format_existing_policies.duplicates[x]["applied_policy_id"], "name": ds_format_existing_policies.duplicates[x]["applied_policy_name"]})
-      add_to_grid(ds_format_existing_policies.duplicates[x], "terminating")
+      grid_and_cwf.to_delete.push({
+        "accountID": duplicate["accountID"],
+        "id": duplicate["applied_policy_id"],
+        "name": duplicate["applied_policy_name"],
+        "flexera_host": flexera_host
+      })
+      add_to_grid(duplicate, "terminating")
     } else {
-      add_to_grid(ds_format_existing_policies.duplicates[x], "to be terminated")
+      add_to_grid(duplicate, "to be terminated")
     }
-  }
+  })
 
-  for (x=0; x<ds_get_aws_accounts.length; x++) {
-    cur = ds_get_aws_accounts[x];
-    cur_account_id = cur.aws_account_id.replace(/['"]+/g, '');
+  // For each AWS account, decide whether to create a new child policy, update the existing
+  // one, or leave it running unchanged.
+  _.each(ds_get_aws_accounts, function(account) {
+    var cur_account_id = account.aws_account_id.replace(/['"]+/g, '')
 
-    // Name and description do not vary between create or updates so defining them here
-    name = child_policy_information.name + ": " + cur.aws_account_name + " (" + cur_account_id + ") (child policy)";
-    description = child_policy_information.name + " policy applied by [" + ds_format_self.name + "](" + applied_policy_url_prefix + meta_parent_policy_id + ") to AWS Account **" + cur.aws_account_name +"** (`" + cur_account_id + "`).  " + child_policy_information.short_description;
+    // Name and description are the same for both create and update operations
+    var name = child_policy_information.name + ": " + account.aws_account_name + " (" + cur_account_id + ") (child policy)"
+    var description = child_policy_information.name + " policy applied by [" + ds_format_self.name + "](" + applied_policy_url_prefix + meta_parent_policy_id + ") to AWS Account **" + account.aws_account_name + "** (`" + cur_account_id + "`).  " + child_policy_information.short_description
 
-    // Check if child policy exists for current account id
-    if ( ! _.contains(_.keys(ds_format_existing_policies.formatted), cur_account_id) ) {
-      console.log("Child Policy for "+cur_account_id+" does not exist and should be created");
+    // Build the child policy options list: parent options plus the account-specific account number
+    var options = _.toArray(ds_child_policy_options)
+    options.push({ "name": "param_aws_account_number", "value": cur_account_id })
 
-      // Child Policy does not exist for current account ID and should be created
-
-
-      // Use the options from the parent policy in "name value" list format
-      options = _.toArray(ds_child_policy_options);
-
-      // Set param_aws_account_id values for this child policy
-      options.push({
-        "name": "param_aws_account_number",
-        "value": cur_account_id
-      });
+    if (!_.contains(_.keys(ds_format_existing_policies.formatted), cur_account_id)) {
+      // No existing child policy for this account — schedule creation
+      console.log("Child policy for " + cur_account_id + " does not exist and should be created")
 
       if (grid_and_cwf.to_create.length < max_actions) {
         grid_and_cwf.to_create.push({
@@ -788,64 +797,45 @@ script "js_take_in_parameters", type: "javascript" do
           "template_href": child_policy_information.href,
           "flexera_host": flexera_host
         })
-
-        policy_status={
+        grid_and_cwf.grid.push({
           "accountID": cur_account_id,
           "policy_name": name,
           "meta_policy_status": "creating policy",
           "policy_status": "",
-          "policy_last_update": "",
-        }
-
-        grid_and_cwf.grid.push(policy_status)
+          "policy_last_update": ""
+        })
       } else {
-        policy_status={
+        grid_and_cwf.grid.push({
           "accountID": cur_account_id,
           "policy_name": name,
           "meta_policy_status": "policy to be created",
           "policy_status": "",
-          "policy_last_update": "",
-        }
-        grid_and_cwf.grid.push(policy_status)
+          "policy_last_update": ""
+        })
       }
     } else {
-      console.log("Child Policy for "+cur_account_id+" does exist for current account ID and may need to be updated or deleted");
-      // Child Policy does exist for current account ID and may need to be updated or deleted
-      // Assume by default we should keep it and not update it
-      should_keep[cur_account_id] = true;
-      should_update = false;
+      // Existing child policy found — mark it as to-keep and check whether an update is needed
+      console.log("Child policy for " + cur_account_id + " exists and may need to be updated or kept")
+      should_keep[cur_account_id] = true
 
-      // Use the options from the parent policy in "name value" list format
-      options = _.toArray(ds_child_policy_options);
-
-      // Set param_aws_account_id values for this child policy
-      options.push({
-        "name": "param_aws_account_number",
-        "value": cur_account_id
-      });
-
-      // Check if child policy params match parent policy params
+      // Compare each parent param value against the child's current value to detect drift
+      var should_update = false
       _.each(ds_format_self.options, function(value, key) {
-        // If any child and parent param values do not match, mark the child policy as should_update
-        if ( !_.isEqual(value, ds_format_existing_policies["formatted"][cur_account_id]["options"][key]) ) {
-          console.log("Child Policy Param does not match Parent Policy and should be updated. "+key+" does not match "+value+"!="+ds_format_existing_policies["formatted"][cur_account_id]["options"][key]);
-          should_update = true;
+        if (!_.isEqual(value, ds_format_existing_policies["formatted"][cur_account_id]["options"][key])) {
+          console.log("Param mismatch for " + key + ": " + value + " != " + ds_format_existing_policies["formatted"][cur_account_id]["options"][key])
+          should_update = true
         }
-      });
-
+      })
 
       if (should_update) {
-        // Child policy needs to be updated
+        console.log("Child policy needs to be updated: " + JSON.stringify(ds_format_existing_policies.formatted[cur_account_id]))
         if (grid_and_cwf.to_update.length < max_actions) {
-          // Child policy needs to be updated and is within the max_actions limit
-          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[cur_account_id]="+JSON.stringify(ds_format_existing_policies.formatted[cur_account_id]));
+          // Within the action limit — schedule the update and add to the grid
           add_to_grid(ds_format_existing_policies.formatted[cur_account_id], "updating")
-          name = ds_format_existing_policies.formatted[cur_account_id].applied_policy_name
-          // Add to_update
           grid_and_cwf.to_update.push({
-            "accountID": cur_projectID,
-            "applied_policy_id": ds_format_existing_policies.formatted[cur_projectID].applied_policy_id,
-            "name": name,
+            "accountID": cur_account_id,
+            "applied_policy_id": ds_format_existing_policies.formatted[cur_account_id].applied_policy_id,
+            "name": ds_format_existing_policies.formatted[cur_account_id].applied_policy_name,
             "description": description,
             "credentials": ds_format_self.credentials,
             "options": options,
@@ -853,21 +843,18 @@ script "js_take_in_parameters", type: "javascript" do
             "flexera_host": flexera_host
           })
         } else {
-          // Child policy needs to be updated but is outside the max_actions limit
-          // Add to grid but do not add to to_update
-          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[cur_account_id]="+JSON.stringify(ds_format_existing_policies.formatted[cur_account_id]));
-          add_to_grid(ds_format_existing_policies.formatted[cur_account_id], "to be updated");
+          // Exceeded the action limit — note in the grid but defer the update to a future run
+          add_to_grid(ds_format_existing_policies.formatted[cur_account_id], "to be updated")
         }
       } else {
-        // Child policy does not need to be updated
-        add_to_grid(ds_format_existing_policies.formatted[cur_account_id], "running");
+        // No param drift detected — child policy is running normally
+        add_to_grid(ds_format_existing_policies.formatted[cur_account_id], "running")
       }
     }
-  }
+  })
 
-  console.log("Checking if policies should be deleted. "+JSON.stringify(should_keep));
+  // Delete child policies whose AWS accounts are no longer in the current account list
   _.each(should_keep, function(keep, account_id) {
-    console.log("Should keep "+account_id+"="+keep);
     if (!keep) {
       if (grid_and_cwf.to_delete.length < max_actions) {
         grid_and_cwf.to_delete.push({
@@ -876,15 +863,13 @@ script "js_take_in_parameters", type: "javascript" do
           "name": ds_format_existing_policies.formatted[account_id].applied_policy_name,
           "flexera_host": flexera_host
         })
-
         add_to_grid(ds_format_existing_policies.formatted[account_id], "terminating")
       } else {
         add_to_grid(ds_format_existing_policies.formatted[account_id], "to be terminated")
       }
     }
-  });
-
-  EOS
+  })
+EOS
 end
 
 datasource "ds_children_in_error" do
@@ -1512,7 +1497,8 @@ define delete_applied_policy($item, $rs_org_id, $rs_project_id) return $response
   task_label("Delete applied policy response: " + $item["id"] + " " + to_json($response))
   $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
 
-  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 201 && $response["code"] != 200
+  # 404 is also acceptable — policy is already gone, which is the desired end state
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 201 && $response["code"] != 200 && $response["code"] != 404
     raise "Unexpected response deleting applied policy: "+ $item["id"] + " " + to_json($response)
   else
     task_label("Delete applied policy successful: " + $item["id"])
