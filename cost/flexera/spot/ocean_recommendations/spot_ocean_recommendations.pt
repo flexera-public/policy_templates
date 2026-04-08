@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "0.3.1",
+  version: "0.4.0",
   provider: "Flexera",
   service: "Kubernetes",
   policy_set: "Rightsize Containers",
@@ -304,7 +304,8 @@ script "js_spotinst_clusters_rightsizing_suggestions", type: "javascript" do
       },
       body_fields: {
         "clusterResources": {} // Empty object to get all resources in the cluster
-      }
+      },
+      ignore_status: [400, 403, 404]
     }
   EOS
 end
@@ -976,6 +977,56 @@ script "js_report", type: "javascript" do
     report.push("* Estimated Memory Savings Portion: " + formatCurrency(metrics.globalMemoryCostSavings || 0, currency));
     report.push("* Total Underprovisioned: " + metrics.globalUnderprovisioned);
     report.push("* Total Overprovisioned: " + metrics.globalOverprovisioned + "\n");
+
+    // Workload summary table grouped by cluster
+    var clusterKeys = _.keys(metrics.clusters).sort();
+
+    _.each(clusterKeys, function(clusterKey) {
+      var clusterData = metrics.clusters[clusterKey];
+      var items = clusterData.items || [];
+
+      if (items.length === 0) { return; }
+
+      report.push("---");
+      report.push("### " + clusterKey);
+      report.push("**Cluster Savings:** " + formatCurrency(clusterData.estimatedSavings || 0, currency) + " | **Workloads:** " + items.length + " | **Underprovisioned:** " + clusterData.underprovisioned + " | **Overprovisioned:** " + clusterData.overprovisioned);
+      report.push("");
+
+      // Sort by estimated savings descending
+      var sorted = _.sortBy(items, function(item) {
+        return -getNumber(item.estimatedSavings, 0);
+      });
+
+      report.push("| Workload Name | Type | Namespace | vCPU | Memory (MiB) | Monthly Savings |");
+      report.push("|---|---|---|---|---|---|");
+
+      _.each(sorted, function(item) {
+        var suggestion = item.suggestion || {};
+        var workloadName = suggestion.workloadName || "";
+        var workloadType = properCase(suggestion.workloadType || "");
+        var namespace = suggestion.namespace || "";
+        var requestedCpu = roundNumber(getNumber(suggestion.requestedCpu, 0), 3);
+        var suggestedCpu = roundNumber(getNumber(suggestion.suggestedCpu, 0), 3);
+        var requestedMemory = Math.round(getNumber(suggestion.requestedMemory, 0));
+        var suggestedMemory = Math.round(getNumber(suggestion.suggestedMemory, 0));
+        var savings = getNumber(item.estimatedSavings, 0);
+
+        var cpuIndicator = "";
+        if (suggestedCpu < requestedCpu) { cpuIndicator = " ▼"; }
+        else if (suggestedCpu > requestedCpu) { cpuIndicator = " ▲"; }
+
+        var memIndicator = "";
+        if (suggestedMemory < requestedMemory) { memIndicator = " ▼"; }
+        else if (suggestedMemory > requestedMemory) { memIndicator = " ▲"; }
+
+        var cpuStr = requestedCpu + " → " + suggestedCpu + cpuIndicator;
+        var memStr = requestedMemory + " → " + suggestedMemory + memIndicator;
+
+        report.push("| " + workloadName + " | " + workloadType + " | " + namespace + " | " + cpuStr + " | " + memStr + " | " + formatCurrency(savings, currency) + " |");
+      });
+
+      report.push("");
+    });
 
     report.push("\n_Report generated at: " + new Date().toISOString() + "_");
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.4.0
+
+- Added workload summary table to incident report, grouped by cluster, showing workload name, type, namespace, vCPU change, memory change, and potential monthly savings
+- Fixed error that caused policy to fail when a cluster returns an error for rightsizing recommendations
+
 ## v0.3.1
 
 - Category of policy template updated to "Cost". Functionality unchanged.
