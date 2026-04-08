@@ -1,0 +1,50 @@
+name: Update Azure Cheaper Region Ratios
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  # Trigger immediately after the Azure VM pricing data is refreshed so the
+  # cheaper_ratio values are always computed from the latest pricing snapshot.
+  workflow_run:
+    workflows: ["Generate Azure VM Pricing JSON"]
+    types: [completed]
+
+  # Workflow dispatch trigger allows manually running workflow
+  workflow_dispatch: {}
+
+jobs:
+  update_azure_cheaper_regions:
+    name: "Update Azure Cheaper Region Ratios"
+    runs-on: ubuntu-latest
+    # Skip if triggered by a failed upstream run; allow all manual dispatches.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.13.2
+          cache: 'pip' # caching pip dependencies
+
+      - run: pip install -r requirements.txt
+
+      - run: python3 tools/cloud_data/azure/azure_cheaper_regions.py
+
+      - name: Create Pull Request
+        id: cpr
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "Update Azure Cheaper Region Ratios"
+          title: "Update Azure Cheaper Region Ratios"
+          body: "Updated Azure cheaper region ratios from GitHub Actions Workflow [${{ github.workflow }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          branch: "task/update-azure-cheaper-regions"
+          delete-branch: true
+          labels: "automation, data, azure"
+
+      - name: Check outputs
+        if: ${{ steps.cpr.outputs.pull-request-number }}
+        run: |
+          echo "Pull Request Number - ${{ steps.cpr.outputs.pull-request-number }}"
+          echo "Pull Request URL - ${{ steps.cpr.outputs.pull-request-url }}"
