@@ -17,12 +17,12 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 The `Estimated Monthly Savings` is calculated differently depending on whether the resource is currently under extended support or approaching it:
 
 - For resources **currently under extended support**: the policy first attempts to match the resource against Flexera CCO billing data. If a match is found, the `Estimated Monthly Savings` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month. This reflects the actual extended support fee currently being charged. If no CCO match is found (e.g., due to billing data lag), the estimated rate below is used as a fallback.
+  - Since actual costs for resources currently under extended support are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
 - For resources **approaching extended support** (when the `Days Until Extended Support` parameter is greater than 0): the `Estimated Monthly Savings` is calculated using the AWS published Year 1 extended support hourly rates and resource-level data collected from the AWS APIs:
   - **RDS**: `$0.12 per vCPU-hour × estimated vCPU count × 24 hours × 30.44 days`. The vCPU count is estimated from the instance class (e.g. `db.m5.xlarge` → 4 vCPUs).
   - **EKS**: `$0.60 per cluster-hour × 24 hours × 30.44 days` (~$438/mo per cluster).
   - **ElastiCache**: `$0.05 per node-hour × number of cache nodes × 24 hours × 30.44 days`.
   - These estimates reflect the Year 1 extended support rate. AWS extended support rates double in Year 2 and double again in Year 3, so actual costs may be higher the longer a resource remains on an unsupported version.
-- Since actual costs for resources currently under extended support are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
 
