@@ -8,7 +8,19 @@ This policy template uses billing data stored in Flexera Cloud Cost Optimization
 
 - This policy template gathers aggregated cost data for Google Cloud for the current month from Flexera CCO via the [Flexera Bill Analysis API](https://reference.rightscale.com/bill_analysis/#). The previous month is used if the policy template executes during the first two days of a month, since it is possible that there will not be any useful data for the current month.
 - This data is sorted by region with any region-less costs being filtered out.
-- The above data is then filtered just for regions with a cheaper available region. The source of truth for cheaper regions is the [Google Regions JSON file in the GitHub repository](https://github.com/flexera-public/policy_templates/blob/master/data/google/regions.json).
+- The above data is then filtered just for regions with a cheaper available region. The source of truth for cheaper regions and their cost ratios is the [Google Regions JSON file in the GitHub repository](https://github.com/flexera-public/policy_templates/blob/master/data/google/regions.json).
+- For each region with a cheaper alternative, an estimated monthly savings is calculated by applying the region's `cheaper_ratio` to the total spend for that region.
+
+### Policy Savings Details
+
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resources currently deployed in the source region are moved to the recommended cheaper region.
+
+- The `Estimated Monthly Savings` for each region is calculated as: `Total Region Spend × (1 - cheaper_ratio)`. For example, a region with $10,000 of monthly spend and a `cheaper_ratio` of `0.85` would yield an estimated savings of $10,000 × (1 - 0.85) = $1,500.
+- The `cheaper_ratio` values stored in the [Google Regions JSON file](https://github.com/flexera-public/policy_templates/blob/master/data/google/regions.json) represent the approximate ratio of the recommended region's general-purpose compute pricing to the source region's general-purpose compute pricing. They were derived by comparing representative on-demand machine type pricing (e.g., general-purpose machine families) between each source region and its recommended cheaper alternative. A ratio of `0.85` means the recommended region is approximately 15% cheaper for comparable compute workloads.
+- Since the costs used in this calculation are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
+- The `Estimated Monthly Savings` is an approximation based on compute pricing ratios. Actual savings may vary depending on the specific mix of services, resource types, data transfer costs, and other region-specific factors.
+- The incident message detail includes the sum of each region's `Estimated Monthly Savings` as `Total Estimated Monthly Savings`.
+- Both `Estimated Monthly Savings` and `Total Estimated Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
 
 ## Input Parameters
 
