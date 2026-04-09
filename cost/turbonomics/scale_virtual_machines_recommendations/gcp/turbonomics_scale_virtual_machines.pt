@@ -1,0 +1,573 @@
+name "Turbonomic Rightsize Virtual Machines Recommendations Google"
+rs_pt_ver 20180301
+type "policy"
+short_description "Turbonomics policy for scaling virtual machines [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/scale_virtual_machines_recommendations/google) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "0.7",
+  provider: "Google",
+  source: "Turbonomic",
+  service: "Compute",
+  policy_set: "Rightsize Compute Instances",
+  recommendation_type: "Usage Reduction"
+)
+
+##################
+# Parameters   #
+##################
+
+## once functionality allows, this will contain "ALL", "AWS", "Azure Subscription", "GCP Project" and we will remove the policies from thier folders
+parameter "param_provider" do
+  type "string"
+  label "Cloud Vendor"
+  description "Allows \"\", GCP Project, AWS, or Azure Subscription as a value"
+  allowed_values "GCP Project"
+  default "GCP Project"
+end
+
+parameter "auth_cookie" do
+  type "string"
+  label "Authorization Cookie"
+  no_echo true
+  description "Valid authorization cookie"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_turbonomic_endpoint" do
+  type "string"
+  label "Turbonomic endpoint"
+  description "Host of the Turbonomic endpoint"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with password and username - not implemented and needs work done
+#credentials "turbo_auth" do
+#  schemes "api_key"
+#  label "Turbonomics"
+#  description "Select the Turbonomic Basic Auth Credential from the list."
+#end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "turbonomic_vm_pagination_header" do
+  get_page_marker do
+    header "x-next-cursor"
+  end
+  set_page_marker do
+    query "cursor"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#get turbonomic recommendation data
+datasource "ds_get_turbonomic_recommendations" do
+  request do
+    run_script $js_get_turbonomic_recommendations, $param_turbonomic_endpoint, $auth_cookie
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "uuid", jmes_path(col_item, "uuid")
+      field "vendorIDValues", jmes_path(col_item, "target.vendorIds")
+      field "businessUUID", jmes_path(col_item, "target.aspects.cloudAspect.businessAccount.uuid")
+      field "resourceGroup", jmes_path(col_item, "target.aspects.cloudAspect.resourceGroup.displayName")
+      field "resourceName", jmes_path(col_item, "target.displayName")
+      field "region", jmes_path(col_item, "currentLocation.displayName")
+      field "currentResourceType", jmes_path(col_item, "currentEntity.displayName")
+      field "newResourceType", jmes_path(col_item, "newEntity.displayName")
+      field "provider", jmes_path(col_item, "target.discoveredBy.type")
+      field "details", jmes_path(col_item, "details")
+      field "tags", jmes_path(col_item, "target.tags")
+      field "actionCreatedTime", jmes_path(col_item, "createTime")
+      field "savings", jmes_path(col_item, "stats[0].value")
+      field "savingsCurrency", jmes_path(col_item, "stats[0].units")
+      field "targetUUID", jmes_path(col_item, "target.uuid")
+      field "urlUUID", jmes_path(col_item, "uuid")
+    end
+  end
+end
+
+##this will potentially be a lot of calls. how to make this more performant
+datasource "ds_get_business_units" do
+  request do
+    run_script $js_get_business_units, $param_turbonomic_endpoint, $auth_cookie, $param_provider
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "uuid", jmes_path(col_item, "uuid")
+      field "accountID", jmes_path(col_item, "accountId")
+      field "displayName", jmes_path(col_item, "displayName")
+    end
+  end
+end
+
+##this will potentially be a lot of calls. how to make this more performant
+datasource "ds_get_action_details" do
+  request do
+    run_script $js_get_action_details, $param_turbonomic_endpoint, $auth_cookie, $ds_get_turbonomic_recommendations
+  end
+  result do
+    encoding "json"
+    field "uuids", response
+  end
+end
+
+datasource "ds_filtered_turbonomic_recommendations" do
+  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_action_details, $ds_get_business_units, $param_provider, $param_turbonomic_endpoint
+end
+
+datasource "ds_get_stats" do
+  iterate $ds_filtered_turbonomic_recommendations
+  request do
+    run_script $js_get_stats, $param_turbonomic_endpoint, $auth_cookie, iter_item
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "epoch", jmes_path(col_item, "epoch")
+      field "statistics", jmes_path(col_item, "statistics")
+      field "uuid", val(iter_item, "targetUUID")
+    end
+  end
+end
+
+datasource "ds_filtered_stats" do
+  run_script $js_filtered_stats, $ds_get_stats, $ds_filtered_turbonomic_recommendations
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+##script using a manually acquired turbonomic cookie and pulls hard coded scalable vm data
+script "js_get_turbonomic_recommendations", type: "javascript" do
+  result "request"
+  parameters "turbonomic_endpoint", "auth_cookie"
+  code <<-EOS
+  //replace cookie every day this is run
+  //up this limit value to 1000 etc when done with POC testing
+    var request = {
+      verb: "POST",
+      pagination: "turbonomic_vm_pagination_header",
+      host: turbonomic_endpoint,
+      path: "/api/v3/markets/Market/actions",
+      body_fields: {
+        "actionStateList": ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"],
+        "actionTypeList":["SCALE"],
+        "relatedEntityTypes":["VirtualMachine"],
+        "environmentType":"CLOUD",
+        "detailLevel":"EXECUTION",
+        "costType":"SAVING"
+      },
+      query_params: {
+        "limit": '100'
+      },
+      headers: {
+        "Content-Type": "application/json"
+        "Cookie": auth_cookie
+      }
+    }
+EOS
+end
+
+## verified that discovered is the only one we need. pagination is not available for this call
+script "js_get_business_units", type: "javascript" do
+  result "request"
+  parameters "turbonomic_endpoint", "auth_cookie", "param_provider"
+  code <<-EOS
+  //replace cookie every day this is run
+    var providers = {
+      "AWS":"AWS",
+      "Azure Subscription":"AZURE",
+      "GCP Project": "GCP",
+    }
+    var request = {
+      verb: "GET",
+      host: turbonomic_endpoint,
+      path: "/api/v3/businessunits",
+      query_params: {
+        "cloud_type": providers[param_provider],
+        "type":"DISCOVERED"
+      },
+      headers: {
+        "Content-Type": "application/json"
+        "Cookie": auth_cookie
+      }
+    }
+EOS
+end
+
+## pagination is not available for this call
+script "js_get_action_details", type: "javascript" do
+  result "request"
+  parameters "turbonomic_endpoint", "auth_cookie", "ds_get_turbonomic_recommendations"
+  code <<-EOS
+  //replace cookie every day this is run
+    var uuids = []
+    _.each(ds_get_turbonomic_recommendations, function(instance){
+      uuids.push(instance.uuid)
+    })
+    var request = {
+      verb: "POST",
+      host: turbonomic_endpoint,
+      path: "/api/v3/actions/details",
+      body_fields: {
+        "uuids": uuids,
+      },
+      headers: {
+        "Content-Type": "application/json"
+        "Cookie": auth_cookie
+      }
+    }
+EOS
+end
+
+script "js_filtered_turbonomic_recommendations", type: "javascript" do
+  result "result"
+  parameters "ds_get_turbonomic_recommendations", "ds_get_action_details", "ds_get_business_units", "param_provider", "param_turbonomic_endpoint"
+  code <<-EOS
+    var instances = []
+    var monthlySavings = 0.0
+    function getRiCoverage(actionDetails, action) {
+      if (actionDetails[action].value != "undefined" && actionDetails[action].value != null) {
+        if (actionDetails[action].capacity != "undefined" && actionDetails[action].capacity != null) {
+          if (typeof actionDetails[action].capacity.avg != "undefined" && actionDetails[action].capacity.avg != null) {
+            return (actionDetails[action].value*100/actionDetails[action].capacity.avg)
+          }
+        }
+      }
+      return 0
+    }
+    Object.keys(ds_get_action_details.uuids).forEach(function(uuid) {
+      _.each(ds_get_turbonomic_recommendations, function(vm, index){
+        if (vm.uuid === uuid) {
+          ds_get_turbonomic_recommendations[index].uptime = Math.round(ds_get_action_details.uuids[uuid].entityUptime.uptimePercentage*100)/100
+          ds_get_turbonomic_recommendations[index].riCoverage = getRiCoverage(ds_get_action_details.uuids[uuid], "riCoverageBefore").toFixed(2)
+          ds_get_turbonomic_recommendations[index].newRiCoverage = getRiCoverage(ds_get_action_details.uuids[uuid], "riCoverageAfter").toFixed(2)
+          var vmAge = Math.floor(ds_get_action_details.uuids[uuid].entityUptime.totalDurationInMilliseconds / (1000*60*60*24))
+          ds_get_turbonomic_recommendations[index].vmAge = vmAge >= 30 ? "30+" : vmAge
+        }
+      })
+    })
+    _.each(ds_get_business_units, function(businessUnit) {
+      _.each(ds_get_turbonomic_recommendations, function(vm, index){
+        if (vm.businessUUID === businessUnit.uuid) {
+          ds_get_turbonomic_recommendations[index].accountID = businessUnit.accountID
+          ds_get_turbonomic_recommendations[index].accountName = businessUnit.displayName
+        }
+      })
+    })
+    var provider_service = {
+      "AWS":"EC2",
+      "Azure Subscription":"Microsoft.Compute",
+      "GCP Project": "Compute"
+    }
+    _.each(ds_get_turbonomic_recommendations, function(vm){
+      if (vm.provider === param_provider || param_provider === "ALL") {
+        if (typeof vm.savingsCurrency != "undefined" && vm.savingsCurrency != null) {
+          if (vm.savingsCurrency.indexOf("$") != -1) {
+            vm.savingsCurrency = "$"
+          }
+        } else {
+          vm.savingsCurrency = "$"
+        }
+        var tags = []
+        if (typeof vm.tags === "undefined" || vm.tags === null){
+          vm.tags = tags
+        }else{
+          Object.keys(vm['tags']).forEach(function(key) {
+            tags.push(key+'='+vm['tags'][key][0])
+          });
+        }
+        vm.tags = tags
+        if (vm.provider === "Azure Subscription") {
+          Object.keys(vm.vendorIDValues).forEach(function(key) {
+            vm.resourceID = "/subscriptions/" + vm.vendorIDValues[key] + "/resourceGroups/" + vm.resourceGroup + "/providers/Microsoft.Compute/virtualMachines/" + vm.resourceName
+            return
+          });
+        } else if (vm.provider === "GCP Project") {
+          Object.keys(vm.vendorIDValues).forEach(function(key) {
+            vm.resourceID = vm.vendorIDValues[key]
+            return
+          });
+        } else {
+          Object.keys(vm.vendorIDValues).forEach(function(key) {
+            vm.resourceID = vm.vendorIDValues[key]
+            return
+          });
+        }
+        vm.service = provider_service[vm.provider]
+        if (typeof vm.savings === "undefined" || vm.savings === null || vm.savings === "" || isNaN(vm.savings)) {
+          vm.savings = 0.0
+        }
+        vm.savings = (Math.round(vm.savings * 730 * 1000 * (vm.uptime/100)) / 1000)
+        monthlySavings = monthlySavings + vm.savings
+        vm.url = "System name: " + vm.resourceName  + " || https://" + param_turbonomic_endpoint + "/app/index.html#/view/main/action/" + vm.urlUUID
+        vm.resourceType = vm.currentResourceType
+        instances.push(vm)
+      }
+    })
+    result = instances
+EOS
+end
+
+script "js_get_stats", type: "javascript" do
+  result "request"
+  parameters "turbonomic_endpoint", "auth_cookie", "instance"
+  code <<-EOS
+    var startDate = new Date(Date.now())
+    var endDate = new Date(Date.now() + (9*60*60*1000))
+    request = {
+      verb: "POST",
+      host: turbonomic_endpoint,
+      path: "/api/v3/stats/" + instance.targetUUID
+      body_fields: {
+        "statistics": [
+          {"name": "VCPU", "groupBy": ["key", "percentile"]},
+          {"name": "VMem", "groupBy": ["key", "percentile"]},
+          {"name": "IOThroughputRead", "groupBy": ["key", "percentile"]},
+          {"name": "IOThroughputWrite", "groupBy": ["key", "percentile"]},
+          {"name": "IopsStandardRead", "groupBy": ["key", "percentile"]},
+          {"name": "IopsStandardWrite", "groupBy": ["key", "percentile"]}
+        ],
+        "startDate": startDate.getTime(),
+        "endDate": endDate.getTime()
+      },
+      headers: {
+        "Content-Type": "application/json"
+        "Cookie": auth_cookie
+      }
+    }
+  EOS
+end
+
+script "js_filtered_stats", type: "javascript" do
+  result "result"
+  parameters "ds_get_stats", "ds_filtered_turbonomic_recommendations"
+  code <<-EOS
+  var monthlySavings = 0.0
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var result = ''
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      result = separator + chunk + result
+    }
+    if (values[0].length > 0) {
+      result = values[0] + result
+    }
+    if (values[1] == undefined) {
+      return result
+    }
+    return result + "." + values[1]
+  }
+  function getStats(recommendation, stats, epoch) {
+    var normalized = {
+      "VCPU": ["cpu", 0.001 ],
+      "VMem": ["mem", (1/1024/1024)],
+      "IOThroughputRead": ["throughputRead", (1/8/1024)],
+      "IOThroughputWrite": ["throughputWrite", (1/8/1024)]
+    }
+    if(stats.epoch == epoch) {
+      _.each(stats.statistics, function(statistic) {
+        if (statistic.name in normalized) {
+          var name = epoch == "CURRENT" ? normalized[statistic.name][0] : "new" + normalized[statistic.name][0].charAt(0).toUpperCase() + normalized[statistic.name][0].slice(1)
+          if (statistic.name == "VMem") {
+            recommendation[name] = Math.floor(statistic.capacity.total * normalized[statistic.name][1])
+          } else {
+            recommendation[name] = (statistic.capacity.total * normalized[statistic.name][1]).toFixed(2)
+          }
+          _.each(statistic.histUtilizations, function(histUtilization) {
+            if (histUtilization.type == "percentile") {
+              recommendation[name + "P95"] = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
+            }
+          })
+        }
+      })
+    }
+    return recommendation
+  }
+  _.each(ds_filtered_turbonomic_recommendations, function (instance, index) {
+    monthlySavings = monthlySavings + instance.savings
+    ds_filtered_turbonomic_recommendations[index].resourceType = instance.resourceType
+    _.each(ds_get_stats, function (stats) {
+      if (instance.targetUUID == stats.uuid) {
+        ds_filtered_turbonomic_recommendations[index] = getStats(ds_filtered_turbonomic_recommendations[index], stats, "CURRENT")
+        ds_filtered_turbonomic_recommendations[index] = getStats(ds_filtered_turbonomic_recommendations[index], stats, "PROJECTED")
+      }
+    })
+  })
+  var message = ""
+  if (ds_filtered_turbonomic_recommendations.length != 0) {
+    var pretty_savings = ds_filtered_turbonomic_recommendations[0].savingsCurrency + ' ' + formatNumber(monthlySavings.toFixed(2), ",")
+    message = "The total estimated monthly savings are " + pretty_savings + '.'
+  }
+  result = {
+    'instances': ds_filtered_turbonomic_recommendations,
+    'message': message
+  }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_turbonomic_scale_vms" do
+  validate $ds_filtered_stats do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Rightsize recommendations for Virtual Machines found"
+    detail_template <<-EOS
+## Turbonomic Rightsize Virtual Machines Recommendations
+{{data.message}}
+EOS
+    check eq(size(val(data, "instances")), 0)
+    export "instances" do
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "savings" do
+        label "Savings"
+      end
+      field "details" do
+        label "Recommendation Details"
+      end
+      field "uptime" do
+        label "Virtual Machine Uptime Percentage"
+      end
+      field "currentResourceType" do
+        label "Current Compute Tier"
+      end
+      field "newResourceType" do
+        label "New Compute Tier"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "provider" do
+        label "Cloud Provider"
+      end
+      field "actionCreatedTime" do
+        label "Action Created Time"
+      end
+      field "riCoverage" do
+        label "RI Coverage"
+      end
+      field "newRiCoverage" do
+        label "New RI Coverage"
+      end
+      field "vmAge" do
+        label "VM Age (Days)"
+      end
+      field "cpu" do
+        label "CPU (GHz)"
+      end
+      field "newCpu" do
+        label "New CPU (GHz)"
+      end
+      field "cpuP95" do
+        label "CPU P95 Utilization (%)"
+      end
+      field "newCpuP95" do
+        label "New CPU P95 Utilization (%)"
+      end
+      field "mem" do
+        label "Memory (GB)"
+      end
+      field "newMem" do
+        label "New Memory (GB)"
+      end
+      field "memP95" do
+        label "Memory P95 Utilization (%)"
+      end
+      field "newMemP95" do
+        label "New Memory P95 Utilization (%)"
+      end
+      field "throughputRead" do
+        label "IO Throughput Read Capacity (MB/s)"
+      end
+      field "newThroughputRead" do
+        label "New IO Throughput Read Capacity (MB/s)"
+      end
+      field "throughputReadP95" do
+        label "IO Throughput Read P95 Utilization (%)"
+      end
+      field "newThroughputReadP95" do
+        label "New IO Throughput Read P95 Utilization (%)"
+      end
+      field "throughputWrite" do
+        label "IO Throughput Write Capacity (MB/s)"
+      end
+      field "newThroughputWrite" do
+        label "New IO Throughput Write Capacity (MB/s)"
+      end
+      field "throughputWriteP95" do
+        label "IO Throughput Write P95 Utilization (%)"
+      end
+      field "newThroughputWriteP95" do
+        label "New IO Throughput Write P95 Utilization (%)"
+      end
+      field "url" do
+        label "System Details URL"
+        format "link-external"
+      end
+    end
+    escalate $esc_email
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
