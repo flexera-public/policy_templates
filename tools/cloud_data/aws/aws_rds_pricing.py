@@ -1,120 +1,136 @@
-# Instructions for updating the price list:
-#   (1) Download the flexera-public/policy_templates repository locally.
-#   (2) Run this Python script. It should replace aws_rds_pricing.json with a new updated file.
-#       Note: Working directory should be the *root* directory of the repository.
-#   (3) Add and commit the new file, push it to the repository, and then make a pull request.
-#
-# Note: It is recommended that you have at least 10 GB of free disk space to run this script.
-#       This is for temporary storage of the price file from Amazon.
+#!/usr/bin/env python3
+"""
+Downloads and processes RDS on-demand pricing data from the AWS Price List API.
+
+Produces: data/aws/aws_rds_pricing.json
+Usage: python3 aws_rds_pricing.py
+  (Run from the root of the policy_templates repository.)
+
+Note: Requires ~10 GB of free disk space for the temporary raw price file.
+"""
 
 import json
 import urllib.request
 import os
+import time
 
-raw_filename = f'aws_rds_pricing_raw.json'
-output_filename = f'data/aws/aws_rds_pricing.json'
-url = "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/index.json"
+PRICING_URL = "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/index.json"
+OUTPUT_FILENAME = "data/aws/aws_rds_pricing.json"
+RAW_FILENAME = "aws_rds_pricing_raw.json"
 
-print("Gathering data from AWS Price API...")
 
-urllib.request.urlretrieve(url, raw_filename)
+def download_with_retry(url, dest, max_retries=3, backoff=5):
+    """Download a file from url to dest with exponential backoff on failure."""
+    for attempt in range(max_retries):
+        try:
+            urllib.request.urlretrieve(url, dest)
+            return
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait = backoff * (2 ** attempt)
+                print(f"Download attempt {attempt + 1} failed: {e}. Retrying in {wait}s...")
+                time.sleep(wait)
+            else:
+                raise
 
-with open(raw_filename) as file:
-  raw_data = json.load(file)
 
-raw_data_products = raw_data["products"]
-raw_data_terms = raw_data["terms"]["OnDemand"]
-del raw_data
+def main():
+    os.makedirs(os.path.dirname(OUTPUT_FILENAME), exist_ok=True)
 
-print("Processing data from AWS Price API output...")
+    print("Gathering data from AWS Price API...")
+    download_with_retry(PRICING_URL, RAW_FILENAME)
 
-starting_list = []
+    with open(RAW_FILENAME) as file:
+        raw_data = json.load(file)
 
-for key in raw_data_products:
-  if "instanceType" in raw_data_products[key]["attributes"] and "regionCode" in raw_data_products[key]["attributes"]:
-    instanceType = raw_data_products[key]["attributes"]["instanceType"]
-    regionCode = raw_data_products[key]["attributes"]["regionCode"]
-    databaseEngine = raw_data_products[key]["attributes"]["databaseEngine"]
-    deploymentOption = raw_data_products[key]["attributes"]["deploymentOption"]
-    sku = raw_data_products[key]["sku"]
+    raw_data_products = raw_data["products"]
+    raw_data_terms = raw_data["terms"]["OnDemand"]
+    del raw_data
 
-    prices = []
+    print("Processing data from AWS Price API output...")
 
-    if key in raw_data_terms:
-      for pricing_key in raw_data_terms[key]:
-        offerTermCode = raw_data_terms[key][pricing_key]["offerTermCode"]
-        priceDimensions = []
+    starting_list = []
 
-        for dimension_key in raw_data_terms[key][pricing_key]["priceDimensions"]:
-          rateCode = raw_data_terms[key][pricing_key]["priceDimensions"][dimension_key]["rateCode"]
-          pricePerUnit = raw_data_terms[key][pricing_key]["priceDimensions"][dimension_key]["pricePerUnit"]["USD"]
+    for key in raw_data_products:
+        if "instanceType" in raw_data_products[key]["attributes"] and "regionCode" in raw_data_products[key]["attributes"]:
+            instanceType = raw_data_products[key]["attributes"]["instanceType"]
+            regionCode = raw_data_products[key]["attributes"]["regionCode"]
+            databaseEngine = raw_data_products[key]["attributes"]["databaseEngine"]
+            deploymentOption = raw_data_products[key]["attributes"]["deploymentOption"]
+            sku = raw_data_products[key]["sku"]
 
-          dimension_object = {
-            "rateCode": rateCode,
-            "pricePerUnit": pricePerUnit
-          }
+            prices = []
 
-          priceDimensions.append(dimension_object)
+            if key in raw_data_terms:
+                for pricing_key in raw_data_terms[key]:
+                    offerTermCode = raw_data_terms[key][pricing_key]["offerTermCode"]
+                    priceDimensions = []
 
-        price_object = {
-          "offerTermCode": offerTermCode,
-          "priceDimensions": priceDimensions
-        }
+                    for dimension_key in raw_data_terms[key][pricing_key]["priceDimensions"]:
+                        dim = raw_data_terms[key][pricing_key]["priceDimensions"][dimension_key]
+                        priceDimensions.append({
+                            "rateCode": dim["rateCode"],
+                            "pricePerUnit": dim["pricePerUnit"]["USD"]
+                        })
 
-        prices.append(price_object)
+                    prices.append({
+                        "offerTermCode": offerTermCode,
+                        "priceDimensions": priceDimensions
+                    })
 
-      item_object = {
-        "instanceType": instanceType,
-        "regionCode": regionCode,
-        "sku": sku,
-        "databaseEngine": databaseEngine,
-        "deploymentOption": deploymentOption,
-        "prices": prices
-      }
+                starting_list.append({
+                    "instanceType": instanceType,
+                    "regionCode": regionCode,
+                    "sku": sku,
+                    "databaseEngine": databaseEngine,
+                    "deploymentOption": deploymentOption,
+                    "prices": prices
+                })
 
-      starting_list.append(item_object)
+    final_list = {}
 
-final_list = {}
+    for item in starting_list:
+        instanceType = item["instanceType"]
+        regionCode = item["regionCode"]
+        sku = item["sku"]
+        databaseEngine = item["databaseEngine"]
+        deploymentOption = item["deploymentOption"]
+        pricePerUnit = -1
 
-for item in starting_list:
-  instanceType = item["instanceType"]
-  regionCode = item["regionCode"]
-  sku = item["sku"]
-  databaseEngine = item["databaseEngine"]
-  deploymentOption = item["deploymentOption"]
-  pricePerUnit = -1
+        if regionCode == "":
+            regionCode = "None"
 
-  if regionCode == "":
-    regionCode = "None"
+        # Find the highest positive price across all dimensions
+        for price in item["prices"]:
+            for dimension in price["priceDimensions"]:
+                if float(dimension["pricePerUnit"]) > pricePerUnit and float(dimension["pricePerUnit"]) > 0:
+                    pricePerUnit = float(dimension["pricePerUnit"])
 
-  for price in item["prices"]:
-    for dimension in price["priceDimensions"]:
-      if float(dimension["pricePerUnit"]) > pricePerUnit and float(dimension["pricePerUnit"]) > 0:
-        pricePerUnit = float(dimension["pricePerUnit"])
+        if not regionCode in final_list:
+            final_list[regionCode] = {}
 
-  if not regionCode in final_list:
-    final_list[regionCode] = {}
+        if not instanceType in final_list[regionCode]:
+            final_list[regionCode][instanceType] = {}
 
-  if not instanceType in final_list[regionCode]:
-    final_list[regionCode][instanceType] = {}
+        if not databaseEngine in final_list[regionCode][instanceType]:
+            final_list[regionCode][instanceType][databaseEngine] = {}
 
-  if not databaseEngine in final_list[regionCode][instanceType]:
-    final_list[regionCode][instanceType][databaseEngine] = {}
+        if pricePerUnit != -1:
+            final_list[regionCode][instanceType][databaseEngine][deploymentOption] = {
+                "sku": sku,
+                "pricePerUnit": pricePerUnit
+            }
 
-  if pricePerUnit != -1:
-    final_list[regionCode][instanceType][databaseEngine][deploymentOption] = {
-      "sku": sku,
-      "pricePerUnit": pricePerUnit
-    }
+    print("Writing final output to file...")
 
-print("Writing final output to file...")
+    with open(OUTPUT_FILENAME, "w") as f:
+        f.write(json.dumps(final_list, sort_keys=True, indent=2))
 
-price_file = open(output_filename, "w")
-price_file.write(json.dumps(final_list, sort_keys=True, indent=2))
-price_file.close()
+    print("Cleaning up temporary files...")
+    os.remove(RAW_FILENAME)
 
-print("Cleaning up temporary files...")
+    print("DONE!")
 
-os.remove(raw_filename)
 
-print("DONE!")
+if __name__ == "__main__":
+    main()

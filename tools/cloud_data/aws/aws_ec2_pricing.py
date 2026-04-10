@@ -1,168 +1,207 @@
-# Instructions for updating the price list:
-#   (1) Download the flexera-public/policy_templates repository locally.
-#   (2) Run this Python script. It should replace aws_ec2_pricing.json with a new updated file.
-#       Note: Working directory should be the *root* directory of the repository.
-#   (3) Add and commit the new file, push it to the repository, and then make a pull request.
-#
-# Note: It is recommended that you have at least 10 GB of free disk space to run this script.
-#       This is for temporary storage of the price file from Amazon.
+#!/usr/bin/env python3
+"""
+Downloads and processes EC2 on-demand pricing data from the AWS Price List API.
+
+Produces: data/aws/aws_ec2_pricing.json
+Usage: python3 aws_ec2_pricing.py
+  (Run from the root of the policy_templates repository.)
+
+Note: Requires ~10 GB of free disk space for the temporary raw price file.
+"""
 
 import json
 import urllib.request
 import os
+import time
 
-raw_filename = f'aws_ec2_pricing_raw.json'
-product_filename = f'aws_ec2_pricing_raw_products.json'
-terms_filename = f'aws_ec2_pricing_raw_terms.json'
-output_filename = f'data/aws/aws_ec2_pricing.json'
-url = "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/index.json"
-
-print("Gathering data from AWS Price API...")
-
-urllib.request.urlretrieve(url, raw_filename)
-
-print("Removing unnecessary data from AWS Price API output...")
-
-# Store filtered file for product list
-product_block = 0
-
-with open(product_filename, 'w') as output_file:
-  output_file.write("{\n")
-
-  with open(raw_filename, 'r') as source_file:
-    for line in source_file:
-      if product_block == 0 and '"products"' in line:
-        product_block = 1
-
-      if product_block == 1:
-        if line.rstrip() == '  },':
-          break
-        elif line.rstrip() == '    },':
-          output_file.write(line)
-        elif line.rstrip().startswith('    "'):
-          output_file.write(line)
-        elif '"sku"' in line.rstrip() or '"instanceType"' in line.rstrip() or '"operatingSystem"' in line.rstrip() or '"preInstalledSw"' in line.rstrip() or '"attributes"' in line.rstrip():
-          output_file.write(line)
-        elif '"regionCode"' in line.rstrip():
-          output_file.write(line.replace(",", ""))
-        elif line.strip() == '}' and line.rstrip() != '  }':
-          output_file.write(line)
-
-  output_file.write("}\n")
-
-# Store filtered file for terms list
-terms_block = 0
-
-with open(terms_filename, 'w') as output_file:
-  output_file.write("{\n")
-
-  with open(raw_filename, 'r') as source_file:
-    for line in source_file:
-      if terms_block == 0 and '"terms"' in line:
-        output_file.write(line)
-
-      if terms_block == 0 and '"OnDemand"' in line.split(":")[0]:
-        terms_block = 1
-
-      if terms_block == 1:
-        if line.rstrip() == '    },':
-          break
-        else:
-          output_file.write(line)
-
-  output_file.write("    }\n")
-  output_file.write("  }\n")
-  output_file.write("}\n")
+PRICING_URL = "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/index.json"
+OUTPUT_FILENAME = "data/aws/aws_ec2_pricing.json"
+RAW_FILENAME = "aws_ec2_pricing_raw.json"
+PRODUCT_FILENAME = "aws_ec2_pricing_raw_products.json"
+TERMS_FILENAME = "aws_ec2_pricing_raw_terms.json"
 
 
-with open(product_filename) as file:
-  raw_data_products = json.load(file)
+def download_with_retry(url, dest, max_retries=3, backoff=5):
+    """Download a file from url to dest with exponential backoff on failure."""
+    for attempt in range(max_retries):
+        try:
+            urllib.request.urlretrieve(url, dest)
+            return
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait = backoff * (2 ** attempt)
+                print(f"Download attempt {attempt + 1} failed: {e}. Retrying in {wait}s...")
+                time.sleep(wait)
+            else:
+                raise
 
-with open(terms_filename) as file:
-  raw_data_terms = json.load(file)
 
-print("Processing remaining data from AWS Price API output...")
+def extract_intermediate_files(raw_filename, product_filename, terms_filename):
+    """Parse the raw pricing file in a single pass, writing both intermediate files.
 
-starting_list = []
+    This avoids reading the 3+ GB raw file twice.  A state machine tracks which
+    section of the JSON we are currently in:
+      before_products -> in_products -> after_products -> in_terms
+    """
+    state = "before_products"
+    with open(raw_filename, 'r') as source, \
+         open(product_filename, 'w') as pf, \
+         open(terms_filename, 'w') as tf:
 
-for key in raw_data_products:
-  if "instanceType" in raw_data_products[key]["attributes"] and "regionCode" in raw_data_products[key]["attributes"]:
-    instanceType = raw_data_products[key]["attributes"]["instanceType"]
-    regionCode = raw_data_products[key]["attributes"]["regionCode"]
-    sku = raw_data_products[key]["sku"]
-    operatingSystem = raw_data_products[key]["attributes"]["operatingSystem"]
-    preInstalledSw = raw_data_products[key]["attributes"]["preInstalledSw"]
-    prices = []
+        pf.write("{\n")
+        tf.write("{\n")
 
-    if key in raw_data_terms["terms"]["OnDemand"] and preInstalledSw == "NA":
-      for pricing_key in raw_data_terms["terms"]["OnDemand"][key]:
-        offerTermCode = raw_data_terms["terms"]["OnDemand"][key][pricing_key]["offerTermCode"]
-        priceDimensions = []
+        for line in source:
+            stripped = line.rstrip()
 
-        for dimension_key in raw_data_terms["terms"]["OnDemand"][key][pricing_key]["priceDimensions"]:
-          rateCode = raw_data_terms["terms"]["OnDemand"][key][pricing_key]["priceDimensions"][dimension_key]["rateCode"]
-          pricePerUnit = raw_data_terms["terms"]["OnDemand"][key][pricing_key]["priceDimensions"][dimension_key]["pricePerUnit"]["USD"]
+            if state == "before_products":
+                if '"products"' in line:
+                    state = "in_products"
 
-          dimension_object = {
-            "rateCode": rateCode,
-            "pricePerUnit": pricePerUnit
-          }
+            elif state == "in_products":
+                if stripped == '  },':
+                    state = "after_products"
+                elif stripped == '    },':
+                    pf.write(line)
+                elif stripped.startswith('    "'):
+                    pf.write(line)
+                elif ('"sku"' in stripped or '"instanceType"' in stripped or
+                      '"operatingSystem"' in stripped or '"preInstalledSw"' in stripped or
+                      '"attributes"' in stripped):
+                    pf.write(line)
+                elif '"regionCode"' in stripped:
+                    # Remove trailing comma so regionCode is valid JSON without a following key
+                    pf.write(line.replace(",", ""))
+                elif line.strip() == '}' and stripped != '  }':
+                    pf.write(line)
 
-          priceDimensions.append(dimension_object)
+            elif state == "after_products":
+                if '"terms"' in line:
+                    tf.write(line)
+                if '"OnDemand"' in line.split(":")[0]:
+                    state = "in_terms"
+                    # The OnDemand header line is included in the block
+                    if stripped != '    },':
+                        tf.write(line)
+                    else:
+                        break
 
-        price_object = {
-          "offerTermCode": offerTermCode,
-          "priceDimensions": priceDimensions
-        }
+            elif state == "in_terms":
+                if stripped == '    },':
+                    break
+                tf.write(line)
 
-        prices.append(price_object)
+        pf.write("}\n")
+        tf.write("    }\n")
+        tf.write("  }\n")
+        tf.write("}\n")
 
-      item_object = {
-        "instanceType": instanceType,
-        "regionCode": regionCode,
-        "sku": sku,
-        "operatingSystem": operatingSystem,
-        "prices": prices
-      }
 
-      starting_list.append(item_object)
+def build_starting_list(raw_data_products, raw_data_terms):
+    """Join product entries with their OnDemand pricing terms."""
+    starting_list = []
 
-final_list = {}
+    for key in raw_data_products:
+        if "instanceType" in raw_data_products[key]["attributes"] and "regionCode" in raw_data_products[key]["attributes"]:
+            instanceType = raw_data_products[key]["attributes"]["instanceType"]
+            regionCode = raw_data_products[key]["attributes"]["regionCode"]
+            sku = raw_data_products[key]["sku"]
+            operatingSystem = raw_data_products[key]["attributes"]["operatingSystem"]
+            preInstalledSw = raw_data_products[key]["attributes"]["preInstalledSw"]
+            prices = []
 
-for item in starting_list:
-  instanceType = item["instanceType"]
-  regionCode = item["regionCode"]
-  sku = item["sku"]
-  operatingSystem = item["operatingSystem"]
-  pricePerUnit = -1
+            # Only process entries with no pre-installed software (NA) that have OnDemand terms
+            if key in raw_data_terms["terms"]["OnDemand"] and preInstalledSw == "NA":
+                for pricing_key in raw_data_terms["terms"]["OnDemand"][key]:
+                    offerTermCode = raw_data_terms["terms"]["OnDemand"][key][pricing_key]["offerTermCode"]
+                    priceDimensions = []
 
-  for price in item["prices"]:
-    for dimension in price["priceDimensions"]:
-      if float(dimension["pricePerUnit"]) > pricePerUnit and float(dimension["pricePerUnit"]) > 0:
-        pricePerUnit = float(dimension["pricePerUnit"])
+                    for dimension_key in raw_data_terms["terms"]["OnDemand"][key][pricing_key]["priceDimensions"]:
+                        dim = raw_data_terms["terms"]["OnDemand"][key][pricing_key]["priceDimensions"][dimension_key]
+                        priceDimensions.append({
+                            "rateCode": dim["rateCode"],
+                            "pricePerUnit": dim["pricePerUnit"]["USD"]
+                        })
 
-  if not regionCode in final_list:
-    final_list[regionCode] = {}
+                    prices.append({
+                        "offerTermCode": offerTermCode,
+                        "priceDimensions": priceDimensions
+                    })
 
-  if not instanceType in final_list[regionCode]:
-    final_list[regionCode][instanceType] = {}
+                starting_list.append({
+                    "instanceType": instanceType,
+                    "regionCode": regionCode,
+                    "sku": sku,
+                    "operatingSystem": operatingSystem,
+                    "prices": prices
+                })
 
-  if pricePerUnit != -1:
-    final_list[regionCode][instanceType][operatingSystem] = {
-      "sku": sku,
-      "pricePerUnit": pricePerUnit
-    }
+    return starting_list
 
-print("Writing final output to file...")
 
-price_file = open(output_filename, "w")
-price_file.write(json.dumps(final_list, sort_keys=True, indent=2))
-price_file.close()
+def build_final_pricing(starting_list):
+    """Aggregate pricing into a nested dict keyed by region, instance type, and OS."""
+    final_list = {}
 
-print("Cleaning up temporary files...")
+    for item in starting_list:
+        instanceType = item["instanceType"]
+        regionCode = item["regionCode"]
+        sku = item["sku"]
+        operatingSystem = item["operatingSystem"]
+        pricePerUnit = -1
 
-os.remove(raw_filename)
-os.remove(product_filename)
-os.remove(terms_filename)
+        # Find the highest positive price across all dimensions
+        for price in item["prices"]:
+            for dimension in price["priceDimensions"]:
+                if float(dimension["pricePerUnit"]) > pricePerUnit and float(dimension["pricePerUnit"]) > 0:
+                    pricePerUnit = float(dimension["pricePerUnit"])
 
-print("DONE!")
+        # Always create the nested dicts even when no valid price is found
+        if not regionCode in final_list:
+            final_list[regionCode] = {}
+
+        if not instanceType in final_list[regionCode]:
+            final_list[regionCode][instanceType] = {}
+
+        if pricePerUnit != -1:
+            final_list[regionCode][instanceType][operatingSystem] = {
+                "sku": sku,
+                "pricePerUnit": pricePerUnit
+            }
+
+    return final_list
+
+
+def main():
+    os.makedirs(os.path.dirname(OUTPUT_FILENAME), exist_ok=True)
+
+    print("Gathering data from AWS Price API...")
+    download_with_retry(PRICING_URL, RAW_FILENAME)
+
+    print("Removing unnecessary data from AWS Price API output...")
+    extract_intermediate_files(RAW_FILENAME, PRODUCT_FILENAME, TERMS_FILENAME)
+
+    with open(PRODUCT_FILENAME) as file:
+        raw_data_products = json.load(file)
+
+    with open(TERMS_FILENAME) as file:
+        raw_data_terms = json.load(file)
+
+    print("Processing remaining data from AWS Price API output...")
+    starting_list = build_starting_list(raw_data_products, raw_data_terms)
+    final_list = build_final_pricing(starting_list)
+
+    print("Writing final output to file...")
+    with open(OUTPUT_FILENAME, "w") as f:
+        f.write(json.dumps(final_list, sort_keys=True, indent=2))
+
+    print("Cleaning up temporary files...")
+    os.remove(RAW_FILENAME)
+    os.remove(PRODUCT_FILENAME)
+    os.remove(TERMS_FILENAME)
+
+    print("DONE!")
+
+
+if __name__ == "__main__":
+    main()

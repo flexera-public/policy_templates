@@ -6,7 +6,7 @@ This policy template reports on any Azure SQL resources that may be eligible for
 
 ## How It Works
 
-- The policy identifies all SQL databases in Azure that are not currently using [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/hybrid-benefit/). These can be SQL Virtual Machines, SQL Elastic Pools, SQL Databases or SQL Managed Instances. It raises an incident for all applicable instances not currently using AHUB, which once approved, will enable AHUB on all identified instances.
+- The policy identifies all SQL databases in Azure that are not currently using [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/offers/hybrid-benefit/). These can be SQL Virtual Machines, SQL Elastic Pools, SQL Databases or SQL Managed Instances. It raises an incident for all applicable instances not currently using AHUB, which once approved, will enable AHUB on all identified instances.
 - This policy template does not track licenses or availability. It is your responsibility to ensure that you have valid licenses for all resources that AHUB is enabled for.
 - The hourly cost of a SQL resource is calculated by dividing the total cost of the SQL resource for the last 30 days by the hours of usage for that same time period.
 
@@ -46,10 +46,14 @@ For example if a user selects the "Apply Hybrid Use Benefit" action while applyi
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.Resources/subscriptions/read`
   - `Microsoft.SqlVirtualMachine/sqlVirtualMachines/read`
   - `Microsoft.SqlVirtualMachine/sqlVirtualMachines/write`*
   - `Microsoft.Sql/servers/read`
-  - `Microsoft.Sql/servers/write`*
+  - `Microsoft.Sql/servers/databases/read`
+  - `Microsoft.Sql/servers/databases/write`*
+  - `Microsoft.Sql/servers/elasticPools/read`
+  - `Microsoft.Sql/servers/elasticPools/write`*
   - `Microsoft.Sql/managedInstances/read`
   - `Microsoft.Sql/managedInstances/write`*
 
@@ -57,6 +61,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
+  - `policy_viewer`
+  - `policy_manager`*
+
+  \* Only required for meta-policy self-termination; not required if not using the meta parent of this policy template.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.7.4
+
+- Fixed issue where policy execution would sometimes fail if "Everything" was selected for the `Payment Option` parameter.
+
 ## v3.7.3
 
 - Updated documentation link in policy description. Functionality unchanged.

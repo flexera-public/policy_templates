@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.3
+
+- Category of policy template updated to "Compliance". Functionality unchanged.
+
 ## v0.2.2
 
 - Updated documentation link in policy description. Functionality unchanged.

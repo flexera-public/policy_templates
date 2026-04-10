@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.8
+
+- Removed suffix from Service Account created by Onboarding policy template to better support Policy Manager use-cases
+
 ## v0.1.7
 
 - Updated documentation link in policy description. Functionality unchanged.

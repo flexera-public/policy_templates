@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.5
+
+- Updated instance type data source from `data/aws/instance_types.json` to `data/aws/aws_ec2_instance_types.json`. Functionality unchanged.
+
 ## v0.2.4
 
 - Updated documentation link in policy description. Functionality unchanged.

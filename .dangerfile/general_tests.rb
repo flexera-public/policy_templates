@@ -42,8 +42,8 @@ def general_textlint?(file)
     end
   end
 
-  return fail_message.strip if !fail_message.empty?
-  return false
+  return false if fail_message.empty?
+  fail_message.strip
 end
 
 ### Spell check test
@@ -73,11 +73,11 @@ def general_spellcheck?(file)
 
   if system(command)
     error_list = `cat aspell.log`
-    fail_message = "Spelling errors found:\n\n#{error_list}" if !error_list.strip.empty?
+    fail_message = "Spelling errors found:\n\n#{error_list}" unless error_list.strip.empty?
   end
 
-  return fail_message.strip if !fail_message.empty?
-  return false
+  return false if fail_message.empty?
+  fail_message.strip
 end
 
 ### Markdown lint test
@@ -102,8 +102,8 @@ def general_bad_markdown?(file)
   end
 
   # Return the problems found if the mdl file is not empty. Otherwise, return false
-  return "Markdown syntax errors found:\n\n#{mdl}" if !mdl.empty?
-  return false
+  return false if mdl.empty?
+  "Markdown syntax errors found:\n\n#{mdl}"
 end
 
 ### Bad URL test
@@ -164,30 +164,32 @@ def general_bad_urls?(file, file_diff)
           # Make HTTP request to URL
           response = Net::HTTP.get_response(url)
 
-          # Test again when the file isn't found and path includes tree/master
-          # This is in case it is the README link or a new file included in the repo
-          if response.code == '404' && url_string =~ /tree\/master/
+          # Test again when the file isn't found and the URL points to this repo.
+          # URLs referencing /master/ may legitimately 404 before the PR is merged
+          # (e.g. new files, moved files). Retry with the PR branch name to confirm
+          # the resource will exist once merged.
+          if response.code == '404' && url_string.include?('github.com/flexera-public/policy_templates/') && url_string.include?('/master/')
             # Modify URL string and convert it back into a proper URI object
-            url_string = url.to_s.gsub('tree/master',"tree/#{github.branch_for_head}").gsub(')','')
+            url_string = url.to_s.gsub('/master/', "/#{github.branch_for_head}/").gsub(')','')
             url = URI(url_string)
 
             # Make HTTP request to URL again
-            response = Net::HTTP.get_response(url) #make request
+            response = Net::HTTP.get_response(url)
           end
 
           # Return error details if a proper response code was not received
-          if response.code !~ /200|302/
-            fail_message += "Line: #{line_number.to_s}\nURL: #{url_string}\nResponse Code: #{response.code}\n\n"
+          unless response.code =~ /200|302/
+            fail_message += "Line: #{line_number}\nURL: #{url_string}\nResponse Code: #{response.code}\n\n"
           end
         end
       end
     end
   end
 
-  fail_message = "Bad URLs found:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "Bad URLs found:\n\n" + fail_message unless fail_message.empty?
 
-  return fail_message.strip if !fail_message.empty?
-  return false
+  return false if fail_message.empty?
+  fail_message.strip
 end
 
 ### Outdated Terminology test
@@ -200,23 +202,23 @@ def general_outdated_terminology?(file, file_lines)
   fail_message = ""
 
   # Exclude files not worth checking
-  if !file.include?("Dangerfile") && !file.include?(".dangerfile") && !file.start_with?("data/") && !file.start_with?("tools/")
+  unless file.include?("Dangerfile") || file.include?(".dangerfile") || file.start_with?("data/") || file.start_with?("tools/")
     file_lines.each_with_index do |line, index|
       line_number = index + 1
       test_line = line.strip.downcase
 
       if test_line.include?(" rs ") || test_line.include?(" rightscale ")
-        fail_message += "Line #{line_number.to_s}: Reference to `RightScale` found. Recommended replacements: `Flexera`, `Flexera CCO`, `Flexera Automation`\n\n"
+        fail_message += "Line #{line_number}: Reference to `RightScale` found. Recommended replacements: `Flexera`, `Flexera CCO`, `Flexera Automation`\n\n"
       end
 
       if test_line.include?(" optima ")
-        fail_message += "Line #{line_number.to_s}: Reference to `Optima` found. Recommended replacements: `Flexera`, `Flexera CCO`, `Cloud Cost Optimization`\n\n"
+        fail_message += "Line #{line_number}: Reference to `Optima` found. Recommended replacements: `Flexera`, `Flexera CCO`, `Cloud Cost Optimization`\n\n"
       end
     end
   end
 
-  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#general-style-guidelines)] Outdated terminology found. Please remove references to defunct internal names for products or services:\n\n" + fail_message if !fail_message.empty?
+  fail_message = "[[Info](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md#general-style-guidelines)] Outdated terminology found. Please remove references to defunct internal names for products or services:\n\n" + fail_message unless fail_message.empty?
 
-  return fail_message.strip if !fail_message.empty?
-  return false
+  return false if fail_message.empty?
+  fail_message.strip
 end

@@ -1,6 +1,9 @@
 # DangerFile Code Tests
 # See ./Dangerfile for more details
 
+# Policy category top-level directories — kept in sync with POLICY_CATEGORY_DIRS in Dangerfile
+POLICY_DIRS = %w[automation/ compliance/ cost/ operational/ saas/ security/].freeze
+
 ###############################################################################
 # Methods: Ruby
 ###############################################################################
@@ -13,8 +16,8 @@ def code_ruby_errors?(file)
   linter = `ruby -c #{file}`
 
   # Return the problems found if applicable
-  return "Ruby linting found errors:\n\n#{linter}" if linter.strip != "Syntax OK"
-  return false
+  return false if linter.strip == "Syntax OK"
+  "Ruby linting found errors:\n\n#{linter}"
 end
 
 ### Rubocop lint test
@@ -54,8 +57,8 @@ def code_python_errors?(file)
   end
 
   # Return the problems found if applicable
-  return "Python linting found errors:\n\n#{fail_message}" if !fail_message.strip.empty?
-  return false
+  return false if fail_message.strip.empty?
+  "Python linting found errors:\n\n#{fail_message}"
 end
 
 ###############################################################################
@@ -64,28 +67,14 @@ end
 
 def code_json_bad_location?(file)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing JSON file location..."
-
-  fail_message = ""
-
-  if file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/")
-    fail_message = "JSON file located inside policy directory. Please move JSON file to an appropriate subdirectory in `data/`"
-  end
-
-  return fail_message.strip if !fail_message.empty?
-  return false
+  return "JSON file located inside policy directory. Please move JSON file to an appropriate subdirectory in `data/`" if POLICY_DIRS.any? { |dir| file.start_with?(dir) }
+  false
 end
 
 def code_yaml_bad_location?(file)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing YAML file location..."
-
-  fail_message = ""
-
-  if file.start_with?("automation/") || file.start_with?("compliance/") || file.start_with?("cost/") || file.start_with?("operational/") || file.start_with?("saas/") || file.start_with?("security/")
-    fail_message = "YAML file located inside policy directory. Please move YAML file to an appropriate subdirectory in `data/`"
-  end
-
-  return fail_message.strip if !fail_message.empty?
-  return false
+  return "YAML file located inside policy directory. Please move YAML file to an appropriate subdirectory in `data/`" if POLICY_DIRS.any? { |dir| file.start_with?(dir) }
+  false
 end
 
 def code_json_errors?(file)
@@ -94,8 +83,8 @@ def code_json_errors?(file)
   linter = `jsonlint #{file}`
 
   # Return the problems found if applicable
-  return "JSON linting found errors:\n\n#{linter}" if !linter.strip.empty?
-  return false
+  return false if linter.strip.empty?
+  "JSON linting found errors:\n\n#{linter}"
 end
 
 def code_yaml_errors?(file)
@@ -104,6 +93,6 @@ def code_yaml_errors?(file)
   linter = `yaml-lint -q #{file}`
 
   # Return the problems found if applicable
-  return "YAML linting found errors:\n\n#{linter}" if !linter.strip.empty?
-  return false
+  return false if linter.strip.empty?
+  "YAML linting found errors:\n\n#{linter}"
 end

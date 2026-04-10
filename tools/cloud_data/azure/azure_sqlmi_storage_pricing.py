@@ -1,64 +1,82 @@
-# Instructions for updating the price list:
-#   (1) Download the flexera-public/policy_templates repository locally.
-#   (2) Create a new local branch of the repository.
-#   (3) Run this Python script. It should replace azure_sqlmi_storage_pricing.json with a new updated file.
-#       Note: Working directory should be the *root* directory of the repository.
-#   (4) Add and commit the new file, push it to the repository, and then make a pull request.
+#!/usr/bin/env python3
+"""
+Fetches Azure SQL Managed Instance storage pricing from the Azure Retail Price API.
+
+Produces: data/azure/azure_sqlmi_storage_pricing.json
+Usage: python3 azure_sqlmi_storage_pricing.py
+  (Run from the root of the policy_templates repository.)
+"""
 
 import requests
 import json
-import os
 
-print("Gathering data from Azure Price API...")
+OUTPUT_FILENAME = "data/azure/azure_sqlmi_storage_pricing.json"
+API_URL = "https://prices.azure.com/api/retail/prices"
+QUERY = (
+    "unitOfMeasure eq '1 GB/Month' and serviceName eq 'SQL Managed Instance' "
+    "and type eq 'Consumption' and (skuName eq 'General Purpose' "
+    "or skuName eq 'Business Critical' or skuName eq 'Hyperscale')"
+)
 
-output_filename = f'data/azure/azure_sqlmi_storage_pricing.json'
 
-api_url = "https://prices.azure.com/api/retail/prices"
-query = "unitOfMeasure eq '1 GB/Month' and serviceName eq 'SQL Managed Instance' and type eq 'Consumption' and (skuName eq 'General Purpose' or skuName eq 'Business Critical' or skuName eq 'Hyperscale')"
-response = requests.get(api_url, params={'$filter': query})
-json_data = response.json()
+def fetch_all_prices(api_url, query):
+    """Fetch all pages of results for the given OData filter query.
 
-price_list = json_data['Items']
-nextPage = json_data['NextPageLink']
+    Returns a flat list of all items across all pages.
+    """
+    response = requests.get(api_url, params={'$filter': query})
+    json_data = response.json()
 
-while(nextPage):
-  response = requests.get(nextPage)
-  json_data = response.json()
-  nextPage = json_data['NextPageLink']
-  price_list.extend(json_data['Items'])
+    price_list = json_data['Items']
+    next_page = json_data['NextPageLink']
 
-final_list = {}
+    # Follow pagination links until exhausted
+    while next_page:
+        response = requests.get(next_page)
+        json_data = response.json()
+        next_page = json_data['NextPageLink']
+        price_list.extend(json_data['Items'])
 
-print("Processing data from Azure Price API...")
+    return price_list
 
-for item in price_list:
-  region = item['armRegionName']
-  skuName = item['skuName']
-  skuId = item['skuId']
-  unitPrice = item['unitPrice']
-  productName = item['productName']
-  meterName = item['meterName']
 
-  # This is so the values match what other Azure APIs return for these sku names
-  if skuName == "Business Critical":
-    skuName = "BusinessCritical"
+def main():
+    print("Gathering data from Azure Price API...")
+    price_list = fetch_all_prices(API_URL, QUERY)
 
-  if skuName == "General Purpose":
-    skuName = "GeneralPurpose"
+    final_list = {}
 
-  if "Free" not in meterName and unitPrice != 0.0:
-    if region not in final_list:
-      final_list[region] = {}
+    print("Processing data from Azure Price API...")
+    for item in price_list:
+        region = item['armRegionName']
+        skuName = item['skuName']
+        skuId = item['skuId']
+        unitPrice = item['unitPrice']
+        meterName = item['meterName']
 
-    final_list[region][skuName] = {
-      "sku": skuId,
-      "unitPrice": unitPrice
-    }
+        # Normalize sku names to match what other Azure APIs return
+        if skuName == "Business Critical":
+            skuName = "BusinessCritical"
 
-print("Writing results to file...")
+        if skuName == "General Purpose":
+            skuName = "GeneralPurpose"
 
-price_file = open(output_filename, "w")
-price_file.write(json.dumps(final_list, sort_keys=True, indent=2))
-price_file.close()
+        if "Free" not in meterName and unitPrice != 0.0:
+            if region not in final_list:
+                final_list[region] = {}
 
-print("DONE!")
+            final_list[region][skuName] = {
+                "sku": skuId,
+                "unitPrice": unitPrice
+            }
+
+    print("Writing results to file...")
+
+    with open(OUTPUT_FILENAME, "w") as f:
+        f.write(json.dumps(final_list, sort_keys=True, indent=2))
+
+    print("DONE!")
+
+
+if __name__ == "__main__":
+    main()

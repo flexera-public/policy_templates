@@ -50,9 +50,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `ec2:DescribeRegions`
   - `fsx:DescribeFileSystems`
   - `fsx:DeleteFileSystem`*
-  - `cloudwatch:GetMetricStatistics`
   - `cloudwatch:GetMetricData`
-  - `cloudwatch:ListMetrics`
   - `sts:GetCallerIdentity`
 
   \* Only required for taking action (deletion); the policy will still function in a read-only capacity without these permissions.
@@ -69,9 +67,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
                   "ec2:DescribeRegions",
                   "fsx:DescribeFileSystems",
                   "fsx:DeleteFileSystem",
-                  "cloudwatch:GetMetricStatistics",
                   "cloudwatch:GetMetricData",
-                  "cloudwatch:ListMetrics",
                   "sts:GetCallerIdentity"
               ],
               "Resource": "*"

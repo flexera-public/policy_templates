@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "6.3.2",
+  version: "6.4.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -113,6 +113,15 @@ parameter "param_exclude_databricks" do
   description "Whether or not to filter virtual machines used for Azure Databricks from the results. If set to \"Yes\", virtual machines for Azure Databricks will not be included in the results."
   allowed_values "Yes", "No"
   default "No"
+end
+
+parameter "param_local_disk_filter" do
+  type "string"
+  category "Filters"
+  label "Filter Recommendations That Change Local Disk"
+  description "Whether to exclude downsize recommendations where the recommended instance type has a different local disk configuration than the current instance type. Set to \"Exclude\" to filter out downsize recommendations where local disk support changes."
+  allowed_values "Include All", "Exclude"
+  default "Include All"
 end
 
 parameter "param_stats_idle_threshold_cpu_value" do
@@ -1243,14 +1252,6 @@ script "js_instance_costs_grouped", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_instance_size_map" do
-  request do
-    host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/azure/instance_types.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
 datasource "ds_azure_regions_for_instance_sizes" do
   run_script $js_azure_regions_for_instance_sizes, $ds_azure_instances_metrics_organized
 end
@@ -1308,12 +1309,85 @@ script "js_azure_disk_count_table", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_compute_instance_types" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/azure_compute_instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_azure_local_disk_table" do
+  run_script $js_azure_local_disk_table, $ds_azure_compute_instance_types
+end
+
+script "js_azure_local_disk_table", type: "javascript" do
+  parameters "ds_azure_compute_instance_types"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  _.each(ds_azure_compute_instance_types, function(item) {
+    if (item['name'] != undefined) { result[item['name']] = item['localDisk'] }
+  })
+EOS
+end
+
+datasource "ds_azure_instance_size_map" do
+  run_script $js_azure_instance_size_map, $ds_azure_compute_instance_types
+end
+
+script "js_azure_instance_size_map", type: "javascript" do
+  parameters "ds_azure_compute_instance_types"
+  result "result"
+  code <<-'EOS'
+  // Build lookup table keyed by instance name
+  result = {}
+  _.each(ds_azure_compute_instance_types, function(instance) {
+    if (instance['name'] != undefined) {
+      result[instance['name']] = {
+        down: null,
+        vcpu: parseInt(instance['specs']['vCPUs']),
+        memory: parseFloat(instance['specs']['MemoryGB'])
+      }
+    }
+  })
+
+  // Derive 'down' pointers by finding the next-smaller instance within the same family.
+  // For each instance, candidates must have strictly fewer vCPUs.
+  // Among candidates with the most vCPUs (smallest step down), the one with the
+  // closest memory-to-vCPU ratio is chosen. This keeps regular and memory-optimized
+  // sub-series separate (e.g. Standard_A4_v2 -> Standard_A2_v2, not Standard_A2m_v2).
+  _.each(ds_azure_compute_instance_types, function(instance) {
+    if (instance['name'] == undefined) { return }
+
+    var currentVcpu = parseInt(instance['specs']['vCPUs'])
+    var currentMemory = parseFloat(instance['specs']['MemoryGB'])
+    var currentRatio = currentVcpu > 0 ? currentMemory / currentVcpu : 0
+    var family = instance['family']
+
+    var candidates = _.filter(ds_azure_compute_instance_types, function(other) {
+      return other['name'] != undefined && other['family'] == family && parseInt(other['specs']['vCPUs']) < currentVcpu
+    })
+
+    if (candidates.length > 0) {
+      candidates = _.sortBy(candidates, function(c) {
+        var cVcpu = parseInt(c['specs']['vCPUs'])
+        var cRatio = cVcpu > 0 ? parseFloat(c['specs']['MemoryGB']) / cVcpu : 0
+        return -cVcpu * 1000000 + Math.abs(cRatio - currentRatio) * 1000
+      })
+
+      result[instance['name']]['down'] = candidates[0]['name']
+    }
+  })
+EOS
+end
+
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_stats_interval, $ds_azure_disk_count_table, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_exclude_databricks, $param_downsize_multiple, $param_incident_csv, rs_org_id, rs_project_id
+  run_script $js_idle_and_underutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_stats_interval, $ds_azure_disk_count_table, $ds_azure_local_disk_table, $ds_currency, $ds_applied_policy, $ds_flexera_api_hosts, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback, $param_exclude_databricks, $param_downsize_multiple, $param_local_disk_filter, $param_incident_csv, rs_org_id, rs_project_id
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_stats_interval", "ds_azure_disk_count_table", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_exclude_databricks", "param_downsize_multiple", "param_incident_csv", "rs_org_id", "rs_project_id"
+  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_stats_interval", "ds_azure_disk_count_table", "ds_azure_local_disk_table", "ds_currency", "ds_applied_policy", "ds_flexera_api_hosts", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback", "param_exclude_databricks", "param_downsize_multiple", "param_local_disk_filter", "param_incident_csv", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -1510,8 +1584,24 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
         if (instance["newResourceType"] != null && instance["newResourceType"] != undefined) {
           if (savings >= param_min_savings) {
-            underutil_total_savings += savings
-            underutil_list.push(instance)
+            // Exclude downsize if local disk support changes and user has opted into filtering
+            var include_instance = true
+
+            if (param_local_disk_filter == "Exclude") {
+              var current_disk = ds_azure_local_disk_table[instance['resourceType']]
+              var new_disk = ds_azure_local_disk_table[instance['newResourceType']]
+
+              if (current_disk !== null && current_disk !== undefined &&
+                  new_disk !== null && new_disk !== undefined &&
+                  current_disk !== new_disk) {
+                include_instance = false
+              }
+            }
+
+            if (include_instance) {
+              underutil_total_savings += savings
+              underutil_list.push(instance)
+            }
           }
         }
       }
@@ -1680,6 +1770,26 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     underutil_list[0]['policy_name'] = ds_applied_policy['name']
   }
 
+  // Look up local disk support for current and recommended instance types
+  function getLocalDiskLabel(instanceType) {
+    var local_disk = ds_azure_local_disk_table[instanceType]
+    if (local_disk === true) { return "Yes" }
+    if (local_disk === false) { return "No" }
+    return "Unknown"
+  }
+
+  idle_list = _.map(idle_list, function(instance) {
+    instance['currentInstanceLocalDisk'] = getLocalDiskLabel(instance['resourceType'])
+    instance['newInstanceLocalDisk'] = "N/A"
+    return instance
+  })
+
+  underutil_list = _.map(underutil_list, function(instance) {
+    instance['currentInstanceLocalDisk'] = getLocalDiskLabel(instance['resourceType'])
+    instance['newInstanceLocalDisk'] = getLocalDiskLabel(instance['newResourceType'])
+    return instance
+  })
+
   result = {
     idle_list: idle_list,
     underutil_list: underutil_list
@@ -1710,7 +1820,9 @@ script "js_underutilized_instances", type: "javascript" do
     "cpu_average": "",
     "mem_maximum": "",
     "mem_minimum": "",
-    "mem_average": ""
+    "mem_average": "",
+    "currentInstanceLocalDisk": "",
+    "newInstanceLocalDisk": ""
   }]
 
   result = ds_idle_and_underutil_instances["underutil_list"].concat(result)
@@ -1740,7 +1852,9 @@ script "js_idle_instances", type: "javascript" do
     "cpu_average": "",
     "mem_maximum": "",
     "mem_minimum": "",
-    "mem_average": ""
+    "mem_average": "",
+    "currentInstanceLocalDisk": "",
+    "newInstanceLocalDisk": ""
   }]
 
   result = ds_idle_and_underutil_instances["idle_list"].concat(result)
@@ -1763,7 +1877,7 @@ policy "pol_utilization" do
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_downsize_instances
-    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "mem_maximum", "mem_minimum", "mem_average"
+    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p90", "cpu_p95", "cpu_p99", "mem_maximum", "mem_minimum", "mem_average", "mem_p90", "mem_p95", "mem_p99"
     export do
       resource_level true
       field "accountID" do
@@ -1792,6 +1906,12 @@ policy "pol_utilization" do
       end
       field "newResourceType" do
         label "Recommended Instance Size"
+      end
+      field "currentInstanceLocalDisk" do
+        label "Current Instance Local Disk"
+      end
+      field "newInstanceLocalDisk" do
+        label "Recommended Instance Local Disk"
       end
       field "resourceKind" do
         label "Resource Kind"
@@ -1908,7 +2028,7 @@ policy "pol_utilization" do
     escalate $esc_email
     escalate $esc_poweroff_instances
     escalate $esc_delete_instances
-    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "mem_maximum", "mem_minimum", "mem_average"
+    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p90", "cpu_p95", "cpu_p99", "mem_maximum", "mem_minimum", "mem_average", "mem_p90", "mem_p95", "mem_p99"
     export do
       resource_level true
       field "accountID" do
@@ -1937,6 +2057,12 @@ policy "pol_utilization" do
       end
       field "newResourceType" do
         label "Recommended Instance Size"
+      end
+      field "currentInstanceLocalDisk" do
+        label "Current Instance Local Disk"
+      end
+      field "newInstanceLocalDisk" do
+        label "Recommended Instance Local Disk"
       end
       field "resourceKind" do
         label "Resource Kind"
