@@ -29,3 +29,12 @@ There are automated workflows that run once per week for each script and automat
 - [Azure DB Storage Pricing Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-azure-db-storage-pricing-json.yaml)
 - [Azure SQL MI Storage Pricing Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-azure-sqlmi-storage-pricing-json.yaml)
 - [Google VM Pricing Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-gcp-vm-pricing-json.yaml)
+
+### Cheaper Regions Workflows
+
+These workflows run automatically after their respective pricing workflows complete each week. They recompute the `cheaper` and `cheaper_ratio` fields in the AWS and Azure `regions.json` files based on the latest pricing data.
+
+For each region, every other region sharing the same geographic prefix (AWS) or geographic group (Azure) is compared using the median Linux on-demand price ratio across all instance types available in both regions. The cheapest in-group region becomes the new `cheaper` value; the ratio becomes `cheaper_ratio`. If no region in the same group is strictly cheaper (ratio ≥ 1.0), both fields are set to `null`.
+
+- [AWS Cheaper Regions Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/update-aws-cheaper-regions.yaml)
+- [Azure Cheaper Regions Workflow](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/update-azure-cheaper-regions.yaml)

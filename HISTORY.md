@@ -6,6 +6,75 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#4289](https://github.com/flexera-public/policy_templates/pull/4289): POL-1749 - Add cluster/workload table to Kubernetes Rightsizing Recommendation Report
+
+*Minor Update*
+
+#### Description
+
+> Enhances Kubernetes Rightsizing Recommendation Policy Template to include a table for each cluster, with the net of workload changes (similar to how these recommendations are presented in another view in the platform)
+>
+
+#### Metadata
+
+- **Policies**: [Kubernetes - Rightsizing Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/spot/ocean_recommendations/README.md)
+- **Merged At**: 2026-04-10 14:20:23 UTC
+
+---
+
+### PR [#4288](https://github.com/flexera-public/policy_templates/pull/4288): POL-1265 Cheaper Regions Update
+
+*Minor Update*
+
+#### Description
+
+> - Updates `regions.json` for each cloud provider to indicate the ratio of price difference between each region and the recommended cheaper region to assist in calculate savings.
+> - Adds Github workflows/scripts to automate updating the above for AWS and Azure.
+> - Updates the three `Cheaper Regions` policy templates to provide an estimated savings based on the above.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4288) for these details.
+- **Merged At**: 2026-04-08 18:31:56 UTC
+
+---
+
+### PR [#4281](https://github.com/flexera-public/policy_templates/pull/4281): POL-1747 Meta Parent Fixes
+
+#### Description
+
+> Fixes the meta parent templates with the following:
+>
+> - Refactored `js_take_in_parameters` to solve multiple bugs, including one that prevented the meta parent from deleting child policy templates.
+> - Added pagination support to `﻿ds_get_existing_policies`; without this, a meta parent could have issues in cases where 1000+ child policies are returned.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4281) for these details.
+- **Merged At**: 2026-04-07 17:02:39 UTC
+
+---
+
+### PR [#4270](https://github.com/flexera-public/policy_templates/pull/4270): POL-1740 Vendor Spend Commitment Forecast: Longer Date Range Support
+
+*Minor Update*
+
+#### Description
+
+> Updates the `Vendor Spend Commitment Forecast` policy template to support longer data ranges by making multiple API calls to the costs/aggregated endpoint as needed.
+>
+> Also makes a minor tweak to the `policy_summary_template_missing_policy_name?` Dangerfile test to avoid false positives.
+>
+
+#### Metadata
+
+- **Policies**: [Vendor Spend Commitment Forecast](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/forecasting/commitment_forecast/README.md)
+- **Merged At**: 2026-04-07 12:15:50 UTC
+
+---
+
 ### PR [#4253](https://github.com/flexera-public/policy_templates/pull/4253): POL-1743 Misc. Policy Template instance_types.json Update
 
 *Minor Update*
@@ -2127,111 +2196,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3072) for these details.
 - **Merged At**: 2025-10-29 18:05:20 UTC
-
----
-
-### PR [#3669](https://github.com/flexera-public/policy_templates/pull/3669): POL-1669 Repo Cleanup
-
-*Unpublished, Minor Update*
-
-#### Description
-
-> `Style Update`
-> - The below changes are to bring policy templates in line with the [Style Guide](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md). Since code is commonly copied and pasted from existing policy templates, noncompliant code has a way of replicating itself if not removed from the repo entirely.
-> - References to "policy" have been changed to "policy template" where appropriate throughout the repository. Where this involved updating a policy template itself, the policy template version was incremented and the CHANGELOG.md file was updated.
-> - Changed parameters with the label "Email addresses to notify" to have the label "Email Addresses" instead for consistency. Where this involved updating a policy template itself, the policy template version was incremented and the CHANGELOG.md file was updated.
-> - Removed defunct `tenancy "single"` line from the tiny number of policy templates that still contained it. All of them were deprecated already.
-> - Fixed misc. linting errors in README.md files.
-> - Fixed several URLs so that they no longer redirect. This prevents the text linter from believing they are dead URLs.
->
-> `Dangerfile Fixes`
-> - Dangerfile tests updated to account for the word template in the sentence "Deprecated: This policy template is no longer being updated"
-> - Dangerfile tests have been updated to tolerate multiple footnote characters on a single permission in policy template README.md files. For example:   - \`ec2:TerminateInstances\`*‡
-> - Dangerfile comma test has been updated to ignore lines containing image charts URL information to prevent false positives.
-> - Dangerfile no longer reports a warning for new datasources if the policy template itself is new.
-> - Dangerfile now filters textlint output to avoid reporting some common false positives, mainly for example or local URLs in documentation that won't pass as valid links when tested.
-> - Dangerfile test for a policy template being unpublished now raises a message instead of a warning since this is rarely unintentional.
-> - Dangerfile test for mismatched script/datasource names no longer raises a warning if the script block is called by multiple datasources. This logic was already in place but was not working correctly.
->
-> `devcontainer`
-> - Fixed outdated reference in devcontainer.json with up to date one.
->
-> `Spelling`
-> - .spellignore has been updated to ignore "FSx" and "fsx"
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3669) for these details.
-- **Merged At**: 2025-10-29 17:20:39 UTC
-
----
-
-### PR [#3658](https://github.com/flexera-public/policy_templates/pull/3658): POL-1661 AWS Overutilized EC2 Instances  - Capture Missing Memory Stats for Instances in Incident
-
-*Bug Fix*
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This change fixes a gap where memory usage data from CloudWatch wasn’t being captured in the policy for many EC2 instances. This fix ensures users now get a more complete picture when reviewing overutilization recommendations for EC2 instances across both CPU and Memory metrics.
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
-> Tested this in a customer org.
->
-
-#### Metadata
-
-- **Policies**: [AWS Overutilized EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/overutilized_ec2_instances/README.md)
-- **Merged At**: 2025-10-22 13:02:39 UTC
-
----
-
-### PR [#3648](https://github.com/flexera-public/policy_templates/pull/3648): FOPTS-15895 Fixed Azure Rightsize SQL Databases policy not showing metrics for DTU database.
-
-*Bug Fix*
-
-#### Description
-
-> Fixed Azure Rightsize SQL Databases policy not showing metrics for DTU databases.
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/FOPTS-15895
-> https://flexera.atlassian.net/browse/SQ-18478
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md), [Meta Parent: Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
-- **Merged At**: 2025-10-16 17:32:58 UTC
-
----
-
-### PR [#3641](https://github.com/flexera-public/policy_templates/pull/3641): POL-1664 AWS Rightsize EC2 Instances - Capture Missing Memory Stats for Windows Instances in Incident
-
-*Bug Fix*
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This change fixes a gap where memory usage data from CloudWatch wasn’t being captured in the policy for many EC2 instances.
->
-> The previous fix seen in https://github.com/flexera-public/policy_templates/pull/3613 fixed the issue for Linux instances, however the problem persisted for Windows instances. This change addresses that.
->
-> This fix ensures users now get a more complete picture when reviewing rightsizing recommendations across both CPU and Memory metrics for both Windows and Linux instances.
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/README.md)
-- **Merged At**: 2025-10-16 12:56:42 UTC
 
 ---
 
