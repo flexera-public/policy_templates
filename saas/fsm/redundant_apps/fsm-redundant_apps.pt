@@ -8,7 +8,7 @@ severity "low"
 category "SaaS Management"
 default_frequency "weekly"
 info(
-  version: "3.1.7",
+  version: "3.2.0",
   provider: "Flexera",
   service: "SaaS Manager",
   policy_set: "",
@@ -34,6 +34,24 @@ parameter "param_too_many_apps" do
   description "The number of SaaS applications within a single category required to report on the category."
   min_value 2
   default 2
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
 end
 
 ###############################################################################
@@ -152,13 +170,14 @@ EOS
 end
 
 datasource "ds_filtered_apps" do
-  run_script $js_filtered_apps, $ds_managed_apps_active, $ds_applied_policy, $param_too_many_apps
+  run_script $js_filtered_apps, $ds_managed_apps_active, $ds_applied_policy, $param_too_many_apps, $param_incident_csv
 end
 
 script "js_filtered_apps", type: "javascript" do
-  parameters "ds_managed_apps_active", "ds_applied_policy", "param_too_many_apps"
+  parameters "ds_managed_apps_active", "ds_applied_policy", "param_too_many_apps", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
   result = []
 
   category_table = {}
@@ -193,6 +212,7 @@ script "js_filtered_apps", type: "javascript" do
 
   if (result.length > 0) {
     result[0]['policy_name'] = ds_applied_policy['name']
+    result[0]['message'] = csv_message
   }
 EOS
 end
@@ -204,6 +224,9 @@ end
 policy "pol_fsm_excessive_apps" do
   validate_each $ds_filtered_apps do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} SaaS App Categories with more than {{ parameters.param_too_many_apps }} Apps"
+    detail_template <<-'EOS'
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
     check eq(val(item, "appCategory"), "")
     escalate $esc_email
     export do
@@ -231,5 +254,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

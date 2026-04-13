@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.0
+
+- Added `Incident Table Size` and `Attach Incident CSV` parameters to control incident email output
+
 ## v3.0.6
 
 - Updated documentation link in policy description. Functionality unchanged.
