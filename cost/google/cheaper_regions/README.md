@@ -28,6 +28,8 @@ This policy template has the following input parameters:
 
 - *Email Addresses* - A list of email addresses to notify.
 - *Cost Metric* - The cost metric to use for per-region spend in the report.
+- *Incident Table Size* - Maximum number of rows to include in the incident table in the email. Larger values may cause email delivery issues.
+- *Attach Incident CSV* - Whether or not to attach a CSV of the incident data to the incident email.
 - *Allow/Deny Regions* - Allow or Deny entered regions.
 - *Allow/Deny Regions List* - A list of allowed or denied regions. Both region IDs, such as `us-east1`, and names, such as `US East Moncks Corner, South Carolina, USA`, are accepted. Leave blank to check all regions.
 - *Allow/Deny Billing Centers* - Allow or Deny entered Billing Centers.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.2.0
+
+- Added `Incident Table Rows for Email Body` and `Attach CSV To Incident Email` parameters to support sending a CSV attachment with incident emails.
+
 ## v1.1.0
 
 - Added `Estimated Monthly Savings` field to incident report, calculated by multiplying total region spend by `(1 - cheaper_ratio)` using the cost ratio from the Azure regions reference data
