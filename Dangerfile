@@ -102,7 +102,7 @@ test = github_pr_missing_ready_label?(github); message test if test
 
 puts Time.now.strftime("%H:%M:%S.%L") + " * Testing if important files were modified..."
 
-modified_important_files = changed_dangerfiles + changed_dot_files + changed_config_files
+modified_important_files = (changed_dangerfiles + changed_dot_files + changed_config_files).select{ |file| git.modified_files.include?(file) }
 modified_important_files = modified_important_files.join("\n")
 
 # Consolidate changed files into a single warning to save space
