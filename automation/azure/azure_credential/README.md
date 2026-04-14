@@ -10,6 +10,8 @@ __NOTE: This policy template is intended to be used in conjunction with its asso
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 
 ## Policy Actions
 

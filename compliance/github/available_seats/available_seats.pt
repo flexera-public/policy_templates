@@ -8,7 +8,7 @@ severity "medium"
 category "Compliance"
 default_frequency "weekly"
 info(
-  version: "3.0.6",
+  version: "3.1.0",
   provider: "GitHub",
   service: "Git",
   policy_set: "",
@@ -51,6 +51,24 @@ parameter "param_max_seats" do
   description "The maximum number of available seats to allow. Set to '-1' to have no maximum."
   min_value -1
   default 50
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
 end
 
 ###############################################################################
@@ -204,30 +222,36 @@ EOS
 end
 
 datasource "ds_orgs_below_min" do
-  run_script $js_orgs_below_min, $ds_cleaned_orgs, $param_min_seats
+  run_script $js_orgs_below_min, $ds_cleaned_orgs, $param_min_seats, $param_incident_csv
 end
 
 script "js_orgs_below_min", type: "javascript" do
-  parameters "ds_cleaned_orgs", "param_min_seats"
+  parameters "ds_cleaned_orgs", "param_min_seats", "param_incident_csv"
   result "result"
   code <<-'EOS'
   result = _.filter(ds_cleaned_orgs, function(org) {
     return org["available_seats"] < param_min_seats
   })
+
+  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  if (result.length > 0) { result[0]['message'] = csv_message }
 EOS
 end
 
 datasource "ds_orgs_above_max" do
-  run_script $js_orgs_above_max, $ds_cleaned_orgs, $param_max_seats
+  run_script $js_orgs_above_max, $ds_cleaned_orgs, $param_max_seats, $param_incident_csv
 end
 
 script "js_orgs_above_max", type: "javascript" do
-  parameters "ds_cleaned_orgs", "param_max_seats"
+  parameters "ds_cleaned_orgs", "param_max_seats", "param_incident_csv"
   result "result"
   code <<-'EOS'
   result = _.filter(ds_cleaned_orgs, function(org) {
     return org["available_seats"] > param_max_seats && param_max_seats != -1
   })
+
+  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  if (result.length > 0) { result[0]['message'] = csv_message }
 EOS
 end
 
@@ -238,6 +262,7 @@ end
 policy "pol_available_seats" do
   validate_each $ds_orgs_below_min do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} GitHub Organizations Below Minimum Available Seats Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     check eq(val(item, "id"), "")
     escalate $esc_email
     export do
@@ -271,6 +296,7 @@ policy "pol_available_seats" do
   end
   validate_each $ds_orgs_above_max do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} GitHub Organizations Above Maximum Available Seats Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     check eq(val(item, "id"), "")
     escalate $esc_email
     export do
@@ -312,5 +338,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

@@ -13,6 +13,8 @@ This policy template generates reports on various aspects of automation within t
   - **Incidents** - Reports all active policy incidents.
 - *Child Policies* - Whether to include child policies/incidents in the Applied Policies and Incident reports. Child policies are created when using meta parent policies but are hidden from view in the Flexera One UI.
 - *Aggregates* - Whether to include aggregates in the Applied Policies and Incident reports. Aggregates are created when a policy template is applied at the organization level across multiple projects.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 
 ## Policy Actions
 

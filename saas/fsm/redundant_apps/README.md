@@ -14,6 +14,8 @@ This policy template has the following input parameters:
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Category Application Limit* - The number of SaaS applications within a single category required to report on the category.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 
 ## Policy Actions
 

@@ -8,7 +8,7 @@ severity "medium"
 category "Compliance"
 default_frequency "weekly"
 info(
-  version: "3.0.6",
+  version: "3.1.0",
   provider: "GitHub",
   service: "Git",
   policy_set: "",
@@ -50,6 +50,24 @@ parameter "param_repos_list" do
   label "Allow/Deny GitHub Repositories List"
   description "A list of allowed or denied Github repositories. See the README for more details."
   default []
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
 end
 
 ###############################################################################
@@ -258,11 +276,11 @@ datasource "ds_org_repos_teams" do
 end
 
 datasource "ds_invalid_repos" do
-  run_script $js_invalid_repos, $ds_org_repos_teams, $ds_github_org_repos, $ds_applied_policy
+  run_script $js_invalid_repos, $ds_org_repos_teams, $ds_github_org_repos, $ds_applied_policy, $param_incident_csv
 end
 
 script "js_invalid_repos", type: "javascript" do
-  parameters "ds_org_repos_teams", "ds_github_org_repos", "ds_applied_policy"
+  parameters "ds_org_repos_teams", "ds_github_org_repos", "ds_applied_policy", "param_incident_csv"
   result "result"
   code <<-'EOS'
   teams_by_repo = _.groupBy(ds_org_repos_teams, function(team) {
@@ -310,6 +328,9 @@ script "js_invalid_repos", type: "javascript" do
       })
     }
   })
+
+  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+  if (result.length > 0) { result[0]['message'] = csv_message }
 EOS
 end
 
@@ -320,6 +341,7 @@ end
 policy "pol_invalid_repos" do
   validate_each $ds_invalid_repos do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} GitHub Repositories Without Admin Team Found"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     check eq(val(item, "id"), "")
     escalate $esc_email
     export do
@@ -362,5 +384,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

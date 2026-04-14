@@ -9,6 +9,8 @@ This policy template checks all of the applied policy templates in the Flexera O
 - *Email Addresses* - A list of email addresses to notify.
 - *Applied Policy Template Ignore List* - A list of applied policy template names and IDs to ignore and never include in the results. Leave blank to report on all applied policy templates in an error state.
 - *Report Child Policy Errors* - Whether or not to report when the child policies of meta parent policies are in error. If `Yes` is selected and errors are found in child policies, these will be raised as a separate incident/email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 
 ## Policy Actions
 
