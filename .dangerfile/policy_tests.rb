@@ -7,7 +7,7 @@
 
 ### Missing Policy-specific Github PR labels
 # Verify that the pull request has appropriate labels for the policy template
-def policy_missing_github_labels?(github, file, file_parsed, file_metadata)
+def policy_missing_github_labels?(github, file, file_parsed, file_metadata, is_new_file = true)
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether PR is labelled appropriately for Policy Template..."
 
   fail_message = ""
@@ -15,7 +15,7 @@ def policy_missing_github_labels?(github, file, file_parsed, file_metadata)
   published = true
   published = false if file_parsed.parsed_info && file_parsed.parsed_info[:publish] && file_parsed.parsed_info[:publish].downcase == "false"
 
-  if !github.pr_labels.include?("NEW POLICY TEMPLATE") && !file_metadata && published
+  if !github.pr_labels.include?("NEW POLICY TEMPLATE") && !file_metadata && published && is_new_file
     fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md#4-make-a-pull-request)] Policy Template is new but Pull Request is missing `NEW POLICY TEMPLATE` label. Please add this label to the Pull Request.\n\n"
   elsif file_parsed.parsed_info && file_parsed.parsed_info[:version] && file_metadata && file_metadata["version"]
     major_version = file_parsed.parsed_info[:version].split('.')[0]
