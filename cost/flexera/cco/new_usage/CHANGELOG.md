@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.1.3
+
+- Removed non-exported field `message` from `hash_exclude`
+
+
 ## v3.1.2
 
 - Updated documentation link in policy description. Functionality unchanged.

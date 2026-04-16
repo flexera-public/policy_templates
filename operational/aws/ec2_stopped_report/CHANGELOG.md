@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.5
+
+- Removed non-exported field `message` from `hash_exclude`
+
+
 ## v0.3.4
 
 - Category of policy template updated to "Operational". Functionality unchanged.

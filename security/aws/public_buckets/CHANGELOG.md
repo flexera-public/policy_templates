@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.2.1
+
+- Removed non-exported field `message` from `hash_exclude`
+
+
 ## v3.2.0
 
 - Added support for attaching CSV files to incident emails.

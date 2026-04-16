@@ -1,5 +1,10 @@
 # Changelog
 
+## v6.6.1
+
+- Removed non-exported field `message` from `hash_exclude`
+
+
 ## v6.6.0
 
 - Added graceful error handling for inaccessible AWS regions

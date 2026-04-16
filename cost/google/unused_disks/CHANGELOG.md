@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.6
+
+- Removed non-exported field `message` from `hash_exclude`
+
+
 ## v0.2.5
 
 - Policy template deprecated. Please see [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/unused_disks) for more details.

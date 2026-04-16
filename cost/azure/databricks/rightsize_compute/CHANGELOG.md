@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.4
+
+- Removed non-exported field `message` from `hash_exclude`
+
+
 ## v0.6.3
 
 - Added `hash_exclude` directives to idle and underutilized incident blocks to prevent spurious incident re-opens when savings estimates or utilization metrics change between runs.

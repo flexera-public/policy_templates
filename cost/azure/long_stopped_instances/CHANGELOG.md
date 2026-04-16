@@ -1,5 +1,10 @@
 # Changelog
 
+## v6.1.7
+
+- Removed non-exported field `message` from `hash_exclude`
+
+
 ## v6.1.6
 
 - Category of policy template updated to "Cost". Functionality unchanged.
