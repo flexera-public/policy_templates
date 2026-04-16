@@ -4,7 +4,6 @@
 
 - Fixed issue with incident table that cause policy execution to fail
 
-
 ## v5.6.0
 
 - Added graceful error handling for inaccessible AWS regions

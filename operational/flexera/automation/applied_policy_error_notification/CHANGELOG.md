@@ -4,7 +4,6 @@
 
 - Fixed issue with incident table that cause policy execution to fail
 
-
 ## v4.1.0
 
 - Added `Incident Table Rows for Email Body` and `Attach CSV To Incident Email` parameters to support sending a CSV attachment with incident emails.

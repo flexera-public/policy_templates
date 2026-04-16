@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.1
+
+- Fixed issue with incident table that cause policy execution to fail
+
 ## v1.0.0
 
 - Policy template is now named `AWS Resources Under or Approaching Extended Support`.

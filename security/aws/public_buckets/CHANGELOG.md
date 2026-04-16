@@ -4,7 +4,6 @@
 
 - Fixed issue with incident table that cause policy execution to fail
 
-
 ## v3.2.0
 
 - Added support for attaching CSV files to incident emails.

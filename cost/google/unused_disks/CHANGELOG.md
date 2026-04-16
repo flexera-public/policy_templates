@@ -4,7 +4,6 @@
 
 - Fixed issue with incident table that cause policy execution to fail
 
-
 ## v0.2.5
 
 - Policy template deprecated. Please see [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/unused_disks) for more details.

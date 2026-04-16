@@ -4,7 +4,6 @@
 
 - Fixed issue with incident table that cause policy execution to fail
 
-
 ## v6.1.3
 
 - Updated documentation link in policy description. Functionality unchanged.

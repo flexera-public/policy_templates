@@ -4,7 +4,6 @@
 
 - Fixed issue with incident table that cause policy execution to fail
 
-
 ## v0.2.4
 
 - Updated instance type data source from `data/google/instance_types.json` to `data/google/google_compute_instance_types.json`. Upsize recommendations now use a computed lookup based on vCPU count and memory-to-vCPU ratio, matching the approach used by the Google Rightsize VM Instances policy template.
