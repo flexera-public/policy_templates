@@ -2,7 +2,7 @@
 
 ## v4.1.3
 
-- Removed non-exported field `message` from `hash_exclude`
+- Fixed issue with incident table that cause policy execution to fail
 
 
 ## v4.1.2
