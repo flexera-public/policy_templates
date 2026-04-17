@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.3
+
+- Fixed a bug introduced in v0.2.0 which causes Cloud Workflow to fail.
+
 ## v0.2.2
 
 - Updated documentation link in policy description. Functionality unchanged.
