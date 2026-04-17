@@ -1059,7 +1059,7 @@ end
 
 **Meta Policy termination check:** Always include `logic_or($ds_parent_policy_terminated, ...)` as first argument in `check` for Meta Policy support.
 
-**`hash_exclude`:** Prevents listed fields from contributing to incident deduplication hash. Exclude volatile fields (tags, savings) that change without indicating meaningful state change.
+**`hash_exclude`:** Prevents listed fields from contributing to incident deduplication hash. Exclude volatile fields (tags, savings) that change without indicating meaningful state change. **Only list fields that are actually declared in the `export` block** — listing a field that is not exported has no effect and is misleading.
 
 **`export <field_name> do`:** Optional field name before `do` extracts a nested sub-array as the exported table. Omit when the incident data itself is the flat array.
 
@@ -1188,10 +1188,10 @@ export do
 end
 ```
 
-**`hash_exclude` minimum** — always exclude these volatile fields that change without indicating a meaningful state change. Extend as needed for utilization metrics or age fields:
+**`hash_exclude` minimum** — always exclude volatile fields that change without indicating a meaningful state change. Extend as needed for utilization metrics or age fields. **Only include field names that are actually declared in the `export` block** — `hash_exclude` has no effect on fields that are not exported. The fields `message`, `policy_name`, and `total_savings` are metadata set on `result[0]` for use in `summary_template` / `detail_template`; only add them to `hash_exclude` if they are explicitly declared in the `export` block:
 
 ```
-hash_exclude "message", "total_savings", "tags", "savings", "savingsCurrency"
+hash_exclude "tags", "savings", "savingsCurrency"
 ```
 
 ```javascript
@@ -1217,7 +1217,7 @@ result.push({
 })
 ```
 
-Always add `"savings"`, `"savingsCurrency"`, `"total_savings"`, and `"message"` to `hash_exclude` in the `validate_each` block so that savings recalculations and message updates don't trigger spurious incident re-opens.
+Always add `"savings"`, `"savingsCurrency"`, and `"tags"` to `hash_exclude` in the `validate_each` block so that savings recalculations don't trigger spurious incident re-opens. If `"message"` or `"total_savings"` are declared as fields in the `export` block, add them too — but do **not** add them if they are not exported, as `hash_exclude` only operates on exported fields.
 
 For cost templates, the `ds_currency` datasource (fetched from the Flexera billing API) provides the org's currency symbol. Copy the boilerplate from a reference template such as `cost/aws/old_snapshots/aws_delete_old_snapshots.pt`.
 

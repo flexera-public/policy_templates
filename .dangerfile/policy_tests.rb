@@ -1682,7 +1682,7 @@ def policy_bad_param_category_order?(file, file_lines)
   file_lines.each do |line|
     stripped = line.strip
 
-    if stripped.match?(/^parameter\s+"/)
+    if line.match?(/^parameter\s+"/)
       in_param = true
     end
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.4
+
+- Fixed issue with incident table that cause policy execution to fail
+
 ## v0.4.3
 
 - Category of policy template updated to "Operational". Functionality unchanged.

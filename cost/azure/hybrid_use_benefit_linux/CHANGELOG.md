@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.2.4
+
+- Fixed issue with incident table that cause policy execution to fail
+
 ## v5.2.3
 
 - Updated documentation link in policy description. Functionality unchanged.
