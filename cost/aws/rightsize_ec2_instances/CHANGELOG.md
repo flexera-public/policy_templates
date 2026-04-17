@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.7.2
+
+- Fixed bug which would cause policy to use utilization metrics from the last 1d period instead of the correct full lookback period
+
 ## v5.7.1
 
 - Updated instance type data source from `data/aws/instance_types.json` to `data/aws/aws_ec2_instance_types.json`. Functionality unchanged.
