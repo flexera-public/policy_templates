@@ -1,0 +1,1112 @@
+name "Rule-Based Dimensions from CSV - Azure Storage"
+rs_pt_ver 20180301
+type "policy"
+short_description "Creates and/or updates Rule-Based Dimensions from a CSV file hosted in Azure Blob Storage. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/rbd_from_csv_azure_storage/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/rbd_from_csv_azure_storage/"
+severity "low"
+category "Operational"
+default_frequency "daily"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: "Rule-Based Dimensions",
+  hide_skip_approvals: "true",
+  skip_permissions: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_effective_date" do
+  type "string"
+  category "Policy Settings"
+  label "Effective Date"
+  description "Year/month you want rules to start applying in YYYY-MM format."
+  allowed_pattern /^\d{4}-\d{2}$/
+  default "2020-01"
+end
+
+parameter "param_normalize_case" do
+  type "string"
+  category "Policy Settings"
+  label "Lowercase Values"
+  description "Whether or not to normalize all RBD output values by converting them to lowercase. Note that, if the same value appears multiple times with different casing, and this option is disabled, the rule-based dimension may be rejected by the API."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_rbd_filter" do
+  type "list"
+  category "Policy Settings"
+  label "RBD ID Filter"
+  description "If non-empty, only process the listed RBD column IDs from the CSV. Useful for splitting large CSVs across multiple applied policies to avoid BSON size limits."
+  default []
+end
+
+parameter "param_rbd_name_map" do
+  type "list"
+  category "Policy Settings"
+  label "RBD Name Overrides"
+  description "Optional list of RBD ID to display name mappings in 'id=Name' format. Example: 'rbd_bu=Business Unit'. When empty, display names are auto-derived from the RBD ID."
+  default []
+end
+
+parameter "param_azure_storage_account" do
+  type "string"
+  category "Azure Storage Settings"
+  label "Storage Account Name"
+  description "The name of the Azure Storage account containing the CSV file. Example: mystorageaccount"
+  # No default value, user input required
+end
+
+parameter "param_azure_container" do
+  type "string"
+  category "Azure Storage Settings"
+  label "Container Name"
+  description "The name of the Azure Blob Storage container containing the CSV file."
+  # No default value, user input required
+end
+
+parameter "param_azure_file_prefix" do
+  type "string"
+  category "Azure Storage Settings"
+  label "File Prefix"
+  description "Only blobs whose name starts with this prefix will be considered when selecting the CSV file."
+  default "rbd_"
+end
+
+parameter "param_azure_file_override" do
+  type "string"
+  category "Azure Storage Settings"
+  label "File Override"
+  description "If non-empty, forces use of this exact blob name instead of automatically selecting the latest file by name."
+  default ""
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure_storage" do
+  schemes "oauth2"
+  label "Azure Storage"
+  description "Select the Azure Storage credential for blob access."
+  tags "provider=azure_storage"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select FlexeraOne OAuth2 credential."
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure_xml" do
+  get_page_marker do
+    body_path "//EnumerationResults/NextMarker"
+  end
+  set_page_marker do
+    query "marker"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      ui: "app.flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      ui: "app.flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      ui: "app.flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for sentinel rule naming
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+    header "User-Agent", "RS Policies"
+  end
+end
+
+# List blobs in Azure container matching the file prefix
+datasource "ds_azure_list_blobs" do
+  request do
+    auth $auth_azure_storage
+    pagination $pagination_azure_xml
+    host join([$param_azure_storage_account, ".blob.core.windows.net"])
+    path join(["/", $param_azure_container])
+    query "restype", "container"
+    query "comp", "list"
+    query "prefix", $param_azure_file_prefix
+    header "User-Agent", "RS Policies"
+    header "x-ms-version", "2018-03-28"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//EnumerationResults/Blobs/Blob", "array") do
+      field "blob_name", xpath(col_item, "Name")
+      field "last_modified", xpath(col_item, "Properties/Last-Modified")
+      field "content_length", xpath(col_item, "Properties/Content-Length")
+    end
+  end
+end
+
+# Select the CSV file to use (latest by name, or override)
+datasource "ds_csv_file_selected" do
+  run_script $js_csv_file_selected, $ds_azure_list_blobs, $param_azure_file_override
+end
+
+script "js_csv_file_selected", type: "javascript" do
+  parameters "ds_azure_list_blobs", "param_azure_file_override"
+  result "result"
+  code <<-'EOS'
+  if (param_azure_file_override && param_azure_file_override.length > 0) {
+    result = _.find(ds_azure_list_blobs, function(file) {
+      return file.blob_name == param_azure_file_override
+    })
+
+    if (result == undefined) {
+      result = { blob_name: param_azure_file_override, last_modified: "", content_length: "0" }
+    }
+  } else if (ds_azure_list_blobs.length > 0) {
+    sorted = _.sortBy(ds_azure_list_blobs, function(file) {
+      return file.blob_name
+    })
+
+    result = sorted[sorted.length - 1]
+  } else {
+    // No files found matching the prefix — use empty name to trigger a
+    // graceful 404 on ds_csv_raw rather than an undefined crash.
+    result = { blob_name: "__NO_FILES_FOUND__", last_modified: "", content_length: "0" }
+  }
+EOS
+end
+
+# Fetch the raw CSV file content from Azure Blob Storage
+datasource "ds_csv_raw" do
+  request do
+    auth $auth_azure_storage
+    host join([$param_azure_storage_account, ".blob.core.windows.net"])
+    path join(["/", $param_azure_container, "/", val($ds_csv_file_selected, "blob_name")])
+    header "User-Agent", "RS Policies"
+    header "x-ms-version", "2018-03-28"
+  end
+  result do
+    encoding "text"
+  end
+end
+
+# Parse the CSV using an RFC 4180 compliant parser
+datasource "ds_csv_parsed" do
+  run_script $js_csv_parsed, $ds_csv_raw
+end
+
+script "js_csv_parsed", type: "javascript" do
+  parameters "ds_csv_raw"
+  result "result"
+  code <<-'EOS'
+  // RFC 4180 CSV Parser - State Machine Implementation
+  // Handles: quoted fields, embedded commas, embedded newlines, escaped quotes (""),
+  // \r\n and \n line endings, UTF-8 BOM
+  function parseCSV(text) {
+    var rows = []
+    var currentRow = []
+    var currentField = ""
+    var inQuotes = false
+    var fieldIsQuoted = false
+    var i = 0
+
+    while (i < text.length) {
+      var ch = text[i]
+
+      if (inQuotes) {
+        if (ch == '"') {
+          if (i + 1 < text.length && text[i + 1] == '"') {
+            // Escaped quote inside quoted field
+            currentField += '"'
+            i += 2
+            continue
+          } else {
+            // End of quoted field
+            inQuotes = false
+            i += 1
+            continue
+          }
+        } else {
+          // Regular character inside quoted field
+          currentField += ch
+          i += 1
+          continue
+        }
+      }
+
+      // Not inside quotes
+      if (ch == '"') {
+        inQuotes = true
+        fieldIsQuoted = true
+        i += 1
+        continue
+      }
+
+      if (ch == ',') {
+        // End of field
+        if (!fieldIsQuoted) { currentField = currentField.trim() }
+        currentRow.push(currentField)
+        currentField = ""
+        fieldIsQuoted = false
+        i += 1
+        continue
+      }
+
+      if (ch == '\r') {
+        if (i + 1 < text.length && text[i + 1] == '\n') {
+          i += 1 // consume \r, \n handled below
+        }
+        // End of row
+        if (!fieldIsQuoted) { currentField = currentField.trim() }
+        currentRow.push(currentField)
+        currentField = ""
+        fieldIsQuoted = false
+        rows.push(currentRow)
+        currentRow = []
+        i += 1
+        continue
+      }
+
+      if (ch == '\n') {
+        // End of row
+        if (!fieldIsQuoted) { currentField = currentField.trim() }
+        currentRow.push(currentField)
+        currentField = ""
+        fieldIsQuoted = false
+        rows.push(currentRow)
+        currentRow = []
+        i += 1
+        continue
+      }
+
+      currentField += ch
+      i += 1
+    }
+
+    // Flush last field/row
+    if (currentField.length > 0 || currentRow.length > 0) {
+      if (!fieldIsQuoted) { currentField = currentField.trim() }
+      currentRow.push(currentField)
+      rows.push(currentRow)
+    }
+
+    return rows
+  }
+
+  var rows = parseCSV(ds_csv_raw)
+
+  // Post-processing Step 1: Strip UTF-8 BOM from first header if present
+  if (rows.length > 0 && rows[0].length > 0) {
+    var first = rows[0][0]
+    if (first.charCodeAt(0) === 0xFEFF) {
+      rows[0][0] = first.substring(1)
+    }
+    // Also handle the 3-byte UTF-8 BOM representation
+    if (first.length >= 3 &&
+        first.charCodeAt(0) === 0xEF &&
+        first.charCodeAt(1) === 0xBB &&
+        first.charCodeAt(2) === 0xBF) {
+      rows[0][0] = first.substring(3)
+    }
+  }
+
+  // Post-processing Step 2: Remove trailing empty rows
+  while (rows.length > 1) {
+    var lastRow = rows[rows.length - 1]
+    var allEmpty = _.every(lastRow, function(cell) { return cell === "" })
+    if (allEmpty) {
+      rows.pop()
+    } else {
+      break
+    }
+  }
+
+  // Extract header row and data rows
+  var columns = rows.length > 0 ? rows[0] : []
+  var dataRows = rows.length > 1 ? rows.slice(1) : []
+
+  // Locate the ||DIVIDER|| column
+  var dividerIndex = -1
+  for (var d = 0; d < columns.length; d++) {
+    if (columns[d].trim() == "||DIVIDER||") {
+      dividerIndex = d
+      break
+    }
+  }
+
+  // Split into rule-dimension headers and RBD headers
+  var ruleDimensionHeaders = dividerIndex > 0 ? columns.slice(0, dividerIndex) : []
+  var rbdHeaders = dividerIndex >= 0 && dividerIndex < columns.length - 1 ? columns.slice(dividerIndex + 1) : []
+
+  result = {
+    columns: columns,
+    rows: dataRows,
+    ruleDimensionHeaders: ruleDimensionHeaders,
+    rbdHeaders: rbdHeaders,
+    dividerIndex: dividerIndex
+  }
+EOS
+end
+
+# Fetch available dimensions from the Flexera Bill Analysis API
+datasource "ds_flexera_dimensions" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "dimensions") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+    end
+  end
+end
+
+# Resolve CSV dimension column headers to Flexera dimension IDs
+datasource "ds_dimension_map" do
+  run_script $js_dimension_map, $ds_csv_parsed, $ds_flexera_dimensions
+end
+
+script "js_dimension_map", type: "javascript" do
+  parameters "ds_csv_parsed", "ds_flexera_dimensions"
+  result "result"
+  code <<-'EOS'
+  var resolvedHeaders = []
+
+  _.each(ds_csv_parsed.ruleDimensionHeaders, function(header) {
+    var trimmedHeader = header.trim()
+    var resolved = { original: trimmedHeader, resolvedId: trimmedHeader, matched: false }
+
+    // First try: exact ID match
+    var idMatch = _.find(ds_flexera_dimensions, function(dim) {
+      return dim.id === trimmedHeader
+    })
+
+    if (idMatch) {
+      resolved.resolvedId = idMatch.id
+      resolved.matched = true
+    } else {
+      // Second try: case-insensitive name match
+      var lowerHeader = trimmedHeader.toLowerCase()
+      var nameMatch = _.find(ds_flexera_dimensions, function(dim) {
+        return dim.name && dim.name.toLowerCase() === lowerHeader
+      })
+
+      if (nameMatch) {
+        resolved.resolvedId = nameMatch.id
+        resolved.matched = true
+      }
+    }
+
+    resolvedHeaders.push(resolved)
+  })
+
+  result = { resolvedHeaders: resolvedHeaders }
+EOS
+end
+
+# Validate the parsed CSV data
+datasource "ds_csv_validated" do
+  run_script $js_csv_validated, $ds_csv_parsed, $ds_dimension_map
+end
+
+script "js_csv_validated", type: "javascript" do
+  parameters "ds_csv_parsed", "ds_dimension_map"
+  result "result"
+  code <<-'EOS'
+  var findings = []
+  var hasErrors = false
+
+  // V1: Missing ||DIVIDER|| column
+  if (ds_csv_parsed.dividerIndex === -1) {
+    findings.push({
+      severity: "Error",
+      checkId: "V1",
+      row: "",
+      column: "",
+      message: "CSV is missing the required ||DIVIDER|| column. Cannot determine which columns are rule dimensions and which are RBD outputs.",
+      suggestion: "Add a ||DIVIDER|| column between rule-dimension columns and RBD-output columns."
+    })
+    hasErrors = true
+  }
+
+  // V2: No rule-dimension columns
+  if (ds_csv_parsed.dividerIndex !== -1 && ds_csv_parsed.ruleDimensionHeaders.length === 0) {
+    findings.push({
+      severity: "Error",
+      checkId: "V2",
+      row: "",
+      column: "",
+      message: "No rule-dimension columns found to the left of the ||DIVIDER|| column. Rules cannot be constructed.",
+      suggestion: "Add at least one rule-dimension column to the left of ||DIVIDER||."
+    })
+    hasErrors = true
+  }
+
+  // V3: No RBD-output columns
+  if (ds_csv_parsed.dividerIndex !== -1 && ds_csv_parsed.rbdHeaders.length === 0) {
+    findings.push({
+      severity: "Error",
+      checkId: "V3",
+      row: "",
+      column: "",
+      message: "No RBD-output columns found to the right of the ||DIVIDER|| column. No dimensions to create.",
+      suggestion: "Add at least one RBD-output column to the right of ||DIVIDER||."
+    })
+    hasErrors = true
+  }
+
+  // V4: Empty CSV (no data rows)
+  if (ds_csv_parsed.dividerIndex !== -1 && ds_csv_parsed.rows.length === 0) {
+    findings.push({
+      severity: "Error",
+      checkId: "V4",
+      row: "",
+      column: "",
+      message: "CSV has a header row but no data rows.",
+      suggestion: "Add data rows to the CSV file."
+    })
+    hasErrors = true
+  }
+
+  // V5: Unresolved dimension names
+  _.each(ds_dimension_map.resolvedHeaders, function(header) {
+    if (!header.matched) {
+      findings.push({
+        severity: "Warning",
+        checkId: "V5",
+        row: "",
+        column: header.original,
+        message: "Rule-dimension column '" + header.original + "' does not match any known Flexera dimension ID or name. The header text will be used as-is.",
+        suggestion: "Verify the dimension name or ID is correct. It may be a custom dimension not yet present in the system."
+      })
+    }
+  })
+
+  // V6: AWS account ID format heuristic
+  // Find columns that resolve to vendor_account
+  var vendorAccountIndices = []
+  _.each(ds_dimension_map.resolvedHeaders, function(header, idx) {
+    if (header.resolvedId === "vendor_account") {
+      vendorAccountIndices.push(idx)
+    }
+  })
+
+  _.each(vendorAccountIndices, function(colIdx) {
+    _.each(ds_csv_parsed.rows, function(row, rowIdx) {
+      if (colIdx < row.length) {
+        var cellValue = row[colIdx].trim()
+        if (cellValue.length > 0 && /^\d+$/.test(cellValue) && cellValue.length !== 12) {
+          var suggestion = ""
+          if (cellValue.length < 12) {
+            var padded = ("000000000000" + cellValue).slice(-12)
+            suggestion = "Zero-pad to '" + padded + "'. AWS account IDs are always 12 digits and may lose leading zeros when opened in Excel."
+          } else {
+            suggestion = "Value has " + cellValue.length + " digits. AWS account IDs are always 12 digits. Verify this value is correct."
+          }
+
+          findings.push({
+            severity: "Warning",
+            checkId: "V6",
+            row: String(rowIdx + 2),
+            column: ds_dimension_map.resolvedHeaders[colIdx].original,
+            message: "Value '" + cellValue + "' is " + cellValue.length + " digits. AWS account IDs are always 12 digits.",
+            suggestion: suggestion
+          })
+        }
+      }
+    })
+  })
+
+  // V7: Duplicate rows (identical rule-dimension values)
+  if (ds_csv_parsed.ruleDimensionHeaders.length > 0 && ds_csv_parsed.rows.length > 1) {
+    var seen = {}
+    _.each(ds_csv_parsed.rows, function(row, rowIdx) {
+      var key = _.map(ds_csv_parsed.ruleDimensionHeaders, function(header, colIdx) {
+        return colIdx < row.length ? row[colIdx].trim() : ""
+      }).join("|")
+
+      if (seen[key] !== undefined) {
+        var dimDesc = _.map(ds_csv_parsed.ruleDimensionHeaders, function(header, colIdx) {
+          return header + "=" + (colIdx < row.length ? row[colIdx].trim() : "")
+        }).join(", ")
+
+        findings.push({
+          severity: "Warning",
+          checkId: "V7",
+          row: String(rowIdx + 2),
+          column: "",
+          message: "Duplicate rule-dimension values: " + dimDesc + ". Row " + (seen[key] + 2) + " will be shadowed.",
+          suggestion: "Remove duplicate row or differentiate rule-dimension values."
+        })
+      } else {
+        seen[key] = rowIdx
+      }
+    })
+  }
+
+  // V8: RBD column with all empty values
+  if (ds_csv_parsed.dividerIndex !== -1) {
+    _.each(ds_csv_parsed.rbdHeaders, function(rbdHeader, rbdIdx) {
+      var colIdx = ds_csv_parsed.dividerIndex + 1 + rbdIdx
+      var hasValue = _.any(ds_csv_parsed.rows, function(row) {
+        return colIdx < row.length && row[colIdx].trim() !== ""
+      })
+
+      if (!hasValue && ds_csv_parsed.rows.length > 0) {
+        findings.push({
+          severity: "Warning",
+          checkId: "V8",
+          row: "",
+          column: rbdHeader,
+          message: "RBD column '" + rbdHeader + "' has no non-empty values. No rules will be created for this dimension.",
+          suggestion: "Add values to this column or remove it from the CSV."
+        })
+      }
+    })
+  }
+
+  // V9a: Row with all empty RBD values but non-empty rule-dimension values
+  if (ds_csv_parsed.dividerIndex !== -1 && ds_csv_parsed.rbdHeaders.length > 0) {
+    _.each(ds_csv_parsed.rows, function(row, rowIdx) {
+      var hasRuleDimValue = _.any(ds_csv_parsed.ruleDimensionHeaders, function(header, colIdx) {
+        return colIdx < row.length && row[colIdx].trim() !== ""
+      })
+
+      var hasRbdValue = _.any(ds_csv_parsed.rbdHeaders, function(header, rbdIdx) {
+        var colIdx = ds_csv_parsed.dividerIndex + 1 + rbdIdx
+        return colIdx < row.length && row[colIdx].trim() !== ""
+      })
+
+      if (hasRuleDimValue && !hasRbdValue) {
+        findings.push({
+          severity: "Info",
+          checkId: "V9",
+          row: String(rowIdx + 2),
+          column: "",
+          message: "Row has rule-dimension values but every RBD-output column is empty. The row contributes nothing.",
+          suggestion: "Add RBD values or remove this row."
+        })
+      }
+
+      // V9b: Row with empty rule-dimension values but non-empty RBD values
+      if (!hasRuleDimValue && hasRbdValue) {
+        findings.push({
+          severity: "Info",
+          checkId: "V9",
+          row: String(rowIdx + 2),
+          column: "",
+          message: "Row has empty rule-dimension values but non-empty RBD values. Rule will have no conditions.",
+          suggestion: "Add rule-dimension values or remove row."
+        })
+      }
+    })
+  }
+
+  // V10: RBD ID format check
+  if (ds_csv_parsed.dividerIndex !== -1) {
+    _.each(ds_csv_parsed.rbdHeaders, function(rbdHeader) {
+      var trimmedHeader = rbdHeader.trim()
+      if (!/^rbd_[a-z0-9_]+$/.test(trimmedHeader)) {
+        var issues = []
+        if (!/^rbd_/.test(trimmedHeader)) {
+          issues.push("does not start with 'rbd_'")
+        }
+        if (/[A-Z]/.test(trimmedHeader)) {
+          issues.push("contains uppercase characters")
+        }
+        if (/\s/.test(trimmedHeader)) {
+          issues.push("contains spaces")
+        }
+        if (/[^a-zA-Z0-9_]/.test(trimmedHeader.replace(/^rbd_/, ""))) {
+          issues.push("contains special characters")
+        }
+
+        var suggestion = "Rename to '" + trimmedHeader.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "") + "'"
+        if (!/^rbd_/.test(trimmedHeader.toLowerCase())) {
+          suggestion = "Rename with 'rbd_' prefix and use only lowercase letters, numbers, and underscores."
+        }
+
+        findings.push({
+          severity: "Warning",
+          checkId: "V10",
+          row: "",
+          column: trimmedHeader,
+          message: "RBD ID '" + trimmedHeader + "' " + issues.join(", ") + ". The Flexera API may reject it.",
+          suggestion: suggestion
+        })
+      }
+    })
+  }
+
+  result = {
+    findings: findings,
+    hasErrors: hasErrors
+  }
+EOS
+end
+
+# Build RBD rule objects from CSV data
+datasource "ds_rbds" do
+  run_script $js_rbds, $ds_csv_parsed, $ds_csv_validated, $ds_dimension_map, $param_rbd_filter, $param_rbd_name_map, $param_normalize_case, $param_effective_date
+end
+
+script "js_rbds", type: "javascript" do
+  parameters "ds_csv_parsed", "ds_csv_validated", "ds_dimension_map", "param_rbd_filter", "param_rbd_name_map", "param_normalize_case", "param_effective_date"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  // If there are validation errors, output empty list to block RBD creation
+  if (!ds_csv_validated.hasErrors) {
+    // Parse the name map parameter into a lookup table
+    var nameMap = {}
+    _.each(param_rbd_name_map, function(entry) {
+      var parts = entry.split("=")
+      if (parts.length >= 2) {
+        nameMap[parts[0].trim()] = parts.slice(1).join("=").trim()
+      }
+    })
+
+    // Build a lookup from resolved headers
+    var resolvedHeaders = ds_dimension_map.resolvedHeaders
+
+    // Determine which RBD columns to process
+    var rbdHeaders = ds_csv_parsed.rbdHeaders
+    if (param_rbd_filter.length > 0) {
+      rbdHeaders = _.filter(rbdHeaders, function(header) {
+        return _.contains(param_rbd_filter, header.trim())
+      })
+    }
+
+    _.each(rbdHeaders, function(rbdHeader, rbdIdx) {
+      var rbdId = rbdHeader.trim()
+      var rbdColIdx = ds_csv_parsed.dividerIndex + 1 + _.indexOf(ds_csv_parsed.rbdHeaders, rbdHeader)
+
+      // Derive display name
+      var rbdName = ""
+      if (nameMap[rbdId]) {
+        rbdName = nameMap[rbdId]
+      } else {
+        // Auto-derive: strip rbd_ prefix, replace underscores with spaces, title-case
+        rbdName = rbdId.replace(/^rbd_/, "")
+        rbdName = rbdName.replace(/_/g, " ")
+        rbdName = rbdName.split(" ").map(function(word) {
+          return word.charAt(0).toUpperCase() + word.slice(1)
+        }).join(" ")
+      }
+
+      var rules = []
+
+      _.each(ds_csv_parsed.rows, function(row) {
+        // Check that the RBD cell has a value
+        if (rbdColIdx >= row.length || row[rbdColIdx].trim() === "") { return }
+
+        var rbdValue = row[rbdColIdx].trim()
+        if (param_normalize_case === "Yes") { rbdValue = rbdValue.toLowerCase() }
+
+        // Collect non-empty rule-dimension conditions
+        var conditions = []
+        _.each(resolvedHeaders, function(header, dimIdx) {
+          if (dimIdx < row.length && row[dimIdx].trim() !== "") {
+            conditions.push({
+              type: "dimension_equals",
+              dimension: header.resolvedId,
+              value: row[dimIdx].trim(),
+              caseInsensitive: true
+            })
+          }
+        })
+
+        // Skip rows with no conditions (no rule-dimension values)
+        if (conditions.length === 0) { return }
+
+        var condition = null
+        if (conditions.length === 1) {
+          condition = conditions[0]
+        } else {
+          condition = {
+            type: "and",
+            expressions: conditions
+          }
+        }
+
+        rules.push({
+          condition: condition,
+          value: { text: rbdValue }
+        })
+      })
+
+      result.push({
+        id: rbdId,
+        name: rbdName,
+        effective_at: param_effective_date,
+        rules: rules,
+        ruleCount: rules.length
+      })
+    })
+  }
+EOS
+end
+
+# List all existing RBDs from the Flexera API
+# The dummy header referencing $ds_rbds ensures Phase 7 completes first
+datasource "ds_existing_rbds" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions"])
+    header "User-Agent", "RS Policies"
+    header "dummy", val($ds_csv_validated, "hasErrors")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+# Filter existing RBDs to only those matching our CSV's RBD IDs
+datasource "ds_existing_rbds_that_match" do
+  run_script $js_existing_rbds_that_match, $ds_existing_rbds, $ds_rbds
+end
+
+script "js_existing_rbds_that_match", type: "javascript" do
+  parameters "ds_existing_rbds", "ds_rbds"
+  result "result"
+  code <<-'EOS'
+  var newIds = _.pluck(ds_rbds, "id")
+
+  result = _.filter(ds_existing_rbds, function(rbd) {
+    return _.contains(newIds, rbd.id)
+  })
+EOS
+end
+
+# Fetch current rules for each matching existing RBD
+datasource "ds_existing_rbds_with_rules" do
+  iterate $ds_existing_rbds_that_match
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", $param_effective_date])
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 401, 403, 404, 429]
+  end
+  result do
+    encoding "json"
+    field "rules", jmes_path(response, "rules")
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+  end
+end
+
+# Merge CSV-generated rules with existing rules using sentinel delimiters
+datasource "ds_merged_rbds" do
+  run_script $js_merged_rbds, $ds_rbds, $ds_existing_rbds, $ds_existing_rbds_with_rules, $ds_applied_policy
+end
+
+script "js_merged_rbds", type: "javascript" do
+  parameters "ds_rbds", "ds_existing_rbds", "ds_existing_rbds_with_rules", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  var existingRbdIds = _.pluck(ds_existing_rbds, "id")
+
+  // Build sentinel rules using the applied policy name
+  var startBlockValue = "Start: " + ds_applied_policy["name"]
+  var endBlockValue = "End: " + ds_applied_policy["name"]
+
+  var blockStartRule = {
+    condition: { dimension: "vendor", type: "dimension_equals", value: startBlockValue },
+    value: { text: startBlockValue }
+  }
+
+  var blockEndRule = {
+    condition: { dimension: "vendor", type: "dimension_equals", value: endBlockValue },
+    value: { text: endBlockValue }
+  }
+
+  // Build lookup tables for existing rules by RBD ID
+  var existingRulesTable = {}
+  _.each(ds_existing_rbds_with_rules, function(rbd) {
+    if (rbd.rules) {
+      existingRulesTable[rbd.id] = rbd.rules
+    }
+  })
+
+  result = []
+
+  _.each(ds_rbds, function(rbd) {
+    var mergedRules = []
+    var foundBlock = false
+    var injectedRules = false
+
+    if (existingRulesTable[rbd.id]) {
+      _.each(existingRulesTable[rbd.id], function(rule) {
+        if (!foundBlock) {
+          if (rule.condition && rule.condition.value === startBlockValue) {
+            foundBlock = true
+            injectedRules = true
+
+            mergedRules.push(blockStartRule)
+            mergedRules = mergedRules.concat(rbd.rules)
+            mergedRules.push(blockEndRule)
+          } else {
+            mergedRules.push(rule)
+          }
+        } else {
+          // Inside old block — skip until end sentinel
+          if (rule.condition && rule.condition.value === endBlockValue) {
+            foundBlock = false
+          }
+        }
+      })
+    }
+
+    // If no existing block found, append at the end
+    if (!injectedRules) {
+      mergedRules.push(blockStartRule)
+      mergedRules = mergedRules.concat(rbd.rules)
+      mergedRules.push(blockEndRule)
+    }
+
+    // Determine whether to create or update the RBD entity
+    var verb = "POST"
+    if (_.contains(existingRbdIds, rbd.id)) {
+      verb = "PATCH"
+    }
+
+    result.push({
+      id: rbd.id,
+      name: rbd.name,
+      verb: verb,
+      effective_at: rbd.effective_at,
+      rules: mergedRules,
+      ruleCount: rbd.ruleCount
+    })
+  })
+EOS
+end
+
+# Create or update RBD entities (POST for new, PATCH for existing)
+datasource "ds_create_rbds" do
+  iterate $ds_merged_rbds
+  request do
+    run_script $js_create_rbds, val(iter_item, "id"), val(iter_item, "verb"), val(iter_item, "name"), val($ds_flexera_api_hosts, "flexera"), rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_create_rbds", type: "javascript" do
+  parameters "rbd_id", "verb", "name", "api_host", "rs_org_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    verb: verb,
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id].join(''),
+    headers: { "User-Agent": "RS Policies" },
+    body_fields: { name: name },
+    ignore_status: [400, 409]
+  }
+EOS
+end
+
+# Apply merged rules via PUT for each RBD
+# $ds_create_rbds is passed as an unused parameter to enforce execution ordering
+datasource "ds_apply_rbds" do
+  iterate $ds_merged_rbds
+  request do
+    run_script $js_apply_rbds, val(iter_item, "id"), val(iter_item, "effective_at"), val(iter_item, "rules"), val($ds_flexera_api_hosts, "flexera"), $ds_create_rbds, rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_apply_rbds", type: "javascript" do
+  parameters "rbd_id", "effective_at", "rules", "api_host", "ds_create_rbds", "rs_org_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    verb: "PUT",
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id, "/rules/", effective_at].join(''),
+    headers: { "User-Agent": "RS Policies" },
+    body_fields: { rules: rules },
+    ignore_status: [400, 404]
+  }
+EOS
+end
+
+# Build incident summary for RBDs
+datasource "ds_incident_rbds" do
+  run_script $js_incident_rbds, $ds_merged_rbds, $ds_csv_validated, $ds_csv_parsed
+end
+
+script "js_incident_rbds", type: "javascript" do
+  parameters "ds_merged_rbds", "ds_csv_validated", "ds_csv_parsed"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (ds_csv_validated.hasErrors) {
+    // Report all expected RBDs as skipped
+    _.each(ds_csv_parsed.rbdHeaders, function(rbdHeader) {
+      var rbdId = rbdHeader.trim()
+      var rbdName = rbdId.replace(/^rbd_/, "").replace(/_/g, " ")
+      rbdName = rbdName.split(" ").map(function(word) {
+        return word.charAt(0).toUpperCase() + word.slice(1)
+      }).join(" ")
+
+      result.push({
+        id: rbdId,
+        name: rbdName,
+        ruleCount: 0,
+        status: "skipped"
+      })
+    })
+  } else {
+    _.each(ds_merged_rbds, function(rbd) {
+      result.push({
+        id: rbd.id,
+        name: rbd.name,
+        ruleCount: rbd.ruleCount,
+        status: rbd.verb === "POST" ? "created" : "updated"
+      })
+    })
+  }
+EOS
+end
+
+# Build findings list for policy block consumption
+datasource "ds_incident_findings" do
+  run_script $js_incident_findings, $ds_csv_validated
+end
+
+script "js_incident_findings", type: "javascript" do
+  parameters "ds_csv_validated"
+  result "result"
+  code <<-'EOS'
+  result = ds_csv_validated.findings
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_rbd_from_csv" do
+  validate $ds_apply_rbds do
+    summary_template "Apply RBDs"
+    detail_template "{{ len data }} Applied"
+    check eq(0, 0) # Never raise an incident, just using this to ensure ds_apply_rbds runs
+  end
+  validate $ds_incident_findings do
+    summary_template "RBD from CSV: {{ len data }} Validation Finding(s)"
+    detail_template <<-'EOS'
+{{ len data }} findings were identified during CSV validation. Please review and address these issues before re-running the policy. If the findings are warnings or informational, they may not need to be addressed but should be reviewed.
+{{- range data }}
+## Check {{ .checkId }} - {{ .severity }}
+{{ .message }}
+Row: {{ .row }}, Column: {{ .column }}
+Suggestion: {{ .suggestion }}
+
+{{ end -}}
+EOS
+    check eq(size(data), 0)
+    export do
+      field "severity" do
+        label "Severity"
+      end
+      field "checkId" do
+        label "Check"
+      end
+      field "row" do
+        label "Row"
+      end
+      field "column" do
+        label "Column"
+      end
+      field "message" do
+        label "Message"
+      end
+      field "suggestion" do
+        label "Suggestion"
+      end
+    end
+  end
+
+  validate $ds_incident_rbds do
+    summary_template "Rule-Based Dimensions Updated/Created: {{ len data }}"
+    check eq(0, 1)
+    export do
+      field "id" do
+        label "RBD ID"
+      end
+      field "name" do
+        label "RBD Name"
+      end
+      field "ruleCount" do
+        label "Rules"
+      end
+      field "status" do
+        label "Status"
+      end
+    end
+  end
+end
+
+
