@@ -46,7 +46,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * All
 
-  * [AWS Resources Under Extended Support](./cost/aws/extended_support)
+  * [AWS Resources Under or Approaching Extended Support](./cost/aws/extended_support)
 
 * Compute
 
