@@ -8,10 +8,11 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "5.2.4",
+  version: "5.3.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Hybrid Use Benefit",
+  recommendation_type: "Usage Reduction",
   hide_skip_approvals: "true"
 )
 
@@ -34,6 +35,15 @@ parameter "param_azure_endpoint" do
   description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
 end
 
 parameter "param_subscriptions_allow_or_deny" do
@@ -222,32 +232,85 @@ datasource "ds_currency_code" do
   end
 end
 
-datasource "ds_currency" do
-  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+datasource "ds_currency_target" do
+  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
 end
 
-script "js_currency", type:"javascript" do
+script "js_currency_target", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
   code <<-'EOS'
-  symbol = "$"
-  separator = ","
+  // Default to USD if currency is not found
+  result = ds_currency_reference['USD']
 
-  if (ds_currency_code['value'] != undefined) {
-    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
-      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
-
-      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
-        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-      } else {
-        separator = ""
-      }
-    }
+  if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
+    result = ds_currency_reference[ds_currency_code['value']]
   }
+EOS
+end
 
-  result = {
-    symbol: symbol,
-    separator: separator
+# Branching logic:
+# This datasource returns an empty array if the target currency is USD.
+# This prevents ds_currency_conversion from running if it's not needed.
+datasource "ds_conditional_currency_conversion" do
+  run_script $js_conditional_currency_conversion, $ds_currency_target
+end
+
+script "js_conditional_currency_conversion", type: "javascript" do
+  parameters "ds_currency_target"
+  result "result"
+  code <<-'EOS'
+  result = []
+  // Make the request only if the target currency is not USD
+  if (ds_currency_target['code'] != 'USD') {
+    result = [1]
+  }
+EOS
+end
+
+datasource "ds_currency_conversion" do
+  # Only make a request if the target currency is not USD
+  iterate $ds_conditional_currency_conversion
+  request do
+    host "api.xe-auth.flexeraeng.com"
+    path "/prod/{proxy+}"
+    query "from", "USD"
+    query "to", val($ds_currency_target, 'code')
+    query "amount", "1"
+    # Ignore currency conversion if API has issues
+    ignore_status [400, 404, 502]
+  end
+  result do
+    encoding "json"
+    field "from", jmes_path(response, "from")
+    field "to", jmes_path(response, "to")
+    field "amount", jmes_path(response, "amount")
+    field "year", jmes_path(response, "year")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_target", "ds_currency_conversion"
+  result "result"
+  code <<-'EOS'
+  result = ds_currency_target
+  result['exchange_rate'] = 1
+
+  if (ds_currency_conversion.length > 0) {
+    currency_code = ds_currency_target['code']
+    current_month = parseInt(new Date().toISOString().split('-')[1])
+
+    conversion_block = _.find(ds_currency_conversion[0]['to'][currency_code], function(item) {
+      return item['month'] == current_month
+    })
+
+    if (conversion_block != undefined) {
+      result['exchange_rate'] = conversion_block['monthlyAverage']
+    }
   }
 EOS
 end
@@ -594,12 +657,20 @@ script "js_instance_costs_grouped", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_linux_license_pricing" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/azure_linux_license_pricing.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 datasource "ds_ahub_recommendations" do
-  run_script $js_ahub_recommendations, $ds_instance_costs_grouped, $ds_azure_instances_region_filtered, $ds_currency, $ds_applied_policy, $param_incident_csv
+  run_script $js_ahub_recommendations, $ds_instance_costs_grouped, $ds_azure_instances_region_filtered, $ds_azure_linux_license_pricing, $ds_currency, $ds_applied_policy, $param_min_savings, $param_incident_csv
 end
 
 script "js_ahub_recommendations", type: "javascript" do
-  parameters "ds_instance_costs_grouped", "ds_azure_instances_region_filtered", "ds_currency", "ds_applied_policy", "param_incident_csv"
+  parameters "ds_instance_costs_grouped", "ds_azure_instances_region_filtered", "ds_azure_linux_license_pricing", "ds_currency", "ds_applied_policy", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -629,7 +700,54 @@ script "js_ahub_recommendations", type: "javascript" do
     return formatted_number
   }
 
+  // Parse vCPU count from Azure VM size name
+  // e.g. "Standard_D2s_v3" -> 2, "Standard_B4ms" -> 4, "Standard_M128s" -> 128
+  function getVCPUCount(vmSize) {
+    var match = vmSize.match(/^(?:Standard|Basic)_[A-Za-z]+(\d+)/)
+    if (match) { return parseInt(match[1]) }
+    return null
+  }
+
+  // Get hourly license price for SUSE based on vCPU count
+  // Uses "SUSE Linux Enterprise Server Standard" pricing tiers: "1-2", "3-4", "5+"
+  function getSUSEHourlyPrice(vcpu_count) {
+    var suse_pricing = ds_azure_linux_license_pricing["SUSE"]
+    if (suse_pricing == undefined) { return null }
+
+    var standard = suse_pricing["SUSE Linux Enterprise Server Standard"]
+    if (standard == undefined) { return null }
+
+    var tier = "5+"
+    if (vcpu_count <= 2) { tier = "1-2" }
+    else if (vcpu_count <= 4) { tier = "3-4" }
+
+    return standard[tier] != undefined ? standard[tier] : null
+  }
+
+  // Get hourly license price for RHEL based on exact vCPU count
+  // Uses "Red Hat Enterprise Linux" pricing; falls back to nearest lower known count
+  function getRHELHourlyPrice(vcpu_count) {
+    var rhel_pricing = ds_azure_linux_license_pricing["RHEL"]
+    if (rhel_pricing == undefined) { return null }
+
+    var standard = rhel_pricing["Red Hat Enterprise Linux"]
+    if (standard == undefined) { return null }
+
+    if (standard[vcpu_count.toString()] != undefined) { return standard[vcpu_count.toString()] }
+
+    // Find nearest lower vCPU count in the pricing table
+    var vcpu_keys = _.map(_.keys(standard), function(k) { return parseInt(k) })
+    vcpu_keys = _.sortBy(vcpu_keys, function(n) { return n })
+
+    var lower_key = null
+    _.each(vcpu_keys, function(k) { if (k <= vcpu_count) { lower_key = k } })
+
+    if (lower_key != null) { return standard[lower_key.toString()] }
+    return null
+  }
+
   result = []
+  total_savings = 0.0
 
   _.each(ds_azure_instances_region_filtered, function(vm) {
     tags = []
@@ -642,10 +760,18 @@ script "js_ahub_recommendations", type: "javascript" do
 
     ahub_qualified = false
     license = null
+    osFamily = null
 
     if (typeof(vm['imagePublisher']) == 'string') {
-      if (vm['imagePublisher'].toLowerCase() == "suse") { license = "SLES_BYOS" }
-      if (vm['imagePublisher'].toLowerCase() == "redhat") { license = "RHEL_BYOS" }
+      if (vm['imagePublisher'].toLowerCase() == "suse") {
+        license = "SLES_BYOS"
+        osFamily = "SUSE"
+      }
+
+      if (vm['imagePublisher'].toLowerCase() == "redhat") {
+        license = "RHEL_BYOS"
+        osFamily = "RHEL"
+      }
     }
 
     if (vm['licenseType'] == "None" || _.isUndefined(vm['licenseType'])) {
@@ -653,44 +779,63 @@ script "js_ahub_recommendations", type: "javascript" do
     }
 
     if (ahub_qualified) {
-      recommendationDetails = [
-        "Apply Hybrid Use Benefit to Azure virtual machine ",
-        vm["resourceName"], " ",
-        "in Azure Subscription ", vm["subscriptionName"],
-        " (", vm["subscriptionId"], ")"
-      ].join('')
+      // Calculate estimated savings from license pricing data
+      savings = 0
+      license_price = null
+      vcpu_count = getVCPUCount(vm['vmSize'])
 
-      hourly_cost = null
-      savingsCurrency = null
+      if (vcpu_count != null) {
+        if (osFamily == "SUSE") { license_price = getSUSEHourlyPrice(vcpu_count) }
+        if (osFamily == "RHEL") { license_price = getRHELHourlyPrice(vcpu_count) }
 
-      if (ds_instance_costs_grouped[vm["id"].toLowerCase()] != undefined) {
-        hourly_cost = Math.round(ds_instance_costs_grouped[vm["id"].toLowerCase()]['hourly_cost'] * 1000) / 1000
-        savingsCurrency = ds_currency["symbol"]
+        if (license_price != null) {
+          savings = license_price * 24 * 365.25 / 12 * ds_currency['exchange_rate']
+        }
       }
 
-      result.push({
-        id: vm["id"],
-        accountID: vm["subscriptionId"],
-        accountName: vm["subscriptionName"],
-        resourceGroup: vm["resourceGroup"],
-        resourceName: vm["name"],
-        resourceKind: vm["type"],
-        region: vm["region"],
-        osType: vm["osType"],
-        tags: tags.join(', '),
-        resourceType: vm["vmSize"],
-        imagePublisher: vm["imagePublisher"],
-        imageOffer: vm["imageOffer"],
-        imageId: vm["imageSku"],
-        imageVersion: vm["imageVersion"],
-        savingsCurrency: savingsCurrency,
-        hourly_cost: hourly_cost,
-        policy_name: ds_applied_policy["name"],
-        recommendationDetails: recommendationDetails,
-        license: license,
-        service: "Microsoft.Compute",
-        message: ""
-      })
+      // Include VM if savings meets threshold, or if savings could not be calculated
+      if (license_price == null || savings >= param_min_savings) {
+        recommendationDetails = [
+          "Apply Hybrid Use Benefit to Azure virtual machine ",
+          vm["name"], " ",
+          "in Azure Subscription ", vm["subscriptionName"],
+          " (", vm["subscriptionId"], ")"
+        ].join('')
+
+        hourly_cost = null
+
+        if (ds_instance_costs_grouped[vm["id"].toLowerCase()] != undefined) {
+          hourly_cost = Math.round(ds_instance_costs_grouped[vm["id"].toLowerCase()]['hourly_cost'] * 1000) / 1000
+        }
+
+        total_savings += savings
+
+        result.push({
+          id: vm["id"],
+          accountID: vm["subscriptionId"],
+          accountName: vm["subscriptionName"],
+          resourceGroup: vm["resourceGroup"],
+          resourceName: vm["name"],
+          resourceKind: vm["type"],
+          region: vm["region"],
+          osType: vm["osType"],
+          tags: tags.join(', '),
+          resourceType: vm["vmSize"],
+          imagePublisher: vm["imagePublisher"],
+          imageOffer: vm["imageOffer"],
+          imageId: vm["imageSku"],
+          imageVersion: vm["imageVersion"],
+          savingsCurrency: ds_currency["symbol"],
+          savings: Math.round(savings * 1000) / 1000,
+          hourly_cost: hourly_cost,
+          policy_name: ds_applied_policy["name"],
+          recommendationDetails: recommendationDetails,
+          license: license,
+          service: "Microsoft.Compute",
+          total_savings: "",
+          message: ""
+        })
+      }
     }
   })
 
@@ -717,9 +862,7 @@ script "js_ahub_recommendations", type: "javascript" do
     do_verb, " not have it applied.\n\n"
   ].join('')
 
-  result = _.sortBy(result, 'resourceName')
-  result = _.sortBy(result, 'resourceGroup')
-  result = _.sortBy(result, 'accountID')
+  result = _.sortBy(result, 'savings').reverse()
 
   // Dummy item to ensure that the check statement in the policy executes at least once
   result.push({
@@ -738,6 +881,7 @@ script "js_ahub_recommendations", type: "javascript" do
     imageId: "",
     imageVersion: "",
     savingsCurrency: "",
+    savings: "",
     hourly_cost: "",
     policy_name: "",
     license: "",
@@ -746,6 +890,7 @@ script "js_ahub_recommendations", type: "javascript" do
     message: ""
   })
 
+  result[0]['total_savings'] = ds_currency['symbol'] + " " + formatNumber(total_savings, ds_currency['t_separator'])
   result[0]['message'] = findings + csv_message
 EOS
 end
@@ -757,11 +902,15 @@ end
 policy "pol_azure_ahub_recommendations" do
   validate_each $ds_ahub_recommendations do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Linux Virtual Machines Without Hybrid Use Benefit Found"
-    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
     check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     escalate $esc_email
     escalate $esc_license_instances
-    hash_exclude "tags"
+    hash_exclude "tags", "savings", "savingsCurrency"
     export do
       resource_level true
       field "accountID" do
@@ -812,8 +961,11 @@ policy "pol_azure_ahub_recommendations" do
       field "hourly_cost" do
         label "Resource Hourly Cost"
       end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
       field "savingsCurrency" do
-        label "Currency"
+        label "Savings Currency"
       end
       field "service" do
         label "Service"
