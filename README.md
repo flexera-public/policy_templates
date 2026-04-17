@@ -507,6 +507,10 @@ These templates can generate savings estimates for your environment. The inciden
   * [FinOps Dashboards](./operational/flexera/cco/finops_dashboards)
   * [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
   * [MSP Invoiceable Spend Report](./operational/flexera/msp/msp_invoiceable_spend_report)
+  * [Rule-Based Dimensions from CSV - AWS S3](./operational/flexera/cco/rbd_from_csv_aws_s3)
+  * [Rule-Based Dimensions from CSV - Azure Storage](./operational/flexera/cco/rbd_from_csv_azure_storage)
+  * [Rule-Based Dimensions from CSV - Google Cloud Storage](./operational/flexera/cco/rbd_from_csv_google_storage)
+  * [Rule-Based Dimensions from CSV - Microsoft Graph](./operational/flexera/cco/rbd_from_csv_microsoft_graph)
 
 * FlexNet Manager
 
