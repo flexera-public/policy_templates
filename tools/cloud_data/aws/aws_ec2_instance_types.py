@@ -276,6 +276,13 @@ def process_instance_types(instance_list, manual_data, nfu_table):
         if gpu_info:
             entry["gpu"] = gpu_info
         
+        # Add RDS supersession data when an equivalent db.* instance type exists.
+        # The superseded_rds value is the superseded field from the db.{instance_type}
+        # entry in the manual data (null when the RDS equivalent is current generation).
+        db_key = f"db.{instance_type}"
+        if db_key in manual_data:
+            entry["superseded_rds"] = manual_data[db_key].get("superseded")
+        
         data.append(entry)
     
     return data
