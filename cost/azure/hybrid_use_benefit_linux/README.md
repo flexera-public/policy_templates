@@ -11,12 +11,24 @@ This Policy Template is used to automatically apply the Azure Hybrid Use Benefit
 - This policy template does not track licenses or availability. It is your responsibility to ensure you are not under licensed.
 - The hourly cost of a virtual machine is calculated by dividing the total cost of the virtual machine for the last 30 days by the hours of usage for that same time period.
 
+### Policy Savings Details
+
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the virtual machine has Azure Hybrid Use Benefit applied to it.
+
+- The `Estimated Monthly Savings` is calculated as `license_hourly_price × 24 × 365.25 / 12`, where `license_hourly_price` is the hourly Linux license cost sourced from the Azure Retail Prices API and stored in [azure_linux_license_pricing.json](https://github.com/flexera-public/policy_templates/blob/master/data/azure/azure_linux_license_pricing.json).
+- For **SUSE** virtual machines, the `SUSE Linux Enterprise Server Standard` product is used. The license tier is determined by the number of vCPUs: `1-2 vCPU` ($0.065/hr), `3-4 vCPU` ($0.125/hr), or `5+ vCPU` ($0.15/hr).
+- For **RHEL** virtual machines, the `Red Hat Enterprise Linux` product is used. The license price is looked up by the exact vCPU count; if the exact count is not in the pricing table, the nearest lower count is used.
+- The vCPU count is derived from the virtual machine's size name (e.g., `Standard_D2s_v3` = 2 vCPUs). If the count cannot be determined, the `Estimated Monthly Savings` will be 0 and the virtual machine will still appear in the incident.
+- Currency conversion is applied when the Flexera organization's configured currency differs from USD.
+- Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
+
 ## Input Parameters
 
 This policy template has the following input parameters:
 
 - *Email Addresses* - A list of email addresses to notify
 - *Azure Endpoint* - Azure Endpoint to access resources
+- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation. Resources where savings cannot be calculated will always be included.
 - *Allow/Deny Subscriptions* - Allow or Deny entered Subscriptions to filter results.
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions.
 - *Allow/Deny Regions* - Allow or Deny entered regions to filter results.
@@ -66,4 +78,4 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automat
 
 ## Cost
 
-This policy template does not incur any cloud costs.
+This Policy Template does not incur any cloud costs.
