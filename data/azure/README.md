@@ -10,27 +10,6 @@ The following files are produced by scripts in [`tools/cloud_data/azure/`](https
 
 **Script:** [`tools/cloud_data/azure/azure_compute_instance_types.py`](https://github.com/flexera-public/policy_templates/blob/master/tools/cloud_data/azure/azure_compute_instance_types.py)
 
-<<<<<<< HEAD
-- superseded
-- specs.nfu
-
-## azure_sql_license_pricing.json
-
-**Script:** [`tools/cloud_data/azure/azure_sql_license_pricing.py`](https://github.com/flexera-public/policy_templates/blob/master/tools/cloud_data/azure/azure_sql_license_pricing.py)
-
-**Workflow:** [Generate Azure SQL License Pricing JSON](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-azure-sql-license-pricing-json.yaml)
-
-**Description:** Hourly SQL Server license prices per vCPU (USD), sourced from the `Virtual Machines Licenses` service in the Azure Retail Prices API. Covers the four standard SQL Server editions: `Enterprise`, `Standard`, `Web`, and `Developer`. These are global prices (not region-specific). The pricing is perfectly linear — the total cost for any vCPU count equals `price_per_vcpu × vcpu_count` — so a single per-vCPU rate is stored for each edition. Used by policy templates that calculate estimated savings from enabling Azure Hybrid Use Benefit on SQL Server resources.
-
-**Structure:** Flat object mapping SQL Server edition name to USD hourly price per vCPU.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `Developer` | number | Per-vCPU hourly license price for Developer edition (always 0 — free) |
-| `Enterprise` | number | Per-vCPU hourly license price for Enterprise edition |
-| `Standard` | number | Per-vCPU hourly license price for Standard edition |
-| `Web` | number | Per-vCPU hourly license price for Web edition |
-=======
 **Workflow:** [Generate Azure Compute Instance Types JSON](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-azure-compute-instance-types-json.yaml)
 
 **Description:** A JSON array of Azure virtual machine SKU objects. Data is fetched from the Azure Management API and merged with Instance Size Flexibility (ISF) ratio data and select fields from the legacy `instance_types.json` file. Use this file in policy templates that need detailed specifications for Azure VM instance types.
@@ -51,7 +30,6 @@ Some fields are currently sourced from the legacy `instance_types.json` file unt
 | `superseded` | object | Recommended replacement SKUs, e.g. `{ "regular": "Standard_D2s_v5" }` |
 | `localDisk` | boolean | Whether the VM size includes a local (temporary) disk |
 | `specs` | object | Raw Azure API capability values: `vCPUs`, `MemoryGB`, `MaxDataDiskCount`, `PremiumIO`, `AcceleratedNetworkingEnabled`, `nfu`, and many others |
->>>>>>> master
 
 **Example:**
 
@@ -149,7 +127,7 @@ For **SUSE**, each product maps a vCPU tier range string to a USD hourly price. 
 
 **Description:** Per-region, per-SKU pricing for Azure Managed Disks, sourced from the Azure Retail Prices API. Prices are in USD per month. Used by policy templates that estimate costs or savings related to Azure Managed Disk rightsizing or deletion.
 
-**Structure:** Object keyed by region display name (or `"Global"` for globally priced SKUs) → disk SKU identifier → pricing object. Region keys use the Azure Retail Prices API display name format (e.g. `"US East"`).
+**Structure:** Object keyed by ARM region name (or `"Global"` for globally priced SKUs) → disk SKU identifier → pricing object.
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -163,7 +141,7 @@ For **SUSE**, each product maps a vCPU tier range string to a USD hourly price. 
 
 ```json
 {
-  "US East": {
+  "eastus": {
     "E10_LRS": {
       "currencyCode": "USD",
       "sku": "E10 LRS",
@@ -208,6 +186,34 @@ For **SUSE**, each product maps a vCPU tier range string to a USD hourly price. 
     "maxBurstThroughput": 200,
     "downgrades": { "tier": null, "size": "E6" }
   }
+}
+```
+
+### azure_sql_license_pricing.json
+
+**Script:** [`tools/cloud_data/azure/azure_sql_license_pricing.py`](https://github.com/flexera-public/policy_templates/blob/master/tools/cloud_data/azure/azure_sql_license_pricing.py)
+
+**Workflow:** [Generate Azure SQL License Pricing JSON](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-azure-sql-license-pricing-json.yaml)
+
+**Description:** Hourly SQL Server license prices per vCPU (USD), sourced from the `Virtual Machines Licenses` service in the Azure Retail Prices API. Covers the four standard SQL Server editions: `Enterprise`, `Standard`, `Web`, and `Developer`. These are global prices (not region-specific). The pricing is perfectly linear — the total cost for any vCPU count equals `price_per_vcpu × vcpu_count` — so a single per-vCPU rate is stored for each edition. Used by policy templates that calculate estimated savings from enabling Azure Hybrid Use Benefit on SQL Server resources.
+
+**Structure:** Flat object mapping SQL Server edition name to USD hourly price per vCPU.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `Developer` | number | Per-vCPU hourly license price for Developer edition (always 0 — free) |
+| `Enterprise` | number | Per-vCPU hourly license price for Enterprise edition |
+| `Standard` | number | Per-vCPU hourly license price for Standard edition |
+| `Web` | number | Per-vCPU hourly license price for Web edition |
+
+**Example:**
+
+```json
+{
+  "Developer": 0,
+  "Enterprise": 0.375,
+  "Standard": 0.1,
+  "Web": 0.008
 }
 ```
 
@@ -342,7 +348,7 @@ The following files do not have automated generation scripts that pull from live
 | --- | --- | --- |
 | `publisher` | string | Azure image publisher name, e.g. `"MicrosoftWindowsServer"` |
 | `sku_contains` | string | Substring to match against the image SKU field |
-| `offer_contains` | string | Substring to match against the image offer field |
+| `offer_contains` | string or null | Substring to match against the image offer field; `null` if not used for matching |
 | `os_name` | string | Human-readable OS name, e.g. `"Windows Server 2012 R2"` |
 | `eol_date` | string | ISO 8601 date when mainstream support ended |
 | `esu_end_date` | string | ISO 8601 date when Extended Security Updates end |

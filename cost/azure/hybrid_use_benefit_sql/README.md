@@ -10,6 +10,17 @@ This policy template reports on any Azure SQL resources that may be eligible for
 - This policy template does not track licenses or availability. It is your responsibility to ensure that you have valid licenses for all resources that AHUB is enabled for.
 - The hourly cost of a SQL resource is calculated by dividing the total cost of the SQL resource for the last 30 days by the hours of usage for that same time period.
 
+### Policy Savings Details
+
+The policy includes the estimated monthly savings. The estimated monthly savings is recognized if AHUB is applied to the resource.
+
+- The `Estimated Monthly Savings` for **SQL Elastic Pools**, **SQL Databases**, and **SQL Managed Instances** is calculated using the resource's vCore count (`SKU Capacity`) and the SQL Server license price per vCPU from the [Azure Retail Prices API](https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices). The formula is: `license_price_per_vcpu × vcpu_count × 730`.
+- The `Estimated Monthly Savings` for **SQL Virtual Machines** is calculated using the SQL Server edition (`Image SKU`) and the vCPU count derived from the underlying Azure VM size. The vCPU count is parsed from the VM size name (e.g., `Standard_D4s_v3` → 4 vCPUs). The formula is: `license_price_per_vcpu × vcpu_count × 730`.
+- License prices per vCPU are sourced from the [`azure_sql_license_pricing.json`](https://github.com/flexera-public/policy_templates/blob/master/data/azure/azure_sql_license_pricing.json) data file. SQL Server editions map to license prices as follows: `BusinessCritical` tier → Enterprise, `GeneralPurpose` and `Hyperscale` tiers → Standard; SQL Virtual Machines use the `Image SKU` field directly.
+- If the vCPU count or edition cannot be determined for a resource, the `Estimated Monthly Savings` is 0 and the resource is still reported.
+- The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
+- Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
+
 ## Input Parameters
 
 This policy template has the following input parameters:
@@ -27,6 +38,7 @@ This policy template has the following input parameters:
   - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
+- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation. Resources whose estimated savings are below this threshold will be excluded from results. Resources whose savings cannot be calculated will still be reported.
 - *SQL Resource Types* - A list of SQL resource types to report on. Resource types not listed here will be ignored. Allowed values: SQL Virtual Machines, SQL Elastic Pools, SQL Databases, SQL Managed Instances
 - *SQL Virtual Machine Image SKUs* - A list of SQL Virtual Machine image SKUs to report on. SQL Virtual Machine resources without one of the SKUs specified here will be ignored. Allowed values: Developer, Enterprise, Express, Standard, Web
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
@@ -47,6 +59,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Resources/subscriptions/read`
+  - `Microsoft.Compute/virtualMachines/read`
   - `Microsoft.SqlVirtualMachine/sqlVirtualMachines/read`
   - `Microsoft.SqlVirtualMachine/sqlVirtualMachines/write`*
   - `Microsoft.Sql/servers/read`
