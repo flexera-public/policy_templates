@@ -2410,6 +2410,25 @@ policy_templates:
 
 Do **not** manually edit `data/active_policy_list/active_policy_list.json` — auto-generated from `validated_policy_templates.yaml`.
 
+## Data Directory READMEs
+
+Each subdirectory of `data/` has a `README.md` documenting every file it contains. **Whenever a JSON (or other data) file in `data/` is added, removed, or structurally changed, update the corresponding `README.md`** to reflect the change.
+
+The README for each subdirectory follows a consistent structure (modelled on `data/azure/README.md`):
+
+- **Auto-Generated Files** section — for files produced by a script and/or GitHub Actions workflow. Include:
+  - `**Script:**` link to the generating script
+  - `**Workflow:**` link to the workflow (omit if there is none and the script is run manually)
+  - `**Description:**` what the file contains and how it is used
+  - `**Structure:**` a Markdown table of every top-level field with its type and description
+  - `**Example:**` a short representative JSON snippet
+
+- **Manually Maintained Files** section — for files edited by hand. Same sub-headings as above, but omit `**Script:**` and `**Workflow:**`.
+
+When adding a new auto-generated data file, also confirm whether a new GitHub Actions workflow was created; if so, link to it in the README entry.
+
+When a structural change affects field names, types, or nesting, update the field table and example in the README to match.
+
 ## Dangerfile
 
 PRs are tested via [Dangerfile](https://danger.systems/guides/dangerfile). Run locally: `bundle exec danger pr https://github.com/flexera-public/policy_templates/pull/NNNNN --pry`
