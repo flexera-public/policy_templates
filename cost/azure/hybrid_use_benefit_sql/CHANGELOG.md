@@ -4,8 +4,7 @@
 
 - Added `Estimated Monthly Savings` to incident table for SQL Elastic Pools, SQL Databases, SQL Managed Instances, and SQL Virtual Machines
 - Added `Minimum Savings Threshold` parameter to filter out low-value recommendations
-- Added `Potential Monthly Savings` total to incident message detail
-- Policy now retrieves underlying Azure VM size for SQL Virtual Machines to enable savings calculations
+- Incident results are now sorted by estimated savings in descending order
 
 ## v4.4.2
 
