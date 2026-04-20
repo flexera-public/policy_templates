@@ -101,6 +101,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Compute
 
+  * [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
   * [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
   * [Azure Long Stopped Compute Instances](./cost/azure/long_stopped_instances)
   * [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
@@ -345,7 +346,6 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
   * [Azure Expiring Savings Plans](./cost/azure/savings_plan/expiration)
-  * [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
   * [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
   * [Azure Savings Plan Utilization](./cost/azure/savings_plan/utilization)
   * [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
