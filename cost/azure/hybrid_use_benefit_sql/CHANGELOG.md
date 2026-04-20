@@ -1,5 +1,11 @@
 # Changelog
 
+## v4.5.0
+
+- Added `Estimated Monthly Savings` to incident table for SQL Elastic Pools, SQL Databases, SQL Managed Instances, and SQL Virtual Machines
+- Added `Minimum Savings Threshold` parameter to filter out low-value recommendations
+- Incident results are now sorted by estimated savings in descending order
+
 ## v4.4.2
 
 - Updated documentation link in policy description. Functionality unchanged.
