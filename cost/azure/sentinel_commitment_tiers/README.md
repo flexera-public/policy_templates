@@ -12,7 +12,7 @@ The policy template performs the following steps:
 1. All Log Analytics workspaces in each subscription are listed.
 1. For each workspace, the Microsoft Sentinel onboarding state is checked via the SecurityInsights API; workspaces without Sentinel enabled are excluded.
 1. For each Sentinel-enabled workspace, the Log Analytics Query API is used to retrieve daily billable data ingestion volumes (in GB) over the configured lookback period.
-1. The Azure Retail Prices API is queried for the current pricing for each workspace's Azure region, including the Pay-As-You-Go per-GB rate and each available Commitment Tier daily rate.
+1. The Azure Retail Prices API is queried for the current pricing for each workspace's Azure region. Because a Sentinel-enabled workspace incurs two separate, additive cost components — Log Analytics data ingestion (sourced from the `Log Analytics` and `Azure Monitor` service listings) and Microsoft Sentinel analysis (sourced from the `Sentinel` service listing) — pricing is fetched from all three service names and combined.
 1. For each workspace, the estimated daily cost is calculated at the current tier and at each available higher tier.
 1. The tier with the lowest estimated cost that is higher than the current tier is identified as the recommended tier.
 1. An incident is raised if the recommended tier saves more than the configured minimum savings threshold.
@@ -21,9 +21,9 @@ The policy template performs the following steps:
 
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the workspace's pricing tier is upgraded to the recommended Commitment Tier.
 
-- Pricing data (Pay-As-You-Go per-GB rate and Commitment Tier daily rates) is retrieved in real time from the [Azure Retail Prices API](https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices) for each workspace's Azure region.
+- Pricing data is retrieved in real time from the [Azure Retail Prices API](https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices) for each workspace's Azure region. Costs for a Sentinel-enabled workspace are the sum of two additive components: the Log Analytics data ingestion cost (fetched from the `Log Analytics` and `Azure Monitor` service listings) and the Microsoft Sentinel analysis cost (fetched from the `Sentinel` service listing). The combined Pay-As-You-Go per-GB rate and each combined Commitment Tier daily rate are used for all cost calculations.
 - The `Estimated Monthly Savings` is calculated as the difference between the current estimated monthly cost and the estimated monthly cost at the recommended tier, multiplied by 30.44 (average days per month).
-- The estimated monthly cost at a given tier is: `(Tier Daily Rate + max(0, Average Daily Ingestion − Tier GB Level) × PAYG Rate per GB) × 30.44`. For Pay-As-You-Go: `Average Daily Ingestion × PAYG Rate per GB × 30.44`.
+- The estimated monthly cost at a given tier is: `(Tier Daily Rate + max(0, Average Daily Ingestion − Tier GB Level) × PAYG Rate per GB) × 30.44`. For Pay-As-You-Go: `Average Daily Ingestion × PAYG Rate per GB × 30.44`. In both formulas, `Tier Daily Rate` and `PAYG Rate per GB` are composite values equal to the sum of the Log Analytics component and the Microsoft Sentinel component for the given tier and region.
 - `Average Daily Ingestion` is computed from the Log Analytics `Usage` table over the configured lookback period using only billable data (`IsBillable == true`).
 - If no pricing data is available for the workspace's region, the workspace is excluded from recommendations.
 - The incident message detail includes the sum of each workspace's `Estimated Monthly Savings` as `Potential Monthly Savings`.

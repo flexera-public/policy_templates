@@ -412,7 +412,7 @@ datasource "ds_sentinel_onboarding" do
   result do
     encoding "json"
     field "workspaceId", val(iter_item, "workspaceId")
-    field "onboardingState", jmes_path(response, "properties.onboardingState")
+    field "onboardingStateId", jmes_path(response, "id")
   end
 end
 
@@ -426,8 +426,8 @@ script "js_sentinel_workspaces", type: "javascript" do
   code <<-'EOS'
     var onboarding_map = {}
     _.each(ds_sentinel_onboarding, function(item) {
-      if (item["onboardingState"] != undefined && item["onboardingState"] != null && item["onboardingState"] != "") {
-        onboarding_map[item["workspaceId"]] = item["onboardingState"]
+      if (item["onboardingStateId"] != undefined && item["onboardingStateId"] != null && item["onboardingStateId"] != "") {
+        onboarding_map[item["workspaceId"]] = item["onboardingStateId"]
       }
     })
     result = _.filter(ds_log_analytics_workspaces_normalized, function(ws) {
@@ -469,7 +469,7 @@ script "js_workspace_ingestion_raw", type: "javascript" do
       verb: "POST",
       host: param_azure_endpoint,
       path: "/subscriptions/" + workspace["subscriptionId"] + "/resourceGroups/" + workspace["resourceGroup"] + "/providers/microsoft.operationalinsights/workspaces/" + workspace["name"] + "/query",
-      query_params: { "api-version": "2021-12-01-preview" },
+      query_params: { "api-version": "2017-10-01" },
       headers: { "User-Agent": "RS Policies", "Content-Type": "application/json" },
       body_fields: { "query": query },
       ignore_status: [400, 403, 404]
@@ -538,11 +538,11 @@ script "js_workspace_ingestion", type: "javascript" do
 EOS
 end
 
-datasource "ds_la_pricing_regions" do
-  run_script $js_la_pricing_regions, $ds_workspace_ingestion
+datasource "ds_pricing_regions" do
+  run_script $js_pricing_regions, $ds_workspace_ingestion
 end
 
-script "js_la_pricing_regions", type: "javascript" do
+script "js_pricing_regions", type: "javascript" do
   parameters "ds_workspace_ingestion"
   result "result"
   code <<-'EOS'
@@ -551,14 +551,14 @@ script "js_la_pricing_regions", type: "javascript" do
 EOS
 end
 
-datasource "ds_la_pricing" do
-  iterate $ds_la_pricing_regions
+datasource "ds_pricing" do
+  iterate $ds_pricing_regions
   request do
     pagination $pagination_azure_pricing
     host "prices.azure.com"
     path "/api/retail/prices"
     query "api-version", "2023-01-01-preview"
-    query "$filter", join(["serviceName eq 'Azure Monitor' and armRegionName eq '", val(iter_item, "region"), "' and priceType eq 'Consumption'"])
+    query "$filter", join(["(serviceName eq 'Log Analytics' or serviceName eq 'Sentinel' or (serviceName eq 'Azure Monitor' and contains(skuName, 'Commitment Tier'))) and armRegionName eq '", val(iter_item, "region"), "' and priceType eq 'Consumption'"])
     header "User-Agent", "RS Policies"
     ignore_status [400, 404]
   end
@@ -573,16 +573,17 @@ datasource "ds_la_pricing" do
       field "retailPrice", jmes_path(col_item, "retailPrice")
       field "unitPrice", jmes_path(col_item, "unitPrice")
       field "currencyCode", jmes_path(col_item, "currencyCode")
+      field "serviceName", jmes_path(col_item, "serviceName")
     end
   end
 end
 
 datasource "ds_sentinel_incident" do
-  run_script $js_sentinel_incident, $ds_workspace_ingestion, $ds_la_pricing, $ds_currency, $ds_applied_policy, $param_lookback_days, $param_min_savings, $param_incident_csv
+  run_script $js_sentinel_incident, $ds_workspace_ingestion, $ds_pricing, $ds_currency, $ds_applied_policy, $param_lookback_days, $param_min_savings, $param_incident_csv
 end
 
 script "js_sentinel_incident", type: "javascript" do
-  parameters "ds_workspace_ingestion", "ds_la_pricing", "ds_currency", "ds_applied_policy", "param_lookback_days", "param_min_savings", "param_incident_csv"
+  parameters "ds_workspace_ingestion", "ds_pricing", "ds_currency", "ds_applied_policy", "param_lookback_days", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
     function formatNumber(number, separator) {
@@ -606,12 +607,13 @@ script "js_sentinel_incident", type: "javascript" do
     var commitment_tiers = [100, 200, 300, 400, 500, 1000, 2000, 5000]
 
     var pricing_by_region = {}
-    _.each(ds_la_pricing, function(item) {
+    _.each(ds_pricing, function(item) {
       var region = item["region"]
       if (!pricing_by_region[region]) {
-        pricing_by_region[region] = { payg_rate: 0, tier_rates: {} }
+        pricing_by_region[region] = { la_payg: 0, sentinel_payg: 0, la_tiers: {}, sentinel_tiers: {} }
       }
 
+      var service = (item["serviceName"] || "").toLowerCase()
       var sku = (item["skuName"] || "").toLowerCase()
       var meter = (item["meterName"] || "").toLowerCase()
       var unit = (item["unitOfMeasure"] || "").toLowerCase()
@@ -619,31 +621,50 @@ script "js_sentinel_incident", type: "javascript" do
 
       if (price <= 0) { return }
 
-      if (unit.indexOf("gb") >= 0) {
-        if (sku.indexOf("pay") >= 0 || meter.indexOf("pay") >= 0 || meter.indexOf("ingestion") >= 0) {
-          if (pricing_by_region[region]["payg_rate"] == 0 || price < pricing_by_region[region]["payg_rate"]) {
-            pricing_by_region[region]["payg_rate"] = price
-          }
+      if (service.indexOf("log analytics") >= 0 && unit.indexOf("gb") >= 0 && meter.indexOf("ingestion") >= 0) {
+        if (pricing_by_region[region]["la_payg"] == 0 || price < pricing_by_region[region]["la_payg"]) {
+          pricing_by_region[region]["la_payg"] = price
+        }
+      }
+
+      if (service.indexOf("sentinel") >= 0 && unit.indexOf("gb") >= 0 && (sku.indexOf("pay") >= 0 || meter.indexOf("pay") >= 0)) {
+        if (pricing_by_region[region]["sentinel_payg"] == 0 || price < pricing_by_region[region]["sentinel_payg"]) {
+          pricing_by_region[region]["sentinel_payg"] = price
         }
       }
 
       if (unit.indexOf("day") >= 0) {
         var gb_match = sku.match(/(\d+)\s*gb/)
         var tb_match = sku.match(/(\d+)\s*tb/)
-
         var tier_gb = 0
-        if (gb_match) {
-          tier_gb = parseInt(gb_match[1])
-        } else if (tb_match) {
-          tier_gb = parseInt(tb_match[1]) * 1000
-        }
+        if (gb_match) { tier_gb = parseInt(gb_match[1]) }
+        else if (tb_match) { tier_gb = parseInt(tb_match[1]) * 1000 }
 
         if (tier_gb > 0 && _.contains(commitment_tiers, tier_gb)) {
-          if (!pricing_by_region[region]["tier_rates"][tier_gb] || price < pricing_by_region[region]["tier_rates"][tier_gb]) {
-            pricing_by_region[region]["tier_rates"][tier_gb] = price
+          if (service.indexOf("azure monitor") >= 0) {
+            if (!pricing_by_region[region]["la_tiers"][tier_gb] || price < pricing_by_region[region]["la_tiers"][tier_gb]) {
+              pricing_by_region[region]["la_tiers"][tier_gb] = price
+            }
+          }
+          if (service.indexOf("sentinel") >= 0) {
+            if (!pricing_by_region[region]["sentinel_tiers"][tier_gb] || price < pricing_by_region[region]["sentinel_tiers"][tier_gb]) {
+              pricing_by_region[region]["sentinel_tiers"][tier_gb] = price
+            }
           }
         }
       }
+    })
+
+    _.each(pricing_by_region, function(pricing, region) {
+      pricing["payg_rate"] = pricing["la_payg"] + pricing["sentinel_payg"]
+      pricing["tier_rates"] = {}
+      _.each(commitment_tiers, function(tier_gb) {
+        var la_rate = pricing["la_tiers"][tier_gb] || 0
+        var sentinel_rate = pricing["sentinel_tiers"][tier_gb] || 0
+        if (la_rate > 0 && sentinel_rate > 0) {
+          pricing["tier_rates"][tier_gb] = la_rate + sentinel_rate
+        }
+      })
     })
 
     function calculateDailyCost(daily_gb, tier_gb, tier_daily_rate, payg_rate) {
@@ -662,7 +683,7 @@ script "js_sentinel_incident", type: "javascript" do
       var region = ws["location"]
       var pricing = pricing_by_region[region]
 
-      if (!pricing || pricing["payg_rate"] <= 0) { return }
+      if (!pricing || pricing["la_payg"] <= 0 || pricing["sentinel_payg"] <= 0) { return }
 
       var payg_rate = pricing["payg_rate"] * exchange_rate
       var avg_daily_gb = ws["avgDailyGB"] || 0
@@ -740,7 +761,7 @@ script "js_sentinel_incident", type: "javascript" do
         savings: savings_rounded,
         savingsCurrency: ds_currency["symbol"],
         lookbackPeriod: param_lookback_days,
-        service: "Microsoft Sentinel",
+        service: "Microsoft.SentinelPlatformServices",
         policy_name: ds_applied_policy["name"],
         total_savings: "",
         message: ""
