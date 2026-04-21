@@ -2,7 +2,11 @@
 
 ## What It Does
 
-This Policy Template is used to automatically apply the Azure Hybrid Use Benefit (AHUB) to all eligible Linux VMs in an Azure Subscription.
+This policy template identifies Azure Linux virtual machines running SUSE Linux Enterprise Server (SLES) or Red Hat Enterprise Linux (RHEL) that are eligible for [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/offers/hybrid-benefit/) (AHUB) but do not currently have it enabled. AHUB for Linux allows organizations to bring existing on-premises SUSE or RHEL subscriptions to Azure, eliminating the pay-as-you-go Linux software charges included in standard Azure VM pricing. The policy detects eligible VMs by examining each VM's image offer and SKU, estimates the potential monthly savings based on the Linux license price for the appropriate OS edition and vCPU count, and generates an incident report for all qualifying VMs. An email notification is sent with the results, and optionally, AHUB can be enabled on qualifying VMs automatically or after manual approval.
+
+**NOTE: This policy template does not check actual license inventory, subscription availability, or compliance. It identifies VMs that are technically eligible for AHUB based on their OS image configuration alone. You must verify that you have sufficient available SUSE or RHEL subscriptions before enabling AHUB. Enabling AHUB without adequate subscription entitlements may result in non-compliance with your software vendor's licensing terms.**
+
+**NOTE: Before enabling AHUB for RHEL virtual machines, you must first enroll your Red Hat products for [Cloud Access](https://www.redhat.com/en/technologies/cloud-computing/cloud-access) through Red Hat Subscription Management.**
 
 ## How It Works
 

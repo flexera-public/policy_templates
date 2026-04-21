@@ -2,7 +2,9 @@
 
 ## What It Does
 
-This policy template reports on any Azure SQL resources that may be eligible for Azure Hybrid Use Benefit (AHUB) but are not currently receiving the benefit. Optionally, this report can be emailed, and AHUB can automatically be enabled on these resources.
+This policy template identifies Azure SQL resources — including SQL Virtual Machines, SQL Elastic Pools, SQL Databases, and SQL Managed Instances — that are eligible for [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/offers/hybrid-benefit/) (AHUB) but do not currently have it enabled. AHUB for SQL allows organizations to apply existing on-premises SQL Server licenses with active Software Assurance to Azure SQL resources, significantly reducing the SQL Server license cost for those resources. The policy estimates monthly savings for each resource based on its vCore count and SQL Server edition, using license pricing data sourced from the Azure Retail Prices API. An incident report is generated for all qualifying resources, and optionally, AHUB can be enabled automatically or after manual approval.
+
+**NOTE: This policy template does not check actual license inventory, availability, or compliance. It identifies SQL resources that are technically eligible for AHUB based on their Azure configuration alone. You must verify that you have sufficient available SQL Server licenses with active Software Assurance coverage before enabling AHUB. Enabling AHUB without adequate license entitlements may result in non-compliance with Microsoft licensing terms.**
 
 ## How It Works
 
