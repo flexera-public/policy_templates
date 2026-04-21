@@ -83,6 +83,7 @@ These templates can generate savings estimates for your environment. The inciden
 * RDS
 
   * [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
+  * [AWS Superseded RDS Instances](./cost/aws/superseded_rds_instances)
 
 * Storage
 
