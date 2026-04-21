@@ -140,6 +140,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * SQL
 
+  * [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   * [Azure Rightsize SQL Database Storage](./cost/azure/rightsize_sql_storage)
   * [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
   * [Azure Rightsize SQL Managed Instance Storage](./cost/azure/rightsize_managed_sql_storage)
@@ -361,7 +362,6 @@ These templates can generate savings estimates for your environment. The inciden
 
 * SQL
 
-  * [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   * [Azure SQL Servers Without Elastic Pools](./cost/azure/sql_servers_without_elastic_pool)
 
 * Storage
