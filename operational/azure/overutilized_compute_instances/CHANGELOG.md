@@ -4,7 +4,6 @@
 
 - Added error incident when no Azure Subscriptions are found, indicating a potential credential or permissions issue.
 
-
 ## v0.2.3
 
 - Updated instance type data source from `data/azure/instance_types.json` to `data/azure/azure_compute_instance_types.json`. Functionality unchanged.

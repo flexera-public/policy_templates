@@ -4,7 +4,6 @@
 
 - Added error incident when no Azure Subscriptions are found, indicating a potential credential or permissions issue.
 
-
 ## v0.1.1
 
 - Fixed issue that prevented meta parent policy template from generating correctly.

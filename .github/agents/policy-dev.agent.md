@@ -2352,6 +2352,38 @@ Every CHANGELOG must use exactly this format, with the most recent version first
 
 Describe changes in terms of user-visible impact. Avoid coding jargon and do not reference internal code changes.
 
+### Adding a New Entry
+
+When prepending a new entry to an existing CHANGELOG, the `# Changelog` heading **must remain the very first line of the file**. Insert the new `## vX.Y.Z` entry immediately after the `# Changelog` heading — not before it.
+
+**Wrong** (new entry placed before `# Changelog`):
+```markdown
+## v0.3.0
+
+- Added new feature
+
+# Changelog
+
+## v0.2.0
+
+- Previous change
+```
+
+**Correct** (`# Changelog` stays first; new entry follows immediately after):
+```markdown
+# Changelog
+
+## v0.3.0
+
+- Added new feature
+
+## v0.2.0
+
+- Previous change
+```
+
+When reading an existing CHANGELOG to prepend a new entry, always verify that `# Changelog` is on the first line of the file before writing. If it is not (malformed file), fix it as part of the update.
+
 ## Deprecating a Policy Template
 
 When a policy template is superseded by a newer one and should no longer be actively maintained, mark it as deprecated. **Do not unpublish it** (i.e. do not add `publish: "false"`) — deprecated templates remain in the catalog so that existing users can still find and apply them.
