@@ -1936,6 +1936,56 @@ recommendationDetails: recommendationDetails,
 
 This applies to DSL `field` declarations in `result do` blocks and to JavaScript object literals in `script` blocks.
 
+### Blank Lines and Spacing
+
+**No multiple consecutive blank lines** — never have more than one blank line in a row, in either `.pt` policy template files or Markdown (`.md`) files. Two or more consecutive blank lines is always wrong.
+
+**No blank lines inside DSL blocks** — within any `do...end` block (datasource, script, policy, escalation, parameter, pagination, credentials, define), do not insert blank lines between the block's statements. The only blank lines that belong inside a block are those within the JavaScript `code <<-'EOS'...EOS` heredoc, where they follow normal JavaScript readability conventions.
+
+**Wrong** (blank line inside a `datasource` block):
+```
+datasource "ds_example" do
+  request do
+    auth $auth_aws
+
+    host "ec2.amazonaws.com"
+    path "/"
+  end
+end
+```
+
+**Correct** (no blank lines inside the block):
+```
+datasource "ds_example" do
+  request do
+    auth $auth_aws
+    host "ec2.amazonaws.com"
+    path "/"
+  end
+end
+```
+
+**Wrong** (blank line inside a `policy` block, between the opening line and first `validate_each`):
+```
+policy "pol_example" do
+
+  validate_each $ds_items do
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
+  end
+end
+```
+
+**Correct** (no blank line after `policy "..." do`):
+```
+policy "pol_example" do
+  validate_each $ds_items do
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
+  end
+end
+```
+
+**Blank lines between top-level blocks** — exactly one blank line between top-level blocks (datasource, script, policy, escalation, parameter, define). Section divider comments (`###...###`) are preceded and followed by one blank line.
+
 ### Naming Conventions
 
 All datasources **must** be named with a `ds_` prefix. All scripts **must** be named with a `js_` prefix. When a script is paired with a single datasource, they share the same base name:
