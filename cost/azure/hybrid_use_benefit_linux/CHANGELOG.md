@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.4.0
+
+- Added error incident when no Azure Subscriptions are found, indicating a potential credential or permissions issue.
+
 ## v5.3.0
 
 - Added `Estimated Monthly Savings` to incident output based on Azure Linux license pricing data from the Azure Retail Prices API

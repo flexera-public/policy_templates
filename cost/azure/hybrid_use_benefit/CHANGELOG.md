@@ -1,3 +1,7 @@
+## v5.4.0
+
+- Added error incident when no Azure Subscriptions are found, indicating a potential credential or permissions issue.
+
 # Changelog
 
 ## v5.3.3
