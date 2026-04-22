@@ -102,7 +102,7 @@ test = github_pr_missing_ready_label?(github); message test if test
 
 puts Time.now.strftime("%H:%M:%S.%L") + " * Testing if important files were modified..."
 
-modified_important_files = changed_dangerfiles + changed_dot_files + changed_config_files
+modified_important_files = (changed_dangerfiles + changed_dot_files + changed_config_files).select{ |file| git.modified_files.include?(file) }
 modified_important_files = modified_important_files.join("\n")
 
 # Consolidate changed files into a single warning to save space
@@ -383,7 +383,10 @@ changed_pt_files.each do |file|
   file_metadata = active_policy_list.find { |policy| policy["name"] == file_parsed.parsed_name }
 
   # Raise error if pull request is missing required labels for this policy template
-  test = policy_missing_github_labels?(github, file, file_parsed, file_metadata); failures << test if test
+  # Pass whether this file is genuinely new (added) vs. just modified.
+  # A modified .pt file whose 'name' field was changed would otherwise appear new
+  # because it won't match any entry in the active_policy_list by name.
+  test = policy_missing_github_labels?(github, file, file_parsed, file_metadata, new_pt_files.include?(file)); failures << test if test
 
   # Raise error if policy template is missing info() block
   test = policy_missing_info_block?(file, file_parsed); failures << test if test

@@ -8,11 +8,12 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.1.7",
+  version: "0.2.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Automation",
-  publish: "false"
+  publish: "false",
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -51,6 +52,24 @@ parameter "param_subscriptions_list" do
   label "Subscriptions Ignore List"
   description "A list of Subscription IDs/names to never include in the results. Leave blank to not filter results."
   default []
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
 end
 
 ###############################################################################
@@ -254,13 +273,15 @@ datasource "ds_azure_subscriptions" do
 end
 
 datasource "ds_missing_subscriptions_api" do
-  run_script $js_missing_subscriptions_api, $ds_flexera_cco_data, $ds_azure_subscriptions, $ds_applied_policy, $param_subscriptions_list, $param_report_selection
+  run_script $js_missing_subscriptions_api, $ds_flexera_cco_data, $ds_azure_subscriptions, $ds_applied_policy, $param_subscriptions_list, $param_report_selection, $param_incident_csv
 end
 
 script "js_missing_subscriptions_api", type: "javascript" do
-  parameters "ds_flexera_cco_data", "ds_azure_subscriptions", "ds_applied_policy", "param_subscriptions_list", "param_report_selection"
+  parameters "ds_flexera_cco_data", "ds_azure_subscriptions", "ds_applied_policy", "param_subscriptions_list", "param_report_selection", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+
   result = []
 
   if (param_report_selection != 'Missing in CCO') {
@@ -289,17 +310,21 @@ script "js_missing_subscriptions_api", type: "javascript" do
     result = _.sortBy(result, 'accountID')
     result = _.sortBy(result, 'bill_source')
   }
+
+  if (result.length > 0) { result[0]['message'] = csv_message }
 EOS
 end
 
 datasource "ds_missing_subscriptions_cco" do
-  run_script $js_missing_subscriptions_cco, $ds_flexera_cco_data, $ds_azure_subscriptions, $ds_applied_policy, $param_subscriptions_list, $param_report_selection
+  run_script $js_missing_subscriptions_cco, $ds_flexera_cco_data, $ds_azure_subscriptions, $ds_applied_policy, $param_subscriptions_list, $param_report_selection, $param_incident_csv
 end
 
 script "js_missing_subscriptions_cco", type: "javascript" do
-  parameters "ds_flexera_cco_data", "ds_azure_subscriptions", "ds_applied_policy", "param_subscriptions_list", "param_report_selection"
+  parameters "ds_flexera_cco_data", "ds_azure_subscriptions", "ds_applied_policy", "param_subscriptions_list", "param_report_selection", "param_incident_csv"
   result "result"
   code <<-'EOS'
+  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+
   result = []
 
   if (param_report_selection != 'Missing in Azure API') {
@@ -326,6 +351,8 @@ script "js_missing_subscriptions_cco", type: "javascript" do
 
     result = _.sortBy(result, 'accountID')
   }
+
+  if (result.length > 0) { result[0]['message'] = csv_message }
 EOS
 end
 
@@ -336,6 +363,7 @@ end
 policy "pol_missing_subscriptions" do
   validate_each $ds_missing_subscriptions_api do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure API Missing Subscriptions"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     check eq(val(item, "accountID"), "")
     escalate $esc_email
     export do
@@ -353,6 +381,7 @@ policy "pol_missing_subscriptions" do
   end
   validate_each $ds_missing_subscriptions_cco do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure CCO Missing Subscriptions"
+    detail_template "{{ with index data 0 }}{{ .message }}{{ end }}"
     check eq(val(item, "accountID"), "")
     escalate $esc_email
     export do
@@ -375,5 +404,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

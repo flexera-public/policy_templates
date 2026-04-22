@@ -2,7 +2,9 @@
 
 ## What It Does
 
-This Policy Template is used to automatically apply the Azure Hybrid Use Benefit (AHUB) to all eligible Windows VMs in an Azure Subscription and provides a monthly savings value if AHUB were to be enabled.
+This policy template identifies Azure Windows Server virtual machines that are eligible for [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/offers/hybrid-benefit/) (AHUB) but do not currently have it enabled. AHUB allows organizations to apply existing on-premises Windows Server licenses with active Software Assurance (or Windows Server subscriptions) to Azure VMs, eliminating the Windows OS license cost and potentially reducing VM costs significantly. The policy generates an incident report listing all qualifying VMs along with an estimated monthly savings figure based on the difference between standard Windows pricing and AHUB pricing from the Azure Pricing API. An email notification is sent with the results, and optionally, AHUB can be enabled on qualifying VMs automatically or after manual approval.
+
+**NOTE: This policy template does not check actual license inventory, availability, or compliance. It identifies VMs that are technically eligible for AHUB based on their Azure configuration alone. You must verify that you have sufficient available Windows Server licenses with active Software Assurance or subscription coverage before enabling AHUB. Enabling AHUB without adequate license entitlements may result in non-compliance with Microsoft licensing terms.**
 
 ## How It Works
 

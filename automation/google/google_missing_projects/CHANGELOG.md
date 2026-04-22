@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.0
+
+- Added error incident if no Google projects are returned by the credential, to alert users to potential permission issues.
+
+## v0.2.0
+
+- Added `Incident Table Rows for Email Body` and `Attach CSV To Incident Email` parameters to support sending a CSV attachment with incident emails.
+
 ## v0.1.5
 
 - Updated documentation link in policy description. Functionality unchanged.

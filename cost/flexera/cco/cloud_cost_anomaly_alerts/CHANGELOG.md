@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.0
+
+- Added `Incident Table Size` and `Attach Incident CSV` parameters to control email incident table row count and CSV attachment behavior.
+
 ## v4.0.4
 
 - Updated documentation link in policy description. Functionality unchanged.

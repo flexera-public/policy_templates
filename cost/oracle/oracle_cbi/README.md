@@ -42,7 +42,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `define tenancy usage-report as <ocid>`
   - `endorse group <group> to read objects in tenancy usage-report`
 
-  Replace `<ocid>` with the OCID of the object storage bucket that stores the Cost & Usage Reports. In most cases, this will be the same as the OCID of the Tenancy itself. Replace `<group>` with a group that the user associated with the Oracle Cloud credential is a member of. The user should be in the `Default` domain to ensure it has full access.
+  Replace `<ocid>` with the OCID of the Tenancy. Replace `<group>` with a group that the user associated with the Oracle Cloud credential is a member of.
+
+  **Note: If the user belongs to a federated identity domain (such as Oracle Identity Cloud Service), you must prefix the group name with the federation domain name. For example: `endorse group OracleIdentityCloudService/billing to read objects in tenancy usage-report`. For most auto-federated tenancies the domain name is `OracleIdentityCloudService`, but you can confirm the exact name by navigating to Identity & Security → Identity → Federation in the Console. Users in OCI's Default domain do not require a prefix.**
 
 Note: Oracle Cloud credentials cannot be added in Flexera One; the [Flexera Credential Management API](https://reference.rightscale.com/cred-management/#/Credentials/Credentials_create_oracle) must be used to create the credential. More information is [available in Oracle's documentation](https://docs.oracle.com/en-us/iaas/Content/Billing/Concepts/costusagereportsoverview.htm#policy).
 

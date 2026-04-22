@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.6.6
+
+- Fixed issue with incident table that cause policy execution to fail
+
 ## v8.6.5
 
 - Updated documentation link in policy description. Functionality unchanged.

@@ -46,7 +46,7 @@ You are an expert Flexera policy template developer working in the `flexera-publ
 **Other critical rules for all policy template work** (full details in each section below):
 
 - **DSL ≠ Ruby** — `.pt` files use a custom DSL; all logic in `script` blocks must be valid JavaScript, not Ruby
-- **JavaScript is ES5 only** — no `const`/`let`, arrow functions (`=>`), template literals (`` ` ``), or any ES6+ features; use `var` and `function(x) {...}` 
+- **JavaScript is ES5 only** — no `const`/`let`, arrow functions (`=>`), template literals (`` ` ``), or any ES6+ features; use `var` and `function(x) {...}`
 - **Always run `fpt check`** after writing or modifying any `.pt` file, even for small changes
 - **Always bump the version** in the `info()` block for any `.pt` file change, including non-functional changes; check `git status` first to avoid double-bumping
 - **Never add `publish: "false"`** unless the user explicitly requests it
@@ -877,111 +877,15 @@ end
 
 ### Policy Block
 
-#### summary_template and detail_template
+`summary_template` and `detail_template` use [Go template](https://pkg.go.dev/text/template) syntax. `data` is the slice of incident rows:
 
-The `summary_template` and `detail_template` fields accept content that mixes **Go template syntax** (for injecting incident data) with **Markdown** (for formatting). The policy engine renders the Go template expressions first to produce a Markdown string, then renders that Markdown for display.
-
-**Documentation:**
-- Go Template syntax: https://pkg.go.dev/text/template and https://github.com/flexera-public/policy_engine_training/blob/main/lessons/18_go_template/README.md
-- Markdown reference: https://www.markdownguide.org/basic-syntax/
-
-**⚠️ Do NOT use HTML in `summary_template` or `detail_template`.** HTML is not legitimately supported by the policy engine. Some HTML may render correctly when an incident is emailed, but the raw HTML code will be displayed as-is when viewing the incident in the Flexera One UI. Always use Markdown equivalents instead.
-
-##### Go Template Syntax
-
-Go templates use `{{ }}` delimiters. Inside a policy template, the top-level context variable is `data` — the slice of incident rows.
-
-**Core expressions:**
-
-| Expression | Description |
+| Expression | Meaning |
 |---|---|
-| `{{ .FieldName }}` | Output the value of `FieldName` on the current context object |
-| `{{ len data }}` | Number of items in `data` (i.e. number of incident rows) |
-| `{{ index data 0 }}` | Access the first element of `data` by index |
-| `{{ with index data 0 }}...{{ end }}` | Render the block only if `data[0]` exists; `.` inside is `data[0]` |
-| `{{ range data }}...{{ end }}` | Iterate over every item in `data`; `.` inside is the current item |
-| `{{ if .Field }}...{{ else }}...{{ end }}` | Conditional — renders `if` block when `.Field` is truthy |
-| `{{ .Field \| printf "%.2f" }}` | Pipeline — pass a value through a function |
+| `{{ len data }}` | Number of violation rows in the incident |
+| `{{ with index data 0 }}{{ .field_name }}{{ end }}` | Access a field from the first row (safe — renders nothing if empty) |
+| `{{ range data -}}\n  - {{ .field }}\n{{ end -}}` | Iterate all rows; `-` trims surrounding whitespace |
 
-**Whitespace trimming:** Add `-` inside the delimiters to trim adjacent whitespace/newlines:
-- `{{- .Field }}` — trim whitespace before the expression
-- `{{ .Field -}}` — trim whitespace after the expression
-- `{{- range data -}}` — trim both sides
-
-**Common patterns used in catalog templates:**
-
-```
-# Safe single-field access (renders nothing if data is empty — always use this pattern):
-{{ with index data 0 }}{{ .policy_name }}{{ end }}
-
-# Count of incident rows:
-{{ len data }} Resources Found
-
-# Iterate to build a list:
-{{ range data -}}
-  - {{ .resourceID }} ({{ .region }})
-{{ end -}}
-
-# Conditional section:
-{{ with index data 0 }}{{ if .message }}{{ .message }}{{ end }}{{ end }}
-
-# Numeric formatting via printf:
-{{ with index data 0 }}Total Savings: {{ .total_savings }}{{ end }}
-```
-
-**Built-in runtime variables available in `detail_template`:**
-
-| Variable | Description |
-|---|---|
-| `rs_org_id` | Flexera organization ID |
-| `rs_project_id` | Flexera project ID |
-
-These are useful for building Image Charts proxy URLs directly in the `detail_template` without JavaScript (see the Image Charts section).
-
-##### Markdown Formatting
-
-The content rendered by Go template expressions is interpreted as Markdown. Use standard Markdown constructs:
-
-| Construct | Syntax | Notes |
-|---|---|---|
-| **Bold** | `**text**` | Use for emphasis on key values |
-| *Italic* | `*text*` | Use sparingly |
-| `Inline code` | `` `text` `` | Use for resource IDs, field names, values |
-| Heading | `## Heading` | Use `##` or `###` inside detail_template; never `#` (reserved for page title) |
-| Unordered list | `- item` | Must have blank line before/after the list |
-| Ordered list | `1. item` | Use `1.` for every item; renderer handles numbering |
-| Link | `[label](url)` | External links open in new tab in most clients |
-| Image | `![alt](url)` | Used to embed Image Charts; `alt` is the fallback text |
-| Blockquote | `> text` | Use for callouts or warnings |
-| Horizontal rule | `---` | Separates sections |
-| Table | `\| col \| col \|` | Pipe-separated; include separator row `\| --- \| --- \|` |
-
-**Key Markdown rules for `detail_template`:**
-- Leave a blank line before and after lists and headings — Markdown requires this to render correctly.
-- Do not use HTML. Tags like `<b>`, `<br>`, `<ul>`, `<table>` will not render as intended.
-- The `{{ .message }}` field set in the final JavaScript transform typically contains a pre-formatted multi-line Markdown string. Embed it with `{{ with index data 0 }}{{ .message }}{{ end }}`.
-
-##### Standard Templates
-
-**`summary_template`** — single-line string (no heredoc); always use this pattern:
-
-```
-summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Items Found"
-```
-
-**`detail_template`** — multi-line heredoc; always embed `{{ .message }}` from the final JS transform:
-
-```
-detail_template <<-'EOS'
-**Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
-
-{{ with index data 0 }}{{ .message }}{{ end }}
-EOS
-```
-
-`{{ .policy_name }}` and `{{ .message }}` are populated by the final JavaScript transform. Always use `with index data 0` to safely handle the case where `data` is empty.
-
-`data` is the slice of incident rows:
+`{{ .policy_name }}` and `{{ .message }}` are populated by the final JavaScript transform. Always use `with index data 0` to safely handle empty datasources.
 
 ```
 policy "pol_example" do
@@ -1039,6 +943,8 @@ end
 3. **`validate $ds_identify_errors do`** in the policy block (using `validate`, not `validate_each`) — fires an incident when the error list is non-empty.
 
 4. **`esc_email_errors_identified`** escalation — simple email with no table attachment.
+
+**Probe endpoint selection:** The `ds_region_check` probe must use an API endpoint whose result-limit parameter accepts small values (e.g. `MaxResults=5`). **Do not probe RDS `DescribeDBInstances`** — that action uses `MaxRecords` (not `MaxResults`), which requires a minimum value of 20 and returns an API error for smaller values. When the template's primary service uses a restrictive API (e.g. RDS), probe a different service such as ElastiCache (`DescribeCacheClusters`) or EC2 (`DescribeNatGateways`) instead, since both accept `MaxResults` with values as small as 5. The convention across existing catalog templates is `query "MaxResults", "5"`.
 
 ```
 # 1. Probe each region for accessibility
@@ -1153,7 +1059,7 @@ end
 
 **Meta Policy termination check:** Always include `logic_or($ds_parent_policy_terminated, ...)` as first argument in `check` for Meta Policy support.
 
-**`hash_exclude`:** Prevents listed fields from contributing to incident deduplication hash. Exclude volatile fields (tags, savings) that change without indicating meaningful state change.
+**`hash_exclude`:** Prevents listed fields from contributing to incident deduplication hash. Exclude volatile fields (tags, savings) that change without indicating meaningful state change. **Only list fields that are actually declared in the `export` block** — listing a field that is not exported has no effect and is misleading.
 
 **`export <field_name> do`:** Optional field name before `do` extracts a nested sub-array as the exported table. Omit when the incident data itself is the flat array.
 
@@ -1185,7 +1091,7 @@ The Flexera platform scrapes incident export data to populate the Total Potentia
 | `resourceID` | `"Resource ID"` | string | ✅ | Unique cloud resource identifier (ID, not full ARN). |
 | `resourceName` | `"Resource Name"` | string | ✅ | Human-friendly resource name. |
 | `tags` | `"Resource Tags"` | string | ✅ | Comma-separated `key=value` pairs. Build with `tags.join(', ')`. **Do NOT store as a raw array.** |
-| `recommendationDetails` | `"Recommendation"` | string | ✅ | Human-readable action description. Must explicitly name the cloud provider (e.g. "Terminate AWS GPU EC2 instance …", "Delete Azure VM …"). Never omit the provider name. |
+| `recommendationDetails` | `"Recommendation"` | string | ✅ | Human-readable action description. |
 | `region` | `"Region"` | string | ✅ | Cloud provider region. |
 | `state` | `"State"` | string | when applicable | Resource state, e.g. `"Active"`, `"unattached"`. |
 | `resourceType` | descriptive, e.g. `"Resource Type"`, `"Instance Size"` | string | when applicable | Current instance type, volume type, runtime, etc. Label is context-dependent. |
@@ -1226,19 +1132,6 @@ accountID → accountName → resourceID → resourceName → tags → recommend
 region → [resource-specific fields] → savings → savingsCurrency →
 [lookbackPeriod, threshold, metric fields] → service → resourceARN → id
 ```
-
-**Critical rule — keep all metric fields contiguous.** When a template reports multiple categories of utilization metrics (e.g. GPU utilization, GPU memory, CPU, memory), every metric field for every category must appear **together in one unbroken block**, ordered by category. Never interleave metric fields with non-metric fields (pricing, launch time, etc.). Example correct ordering for a GPU rightsizing template:
-
-```
-... savings → savingsCurrency → launchTime →
-gpuUtilMaximum → gpuUtilMinimum → ... → gpuUtilP90 →
-gpuMemPct → gpuMemUsedMiB →
-cpuMaximum → cpuMinimum → ... → cpuP90 →
-memMaximum → memMinimum → ... → memP90 →
-thresholdType → lookbackPeriod → service → resourceARN → id
-```
-
-Pricing context fields (`currentInstancePrice`, `newInstancePrice`) belong **before** the metric block, grouped with `savings` and `savingsCurrency`. Temporal fields (`launchTime`) also belong before the metric block. If you find yourself placing one metric field early (e.g. after a hardware spec field) and another late (e.g. after `launchTime`), that is a bug — move all metrics for that category into the single contiguous metric block.
 
 **Canonical export block example:**
 
@@ -1295,12 +1188,10 @@ export do
 end
 ```
 
-**`path` preference** — Use `path` only when the export field name must differ from the data field name (e.g., the required `id` field with `path "resourceID"`, or mapping a raw API field like `runtime` to the canonical `resourceType`). When possible, name fields in the datasource JavaScript transform using the same camelCase names as the export fields — this keeps the export block clean and avoids hidden aliasing. For example, write `cpuMaximum`, `memAverage`, `gpuUtilP90` as the JavaScript object keys so that no `path` is needed in the export block. Never add `path` when its value already equals the field name — that is redundant and should be omitted.
-
-**`hash_exclude` minimum** — always exclude these volatile fields that change without indicating a meaningful state change. Extend as needed for utilization metrics or age fields:
+**`hash_exclude` minimum** — always exclude volatile fields that change without indicating a meaningful state change. Extend as needed for utilization metrics or age fields. **Only include field names that are actually declared in the `export` block** — `hash_exclude` has no effect on fields that are not exported. The fields `message`, `policy_name`, and `total_savings` are metadata set on `result[0]` for use in `summary_template` / `detail_template`; only add them to `hash_exclude` if they are explicitly declared in the `export` block:
 
 ```
-hash_exclude "message", "total_savings", "tags", "savings", "savingsCurrency"
+hash_exclude "tags", "savings", "savingsCurrency"
 ```
 
 ```javascript
@@ -1326,126 +1217,9 @@ result.push({
 })
 ```
 
-Always add `"savings"`, `"savingsCurrency"`, `"total_savings"`, and `"message"` to `hash_exclude` in the `validate_each` block so that savings recalculations and message updates don't trigger spurious incident re-opens.
+Always add `"savings"`, `"savingsCurrency"`, and `"tags"` to `hash_exclude` in the `validate_each` block so that savings recalculations don't trigger spurious incident re-opens. If `"message"` or `"total_savings"` are declared as fields in the `export` block, add them too — but do **not** add them if they are not exported, as `hash_exclude` only operates on exported fields.
 
 For cost templates, the `ds_currency` datasource (fetched from the Flexera billing API) provides the org's currency symbol. Copy the boilerplate from a reference template such as `cost/aws/old_snapshots/aws_delete_old_snapshots.pt`.
-
-### Image Charts Integration
-
-[Image Charts](https://documentation.image-charts.com/) is a chart-as-a-URL service that renders PNG chart images from URL query parameters — no JavaScript library or server-side rendering needed. Policy templates use it to embed utilization charts directly inside incident `detail_template` markdown and inside `recommendationDetails` fields.
-
-#### The Flexera Proxy URL
-
-Policy templates do **not** call the public Image Charts API directly. Instead, they use a Flexera-hosted authenticated proxy:
-
-```
-https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id=<ORG_ID>&rs_project_id=<PROJECT_ID>&...chart params...
-```
-
-The proxy validates the request against the Flexera org/project before forwarding it to Image Charts. This means:
-
-- **`rs_org_id` and `rs_project_id` must always be the first two query parameters**, immediately after `ic-function?`. Never omit them; the proxy will reject requests without them.
-- Pass `rs_org_id` and `rs_project_id` as script `parameters` so they are available inside `code` blocks — they cannot be referenced directly inside JavaScript.
-- The remaining parameters are standard Image Charts parameters documented at https://documentation.image-charts.com/.
-
-#### Building a Chart URL in JavaScript
-
-Build the URL using string concatenation. Put long data/label parameters last to make the configuration parameters easier to scan and troubleshoot:
-
-```javascript
-function generateChartUrl(cpuData, memData, statName, resourceName) {
-  var chartUrl = "https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id=" + rs_org_id + "&rs_project_id=" + rs_project_id;
-  chartUrl += "&cht=lc";                                                      // Chart type: lc = line chart
-  chartUrl += "&chs=900x450";                                                 // Chart size (width x height in pixels; max width 999)
-  chartUrl += "&chco=FF0000,0000FF";                                          // Line colors (comma-separated hex, no # prefix)
-  chartUrl += "&chxt=x,y";                                                    // Show both axes
-  chartUrl += "&chxs=0,000000,12,-1,lt,000000,s,min90";                       // X-axis: rotate labels 90°, skip overlapping
-  chartUrl += "&chdl=" + encodeURIComponent("CPU Usage%25|Memory Usage%25");  // Legend labels (pipe-separated)
-  chartUrl += "&chdlp=b";                                                     // Legend position: b = bottom
-  chartUrl += "&chtt=" + encodeURIComponent(statName + "+Utilization|" + encodeURIComponent(resourceName));  // Chart title
-  chartUrl += "&chma=10,10,10,10";                                            // Margins (left, right, top, bottom in px)
-  chartUrl += "&chxr=1,0,100";                                                // Y-axis range: min 0, max 100
-  chartUrl += "&chls=" + encodeURIComponent("4|4");                           // Line thickness (pipe-separated per series)
-  chartUrl += "&chf=bg,s,FFFFFF00";                                           // Background: transparent
-  chartUrl += "&chg=" + encodeURIComponent("20,50,5,5,CECECE");               // Gridlines: dashed grey
-  chartUrl += "&chxl=" + encodeURIComponent("0:|" + encodeURIComponent(timeLabels));  // X-axis labels
-  chartUrl += "&chd=" + encodeURIComponent("t:" + cpuData + "|" + memData);   // Chart data — put last for easier debugging
-  return chartUrl;
-}
-```
-
-**Always `encodeURIComponent`** any parameter value that contains characters that could break URL parsing: labels (`chdl`), titles (`chtt`), axis labels (`chxl`), line styles (`chls`), gridlines (`chg`), and data (`chd`). Hex colors and simple numeric ranges do not need encoding.
-
-#### Common Image Charts Parameters
-
-| Parameter | Description | Example |
-| --- | --- | --- |
-| `cht` | Chart type | `lc` (line), `bvs` (vertical bar stacked), `bhs` (horizontal bar stacked), `p` (pie) |
-| `chs` | Chart dimensions (width×height in px; max 999px wide) | `900x450` |
-| `chco` | Series colors (comma-separated hex, no `#`) | `FF0000,0000FF,00AA00` |
-| `chxt` | Visible axes | `x,y` |
-| `chxs` | Axis style (per axis; see docs) | `0,000000,12,-1,lt,000000,s,min90` |
-| `chdl` | Legend labels (pipe-separated) | `CPU%25\|Memory%25` |
-| `chdlp` | Legend position | `b` = bottom, `r` = right |
-| `chtt` | Chart title (pipe separates lines) | `Resource+Utilization\|instance-id` |
-| `chma` | Chart margins (left, right, top, bottom px) | `10,10,10,10` |
-| `chxr` | Axis range (index,min,max) | `1,0,100` (y-axis 0–100) |
-| `chls` | Line thickness per series (pipe-separated) | `4\|4` |
-| `chf` | Background fill | `bg,s,FFFFFF00` = transparent |
-| `chg` | Gridlines | `20,50,5,5,CECECE` = dashed grey |
-| `chxl` | Axis tick labels | `0:\|Jan\|Feb\|Mar` |
-| `chd` | Chart data | `t:10,20,30\|40,50,60` (text format, pipe-separates series) |
-
-For the full parameter reference, see https://documentation.image-charts.com/.
-
-#### Embedding Charts in Incidents
-
-There are two places charts appear in an incident:
-
-**1. Inside `recommendationDetails`** — embed as a markdown image so the chart renders inline in the incident detail view. Always append `&from_pt=true` as the **last** query parameter:
-
-```javascript
-if (_.isString(instance["chartUrl"])) {
-  // &from_pt=true must be the LAST query parameter. When the policy engine renders markdown
-  // in some email/browser clients, a trailing ')' from the image syntax ![alt](url) can be
-  // appended to the URL. Placing from_pt=true last absorbs that stray ')' as a harmless value.
-  recommendationDetails += "\n\n![Utilization Chart](" + instance["chartUrl"] + "&from_pt=true)"
-}
-```
-
-**2. In the export block table** — provide a clickable link. Construct a `chartUrlField` string in `"Display Name||URL"` format (the `link-external` format), with `&from_pt=true` on the URL, and declare the export field with `format "link-external"`:
-
-```javascript
-if (_.isString(instance["chartUrl"])) {
-  instance["chartUrlField"] = instance["resourceName"] + " Utilization Chart||" + instance["chartUrl"] + "&from_pt=true"
-}
-```
-
-```
-field "chartUrlField" do
-  label "Utilization Chart External Link"
-  format "link-external"
-end
-```
-
-Place `chartUrlField` as the **last** field in the `export do` block (after the `id` alias field).
-
-**In `detail_template` (for CCO spend charts)** — embed directly using a Go template expression, with the chart parameters pre-built as datasource fields:
-
-```
-![Spending Overview Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ data.chartType }}&{{ data.chartData }} "Chart Title")
-```
-
-Note: When embedding in a `detail_template` heredoc (not JavaScript), `rs_org_id` and `rs_project_id` are available as Go template variables. Do **not** use `&from_pt=true` in `detail_template` embeds — it is only needed in JavaScript-built URLs inside `recommendationDetails`.
-
-#### Summary of Rules
-
-1. **Always use the Flexera proxy** (`api.image-charts-auth.flexeraeng.com/ic-function`) — never call the public Image Charts API directly.
-2. **`rs_org_id` and `rs_project_id` must be the first two parameters** in every proxy URL.
-3. **Always `encodeURIComponent`** labels, titles, axis labels, gridline specs, line styles, and chart data.
-4. **Always append `&from_pt=true` as the last parameter** on any chart URL embedded via JavaScript (in `recommendationDetails` or `chartUrlField`).
-5. **Put `chd` (chart data) last** in the URL for readability — it's the longest parameter and putting it last makes the config params easier to scan.
-6. **`chartUrlField` is always the last export field**, declared with `format "link-external"`.
 
 ### Escalations
 
@@ -1547,20 +1321,12 @@ end
   call log_event($item)                            # fire-and-forget; no return value needed
 ```
 
-**`task_label(msg)`:** Log HTTP operations to the execution audit trail. Every single-item action `define` must follow the **canonical Cloud Workflow action pattern** — no exceptions:
-
-1. Build a `$url` string from the full human-readable URL (before the request)
-2. `task_label("VERB " + $url)` immediately before the HTTP request
-3. Make the HTTP request
-4. `task_label("Action description response: " + $item["id"] + " " + to_json($response))` immediately after
-5. `$$all_responses << to_json({"req": "VERB " + $url, "resp": $response})` to accumulate the audit trail
-6. Check `$response["code"]`; raise on failure, log success with `task_label`
+**`task_label(msg)`:** Log HTTP operations to the execution audit trail. Pass HTTP verb + URL for easy failure diagnosis:
 
 ```
 define delete_one_item($item) return $response do
   $url = "https://example.com/items/" + $item["id"]
   task_label("DELETE " + $url)
-
   $response = http_request(
     auth: $$auth_aws,
     https: true,
@@ -1568,38 +1334,9 @@ define delete_one_item($item) return $response do
     host: "example.com",
     href: join(["/items/", $item["id"]])
   )
-
-  task_label("Delete item response: " + $item["id"] + " " + to_json($response))
-  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
-
-  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
-    raise "Unexpected response deleting item: " + $item["id"] + " " + to_json($response)
-  else
-    task_label("Delete item successful: " + $item["id"])
-  end
+  task_label("DELETE " + $url + " response: " + to_json($response))
 end
 ```
-
-**Orchestrator defines** (those that call single-item defines in a loop) must initialize `$$all_responses` and `$$errors` at the top, then check errors at the end:
-
-```
-define delete_items($data) do
-  $$all_responses = []
-  $$errors = []
-
-  foreach $item in $data do
-    sub on_error: handle_error() do
-      call delete_one_item($item) retrieve $response
-    end
-  end
-
-  if inspect($$errors) != "null"
-    raise join($$errors, "\n")
-  end
-end
-```
-
-**Do not** use a separate `handle_response` helper define — inline the `$$all_responses <<` append directly in each action define as shown above.
 
 **`to_json($obj)`:** Serialize to JSON string. Use in `task_label` calls and error messages.
 
@@ -1621,7 +1358,15 @@ end
   end
 ```
 
-**Response code validation:** Check `$response["code"]` and `raise` on unexpected values as part of the canonical action pattern above. Common success codes: `200`, `201`, `202`, `204`. The error message must include `to_json($response)` so the full response body appears in the execution log:
+**Response code validation:** Check `$response["code"]` and `raise` on unexpected values. Success codes: `200`, `201`, `202`, `204`:
+
+```
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response deleting item " + $item["id"] + ": " + to_json($response)
+  else
+    task_label("Successfully deleted item: " + $item["id"])
+  end
+```
 
 **`sleep($seconds)`:** Pause execution. Use in polling loops:
 
@@ -2419,17 +2164,17 @@ Some text.
 More text.
 ```
 
-**MD040 — Fenced code blocks must declare a language.** Always specify the language after the opening fence. Use `markdown`, `bash`, `javascript`, `yaml`, `json`, or `text` as appropriate. Never leave the fence bare — this applies to **every** fenced block without exception, including pseudocode, formula blocks, config snippets, or any other content that doesn't fit a named language. Use `text` as the fallback for plain text, formulas, and pseudocode:
+**MD040 — Fenced code blocks must declare a language.** Always specify the language after the opening fence. Use `markdown`, `bash`, `javascript`, `yaml`, `json`, or `text` as appropriate. Never leave the fence bare:
 
 ```markdown
-<!-- Wrong — bare fence -->
+<!-- Wrong -->
 ```
-required_vcpus = ceil(current_vcpus × cpu_pct / 100 × 1.5)
+some code
 ```
 
-<!-- Correct — use "text" for formulas/pseudocode -->
-```text
-required_vcpus = ceil(current_vcpus × cpu_pct / 100 × 1.5)
+<!-- Correct -->
+```bash
+some code
 ```
 ```
 
@@ -2496,25 +2241,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
   \* Only required for taking action (termination); the policy will still function in a read-only capacity without these permissions.
 
-  Example IAM Permission Policy:
-
-  ```json
-  {
-      "Version": "2012-10-17",
-      "Statement": [
-          {
-              "Effect": "Allow",
-              "Action": [
-                  "ec2:DescribeRegions",
-                  "ec2:DescribeInstances",
-                  "ec2:TerminateInstances"
-              ],
-              "Resource": "*"
-          }
-      ]
-  }
-  ```
-
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Compute/virtualMachines/read`
   - `Microsoft.Compute/virtualMachines/delete`*
@@ -2561,57 +2287,50 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automat
 
 6. **Action-only permissions** — suffix with `*` (or `†`, `‡`, `§`, `‖`, `¶` for additional distinctions). Every symbol used in the list **must** have a matching footnote line that starts with `  \* ` (or the respective symbol). Standard footnote text: `\* Only required for taking action; the policy will still function in a read-only capacity without these permissions.`
 
-7. **AWS IAM JSON example** — every AWS credential block must include an `Example IAM Permission Policy:` line followed by a fenced `json` code block containing a valid IAM policy document with all permissions listed. Place it immediately after the footnote line(s) and before the next credential block or closing footnote. The JSON must include every permission listed above it (including action-only ones — omit the `*` suffix in the JSON). Example:
+7. **Closing footnote** — the section must end (before the next `##` heading) with exactly:
+   `The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.`
 
-```markdown
-  \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
+8. **AWS credential JSON example** — whenever an AWS credential (`provider=aws`) is listed in `## Prerequisites`, the credential block **must** include a `### Credential configuration` subsection immediately after the credential list (before the closing footnote). This subsection provides an IAM policy JSON example for administrators. The format is:
 
-  Example IAM Permission Policy:
+   ```markdown
+   ### Credential configuration
 
-  ```json
-  {
-      "Version": "2012-10-17",
-      "Statement": [
-          {
-              "Effect": "Allow",
-              "Action": [
-                  "ec2:DescribeRegions",
-                  "ec2:DescribeInstances",
-                  "ec2:TerminateInstances"
-              ],
-              "Resource": "*"
-          }
-      ]
-  }
-  ```
-```
+   For administrators [creating and managing credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) to use with this policy, the following information is needed:
 
-8. **Closing footnote** — the sentence `The [Provider-Specific Credentials](...) page in the docs has detailed instructions...` must appear **immediately after the last credential block** (before any non-credential requirements and before the next `##` heading).
+   - [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
+     - `ec2:DescribeRegions`
+     - `rds:DescribeDBInstances`
+     - `rds:ListTagsForResource`*
 
-9. **Non-credential requirements** — if the policy has additional requirements beyond credentials (e.g. a CloudWatch Agent plugin, an installed OS tool, an IAM instance profile), add them as a `###` subsection **after** the closing footnote and **before** the next `##` heading. Do **not** create a separate top-level `## Requirements` section; all prerequisites belong under `## Prerequisites`. Example:
+     \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
-```markdown
-The [Provider-Specific Credentials](...) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+     Example IAM Permission Policy:
 
-### CloudWatch Agent Requirements
+     ```json
+     {
+         "Version": "2012-10-17",
+         "Statement": [
+             {
+                 "Effect": "Allow",
+                 "Action": [
+                     "ec2:DescribeRegions",
+                     "rds:DescribeDBInstances",
+                     "rds:ListTagsForResource"
+                 ],
+                 "Resource": "*"
+             }
+         ]
+     }
+     ```
+   ```
 
-The following must be in place on each instance before the policy can collect metrics:
-
-1. **CloudWatch Agent installed** — ...
-1. **NVIDIA GPU stats plugin enabled** — ...
-```
+   - The `### Credential configuration` subsection appears **inside `## Prerequisites`**, immediately before the `The [Provider-Specific Credentials]...` closing footnote.
+   - The JSON example must list **all** permissions from the credential block (including action-only ones — those should still appear in the JSON so the administrator can apply full permissions as needed).
+   - The `Resource: "*"` is standard for all AWS service actions in this catalog.
 
 The remaining two required README sections (continuing the main list above):
 
-1. `## Supported Clouds` — a bulleted list of the cloud provider(s) or platform(s) the template targets. Use the canonical short names as they appear across the catalog:
-   - `- AWS` — Amazon Web Services (never "Amazon Web Services")
-   - `- Azure` — Microsoft Azure
-   - `- Google` — Google Cloud Platform
-   - `- Oracle` — Oracle Cloud Infrastructure
-   - `- Alibaba Cloud` — Alibaba Cloud
-   - `- ServiceNow` — ServiceNow (SaaS templates)
-   - `- Flexera` — Flexera-platform templates (FSM, SaaS management, etc.)
-   - `- All` — cloud-agnostic templates that work across all providers
+1. `## Supported Clouds` — list of supported providers, or "All" for cloud-agnostic
 1. `## Cost` — whether this policy template incurs additional costs
 
 ## CHANGELOG Requirements
@@ -2690,6 +2409,25 @@ policy_templates:
 ```
 
 Do **not** manually edit `data/active_policy_list/active_policy_list.json` — auto-generated from `validated_policy_templates.yaml`.
+
+## Data Directory READMEs
+
+Each subdirectory of `data/` has a `README.md` documenting every file it contains. **Whenever a JSON (or other data) file in `data/` is added, removed, or structurally changed, update the corresponding `README.md`** to reflect the change.
+
+The README for each subdirectory follows a consistent structure (modelled on `data/azure/README.md`):
+
+- **Auto-Generated Files** section — for files produced by a script and/or GitHub Actions workflow. Include:
+  - `**Script:**` link to the generating script
+  - `**Workflow:**` link to the workflow (omit if there is none and the script is run manually)
+  - `**Description:**` what the file contains and how it is used
+  - `**Structure:**` a Markdown table of every top-level field with its type and description
+  - `**Example:**` a short representative JSON snippet
+
+- **Manually Maintained Files** section — for files edited by hand. Same sub-headings as above, but omit `**Script:**` and `**Workflow:**`.
+
+When adding a new auto-generated data file, also confirm whether a new GitHub Actions workflow was created; if so, link to it in the README entry.
+
+When a structural change affects field names, types, or nesting, update the field table and example in the README to match.
 
 ## Dangerfile
 

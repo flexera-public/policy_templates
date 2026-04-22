@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.4
+
+- Fixed issue with incident table that cause policy execution to fail
+
 ## v0.6.3
 
 - Added `hash_exclude` directives to idle and underutilized incident blocks to prevent spurious incident re-opens when savings estimates or utilization metrics change between runs.

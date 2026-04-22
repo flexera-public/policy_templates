@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.0
+
+- Added error incident if no Google projects are returned by the credential, to alert users to potential permission issues.
+
+## v0.2.5
+
+- Fixed issue with incident table that cause policy execution to fail
+
 ## v0.2.4
 
 - Updated documentation link in policy description. Functionality unchanged.

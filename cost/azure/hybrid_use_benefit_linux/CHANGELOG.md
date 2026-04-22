@@ -1,5 +1,15 @@
 # Changelog
 
+## v5.3.0
+
+- Added `Estimated Monthly Savings` to incident output based on Azure Linux license pricing data from the Azure Retail Prices API
+- Added `Minimum Savings Threshold` parameter to filter out low-value recommendations
+- Incident results are now sorted by estimated savings in descending order
+
+## v5.2.4
+
+- Fixed issue with incident table that cause policy execution to fail
+
 ## v5.2.3
 
 - Updated documentation link in policy description. Functionality unchanged.

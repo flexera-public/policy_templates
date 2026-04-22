@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "3.5.0",
+  version: "3.6.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -79,6 +79,24 @@ parameter "param_unbudgeted" do
   description "Whether to include or exclude Unbudgeted Spend"
   allowed_values "Exclude Unbudgeted Spend", "Include Unbudgeted Spend"
   default "Exclude Unbudgeted Spend"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
 end
 
 ###############################################################################
@@ -348,11 +366,11 @@ EOS
 end
 
 datasource "ds_aggregated" do
-  run_script $js_aggregated, $ds_filtered_reports, $ds_currency, $ds_dimensions, $ds_billing_center_table, $param_threshold_percentage, $param_type, $param_budget_name_id, $param_filter, f1_app_host
+  run_script $js_aggregated, $ds_filtered_reports, $ds_currency, $ds_dimensions, $ds_billing_center_table, $param_threshold_percentage, $param_type, $param_budget_name_id, $param_filter, $param_incident_csv, f1_app_host
 end
 
 script "js_aggregated", type: "javascript" do
-  parameters "ds_filtered_reports", "ds_currency", "ds_dimensions", "ds_billing_center_table", "param_threshold_percentage", "param_type", "param_budget_name_id", "param_filter", "f1_app_host"
+  parameters "ds_filtered_reports", "ds_currency", "ds_dimensions", "ds_billing_center_table", "param_threshold_percentage", "param_type", "param_budget_name_id", "param_filter", "param_incident_csv", "f1_app_host"
   result "result"
   code <<-'EOS'
   function convert_bc_name(id) {
@@ -392,6 +410,8 @@ script "js_aggregated", type: "javascript" do
     exceeded: [],
     forecasted: [],
   }
+
+  var csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
 
   if (!ds_filtered_reports || !ds_filtered_reports.length) { result['invalid'].push(param_budget_name_id) }
 
@@ -494,6 +514,9 @@ script "js_aggregated", type: "javascript" do
 
   result['exceeded'] = _.sortBy(result['exceeded'], function (item) {return item['group'] })
   result['forecasted'] = _.sortBy(result['forecasted'], function (item) {return item['group'] })
+
+  if (result['exceeded'].length > 0) { result['exceeded'][0]['message'] = csv_message }
+  if (result['forecasted'].length > 0) { result['forecasted'][0]['message'] = csv_message }
 EOS
 end
 
@@ -550,6 +573,8 @@ Target Groups: \n
 {{end}}
 
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
+
+{{ with index data 0 }}{{ .message }}{{ end }}
 EOS
     check eq(size(data), 0)
     escalate $esc_email
@@ -600,6 +625,8 @@ Target Groups: \n
 {{end}}
 
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
+
+{{ with index data 0 }}{{ .message }}{{ end }}
 EOS
     check eq(size(data), 0)
     escalate $esc_email
@@ -637,5 +664,8 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send budget alert email"
-  email $param_email
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
 end

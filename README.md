@@ -46,7 +46,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * All
 
-  * [AWS Resources Under Extended Support](./cost/aws/extended_support)
+  * [AWS Resources Under or Approaching Extended Support](./cost/aws/extended_support)
 
 * Compute
 
@@ -83,6 +83,7 @@ These templates can generate savings estimates for your environment. The inciden
 * RDS
 
   * [AWS Rightsize RDS Instances](./cost/aws/rightsize_rds_instances)
+  * [AWS Superseded RDS Instances](./cost/aws/superseded_rds_instances)
 
 * Storage
 
@@ -101,6 +102,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Compute
 
+  * [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
   * [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
   * [Azure Long Stopped Compute Instances](./cost/azure/long_stopped_instances)
   * [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
@@ -139,11 +141,16 @@ These templates can generate savings estimates for your environment. The inciden
 
 * SQL
 
+  * [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   * [Azure Rightsize SQL Database Storage](./cost/azure/rightsize_sql_storage)
   * [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
   * [Azure Rightsize SQL Managed Instance Storage](./cost/azure/rightsize_managed_sql_storage)
   * [Azure Rightsize SQL Managed Instances](./cost/azure/rightsize_managed_sql)
   * [Azure Rightsize Synapse SQL Pools](./cost/azure/rightsize_synapse_sql_pools)
+
+* Sentinel
+
+  * [Azure Sentinel Commitment Tier Recommendations](./cost/azure/sentinel_commitment_tiers)
 
 * Storage
 
@@ -345,7 +352,6 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
   * [Azure Expiring Savings Plans](./cost/azure/savings_plan/expiration)
-  * [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
   * [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
   * [Azure Savings Plan Utilization](./cost/azure/savings_plan/utilization)
   * [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
@@ -361,7 +367,6 @@ These templates can generate savings estimates for your environment. The inciden
 
 * SQL
 
-  * [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
   * [Azure SQL Servers Without Elastic Pools](./cost/azure/sql_servers_without_elastic_pool)
 
 * Storage
@@ -394,6 +399,7 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Common Bill Ingestion from AWS S3 Object Storage](./cost/flexera/cco/cbi_ingestion_aws_s3)
   * [Common Bill Ingestion from Azure Blob Storage](./cost/flexera/cco/cbi_ingestion_azure_blob)
+  * [Common Bill Ingestion from Google Cloud Storage](./cost/flexera/cco/cbi_ingestion_google_gcs)
   * [Fixed Cost Common Bill Ingestion](./cost/flexera/cco/fixed_cost_cbi)
   * [Percentage Cost Common Bill Ingestion](./cost/flexera/cco/percentage_cost_cbi)
 
@@ -507,6 +513,10 @@ These templates can generate savings estimates for your environment. The inciden
   * [FinOps Dashboards](./operational/flexera/cco/finops_dashboards)
   * [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
   * [MSP Invoiceable Spend Report](./operational/flexera/msp/msp_invoiceable_spend_report)
+  * [Rule-Based Dimensions from CSV - AWS S3](./operational/flexera/cco/rbd_from_csv_aws_s3)
+  * [Rule-Based Dimensions from CSV - Azure Storage](./operational/flexera/cco/rbd_from_csv_azure_storage)
+  * [Rule-Based Dimensions from CSV - Google Cloud Storage](./operational/flexera/cco/rbd_from_csv_google_storage)
+  * [Rule-Based Dimensions from CSV - Microsoft Graph](./operational/flexera/cco/rbd_from_csv_microsoft_graph)
 
 * FlexNet Manager
 

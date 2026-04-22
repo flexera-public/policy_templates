@@ -10,6 +10,8 @@ This policy template checks the user-specified GitHub organizations and reports 
 - *GitHub Organizations* - A list of GitHub Organizations to check.
 - *Minimum Available Seats Required* - The minimum number of available seats to require. Set to `0` to not require any minimum.
 - *Maximum Available Seats Allowed* - The maximum number of available seats to allow. Set to `-1` to have no maximum.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 
 ## Policy Actions
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.0
+
+- Added `Incident Table Rows for Email Body` and `Attach CSV To Incident Email` parameters.
+
 ## v3.0.6
 
 - Updated documentation link in policy description. Functionality unchanged.
