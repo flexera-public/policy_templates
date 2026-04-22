@@ -1,8 +1,8 @@
+# Changelog
+
 ## v1.3.0
 
 - Added error incident when no Azure Subscriptions are found, indicating a potential credential or permissions issue.
-
-# Changelog
 
 ## v1.2.3
 
