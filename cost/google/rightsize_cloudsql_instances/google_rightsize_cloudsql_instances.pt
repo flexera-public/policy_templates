@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.5",
+  version: "0.3.0",
   provider: "Google",
   service: "Compute",
   policy_set: "Rightsize Database Instances",
@@ -442,6 +442,28 @@ script "js_google_projects_filtered", type: "javascript" do
     })
   } else {
     result = ds_google_projects
+  }
+EOS
+end
+
+datasource "ds_no_projects_error" do
+  run_script $js_no_projects_error, $ds_google_projects, $ds_applied_policy
+end
+
+script "js_no_projects_error", type: "javascript" do
+  parameters "ds_google_projects", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (ds_google_projects.length == 0) {
+    var policy_name = "Google Policy"
+    if (ds_applied_policy && ds_applied_policy.name) { policy_name = ds_applied_policy.name }
+
+    result = [{
+      error: "No Google projects were returned. This typically indicates that the Google credential does not have the required 'resourcemanager.projects.get' permission, or that there are no accessible Google projects associated with this credential.",
+      policy_name: policy_name
+    }]
   }
 EOS
 end
@@ -1862,11 +1884,37 @@ policy "pol_cloudsql_recommendations" do
       end
     end
   end
+
+  validate $ds_no_projects_error do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to retrieve any Google projects. This typically indicates a permissions issue with the Google credential.
+
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end -}}
+
+    **Recommended Actions:**
+    1. Verify that the Google credential has the 'resourcemanager.projects.get' permission.
+    1. Ensure that the credential has access to at least one Google project.
+    1. If using project filtering parameters, verify that the filtered list includes accessible projects.
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
 end
 
 ###############################################################################
 # Escalations
 ###############################################################################
+
+escalation "esc_email_errors_identified" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
 
 escalation "esc_email" do
   automatic true

@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4.0
+
+- Added error incident if no Google projects are returned by the credential, to alert users to potential permission issues.
+
 ## v3.3.0
 
 - Added support for attaching CSV files to incident emails.

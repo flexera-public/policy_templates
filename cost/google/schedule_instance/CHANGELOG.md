@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1.0
+
+- Added error incident if no Google projects are returned by the credential, to alert users to potential permission issues.
+
 ## v6.0.8
 
 - Updated documentation link in policy description. Functionality unchanged.
