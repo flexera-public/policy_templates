@@ -569,7 +569,6 @@ script "js_no_subscriptions_error", type: "javascript" do
 EOS
 end
 
-
 datasource "ds_azure_synapse_sql_pools_region_filtered" do
   run_script $js_azure_synapse_sql_pools_region_filtered, $ds_azure_synapse_sql_pools_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
 end
@@ -1517,23 +1516,6 @@ end
 ###############################################################################
 
 policy "pol_azure_synapse_sql_pool_utilization" do
-  validate $ds_no_subscriptions_error do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
-    detail_template <<-'EOS'
-    The policy was unable to access any Azure Subscriptions.
-
-    **Error Details:**
-    {{ range data -}}
-      - {{ .error }}
-    {{ end -}}
-
-    **Recommended Actions:**
-    1. Verify that the Azure credential has the required permissions to list subscriptions.
-    2. Ensure the credential has not expired or been revoked.
-    EOS
-    check eq(size(data), 0)
-    escalate $esc_email_errors_identified
-  end
 
   validate_each $ds_azure_synapse_terminate_pools do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Idle for termination Synapse SQL pools found"
@@ -1843,6 +1825,24 @@ policy "pol_azure_synapse_sql_pool_utilization" do
       end
     end
   end
+
+  validate $ds_no_subscriptions_error do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to access any Azure Subscriptions.
+
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end -}}
+
+    **Recommended Actions:**
+    1. Verify that the Azure credential has the required permissions to list subscriptions.
+    2. Ensure the credential has not expired or been revoked.
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
 end
 
 ###############################################################################
@@ -1871,6 +1871,7 @@ escalation "esc_pause_instances" do
   label "Pause Underutilized Instances"
   description "Automatically pause the dedicated Synapse SQL Pool in the Test MCA subscription"
   run "pause_instances", data, $param_azure_endpoint
+
 end
 
 ###############################################################################

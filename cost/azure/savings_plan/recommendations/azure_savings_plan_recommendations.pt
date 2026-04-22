@@ -309,7 +309,6 @@ script "js_no_subscriptions_error", type: "javascript" do
 EOS
 end
 
-
 # Only request the resource groups in each subscription if we're doing "Resource Group" scope
 datasource "ds_azure_resource_groups_requests" do
   run_script $js_azure_resource_groups_requests, $ds_azure_subscriptions_filtered, $param_scope
@@ -656,23 +655,6 @@ end
 ###############################################################################
 
 policy "pol_azure_sp_recommendations" do
-  validate $ds_no_subscriptions_error do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
-    detail_template <<-'EOS'
-    The policy was unable to access any Azure Subscriptions.
-
-    **Error Details:**
-    {{ range data -}}
-      - {{ .error }}
-    {{ end -}}
-
-    **Recommended Actions:**
-    1. Verify that the Azure credential has the required permissions to list subscriptions.
-    2. Ensure the credential has not expired or been revoked.
-    EOS
-    check eq(size(data), 0)
-    escalate $esc_email_errors_identified
-  end
 
   validate_each $ds_sp_incident do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Savings Plan Purchase Recommendations"
@@ -756,6 +738,24 @@ policy "pol_azure_sp_recommendations" do
       end
     end
   end
+
+  validate $ds_no_subscriptions_error do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to access any Azure Subscriptions.
+
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end -}}
+
+    **Recommended Actions:**
+    1. Verify that the Azure credential has the required permissions to list subscriptions.
+    2. Ensure the credential has not expired or been revoked.
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
 end
 
 ###############################################################################
@@ -767,6 +767,7 @@ escalation "esc_email_errors_identified" do
   label "Send Email"
   description "Send incident email"
   email $param_email
+
 end
 
 escalation "esc_email" do
