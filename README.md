@@ -148,6 +148,10 @@ These templates can generate savings estimates for your environment. The inciden
   * [Azure Rightsize SQL Managed Instances](./cost/azure/rightsize_managed_sql)
   * [Azure Rightsize Synapse SQL Pools](./cost/azure/rightsize_synapse_sql_pools)
 
+* Sentinel
+
+  * [Azure Sentinel Commitment Tier Recommendations](./cost/azure/sentinel_commitment_tiers)
+
 * Storage
 
   * [Azure Old Snapshots](./cost/azure/old_snapshots)
