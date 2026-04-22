@@ -83,6 +83,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `cloudwatch:GetMetricData`
   - `cloudwatch:ListMetrics`
   - `sts:GetCallerIdentity`
+  - `ec2:DescribeInstanceStatus`*
   - `ec2:ModifyInstanceAttribute`*
   - `ec2:StartInstances`*
   - `ec2:StopInstances`*
@@ -104,6 +105,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
                   "cloudwatch:GetMetricData",
                   "cloudwatch:ListMetrics",
                   "sts:GetCallerIdentity",
+                  "ec2:DescribeInstanceStatus",
                   "ec2:ModifyInstanceAttribute",
                   "ec2:StartInstances",
                   "ec2:StopInstances",
