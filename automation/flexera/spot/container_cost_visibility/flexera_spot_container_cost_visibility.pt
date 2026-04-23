@@ -1,0 +1,1095 @@
+name "Container Cost Visibility Setup"
+rs_pt_ver 20180301
+type "policy"
+short_description "Automates the setup of the Flexera One and Spot Ocean integration for Container Cost Visibility. Creates CBI bill connect, dashboard, tag dimensions, optionally hides CCV estimated costs, and applies the Kubernetes Rightsizing Recommendations policy template. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/spot/container_cost_visibility/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/spot/container_cost_visibility/"
+category "Operational"
+severity "low"
+default_frequency "monthly"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: "Container Cost Visibility",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when the setup is complete."
+  default []
+end
+
+parameter "param_spot_ocean_org_id" do
+  type "string"
+  category "Spot Ocean Settings"
+  label "Spot Ocean Organization ID"
+  description "The Spot Ocean Organization ID to integrate with Flexera. This is used to create the CBI bill connect and configure the Spot CCO export."
+  # No default value, user input required
+end
+
+parameter "param_create_dashboard" do
+  type "string"
+  category "Policy Settings"
+  label "Create Dashboard"
+  description "Whether to create the Container Cost Visibility Dashboard in the Flexera One CCO UI. The dashboard provides visibility into Kubernetes costs by cluster, namespace, and pod."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+
+parameter "param_create_tag_dimensions" do
+  type "string"
+  category "Policy Settings"
+  label "Create Tag Dimensions"
+  description "Whether to create Kubernetes tag dimensions in Flexera One CCO. These dimensions expose Kubernetes context (cluster, namespace, pod, etc.) from CCV bill data for cost analysis."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+
+parameter "param_hide_ccv_costs" do
+  type "string"
+  category "Policy Settings"
+  label "Hide CCV Costs"
+  description "Whether to hide Container Cost Visibility estimated costs from general CCO reports via a -100% adjustment rule. CCV costs are estimated based on public market rates, not actual customer rates. Hiding them avoids confusion in chargeback and other reports. The CCV Dashboard still shows these costs."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+
+parameter "param_apply_rightsizing" do
+  type "string"
+  category "Policy Settings"
+  label "Apply Rightsizing Recommendations"
+  description "Whether to apply the 'Kubernetes - Rightsizing Recommendations' published policy template if it is not already applied in this project. This template provides container rightsizing recommendations based on CCV data."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+credentials "auth_spotinst" do
+  schemes "api_key"
+  label "SpotInst"
+  description "Select the SpotInst Credential from the list."
+  tags "provider=spotinst"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_flexera" do
+  get_page_marker do
+    body_path jq(response, 'try(.nextPage | split("skipToken=") | .[1] | sub("%3D";"=";"g") | sub("%253D";"=";"g")) catch null') # The skipToken is url encoded, so we need to decode the %3D and %253D to = .  This is not ideal implementation this seems to be enough without a true urldecode function
+  end
+  set_page_marker do
+    query "skipToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Flexera API host resolution (region-aware)
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      ui: "app.flexera.com",
+      login: "login.flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      ui: "app.flexera.eu",
+      login: "login.flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      ui: "app.flexera.au",
+      login: "login.flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+###############################################################################
+# Step 1: CBI Bill Connect
+###############################################################################
+
+datasource "ds_existing_bill_connects" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
+      field "billIdentifier", jmes_path(col_item, "cbi.billIdentifier")
+      field "integrationId", jmes_path(col_item, "cbi.integrationId")
+      field "name", jmes_path(col_item, "cbi.name")
+      field "displayName", jmes_path(col_item, "cbi.params.displayName")
+      field "vendorName", jmes_path(col_item, "cbi.params.vendorName")
+    end
+  end
+end
+
+datasource "ds_bill_connect_request" do
+  run_script $js_bill_connect_request, $ds_existing_bill_connects, $ds_flexera_api_hosts, $param_spot_ocean_org_id, rs_org_id
+end
+
+script "js_bill_connect_request", type: "javascript" do
+  parameters "ds_existing_bill_connects", "ds_flexera_api_hosts", "param_spot_ocean_org_id", "rs_org_id"
+  result "result"
+  code <<-'EOS'
+  var bill_identifier = "org-" + param_spot_ocean_org_id
+  var bill_connect_id = "cbi-oi-ocean-" + bill_identifier
+
+  var existing_bc = _.find(ds_existing_bill_connects, function(bc) {
+    return bc.id == bill_connect_id
+  })
+
+  if (_.isObject(existing_bc)) {
+    result = []
+  } else {
+    result = [{
+      host: ds_flexera_api_hosts["flexera"],
+      path: "/finops-onboarding/v1/orgs/" + rs_org_id + "/bill-connects/cbi",
+      billIdentifier: bill_identifier,
+      integrationId: "cbi-oi-ocean",
+      name: bill_identifier,
+      params: {
+        "displayName": "Container Cost Visibility",
+        "vendorName": "Container Cost Visibility"
+      }
+    }]
+  }
+EOS
+end
+
+datasource "ds_bill_connect" do
+  iterate $ds_bill_connect_request
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host val(iter_item, "host")
+    path val(iter_item, "path")
+    header "User-Agent", "RS Policies"
+    body_field "billIdentifier", val(iter_item, "billIdentifier")
+    body_field "integrationId", val(iter_item, "integrationId")
+    body_field "name", val(iter_item, "name")
+    body_field "params", val(iter_item, "params")
+    ignore_status [409]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+###############################################################################
+# Step 2: Dashboard
+###############################################################################
+
+# Conditional: only fetch dashboard if param says Yes
+datasource "ds_dashboard_toggle" do
+  run_script $js_dashboard_toggle, $param_create_dashboard
+end
+
+script "js_dashboard_toggle", type: "javascript" do
+  parameters "param_create_dashboard"
+  result "result"
+  code <<-'EOS'
+  if (param_create_dashboard == "Yes") {
+    result = [{ fetch: true }]
+  } else {
+    result = []
+  }
+EOS
+end
+
+# TODO: After pushing to GitHub, uncomment this datasource and remove
+# ds_dashboard_json_embedded below to fetch the dashboard JSON from the repo.
+# datasource "ds_dashboard_json" do
+#   iterate $ds_dashboard_toggle
+#   request do
+#     host "raw.githubusercontent.com"
+#     path "/flexera-public/policy_templates/master/data/dashboards/container_cost_visibility.json"
+#     header "User-Agent", "RS Policies"
+#     ignore_status [404]
+#   end
+#   result do
+#     encoding "json"
+#     field "name", jmes_path(response, "name")
+#     field "config", jmes_path(response, "config")
+#   end
+# end
+
+datasource "ds_dashboard_json" do
+  run_script $js_dashboard_json, $ds_dashboard_toggle
+end
+
+script "js_dashboard_json", type: "javascript" do
+  parameters "ds_dashboard_toggle"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (ds_dashboard_toggle.length > 0) {
+
+  var select_filter = {
+    "adjustment_name": [{ "id": "Raw Cost" }],
+    "bill_source": [{ "regex": "cbi-oi-ocean-" }]
+  }
+
+  var default_filters = [
+    { "id": "CostTypeParam", "source": "default" },
+    { "id": "DateRangeParam", "source": "default" },
+    { "id": "CalendarPeriodParam", "source": "default" },
+    { "id": "SelectParam", "source": "manual", "value": select_filter }
+  ]
+
+  var metric = [{ "id": "cost_amortized_unblended_adj", "name": "Amortized Cost", "type": "Cost" }]
+
+  var widgets = [
+    {
+      component: "bar-chart",
+      description: "",
+      filters: [
+        { id: "DimensionParam", source: "manual", value: ["tag_kubernetes_cluster"] },
+        { id: "GroupByParam", source: "inline" }
+      ].concat(default_filters),
+      id: "502c4858-8abb-4e21-8ba5-ceeabbd0388b",
+      isPercentageBased: "off",
+      metrics: metric,
+      name: "Costs by Kubernetes Cluster"
+    },
+    {
+      component: "cost-list",
+      description: "",
+      filters: [
+        { id: "DimensionParam", source: "inline" },
+        { id: "GroupByParam", source: "manual", value: ["tag_kubernetes_cluster"] }
+      ].concat(default_filters),
+      id: "4e78f534-a954-42e9-ab95-8f7033c91fa4",
+      isPercentageBased: "off",
+      metrics: metric,
+      name: "Costs by Kubernetes Cluster"
+    },
+    {
+      component: "bar-chart",
+      description: "",
+      filters: [
+        { id: "DimensionParam", source: "manual", value: ["tag_kubernetes_namespace"] },
+        { id: "GroupByParam", source: "inline" }
+      ].concat(default_filters),
+      id: "c5ddbd5d-7f39-4d61-9fec-90016a1758a0",
+      isPercentageBased: "off",
+      metrics: metric,
+      name: "Costs by Kubernetes Resource Namespace"
+    },
+    {
+      component: "cost-list",
+      description: "",
+      filters: [
+        { id: "DimensionParam", source: "inline" },
+        { id: "GroupByParam", source: "manual", value: ["tag_kubernetes_namespace"] }
+      ].concat(default_filters),
+      id: "368250f9-cd66-4583-b1e1-d3b9ebd1bdf6",
+      isPercentageBased: "off",
+      metrics: metric,
+      name: "Costs by Kubernetes Namespace"
+    },
+    {
+      component: "cost-list",
+      description: "",
+      filters: [
+        { id: "DimensionParam", source: "inline" },
+        { id: "GroupByParam", source: "manual", value: [
+          "tag_kubernetes_cluster", "tag_kubernetes_namespace",
+          "tag_kubernetes_controller_kind", "tag_kubernetes_controller",
+          "tag_kubernetes_node", "tag_kubernetes_metadata_helm_chart",
+          "tag_kubernetes_metadata_app_name", "usage_type"
+        ]}
+      ].concat(default_filters),
+      id: "8aa64379-fe8d-40b5-98fa-6a4003456af8",
+      isPercentageBased: "off",
+      metrics: metric,
+      name: "Cost List by Cluster, Namespace, Controller Kind, Controller, Node, Helm Chart, App Name, Usage Type"
+    },
+    {
+      component: "resource-list",
+      description: "",
+      filters: [
+        { id: "DimensionParam", source: "inline" },
+        { id: "GroupByParam", source: "inline" }
+      ].concat(default_filters),
+      id: "d418e467-241a-48b8-be5d-b6cbee80f914",
+      isPercentageBased: "off",
+      metrics: metric,
+      name: "Resource List"
+    }
+  ]
+
+  var config = {
+    description: "",
+    layouts: {
+      md: [
+        { h: 6, i: "502c4858-8abb-4e21-8ba5-ceeabbd0388b", minH: 6, minW: 6, moved: false, "static": false, w: 8, x: 0, y: 0 },
+        { h: 6, i: "4e78f534-a954-42e9-ab95-8f7033c91fa4", minH: 6, minW: 4, moved: false, "static": false, w: 4, x: 8, y: 0 },
+        { h: 6, i: "c5ddbd5d-7f39-4d61-9fec-90016a1758a0", minH: 6, minW: 6, moved: false, "static": false, w: 8, x: 0, y: 6 },
+        { h: 6, i: "368250f9-cd66-4583-b1e1-d3b9ebd1bdf6", minH: 6, minW: 4, moved: false, "static": false, w: 4, x: 8, y: 6 },
+        { h: 8, i: "8aa64379-fe8d-40b5-98fa-6a4003456af8", minH: 6, minW: 4, moved: false, "static": false, w: 12, x: 0, y: 12 },
+        { h: 6, i: "d418e467-241a-48b8-be5d-b6cbee80f914", minH: 6, minW: 6, moved: false, "static": false, w: 12, x: 0, y: 20 }
+      ],
+      sm: [
+        { h: 6, i: "502c4858-8abb-4e21-8ba5-ceeabbd0388b", minH: 6, minW: 2, moved: false, "static": false, w: 2, x: 0, y: 0 },
+        { h: 6, i: "4e78f534-a954-42e9-ab95-8f7033c91fa4", minH: 6, minW: 2, moved: false, "static": false, w: 2, x: 0, y: 6 },
+        { h: 6, i: "c5ddbd5d-7f39-4d61-9fec-90016a1758a0", minH: 6, minW: 2, moved: false, "static": false, w: 2, x: 0, y: 12 },
+        { h: 6, i: "368250f9-cd66-4583-b1e1-d3b9ebd1bdf6", minH: 6, minW: 2, moved: false, "static": false, w: 2, x: 0, y: 18 },
+        { h: 6, i: "8aa64379-fe8d-40b5-98fa-6a4003456af8", minH: 6, minW: 2, moved: false, "static": false, w: 2, x: 0, y: 24 },
+        { h: 6, i: "d418e467-241a-48b8-be5d-b6cbee80f914", minH: 6, minW: 2, moved: false, "static": false, w: 2, x: 0, y: 30 }
+      ]
+    },
+    version: 2,
+    widgets: widgets
+  }
+
+  result = [{
+    name: "Container Cost Visibility Dashboard",
+    config: config
+  }]
+
+  } // end if ds_dashboard_toggle.length > 0
+EOS
+end
+
+datasource "ds_dashboard_to_create" do
+  run_script $js_dashboard_to_create, $ds_dashboard_json
+end
+
+script "js_dashboard_to_create", type: "javascript" do
+  parameters "ds_dashboard_json"
+  result "result"
+  code <<-'EOS'
+  result = _.map(ds_dashboard_json, function(dashboard) {
+    if (dashboard["name"] && dashboard["config"]) {
+      return {
+        area: "OrgDashboard",
+        id: "new-dashboard",
+        config: dashboard["config"],
+        name: dashboard["name"],
+        visibility: "public",
+        isDefault: false
+      }
+    }
+  })
+
+  result = _.compact(result)
+EOS
+end
+
+datasource "ds_create_dashboard" do
+  iterate $ds_dashboard_to_create
+  request do
+    auth $auth_flexera
+    verb "POST"
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/dashboards"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    body_field "area", val(iter_item, "area")
+    body_field "id", val(iter_item, "id")
+    body_field "config", val(iter_item, "config")
+    body_field "name", val(iter_item, "name")
+    body_field "visibility", val(iter_item, "visibility")
+    body_field "isDefault", val(iter_item, "isDefault")
+    ignore_status [409]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "name", jmes_path(response, "name")
+  end
+end
+
+###############################################################################
+# Step 3: Tag Dimensions
+###############################################################################
+
+datasource "ds_existing_tag_dimensions" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/tag-dimensions"])
+    query "view", "extended"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_tag_dimensions_to_create" do
+  run_script $js_tag_dimensions_to_create, $ds_existing_tag_dimensions, $param_create_tag_dimensions
+end
+
+script "js_tag_dimensions_to_create", type: "javascript" do
+  parameters "ds_existing_tag_dimensions", "param_create_tag_dimensions"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (param_create_tag_dimensions == "Yes") {
+    var required_dimensions = [
+      { name: "Kubernetes Namespace", tags: [{ key: "oc-namespace" }] },
+      { name: "Kubernetes Cluster", tags: [{ key: "oc-cluster" }] },
+      { name: "Kubernetes Node Cloud Provider Id", tags: [{ key: "oc-provider-id" }] },
+      { name: "Kubernetes Controller", tags: [{ key: "oc-controller" }] },
+      { name: "Kubernetes Pod Id", tags: [{ key: "oc-pod" }] },
+      { name: "Kubernetes Controller Kind", tags: [{ key: "oc-controller-kind" }] },
+      { name: "Kubernetes Node", tags: [{ key: "oc-node" }] },
+      { name: "Kubernetes Metadata App Part Of", tags: [{ key: "app.kubernetes.io/part-of" }] },
+      { name: "Kubernetes Metadata App Name", tags: [{ key: "app.kubernetes.io/name" },{ key: "app" }] },
+      { name: "Kubernetes Metadata App Instance", tags: [{ key: "app.kubernetes.io/instance" }] },
+      { name: "Kubernetes Metadata App Component", tags: [{ key: "app.kubernetes.io/component" }] },
+      { name: "Kubernetes Metadata App Managed By", tags: [{ key: "app.kubernetes.io/managed-by" }] },
+      { name: "Kubernetes Metadata Helm Chart", tags: [{ key: "helm.sh/chart" }] }
+    ]
+
+    var existing_values = []
+    if (ds_existing_tag_dimensions && ds_existing_tag_dimensions["values"]) {
+      existing_values = ds_existing_tag_dimensions["values"]
+    }
+
+    _.each(required_dimensions, function(dim) {
+      var existing = _.find(existing_values, function(e) {
+        return e["name"] == dim["name"]
+      })
+
+      if (!existing) {
+        result.push({
+          verb: "POST",
+          name: dim["name"],
+          tags: dim["tags"],
+          path_suffix: ""
+        })
+      }
+    })
+  }
+EOS
+end
+
+datasource "ds_create_tag_dimensions" do
+  iterate $ds_tag_dimensions_to_create
+  request do
+    run_script $js_create_tag_dimensions, iter_item, $ds_flexera_api_hosts, rs_org_id
+  end
+end
+
+script "js_create_tag_dimensions", type: "javascript" do
+  parameters "iter_item", "ds_flexera_api_hosts", "rs_org_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: ds_flexera_api_hosts["flexera"],
+    path: "/finops-customizations/v1/orgs/" + rs_org_id + "/tag-dimensions",
+    body_fields: {
+      "name": iter_item["name"],
+      "tags": iter_item["tags"]
+    },
+    headers: {
+      "User-Agent": "RS Policies"
+    },
+    ignore_status: [409]
+  }
+EOS
+end
+
+###############################################################################
+# Step 4: Adjustment Rules (Hide CCV Costs)
+###############################################################################
+
+datasource "ds_current_adjustments" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/adjustments/"])
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_updated_adjustments" do
+  run_script $js_updated_adjustments, $ds_current_adjustments, $ds_bill_connect, $param_hide_ccv_costs, $param_spot_ocean_org_id
+end
+
+script "js_updated_adjustments", type: "javascript" do
+  parameters "ds_current_adjustments", "ds_bill_connect", "param_hide_ccv_costs", "param_spot_ocean_org_id"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (param_hide_ccv_costs == "Yes") {
+  var bill_connect_id = "cbi-oi-ocean-org-" + param_spot_ocean_org_id
+  var adj_name = "Container Cost Visibility - Hide Estimated Costs"
+
+  var current_date_parts = new Date().toISOString().split('-')
+  var current_month = [current_date_parts[0], current_date_parts[1]].join('-')
+
+  var ccv_rule = {
+    name: adj_name,
+    rules: [{
+      condition: {
+        type: "dimension_equals",
+        dimension: "bill_source",
+        value: bill_connect_id
+      },
+      cost_multiplier: -1,
+      label: "Hide CCV estimated costs"
+    }]
+  }
+
+  // Build new dated_adjustment_lists preserving existing rules
+  var existing_lists = {}
+  if (ds_current_adjustments && ds_current_adjustments["dated_adjustment_lists"]) {
+    _.each(ds_current_adjustments["dated_adjustment_lists"], function(list) {
+      existing_lists[list["effective_at"]] = list["adjustment_list"]
+    })
+  }
+
+  // Remove our rule from existing lists and re-add it (to update)
+  var new_adjustments = []
+
+  // Process existing months
+  _.each(ds_current_adjustments["dated_adjustment_lists"] || [], function(list) {
+    var filtered = _.filter(list["adjustment_list"], function(adj) {
+      return adj["name"] != adj_name
+    })
+
+    filtered.unshift(ccv_rule)
+
+    new_adjustments.push({
+      adjustment_list: filtered,
+      effective_at: list["effective_at"]
+    })
+  })
+
+  // Add current month if not already present
+  var has_current = _.find(new_adjustments, function(adj) {
+    return adj["effective_at"] == current_month
+  })
+
+  if (!has_current) {
+    new_adjustments.push({
+      adjustment_list: [ccv_rule],
+      effective_at: current_month
+    })
+  }
+
+  new_adjustments = _.sortBy(new_adjustments, "effective_at")
+
+  result = [{ payload: JSON.stringify({ dated_adjustment_lists: new_adjustments }) }]
+  }
+EOS
+end
+
+datasource "ds_apply_adjustments" do
+  iterate $ds_updated_adjustments
+  request do
+    auth $auth_flexera
+    verb "PUT"
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/adjustments/"])
+    header "content-type", "application/json"
+    header "User-Agent", "RS Policies"
+    body val(iter_item, "payload")
+  end
+end
+
+###############################################################################
+# Step 5: Spot CCO Export Check
+###############################################################################
+
+datasource "ds_spot_cco_integration" do
+  request do
+    auth $auth_spotinst
+    host "api.spotinst.io"
+    path "/ocean/flexeraCcoIntegration"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 401, 403, 404]
+  end
+end
+
+###############################################################################
+# Step 6: Apply Kubernetes Rightsizing Recommendations
+###############################################################################
+
+datasource "ds_published_templates" do
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/published-templates"])
+    query "limit", "5000"
+    query "view", "extended"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    collect jmes_path(response, "values[*]") do
+      field "id", jq(col_item, ".id")
+      field "name", jq(col_item, ".name")
+      field "ref", jq(col_item, ".ref")
+      field "builtIn", jq(col_item, ".builtIn")
+      field "credentials", jq(col_item, ".credentials")
+      field "defaultFrequency", jq(col_item, ".defaultFrequency")
+      field "shortDescription", jq(col_item, ".shortDescription")
+    end
+  end
+end
+
+datasource "ds_applied_policies" do
+  request do
+    auth $auth_flexera
+    pagination $pagination_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies"])
+    query "limit", "5000"
+    query "view", "extended"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    collect jmes_path(response, "values[*]") do
+      field "id", jq(col_item, ".id")
+      field "name", jq(col_item, ".name")
+      field "credentials", jq(col_item, ".credentials")
+      field "publishedTemplate", jq(col_item, ".publishedTemplate")
+      field "policyTemplate", jq(col_item, ".policyTemplate")
+      field "status", jq(col_item, ".status")
+    end
+  end
+end
+
+datasource "ds_apply_rightsizing_request" do
+  run_script $js_apply_rightsizing_request, $ds_published_templates, $ds_applied_policies, $ds_flexera_api_hosts, $param_apply_rightsizing, rs_org_id, rs_project_id
+end
+
+script "js_apply_rightsizing_request", type: "javascript" do
+  parameters "ds_published_templates", "ds_applied_policies", "ds_flexera_api_hosts", "param_apply_rightsizing", "rs_org_id", "rs_project_id"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (param_apply_rightsizing == "Yes") {
+    var template_name = "Kubernetes - Rightsizing Recommendations"
+
+    var published_template = _.find(ds_published_templates, function(pt) {
+      return pt["name"] == template_name && pt["builtIn"] == true
+    })
+
+    if (published_template) {
+      var already_applied = _.find(ds_applied_policies, function(ap) {
+        if (ap["name"] == template_name) { return true }
+        if (ap["publishedTemplate"] && ap["publishedTemplate"]["name"] == template_name) { return true }
+        if (ap["policyTemplate"] && ap["policyTemplate"]["name"] == template_name) { return true }
+        return false
+      })
+
+      if (!already_applied) {
+        // Reuse the same credential IDs as this running policy.
+        // Find our own applied policy by template name and extract its credentials.
+        var our_policy = _.find(ds_applied_policies, function(ap) {
+          if (ap["policyTemplate"] && ap["policyTemplate"]["name"] == "Container Cost Visibility Setup") { return true }
+          if (ap["name"] == "Container Cost Visibility Setup") { return true }
+          return false
+        })
+
+        var our_creds = {}
+        if (our_policy && our_policy["credentials"]) {
+          our_creds = our_policy["credentials"]
+        }
+
+        // Map published template's required credentials to our credential IDs
+        var cred_mapping = {}
+
+        if (published_template["credentials"]) {
+          var cred_keys = Object.keys(published_template["credentials"])
+
+          _.each(cred_keys, function(cred_key) {
+            var pt_cred = published_template["credentials"][cred_key]
+            var pt_cred_name = pt_cred["name"]
+            var pt_provider = ""
+
+            if (pt_cred["tags"]) {
+              _.each(pt_cred["tags"], function(tag) {
+                if (tag["key"] == "provider") { pt_provider = tag["value"] }
+              })
+            }
+
+            // First: match by name (e.g. both use "auth_flexera")
+            if (our_creds[pt_cred_name]) {
+              cred_mapping[pt_cred_name] = our_creds[pt_cred_name]
+            } else {
+              // Second: match by provider tag across our credentials
+              _.each(Object.keys(our_creds), function(our_cred_name) {
+                if (pt_provider == "flexera" && our_cred_name.indexOf("flexera") >= 0) {
+                  cred_mapping[pt_cred_name] = our_creds[our_cred_name]
+                } else if (pt_provider == "spotinst" && our_cred_name.indexOf("spotinst") >= 0) {
+                  cred_mapping[pt_cred_name] = our_creds[our_cred_name]
+                }
+              })
+            }
+          })
+        }
+
+        var freq = "DAILY"
+
+        if (published_template["defaultFrequency"]) {
+          freq = published_template["defaultFrequency"].toUpperCase()
+          if (freq == "15 MINUTES") { freq = "MINUTELY;INTERVAL=15" }
+        }
+
+        result = [{
+          host: ds_flexera_api_hosts["flexera"],
+          path: "/policy/v1/orgs/" + rs_org_id + "/projects/" + rs_project_id + "/applied-policies",
+          name: template_name,
+          description: "Applied automatically by Container Cost Visibility Setup policy template.",
+          templateRef: published_template["ref"],
+          schedule: { "rrule": "FREQ=" + freq },
+          credentials: cred_mapping,
+          options: []
+        }]
+      }
+    }
+  }
+EOS
+end
+
+datasource "ds_apply_rightsizing" do
+  iterate $ds_apply_rightsizing_request
+  request do
+    run_script $js_apply_rightsizing, iter_item
+  end
+end
+
+script "js_apply_rightsizing", type: "javascript" do
+  parameters "iter_item"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: iter_item["host"],
+    path: iter_item["path"],
+    body_fields: {
+      "name": iter_item["name"],
+      "description": iter_item["description"],
+      "templateRef": iter_item["templateRef"],
+      "dryRun": false,
+      "schedule": iter_item["schedule"],
+      "credentials": iter_item["credentials"],
+      "options": iter_item["options"]
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json"
+    },
+    ignore_status: [409]
+  }
+EOS
+end
+
+###############################################################################
+# Compile Results
+###############################################################################
+
+datasource "ds_results" do
+  run_script $js_results, $ds_bill_connect, $ds_create_dashboard, $ds_create_tag_dimensions, $ds_apply_adjustments, $ds_spot_cco_integration, $ds_apply_rightsizing, $ds_existing_bill_connects, $ds_published_templates, $ds_applied_policies, $ds_flexera_api_hosts, $param_spot_ocean_org_id, $param_create_dashboard, $param_create_tag_dimensions, $param_hide_ccv_costs, $param_apply_rightsizing, rs_org_id
+end
+
+script "js_results", type: "javascript" do
+  parameters "ds_bill_connect", "ds_create_dashboard", "ds_create_tag_dimensions", "ds_apply_adjustments", "ds_spot_cco_integration", "ds_apply_rightsizing", "ds_existing_bill_connects", "ds_published_templates", "ds_applied_policies", "ds_flexera_api_hosts", "param_spot_ocean_org_id", "param_create_dashboard", "param_create_tag_dimensions", "param_hide_ccv_costs", "param_apply_rightsizing", "rs_org_id"
+  result "result"
+  code <<-'EOS'
+  var bill_connect_id = "cbi-oi-ocean-org-" + param_spot_ocean_org_id
+  var ui_host = ds_flexera_api_hosts["ui"]
+  var flexera_host = ds_flexera_api_hosts["flexera"]
+
+  result = []
+
+  // Step 1: Bill Connect
+  var bc_existed = _.find(ds_existing_bill_connects, function(bc) {
+    return bc.id == bill_connect_id
+  })
+  if (ds_bill_connect.length > 0) {
+    result.push({
+      step: "1. CBI Bill Connect",
+      status: "Created",
+      details: "Bill Connect ID: " + bill_connect_id
+    })
+  } else {
+    result.push({
+      step: "1. CBI Bill Connect",
+      status: bc_existed ? "Already Exists" : "Failed",
+      details: "Bill Connect ID: " + bill_connect_id
+    })
+  }
+
+  // Step 2: Dashboard
+  if (param_create_dashboard == "Yes") {
+    if (ds_create_dashboard.length > 0 && ds_create_dashboard[0]["id"]) {
+      result.push({
+        step: "2. CCV Dashboard",
+        status: "Created",
+        details: "Dashboard: " + (ds_create_dashboard[0]["name"] || "Container Cost Visibility Dashboard") + " — View at https://" + ui_host + "/orgs/" + rs_org_id + "/optima/dashboards"
+      })
+    } else {
+      result.push({
+        step: "2. CCV Dashboard",
+        status: "Already Exists or Failed",
+        details: "Dashboard may already exist (409 conflict) or creation failed. View dashboards at https://" + ui_host + "/orgs/" + rs_org_id + "/optima/dashboards"
+      })
+    }
+  } else {
+    result.push({
+      step: "2. CCV Dashboard",
+      status: "Skipped",
+      details: "Dashboard creation disabled by parameter."
+    })
+  }
+
+  // Step 3: Tag Dimensions
+  if (param_create_tag_dimensions == "Yes") {
+    if (ds_create_tag_dimensions.length > 0) {
+      result.push({
+        step: "3. Tag Dimensions",
+        status: "Created " + ds_create_tag_dimensions.length + " dimension(s)",
+        details: "Kubernetes tag dimensions created for Ocean context (oc-namespace, oc-cluster, etc.)."
+      })
+    } else {
+      result.push({
+        step: "3. Tag Dimensions",
+        status: "Already Exist",
+        details: "All required Kubernetes tag dimensions already exist."
+      })
+    }
+  } else {
+    result.push({
+      step: "3. Tag Dimensions",
+      status: "Skipped",
+      details: "Tag dimension creation disabled by parameter."
+    })
+  }
+
+  // Step 4: Adjustment Rules
+  if (param_hide_ccv_costs == "Yes") {
+    result.push({
+      step: "4. Hide CCV Costs",
+      status: "Applied",
+      details: "Adjustment rule added: -100% cost multiplier on bill_source=" + bill_connect_id + ". CCV costs hidden from general CCO reports. The CCV Dashboard shows raw (pre-adjustment) costs."
+    })
+  } else {
+    result.push({
+      step: "4. Hide CCV Costs",
+      status: "Skipped",
+      details: "CCV cost hiding disabled by parameter. CCV estimated costs will be visible in all CCO reports."
+    })
+  }
+
+  // Step 5: Spot CCO Export
+  var spot_integration_exists = false
+  if (ds_spot_cco_integration && ds_spot_cco_integration["response"]) {
+    var status = ds_spot_cco_integration["response"]["status"]
+    if (status && status["code"] == 200) {
+      spot_integration_exists = true
+    }
+  }
+  // Also check if items array exists and has content
+  if (ds_spot_cco_integration && ds_spot_cco_integration["response"] && ds_spot_cco_integration["response"]["items"]) {
+    if (ds_spot_cco_integration["response"]["items"].length > 0) {
+      spot_integration_exists = true
+    }
+  }
+
+  if (spot_integration_exists) {
+    result.push({
+      step: "5. Spot CCO Export",
+      status: "Already Configured",
+      details: "Spot CCO Export integration is already configured for this Spot organization."
+    })
+  } else {
+    var curl_cmd = [
+      "curl -X POST 'https://api.spotinst.io/ocean/flexeraCcoIntegration' \\",
+      "  -H 'Authorization: Bearer <SPOT_API_TOKEN>' \\",
+      "  -H 'Content-Type: application/json' \\",
+      "  -d '{",
+      "    \"flexeraBillConnectId\": \"" + bill_connect_id + "\",",
+      "    \"flexeraOrganizationId\": \"" + rs_org_id + "\",",
+      "    \"flexeraRefreshToken\": \"<FLEXERA_REFRESH_TOKEN>\",",
+      "    \"flexeraZone\": \"" + ds_flexera_api_hosts["flexera"].replace("api.", "") + "\"",
+      "  }'"
+    ].join("\n")
+
+    var ps_cmd = [
+      "$headers = @{",
+      "  'Authorization' = 'Bearer <SPOT_API_TOKEN>'",
+      "  'Content-Type'  = 'application/json'",
+      "}",
+      "$body = @{",
+      "  flexeraBillConnectId   = '" + bill_connect_id + "'",
+      "  flexeraOrganizationId  = '" + rs_org_id + "'",
+      "  flexeraRefreshToken    = '<FLEXERA_REFRESH_TOKEN>'",
+      "  flexeraZone            = '" + ds_flexera_api_hosts["flexera"].replace("api.", "") + "'",
+      "} | ConvertTo-Json",
+      "Invoke-RestMethod -Uri 'https://api.spotinst.io/ocean/flexeraCcoIntegration' -Method Post -Headers $headers -Body $body"
+    ].join("\n")
+
+    var details = "The Spot CCO Export requires a Flexera refresh token which cannot be generated automatically by this policy template.\n\n"
+    details += "**To complete the setup:**\n\n"
+    details += "1. Generate a Flexera refresh token: [Flexera Documentation](https://docs.flexera.com/flexera/EN/FlexeraAPI/GenerateRefreshToken.htm)\n"
+    details += "2. Get your Spot API permanent token: [Spot Documentation](https://docs-spot.flexera.com/administration/api/create-api-token)\n"
+    details += "3. Run one of the following commands, replacing the placeholder tokens:\n\n"
+    details += "**curl (Linux/Mac):**\n\n"
+    details += "```\n" + curl_cmd + "\n```\n\n"
+    details += "**PowerShell (Windows):**\n\n"
+    details += "```\n" + ps_cmd + "\n```\n\n"
+    details += "**Values for your environment:**\n\n"
+    details += "| Setting | Value |\n"
+    details += "| --- | --- |\n"
+    details += "| Bill Connect ID | `" + bill_connect_id + "` |\n"
+    details += "| Flexera Org ID | `" + rs_org_id + "` |\n"
+    details += "| Flexera Zone | `" + ds_flexera_api_hosts["flexera"].replace("api.", "") + "` |\n"
+    details += "| Spot Ocean Org ID | `" + param_spot_ocean_org_id + "` |\n"
+
+    result.push({
+      step: "5. Spot CCO Export",
+      status: "Manual Setup Required",
+      details: details
+    })
+  }
+
+  // Step 6: Rightsizing Recommendations
+  if (param_apply_rightsizing == "Yes") {
+    var template_name = "Kubernetes - Rightsizing Recommendations"
+
+    var published_template = _.find(ds_published_templates, function(pt) {
+      return pt["name"] == template_name && pt["builtIn"] == true
+    })
+
+    if (!published_template) {
+      result.push({
+        step: "6. Rightsizing Recommendations",
+        status: "Template Not Found",
+        details: "The '" + template_name + "' published template was not found in the catalog. It may not be available in this organization."
+      })
+    } else {
+      var already_applied = _.find(ds_applied_policies, function(ap) {
+        if (ap["name"] == template_name) { return true }
+        if (ap["publishedTemplate"] && ap["publishedTemplate"]["name"] == template_name) { return true }
+        if (ap["policyTemplate"] && ap["policyTemplate"]["name"] == template_name) { return true }
+        return false
+      })
+
+      if (already_applied) {
+        result.push({
+          step: "6. Rightsizing Recommendations",
+          status: "Already Applied",
+          details: "The '" + template_name + "' policy template is already applied in this project."
+        })
+      } else if (ds_apply_rightsizing.length > 0) {
+        result.push({
+          step: "6. Rightsizing Recommendations",
+          status: "Applied",
+          details: "The '" + template_name + "' policy template has been applied. View at https://" + ui_host + "/orgs/" + rs_org_id + "/policy"
+        })
+      } else {
+        result.push({
+          step: "6. Rightsizing Recommendations",
+          status: "Failed",
+          details: "Failed to apply the '" + template_name + "' policy template. Please apply it manually from the Flexera catalog."
+        })
+      }
+    }
+  } else {
+    result.push({
+      step: "6. Rightsizing Recommendations",
+      status: "Skipped",
+      details: "Rightsizing recommendations policy application disabled by parameter."
+    })
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_container_cost_visibility" do
+  validate_each $ds_results do
+    summary_template "Container Cost Visibility Setup: {{ len data }} Steps Completed"
+    detail_template <<-'EOS'
+  # Container Cost Visibility Setup Results
+
+  {{range data}}
+  ## {{ .step }}: {{ .status }}
+  {{ .details }}
+
+  {{end}}
+  EOS
+    check eq(0, 1)
+    escalate $esc_email
+    # export do
+    #   resource_level true
+    #   field "id" do
+    #     label "Step #"
+    #     path "step"
+    #   end
+    #   field "step" do
+    #     label "Step"
+    #   end
+    #   field "status" do
+    #     label "Status"
+    #   end
+    #   field "details" do
+    #     label "Details"
+    #   end
+    # end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
