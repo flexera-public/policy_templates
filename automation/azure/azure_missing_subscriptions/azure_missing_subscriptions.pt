@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.2.0",
+  version: "0.3.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Automation",
@@ -272,6 +272,25 @@ datasource "ds_azure_subscriptions" do
   end
 end
 
+datasource "ds_no_subscriptions_error" do
+  run_script $js_no_subscriptions_error, $ds_azure_subscriptions, $ds_applied_policy
+end
+
+script "js_no_subscriptions_error", type: "javascript" do
+  parameters "ds_azure_subscriptions", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (ds_azure_subscriptions.length == 0) {
+    result = [{
+      policy_name: ds_applied_policy['name'],
+      error: "No Azure Subscriptions found. This is usually caused by a lack of permissions or an expired/invalid credential."
+    }]
+  }
+EOS
+end
+
 datasource "ds_missing_subscriptions_api" do
   run_script $js_missing_subscriptions_api, $ds_flexera_cco_data, $ds_azure_subscriptions, $ds_applied_policy, $param_subscriptions_list, $param_report_selection, $param_incident_csv
 end
@@ -394,11 +413,35 @@ policy "pol_missing_subscriptions" do
       end
     end
   end
+  validate $ds_no_subscriptions_error do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to access any Azure Subscriptions.
+
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end -}}
+
+    **Recommended Actions:**
+    1. Verify that the Azure credential has the required permissions to list subscriptions.
+    2. Ensure the credential has not expired or been revoked.
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
 end
 
 ###############################################################################
 # Escalations
 ###############################################################################
+
+escalation "esc_email_errors_identified" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
 
 escalation "esc_email" do
   automatic true

@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "15 minutes"
 info(
-  version: "7.0.10",
+  version: "7.1.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Schedule Instance",
@@ -458,6 +458,25 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
     })
   } else {
     result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_no_subscriptions_error" do
+  run_script $js_no_subscriptions_error, $ds_azure_subscriptions, $ds_applied_policy
+end
+
+script "js_no_subscriptions_error", type: "javascript" do
+  parameters "ds_azure_subscriptions", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (ds_azure_subscriptions.length == 0) {
+    result = [{
+      policy_name: ds_applied_policy['name'],
+      error: "No Azure Subscriptions found. This is usually caused by a lack of permissions or an expired/invalid credential."
+    }]
   }
 EOS
 end
@@ -1111,7 +1130,6 @@ The following actions completed successfully:
       end
     end
   end
-
   validate $ds_policy_incident_action_failed_details do
     summary_template "{{ with index data.actions 0 }}{{ .policy_name }}{{ end }}: Failed Actions"
     detail_template <<-'EOS'
@@ -1193,7 +1211,6 @@ Failed:
       end
     end
   end
-
   validate_each $ds_instances_schedule_result_action_start do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Starting {{ len data }} Instances"
     detail_template <<-'EOS'
@@ -1271,7 +1288,6 @@ The following Azure Instances are scheduled to start now:
       end
     end
   end
-
   validate_each $ds_instances_schedule_result_action_stop do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Stopping {{ len data }} Instances"
     detail_template <<-'EOS'
@@ -1349,7 +1365,6 @@ The following Azure Instances are scheduled to stop now:
       end
     end
   end
-
   validate_each $ds_instances_schedule_result_with_last_action_status do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Scheduled Instances"
     detail_template <<-'EOS'
@@ -1436,11 +1451,35 @@ The following Azure Scheduled Instances have tag `{{ parameters.param_tag_schedu
       end
     end
   end
+  validate $ds_no_subscriptions_error do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to access any Azure Subscriptions.
+
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end -}}
+
+    **Recommended Actions:**
+    1. Verify that the Azure credential has the required permissions to list subscriptions.
+    2. Ensure the credential has not expired or been revoked.
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
 end
 
 ###############################################################################
 # Escalations
 ###############################################################################
+
+escalation "esc_email_errors_identified" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
 
 escalation "esc_email_start" do
   automatic contains($param_automatic_action, "Start Notification")

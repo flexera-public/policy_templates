@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.6.0
+
+- Added error incident when no Azure Subscriptions are found, indicating a potential credential or permissions issue.
+
 ## v4.5.0
 
 - Added `Estimated Monthly Savings` to incident table for SQL Elastic Pools, SQL Databases, SQL Managed Instances, and SQL Virtual Machines

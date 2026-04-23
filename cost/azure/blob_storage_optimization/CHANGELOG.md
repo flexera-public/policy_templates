@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.0
+
+- Added error incident when no Azure Subscriptions are found, indicating a potential credential or permissions issue.
+
 ## v4.0.12
 
 - Fixed issue with incident table that cause policy execution to fail
