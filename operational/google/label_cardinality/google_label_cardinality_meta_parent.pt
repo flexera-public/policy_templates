@@ -993,17 +993,52 @@ script "js_ds_label_report_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-'EOS'
-  result = []
+  // Aggregate label cardinality across all child incidents.
+  // Each child incident has rows of the form { type, key, cardinality, value_list }.
+  // Simply stacking them would produce duplicate rows per project. Instead we
+  // merge all value_list strings for each (type, key) pair, deduplicate the
+  // values, and recalculate the true combined cardinality.
+  var label_map = {}
+
   _.each(ds_child_incident_details, function(incident) {
-    s = incident["summary"];
-    // If the incident summary contains "Google Label Keys Found" then include it in the filter result
+    var s = incident["summary"]
     if (s.indexOf("Google Label Keys Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
-        violation["incident_id"] = incident["id"];
-        result.push(violation);
-      });
+        var map_key = violation["type"] + "||" + violation["key"]
+
+        if (label_map[map_key] == undefined) {
+          label_map[map_key] = {
+            type: violation["type"],
+            key: violation["key"],
+            values: [],
+            project_count: 0
+          }
+        }
+
+        if (violation["value_list"] && violation["value_list"].length > 0) {
+          var new_values = violation["value_list"].split(", ")
+          label_map[map_key]["values"] = label_map[map_key]["values"].concat(new_values)
+        }
+
+        label_map[map_key]["project_count"] += 1
+      })
     }
-  });
+  })
+
+  result = []
+
+  _.each(label_map, function(label_data) {
+    var unique_values = _.uniq(label_data["values"])
+    result.push({
+      type: label_data["type"],
+      key: label_data["key"],
+      cardinality: unique_values.length,
+      value_list: unique_values.join(", "),
+      project_count: label_data["project_count"]
+    })
+  })
+
+  result = _.sortBy(result, "cardinality").reverse()
 EOS
 end
 
@@ -1020,9 +1055,8 @@ policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
     # Consolidated incident for Google Label Keys Found
   validate $ds_label_report_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Google Label Keys Found"
+    summary_template "Consolidated Google Label Cardinality Report: {{ len data }} Label Keys Found"
     escalate $esc_email
-    
     check eq(size(data), 0)
     export do
       resource_level false
@@ -1038,8 +1072,8 @@ policy "policy_scheduled_report" do
       field "value_list" do
         label "Unique Values"
       end
-      field "incident_id" do
-        label "Child Incident ID"
+      field "project_count" do
+        label "Project Count"
       end
     end
   end

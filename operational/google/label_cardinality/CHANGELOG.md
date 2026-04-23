@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.0
+
+- Meta parent policy now produces a proper consolidated cardinality report by aggregating label key values across all child policy incidents. The combined report shows the true cardinality (unique value count) of each label key across all Google Projects, along with a Project Count field indicating how many projects use each label key.
+
 ## v0.4.0
 
 - Added error incident if no Google projects are returned by the credential, to alert users to potential permission issues.

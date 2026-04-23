@@ -983,17 +983,52 @@ script "js_ds_tag_report_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-'EOS'
-  result = []
+  // Aggregate tag cardinality across all child incidents.
+  // Each child incident has rows of the form { type, key, cardinality, value_list }.
+  // Simply stacking them would produce duplicate rows per account. Instead we
+  // merge all value_list strings for each (type, key) pair, deduplicate the
+  // values, and recalculate the true combined cardinality.
+  var tag_map = {}
+
   _.each(ds_child_incident_details, function(incident) {
-    s = incident["summary"];
-    // If the incident summary contains "AWS Tag Cardinality Report" then include it in the filter result
+    var s = incident["summary"]
     if (s.indexOf("AWS Tag Cardinality Report") > -1) {
       _.each(incident["violation_data"], function(violation) {
-        violation["incident_id"] = incident["id"];
-        result.push(violation);
-      });
+        var map_key = violation["type"] + "||" + violation["key"]
+
+        if (tag_map[map_key] == undefined) {
+          tag_map[map_key] = {
+            type: violation["type"],
+            key: violation["key"],
+            values: [],
+            account_count: 0
+          }
+        }
+
+        if (violation["value_list"] && violation["value_list"].length > 0) {
+          var new_values = violation["value_list"].split(", ")
+          tag_map[map_key]["values"] = tag_map[map_key]["values"].concat(new_values)
+        }
+
+        tag_map[map_key]["account_count"] += 1
+      })
     }
-  });
+  })
+
+  result = []
+
+  _.each(tag_map, function(tag_data) {
+    var unique_values = _.uniq(tag_data["values"])
+    result.push({
+      type: tag_data["type"],
+      key: tag_data["key"],
+      cardinality: unique_values.length,
+      value_list: unique_values.join(", "),
+      account_count: tag_data["account_count"]
+    })
+  })
+
+  result = _.sortBy(result, "cardinality").reverse()
 EOS
 end
 
@@ -1010,9 +1045,8 @@ policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
     # Consolidated incident for AWS Tag Cardinality Report
   validate $ds_tag_report_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} AWS Tag Cardinality Report"
+    summary_template "Consolidated AWS Tag Cardinality Report: {{ len data }} Tag Keys Found"
     escalate $esc_email
-    
     check eq(size(data), 0)
     export do
       resource_level false
@@ -1028,8 +1062,8 @@ policy "policy_scheduled_report" do
       field "value_list" do
         label "Unique Values"
       end
-      field "incident_id" do
-        label "Child Incident ID"
+      field "account_count" do
+        label "Account Count"
       end
     end
   end

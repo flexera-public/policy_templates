@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4.0
+
+- Meta parent policy now produces a proper consolidated cardinality report by aggregating tag key values across all child policy incidents. The combined report shows the true cardinality (unique value count) of each tag key across all Azure Subscriptions, along with a Subscription Count field indicating how many subscriptions use each tag key.
+
 ## v3.3.2
 
 - Updated documentation link in policy description. Functionality unchanged.
