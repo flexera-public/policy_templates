@@ -12,7 +12,6 @@ This policy template identifies Azure Windows Server virtual machines that are e
 - This policy template does not track licenses or availability. It is your responsibility to ensure you are not under licensed.
 - The hourly cost of a virtual machine is calculated by dividing the total cost of the virtual machine for the last 30 days by the hours of usage for that same time period.
 - Azure subscriptions using the Azure Plan for DevTest are automatically excluded from results. These subscriptions are identified by a `subscriptionPolicies.quotaId` value that contains the string "devtest" (case-insensitive). Windows VMs in DevTest subscriptions already receive free Windows licenses and therefore do not yield savings from AHUB.
-- Subscriptions with an Azure Plan for DevTest are automatically excluded from results. Windows VMs in DevTest subscriptions already receive free Windows licenses as part of the DevTest offer, so there is no licensing cost savings to be realized from enabling AHUB for those VMs.
 
 ### Policy Savings Details
 

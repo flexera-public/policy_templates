@@ -12,7 +12,6 @@ This policy template identifies Azure SQL resources — including SQL Virtual Ma
 - This policy template does not track licenses or availability. It is your responsibility to ensure that you have valid licenses for all resources that AHUB is enabled for.
 - The hourly cost of a SQL resource is calculated by dividing the total cost of the SQL resource for the last 30 days by the hours of usage for that same time period.
 - Azure subscriptions using the Azure Plan for DevTest are automatically excluded from SQL Virtual Machine results. These subscriptions are identified by a `subscriptionPolicies.quotaId` value that contains the string "devtest" (case-insensitive). Windows VMs in DevTest subscriptions already receive free Windows licenses and therefore do not yield savings from AHUB for SQL VMs. This exclusion does not apply to SQL Elastic Pools, SQL Databases, or SQL Managed Instances, as SQL Server license costs are not covered by the DevTest plan.
-- Subscriptions with an Azure Plan for DevTest are automatically excluded from SQL Virtual Machine results. Windows VMs in DevTest subscriptions already receive free Windows licenses as part of the DevTest offer, so AHUB recommendations for SQL Virtual Machines in those subscriptions do not apply. This exclusion does not affect SQL Elastic Pools, SQL Databases, or SQL Managed Instances.
 
 ### Policy Savings Details
 
