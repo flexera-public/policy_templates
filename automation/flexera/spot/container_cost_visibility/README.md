@@ -6,18 +6,18 @@ This policy template automates the setup of the Flexera One and Spot Ocean integ
 
 1. Creates a CBI (Common Bill Ingestion) bill connect for Spot Ocean to ingest container cost data into Flexera One.
 1. Creates a Container Cost Visibility Dashboard in the Flexera CCO UI for viewing Kubernetes costs by cluster, namespace, and pod.
-1. Creates Kubernetes tag dimensions for cost analysis, exposing context such as cluster, namespace, pod, controller, and node from CCV bill data.
-1. Optionally hides CCV estimated costs from general CCO reports via a -100% adjustment rule. CCV costs are estimated based on public market rates, not actual customer rates — hiding them avoids confusion in chargeback and other reports. The CCV Dashboard still shows these costs using raw (pre-adjustment) values.
+1. Creates Kubernetes tag dimensions for cost analysis, exposing context such as cluster, namespace, pod, controller, and node from Container Cost Visibility bill data.
+1. Optionally hides Container Cost Visibility estimated costs from general CCO reports via a -100% adjustment rule. Flexera Container Cost Visibility estimated **currently** based on public market rates, not actual customer rates — hiding them avoids confusion in chargeback and other reports. The CCV Dashboard still shows these costs using raw (pre-adjustment) values.  "Actual costs" breakdowns for Containers (cost reconciliation with Cloud Bill Data) is committed for general available 2026.
 1. Checks Spot CCO Export status and provides setup instructions if it is not yet configured.
 1. Optionally applies the "Kubernetes - Rightsizing Recommendations" published policy template from the Flexera catalog if it is not already applied in the current project.
 
-__NOTE: This policy template only needs to execute once to perform the above tasks. It is recommended that the policy template be terminated after execution completes.__
+__NOTE: This *Container Cost Visibility Setup* policy template only needs to execute once to perform the above tasks. It is recommended that the applied policy be terminated after execution completes.__
 
 ## How It Works
 
 - The policy creates or updates a CBI bill connect (`cbi-oi-ocean-org-{spot_org_id}`) via the Flexera FinOps Onboarding API. This bill connect is the data pipeline from Spot Ocean to Flexera One, ingesting container cost data in the CBI format.
-- The Container Cost Visibility Dashboard is fetched from the public `policy_templates` repository and created via the Flexera Bill Analysis Dashboards API. The dashboard filters on `bill_source` matching the `cbi-oi-ocean-` prefix and uses the `adjustment_name: Raw Cost` metric to show pre-adjustment CCV costs.
-- Kubernetes tag dimensions (e.g. `oc-namespace`, `oc-cluster`, `oc-pod`, `oc-controller`, `oc-node`, `oc-controller-kind`, `oc-provider-id`, `app.kubernetes.io/name`, `app.kubernetes.io/part-of`, `helm.sh/chart`) are created via the FinOps Customizations API. These dimensions allow Kubernetes context to appear in cost analysis views alongside standard cloud dimensions.
+- The Container Cost Visibility Dashboard is created from the public `policy_templates` repository and created via the Flexera Bill Analysis Dashboards API. The dashboard filters on `bill_source` matching the `cbi-oi-ocean-` prefix and uses the `adjustment_name: Raw Cost` metric to show pre-adjustment CCV costs.
+- Kubernetes Dimensions (e.g. `Kubernetes Namespace`, `Kubernetes Cluster`, `Kubernetes Controller`, `Kubernetes Node`, etc.) are created. These dimensions allow Kubernetes context to appear in cost analysis views alongside standard cloud dimensions.
 - When the "Hide CCV Costs" option is enabled, the policy applies a cost adjustment rule with `cost_multiplier: -1` on the CCV `bill_source`. This zeroes out CCV estimated costs from general CCO reports (e.g. chargeback, trending) while preserving them on the dedicated CCV Dashboard.
 - The policy checks the Spot CCO Export integration status by querying the Spot API ([`/ccoUsageExporter/flexeraIntegration`](https://spec.dev.spot.io/#tag/Flexera-CCO-Integration)). If the integration is not configured, the incident report includes pre-filled `curl` and PowerShell commands with the correct bill connect ID, Flexera org ID, and zone — requiring only a Flexera refresh token and Spot API token to complete the setup.
 - When the "Apply Rightsizing Recommendations" option is enabled, the policy checks the Flexera catalog for the "Kubernetes - Rightsizing Recommendations" published template and lists the project's applied policies. If the template is not already applied, the policy automatically applies it with auto-detected credentials and the template's default schedule.
