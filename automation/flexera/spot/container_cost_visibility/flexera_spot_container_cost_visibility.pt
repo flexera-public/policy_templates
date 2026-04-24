@@ -279,106 +279,126 @@ script "js_dashboard_json", type: "javascript" do
 
   var metric = [{ "id": "cost_amortized_unblended_adj", "name": "Amortized Cost", "type": "Cost" }]
 
+  function barChart(id, name, description, dimension) {
+    return {
+      component: "bar-chart", description: description, id: id,
+      isPercentageBased: "off", metrics: metric, name: name,
+      filters: [
+        { id: "DimensionParam", source: "manual", value: [dimension] },
+        { id: "GroupByParam", source: "inline" }
+      ].concat(default_filters)
+    }
+  }
+
+  function costList(id, name, description, groupBy) {
+    return {
+      component: "cost-list", description: description, id: id,
+      isPercentageBased: "off", metrics: metric, name: name,
+      filters: [
+        { id: "DimensionParam", source: "inline" },
+        { id: "GroupByParam", source: "manual", value: groupBy }
+      ].concat(default_filters)
+    }
+  }
+
   var widgets = [
-    {
-      component: "bar-chart",
-      description: "",
-      filters: [
-        { id: "DimensionParam", source: "manual", value: ["tag_kubernetes_cluster"] },
-        { id: "GroupByParam", source: "inline" }
-      ].concat(default_filters),
-      id: "502c4858-8abb-4e21-8ba5-ceeabbd0388b",
-      isPercentageBased: "off",
-      metrics: metric,
-      name: "Costs by Kubernetes Cluster"
-    },
-    {
-      component: "cost-list",
-      description: "",
-      filters: [
-        { id: "DimensionParam", source: "inline" },
-        { id: "GroupByParam", source: "manual", value: ["tag_kubernetes_cluster"] }
-      ].concat(default_filters),
-      id: "4e78f534-a954-42e9-ab95-8f7033c91fa4",
-      isPercentageBased: "off",
-      metrics: metric,
-      name: "Costs by Kubernetes Cluster"
-    },
-    {
-      component: "bar-chart",
-      description: "",
-      filters: [
-        { id: "DimensionParam", source: "manual", value: ["tag_kubernetes_namespace"] },
-        { id: "GroupByParam", source: "inline" }
-      ].concat(default_filters),
-      id: "c5ddbd5d-7f39-4d61-9fec-90016a1758a0",
-      isPercentageBased: "off",
-      metrics: metric,
-      name: "Costs by Kubernetes Resource Namespace"
-    },
-    {
-      component: "cost-list",
-      description: "",
-      filters: [
-        { id: "DimensionParam", source: "inline" },
-        { id: "GroupByParam", source: "manual", value: ["tag_kubernetes_namespace"] }
-      ].concat(default_filters),
-      id: "368250f9-cd66-4583-b1e1-d3b9ebd1bdf6",
-      isPercentageBased: "off",
-      metrics: metric,
-      name: "Costs by Kubernetes Namespace"
-    },
-    {
-      component: "cost-list",
-      description: "",
-      filters: [
-        { id: "DimensionParam", source: "inline" },
-        { id: "GroupByParam", source: "manual", value: [
-          "tag_kubernetes_cluster", "tag_kubernetes_namespace",
-          "tag_kubernetes_controller_kind", "tag_kubernetes_controller",
-          "tag_kubernetes_node", "tag_kubernetes_metadata_helm_chart",
-          "tag_kubernetes_metadata_app_name", "usage_type"
-        ]}
-      ].concat(default_filters),
-      id: "8aa64379-fe8d-40b5-98fa-6a4003456af8",
-      isPercentageBased: "off",
-      metrics: metric,
-      name: "Cost List by Cluster, Namespace, Controller Kind, Controller, Node, Helm Chart, App Name, Usage Type"
-    },
+    // Section 1: Platform / Tenancy
+    barChart("s1-bar-cluster", "Costs by Cluster",
+      "Which clusters have the highest container costs?",
+      "tag_kubernetes_cluster"),
+    costList("s1-list-cluster", "Costs by Cluster",
+      "Cluster cost breakdown",
+      ["tag_kubernetes_cluster"]),
+    barChart("s1-bar-namespace", "Costs by Namespace",
+      "Which namespaces have the highest container costs?",
+      "tag_kubernetes_namespace"),
+    costList("s1-list-namespace", "Costs by Namespace",
+      "Namespace cost breakdown",
+      ["tag_kubernetes_namespace"]),
+
+    // Section 2: Application Identity
+    barChart("s2-bar-appname", "Costs by App Name",
+      "Which applications (app.kubernetes.io/name) cost the most?",
+      "tag_kubernetes_metadata_app_name"),
+    costList("s2-list-appname", "Costs by App Name",
+      "Application cost breakdown by name label",
+      ["tag_kubernetes_metadata_app_name"]),
+    costList("s2-list-app-cluster-ns", "App Name by Cluster and Namespace",
+      "App Name broken down by Cluster and Namespace",
+      ["tag_kubernetes_metadata_app_name", "tag_kubernetes_cluster", "tag_kubernetes_namespace"]),
+
+    // Section 3: Workload Runtime
+    barChart("s3-bar-ctrlkind", "Costs by Controller Kind",
+      "Cost by controller kind (Deployment, StatefulSet, DaemonSet, Job, Pod)",
+      "tag_kubernetes_controller_kind"),
+    costList("s3-list-controller", "Costs by Controller",
+      "Top controllers by cost",
+      ["tag_kubernetes_controller"]),
+    costList("s3-list-workload", "Workload Detail: Kind, Controller, Namespace, Cluster",
+      "Full workload breakdown: Kind, Controller, Namespace, Cluster",
+      ["tag_kubernetes_controller_kind", "tag_kubernetes_controller",
+       "tag_kubernetes_namespace", "tag_kubernetes_cluster"]),
+
+    // Section 4: Infrastructure / Node
+    barChart("s4-bar-node", "Costs by Node",
+      "Which nodes are the most expensive?",
+      "tag_kubernetes_node"),
+    costList("s4-list-node-provider", "Node, Provider ID, Cluster",
+      "Node with Cloud Provider ID for IaaS correlation",
+      ["tag_kubernetes_node", "tag_kubernetes_node_cloud_provider_id", "tag_kubernetes_cluster"]),
+
+    // Section 5: Helm / Packaging
+    barChart("s5-bar-helm", "Costs by Helm Chart",
+      "Which Helm charts produce the most cost? (Only shows Helm-deployed workloads)",
+      "tag_kubernetes_metadata_helm_chart"),
+    costList("s5-list-helm", "Helm Chart, App Name, Namespace",
+      "Helm Chart detail with App Name and Namespace",
+      ["tag_kubernetes_metadata_helm_chart", "tag_kubernetes_metadata_app_name",
+       "tag_kubernetes_namespace"]),
+
+    // Resource-level detail
     {
       component: "resource-list",
-      description: "",
+      description: "Full resource-level detail view",
+      id: "s6-resourcelist",
+      isPercentageBased: "off",
+      metrics: metric,
+      name: "Detailed Resource View",
       filters: [
         { id: "DimensionParam", source: "inline" },
         { id: "GroupByParam", source: "inline" }
-      ].concat(default_filters),
-      id: "d418e467-241a-48b8-be5d-b6cbee80f914",
-      isPercentageBased: "off",
-      metrics: metric,
-      name: "Resource List"
+      ].concat(default_filters)
     }
   ]
 
+  var md_layout = [
+    { h: 6, i: "s1-bar-cluster",       minH: 6, minW: 6, moved: false, "static": false, w: 8,  x: 0, y: 0 },
+    { h: 6, i: "s1-list-cluster",       minH: 6, minW: 4, moved: false, "static": false, w: 4,  x: 8, y: 0 },
+    { h: 6, i: "s1-bar-namespace",      minH: 6, minW: 6, moved: false, "static": false, w: 8,  x: 0, y: 6 },
+    { h: 6, i: "s1-list-namespace",     minH: 6, minW: 4, moved: false, "static": false, w: 4,  x: 8, y: 6 },
+    { h: 6, i: "s2-bar-appname",        minH: 6, minW: 6, moved: false, "static": false, w: 8,  x: 0, y: 12 },
+    { h: 6, i: "s2-list-appname",       minH: 6, minW: 4, moved: false, "static": false, w: 4,  x: 8, y: 12 },
+    { h: 8, i: "s2-list-app-cluster-ns",minH: 6, minW: 4, moved: false, "static": false, w: 12, x: 0, y: 18 },
+    { h: 6, i: "s3-bar-ctrlkind",       minH: 6, minW: 6, moved: false, "static": false, w: 8,  x: 0, y: 26 },
+    { h: 6, i: "s3-list-controller",    minH: 6, minW: 4, moved: false, "static": false, w: 4,  x: 8, y: 26 },
+    { h: 8, i: "s3-list-workload",      minH: 6, minW: 4, moved: false, "static": false, w: 12, x: 0, y: 32 },
+    { h: 6, i: "s4-bar-node",           minH: 6, minW: 6, moved: false, "static": false, w: 8,  x: 0, y: 40 },
+    { h: 6, i: "s4-list-node-provider", minH: 6, minW: 4, moved: false, "static": false, w: 4,  x: 8, y: 40 },
+    { h: 6, i: "s5-bar-helm",           minH: 6, minW: 6, moved: false, "static": false, w: 8,  x: 0, y: 46 },
+    { h: 6, i: "s5-list-helm",          minH: 6, minW: 4, moved: false, "static": false, w: 4,  x: 8, y: 46 },
+    { h: 6, i: "s6-resourcelist",       minH: 6, minW: 6, moved: false, "static": false, w: 12, x: 0, y: 52 }
+  ]
+
+  var sm_y = 0
+  var sm_layout = _.map(md_layout, function(item) {
+    var sm_item = { h: item.h, i: item.i, minH: 6, minW: 2, moved: false, "static": false, w: 2, x: 0, y: sm_y }
+    sm_y += item.h
+    return sm_item
+  })
+
   var config = {
-    description: "",
-    layouts: {
-      md: [
-        { h: 6, i: "502c4858-8abb-4e21-8ba5-ceeabbd0388b", minH: 6, minW: 6, moved: false, "static": false, w: 8, x: 0, y: 0 },
-        { h: 6, i: "4e78f534-a954-42e9-ab95-8f7033c91fa4", minH: 6, minW: 4, moved: false, "static": false, w: 4, x: 8, y: 0 },
-        { h: 6, i: "c5ddbd5d-7f39-4d61-9fec-90016a1758a0", minH: 6, minW: 6, moved: false, "static": false, w: 8, x: 0, y: 6 },
-        { h: 6, i: "368250f9-cd66-4583-b1e1-d3b9ebd1bdf6", minH: 6, minW: 4, moved: false, "static": false, w: 4, x: 8, y: 6 },
-        { h: 8, i: "8aa64379-fe8d-40b5-98fa-6a4003456af8", minH: 6, minW: 4, moved: false, "static": false, w: 12, x: 0, y: 12 },
-        { h: 6, i: "d418e467-241a-48b8-be5d-b6cbee80f914", minH: 6, minW: 6, moved: false, "static": false, w: 12, x: 0, y: 20 }
-      ],
-      sm: [
-        { h: 6, i: "502c4858-8abb-4e21-8ba5-ceeabbd0388b", minH: 6, minW: 2, moved: false, "static": false, w: 2, x: 0, y: 0 },
-        { h: 6, i: "4e78f534-a954-42e9-ab95-8f7033c91fa4", minH: 6, minW: 2, moved: false, "static": false, w: 2, x: 0, y: 6 },
-        { h: 6, i: "c5ddbd5d-7f39-4d61-9fec-90016a1758a0", minH: 6, minW: 2, moved: false, "static": false, w: 2, x: 0, y: 12 },
-        { h: 6, i: "368250f9-cd66-4583-b1e1-d3b9ebd1bdf6", minH: 6, minW: 2, moved: false, "static": false, w: 2, x: 0, y: 18 },
-        { h: 6, i: "8aa64379-fe8d-40b5-98fa-6a4003456af8", minH: 6, minW: 2, moved: false, "static": false, w: 2, x: 0, y: 24 },
-        { h: 6, i: "d418e467-241a-48b8-be5d-b6cbee80f914", minH: 6, minW: 2, moved: false, "static": false, w: 2, x: 0, y: 30 }
-      ]
-    },
+    description: "Kubernetes cost visibility from Spot Ocean CCV data. Sections: Platform/Tenancy, Application, Workload Runtime, Infrastructure, Helm/Packaging.",
+    layouts: { md: md_layout, sm: sm_layout },
     version: 2,
     widgets: widgets
   }
@@ -438,6 +458,22 @@ datasource "ds_create_dashboard" do
     encoding "json"
     field "id", jmes_path(response, "id")
     field "name", jmes_path(response, "name")
+  end
+end
+
+datasource "ds_existing_dashboards" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/dashboards"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
   end
 end
 
@@ -634,21 +670,7 @@ datasource "ds_apply_adjustments" do
 end
 
 ###############################################################################
-# Step 5: Spot CCO Export Check
-###############################################################################
-
-datasource "ds_spot_cco_integration" do
-  request do
-    auth $auth_spotinst
-    host "api.spotinst.io"
-    path "/ocean/flexeraCcoIntegration"
-    header "User-Agent", "RS Policies"
-    ignore_status [400, 401, 403, 404]
-  end
-end
-
-###############################################################################
-# Step 6: Apply Kubernetes Rightsizing Recommendations
+# Step 5: Apply Kubernetes Rightsizing Recommendations
 ###############################################################################
 
 datasource "ds_published_templates" do
@@ -826,15 +848,29 @@ EOS
 end
 
 ###############################################################################
+# Step 6: Spot CCO Export Check
+###############################################################################
+
+datasource "ds_spot_cco_integration" do
+  request do
+    auth $auth_spotinst
+    host "api.spotinst.io"
+    path "/ccoUsageExporter/flexeraIntegration"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 401, 403, 404]
+  end
+end
+
+###############################################################################
 # Compile Results
 ###############################################################################
 
 datasource "ds_results" do
-  run_script $js_results, $ds_bill_connect, $ds_create_dashboard, $ds_create_tag_dimensions, $ds_apply_adjustments, $ds_spot_cco_integration, $ds_apply_rightsizing, $ds_existing_bill_connects, $ds_published_templates, $ds_applied_policies, $ds_flexera_api_hosts, $param_spot_ocean_org_id, $param_create_dashboard, $param_create_tag_dimensions, $param_hide_ccv_costs, $param_apply_rightsizing, rs_org_id
+  run_script $js_results, $ds_bill_connect, $ds_create_dashboard, $ds_existing_dashboards, $ds_create_tag_dimensions, $ds_apply_adjustments, $ds_spot_cco_integration, $ds_apply_rightsizing, $ds_existing_bill_connects, $ds_published_templates, $ds_applied_policies, $ds_flexera_api_hosts, $param_spot_ocean_org_id, $param_create_dashboard, $param_create_tag_dimensions, $param_hide_ccv_costs, $param_apply_rightsizing, rs_org_id
 end
 
 script "js_results", type: "javascript" do
-  parameters "ds_bill_connect", "ds_create_dashboard", "ds_create_tag_dimensions", "ds_apply_adjustments", "ds_spot_cco_integration", "ds_apply_rightsizing", "ds_existing_bill_connects", "ds_published_templates", "ds_applied_policies", "ds_flexera_api_hosts", "param_spot_ocean_org_id", "param_create_dashboard", "param_create_tag_dimensions", "param_hide_ccv_costs", "param_apply_rightsizing", "rs_org_id"
+  parameters "ds_bill_connect", "ds_create_dashboard", "ds_existing_dashboards", "ds_create_tag_dimensions", "ds_apply_adjustments", "ds_spot_cco_integration", "ds_apply_rightsizing", "ds_existing_bill_connects", "ds_published_templates", "ds_applied_policies", "ds_flexera_api_hosts", "param_spot_ocean_org_id", "param_create_dashboard", "param_create_tag_dimensions", "param_hide_ccv_costs", "param_apply_rightsizing", "rs_org_id"
   result "result"
   code <<-'EOS'
   var bill_connect_id = "cbi-oi-ocean-org-" + param_spot_ocean_org_id
@@ -842,6 +878,20 @@ script "js_results", type: "javascript" do
   var flexera_host = ds_flexera_api_hosts["flexera"]
 
   result = []
+
+  // Date helpers for dashboard links
+  var now = new Date()
+  var start_year = now.getUTCFullYear()
+  var start_month = now.getUTCMonth() + 1
+  var end_year = start_month == 12 ? start_year + 1 : start_year
+  var end_month = start_month == 12 ? 1 : start_month + 1
+  var start_date = start_year + "-" + (start_month < 10 ? "0" : "") + start_month + "-01"
+  var end_date = end_year + "-" + (end_month < 10 ? "0" : "") + end_month + "-01"
+  var dashboard_note = "\n\n**Note:** If Tag Dimensions were just created, the dashboard may not load correctly until bill data refreshes and the new Kubernetes Tag Dimensions become available (up to 24 hours)."
+
+  function dashboardUrl(id) {
+    return "https://" + ui_host + "/orgs/" + rs_org_id + "/optima/dashboards?dashboardID=" + id + "&granularity=Daily&startDate=" + start_date + "&endDate=" + end_date
+  }
 
   // Step 1: Bill Connect
   var bc_existed = _.find(ds_existing_bill_connects, function(bc) {
@@ -862,26 +912,45 @@ script "js_results", type: "javascript" do
   }
 
   // Step 2: Dashboard
+  var dashboard_name = "Container Cost Visibility Dashboard"
+  var dashboard_exists = _.find(ds_existing_dashboards, function(d) {
+    return d["name"] == dashboard_name
+  })
+
   if (param_create_dashboard == "Yes") {
     if (ds_create_dashboard.length > 0 && ds_create_dashboard[0]["id"]) {
       result.push({
         step: "2. CCV Dashboard",
         status: "Created",
-        details: "Dashboard: " + (ds_create_dashboard[0]["name"] || "Container Cost Visibility Dashboard") + " — View at https://" + ui_host + "/orgs/" + rs_org_id + "/optima/dashboards"
+        details: "Dashboard: " + dashboard_name + " — [View Dashboard](" + dashboardUrl(ds_create_dashboard[0]["id"]) + ")" + dashboard_note
+      })
+    } else if (dashboard_exists) {
+      result.push({
+        step: "2. CCV Dashboard",
+        status: "Already Exists",
+        details: "Dashboard '" + dashboard_name + "' already exists — [View Dashboard](" + dashboardUrl(dashboard_exists["id"]) + ")" + dashboard_note
       })
     } else {
       result.push({
         step: "2. CCV Dashboard",
-        status: "Already Exists or Failed",
-        details: "Dashboard may already exist (409 conflict) or creation failed. View dashboards at https://" + ui_host + "/orgs/" + rs_org_id + "/optima/dashboards"
+        status: "Failed",
+        details: "Dashboard creation failed. Check permissions and try again. View dashboards at https://" + ui_host + "/orgs/" + rs_org_id + "/optima/dashboards"
       })
     }
   } else {
-    result.push({
-      step: "2. CCV Dashboard",
-      status: "Skipped",
-      details: "Dashboard creation disabled by parameter."
-    })
+    if (dashboard_exists) {
+      result.push({
+        step: "2. CCV Dashboard",
+        status: "Already Exists",
+        details: "Dashboard '" + dashboard_name + "' exists. Creation was skipped by parameter. [View Dashboard](" + dashboardUrl(dashboard_exists["id"]) + ")" + dashboard_note
+      })
+    } else {
+      result.push({
+        step: "2. CCV Dashboard",
+        status: "Skipped",
+        details: "Dashboard creation disabled by parameter."
+      })
+    }
   }
 
   // Step 3: Tag Dimensions
@@ -922,30 +991,84 @@ script "js_results", type: "javascript" do
     })
   }
 
-  // Step 5: Spot CCO Export
-  var spot_integration_exists = false
-  if (ds_spot_cco_integration && ds_spot_cco_integration["response"]) {
-    var status = ds_spot_cco_integration["response"]["status"]
-    if (status && status["code"] == 200) {
-      spot_integration_exists = true
+  // Step 5: Rightsizing Recommendations
+  if (param_apply_rightsizing == "Yes") {
+    var template_name = "Kubernetes - Rightsizing Recommendations"
+
+    var published_template = _.find(ds_published_templates, function(pt) {
+      return pt["name"] == template_name && pt["builtIn"] == true
+    })
+
+    if (!published_template) {
+      result.push({
+        step: "5. Rightsizing Recommendations",
+        status: "Template Not Found",
+        details: "The '" + template_name + "' published template was not found in the catalog. It may not be available in this organization."
+      })
+    } else {
+      var already_applied = _.find(ds_applied_policies, function(ap) {
+        if (ap["name"] == template_name) { return true }
+        if (ap["publishedTemplate"] && ap["publishedTemplate"]["name"] == template_name) { return true }
+        if (ap["policyTemplate"] && ap["policyTemplate"]["name"] == template_name) { return true }
+        return false
+      })
+
+      if (already_applied) {
+        result.push({
+          step: "5. Rightsizing Recommendations",
+          status: "Already Applied",
+          details: "The '" + template_name + "' policy template is already applied in this project."
+        })
+      } else if (ds_apply_rightsizing.length > 0) {
+        result.push({
+          step: "5. Rightsizing Recommendations",
+          status: "Applied",
+          details: "The '" + template_name + "' policy template has been applied. View at https://" + ui_host + "/orgs/" + rs_org_id + "/policy"
+        })
+      } else {
+        result.push({
+          step: "5. Rightsizing Recommendations",
+          status: "Failed",
+          details: "Failed to apply the '" + template_name + "' policy template. Please apply it manually from the Flexera catalog."
+        })
+      }
     }
+  } else {
+    result.push({
+      step: "5. Rightsizing Recommendations",
+      status: "Skipped",
+      details: "Rightsizing recommendations policy application disabled by parameter."
+    })
   }
-  // Also check if items array exists and has content
-  if (ds_spot_cco_integration && ds_spot_cco_integration["response"] && ds_spot_cco_integration["response"]["items"]) {
-    if (ds_spot_cco_integration["response"]["items"].length > 0) {
-      spot_integration_exists = true
+
+  // Step 6: Spot CCO Export
+  var spot_integration_status = "not_found"
+  var spot_integration_org = ""
+
+  if (ds_spot_cco_integration && ds_spot_cco_integration["response"]) {
+    var resp = ds_spot_cco_integration["response"]
+
+    if (resp["status"] && resp["status"]["code"] == 200 && resp["items"] && resp["items"].length > 0) {
+      var integration = resp["items"][0]
+      spot_integration_org = String(integration["flexeraOrganizationId"] || "")
+
+      if (spot_integration_org == String(rs_org_id)) {
+        spot_integration_status = "configured_same_org"
+      } else {
+        spot_integration_status = "configured_different_org"
+      }
     }
   }
 
-  if (spot_integration_exists) {
+  if (spot_integration_status == "configured_same_org") {
     result.push({
-      step: "5. Spot CCO Export",
+      step: "6. Spot CCO Export",
       status: "Already Configured",
-      details: "Spot CCO Export integration is already configured for this Spot organization."
+      details: "Spot CCO Export integration is configured and pointing to this Flexera organization (Org ID: " + rs_org_id + ")."
     })
   } else {
     var curl_cmd = [
-      "curl -X POST 'https://api.spotinst.io/ocean/flexeraCcoIntegration' \\",
+      "curl -X POST 'https://api.spotinst.io/ccoUsageExporter/flexeraIntegration' \\",
       "  -H 'Authorization: Bearer <SPOT_API_TOKEN>' \\",
       "  -H 'Content-Type: application/json' \\",
       "  -d '{",
@@ -967,13 +1090,20 @@ script "js_results", type: "javascript" do
       "  flexeraRefreshToken    = '<FLEXERA_REFRESH_TOKEN>'",
       "  flexeraZone            = '" + ds_flexera_api_hosts["flexera"].replace("api.", "") + "'",
       "} | ConvertTo-Json",
-      "Invoke-RestMethod -Uri 'https://api.spotinst.io/ocean/flexeraCcoIntegration' -Method Post -Headers $headers -Body $body"
+      "Invoke-RestMethod -Uri 'https://api.spotinst.io/ccoUsageExporter/flexeraIntegration' -Method Post -Headers $headers -Body $body"
     ].join("\n")
 
-    var details = "The Spot CCO Export requires a Flexera refresh token which cannot be generated automatically by this policy template.\n\n"
+    var details = ""
+
+    if (spot_integration_status == "configured_different_org") {
+      details += "**⚠️ WARNING:** The Spot CCO Export is currently configured to push data to **Flexera Org " + spot_integration_org + "**, which is different from this organization (" + rs_org_id + "). "
+      details += "Spot only supports one Flexera integration per Spot organization. Running the POST command below will **replace** the existing configuration and **stop data flowing to Org " + spot_integration_org + "**.\n\n"
+    }
+
+    details += "The Spot CCO Export requires a Flexera refresh token which cannot be generated automatically by this policy template.\n\n"
     details += "**To complete the setup:**\n\n"
-    details += "1. Generate a Flexera refresh token: [Flexera Documentation](https://docs.flexera.com/flexera/EN/FlexeraAPI/GenerateRefreshToken.htm)\n"
-    details += "2. Get your Spot API permanent token: [Spot Documentation](https://docs-spot.flexera.com/administration/api/create-api-token)\n"
+    details += "1. Generate a Flexera refresh token: [Flexera Documentation](https://docs.flexera.com/flexera-one/flexera-api/working-with-the-flexera-one-api/generating-a-refresh-token)\n"
+    details += "2. Get your Spot API permanent token: [Spot Documentation](https://docs.flexera.com/spot/administration/api/create-api-token)\n"
     details += "3. Run one of the following commands, replacing the placeholder tokens:\n\n"
     details += "**curl (Linux/Mac):**\n\n"
     details += "```\n" + curl_cmd + "\n```\n\n"
@@ -988,59 +1118,26 @@ script "js_results", type: "javascript" do
     details += "| Spot Ocean Org ID | `" + param_spot_ocean_org_id + "` |\n"
 
     result.push({
-      step: "5. Spot CCO Export",
-      status: "Manual Setup Required",
+      step: "6. Spot CCO Export",
+      status: spot_integration_status == "configured_different_org" ? "⚠️ Different Org Configured" : "Manual Setup Required",
       details: details
     })
   }
 
-  // Step 6: Rightsizing Recommendations
-  if (param_apply_rightsizing == "Yes") {
-    var template_name = "Kubernetes - Rightsizing Recommendations"
+  // Check if all steps completed successfully
+  var all_done = _.every(result, function(r) {
+    var s = r["status"]
+    return s == "Created" || s.indexOf("Created ") == 0 ||
+           s == "Already Exists" || s == "Already Exist" ||
+           s == "Already Configured" || s == "Already Applied" ||
+           s == "Applied" || s == "Skipped"
+  })
 
-    var published_template = _.find(ds_published_templates, function(pt) {
-      return pt["name"] == template_name && pt["builtIn"] == true
-    })
-
-    if (!published_template) {
-      result.push({
-        step: "6. Rightsizing Recommendations",
-        status: "Template Not Found",
-        details: "The '" + template_name + "' published template was not found in the catalog. It may not be available in this organization."
-      })
-    } else {
-      var already_applied = _.find(ds_applied_policies, function(ap) {
-        if (ap["name"] == template_name) { return true }
-        if (ap["publishedTemplate"] && ap["publishedTemplate"]["name"] == template_name) { return true }
-        if (ap["policyTemplate"] && ap["policyTemplate"]["name"] == template_name) { return true }
-        return false
-      })
-
-      if (already_applied) {
-        result.push({
-          step: "6. Rightsizing Recommendations",
-          status: "Already Applied",
-          details: "The '" + template_name + "' policy template is already applied in this project."
-        })
-      } else if (ds_apply_rightsizing.length > 0) {
-        result.push({
-          step: "6. Rightsizing Recommendations",
-          status: "Applied",
-          details: "The '" + template_name + "' policy template has been applied. View at https://" + ui_host + "/orgs/" + rs_org_id + "/policy"
-        })
-      } else {
-        result.push({
-          step: "6. Rightsizing Recommendations",
-          status: "Failed",
-          details: "Failed to apply the '" + template_name + "' policy template. Please apply it manually from the Flexera catalog."
-        })
-      }
-    }
-  } else {
-    result.push({
-      step: "6. Rightsizing Recommendations",
-      status: "Skipped",
-      details: "Rightsizing recommendations policy application disabled by parameter."
+  if (all_done) {
+    result.unshift({
+      step: "✅ Setup Complete",
+      status: "All Steps Successful",
+      details: "**Container Cost Visibility has been fully onboarded.** This policy template is intended for one-time setup. You may now terminate this applied policy — all configured resources (bill connect, dashboard, tag dimensions, adjustment rules, and applied policies) will persist after termination.\n\n---\n\n"
     })
   }
 EOS
