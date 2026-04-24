@@ -326,6 +326,7 @@ These templates can generate savings estimates for your environment. The inciden
 * Compute
 
   * [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
+  * [AWS Cost Report - EC2 Instance Cost Per Hour](./cost/aws/instance_cost_per_hour)
   * [AWS EKS Clusters Without Spot Instances](./cost/aws/eks_without_spot)
   * [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration)
   * [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
@@ -350,6 +351,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Compute
 
+  * [Azure Cost Report - VM Instance Cost Per Hour](./cost/azure/instance_cost_per_hour)
   * [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
   * [Azure Expiring Savings Plans](./cost/azure/savings_plan/expiration)
   * [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
@@ -421,6 +423,7 @@ These templates can generate savings estimates for your environment. The inciden
 * Compute
 
   * [Google Committed Use Discount Report](./cost/google/cud_report)
+  * [Google Cost Report - VM Instance Cost Per Hour](./cost/google/instance_cost_per_hour)
   * [Google Expiring Committed Use Discounts (CUD)](./cost/google/cud_expiration)
   * [Google Schedule Instance](./cost/google/schedule_instance)
 
