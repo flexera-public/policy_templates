@@ -7,7 +7,7 @@ This policy template automates the setup of the Flexera One and Spot Ocean integ
 1. Creates a CBI (Common Bill Ingestion) bill connect for Spot Ocean to ingest container cost data into Flexera One.
 1. Creates a Container Cost Visibility Dashboard in the Flexera CCO UI for viewing Kubernetes costs by cluster, namespace, and pod.
 1. Creates Kubernetes tag dimensions for cost analysis, exposing context such as cluster, namespace, pod, controller, and node from Container Cost Visibility bill data.
-1. Optionally hides Container Cost Visibility estimated costs from general CCO reports via a -100% adjustment rule. Flexera Container Cost Visibility estimated **currently** based on public market rates, not actual customer rates — hiding them avoids confusion in chargeback and other reports. The CCV Dashboard still shows these costs using raw (pre-adjustment) values.  "Actual costs" breakdowns for Containers (cost reconciliation with Cloud Bill Data) is committed for general available 2026.
+1. Optionally hides Container Cost Visibility estimated costs from general CCO reports via a -100% adjustment rule. Flexera Container Cost Visibility estimated **currently** based on public market rates, not actual customer rates — hiding them avoids confusion in chargeback and other reports. The CCV Dashboard still shows these costs using raw (pre-adjustment) values.  "Actual costs" breakdowns for Containers (cost reconciliation with Cloud Bill Data) is committed for general available in 2026.
 1. Checks Spot CCO Export status and provides setup instructions if it is not yet configured.
 1. Optionally applies the "Kubernetes - Rightsizing Recommendations" published policy template from the Flexera catalog if it is not already applied in the current project.
 
