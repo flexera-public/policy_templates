@@ -4,6 +4,10 @@
 
 This policy template generates a report and chart showing the average Azure VM instance cost per hour per month going back a user-specified number of months. Instance costs are normalized to [Instance Size Flexibility (ISF) ratios](https://learn.microsoft.com/en-us/azure/virtual-machines/reserved-vm-instance-size-flexibility), Microsoft's published measure of relative instance size within a VM family. Optionally, this report, with chart, can be emailed.
 
+## Example Incident
+
+![Example Incident](example.png "Example Incident")
+
 ## Input Parameters
 
 - *Email Addresses* - A list of email addresses to notify.
@@ -22,6 +26,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
+  - `policy_viewer`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
