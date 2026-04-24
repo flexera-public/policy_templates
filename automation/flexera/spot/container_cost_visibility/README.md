@@ -16,7 +16,7 @@ __NOTE: This *Container Cost Visibility Setup* policy template only needs to exe
 ## How It Works
 
 - The policy creates or updates a CBI bill connect (`cbi-oi-ocean-org-{spot_org_id}`) via the Flexera FinOps Onboarding API. This bill connect is the data pipeline from Spot Ocean to Flexera One, ingesting container cost data in the CBI format.
-- The Container Cost Visibility Dashboard is created from the public `policy_templates` repository and created via the Flexera Bill Analysis Dashboards API. The dashboard filters on `bill_source` matching the `cbi-oi-ocean-` prefix and uses the `adjustment_name: Raw Cost` metric to show pre-adjustment CCV costs.
+- The Container Cost Visibility Dashboard is created from the public `policy_templates` repository and created via the Flexera Bill Analysis Dashboards API. The dashboard filters on `bill_source` matching the `cbi-oi-ocean-` prefix and uses the `adjustment_name: Raw Cost` metric to show pre-adjustment container costs.
 - Kubernetes Dimensions (e.g. `Kubernetes Namespace`, `Kubernetes Cluster`, `Kubernetes Controller`, `Kubernetes Node`, etc.) are created. These dimensions allow Kubernetes context to appear in cost analysis views alongside standard cloud dimensions.
 - When the "Hide CCV Costs" option is enabled, the policy applies a cost adjustment rule with `cost_multiplier: -1` on the CCV `bill_source`. This zeroes out CCV estimated costs from general CCO reports (e.g. chargeback, trending) while preserving them on the dedicated CCV Dashboard.
 - The policy checks the Spot CCO Export integration status by querying the Spot API ([`/ccoUsageExporter/flexeraIntegration`](https://spec.dev.spot.io/#tag/Flexera-CCO-Integration)). If the integration is not configured, the incident report includes pre-filled `curl` and PowerShell commands with the correct bill connect ID, Flexera org ID, and zone — requiring only a Flexera refresh token and Spot API token to complete the setup.
@@ -54,8 +54,8 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 Additionally, the manual Spot CCO Export step (Step 5) requires:
 
-- A **Flexera refresh token** — see [Generate a Refresh Token](https://docs.flexera.com/flexera/EN/FlexeraAPI/GenerateRefreshToken.htm) for instructions.
-- A **Spot API permanent token** — see [Create an API Token](https://docs-spot.flexera.com/administration/api/create-api-token) for instructions.
+- A **Flexera refresh token** — see [Generate a Refresh Token](https://docs.flexera.com/flexera-one/flexera-api/working-with-the-flexera-one-api/generating-a-refresh-token) for instructions.
+- A **Spot API permanent token** — see [Create an API Token](https://docs.flexera.com/spot/administration/api/create-api-token) for instructions.
 
 For more information on the Spot Ocean integration, see the [Spot Ocean bill connect documentation](https://docs.flexera.com/flexera-one/administration/cloud-settings/bill-data-connections/bill-connect-configurations/spot-ocean/).
 
