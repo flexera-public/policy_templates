@@ -1,15 +1,15 @@
-name "AWS Cost Report - EC2 Instance Cost Per Hour"
+name "Azure Cost Report - VM Instance Cost Per Hour"
 rs_pt_ver 20180301
 type "policy"
-short_description "Creates a Unit Economics report showing AWS EC2 instance cost per hour normalized to NFUs. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/instance_cost_per_hour) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+short_description "Creates a Unit Economics report showing Azure VM instance cost per hour normalized to Instance Size Flexibility (ISF) ratios. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/instance_cost_per_hour) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
 long_description ""
-doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/instance_cost_per_hour"
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/azure/instance_cost_per_hour"
 severity "low"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "0.2.6",
-  provider: "AWS",
+  version: "0.1.0",
+  provider: "Azure",
   service: "Compute",
   policy_set: "Unit Economics"
 )
@@ -207,7 +207,7 @@ datasource "ds_currency" do
   run_script $js_currency, $ds_currency_reference, $ds_currency_code
 end
 
-script "js_currency", type:"javascript" do
+script "js_currency", type: "javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
   code <<-'EOS'
@@ -305,7 +305,17 @@ script "js_instance_types", type: "javascript" do
         "expressions": [
           { "dimension": "category", "type": "equal", "value": "Compute" },
           { "dimension": "resource_type", "type": "equal", "value": "Compute Instance" },
-          { "dimension": "vendor", "type": "equal", "value": "AWS" }
+          {
+            "type": "or",
+            "expressions": [
+              { "dimension": "vendor", "type": "equal", "value": "Azure" },
+              { "dimension": "vendor", "type": "equal", "value": "azure" },
+              { "dimension": "vendor", "type": "equal", "value": "AzureMCA" },
+              { "dimension": "vendor", "type": "equal", "value": "azuremca" },
+              { "dimension": "vendor", "type": "equal", "value": "AzureMCA-Enterprise" },
+              { "dimension": "vendor", "type": "equal", "value": "azuremca-enterprise" }
+            ]
+          }
         ]
       }
     }
@@ -313,38 +323,38 @@ script "js_instance_types", type: "javascript" do
 EOS
 end
 
-datasource "ds_aws_instance_types" do
+datasource "ds_azure_instance_types" do
   request do
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/aws/aws_ec2_instance_types.json"
+    path "/flexera-public/policy_templates/master/data/azure/azure_compute_instance_types.json"
     header "User-Agent", "RS Policies"
   end
 end
 
-datasource "ds_aws_instance_type_map" do
-  run_script $js_aws_instance_type_map, $ds_aws_instance_types
+datasource "ds_azure_instance_type_map" do
+  run_script $js_azure_instance_type_map, $ds_azure_instance_types
 end
 
-script "js_aws_instance_type_map", type: "javascript" do
-  parameters "ds_aws_instance_types"
+script "js_azure_instance_type_map", type: "javascript" do
+  parameters "ds_azure_instance_types"
   result "result"
   code <<-'EOS'
   result = {}
-  _.each(ds_aws_instance_types, function(entry) { result[entry["name"]] = entry })
+  _.each(ds_azure_instance_types, function(entry) { result[entry["name"]] = entry })
 EOS
 end
 
 datasource "ds_normalized_cost_instance_hour_data" do
-  run_script $js_normalized_cost_instance_hour_data, $ds_aws_instance_type_map, $ds_instance_types, $ds_billing_centers_filtered, $param_group_by
+  run_script $js_normalized_cost_instance_hour_data, $ds_azure_instance_type_map, $ds_instance_types, $ds_billing_centers_filtered, $param_group_by
 end
 
 script "js_normalized_cost_instance_hour_data", type: "javascript" do
-  parameters "ds_aws_instance_type_map", "ds_instance_types", "ds_billing_centers_filtered", "param_group_by"
+  parameters "ds_azure_instance_type_map", "ds_instance_types", "ds_billing_centers_filtered", "param_group_by"
   result "result"
   code <<-'EOS'
   result = []
 
-  // Apply normalization factor to costs based on instance size and calculate NFU total
+  // Apply normalization factor to costs based on Instance Size Flexibility (ISF) ratio and calculate normalized total
   normalized_instance_types = _.map(ds_instance_types, function(data) {
     billing_center_name = ""
     matching_bc = _.find(ds_billing_centers_filtered, function(name) { return name['id'] == data['billing_center_id'] })
@@ -352,10 +362,10 @@ script "js_normalized_cost_instance_hour_data", type: "javascript" do
 
     normalized_usage_amount = null
     normalization_factor = 1
-    instance_metadata = ds_aws_instance_type_map[data['instance_type']]
+    instance_metadata = ds_azure_instance_type_map[data['instance_type']]
 
-    if (instance_metadata && instance_metadata["cpu"] && instance_metadata["cpu"]["nfus"]) {
-      normalization_factor = Number(instance_metadata["cpu"]["nfus"])
+    if (instance_metadata && instance_metadata["specs"] && instance_metadata["specs"]["nfu"]) {
+      normalization_factor = Number(instance_metadata["specs"]["nfu"])
     }
 
     normalized_usage_amount = data['usage_amount'] * normalization_factor
@@ -393,7 +403,7 @@ script "js_normalized_cost_instance_hour_data", type: "javascript" do
 
       result.push({
         "billing_center": "Aggregated",
-        "vendor": "AWS",
+        "vendor": "Azure",
         "avg_normalized_cost_instance_hr": Math.round(normalized_cost_instance_hr * 10000) / 10000,
         "date": month.substring(0, 7)
       })
@@ -421,7 +431,7 @@ script "js_normalized_cost_instance_hour_data", type: "javascript" do
 
         result.push({
           "billing_center": bc,
-          "vendor": "AWS",
+          "vendor": "Azure",
           "avg_normalized_cost_instance_hr": Math.round(normalized_cost_instance_hr * 10000) / 10000,
           "date": month.substring(0, 7)
         })
@@ -470,7 +480,7 @@ script "js_chart_creation", type: "javascript" do
     chartType: encodeURI("cht=lc"),
     chartSize: encodeURI("chs=999x450"),
     chartData: encodeURI(chart_data),
-    chartTitle: encodeURI("chtt=AWS Cost Report - Instance Cost Per Hour"),
+    chartTitle: encodeURI("chtt=Azure Cost Report - VM Instance Cost Per Hour"),
     chartImage: encodeURI("chof=.png"),
     chartLegend: encodeURI(chart_legend),
     chartLegendPosition: encodeURI("chdlp=r"),
@@ -499,9 +509,9 @@ policy "pol_instance_cost_hour" do
   validate_each $ds_chart_creation do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}"
     detail_template <<-'EOS'
-# AWS Cost Report for {{ rs_org_name }} - EC2 Instance Cost Per Hour
-![AWS Cost Report - EC2 Instance Cost Per Hour](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{with index data 0}}{{ .chart_dimensions.chartData }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartSize }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartType }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartLegend }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartScale}}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartAxis }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartAxisLabel }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartLineStyle }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartLineColour }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartTitle }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartLegendPosition }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartAxisFormat }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartImage }}{{end}})
-EOS
+# Azure Cost Report for {{ rs_org_name }} - VM Instance Cost Per Hour
+![Azure Cost Report - VM Instance Cost Per Hour](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{with index data 0}}{{ .chart_dimensions.chartData }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartSize }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartType }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartLegend }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartScale}}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartAxis }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartAxisLabel }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartLineStyle }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartLineColour }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartTitle }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartLegendPosition }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartAxisFormat }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartImage }}{{end}})
+    EOS
     check eq(0, 1)
     escalate $esc_email
     export do

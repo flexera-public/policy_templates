@@ -1,24 +1,20 @@
-# AWS Cost Report - EC2 Instance Cost Per Hour
+# Azure Cost Report - VM Instance Cost Per Hour
 
 ## What It Does
 
-This policy template generates a report and chart showing the average AWS EC2 instance cost per hour per month going back a user-specified number of months. Instance costs are normalized to [NFUs (Normalization Factor Units)](https://docs.aws.amazon.com/whitepapers/latest/cost-optimization-reservation-models/normalization-factor-for-dedicated-ec2-instances.html). Optionally, this report, with chart, can be emailed.
-
-## Example Incident
-
-![Example Incident](example.png "Example Incident")
+This policy template generates a report and chart showing the average Azure VM instance cost per hour per month going back a user-specified number of months. Instance costs are normalized to [Instance Size Flexibility (ISF) ratios](https://learn.microsoft.com/en-us/azure/virtual-machines/reserved-vm-instance-size-flexibility), Microsoft's published measure of relative instance size within a VM family. Optionally, this report, with chart, can be emailed.
 
 ## Input Parameters
 
 - *Email Addresses* - A list of email addresses to notify.
-- *Months Back* - Number of previous months to include in the report
-- *Aggregation* - Whether to report the entire organization in aggregate or by Billing Center
+- *Months Back* - Number of previous months to include in the report.
+- *Aggregation* - Whether to report the entire organization in aggregate or by Billing Center.
 - *Allow/Deny Billing Centers* - Whether to treat `Allow/Deny Billing Center List` parameter as allow or deny list. Has no effect if `Allow/Deny Billing Center List` is left empty.
 - *Allow/Deny Billing Center List* - A list of allowed or denied Billing Center names/IDs. Leave blank to check all Billing Centers.
 
 ## Policy Actions
 
-- Sends an email notification
+- Sends an email notification.
 
 ## Prerequisites
 
@@ -31,7 +27,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automat
 
 ## Supported Clouds
 
-- AWS
+- Azure
 
 ## Cost
 
