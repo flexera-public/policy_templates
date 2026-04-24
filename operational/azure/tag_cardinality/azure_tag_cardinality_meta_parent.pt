@@ -1004,37 +1004,47 @@ script "js_ds_tag_report_combined_incidents", type: "javascript" do
   // Simply stacking them would produce duplicate rows per subscription. Instead we
   // merge all value_list strings for each (type, key) pair, deduplicate the
   // values, and recalculate the true combined cardinality.
+  //
+  // Performance note: values is stored as a plain object used as a hash set.
+  // This gives O(1) insertion and free deduplication, avoiding the O(n^2)
+  // cost of Array.concat() + _.uniq(indexOf) on large datasets.
   var tag_map = {}
 
-  _.each(ds_child_incident_details, function(incident) {
-    var s = incident["summary"]
-    if (s.indexOf("Azure Tag Cardinality Report") > -1) {
-      _.each(incident["violation_data"], function(violation) {
+  for (var i = 0; i < ds_child_incident_details.length; i++) {
+    var incident = ds_child_incident_details[i]
+    if (incident["summary"].indexOf("Azure Tag Cardinality Report") > -1) {
+      var violation_data = incident["violation_data"]
+      for (var j = 0; j < violation_data.length; j++) {
+        var violation = violation_data[j]
         var map_key = violation["type"] + "||" + violation["key"]
 
         if (tag_map[map_key] == undefined) {
           tag_map[map_key] = {
             type: violation["type"],
             key: violation["key"],
-            values: [],
+            values: {},
             subscription_count: 0
           }
         }
 
         if (violation["value_list"] && violation["value_list"].length > 0) {
           var new_values = violation["value_list"].split(", ")
-          tag_map[map_key]["values"] = tag_map[map_key]["values"].concat(new_values)
+          for (var k = 0; k < new_values.length; k++) {
+            tag_map[map_key]["values"][new_values[k]] = true
+          }
         }
 
         tag_map[map_key]["subscription_count"] += 1
-      })
+      }
     }
-  })
+  }
 
   result = []
+  var map_keys = Object.keys(tag_map)
 
-  _.each(tag_map, function(tag_data) {
-    var unique_values = _.uniq(tag_data["values"])
+  for (var i = 0; i < map_keys.length; i++) {
+    var tag_data = tag_map[map_keys[i]]
+    var unique_values = Object.keys(tag_data["values"])
     result.push({
       type: tag_data["type"],
       key: tag_data["key"],
@@ -1042,9 +1052,9 @@ script "js_ds_tag_report_combined_incidents", type: "javascript" do
       value_list: unique_values.join(", "),
       subscription_count: tag_data["subscription_count"]
     })
-  })
+  }
 
-  result = _.sortBy(result, "cardinality").reverse()
+  result.sort(function(a, b) { return b.cardinality - a.cardinality })
 EOS
 end
 
