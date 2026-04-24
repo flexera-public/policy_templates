@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.5.0
+
+- Subscriptions with an Azure Plan for DevTest are now always excluded from results. Windows VMs in these subscriptions already receive free Windows licenses, so AHUB recommendations do not apply to them.
+
 ## v5.4.0
 
 - Added error incident when no Azure Subscriptions are found, indicating a potential credential or permissions issue.

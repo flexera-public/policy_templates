@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "5.4.0",
+  version: "5.5.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Hybrid Use Benefit",
@@ -407,6 +407,7 @@ datasource "ds_azure_subscriptions" do
       field "id", jmes_path(col_item, "subscriptionId")
       field "name", jmes_path(col_item, "displayName")
       field "state", jmes_path(col_item, "state")
+      field "quotaId", jmes_path(col_item, "subscriptionPolicies.quotaId")
     end
   end
 end
@@ -432,6 +433,16 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
   } else {
     result = ds_azure_subscriptions
   }
+
+  // Filter out DevTest subscriptions. Windows VMs in subscriptions with the Azure Plan for
+  // DevTest already receive free Windows licenses, so AHUB recommendations don't apply to them.
+  result = _.filter(result, function(subscription) {
+    quotaId = subscription['quotaId']
+    if (typeof(quotaId) == 'string') {
+      return quotaId.toLowerCase().indexOf('devtest') == -1
+    }
+    return true
+  })
 EOS
 end
 
