@@ -11,6 +11,7 @@ This policy template identifies Azure Windows Server virtual machines that are e
 - The policy identifies all Windows server instances that could utilize [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/offers/hybrid-benefit/) but are not currently using it. It raises an incident for all applicable VMs not currently using AHUB, provides a monthly savings amount if AHUB were to be enabled, and provides the option to automatically enable AHUB on all identified instances.
 - This policy template does not track licenses or availability. It is your responsibility to ensure you are not under licensed.
 - The hourly cost of a virtual machine is calculated by dividing the total cost of the virtual machine for the last 30 days by the hours of usage for that same time period.
+- Azure subscriptions using the Azure Plan for DevTest are automatically excluded from results. These subscriptions are identified by a `subscriptionPolicies.quotaId` value that contains the string "devtest" (case-insensitive). Windows VMs in DevTest subscriptions already receive free Windows licenses and therefore do not yield savings from AHUB.
 
 ### Policy Savings Details
 
