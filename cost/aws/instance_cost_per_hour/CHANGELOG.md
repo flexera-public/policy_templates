@@ -2,12 +2,9 @@
 
 ## v0.2.6
 
-- Fixed missing comma in JavaScript that could cause a runtime error.
-- Fixed chart Y-axis scale using incorrect numeric sort order.
-- Added missing `view=allocation_table` parameter and 403 error handling to billing center API request.
-- Fixed mixed tab/space indentation in API host table.
-- Removed `publish: "false"` flag; policy template is now publicly listed in the catalog.
-- Fixed incorrect NFU acronym expansion in README.
+- Fixed several bugs that could cause policy execution to fail.
+- Fixed bug that could sometimes cause the chart to be rendered incorrectly.
+- Policy template is now published in the policy catalog.
 
 ## v0.2.5
 
