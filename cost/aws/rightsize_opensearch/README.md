@@ -96,6 +96,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 - [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
   - `ec2:DescribeRegions`
+  - `sts:GetCallerIdentity`
   - `elasticache:DescribeCacheClusters`
   - `es:ListDomainNames`
   - `es:DescribeDomains`
@@ -115,6 +116,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
               "Effect": "Allow",
               "Action": [
                   "ec2:DescribeRegions",
+                  "sts:GetCallerIdentity",
                   "elasticache:DescribeCacheClusters",
                   "es:ListDomainNames",
                   "es:DescribeDomains",
