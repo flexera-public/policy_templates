@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.1",
+  version: "0.1.0",
   provider: "AWS",
   service: "Search",
   policy_set: "Rightsize Search Services",
@@ -84,8 +84,8 @@ parameter "param_exclude_risk_flags" do
   type "list"
   category "Filters"
   label "Exclude Recommendations with Risk Flags"
-  description "Suppress downsize recommendations that carry the selected risk flags. Risk flags highlight areas — such as storage, network, disk I/O, or incomplete utilization data — where shrinking a domain may carry additional risk. Only applies to underutilized domain recommendations; idle domain findings are not affected. Leave blank to include all recommendations regardless of risk flags. See the README for more details."
-  allowed_values ["Disk Risk", "Network Risk", "EBS IOPS Risk", "EBS Throughput Risk", "Incomplete Data Risk"]
+  description "Suppress downsize recommendations that carry the selected risk flags. Risk flags highlight areas — such as storage, disk I/O, or incomplete utilization data — where shrinking a domain may carry additional risk. Only applies to underutilized domain recommendations; idle domain findings are not affected. Leave blank to include all recommendations regardless of risk flags. See the README for more details."
+  allowed_values ["Disk Risk", "EBS IOPS Risk", "EBS Throughput Risk", "Incomplete Data Risk"]
   default []
 end
 
@@ -549,7 +549,7 @@ datasource "ds_opensearch_domain_names" do
   request do
     auth $auth_aws
     host join(["es.", val(iter_item, "region"), ".amazonaws.com"])
-    path "/2021-01-01/opensearch/domain"
+    path "/2021-01-01/domain"
     header "User-Agent", "RS Policies"
     ignore_status [403, 401]
   end
@@ -581,7 +581,9 @@ script "js_opensearch_domain_requests", type: "javascript" do
   })
 
   _.each(by_region, function(names, region) {
-    result.push({ region: region, domainNames: names })
+    for (var i = 0; i < names.length; i += 5) {
+      result.push({ region: region, domainNames: names.slice(i, i + 5) })
+    }
   })
 EOS
 end
@@ -652,7 +654,7 @@ datasource "ds_opensearch_tags" do
     path "/2021-01-01/tags/"
     query "arn", val(iter_item, "arn")
     header "User-Agent", "RS Policies"
-    ignore_status [403, 401]
+    ignore_status [403, 401, 404]
   end
   result do
     encoding "json"
@@ -724,11 +726,11 @@ end
 
 # Identify inaccessible regions
 datasource "ds_identify_errors" do
-  run_script $js_identify_errors, $ds_regions, $ds_region_check, $ds_applied_policy, $param_regions_allow_or_deny, $param_regions_list
+  run_script $js_identify_errors, $ds_regions, $ds_region_check, $ds_applied_policy, $param_regions_list
 end
 
 script "js_identify_errors", type: "javascript" do
-  parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
+  parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_list"
   result "errors"
   code <<-'EOS'
   var errors = []
@@ -792,7 +794,7 @@ script "js_cloudwatch_queries", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = {}
-  var stats = ["Average", "Minimum", "Maximum", "p90", "p99"]
+  var util_stats = ["Average", "Maximum", "p99"]
   var lookback_seconds = param_stats_lookback * 86400
   var account_id = ds_aws_account.id || ""
 
@@ -828,32 +830,24 @@ script "js_cloudwatch_queries", type: "javascript" do
 
     var request_metrics = ["OpenSearchRequests", "ElasticsearchRequests", "SearchRate", "IndexingRate"]
     _.each(request_metrics, function(metric) {
-      _.each(stats, function(stat) { push_query(metric, stat) })
+      push_query(metric, "Average")
     })
 
     var util_metrics = ["CPUUtilization", "OldGenJVMMemoryPressure", "JVMMemoryPressure"]
     _.each(util_metrics, function(metric) {
-      _.each(stats, function(stat) { push_query(metric, stat) })
+      _.each(util_stats, function(stat) { push_query(metric, stat) })
     })
 
     var queue_metrics = ["ThreadpoolSearchQueue", "ThreadpoolWriteQueue"]
     _.each(queue_metrics, function(metric) {
-      _.each(stats, function(stat) { push_query(metric, stat) })
-    })
-
-    var network_metrics = ["NetworkTXThroughput", "NetworkRXThroughput"]
-    _.each(network_metrics, function(metric) {
-      _.each(stats, function(stat) { push_query(metric, stat) })
+      push_query(metric, "Average")
     })
 
     push_query("FreeStorageSpace", "Minimum")
-    push_query("FreeStorageSpace", "Average")
 
     if (domain.ebsEnabled == true) {
       var ebs_metrics = ["ReadIOPS", "WriteIOPS", "ReadThroughput", "WriteThroughput"]
-      _.each(ebs_metrics, function(metric) {
-        _.each(stats, function(stat) { push_query(metric, stat) })
-      })
+      _.each(ebs_metrics, function(metric) { push_query(metric, "Average") })
     }
   })
 EOS
@@ -956,7 +950,6 @@ script "js_cloudwatch_data_parsed", type: "javascript" do
     "OpenSearchRequests", "ElasticsearchRequests", "SearchRate", "IndexingRate",
     "CPUUtilization", "OldGenJVMMemoryPressure", "JVMMemoryPressure",
     "ThreadpoolSearchQueue", "ThreadpoolWriteQueue",
-    "NetworkTXThroughput", "NetworkRXThroughput",
     "FreeStorageSpace",
     "ReadIOPS", "WriteIOPS", "ReadThroughput", "WriteThroughput"
   ]
@@ -1219,11 +1212,6 @@ script "js_idle_and_rightsize_domains", type: "javascript" do
     var search_queue_avg = get_metric("ThreadpoolSearchQueue", "Average")
     var write_queue_avg = get_metric("ThreadpoolWriteQueue", "Average")
 
-    var net_tx_max = get_metric("NetworkTXThroughput", "Maximum")
-    var net_rx_max = get_metric("NetworkRXThroughput", "Maximum")
-    var net_tx_avg = get_metric("NetworkTXThroughput", "Average")
-    var net_rx_avg = get_metric("NetworkRXThroughput", "Average")
-
     var read_iops_avg = get_metric("ReadIOPS", "Average")
     var write_iops_avg = get_metric("WriteIOPS", "Average")
     var read_throughput_avg = get_metric("ReadThroughput", "Average")
@@ -1311,25 +1299,15 @@ script "js_idle_and_rightsize_domains", type: "javascript" do
         risk_flags.push("Disk Risk: Domain uses instance storage (not EBS). Verify the target instance type has sufficient local NVMe storage capacity.")
       }
 
-      var net_baseline_gbps = size_info ? (size_info.networkBaselineBandwidthGbps || null) : null
-      if (net_baseline_gbps) {
-        var net_baseline_bps = net_baseline_gbps * 125000000
-        var net_tx_bps = net_tx_max || 0
-        var net_rx_bps = net_rx_max || 0
-        if (net_tx_bps >= net_baseline_bps * 0.8 || net_rx_bps >= net_baseline_bps * 0.8) {
-          risk_flags.push("Network Risk: Current network throughput is within 20% of the documented baseline for the current instance type. Verify the target instance type has sufficient network capacity.")
-        }
-      }
-
       if (domain.ebsEnabled == true) {
         var configured_iops = domain.ebsIops || 0
         var configured_throughput = domain.ebsThroughput || 0
         var actual_iops = (read_iops_avg || 0) + (write_iops_avg || 0)
-        var actual_throughput = (read_throughput_avg || 0) + (write_throughput_avg || 0)
+        var actual_throughput_mib = ((read_throughput_avg || 0) + (write_throughput_avg || 0)) / (1024 * 1024)
         if (configured_iops > 0 && actual_iops >= configured_iops * 0.8) {
           risk_flags.push("EBS IOPS Risk: Current IOPS usage is within 20% of configured EBS volume limits. Verify EBS IOPS configuration for the target instance type.")
         }
-        if (configured_throughput > 0 && actual_throughput >= configured_throughput * 0.8) {
+        if (configured_throughput > 0 && actual_throughput_mib >= configured_throughput * 0.8) {
           risk_flags.push("EBS Throughput Risk: Current throughput is within 20% of configured EBS volume limits.")
         }
       }
@@ -1361,7 +1339,7 @@ script "js_idle_and_rightsize_domains", type: "javascript" do
     if (idle_requests) {
       recommendation_type = "Delete"
       recommendation_details = "Delete OpenSearch domain " + name + " in AWS Account " + (ds_aws_account.name || ds_aws_account.id) + " (" + ds_aws_account.id + "). " +
-        "Domain appears idle: average request rate (" + (requests_avg != null ? (requests_avg * 1440).toFixed(1) : "N/A") + " req/day) is below threshold of " + param_idle_requests_threshold + " req/day."
+        "Domain appears idle: average request rate (" + (requests_avg != null ? (requests_avg * 1440).toFixed(1) : "0") + " req/day) is below threshold of " + param_idle_requests_threshold + " req/day."
     } else if (is_underutil) {
       recommendation_type = "Downsize"
       if (recommended_type) {
@@ -1410,12 +1388,10 @@ script "js_idle_and_rightsize_domains", type: "javascript" do
       jvmMaximum: jvm_max != null ? parseFloat(jvm_max.toFixed(2)) : null,
       freeStorageMin: free_storage_min != null ? parseFloat(free_storage_min.toFixed(2)) : null,
       requestsAverage: requests_avg != null ? parseFloat((requests_avg * 1440).toFixed(2)) : null,
-      searchRateAverage: search_rate_avg != null ? parseFloat(search_rate_avg.toFixed(2)) : null,
-      indexingRateAverage: indexing_rate_avg != null ? parseFloat(indexing_rate_avg.toFixed(2)) : null,
+      searchRateAverage: search_rate_avg != null ? parseFloat((search_rate_avg * 1440).toFixed(2)) : null,
+      indexingRateAverage: indexing_rate_avg != null ? parseFloat((indexing_rate_avg * 1440).toFixed(2)) : null,
       searchQueueAverage: search_queue_avg != null ? parseFloat(search_queue_avg.toFixed(2)) : null,
       writeQueueAverage: write_queue_avg != null ? parseFloat(write_queue_avg.toFixed(2)) : null,
-      networkTxAverage: net_tx_avg != null ? parseFloat(net_tx_avg.toFixed(2)) : null,
-      networkRxAverage: net_rx_avg != null ? parseFloat(net_rx_avg.toFixed(2)) : null,
       newResourceType: recommended_type || "N/A",
       riskFlags: risk_flags.join(" | "),
       scaleUpAdvisory: scale_up_advisory,
@@ -1536,7 +1512,7 @@ policy "pol_opensearch" do
     check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Delete"))
     escalate $esc_email
     escalate $esc_delete_domains
-    hash_exclude "tags", "savings", "savingsCurrency", "requestsAverage", "searchRateAverage", "indexingRateAverage", "cpuAverage", "cpuP99", "jvmP99", "freeStorageMin"
+    hash_exclude "tags", "savings", "savingsCurrency", "requestsAverage", "searchRateAverage", "indexingRateAverage", "cpuAverage", "cpuP99", "jvmP99", "freeStorageMin", "recommendationDetails"
     export do
       resource_level true
       field "accountID" do
@@ -1585,10 +1561,10 @@ policy "pol_opensearch" do
         label "Average Daily Requests"
       end
       field "searchRateAverage" do
-        label "Average Search Rate"
+        label "Average Daily Search Requests"
       end
       field "indexingRateAverage" do
-        label "Average Indexing Rate"
+        label "Average Daily Indexing Requests"
       end
       field "cpuAverage" do
         label "CPU Average %"
@@ -1632,7 +1608,7 @@ policy "pol_opensearch" do
     EOS
     check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Downsize"))
     escalate $esc_email
-    hash_exclude "tags", "savings", "savingsCurrency", "requestsAverage", "searchRateAverage", "indexingRateAverage", "searchQueueAverage", "writeQueueAverage", "cpuAverage", "cpuMaximum", "cpuP99", "jvmAverage", "jvmMaximum", "jvmP99", "freeStorageMin", "riskFlags", "scaleUpAdvisory"
+    hash_exclude "tags", "savings", "savingsCurrency", "requestsAverage", "searchRateAverage", "indexingRateAverage", "searchQueueAverage", "writeQueueAverage", "cpuAverage", "cpuMaximum", "cpuP99", "jvmAverage", "jvmMaximum", "jvmP99", "freeStorageMin", "riskFlags", "scaleUpAdvisory", "recommendationDetails"
     export do
       resource_level true
       field "accountID" do
@@ -1690,10 +1666,10 @@ policy "pol_opensearch" do
         label "Average Daily Requests"
       end
       field "searchRateAverage" do
-        label "Average Search Rate"
+        label "Average Daily Search Requests"
       end
       field "indexingRateAverage" do
-        label "Average Indexing Rate"
+        label "Average Daily Indexing Requests"
       end
       field "searchQueueAverage" do
         label "Average Search Queue Depth"

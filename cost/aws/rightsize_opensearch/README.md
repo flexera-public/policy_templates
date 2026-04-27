@@ -47,7 +47,6 @@ Downsize recommendations carry risk flags when applicable. Risk flags are inform
 | Flag | Condition | Recommended Action |
 | --- | --- | --- |
 | **Disk Risk** | Domain uses instance storage (EBS not enabled) | Verify the target instance type has sufficient local NVMe storage. Smaller instances in the same family may have less NVMe than the current one. |
-| **Network Risk** | Current `NetworkTXThroughput` or `NetworkRXThroughput` maximum is ≥ 80% of the documented baseline for the current instance type | Verify the target instance type's network baseline is adequate for the observed throughput. |
 | **EBS IOPS Risk** | Actual combined ReadIOPS + WriteIOPS ≥ 80% of the configured EBS volume IOPS limit | Verify EBS IOPS configuration for the target instance type. |
 | **EBS Throughput Risk** | Actual combined read + write throughput ≥ 80% of the configured EBS throughput limit | Verify EBS throughput configuration for the target instance type. |
 | **Incomplete Data Risk** | Only one utilization metric (CPU or memory) was available during the lookback period | Review whether the missing metric is expected for this domain; verify the unchecked resource dimension manually before rightsizing. |
@@ -75,7 +74,7 @@ The policy includes an estimated monthly savings figure for each finding.
 - *Exclusion Tags: Any / All* - Whether to filter domains containing any of the specified tags or only those that contain all of them.
 - *Allow/Deny Regions* - Allow or Deny entered regions. See the README for more details.
 - *Allow/Deny Regions List* - A list of allowed or denied regions. See the README for more details.
-- *Exclude Recommendations with Risk Flags* - Suppress downsize recommendations that carry the selected risk flags. Risk flags highlight areas — such as storage, network, disk I/O, or incomplete utilization data — where shrinking a domain may carry additional risk. Only applies to underutilized domain recommendations; idle domain findings are not affected. Leave blank to include all recommendations regardless of risk flags. See the README for more details.
+- *Exclude Recommendations with Risk Flags* - Suppress downsize recommendations that carry the selected risk flags. Risk flags highlight areas — such as storage, disk I/O, or incomplete utilization data — where shrinking a domain may carry additional risk. Only applies to underutilized domain recommendations; idle domain findings are not affected. Leave blank to include all recommendations regardless of risk flags. See the README for more details.
 - *Statistic Lookback Period* - How many days of historical usage data to analyze when assessing domains. This value cannot be set higher than 90 because AWS only retains usage history for up to 90 days.
 - *Idle Domain Request Threshold (Requests/Day)* - Average number of search and indexing requests received per day below which a domain is considered idle. When a domain falls below this level across all traffic signals, it is flagged as idle. Set to 0 to disable idle detection.
 - *Rightsizing Safety Factor* - A multiplier applied to peak resource usage when computing the minimum resources required for a rightsized instance. For example, a value of 1.5 means the recommended instance type must be able to handle 1.5 times the observed peak usage. Set a higher value for more headroom.

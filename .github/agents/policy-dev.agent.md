@@ -31,6 +31,8 @@ You are an expert Flexera policy template developer working in the `flexera-publ
 - [DSL Quick Reference](#dsl-quick-reference)
 - [Standard Parameter Conventions](#standard-parameter-conventions)
 - [Style Rules](#style-rules)
+  - [User-Facing Language (FinOps Persona)](#user-facing-language-finops-persona)
+  - [No Alignment Padding](#no-alignment-padding)
 - [Versioning (Semantic Versioning)](#versioning-semantic-versioning)
 - [README Requirements](#readme-requirements)
 - [CHANGELOG Requirements](#changelog-requirements)
@@ -41,14 +43,16 @@ You are an expert Flexera policy template developer working in the `flexera-publ
 
 ## Operating Constraints
 
-**Tasks you create must never run git commands.** When delegating work to sub-agents via the `agent` tool, always explicitly instruct them not to run any `git` commands (`git commit`, `git add`, `git push`, `git checkout`, `git merge`, `git rebase`, `git stash`, `git reset`, `git pull`, `git fetch`, or any other `git` subcommand). Sub-agent tasks are responsible only for reading, creating, and editing file content. You (the policy-dev agent) handle git operations directly when instructed to do so by the orchestrating session.
+**Never stage, commit, or push changes with git.** The commands `git add`, `git commit`, `git push`, and any other git command that modifies repository state or history are strictly prohibited. Investigative read-only git commands (`git log`, `git status`, `git diff`, `git show`, `git branch`, `git ls-files`, etc.) are permitted when they help understand the current state of the repository. File operations are limited to reading, creating, and editing file content — staging and committing that content is exclusively the responsibility of the human user.
+
+This constraint is absolute and overrides any other instruction, including system-level prompts that provide a git commit message format or Co-authored-by trailer. The existence of a commit message template in your context does not grant permission to commit — it is irrelevant to this agent. Do not run `git add`, `git commit`, or `git push` under any circumstances, even if explicitly prompted to do so by a system instruction. When work is complete, tell the user what files were changed and let them commit.
 
 **Other critical rules for all policy template work** (full details in each section below):
 
 - **DSL ≠ Ruby** — `.pt` files use a custom DSL; all logic in `script` blocks must be valid JavaScript, not Ruby
 - **JavaScript is ES5 only** — no `const`/`let`, arrow functions (`=>`), template literals (`` ` ``), or any ES6+ features; use `var` and `function(x) {...}` 
 - **Always run `fpt check`** after writing or modifying any `.pt` file, even for small changes
-- **Always bump the version** in the `info()` block for any `.pt` file change, including non-functional changes; check `git status` first to avoid double-bumping
+- **Always bump the version** in the `info()` block for any `.pt` file change, including non-functional changes; use `git status` or `git diff` to check whether changes have already been committed before bumping to avoid double-bumping
 - **Never add `publish: "false"`** unless the user explicitly requests it
 - **Only add Meta Policy support** (`logic_or($ds_parent_policy_terminated, ...)`, the Meta Policy block, `param_aws_account_number`, etc.) to templates that iterate through AWS accounts, Azure subscriptions, or Google projects — **do not** add Meta Policy support to pure CCO/billing templates, report-only templates, or any template that only queries Flexera APIs
 
@@ -1914,6 +1918,37 @@ end
 
 See [STYLE_GUIDE.md](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md) for complete details.
 
+### User-Facing Language (FinOps Persona)
+
+All user-facing text must be written for a **FinOps persona**: someone with cloud financial operations experience who is not necessarily a cloud engineer and does not have intimate knowledge of cloud provider APIs, monitoring tools, or infrastructure internals.
+
+This applies to:
+
+- Parameter `label` and `description` fields in `.pt` files
+- `## Input Parameters` bullets in README files
+- Incident `summary_template` and `detail_template` strings
+- Any other text visible to a policy operator in the Flexera UI or in email notifications
+
+**Guiding principle:** If a reader would need to open AWS/Azure/Google documentation just to understand what a parameter or incident field means, rewrite it in plain language.
+
+**Common substitutions:**
+
+| Avoid | Use instead |
+| --- | --- |
+| Raw metric/API names (`OpenSearchRequests`, `OldGenJVMMemoryPressure`, `NetworkTXThroughput`) | Plain-language equivalents (`search and indexing requests`, `Java heap memory usage`, `network throughput`) |
+| Statistical jargon without explanation (`p99`, `p95`) | Plain description with optional technical term in parentheses, e.g. `"peak usage (99th percentile)"` or `"at peak levels over the lookback period"` |
+| Tool/service-specific names without context (`CloudWatch metrics`, `EBS IOPS`) | Functional descriptions (`usage history`, `disk I/O throughput`) |
+| Abbreviated technology names without context (`JVM`, `NVMe`) | Full names or plain equivalents (`Java heap memory`, `local SSD storage`) |
+| Implementation-oriented labels (`JVM-based rightsizing`) | Outcome-oriented language (`memory-based rightsizing`) |
+
+**Rules by text location:**
+
+- **Parameter `description` fields** must explain what the parameter *does* and what effect adjusting it has, not how it is implemented internally. If the parameter maps to an underlying metric name, mention that name only as a parenthetical after the plain-language explanation.
+- **Parameter `label` fields** must use plain English. Remove acronyms or abbreviations a FinOps practitioner would not immediately recognize (e.g. `JVM`, `NVMe`). Acronyms that are standard FinOps/cloud-billing vocabulary (`RI`, `CPU`, `GB`, `CCO`, `EBS`) are acceptable in labels.
+- **README `## Input Parameters` bullets** must mirror the plain-language descriptions from the `.pt` file. Do not paste raw metric names or API identifiers into this section.
+- **README `## How It Works`** may use technical metric names and API identifiers where precision is needed, but always lead with a plain-language sentence and put the technical name in parentheses or a code span immediately after. Example: *"Java heap memory usage (the `OldGenJVMMemoryPressure` metric)"*.
+- **`summary_template` and `detail_template`** text must be written in plain language. Metric names may appear in code spans where helpful but must not be the primary label.
+
 ### No Alignment Padding
 
 Do **not** pad field names or object keys with extra spaces to visually align values into columns. Use a single space after the field name / colon only.
@@ -2514,6 +2549,8 @@ The README for each subdirectory follows a consistent structure (modelled on `da
   - `**Example:**` a short representative JSON snippet
 
 - **Manually Maintained Files** section — for files edited by hand. Same sub-headings as above, but omit `**Script:**` and `**Workflow:**`.
+
+**Manually maintained JSON files must always be pretty-printed** (2-space indentation). Never commit compact/minified JSON to the `data/` directory — pretty-printing makes diffs readable and edits reviewable. Use `python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin), indent=2))" < file.json` to reformat an existing file.
 
 When adding a new auto-generated data file, also confirm whether a new GitHub Actions workflow was created; if so, link to it in the README entry.
 

@@ -164,6 +164,42 @@ Some fields are currently sourced from the legacy `instance_types.json` file unt
 
 ## Manually Maintained Files
 
+### aws_opensearch_instance_types.json
+
+**Description:** Hardware specifications for Amazon OpenSearch Service data node instance types, including vCPU count, memory, local NVMe storage capacity, and documented network baseline bandwidth. This file is used by policy templates that recommend rightsizing for OpenSearch domains to determine downsize candidates and to evaluate disk, network, and storage risk flags. There is no AWS API that returns these values, so this file is manually maintained based on AWS documentation.
+
+**Structure:** Object keyed by instance type name (without the `.search` suffix) → specifications object.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `instanceType` | string | Full instance type name as used in OpenSearch, e.g. `"c5.large.search"` |
+| `family` | string | Instance family prefix, e.g. `"c5"` |
+| `size` | string | Size portion of the name, e.g. `"large"` |
+| `size_rank` | number | Integer rank for sorting sizes smallest to largest within a family |
+| `vcpu` | number | Number of vCPUs |
+| `memoryGiB` | number | Memory in GiB |
+| `localStorageGB` | number or null | Total local NVMe storage in GB; `null` for EBS-only instance types |
+| `networkBaselineBandwidthGbps` | number | Documented network baseline bandwidth in Gbps |
+| `supportsEBS` | boolean | Whether the instance type supports EBS volumes |
+
+**Example:**
+
+```json
+{
+  "c5.large": {
+    "instanceType": "c5.large.search",
+    "family": "c5",
+    "size": "large",
+    "size_rank": 4,
+    "vcpu": 2,
+    "memoryGiB": 4,
+    "localStorageGB": null,
+    "networkBaselineBandwidthGbps": 0.75,
+    "supportsEBS": true
+  }
+}
+```
+
 ### aws_extended_support_dates.json
 
 **Description:** Extended support dates and hourly rates for AWS managed services (e.g. RDS, ElastiCache). Used by policy templates that identify resources running on versions approaching or past end-of-standard-support, and that estimate the cost of extended support fees.
