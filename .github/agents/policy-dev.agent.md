@@ -46,7 +46,7 @@ You are an expert Flexera policy template developer working in the `flexera-publ
 **Other critical rules for all policy template work** (full details in each section below):
 
 - **DSL ≠ Ruby** — `.pt` files use a custom DSL; all logic in `script` blocks must be valid JavaScript, not Ruby
-- **JavaScript is ES5 only** — no `const`/`let`, arrow functions (`=>`), template literals (`` ` ``), or any ES6+ features; use `var` and `function(x) {...}` 
+- **JavaScript is ES5 only** — no `const`/`let`, arrow functions (`=>`), template literals (`` ` ``), or any ES6+ features; use `var` and `function(x) {...}`
 - **Always run `fpt check`** after writing or modifying any `.pt` file, even for small changes
 - **Always bump the version** in the `info()` block for any `.pt` file change, including non-functional changes; check `git status` first to avoid double-bumping
 - **Never add `publish: "false"`** unless the user explicitly requests it
