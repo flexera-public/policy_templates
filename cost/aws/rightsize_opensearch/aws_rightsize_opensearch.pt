@@ -1,0 +1,1910 @@
+name "AWS Rightsize OpenSearch Service Domains"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports on idle and underutilized AWS OpenSearch Service domains and deletes idle ones after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_opensearch/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_opensearch/"
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.2.1",
+  provider: "AWS",
+  service: "Search",
+  policy_set: "Rightsize Search Services",
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter domains containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
+end
+
+parameter "param_exclude_risk_flags" do
+  type "list"
+  category "Filters"
+  label "Exclude Recommendations with Risk Flags"
+  description "Suppress downsize recommendations that carry the selected risk flags. Risk flags highlight areas — such as storage, network, disk I/O, or incomplete utilization data — where shrinking a domain may carry additional risk. Only applies to underutilized domain recommendations; idle domain findings are not affected. Leave blank to include all recommendations regardless of risk flags. See the README for more details."
+  allowed_values ["Disk Risk", "Network Risk", "EBS IOPS Risk", "EBS Throughput Risk", "Incomplete Data Risk"]
+  default []
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days of historical usage data to analyze when assessing domains. This value cannot be set higher than 90 because AWS only retains usage history for up to 90 days."
+  min_value 1
+  max_value 90
+  default 30
+end
+
+parameter "param_idle_requests_threshold" do
+  type "number"
+  category "Statistics"
+  label "Idle Domain Request Threshold (Requests/Day)"
+  description "Average number of search and indexing requests received per day below which a domain is considered idle. When a domain falls below this level across all traffic signals, it is flagged as idle. Set to 0 to disable idle detection."
+  min_value 0
+  default 100
+end
+
+parameter "param_stats_safety_factor" do
+  type "number"
+  category "Statistics"
+  label "Rightsizing Safety Factor"
+  description "A multiplier applied to peak resource usage when computing the minimum resources required for a rightsized instance. For example, a value of 1.5 means the recommended instance type must be able to handle 1.5 times the observed peak usage. Set a higher value for more headroom."
+  min_value 1
+  default 1.5
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)."
+  allowed_values ["Delete Idle Domains"]
+  default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws_getmetricdata" do
+  get_page_marker do
+    body_path "NextToken"
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+# Get AWS account info fallback
+datasource "ds_billing_centers_aws_acc" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_bcs_aws_acc" do
+  run_script $js_top_level_bcs_aws_acc, $ds_billing_centers_aws_acc
+end
+
+script "js_top_level_bcs_aws_acc", type: "javascript" do
+  parameters "ds_billing_centers_aws_acc"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers_aws_acc, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_cloud_vendor_accounts_fallback" do
+  request do
+    run_script $js_cloud_vendor_accounts_fallback, $ds_top_level_bcs_aws_acc, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "id", jmes_path(col_item, "dimensions.vendor_account")
+      field "name", jmes_path(col_item, "dimensions.vendor_account_name")
+    end
+  end
+end
+
+script "js_cloud_vendor_accounts_fallback", type: "javascript" do
+  parameters "ds_top_level_bcs_aws_acc", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      dimensions: ["vendor_account", "vendor_account_name"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs_aws_acc
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_cloud_vendor_accounts_fallback, $ds_get_caller_identity
+end
+
+script "js_aws_account", type: "javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_cloud_vendor_accounts_fallback", "ds_get_caller_identity"
+  result "result"
+  code <<-'EOS'
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  if (result == undefined) {
+    result = _.find(ds_cloud_vendor_accounts_fallback, function(account) {
+      return account['id'] == ds_get_caller_identity[0]['account']
+    })
+
+    if (result) {
+      result["tags"] = {}
+    }
+  }
+
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type: "javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+# Enumerate all AWS regions
+datasource "ds_describe_regions" do
+  request do
+    auth $auth_aws
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
+    header "User-Agent", "RS Policies"
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+datasource "ds_regions" do
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
+end
+
+script "js_regions", type: "javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-'EOS'
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+# Probe region accessibility using ElastiCache (avoids RDS MaxRecords constraint)
+datasource "ds_region_check" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    host join(["elasticache.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeCacheClusters"
+    query "Version", "2015-02-02"
+    query "MaxResults", "5"
+    header "User-Agent", "RS Policies"
+    ignore_status [403, 401]
+  end
+  result do
+    encoding "xml"
+    field "region", val(iter_item, "region")
+    field "status", "OK"
+  end
+end
+
+# Load OpenSearch instance type reference data
+datasource "ds_opensearch_instance_types" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/aws_opensearch_instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+# List all domain names in each region
+datasource "ds_opensearch_domain_names" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    host join(["es.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/2021-01-01/opensearch/domain"
+    header "User-Agent", "RS Policies"
+    ignore_status [403, 401]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DomainNames[*]") do
+      field "domainName", jmes_path(col_item, "DomainName")
+      field "engineType", jmes_path(col_item, "EngineType")
+      field "region", val(iter_item, "region")
+    end
+  end
+end
+
+# Group domain names by region for bulk DescribeDomains requests
+datasource "ds_opensearch_domain_requests" do
+  run_script $js_opensearch_domain_requests, $ds_opensearch_domain_names
+end
+
+script "js_opensearch_domain_requests", type: "javascript" do
+  parameters "ds_opensearch_domain_names"
+  result "result"
+  code <<-'EOS'
+  var result = []
+  var by_region = {}
+
+  _.each(ds_opensearch_domain_names, function(domain) {
+    if (!by_region[domain.region]) { by_region[domain.region] = [] }
+    by_region[domain.region].push(domain.domainName)
+  })
+
+  _.each(by_region, function(names, region) {
+    result.push({ region: region, domainNames: names })
+  })
+EOS
+end
+
+# Bulk DescribeDomains per region
+datasource "ds_opensearch_domains" do
+  iterate $ds_opensearch_domain_requests
+  request do
+    run_script $js_opensearch_domains, val(iter_item, "region"), val(iter_item, "domainNames")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DomainStatusList[*]") do
+      field "domainName", jmes_path(col_item, "DomainName")
+      field "domainId", jmes_path(col_item, "DomainId")
+      field "arn", jmes_path(col_item, "ARN")
+      field "engineVersion", jmes_path(col_item, "EngineVersion")
+      field "instanceType", jmes_path(col_item, "ClusterConfig.InstanceType")
+      field "instanceCount", jmes_path(col_item, "ClusterConfig.InstanceCount")
+      field "dedicatedMasterEnabled", jmes_path(col_item, "ClusterConfig.DedicatedMasterEnabled")
+      field "dedicatedMasterType", jmes_path(col_item, "ClusterConfig.DedicatedMasterType")
+      field "dedicatedMasterCount", jmes_path(col_item, "ClusterConfig.DedicatedMasterCount")
+      field "warmEnabled", jmes_path(col_item, "ClusterConfig.WarmEnabled")
+      field "warmType", jmes_path(col_item, "ClusterConfig.WarmType")
+      field "warmCount", jmes_path(col_item, "ClusterConfig.WarmCount")
+      field "coldStorageEnabled", jmes_path(col_item, "ClusterConfig.ColdStorageOptions.Enabled")
+      field "ebsEnabled", jmes_path(col_item, "EBSOptions.EBSEnabled")
+      field "ebsVolumeType", jmes_path(col_item, "EBSOptions.VolumeType")
+      field "ebsVolumeSize", jmes_path(col_item, "EBSOptions.VolumeSize")
+      field "ebsIops", jmes_path(col_item, "EBSOptions.Iops")
+      field "ebsThroughput", jmes_path(col_item, "EBSOptions.Throughput")
+      field "autoTuneState", jmes_path(col_item, "AutoTuneOptions.State")
+      field "zoneAwarenessEnabled", jmes_path(col_item, "ClusterConfig.ZoneAwarenessEnabled")
+      field "availabilityZoneCount", jmes_path(col_item, "ClusterConfig.ZoneAwarenessConfig.AvailabilityZoneCount")
+      field "created", jmes_path(col_item, "Created")
+      field "deleted", jmes_path(col_item, "Deleted")
+      field "processing", jmes_path(col_item, "Processing")
+      field "region", val(iter_item, "region")
+    end
+  end
+end
+
+script "js_opensearch_domains", type: "javascript" do
+  parameters "region", "domain_names"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_aws",
+    host: "es." + region + ".amazonaws.com",
+    verb: "POST",
+    path: "/2021-01-01/opensearch/domain-info",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ DomainNames: domain_names }),
+    ignore_status: [403, 401]
+  }
+EOS
+end
+
+# Retrieve tags for each domain
+datasource "ds_opensearch_tags" do
+  iterate $ds_opensearch_domains
+  request do
+    auth $auth_aws
+    host join(["es.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/2021-01-01/tags/"
+    query "arn", val(iter_item, "arn")
+    header "User-Agent", "RS Policies"
+    ignore_status [403, 401]
+  end
+  result do
+    encoding "json"
+    field "arn", val(iter_item, "arn")
+    field "tags", jmes_path(response, "TagList")
+  end
+end
+
+# Apply tag exclusion filters and remove already-deleted domains
+datasource "ds_opensearch_domains_filtered" do
+  run_script $js_opensearch_domains_filtered, $ds_opensearch_domains, $ds_opensearch_tags, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_opensearch_domains_filtered", type: "javascript" do
+  parameters "ds_opensearch_domains", "ds_opensearch_tags", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-'EOS'
+  var tags_by_arn = {}
+  _.each(ds_opensearch_tags, function(item) {
+    if (item.arn) { tags_by_arn[item.arn] = item.tags || [] }
+  })
+
+  var comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+    if (item.indexOf('=~') != -1) {
+      var value = item.split('=~')[1]
+      var regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+    if (item.indexOf('!~') != -1) {
+      var value = item.split('!~')[1]
+      var regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  result = _.reject(ds_opensearch_domains, function(domain) {
+    if (domain.deleted == true) { return true }
+
+    var resource_tags = {}
+    var tag_list = tags_by_arn[domain.arn] || []
+    _.each(tag_list, function(tag) {
+      resource_tags[tag.Key] = tag.Value
+    })
+
+    if (param_exclusion_tags.length == 0) { return false }
+
+    var found_tags = []
+    _.each(comparators, function(comparator) {
+      var resource_tag = resource_tags[comparator['key']]
+      if (comparator['comparison'] == 'key' && resource_tag != undefined) { found_tags.push(comparator['string']) }
+      if (comparator['comparison'] == '==' && resource_tag == comparator['value']) { found_tags.push(comparator['string']) }
+      if (comparator['comparison'] == '!=' && resource_tag != comparator['value']) { found_tags.push(comparator['string']) }
+      if (comparator['comparison'] == '=~' && resource_tag != undefined && comparator['value'].test(resource_tag)) { found_tags.push(comparator['string']) }
+      if (comparator['comparison'] == '!~' && (resource_tag == undefined || !comparator['value'].test(resource_tag))) { found_tags.push(comparator['string']) }
+    })
+
+    if (param_exclusion_tags_boolean == 'Any') { return found_tags.length > 0 }
+    return found_tags.length == comparators.length
+  })
+EOS
+end
+
+# Identify inaccessible regions
+datasource "ds_identify_errors" do
+  run_script $js_identify_errors, $ds_regions, $ds_region_check, $ds_applied_policy, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_identify_errors", type: "javascript" do
+  parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
+  result "errors"
+  code <<-'EOS'
+  var errors = []
+  var region_responses = {}
+  _.each(ds_region_check, function(item) {
+    if (item.region) { region_responses[item.region] = "OK" }
+  })
+
+  var allowed_regions = _.keys(region_responses)
+  var forbidden_regions = []
+  _.each(ds_regions, function(region_obj) {
+    if (!_.contains(allowed_regions, region_obj.region)) {
+      forbidden_regions.push(region_obj.region)
+    }
+  })
+
+  if (forbidden_regions.length > 0) {
+    var regions_string = forbidden_regions.sort().join(", ")
+    var successful_regions = allowed_regions.sort().join(", ")
+    var filter_guidance = ""
+
+    if (param_regions_list.length > 0) {
+      filter_guidance = " You are currently using the 'Allow/Deny Regions List' parameter. "
+      filter_guidance += "You can update this list to exclude the inaccessible regions if appropriate."
+    } else {
+      filter_guidance = " You can use the 'Allow/Deny Regions List' parameter to exclude these regions from the policy scope."
+    }
+
+    errors.push(
+      "HTTP error received when attempting to query some AWS region(s).\n" +
+      "\n - Failed Regions: " + regions_string +
+      "\n - Successful Regions: " + successful_regions +
+      "\n\nThis typically indicates that the AWS credential does not have the required permissions " +
+      "for these regions, or these regions may not be enabled. " +
+      "To resolve: " +
+      "(1) Verify the credential has the required permissions for these regions, " +
+      "(2) Ensure these regions are opted-in in your account, or " +
+      "(3) Exclude these regions using the region filter parameters." +
+      filter_guidance
+    )
+  }
+
+  errors = _.uniq(errors)
+  errors = _.map(errors, function(err) { return { "error": err } })
+
+  if (errors.length > 0) {
+    var policy_name = "AWS Rightsize OpenSearch Service Domains"
+    if (ds_applied_policy && ds_applied_policy.name) { policy_name = ds_applied_policy.name }
+    errors[0].policy_name = policy_name
+  }
+EOS
+end
+
+# Build CloudWatch GetMetricData query objects for each domain
+datasource "ds_cloudwatch_queries" do
+  run_script $js_cloudwatch_queries, $ds_opensearch_domains_filtered, $ds_aws_account, $param_stats_lookback
+end
+
+script "js_cloudwatch_queries", type: "javascript" do
+  parameters "domains", "ds_aws_account", "param_stats_lookback"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  var stats = ["Average", "Minimum", "Maximum", "p90", "p99"]
+  var lookback_seconds = param_stats_lookback * 86400
+  var account_id = ds_aws_account.id || ""
+
+  _.each(domains, function(domain) {
+    var region = domain.region
+    var name = domain.domainName
+    var id_prefix = "d_" + name.replace(/[^a-zA-Z0-9]/g, "_")
+
+    if (!result[region]) { result[region] = [] }
+
+    var dims = [
+      { "Name": "DomainName", "Value": name },
+      { "Name": "ClientId", "Value": account_id }
+    ]
+
+    function push_query(metric_name, stat) {
+      var safe_metric = metric_name.replace(/[^a-zA-Z0-9]/g, "_")
+      var safe_stat = stat.replace(/[^a-zA-Z0-9]/g, "_")
+      result[region].push({
+        "Id": id_prefix + "_" + safe_metric + "_" + safe_stat,
+        "MetricStat": {
+          "Metric": {
+            "Namespace": "AWS/ES",
+            "MetricName": metric_name,
+            "Dimensions": dims
+          },
+          "Period": lookback_seconds,
+          "Stat": stat
+        },
+        "ReturnData": true
+      })
+    }
+
+    var request_metrics = ["OpenSearchRequests", "ElasticsearchRequests", "SearchRate", "IndexingRate"]
+    _.each(request_metrics, function(metric) {
+      _.each(stats, function(stat) { push_query(metric, stat) })
+    })
+
+    var util_metrics = ["CPUUtilization", "OldGenJVMMemoryPressure", "JVMMemoryPressure"]
+    _.each(util_metrics, function(metric) {
+      _.each(stats, function(stat) { push_query(metric, stat) })
+    })
+
+    var queue_metrics = ["ThreadpoolSearchQueue", "ThreadpoolWriteQueue"]
+    _.each(queue_metrics, function(metric) {
+      _.each(stats, function(stat) { push_query(metric, stat) })
+    })
+
+    var network_metrics = ["NetworkTXThroughput", "NetworkRXThroughput"]
+    _.each(network_metrics, function(metric) {
+      _.each(stats, function(stat) { push_query(metric, stat) })
+    })
+
+    push_query("FreeStorageSpace", "Minimum")
+    push_query("FreeStorageSpace", "Average")
+
+    if (domain.ebsEnabled == true) {
+      var ebs_metrics = ["ReadIOPS", "WriteIOPS", "ReadThroughput", "WriteThroughput"]
+      _.each(ebs_metrics, function(metric) {
+        _.each(stats, function(stat) { push_query(metric, stat) })
+      })
+    }
+  })
+EOS
+end
+
+# Organize queries into 500-item batches for CloudWatch GetMetricData
+datasource "ds_cloudwatch_requests" do
+  run_script $js_cloudwatch_requests, $ds_cloudwatch_queries, $param_stats_lookback
+end
+
+script "js_cloudwatch_requests", type: "javascript" do
+  parameters "queries", "param_stats_lookback"
+  result "result"
+  code <<-'EOS'
+  result = []
+  var query_block_size = 500
+
+  var end_date = new Date()
+  end_date.setMinutes(0, 0, 0)
+  end_date = parseInt(end_date.getTime() / 1000)
+
+  var start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date.setMinutes(0, 0, 0)
+  start_date = parseInt(start_date.getTime() / 1000)
+
+  _.each(Object.keys(queries), function(region) {
+    for (var i = 0; i < queries[region].length; i += query_block_size) {
+      var chunk = queries[region].slice(i, i + query_block_size)
+      result.push({
+        body: {
+          "StartTime": start_date,
+          "EndTime": end_date,
+          "MetricDataQueries": chunk
+        },
+        region: region
+      })
+    }
+  })
+EOS
+end
+
+# Execute batched CloudWatch GetMetricData requests
+datasource "ds_cloudwatch_data" do
+  iterate $ds_cloudwatch_requests
+  request do
+    run_script $js_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
+script "js_cloudwatch_data", type: "javascript" do
+  parameters "region", "body"
+  result "request"
+  code <<-'EOS'
+  var api_wait = 5
+  var now = new Date().getTime()
+  while (new Date().getTime() < now + (api_wait * 1000)) { /* wait */ }
+
+  var request = {
+    auth: "auth_aws",
+    host: "monitoring." + region + ".amazonaws.com",
+    pagination: "pagination_aws_getmetricdata",
+    verb: "POST",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    },
+    query_params: {
+      "Version": "2010-08-01"
+    },
+    body: JSON.stringify(body)
+  }
+EOS
+end
+
+# Parse CloudWatch results into a nested lookup: result[region][domain_slug][metric][stat]
+datasource "ds_cloudwatch_data_parsed" do
+  run_script $js_cloudwatch_data_parsed, $ds_cloudwatch_data
+end
+
+script "js_cloudwatch_data_parsed", type: "javascript" do
+  parameters "ds_cloudwatch_data"
+  result "result"
+  code <<-'EOS'
+  result = {}
+
+  var known_metrics = [
+    "OpenSearchRequests", "ElasticsearchRequests", "SearchRate", "IndexingRate",
+    "CPUUtilization", "OldGenJVMMemoryPressure", "JVMMemoryPressure",
+    "ThreadpoolSearchQueue", "ThreadpoolWriteQueue",
+    "NetworkTXThroughput", "NetworkRXThroughput",
+    "FreeStorageSpace",
+    "ReadIOPS", "WriteIOPS", "ReadThroughput", "WriteThroughput"
+  ]
+
+  var known_stats = ["Average", "Minimum", "Maximum", "p90", "p99"]
+
+  _.each(ds_cloudwatch_data, function(item) {
+    var region = item.region
+    var id = item.id
+
+    if (!id || !region) { return }
+
+    var metric = null
+    var stat = null
+    var domain_slug = null
+
+    _.each(known_metrics, function(m) {
+      if (metric) { return }
+      var safe_m = m.replace(/[^a-zA-Z0-9]/g, "_")
+      _.each(known_stats, function(s) {
+        if (metric) { return }
+        var safe_s = s.replace(/[^a-zA-Z0-9]/g, "_")
+        var suffix = "_" + safe_m + "_" + safe_s
+        var pos = id.lastIndexOf(suffix)
+        if (pos != -1 && pos + suffix.length == id.length) {
+          metric = m
+          stat = s
+          domain_slug = id.slice(2, pos)
+        }
+      })
+    })
+
+    if (!metric || !stat || !domain_slug) { return }
+
+    if (!result[region]) { result[region] = {} }
+    if (!result[region][domain_slug]) { result[region][domain_slug] = {} }
+    if (!result[region][domain_slug][metric]) { result[region][domain_slug][metric] = {} }
+
+    var value = (item.values && item.values.length > 0) ? item.values[item.values.length - 1] : null
+    result[region][domain_slug][metric][stat] = value
+  })
+EOS
+end
+
+# Query CCO for OpenSearch domain costs
+datasource "ds_domain_costs" do
+  request do
+    run_script $js_domain_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceId", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_domain_costs", type: "javascript" do
+  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  var end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  var start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        type: "and",
+        expressions: [
+          {
+            dimension: "service",
+            type: "equal",
+            value: "AmazonES"
+          },
+          {
+            dimension: "vendor_account",
+            type: "equal",
+            value: ds_aws_account["id"]
+          },
+          {
+            type: "not",
+            expression: {
+              dimension: "adjustment_name",
+              type: "substring",
+              substring: "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_domain_costs_grouped" do
+  run_script $js_domain_costs_grouped, $ds_domain_costs
+end
+
+script "js_domain_costs_grouped", type: "javascript" do
+  parameters "ds_domain_costs"
+  result "result"
+  code <<-'EOS'
+  var cost_multiplier = 365.25 / 12
+
+  result = {}
+  _.each(ds_domain_costs, function(item) {
+    var id = (item.resourceId || "").toLowerCase()
+    if (!result[id]) { result[id] = 0.0 }
+    result[id] += item.cost * cost_multiplier
+  })
+EOS
+end
+
+# Build instance size map for downsize recommendations
+datasource "ds_opensearch_instance_size_map" do
+  run_script $js_opensearch_instance_size_map, $ds_opensearch_instance_types
+end
+
+script "js_opensearch_instance_size_map", type: "javascript" do
+  parameters "ds_opensearch_instance_types"
+  result "result"
+  code <<-'EOS'
+  result = { byName: {}, byFamily: {} }
+  var families = {}
+
+  _.each(ds_opensearch_instance_types, function(item) {
+    if (!item.name || item.size_rank == null) { return }
+    result.byName[item.name] = {
+      family: item.family,
+      size_rank: item.size_rank,
+      vcpu: item.vcpu || null,
+      memorySizeInGiB: item.memorySizeInGiB || null,
+      localStorageGB: item.localStorageGB || null,
+      networkBaselineBandwidthGbps: item.networkBaselineBandwidthGbps || null
+    }
+    if (!families[item.family]) { families[item.family] = [] }
+    families[item.family].push(item)
+  })
+
+  _.each(families, function(members, family) {
+    members.sort(function(a, b) { return a.size_rank - b.size_rank })
+    result.byFamily[family] = _.map(members, function(m) {
+      return {
+        name: m.name,
+        size_rank: m.size_rank,
+        vcpu: m.vcpu || null,
+        memorySizeInGiB: m.memorySizeInGiB || null,
+        localStorageGB: m.localStorageGB || null,
+        networkBaselineBandwidthGbps: m.networkBaselineBandwidthGbps || null
+      }
+    })
+  })
+EOS
+end
+
+# Final transform: merge all data, classify domains, produce idle and rightsize lists
+datasource "ds_idle_and_rightsize_domains" do
+  run_script $js_idle_and_rightsize_domains, $ds_opensearch_domains_filtered, $ds_opensearch_tags, $ds_cloudwatch_data_parsed, $ds_domain_costs_grouped, $ds_opensearch_instance_size_map, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_idle_requests_threshold, $param_stats_safety_factor, $param_min_savings, $param_exclude_risk_flags
+end
+
+script "js_idle_and_rightsize_domains", type: "javascript" do
+  parameters "domains", "ds_opensearch_tags", "cw_data", "costs_grouped", "size_map", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_idle_requests_threshold", "param_stats_safety_factor", "param_min_savings", "param_exclude_risk_flags"
+  result "result"
+  code <<-'EOS'
+  function formatNumber(number, separator) {
+    var formatted = "0"
+    if (number != null && !isNaN(number)) {
+      formatted = (Math.round(number * 100) / 100).toString().split(".")[0]
+      if (separator) {
+        var withSep = ""
+        for (var i = 0; i < formatted.length; i++) {
+          if (i > 0 && (formatted.length - i) % 3 == 0) { withSep += separator }
+          withSep += formatted[i]
+        }
+        formatted = withSep
+      }
+      var decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted += "." + decimal }
+    }
+    return formatted
+  }
+
+  var tags_by_arn = {}
+  _.each(ds_opensearch_tags, function(item) {
+    if (item.arn) { tags_by_arn[item.arn] = item.tags || [] }
+  })
+
+  var idle_list = []
+  var rightsize_list = []
+  var idle_total_savings = 0.0
+  var rightsize_total_savings = 0.0
+
+  _.each(domains, function(domain) {
+    var region = domain.region
+    var name = domain.domainName
+    var domain_slug = name.replace(/[^a-zA-Z0-9]/g, "_")
+
+    var tag_list = tags_by_arn[domain.arn] || []
+    var tags_display = []
+    _.each(tag_list, function(tag) {
+      tags_display.push(tag.Key + "=" + tag.Value)
+    })
+
+    var metrics = {}
+    if (cw_data[region] && cw_data[region][domain_slug]) {
+      metrics = cw_data[region][domain_slug]
+    }
+
+    function get_metric(metric, stat) {
+      if (metrics[metric] && metrics[metric][stat] != null && metrics[metric][stat] != undefined) {
+        return metrics[metric][stat]
+      }
+      return null
+    }
+
+    var requests_avg = get_metric("OpenSearchRequests", "Average")
+    if (requests_avg == null) { requests_avg = get_metric("ElasticsearchRequests", "Average") }
+
+    var search_rate_avg = get_metric("SearchRate", "Average")
+    var indexing_rate_avg = get_metric("IndexingRate", "Average")
+
+    var cpu_p99 = get_metric("CPUUtilization", "p99")
+    var cpu_avg = get_metric("CPUUtilization", "Average")
+    var cpu_max = get_metric("CPUUtilization", "Maximum")
+
+    var oldgen_jvm_p99 = get_metric("OldGenJVMMemoryPressure", "p99")
+    var oldgen_jvm_avg = get_metric("OldGenJVMMemoryPressure", "Average")
+    var oldgen_jvm_max = get_metric("OldGenJVMMemoryPressure", "Maximum")
+    var total_jvm_p99 = get_metric("JVMMemoryPressure", "p99")
+    var total_jvm_avg = get_metric("JVMMemoryPressure", "Average")
+    var total_jvm_max = get_metric("JVMMemoryPressure", "Maximum")
+    var jvm_p99 = (oldgen_jvm_p99 != null && total_jvm_p99 != null) ? Math.max(oldgen_jvm_p99, total_jvm_p99) : (oldgen_jvm_p99 != null ? oldgen_jvm_p99 : total_jvm_p99)
+    var jvm_avg = (oldgen_jvm_avg != null && total_jvm_avg != null) ? Math.max(oldgen_jvm_avg, total_jvm_avg) : (oldgen_jvm_avg != null ? oldgen_jvm_avg : total_jvm_avg)
+    var jvm_max = (oldgen_jvm_max != null && total_jvm_max != null) ? Math.max(oldgen_jvm_max, total_jvm_max) : (oldgen_jvm_max != null ? oldgen_jvm_max : total_jvm_max)
+
+    var free_storage_min = get_metric("FreeStorageSpace", "Minimum")
+
+    var search_queue_avg = get_metric("ThreadpoolSearchQueue", "Average")
+    var write_queue_avg = get_metric("ThreadpoolWriteQueue", "Average")
+
+    var net_tx_max = get_metric("NetworkTXThroughput", "Maximum")
+    var net_rx_max = get_metric("NetworkRXThroughput", "Maximum")
+    var net_tx_avg = get_metric("NetworkTXThroughput", "Average")
+    var net_rx_avg = get_metric("NetworkRXThroughput", "Average")
+
+    var read_iops_avg = get_metric("ReadIOPS", "Average")
+    var write_iops_avg = get_metric("WriteIOPS", "Average")
+    var read_throughput_avg = get_metric("ReadThroughput", "Average")
+    var write_throughput_avg = get_metric("WriteThroughput", "Average")
+
+    // Look up cost — try ARN, then domain/name, then partial match
+    var cost_key_arn = (domain.arn || "").toLowerCase()
+    var cost_key_name = ("domain/" + name).toLowerCase()
+    var total_cost = 0.0
+    if (costs_grouped[cost_key_arn] != undefined) {
+      total_cost = costs_grouped[cost_key_arn]
+    } else if (costs_grouped[cost_key_name] != undefined) {
+      total_cost = costs_grouped[cost_key_name]
+    } else {
+      _.each(Object.keys(costs_grouped), function(key) {
+        if (total_cost == 0.0 && key.indexOf(name.toLowerCase()) != -1) {
+          total_cost = costs_grouped[key]
+        }
+      })
+    }
+
+    // Idle detection: all request signals near zero
+    // null requests_avg means CloudWatch returned no data — treat as zero (CloudWatch only publishes when non-zero)
+    // SearchRate and IndexingRate are in requests/minute; divide the req/day threshold before comparing
+    var idle_requests = false
+    if (param_idle_requests_threshold > 0) {
+      var threshold_per_min = param_idle_requests_threshold / 1440.0
+      var effective_requests = requests_avg != null ? requests_avg : 0
+      var search_near_zero = (search_rate_avg == null || search_rate_avg <= threshold_per_min)
+      var indexing_near_zero = (indexing_rate_avg == null || indexing_rate_avg <= threshold_per_min)
+      idle_requests = (effective_requests <= threshold_per_min) && search_near_zero && indexing_near_zero
+    }
+
+    var has_tiered_storage = domain.warmEnabled == true || domain.coldStorageEnabled == true
+
+    // Find the optimal (smallest valid) instance type in the same family based on peak usage x safety factor
+    var instance_type = domain.instanceType || ""
+    var size_info = size_map.byName[instance_type] || null
+    var current_family = size_info ? size_info.family : null
+    var current_vcpu = size_info ? size_info.vcpu : null
+    var current_mem_gib = size_info ? size_info.memorySizeInGiB : null
+    var current_rank = size_info ? size_info.size_rank : null
+    var family_members = (current_family && size_map.byFamily[current_family]) ? size_map.byFamily[current_family] : []
+
+    var required_vcpu = null
+    var required_mem_gib = null
+
+    if (cpu_p99 != null && current_vcpu != null) {
+      required_vcpu = (cpu_p99 / 100) * current_vcpu * param_stats_safety_factor
+    }
+
+    if (jvm_p99 != null && current_mem_gib != null) {
+      required_mem_gib = (jvm_p99 / 100) * current_mem_gib * param_stats_safety_factor
+    }
+
+    var recommended_type = null
+    var is_underutil = false
+
+    if (!idle_requests && !has_tiered_storage && size_info && (required_vcpu != null || required_mem_gib != null)) {
+      _.each(family_members, function(candidate) {
+        if (recommended_type) { return }
+        if (candidate.size_rank >= current_rank) { return }
+        var cpu_ok = (required_vcpu == null) || (candidate.vcpu != null && candidate.vcpu >= required_vcpu)
+        var mem_ok = (required_mem_gib == null) || (candidate.memorySizeInGiB != null && candidate.memorySizeInGiB >= required_mem_gib)
+        if (cpu_ok && mem_ok) {
+          recommended_type = candidate.name
+          is_underutil = true
+        }
+      })
+    }
+
+    // Scale-up advisory signals
+    var scale_up_reasons = []
+    if (cpu_p99 != null && cpu_p99 > 80) { scale_up_reasons.push("CPU p99 > 80%") }
+    if (jvm_p99 != null && jvm_p99 > 75) { scale_up_reasons.push("JVM memory p99 > 75%") }
+    if (search_queue_avg != null && search_queue_avg > 0) { scale_up_reasons.push("Sustained search queue depth > 0") }
+    if (write_queue_avg != null && write_queue_avg > 0) { scale_up_reasons.push("Sustained write queue depth > 0") }
+    var scale_up_advisory = scale_up_reasons.length > 0 ? "Scale-Up Advisory: " + scale_up_reasons.join("; ") : ""
+
+    // Risk flags for downsize recommendations
+    var risk_flags = []
+
+    if (is_underutil) {
+      if (!domain.ebsEnabled) {
+        risk_flags.push("Disk Risk: Domain uses instance storage (not EBS). Verify the target instance type has sufficient local NVMe storage capacity.")
+      }
+
+      var net_baseline_gbps = size_info ? (size_info.networkBaselineBandwidthGbps || null) : null
+      if (net_baseline_gbps) {
+        var net_baseline_bps = net_baseline_gbps * 125000000
+        var net_tx_bps = net_tx_max || 0
+        var net_rx_bps = net_rx_max || 0
+        if (net_tx_bps >= net_baseline_bps * 0.8 || net_rx_bps >= net_baseline_bps * 0.8) {
+          risk_flags.push("Network Risk: Current network throughput is within 20% of the documented baseline for the current instance type. Verify the target instance type has sufficient network capacity.")
+        }
+      }
+
+      if (domain.ebsEnabled == true) {
+        var configured_iops = domain.ebsIops || 0
+        var configured_throughput = domain.ebsThroughput || 0
+        var actual_iops = (read_iops_avg || 0) + (write_iops_avg || 0)
+        var actual_throughput = (read_throughput_avg || 0) + (write_throughput_avg || 0)
+        if (configured_iops > 0 && actual_iops >= configured_iops * 0.8) {
+          risk_flags.push("EBS IOPS Risk: Current IOPS usage is within 20% of configured EBS volume limits. Verify EBS IOPS configuration for the target instance type.")
+        }
+        if (configured_throughput > 0 && actual_throughput >= configured_throughput * 0.8) {
+          risk_flags.push("EBS Throughput Risk: Current throughput is within 20% of configured EBS volume limits.")
+        }
+      }
+
+      if (required_vcpu != null && required_mem_gib == null) {
+        risk_flags.push("Incomplete Data Risk: Downsize recommendation is based on CPU usage data only. Memory usage data was unavailable for the lookback period. Verify memory requirements before rightsizing.")
+      } else if (required_vcpu == null && required_mem_gib != null) {
+        risk_flags.push("Incomplete Data Risk: Downsize recommendation is based on memory usage data only. CPU usage data was unavailable for the lookback period. Verify CPU requirements before rightsizing.")
+      }
+    }
+
+    var savings = 0.0
+    if (idle_requests) {
+      savings = parseFloat(total_cost.toFixed(3))
+    } else if (is_underutil && recommended_type) {
+      var savings_factor = 0.5
+      var rec_info = size_map.byName[recommended_type]
+      if (rec_info && size_info) {
+        var vcpu_savings = (size_info.vcpu && rec_info.vcpu) ? Math.max(0, 1 - (rec_info.vcpu / size_info.vcpu)) : 0
+        var mem_savings = (size_info.memorySizeInGiB && rec_info.memorySizeInGiB) ? Math.max(0, 1 - (rec_info.memorySizeInGiB / size_info.memorySizeInGiB)) : 0
+        savings_factor = parseFloat(Math.max(vcpu_savings, mem_savings).toFixed(3))
+      }
+      savings = parseFloat((total_cost * savings_factor).toFixed(3))
+    }
+
+    var recommendation_type = ""
+    var recommendation_details = ""
+
+    if (idle_requests) {
+      recommendation_type = "Delete"
+      recommendation_details = "Delete OpenSearch domain " + name + " in AWS Account " + (ds_aws_account.name || ds_aws_account.id) + " (" + ds_aws_account.id + "). " +
+        "Domain appears idle: average request rate (" + (requests_avg != null ? (requests_avg * 1440).toFixed(1) : "N/A") + " req/day) is below threshold of " + param_idle_requests_threshold + " req/day."
+    } else if (is_underutil) {
+      recommendation_type = "Downsize"
+      if (recommended_type) {
+        var req_parts = []
+        if (required_vcpu != null) { req_parts.push(required_vcpu.toFixed(1) + " vCPU") }
+        if (required_mem_gib != null) { req_parts.push(required_mem_gib.toFixed(1) + " GiB memory") }
+        var req_summary = req_parts.length > 0 ? " (required at " + param_stats_safety_factor + "x safety factor: " + req_parts.join(", ") + ")" : ""
+
+        recommendation_details = "Downsize OpenSearch domain " + name + " in AWS Account " + (ds_aws_account.name || ds_aws_account.id) + " (" + ds_aws_account.id + ") " +
+          "from " + instance_type + " to " + recommended_type + " per data node" + req_summary + "."
+      }
+      if (risk_flags.length > 0) {
+        recommendation_details += " Risk Flags: " + risk_flags.join(" | ")
+      }
+      if (scale_up_advisory) {
+        recommendation_details += " NOTE: " + scale_up_advisory
+      }
+    }
+
+    var row = {
+      accountID: ds_aws_account.id,
+      accountName: ds_aws_account.name || ds_aws_account.id,
+      resourceID: name,
+      resourceName: name,
+      resourceARN: domain.arn || "",
+      tags: tags_display.join(", "),
+      recommendationDetails: recommendation_details,
+      region: region,
+      instanceType: instance_type,
+      instanceCount: domain.instanceCount || 1,
+      engineVersion: domain.engineVersion || "",
+      dedicatedMasterEnabled: domain.dedicatedMasterEnabled == true ? "Yes" : "No",
+      dedicatedMasterType: domain.dedicatedMasterType || "N/A",
+      dedicatedMasterCount: domain.dedicatedMasterCount || 0,
+      ebsEnabled: domain.ebsEnabled == true ? "Yes" : "No",
+      ebsVolumeType: domain.ebsVolumeType || "N/A",
+      ebsVolumeSize: domain.ebsVolumeSize || 0,
+      warmEnabled: domain.warmEnabled == true ? "Yes" : "No",
+      coldStorageEnabled: domain.coldStorageEnabled == true ? "Yes" : "No",
+      autoTuneState: domain.autoTuneState || "N/A",
+      cpuAverage: cpu_avg != null ? parseFloat(cpu_avg.toFixed(2)) : null,
+      cpuMaximum: cpu_max != null ? parseFloat(cpu_max.toFixed(2)) : null,
+      cpuP99: cpu_p99 != null ? parseFloat(cpu_p99.toFixed(2)) : null,
+      jvmP99: jvm_p99 != null ? parseFloat(jvm_p99.toFixed(2)) : null,
+      jvmAverage: jvm_avg != null ? parseFloat(jvm_avg.toFixed(2)) : null,
+      jvmMaximum: jvm_max != null ? parseFloat(jvm_max.toFixed(2)) : null,
+      freeStorageMin: free_storage_min != null ? parseFloat(free_storage_min.toFixed(2)) : null,
+      requestsAverage: requests_avg != null ? parseFloat((requests_avg * 1440).toFixed(2)) : null,
+      searchRateAverage: search_rate_avg != null ? parseFloat(search_rate_avg.toFixed(2)) : null,
+      indexingRateAverage: indexing_rate_avg != null ? parseFloat(indexing_rate_avg.toFixed(2)) : null,
+      searchQueueAverage: search_queue_avg != null ? parseFloat(search_queue_avg.toFixed(2)) : null,
+      writeQueueAverage: write_queue_avg != null ? parseFloat(write_queue_avg.toFixed(2)) : null,
+      networkTxAverage: net_tx_avg != null ? parseFloat(net_tx_avg.toFixed(2)) : null,
+      networkRxAverage: net_rx_avg != null ? parseFloat(net_rx_avg.toFixed(2)) : null,
+      newResourceType: recommended_type || "N/A",
+      riskFlags: risk_flags.join(" | "),
+      scaleUpAdvisory: scale_up_advisory,
+      recommendationType: recommendation_type,
+      savings: savings,
+      savingsCurrency: ds_currency.symbol,
+      lookbackPeriod: param_stats_lookback,
+      service: "AmazonES",
+      policy_name: "",
+      idle_message: "",
+      rightsize_message: "",
+      idle_total_savings: "",
+      rightsize_total_savings: ""
+    }
+
+    if (idle_requests && savings >= param_min_savings) {
+      idle_total_savings += total_cost
+      idle_list.push(row)
+    } else if (is_underutil && recommendation_type == "Downsize" && savings >= param_min_savings) {
+      var excluded_by_risk = false
+      if (param_exclude_risk_flags.length > 0) {
+        _.each(param_exclude_risk_flags, function(flag_type) {
+          _.each(risk_flags, function(flag) {
+            if (flag.indexOf(flag_type + ":") === 0) { excluded_by_risk = true }
+          })
+        })
+      }
+      if (!excluded_by_risk) {
+        rightsize_total_savings += savings
+        rightsize_list.push(row)
+      }
+    }
+  })
+
+  idle_list = _.sortBy(idle_list, function(r) { return r.savings * -1 })
+  rightsize_list = _.sortBy(rightsize_list, function(r) { return r.savings * -1 })
+
+  var policy_name = "AWS Rightsize OpenSearch Service Domains"
+  if (ds_applied_policy && ds_applied_policy.name) { policy_name = ds_applied_policy.name }
+
+  var idle_savings_formatted = ds_currency.symbol + " " + formatNumber(parseFloat(idle_total_savings).toFixed(2), ds_currency.separator)
+  var rightsize_savings_formatted = ds_currency.symbol + " " + formatNumber(parseFloat(rightsize_total_savings).toFixed(2), ds_currency.separator)
+
+  var idle_msg = "Out of " + domains.length.toString() + " OpenSearch domains analyzed, " + idle_list.length.toString() +
+    " appear idle (average request rate at or below " + param_idle_requests_threshold + " req/day) and are recommended for deletion. " +
+    "Metrics were analyzed over the last " + param_stats_lookback + " days."
+
+  var rightsize_msg = "Out of " + domains.length.toString() + " OpenSearch domains analyzed, " + rightsize_list.length.toString() +
+    " can be rightsized to a smaller instance type based on observed peak usage with a " + param_stats_safety_factor + "x safety factor applied. " +
+    "Metrics were analyzed over the last " + param_stats_lookback + " days."
+
+  var dummy = {
+    recommendationType: "",
+    policy_name: "",
+    idle_message: "",
+    rightsize_message: "",
+    idle_total_savings: "",
+    rightsize_total_savings: "",
+    tags: "",
+    savings: "",
+    savingsCurrency: "",
+    cpuP99: "",
+    jvmP99: "",
+    freeStorageMin: "",
+    requestsAverage: "",
+    riskFlags: "",
+    scaleUpAdvisory: ""
+  }
+
+  idle_list.push(dummy)
+  rightsize_list.push(dummy)
+
+  if (idle_list.length > 0) {
+    idle_list[0].idle_message = idle_msg
+    idle_list[0].idle_total_savings = idle_savings_formatted
+    idle_list[0].policy_name = policy_name
+  }
+
+  if (rightsize_list.length > 0) {
+    rightsize_list[0].rightsize_message = rightsize_msg
+    rightsize_list[0].rightsize_total_savings = rightsize_savings_formatted
+    rightsize_list[0].policy_name = policy_name
+  }
+
+  result = {
+    idle_list: idle_list,
+    rightsize_list: rightsize_list
+  }
+EOS
+end
+
+datasource "ds_idle_domains" do
+  run_script $js_split_incidents, $ds_idle_and_rightsize_domains, "idle_list"
+end
+
+datasource "ds_rightsize_domains" do
+  run_script $js_split_incidents, $ds_idle_and_rightsize_domains, "rightsize_list"
+end
+
+script "js_split_incidents", type: "javascript" do
+  parameters "ds_idle_and_rightsize_domains", "incident"
+  result "result"
+  code "result = ds_idle_and_rightsize_domains[incident]"
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_opensearch" do
+  validate_each $ds_idle_domains do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Idle AWS OpenSearch Domains Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .idle_total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .idle_message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Delete"))
+    escalate $esc_email
+    escalate $esc_delete_domains
+    hash_exclude "tags", "savings", "savingsCurrency", "requestsAverage", "searchRateAverage", "indexingRateAverage", "cpuAverage", "cpuP99", "jvmP99", "freeStorageMin"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "instanceType" do
+        label "Instance Type"
+      end
+      field "instanceCount" do
+        label "Instance Count"
+      end
+      field "engineVersion" do
+        label "Engine Version"
+      end
+      field "ebsEnabled" do
+        label "EBS Enabled"
+      end
+      field "warmEnabled" do
+        label "UltraWarm Enabled"
+      end
+      field "coldStorageEnabled" do
+        label "Cold Storage Enabled"
+      end
+      field "autoTuneState" do
+        label "Auto-Tune State"
+      end
+      field "requestsAverage" do
+        label "Average Daily Requests"
+      end
+      field "searchRateAverage" do
+        label "Average Search Rate"
+      end
+      field "indexingRateAverage" do
+        label "Average Indexing Rate"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "cpuP99" do
+        label "CPU p99 %"
+      end
+      field "jvmP99" do
+        label "JVM Memory p99 %"
+      end
+      field "freeStorageMin" do
+        label "Min Free Storage (MiB)"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "resourceARN" do
+        label "Resource ARN"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+  validate_each $ds_rightsize_domains do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Underutilized AWS OpenSearch Domains Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .rightsize_total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .rightsize_message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Downsize"))
+    escalate $esc_email
+    hash_exclude "tags", "savings", "savingsCurrency", "requestsAverage", "searchRateAverage", "indexingRateAverage", "searchQueueAverage", "writeQueueAverage", "cpuAverage", "cpuMaximum", "cpuP99", "jvmAverage", "jvmMaximum", "jvmP99", "freeStorageMin", "riskFlags", "scaleUpAdvisory"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "instanceType" do
+        label "Instance Type"
+      end
+      field "instanceCount" do
+        label "Instance Count"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Type"
+      end
+      field "engineVersion" do
+        label "Engine Version"
+      end
+      field "ebsEnabled" do
+        label "EBS Enabled"
+      end
+      field "warmEnabled" do
+        label "UltraWarm Enabled"
+      end
+      field "coldStorageEnabled" do
+        label "Cold Storage Enabled"
+      end
+      field "autoTuneState" do
+        label "Auto-Tune State"
+      end
+      field "riskFlags" do
+        label "Risk Flags"
+      end
+      field "scaleUpAdvisory" do
+        label "Scale-Up Advisory"
+      end
+      field "requestsAverage" do
+        label "Average Daily Requests"
+      end
+      field "searchRateAverage" do
+        label "Average Search Rate"
+      end
+      field "indexingRateAverage" do
+        label "Average Indexing Rate"
+      end
+      field "searchQueueAverage" do
+        label "Average Search Queue Depth"
+      end
+      field "writeQueueAverage" do
+        label "Average Write Queue Depth"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+      end
+      field "cpuP99" do
+        label "CPU p99 %"
+      end
+      field "jvmAverage" do
+        label "JVM Memory Average %"
+      end
+      field "jvmMaximum" do
+        label "JVM Memory Maximum %"
+      end
+      field "jvmP99" do
+        label "JVM Memory p99 %"
+      end
+      field "freeStorageMin" do
+        label "Min Free Storage (MiB)"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "resourceARN" do
+        label "Resource ARN"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+  validate $ds_identify_errors do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to access one or more AWS regions due to permission or configuration errors.
+
+    **Error Details:**
+
+    {{ range data -}}
+      - {{ .error }}
+    {{ end }}
+
+    **Recommended Actions:**
+
+    1. Verify the AWS credential has the required permissions for all regions.
+    2. Ensure any opt-in regions are enabled in your AWS account.
+    3. Use the Allow/Deny Regions List parameter to exclude inaccessible regions.
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email_errors_identified" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
+end
+
+escalation "esc_delete_domains" do
+  automatic contains($param_automatic_action, "Delete Idle Domains")
+  label "Delete Idle Domains"
+  description "Approval to delete all selected idle OpenSearch domains"
+  run "delete_domains", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_domains($data) do
+  $$errors = []
+
+  foreach $domain in $data do
+    sub on_error: handle_error() do
+      call delete_domain($domain)
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_domain($domain) return $response do
+  $url = "https://es." + $domain["region"] + ".amazonaws.com/2021-01-01/opensearch/domain/" + $domain["resourceID"]
+  task_label("DELETE " + $url)
+  $response = http_delete(
+    auth: $$auth_aws,
+    url: $url,
+    headers: { "User-Agent": "RS Policies" }
+  )
+  task_label("DELETE response for " + $domain["resourceID"] + ": " + to_json($response))
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response deleting OpenSearch domain " + $domain["resourceID"] + ": " + to_json($response)
+  else
+    task_label("Successfully deleted OpenSearch domain: " + $domain["resourceID"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_parent_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
+  result "result"
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
+  end
+end
+
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
+  result "result"
+  code 'result = { path: "/"}'
+end
