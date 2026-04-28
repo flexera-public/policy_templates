@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.4.1
+
+- Added error detection for Ocean clusters that fail to return rightsizing recommendations, with a separate incident that includes the specific error code, affected cluster details, troubleshooting steps, and links to Spot documentation
+- Fixed Allow/Deny Spot Accounts filter so that the "Deny" option correctly excludes the listed accounts
+
 ## v0.4.0
 
 - Added workload summary table to incident report, grouped by cluster, showing workload name, type, namespace, vCPU change, memory change, and potential monthly savings
