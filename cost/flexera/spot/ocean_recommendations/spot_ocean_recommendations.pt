@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "0.4.0",
+  version: "0.4.1",
   provider: "Flexera",
   service: "Kubernetes",
   policy_set: "Rightsize Containers",
@@ -219,7 +219,7 @@ script "js_spotinst_accounts_filtered", type: "javascript" do
       include = _.contains(param_spotinst_accounts_list, subscription['account']['accountId']) || _.contains(param_spotinst_accounts_list, subscription['account']['name'])
 
       if (param_spotinst_accounts_allow_or_deny == "Deny") {
-        include = include
+        include = !include
       }
 
       return include
@@ -270,24 +270,20 @@ script "js_spotinst_clusters", type: "javascript" do
   EOS
 end
 
-datasource "ds_spotinst_clusters_rightsizing_suggestions" do
+datasource "ds_spotinst_clusters_rightsizing_suggestions_raw" do
   iterate $ds_spotinst_clusters
   request do
-    run_script $js_spotinst_clusters_rightsizing_suggestions, val(iter_item, "cluster"), val(iter_item, "account")
+    run_script $js_spotinst_clusters_rightsizing_suggestions_raw, val(iter_item, "cluster"), val(iter_item, "account")
   end
   result do
     encoding "json"
-    collect jmes_path(response, "response.items[*].recommendations[*]") do
-      # iteration fields
-      field "account", jq(iter_item, ".account")
-      field "cluster", jq(iter_item, ".cluster")
-      # response field
-      field "suggestions", jq(col_item, ".")
-    end
+    field "account", jq(iter_item, ".account")
+    field "cluster", jq(iter_item, ".cluster")
+    field "items", jq(response, ".response.items")
   end
 end
 
-script "js_spotinst_clusters_rightsizing_suggestions", type: "javascript" do
+script "js_spotinst_clusters_rightsizing_suggestions_raw", type: "javascript" do
   parameters "spotinst_cluster", "spotinst_account"
   result "request"
   code <<-'EOS'
@@ -307,6 +303,36 @@ script "js_spotinst_clusters_rightsizing_suggestions", type: "javascript" do
       },
       ignore_status: [400, 403, 404]
     }
+  EOS
+end
+
+# Flatten raw per-cluster responses into individual recommendation rows
+datasource "ds_spotinst_clusters_rightsizing_suggestions" do
+  run_script $js_spotinst_clusters_rightsizing_suggestions, $ds_spotinst_clusters_rightsizing_suggestions_raw
+end
+
+script "js_spotinst_clusters_rightsizing_suggestions", type: "javascript" do
+  parameters "ds_spotinst_clusters_rightsizing_suggestions_raw"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(ds_spotinst_clusters_rightsizing_suggestions_raw, function(row) {
+    if (!row.items || !_.isArray(row.items)) { return }
+
+    var recommendations = []
+    _.each(row.items, function(item) {
+      _.each((item && item.recommendations) || [], function(recommendation) {
+        recommendations.push(recommendation)
+      })
+    })
+
+    result.push({
+      account: row.account,
+      cluster: row.cluster,
+      suggestions: recommendations
+    })
+  })
   EOS
 end
 
@@ -344,6 +370,111 @@ script "js_spotinst_clusters_rightsizing_suggestions_filtered", type: "javascrip
     return (param_include_recommendations_request_undefined == "Yes" || suggestion.suggestion.requestedCpu > 0 || suggestion.suggestion.requestedMemory > 0) && (suggestion.suggestion.monthlyMaxSavings >= param_min_savings);
   })
 EOS
+end
+
+datasource "ds_identify_errors" do
+  run_script $js_identify_errors, $ds_spotinst_clusters, $ds_spotinst_clusters_rightsizing_suggestions_raw, $ds_applied_policy
+end
+
+script "js_identify_errors", type: "javascript" do
+  parameters "ds_spotinst_clusters", "ds_spotinst_clusters_rightsizing_suggestions_raw", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  var policyName = "Kubernetes - Rightsizing Recommendations"
+  if (ds_applied_policy && ds_applied_policy.name) {
+    policyName = ds_applied_policy.name
+  }
+
+  // Build a set of cluster IDs that appear in the raw responses.
+  // When a cluster returns a 400/403/404 error (even with ignore_status),
+  // the policy engine may not produce a row for that cluster, so it will
+  // be absent from this set.
+  var clustersWithResponses = {}
+
+  _.each(ds_spotinst_clusters_rightsizing_suggestions_raw, function(row) {
+    if (row.cluster && row.cluster.id) {
+      clustersWithResponses[row.cluster.id] = true
+    }
+  })
+
+  // Compare against all clusters we attempted to query.
+  // Any cluster not present in the raw responses failed to return data.
+  var errors = []
+
+  _.each(ds_spotinst_clusters, function(item) {
+    var cluster = item.cluster || {}
+    var account = item.account || {}
+    var clusterId = cluster.id || ""
+
+    if (clusterId && !clustersWithResponses[clusterId]) {
+      errors.push({
+        accountId: account.accountId || "",
+        accountName: account.name || account.accountId || "",
+        cloudProvider: account.cloudProvider || "",
+        clusterId: clusterId,
+        clusterName: cluster.name || clusterId,
+        errorMessage: "The Spot API did not return a parseable response for this cluster. This commonly occurs when the API returns HTTP 400 with code FAILED_TO_GET_RECOMMENDATIONS.",
+        remediation: [
+          "1. Verify the Ocean cluster is active and has running workloads.",
+          "2. Ensure workloads have resource requests (CPU/Memory) defined in their pod specs.",
+          "3. Confirm the Ocean right-sizing feature is enabled for the cluster in the Spot console.",
+          "4. Check that the Spot API credentials have sufficient permissions.",
+          "5. If the cluster was recently created, allow 24-48 hours for metrics collection to complete.",
+          "",
+          "Spot Docs: https://docs.spot.io/ocean/features/right-sizing",
+          "Spot API: https://docs.spot.io/api/#tag/Ocean-AWS-Right-Sizing"
+        ].join("\n")
+      })
+    }
+  })
+
+  var markdown = ""
+
+  if (errors.length > 0) {
+    var lines = []
+
+    lines.push("# Kubernetes Rightsizing - Cluster Retrieval Errors")
+    lines.push("")
+    lines.push("The following " + errors.length + " Ocean cluster(s) did not return rightsizing recommendations.")
+    lines.push("This typically indicates one of the following issues:")
+    lines.push("")
+    lines.push("- **`FAILED_TO_GET_RECOMMENDATIONS`** (HTTP 400): The Spot Ocean rightsizing API was unable to generate recommendations for the cluster. This can occur when the cluster has no running workloads, workloads do not define resource requests, the right-sizing feature is not enabled, or the metrics collection period has not yet completed.")
+    lines.push("- **Forbidden** (HTTP 403): The Spot API credentials do not have sufficient permissions to retrieve rightsizing recommendations for the cluster.")
+    lines.push("- **Not Found** (HTTP 404): The Ocean cluster ID was not found. The cluster may have been deleted or the ID may be incorrect.")
+    lines.push("")
+    lines.push("## Affected Clusters")
+    lines.push("")
+    lines.push("| Spot Account | Cloud Provider | Cluster Name | Cluster ID |")
+    lines.push("|---|---|---|---|")
+
+    _.each(errors, function(error) {
+      lines.push("| " + error.accountName + " (" + error.accountId + ") | " + error.cloudProvider + " | " + error.clusterName + " | " + error.clusterId + " |")
+    })
+
+    lines.push("")
+    lines.push("## Troubleshooting Steps")
+    lines.push("")
+    lines.push("1. **Verify Cluster Status**: Confirm the Ocean cluster is active in the [Spot Console](https://console.spotinst.com/).")
+    lines.push("2. **Check Workload Resource Requests**: Ensure Kubernetes workloads in the cluster have `resources.requests` defined for CPU and Memory in their pod specifications. Workloads without resource requests cannot be rightsized.")
+    lines.push("3. **Enable Right-Sizing**: Verify that the [Ocean Right-Sizing](https://docs.spot.io/ocean/features/right-sizing) feature is enabled for the cluster.")
+    lines.push("4. **Review Permissions**: Ensure the Spot API credentials used by this policy have the required permissions to access rightsizing data.")
+    lines.push("5. **Allow Metrics Collection**: If the cluster was recently created or right-sizing was recently enabled, allow 24-48 hours for sufficient metrics to be collected before recommendations can be generated.")
+    lines.push("")
+    lines.push("## Documentation")
+    lines.push("")
+    lines.push("- [Spot Ocean Right-Sizing Overview](https://docs.spot.io/ocean/features/right-sizing)")
+    lines.push("- [Spot Ocean Right-Sizing API Reference](https://docs.spot.io/api/#tag/Ocean-AWS-Right-Sizing)")
+    lines.push("- [Kubernetes Resource Management](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/)")
+
+    markdown = lines.join("\n")
+  }
+
+  result = {
+    errors: errors,
+    markdown: markdown,
+    policy_name: policyName
+  }
+  EOS
 end
 
 # Add this new datasource before the policy block
@@ -1204,6 +1335,36 @@ policy "pol_spot_ocean_recommendation_report" do
       end
     end
   end
+
+  validate $ds_identify_errors do
+    summary_template "{{ data.policy_name }}: {{ len data.errors }} Clusters With Retrieval Errors"
+    detail_template "{{ data.markdown }}"
+    check eq(size(val(data, "errors")), 0)
+    escalate $esc_email_errors
+    export "errors" do
+      field "accountId" do
+        label "Spot Account ID"
+      end
+      field "accountName" do
+        label "Spot Account Name"
+      end
+      field "cloudProvider" do
+        label "Cloud Provider"
+      end
+      field "clusterId" do
+        label "Cluster ID"
+      end
+      field "clusterName" do
+        label "Cluster Name"
+      end
+      field "errorMessage" do
+        label "Error Details"
+      end
+      field "remediation" do
+        label "Remediation"
+      end
+    end
+  end
 end
 
 ###############################################################################
@@ -1214,5 +1375,12 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_email_errors" do
+  automatic true
+  label "Send Error Email"
+  description "Send email notification for cluster retrieval errors"
   email $param_email
 end
