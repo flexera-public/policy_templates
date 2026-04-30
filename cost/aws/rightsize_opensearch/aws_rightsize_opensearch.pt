@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.0",
+  version: "0.2.1",
   provider: "AWS",
   service: "Search",
   policy_set: "Rightsize Search Services",
@@ -848,7 +848,7 @@ script "js_cloudwatch_queries", type: "javascript" do
 
     if (domain.ebsEnabled == true) {
       var ebs_metrics = ["ReadIOPS", "WriteIOPS", "ReadThroughput", "WriteThroughput"]
-      _.each(ebs_metrics, function(metric) { push_query(metric, "Average") })
+      _.each(ebs_metrics, function(metric) { push_query(metric, "Maximum") })
     }
   })
 EOS
@@ -1086,6 +1086,111 @@ script "js_domain_costs_grouped", type: "javascript" do
 EOS
 end
 
+datasource "ds_domain_costs_compute" do
+  request do
+    run_script $js_domain_costs_compute, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceId", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_domain_costs_compute", type: "javascript" do
+  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  var end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  var start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        type: "and",
+        expressions: [
+          {
+            dimension: "service",
+            type: "equal",
+            value: "AmazonES"
+          },
+          {
+            dimension: "vendor_account",
+            type: "equal",
+            value: ds_aws_account["id"]
+          },
+          {
+            type: "not",
+            expression: {
+              dimension: "adjustment_name",
+              type: "substring",
+              substring: "Shared"
+            }
+          },
+          {
+            type: "or",
+            expressions: [
+              { dimension: "usage_type", type: "substring", substring: "ESInstance" },
+              { dimension: "usage_type", type: "substring", substring: "HeavyUsage" }
+            ]
+          },
+          {
+            type: "not",
+            expression: {
+              dimension: "usage_type",
+              type: "substring",
+              substring: "ultrawarm1"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_domain_costs_compute_grouped" do
+  run_script $js_domain_costs_compute_grouped, $ds_domain_costs_compute
+end
+
+script "js_domain_costs_compute_grouped", type: "javascript" do
+  parameters "ds_domain_costs_compute"
+  result "result"
+  code <<-'EOS'
+  var cost_multiplier = 365.25 / 12
+
+  result = {}
+  _.each(ds_domain_costs_compute, function(item) {
+    var id = (item.resourceId || "").toLowerCase()
+    if (!result[id]) { result[id] = 0.0 }
+    result[id] += item.cost * cost_multiplier
+  })
+EOS
+end
+
 # Build instance size map for downsize recommendations
 datasource "ds_opensearch_instance_size_map" do
   run_script $js_opensearch_instance_size_map, $ds_opensearch_instance_types
@@ -1130,11 +1235,11 @@ end
 
 # Final transform: merge all data, classify domains, produce idle and rightsize lists
 datasource "ds_idle_and_rightsize_domains" do
-  run_script $js_idle_and_rightsize_domains, $ds_opensearch_domains_filtered, $ds_opensearch_tags, $ds_cloudwatch_data_parsed, $ds_domain_costs_grouped, $ds_opensearch_instance_size_map, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_idle_requests_threshold, $param_stats_safety_factor, $param_min_savings, $param_exclude_risk_flags
+  run_script $js_idle_and_rightsize_domains, $ds_opensearch_domains_filtered, $ds_opensearch_tags, $ds_cloudwatch_data_parsed, $ds_domain_costs_grouped, $ds_domain_costs_compute_grouped, $ds_opensearch_instance_size_map, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_idle_requests_threshold, $param_stats_safety_factor, $param_min_savings, $param_exclude_risk_flags
 end
 
 script "js_idle_and_rightsize_domains", type: "javascript" do
-  parameters "domains", "ds_opensearch_tags", "cw_data", "costs_grouped", "size_map", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_idle_requests_threshold", "param_stats_safety_factor", "param_min_savings", "param_exclude_risk_flags"
+  parameters "domains", "ds_opensearch_tags", "cw_data", "costs_grouped", "costs_compute_grouped", "size_map", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_idle_requests_threshold", "param_stats_safety_factor", "param_min_savings", "param_exclude_risk_flags"
   result "result"
   code <<-'EOS'
   function formatNumber(number, separator) {
@@ -1213,10 +1318,10 @@ script "js_idle_and_rightsize_domains", type: "javascript" do
     var search_queue_avg = get_metric("ThreadpoolSearchQueue", "Average")
     var write_queue_avg = get_metric("ThreadpoolWriteQueue", "Average")
 
-    var read_iops_avg = get_metric("ReadIOPS", "Average")
-    var write_iops_avg = get_metric("WriteIOPS", "Average")
-    var read_throughput_avg = get_metric("ReadThroughput", "Average")
-    var write_throughput_avg = get_metric("WriteThroughput", "Average")
+    var read_iops_max = get_metric("ReadIOPS", "Maximum")
+    var write_iops_max = get_metric("WriteIOPS", "Maximum")
+    var read_throughput_max = get_metric("ReadThroughput", "Maximum")
+    var write_throughput_max = get_metric("WriteThroughput", "Maximum")
 
     // Look up cost - try ARN, then domain/name, then partial match
     var cost_key_arn = (domain.arn || "").toLowerCase()
@@ -1230,6 +1335,19 @@ script "js_idle_and_rightsize_domains", type: "javascript" do
       _.each(Object.keys(costs_grouped), function(key) {
         if (total_cost == 0.0 && key.indexOf(name.toLowerCase()) != -1) {
           total_cost = costs_grouped[key]
+        }
+      })
+    }
+
+    var compute_cost = 0.0
+    if (costs_compute_grouped[cost_key_arn] != undefined) {
+      compute_cost = costs_compute_grouped[cost_key_arn]
+    } else if (costs_compute_grouped[cost_key_name] != undefined) {
+      compute_cost = costs_compute_grouped[cost_key_name]
+    } else {
+      _.each(Object.keys(costs_compute_grouped), function(key) {
+        if (compute_cost == 0.0 && key.indexOf(name.toLowerCase()) != -1) {
+          compute_cost = costs_compute_grouped[key]
         }
       })
     }
@@ -1265,7 +1383,8 @@ script "js_idle_and_rightsize_domains", type: "javascript" do
     }
 
     if (jvm_p99 != null && current_mem_gib != null) {
-      required_mem_gib = (jvm_p99 / 100) * current_mem_gib * param_stats_safety_factor
+      var jvm_heap_gib = Math.min(current_mem_gib / 2, 32)
+      required_mem_gib = (jvm_p99 / 100) * jvm_heap_gib * 2 * param_stats_safety_factor
     }
 
     var recommended_type = null
@@ -1303,8 +1422,8 @@ script "js_idle_and_rightsize_domains", type: "javascript" do
       if (domain.ebsEnabled == true) {
         var configured_iops = domain.ebsIops || 0
         var configured_throughput = domain.ebsThroughput || 0
-        var actual_iops = (read_iops_avg || 0) + (write_iops_avg || 0)
-        var actual_throughput_mib = ((read_throughput_avg || 0) + (write_throughput_avg || 0)) / (1024 * 1024)
+        var actual_iops = (read_iops_max || 0) + (write_iops_max || 0)
+        var actual_throughput_mib = ((read_throughput_max || 0) + (write_throughput_max || 0)) / (1024 * 1024)
         if (configured_iops > 0 && actual_iops >= configured_iops * 0.8) {
           risk_flags.push("EBS IOPS Risk: Current IOPS usage is within 20% of configured EBS volume limits. Verify EBS IOPS configuration for the target instance type.")
         }
@@ -1331,7 +1450,7 @@ script "js_idle_and_rightsize_domains", type: "javascript" do
         var mem_savings = (size_info.memorySizeInGiB && rec_info.memorySizeInGiB) ? Math.max(0, 1 - (rec_info.memorySizeInGiB / size_info.memorySizeInGiB)) : 0
         savings_factor = parseFloat(Math.max(vcpu_savings, mem_savings).toFixed(3))
       }
-      savings = parseFloat((total_cost * savings_factor).toFixed(3))
+      savings = parseFloat((compute_cost * savings_factor).toFixed(3))
     }
 
     var recommendation_type = ""
