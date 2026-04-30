@@ -4,6 +4,10 @@
  * Pi extension that loads agent instruction files from .github/agents/ and
  * injects them into the system prompt on every agent turn.
  *
+ * Commands:
+ *   /github-agents-reload  — reload files from disk without restarting pi
+ *   /github-agents-status  — show loaded files and content preview
+ *
  * Install (project-local, committed to repo):
  *   mkdir -p .pi/extensions
  *   cp github-agents.ts .pi/extensions/
@@ -13,8 +17,11 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { Text } from "@mariozechner/pi-tui";
 import * as fs from "node:fs";
 import * as path from "node:path";
+
+const STATUS_MESSAGE_TYPE = "github-agents-status";
 
 interface AgentFile {
   name: string;
@@ -25,6 +32,11 @@ interface LoadResult {
   agentsDir: string;
   files: AgentFile[];
   errors: string[];
+}
+
+interface StatusLine {
+  text: string;
+  style: "header" | "file" | "error-heading" | "error" | "inactive";
 }
 
 export default function (pi: ExtensionAPI) {
@@ -44,7 +56,11 @@ export default function (pi: ExtensionAPI) {
         .filter((f) => f.endsWith(".md") || f.endsWith(".txt"))
         .sort();
     } catch (err) {
-      return { agentsDir, files: [], errors: [`Could not read .github/agents/: ${(err as Error).message}`] };
+      return {
+        agentsDir,
+        files: [],
+        errors: [`Could not read .github/agents/: ${(err as Error).message}`],
+      };
     }
 
     const files: AgentFile[] = [];
@@ -53,7 +69,7 @@ export default function (pi: ExtensionAPI) {
     for (const name of filenames) {
       try {
         const content = fs.readFileSync(path.join(agentsDir, name), "utf-8").trim();
-        if (content.length === 0) continue; // skip empty files
+        if (content.length === 0) continue;
         files.push({ name, content });
       } catch (err) {
         errors.push(`Could not read .github/agents/${name}: ${(err as Error).message}`);
@@ -64,23 +80,63 @@ export default function (pi: ExtensionAPI) {
   }
 
   function buildSystemPromptAppendix(files: AgentFile[]): string {
-    const sections = files.map(({ name, content }) => `<!-- .github/agents/${name} -->\n${content}`);
+    const sections = files.map(
+      ({ name, content }) => `<!-- .github/agents/${name} -->\n${content}`
+    );
     return `\n\n---\n<!-- Project agent instructions from .github/agents/ -->\n\n${sections.join("\n\n---\n\n")}`;
+  }
+
+  function buildStatusLines(): StatusLine[] {
+    const { agentsDir, files, errors } = cached;
+    const lines: StatusLine[] = [];
+
+    if (files.length === 0 && errors.length === 0) {
+      lines.push({
+        text: `No files loaded. Looked in: ${agentsDir}`,
+        style: "inactive",
+      });
+    } else {
+      lines.push({
+        text: `${files.length} file${files.length !== 1 ? "s" : ""} loaded from ${agentsDir}`,
+        style: "header",
+      });
+      lines.push({ text: "", style: "file" });
+      for (const { name, content } of files) {
+        const contentLines = content.split("\n");
+        const preview = contentLines.slice(0, 3).join(" ↵ ");
+        const truncated = contentLines.length > 3 ? " …" : "";
+        lines.push({
+          text: `• ${name} (${content.length} chars): ${preview}${truncated}`,
+          style: "file",
+        });
+      }
+    }
+
+    if (errors.length > 0) {
+      lines.push({ text: "", style: "error" });
+      lines.push({ text: "Errors:", style: "error-heading" });
+      for (const err of errors) {
+        lines.push({ text: `• ${err}`, style: "error" });
+      }
+    }
+
+    return lines;
   }
 
   function reload(ctx: ExtensionContext, notify: boolean) {
     cached = loadAgentFiles();
-    const { agentsDir, files, errors } = cached;
+    const { files, errors } = cached;
 
-    // Always surface errors, but only when notifying — avoids surprise
-    // red toasts during silent session switches
     if (notify) {
       for (const err of errors) {
         ctx.ui.notify(`github-agents: ${err}`, "error");
       }
 
       if (files.length === 0 && errors.length === 0) {
-        ctx.ui.notify(`github-agents: .github/agents/ not found or empty — extension inactive`, "warning");
+        ctx.ui.notify(
+          "github-agents: .github/agents/ not found or empty — extension inactive",
+          "warning"
+        );
       } else if (files.length > 0) {
         ctx.ui.notify(
           `github-agents: loaded ${files.length} file${files.length !== 1 ? "s" : ""}: ${files.map((f) => f.name).join(", ")}`,
@@ -89,6 +145,30 @@ export default function (pi: ExtensionAPI) {
       }
     }
   }
+
+  pi.registerMessageRenderer(STATUS_MESSAGE_TYPE, (message, _options, theme) => {
+    const statusLines = message.details?.lines as StatusLine[] | undefined;
+
+    // Fall back to raw content if details are missing (e.g. old session replay)
+    if (!statusLines) {
+      return new Text(String(message.content), 0, 0);
+    }
+
+    const rendered = statusLines
+      .map(({ text, style }) => {
+        switch (style) {
+          case "header":  return theme.fg("accent", text);
+          case "file":    return theme.fg("muted", text);
+          case "error-heading": return theme.fg("error", text);
+          case "error":   return theme.fg("error", text);
+          case "inactive": return theme.fg("warning", text);
+          default:        return text;
+        }
+      })
+      .join("\n");
+
+    return new Text(rendered, 0, 0);
+  });
 
   pi.on("session_start", (event, ctx) => {
     const shouldNotify = event.reason === "startup" || event.reason === "reload";
@@ -104,36 +184,13 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("github-agents-status", {
     description: "Show currently loaded .github/agents/ files and their content preview",
-    handler: (_args, ctx) => {
-      const { agentsDir, files, errors } = cached;
-
-      const lines: string[] = [];
-
-      if (files.length === 0 && errors.length === 0) {
-        lines.push(`No files loaded. Looked in: ${agentsDir}`);
-      } else {
-        lines.push(`${files.length} file${files.length !== 1 ? "s" : ""} loaded from ${agentsDir}`);
-        lines.push("");
-        for (const { name, content } of files) {
-          const previewLines = content.split("\n").slice(0, 3);
-          const preview = previewLines.join(" ↵ ");
-          const truncated = content.split("\n").length > 3 ? " …" : "";
-          lines.push(`• ${name} (${content.length} chars): ${preview}${truncated}`);
-        }
-      }
-
-      if (errors.length > 0) {
-        lines.push("");
-        lines.push("Errors:");
-        for (const err of errors) {
-          lines.push(`• ${err}`);
-        }
-      }
-
+    handler: (_args, _ctx) => {
+      const lines = buildStatusLines();
       pi.sendMessage({
-        customType: "github-agents-status",
-        content: lines.join("\n"),
+        customType: STATUS_MESSAGE_TYPE,
+        content: lines.map((l) => l.text).join("\n"),
         display: true,
+        details: { lines },
       });
     },
   });
