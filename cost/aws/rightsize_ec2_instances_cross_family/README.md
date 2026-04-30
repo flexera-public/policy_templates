@@ -82,6 +82,7 @@ For example if a user selects the "Resize Instances" action while applying the p
 ## Policy Actions
 
 - Sends an email notification
+- Stop EC2 instances (if idle) after approval
 - Terminate EC2 instances (if idle) after approval
 - Downsize EC2 instances (if underutilized but not idle) after approval
 

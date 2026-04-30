@@ -122,7 +122,7 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Resize Instances", "Terminate Instances"]
+  allowed_values ["Downsize Instances", "Stop Instances", "Terminate Instances"]
   default []
 end
 
@@ -1997,8 +1997,8 @@ policy "pol_utilization" do
     EOS
     check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendedAction"), "resize"))
     escalate $esc_email
-    escalate $esc_resize_instances
-    hash_exclude "tags", "savings", "savingsCurrency", "cpu_maximum", "mem_maximum", "net_peak_Gbps", "ebs_peak_Mbps", "ebs_peak_iops", "underutil_message", "underutil_total_savings"
+    escalate $esc_downsize_instances
+    hash_exclude "tags", "savings", "savingsCurrency", "cpu_maximum", "mem_maximum", "net_peak_Gbps", "ebs_peak_Mbps", "ebs_peak_iops"
     export do
       resource_level true
       field "accountID" do
@@ -2104,8 +2104,9 @@ policy "pol_utilization" do
     EOS
     check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendedAction"), "terminate"))
     escalate $esc_email
+    escalate $esc_stop_instances
     escalate $esc_terminate_instances
-    hash_exclude "tags", "savings", "savingsCurrency", "cpu_average", "net_avg_mb_per_day", "idle_message", "idle_total_savings"
+    hash_exclude "tags", "savings", "savingsCurrency", "cpu_average", "net_avg_mb_per_day"
     export do
       resource_level true
       field "accountID" do
@@ -2218,17 +2219,24 @@ escalation "esc_email" do
   end
 end
 
-escalation "esc_resize_instances" do
-  automatic contains($param_automatic_action, "Resize Instances")
-  label "Resize Instances"
-  description "Approval to resize all selected instances to the recommended cross-family instance type"
-  run "resize_instances", data
+escalation "esc_downsize_instances" do
+  automatic contains($param_automatic_action, "Downsize Instances")
+  label "Downsize Instances"
+  description "Approval to downsize all selected instances"
+  run "downsize_instances", data
+end
+
+escalation "esc_stop_instances" do
+  automatic contains($param_automatic_action, "Stop Instances")
+  label "Stop Instances"
+  description "Approval to stop all selected instances"
+  run "stop_instances", data
 end
 
 escalation "esc_terminate_instances" do
   automatic contains($param_automatic_action, "Terminate Instances")
   label "Terminate Instances"
-  description "Approval to terminate all selected idle instances"
+  description "Approval to terminate all selected instances"
   run "terminate_instances", data
 end
 
@@ -2236,18 +2244,42 @@ end
 # Cloud Workflow
 ###############################################################################
 
-# CWF function to resize instances to the recommended cross-family instance type
-define resize_instances($data) do
+# Core CWF function to stop instances
+define stop_instances($data) do
   foreach $instance in $data do
     sub on_error: handle_error() do
-      if $instance["newResourceType"] != null && $instance["newResourceType"] != ""
-        call get_instance_state($instance) retrieve $initial_state
+      call get_instance_state($instance) retrieve $initial_state
 
+      if $initial_state != "terminated" && $initial_state != "pending"
+        if $initial_state != "stopped"
+          call stop_instance($instance)
+        end
+      end
+    end
+  end
+
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+# Core CWF function to downsize instances
+define downsize_instances($data) do
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      if $instance["newResourceType"] != "Terminate EC2 Instance"
+        # Get the initial state of the instance before we take any action
+        call get_instance_state($instance) retrieve $initial_state
+        # Check to see if the instance is in a state that we can actual change instance type
         if $initial_state != "terminated" && $initial_state != "pending"
+          # Stop the instance if it's not already stopped
           if $initial_state != "stopped"
             call stop_instance($instance)
           end
+          # Resize the instance
           call resize_instance($instance)
+          # Start the instance if it was running before we stopped it
           if $initial_state == "running"
             call start_instance($instance)
           end
@@ -2256,12 +2288,13 @@ define resize_instances($data) do
     end
   end
 
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
     raise join($$errors, "\n")
   end
 end
 
-# CWF function to terminate instances
+# Core CWF function to terminate instances
 define terminate_instances($data) do
   foreach $instance in $data do
     sub on_error: handle_error() do
@@ -2273,6 +2306,7 @@ define terminate_instances($data) do
     end
   end
 
+  # If we encountered any errors, use `raise` to mark the CWF process as errored
   if inspect($$errors) != "null"
     raise join($$errors, "\n")
   end
@@ -2402,7 +2436,7 @@ define terminate_instance($instance) return $response do
       task_label("Waiting for Terminate Instance: " + $instance["id"] +" "+ $instance_state)
       sleep(10)
     end
-    task_label("Completed Terminate Instance: " + $instance["id"])
+    task_label("Completed Modify Instance: " + $instance["id"])
   end
 end
 
@@ -2432,6 +2466,8 @@ define handle_error() do
     $$errors = []
   end
   $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
   $_error_behavior = "skip"
 end
 
@@ -2440,6 +2476,7 @@ define handle_response($response) do
   if !$$all_responses
     $$all_responses = []
   end
+  # Convert response object to JSON string.  Easier to interpret
   $$all_responses << to_json($response)
 end
 
