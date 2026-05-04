@@ -72,8 +72,13 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Email Addresses* - A list of email addresses to notify when new incidents are created.
 - *Account Number* - Leave blank; this is for automated use with Meta Policies. See README for more details.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation. Set to 0 to report all findings.
-- *Exclusion Tags* - Cloud native tags to ignore resources. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the [README](https://github.com/flexera-public/policy_templates/tree/master/README.md) for more details.
-- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them.
+- *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:
+  - `Key` - Filter all resources with the specified tag key.
+  - `Key==Value` - Filter all resources with the specified tag key:value pair.
+  - `Key!=Value` - Filter all resources missing the specified tag key:value pair. This will also filter all resources missing the specified tag key.
+  - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
+  - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
+- *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
 - *Allow/Deny Regions* - Allow or Deny entered regions.
 - *Allow/Deny Regions List* - A list of allowed or denied AWS regions. Leave blank to include all regions.
 - *Filter GPU Instances* - Whether or not to exclude GPU-focused EC2 instances from the results.
