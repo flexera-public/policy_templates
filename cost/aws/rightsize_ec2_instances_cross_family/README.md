@@ -4,6 +4,10 @@
 
 This policy template analyzes AWS EC2 instances using Amazon CloudWatch metrics to identify instances that are idle (candidates for termination) or underutilized (candidates for cross-family rightsizing). Unlike same-family downsizing, cross-family rightsizing searches the entire catalog of current-generation instance types in the same region to find the cheapest option that can still satisfy the observed workload. Incidents report estimated monthly savings and trigger optional automated actions to resize or terminate instances after approval.
 
+NOTE: It is recommended that you use this policy template *or* the [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances) policy template but not both at the same time to avoid duplicate recommendations.
+
+NOTE: This policy template only reports on underutilized and idle EC2 instances. Please use the [AWS Overutilized EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/overutilized_ec2_instances) policy template to report on overutilized EC2 instances.
+
 ## How It Works
 
 ### Idle Instance Detection
