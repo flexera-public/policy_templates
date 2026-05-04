@@ -14,17 +14,16 @@ NOTE: This policy template only reports on underutilized and idle EC2 instances.
 
 An instance is flagged as idle when **both** of the following conditions are true over the configured lookback period:
 
-- **CPU utilization (average) is below a size-scaled threshold:**
-
-  | vCPU Count | CPU Idle Threshold |
-  | --- | --- |
-  | ≤ 2 vCPUs | 5% |
-  | ≤ 4 vCPUs | 4% |
-  | ≤ 8 vCPUs | 3% |
-  | ≤ 16 vCPUs | 2% |
-  | > 16 vCPUs | 1% |
-
+- **CPU utilization (average) is below a size-scaled threshold** (see table below)
 - **Average daily network traffic (NetworkIn + NetworkOut) is below 500 MB/day.**
+
+| vCPU Count | CPU Idle Threshold |
+| --- | --- |
+| <= 2 vCPUs | 5% |
+| <= 4 vCPUs | 4% |
+| <= 8 vCPUs | 3% |
+| <= 16 vCPUs | 2% |
+| > 16 vCPUs | 1% |
 
 Instances that meet both criteria are recommended for **termination**. No CloudWatch Agent (CWAgent) memory data is required for idle detection.
 
