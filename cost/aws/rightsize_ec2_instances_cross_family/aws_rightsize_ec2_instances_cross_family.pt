@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.1.1",
+  version: "0.1.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -191,7 +191,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -199,7 +199,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -207,7 +207,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
@@ -1685,6 +1685,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
   var idle_list = []
   var underutil_list = []
+  var underutil_no_memory_count = 0
 
   _.each(ds_merged_metrics, function(instance) {
     var instance_type = instance['resourceType']
@@ -1767,18 +1768,22 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
     // === UNDERUTILIZED (CROSS-FAMILY) DETECTION ===
 
-    // Memory data is required for cross-family rightsizing
-    if (!has_memory) { return }
-
-    if (cpu_max == null || mem_max == null) { return }
+    if (cpu_max == null) { return }
+    if (has_memory && mem_max == null) { return }
 
     var safety = param_stats_safety_factor
 
     var required_vcpus = Math.ceil((cpu_max / 100) * vcpus * safety)
     if (required_vcpus < 1) { required_vcpus = 1 }
 
-    var required_mem_MiB = Math.ceil((mem_max / 100) * mem_MiB * safety)
-    if (required_mem_MiB < 512) { required_mem_MiB = 512 }
+    var required_mem_MiB
+    if (has_memory && mem_max !== null) {
+      required_mem_MiB = Math.ceil((mem_max / 100) * mem_MiB * safety)
+      if (required_mem_MiB < 512) { required_mem_MiB = 512 }
+    } else {
+      // No memory data - require at least current instance memory so we never downsize memory
+      required_mem_MiB = mem_MiB
+    }
 
     var required_net_Gbps = net_peak_Gbps * safety
     var required_ebs_Mbps = ebs_peak_Mbps * safety
@@ -1908,6 +1913,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
         }
 
         underutil_list.push(underutil_instance)
+        if (!has_memory) { underutil_no_memory_count++ }
       }
     }
   })
@@ -1940,16 +1946,25 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     "CPU and network usage was analyzed over the last ", param_stats_lookback.toString(), " days."
   ].join('')
 
-  var underutil_message = [
+  var underutil_message_parts = [
     "Out of ", instances_total, " EC2 instances analyzed, ",
     underutil_total.toString(), " (", underutil_pct, "%) are underutilized and recommended for cross-family rightsizing.\n\n",
-    "An instance is considered underutilized when both CPU and memory data indicate that a smaller, ",
+    "An instance is considered underutilized when CPU (and memory, when available) data indicate that a smaller, ",
     "cheaper instance type can satisfy the observed workload with a safety factor of ", param_stats_safety_factor.toString(), "x. ",
-    "Memory data requires the AWS CloudWatch Agent (CWAgent) to be installed with memory metrics enabled ",
-    "(Linux: mem_used_percent; Windows: Memory % Committed Bytes In Use). ",
-    "Instances without memory data are skipped for rightsizing recommendations. ",
+    "When memory data is available, the required memory is calculated from peak utilization. ",
     "CPU and memory usage was analyzed over the last ", param_stats_lookback.toString(), " days."
-  ].join('')
+  ]
+
+  if (underutil_no_memory_count > 0) {
+    underutil_message_parts.push(
+      "\n\n**Note:** ", underutil_no_memory_count.toString(), " of these recommendations were produced without memory utilization data. ",
+      "For these instances, the recommended type is required to have at least as much memory as the current instance, ",
+      "but actual memory usage is unknown. For more robust recommendations, install the AWS CloudWatch Agent (CWAgent) ",
+      "with memory metrics enabled (Linux: mem_used_percent; Windows: Memory % Committed Bytes In Use)."
+    )
+  }
+
+  var underutil_message = underutil_message_parts.join('')
 
   var dummy_entry = {
     recommendedAction: "",
@@ -2517,7 +2532,7 @@ datasource "ds_get_parent_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
-	  ignore_status [404]
+    ignore_status [404]
   end
   result do
     encoding "json"

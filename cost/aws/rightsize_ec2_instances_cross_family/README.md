@@ -31,7 +31,7 @@ An underutilized instance is one where both CPU and memory utilization indicate 
 #### Requirements
 
 - AWS CloudWatch Agent (CWAgent) must be installed and configured to publish memory utilization metrics (`mem_used_percent` for Linux; `Memory % Committed Bytes In Use` for Windows) to CloudWatch.
-- Instances **without** CWAgent memory data are skipped for rightsizing recommendations entirely. They may still appear as idle candidates if the idle criteria are met.
+- Instances **without** CWAgent memory data will still receive rightsizing recommendations; however, the recommended instance type is required to have at least as much memory as the current instance, since actual memory usage is unknown. The incident message will indicate how many recommendations were produced without memory data. For the most accurate recommendations, CWAgent with memory metrics should be installed on all instances.
 
 #### Algorithm
 
