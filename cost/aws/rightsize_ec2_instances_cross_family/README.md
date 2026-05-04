@@ -68,9 +68,10 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 ## Input Parameters
 
-- *Email Addresses* - A list of email addresses to notify when new incidents are created.
-- *Account Number* - Leave blank; this is for automated use with Meta Policies. See README for more details.
-- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation. Set to 0 to report all findings.
+- *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws)
+- *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
+- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.
   - `Key==Value` - Filter all resources with the specified tag key:value pair.
@@ -78,9 +79,8 @@ The policy includes the estimated monthly savings. The estimated monthly savings
   - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
-- *Allow/Deny Regions* - Allow or Deny entered regions.
-- *Allow/Deny Regions List* - A list of allowed or denied AWS regions. Leave blank to include all regions.
-- *Filter GPU Instances* - Whether or not to exclude GPU-focused EC2 instances from the results.
+- *Filter GPU Instances* - Whether or not to exclude GPU-focused EC2 instances from the results. Note: GPU metrics are not considered when producing recommendations.
+- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation. Set to 0 to report all findings.
 - *Allow Intel/AMD Recommendations* - Whether to allow recommendations that switch between Intel and AMD processors (both x86_64). Set to `Yes` to allow cross-manufacturer recommendations; `No` (default) to keep the same CPU manufacturer.
 - *Statistic Lookback Period* - How many days back to look at CPU and memory data for instances. Maximum is 90 days (AWS CloudWatch data retention limit).
 - *Rightsizing Safety Factor* - A multiplier applied to peak utilization when computing required resources for a rightsized instance. Default is 1.5 (50% headroom). Set higher for more conservative recommendations.
@@ -89,7 +89,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email.
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy template will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave this parameter blank for *manual* action.
-For example if a user selects the "Resize Instances" action while applying the policy template, all the underutilized instances that received a rightsizing recommendation will be stopped, resized to the recommended instance type, and restarted.
+For example if a user selects the "Downsize Instances" action while applying the policy template, all the underutilized instances that received a rightsizing recommendation will be stopped, resized to the recommended instance type, and restarted.
 
 ## Policy Actions
 
