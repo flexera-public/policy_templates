@@ -30,12 +30,16 @@ Instances that meet both criteria are recommended for **termination**. No CloudW
 
 ### Cross-Family Rightsizing
 
-An underutilized instance is one where both CPU and memory utilization indicate the workload could run on a smaller, cheaper instance type from a **different instance family**.
+An underutilized instance is one where CPU utilization (and memory utilization, when available) indicates the workload could run on a smaller, cheaper instance type from a **different instance family**.
 
-#### Requirements
+#### Memory Data
 
-- AWS CloudWatch Agent (CWAgent) must be installed and configured to publish memory utilization metrics (`mem_used_percent` for Linux; `Memory % Committed Bytes In Use` for Windows) to CloudWatch.
-- Instances **without** CWAgent memory data will still receive rightsizing recommendations; however, the recommended instance type is required to have at least as much memory as the current instance, since actual memory usage is unknown. The incident message will indicate how many recommendations were produced without memory data. For the most accurate recommendations, CWAgent with memory metrics should be installed on all instances.
+Memory utilization data requires the AWS CloudWatch Agent (CWAgent) to be installed and configured on each instance to publish the `mem_used_percent` metric (Linux) or the `Memory % Committed Bytes In Use` metric (Windows) to CloudWatch. CWAgent is **not** required for the policy to run, but without it memory utilization is unknown and the policy uses the following fallback behavior:
+
+- **With memory data:** The required memory for the recommended instance is calculated from the peak observed memory utilization scaled by the Rightsizing Safety Factor. The recommended instance must have at least this much memory.
+- **Without memory data:** The required memory is set equal to the current instance's total memory. The recommended instance must have **at least as much memory** as the current instance. Recommendations to a smaller (cheaper) instance type with the same or more memory are still made; recommendations to an instance type with less memory are not. The incident message will note how many recommendations were produced without memory data.
+
+For the most accurate rightsizing recommendations, install CWAgent with memory metrics enabled on all instances.
 
 #### Algorithm
 

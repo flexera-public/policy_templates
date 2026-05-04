@@ -175,7 +175,7 @@ parameter "param_automatic_action" do
   category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Resize Instances", "Terminate Instances"]
+  allowed_values ["Downsize Instances", "Stop Instances", "Terminate Instances"]
   default []
 end
 
@@ -1106,7 +1106,7 @@ policy "policy_scheduled_report" do
   validate $ds_underutil_instances_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} AWS Underutilized EC2 Instances Found"
     escalate $esc_email
-    escalate $esc_resize_instances
+    escalate $esc_downsize_instances
     check eq(size(data), 0)
     export do
       resource_level true
@@ -1211,6 +1211,7 @@ policy "policy_scheduled_report" do
   validate $ds_idle_instances_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} AWS Idle EC2 Instances Found"
     escalate $esc_email
+    escalate $esc_stop_instances
     escalate $esc_terminate_instances
     check eq(size(data), 0)
     export do
@@ -1235,6 +1236,9 @@ policy "policy_scheduled_report" do
       end
       field "resourceType" do
         label "Instance Size"
+      end
+      field "newResourceType" do
+        label "Recommended Action"
       end
       field "region" do
         label "Region"
@@ -1495,25 +1499,39 @@ end
 # Escalations
 ###############################################################################
 
-# Escalation for Resize Instances
-escalation "esc_resize_instances" do
+# Escalation for Downsize Instances
+escalation "esc_downsize_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Resize Instances"
-  description "Approval to resize all selected instances to the recommended cross-family instance type"
+  label "Downsize Instances"
+  description "Approval to downsize all selected instances"
 
   # Run declaration should go at end, after any parameters that may exist
-  run "esc_resize_instances", data, rs_governance_host, rs_project_id
+  run "esc_downsize_instances", data, rs_governance_host, rs_project_id
 end
-define esc_resize_instances($data, $governance_host, $rs_project_id) do
+define esc_downsize_instances($data, $governance_host, $rs_project_id) do
   $action_options = []
-  call child_run_action($data, $governance_host, $rs_project_id, "Resize Instances", $action_options)
+  call child_run_action($data, $governance_host, $rs_project_id, "Downsize Instances", $action_options)
+end
+
+# Escalation for Stop Instances
+escalation "esc_stop_instances" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
+  label "Stop Instances"
+  description "Approval to stop all selected instances"
+
+  # Run declaration should go at end, after any parameters that may exist
+  run "esc_stop_instances", data, rs_governance_host, rs_project_id
+end
+define esc_stop_instances($data, $governance_host, $rs_project_id) do
+  $action_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Stop Instances", $action_options)
 end
 
 # Escalation for Terminate Instances
 escalation "esc_terminate_instances" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
   label "Terminate Instances"
-  description "Approval to terminate all selected idle instances"
+  description "Approval to terminate all selected instances"
 
   # Run declaration should go at end, after any parameters that may exist
   run "esc_terminate_instances", data, rs_governance_host, rs_project_id
