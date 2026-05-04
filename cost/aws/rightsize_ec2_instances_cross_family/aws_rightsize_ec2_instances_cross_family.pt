@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.1.0",
+  version: "0.1.1",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -1114,60 +1114,83 @@ script "js_cloudwatch_queries", type: "javascript" do
       "ReturnData": true
     })
 
-    // Memory metrics (CWAgent) - only if instance has CWAgent memory metric
+    // Memory metrics (CWAgent) - always query; use exact dimensions from ListMetrics
+    // if available, otherwise fall back to standard CWAgent dimensions per platform.
+    // GetMetricData simply returns no datapoints for instances without CWAgent installed,
+    // so has_memory_data will remain false for those instances.
     var metric_details = ds_cloudwatch_metrics_by_instance[inst_id]
+    var mem_metricname
+    var mem_dimensions
+
     if (metric_details != null) {
-      var mem_metricname = metric_details['metricName']
-      var dimensions = []
+      mem_metricname = metric_details['metricName']
+      mem_dimensions = []
       _.each(metric_details['dimensions'], function(dim) {
-        dimensions.push({ "Name": dim['name'], "Value": dim['value'] })
+        mem_dimensions.push({ "Name": dim['name'], "Value": dim['value'] })
       })
-
-      // Memory Average aggregate
-      result[instance['region']].push({
-        "Id": inst_escaped + "_memAverage",
-        "MetricStat": {
-          "Metric": {
-            "Namespace": "CWAgent",
-            "MetricName": mem_metricname,
-            "Dimensions": dimensions
-          },
-          "Period": lookback,
-          "Stat": "Average"
-        },
-        "ReturnData": true
-      })
-
-      // Memory Maximum aggregate
-      result[instance['region']].push({
-        "Id": inst_escaped + "_memMaximum",
-        "MetricStat": {
-          "Metric": {
-            "Namespace": "CWAgent",
-            "MetricName": mem_metricname,
-            "Dimensions": dimensions
-          },
-          "Period": lookback,
-          "Stat": "Maximum"
-        },
-        "ReturnData": true
-      })
-
-      // Memory Average timeseries
-      result[instance['region']].push({
-        "Id": inst_escaped + "_memAverage_timeseries",
-        "MetricStat": {
-          "Metric": {
-            "Namespace": "CWAgent",
-            "MetricName": mem_metricname,
-            "Dimensions": dimensions
-          },
-          "Period": lookback_1d,
-          "Stat": "Average"
-        },
-        "ReturnData": true
-      })
+    } else if (instance['platform'] && instance['platform'].indexOf('Windows') != -1) {
+      // Fallback for Windows - query the Windows CWAgent memory metric
+      mem_metricname = "Memory % Committed Bytes In Use"
+      mem_dimensions = [
+        { "Name": "ImageId",      "Value": instance['imageId'] },
+        { "Name": "InstanceId",   "Value": inst_id },
+        { "Name": "InstanceType", "Value": instance['resourceType'] },
+        { "Name": "objectname",   "Value": "Memory" }
+      ]
+    } else {
+      // Fallback for Linux / unknown - query the standard CWAgent mem_used_percent metric
+      mem_metricname = "mem_used_percent"
+      mem_dimensions = [
+        { "Name": "ImageId",      "Value": instance['imageId'] },
+        { "Name": "InstanceId",   "Value": inst_id },
+        { "Name": "InstanceType", "Value": instance['resourceType'] }
+      ]
     }
+
+    // Memory Average aggregate
+    result[instance['region']].push({
+      "Id": inst_escaped + "_memAverage",
+      "MetricStat": {
+        "Metric": {
+          "Namespace": "CWAgent",
+          "MetricName": mem_metricname,
+          "Dimensions": mem_dimensions
+        },
+        "Period": lookback,
+        "Stat": "Average"
+      },
+      "ReturnData": true
+    })
+
+    // Memory Maximum aggregate
+    result[instance['region']].push({
+      "Id": inst_escaped + "_memMaximum",
+      "MetricStat": {
+        "Metric": {
+          "Namespace": "CWAgent",
+          "MetricName": mem_metricname,
+          "Dimensions": mem_dimensions
+        },
+        "Period": lookback,
+        "Stat": "Maximum"
+      },
+      "ReturnData": true
+    })
+
+    // Memory Average timeseries
+    result[instance['region']].push({
+      "Id": inst_escaped + "_memAverage_timeseries",
+      "MetricStat": {
+        "Metric": {
+          "Namespace": "CWAgent",
+          "MetricName": mem_metricname,
+          "Dimensions": mem_dimensions
+        },
+        "Period": lookback_1d,
+        "Stat": "Average"
+      },
+      "ReturnData": true
+    })
   })
 EOS
 end
