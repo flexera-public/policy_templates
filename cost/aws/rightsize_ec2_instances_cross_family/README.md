@@ -42,17 +42,16 @@ For the most accurate rightsizing recommendations, install CWAgent with memory m
 
 #### Algorithm
 
-1. **Peak resource requirements** are computed by scaling observed peak metrics by the *Rightsizing Safety Factor* (`param_stats_safety_factor`). For example, with a safety factor of 1.5, if peak CPU was 40% of 4 vCPUs, the required vCPUs = ceil(0.40 × 4 × 1.5) = 3.
-
-2. **Candidate instances** in the same region must satisfy all of the following compatibility constraints:
-   - Current generation only (no previous-generation or bare-metal types)
-   - Same CPU architecture (x86_64, arm64, etc.)
-   - Same CPU burst model (burstable instances only recommend other burstable types)
-   - Same GPU presence (instances with a GPU only recommend GPU types; non-GPU instances only recommend non-GPU types)
-   - No local instance storage (NVMe/SSD instance store) on the recommended type
-   - ENA networking is required if the candidate uses the Nitro hypervisor and the current instance does not have ENA enabled
-   - Sufficient EBS attachment slots, network baseline bandwidth, EBS throughput, and EBS IOPS to meet scaled requirements
-   - Intel/AMD manufacturer match is enforced by default (configurable via `param_allow_mixed_x86_vendors`)
+- **Peak resource requirements** are computed by scaling observed peak metrics by the *Rightsizing Safety Factor* (`param_stats_safety_factor`). For example, with a safety factor of 1.5, if peak CPU was 40% of 4 vCPUs, the required vCPUs = ceil(0.40 × 4 × 1.5) = 3.
+- **Candidate instances** in the same region must satisfy all of the following compatibility constraints:
+  - Current generation only (no previous-generation or bare-metal types)
+  - Same CPU architecture (x86_64, arm64, etc.)
+  - Same CPU burst model (burstable instances only recommend other burstable types)
+  - Same GPU presence (instances with a GPU only recommend GPU types; non-GPU instances only recommend non-GPU types)
+  - No local instance storage (NVMe/SSD instance store) on the recommended type
+  - ENA networking is required if the candidate uses the Nitro hypervisor and the current instance does not have ENA enabled
+  - Sufficient EBS attachment slots, network baseline bandwidth, EBS throughput, and EBS IOPS to meet scaled requirements
+  - Intel/AMD manufacturer match is enforced by default (configurable via `param_allow_mixed_x86_vendors`)
 
 ### Policy Savings Details
 
