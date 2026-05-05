@@ -1,0 +1,2153 @@
+name "Azure Rightsize Compute Instances (Cross-Family)"
+rs_pt_ver 20180301
+type "policy"
+short_description "Identifies underutilized or idle Azure virtual machines and recommends the cheapest compatible instance type across all available VM families. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances_cross_family/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances_cross_family/"
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.2.4",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Rightsize Compute Instances",
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_allow_mixed_x86_vendors" do
+  type "string"
+  category "Filters"
+  label "Allow Intel/AMD Recommendations"
+  description "Whether to allow rightsizing recommendations that change the CPU manufacturer between Intel and AMD (both x86_64 architecture). Such recommendations are generally safe but may affect licensing or workload performance."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at CPU and memory data for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 90
+  default 30
+end
+
+parameter "param_stats_safety_factor" do
+  type "number"
+  category "Statistics"
+  label "Rightsizing Safety Factor"
+  description "A multiplier applied to p95 utilization when computing the required resources for a rightsized instance. For example, 1.5x means the recommended instance must handle 1.5 times the observed peak utilization."
+  min_value 1
+  default 1.5
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Downsize Underutilized Instances", "Power Off Idle Instances", "Delete Idle Instances"]
+  default []
+end
+
+parameter "param_skipshutdown" do
+  type "string"
+  category "Actions"
+  label "Power Off Type"
+  description "Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances. Only applicable when taking action against instances."
+  allowed_values "Graceful", "Forced"
+  default "Graceful"
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "true"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type: "javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-'EOS'
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_no_subscriptions_error" do
+  run_script $js_no_subscriptions_error, $ds_azure_subscriptions, $ds_applied_policy
+end
+
+script "js_no_subscriptions_error", type: "javascript" do
+  parameters "ds_azure_subscriptions", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (ds_azure_subscriptions.length == 0) {
+    result = [{
+      policy_name: ds_applied_policy['name'],
+      error: "No Azure Subscriptions found. This is usually caused by a lack of permissions or an expired/invalid credential."
+    }]
+  }
+EOS
+end
+
+datasource "ds_azure_instances" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version", "2024-07-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "resourceID", jmes_path(col_item, "id")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "resourceKind", jmes_path(col_item, "type")
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "imagePublisher", jmes_path(col_item, "properties.storageProfile.imageReference.publisher")
+      field "imageOffer", jmes_path(col_item, "properties.storageProfile.imageReference.offer")
+      field "imageSKU", jmes_path(col_item, "properties.storageProfile.imageReference.sku")
+      field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "dataDisks", jmes_path(col_item, "properties.storageProfile.dataDisks")
+      field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
+      field "networkInterfaces", jmes_path(col_item, "properties.networkProfile.networkInterfaces")
+      field "tags", jmes_path(col_item, "tags")
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_instance_statuses" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version", "2024-03-01"
+    query "statusOnly", "true"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "resourceID", jmes_path(col_item, "id")
+      field "statuses", jmes_path(col_item, "properties.instanceView.statuses")
+    end
+  end
+end
+
+datasource "ds_azure_instances_with_status" do
+  run_script $js_azure_instances_with_status, $ds_azure_instances, $ds_azure_instance_statuses
+end
+
+script "js_azure_instances_with_status", type: "javascript" do
+  parameters "ds_azure_instances", "ds_azure_instance_statuses"
+  result "result"
+  code <<-'EOS'
+  var status_object = {}
+
+  _.each(ds_azure_instance_statuses, function(item) {
+    status_object[item['resourceID'].toLowerCase()] = item['statuses']
+  })
+
+  result = _.map(ds_azure_instances, function(vm) {
+    var dataDiskCount = 0
+    if (vm['dataDisks']) { dataDiskCount = vm['dataDisks'].length }
+
+    var nicCount = 1
+    if (vm['networkInterfaces'] && vm['networkInterfaces'].length > 0) {
+      nicCount = Math.max(1, vm['networkInterfaces'].length)
+    }
+
+    return {
+      resourceID: vm["resourceID"],
+      resourceGroup: vm["resourceGroup"],
+      resourceKind: vm["resourceKind"],
+      name: vm["name"],
+      region: vm["region"],
+      imagePublisher: vm["imagePublisher"],
+      imageOffer: vm["imageOffer"],
+      imageSKU: vm["imageSKU"],
+      osType: vm["osType"],
+      dataDiskCount: dataDiskCount,
+      nicCount: nicCount,
+      resourceType: vm["resourceType"],
+      tags: vm["tags"],
+      subscriptionId: vm["subscriptionId"],
+      subscriptionName: vm["subscriptionName"],
+      statuses: status_object[vm["resourceID"].toLowerCase()]
+    }
+  })
+EOS
+end
+
+datasource "ds_azure_instances_tag_filtered" do
+  run_script $js_azure_instances_tag_filtered, $ds_azure_instances_with_status, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_azure_instances_tag_filtered", type: "javascript" do
+  parameters "ds_azure_instances_with_status", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-'EOS'
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_azure_instances_with_status, function(resource) {
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object') { resource_tags = resource['tags'] }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined || !value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_azure_instances_with_status
+  }
+EOS
+end
+
+datasource "ds_azure_instances_region_filtered" do
+  run_script $js_azure_instances_region_filtered, $ds_azure_instances_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_instances_region_filtered", type: "javascript" do
+  parameters "ds_azure_instances_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-'EOS'
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_instances_tag_filtered, function(vm) {
+      include_vm = _.contains(param_regions_list, vm['region'])
+      if (param_regions_allow_or_deny == "Deny") { include_vm = !include_vm }
+      return include_vm
+    })
+  } else {
+    result = ds_azure_instances_tag_filtered
+  }
+EOS
+end
+
+# Always filter to running instances only for cross-family rightsizing
+datasource "ds_azure_instances_status_filtered" do
+  run_script $js_azure_instances_status_filtered, $ds_azure_instances_region_filtered
+end
+
+script "js_azure_instances_status_filtered", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_azure_instances_region_filtered, function(vm) {
+    var status_codes = _.pluck(vm['statuses'], 'code')
+    return _.contains(status_codes, 'PowerState/running')
+  })
+EOS
+end
+
+datasource "ds_azure_instances_batch" do
+  run_script $js_azure_instances_batch, $ds_azure_instances_status_filtered
+end
+
+script "js_azure_instances_batch", type: "javascript" do
+  parameters "ds_azure_instances_status_filtered"
+  result "result"
+  code <<-'EOS'
+  // Group by subscription
+  var instances_by_subscription = _.values(_.groupBy(ds_azure_instances_status_filtered, function(instance) {
+    return instance.subscriptionId
+  }))
+
+  // Group by region
+  var instances_by_subscription_region = _.map(instances_by_subscription, function(instances) {
+    return _.values(_.groupBy(instances, function(instance) {
+      return instance.region
+    }))
+  })
+
+  // Group into batches of same region (Azure Metrics getBatch max is 50)
+  result = []
+  var batch_size = 50
+  _.each(instances_by_subscription_region, function(instances_same_subscription) {
+    _.each(instances_same_subscription, function(instances_same_subscription_region) {
+      for (var i = 0; i < instances_same_subscription_region.length; i += batch_size) {
+        result.push(instances_same_subscription_region.slice(i, i + batch_size))
+      }
+    })
+  })
+EOS
+end
+
+datasource "ds_azure_metrics_batch" do
+  batch true
+  iterate $ds_azure_instances_batch
+  request do
+    run_script $js_azure_metrics_batch, iter_item, $param_azure_endpoint, $param_stats_lookback
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "value", jmes_path(col_item, "value")
+      field "resourceID", jmes_path(col_item, "resourceid")
+    end
+  end
+end
+
+script "js_azure_metrics_batch", type: "javascript" do
+  parameters "ds_azure_instances_batch", "param_azure_endpoint", "param_stats_lookback"
+  result "request"
+  code <<-'EOS'
+  var end_date = new Date()
+  end_date.setMilliseconds(999)
+  end_date.setSeconds(59)
+  end_date.setMinutes(59)
+  end_date.setHours(23)
+
+  var start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date.setMilliseconds(0)
+  start_date.setSeconds(0)
+  start_date.setMinutes(0)
+
+  function get_host_by_region(region) {
+    if (param_azure_endpoint === "management.chinacloudapi.cn") {
+      return region + ".metrics.monitor.azure.cn"
+    }
+    return region + ".metrics.monitor.azure.com"
+  }
+
+  var resourceIDs = _.map(ds_azure_instances_batch, function(instance) {
+    return instance.resourceID
+  })
+
+  var request = {
+    auth: "auth_azure",
+    pagination: "pagination_azure",
+    host: get_host_by_region(ds_azure_instances_batch[0].region),
+    verb: "POST",
+    path: "subscriptions/" + ds_azure_instances_batch[0].subscriptionId + "/metrics:getBatch",
+    query_params: {
+      "api-version": "2023-10-01",
+      "starttime": start_date.toISOString(),
+      "endtime": end_date.toISOString(),
+      "interval": "PT15M",
+      "metricnames": "Percentage CPU,Available Memory Percentage",
+      "metricnamespace": "Microsoft.Compute/VirtualMachines",
+      "aggregation": "average,maximum,minimum"
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({"resourceids": resourceIDs})
+  }
+EOS
+end
+
+datasource "ds_azure_instances_metrics" do
+  batch true
+  run_script $js_azure_instances_metrics, $ds_azure_metrics_batch, $ds_azure_instances_status_filtered
+end
+
+script "js_azure_instances_metrics", type: "javascript" do
+  parameters "ds_azure_metrics_batch", "ds_azure_instances_status_filtered"
+  result "result"
+  code <<-'EOS'
+  var instances_map = {}
+  _.each(ds_azure_instances_status_filtered, function(instance) {
+    instances_map[instance.resourceID.toLowerCase()] = instance
+  })
+
+  getIterator(ds_azure_metrics_batch).Each(function(metric) {
+    var instance = instances_map[metric.resourceID.toLowerCase()]
+    if (!instance) { return }
+    appendToResult({
+      resourceName: instance.name,
+      resourceGroup: instance.resourceGroup,
+      resourceID: instance.resourceID,
+      resourceKind: instance.resourceKind,
+      region: instance.region,
+      tags: instance.tags,
+      statuses: instance.statuses,
+      imagePublisher: instance.imagePublisher,
+      imageOffer: instance.imageOffer,
+      imageSKU: instance.imageSKU,
+      osType: instance.osType,
+      dataDiskCount: instance.dataDiskCount,
+      nicCount: instance.nicCount,
+      resourceType: instance.resourceType,
+      subscriptionId: instance.subscriptionId,
+      subscriptionName: instance.subscriptionName,
+      value: metric.value
+    })
+  })
+EOS
+end
+
+datasource "ds_azure_instances_metrics_organized" do
+  run_script $js_azure_instances_metrics_organized, $ds_azure_instances_metrics, $param_stats_lookback, rs_org_id, rs_project_id
+end
+
+script "js_azure_instances_metrics_organized", type: "javascript" do
+  parameters "ds_azure_instances_metrics", "param_stats_lookback", "rs_org_id", "rs_project_id"
+  result "result"
+  code <<-'EOS'
+  // Function to calculate percentiles from a sorted array
+  function percentile(arr, p) {
+    arr.sort(function(a, b) { return a - b })
+    var index = (p / 100) * arr.length
+    return arr[Math.ceil(index) - 1]
+  }
+
+  // Function to generate ImageCharts URL for CPU and Memory usage
+  function generateChartUrl(cpu_stats, mem_stats, stat_name, resource_name) {
+    if (!cpu_stats || cpu_stats.length === 0) { return null }
+
+    stat_name = stat_name.toLowerCase()
+
+    var timestamps = []
+    var cpuValues = []
+    var memValues = []
+
+    var maxPoints = 90
+    var step = Math.max(1, Math.floor(cpu_stats.length / maxPoints))
+    for (var i = 0; i < cpu_stats.length; i += step) {
+      if ((cpu_stats[i] && cpu_stats[i][stat_name] !== undefined) || (mem_stats && mem_stats[i] && mem_stats[i][stat_name] !== undefined)) {
+        var date = new Date(cpu_stats[i].timeStamp)
+        timestamps.push(date.toISOString().split('T')[0])
+        cpuValues.push(_.isNumber(cpu_stats[i][stat_name]) ? Math.round(cpu_stats[i][stat_name] * 10) / 10 : "_")
+        memValues.push((mem_stats && mem_stats[i] && _.isNumber(mem_stats[i][stat_name])) ? Math.round((100 - mem_stats[i][stat_name]) * 10) / 10 : "_")
+      }
+    }
+
+    if (cpuValues.length === 0) { return null }
+
+    var timeLabels = timestamps.join('|')
+    var cpuData = cpuValues.join(',')
+    var memData = memValues.join(',')
+
+    var lineColors = ["206BB6", "CF8F36"]
+
+    var first_char = stat_name.charAt(0)
+    var rest = stat_name.substring(1)
+    var stat_name_Proper = first_char.toUpperCase() + rest.toLowerCase()
+
+    var chartUrl = "https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id=" + rs_org_id + "&rs_project_id=" + rs_project_id
+    chartUrl += "&cht=lc"
+    chartUrl += "&chs=900x450"
+    chartUrl += "&chco=" + lineColors.join(',')
+    chartUrl += "&chxt=x,y"
+    chartUrl += "&chxs=0,000000,12,-1,lt,000000,s,min90"
+    chartUrl += "&chdl=" + encodeURIComponent("CPU Usage%25%20%20%20%20%20%20%20%20%20%20|Memory Usage%25")
+    chartUrl += "&chdlp=b"
+    chartUrl += "&chtt=" + encodeURIComponent(stat_name_Proper + "+Resource+Utilization|" + encodeURIComponent(resource_name))
+    chartUrl += "&chma=10,10,10,10"
+    chartUrl += "&chxr=1,0,100"
+    chartUrl += "&chls=" + encodeURIComponent("4|4")
+    chartUrl += "&chf=bg,s,FFFFFF00"
+    chartUrl += "&chg=" + encodeURIComponent("20,50,5,5,CECECE")
+    chartUrl += "&chxl=" + encodeURIComponent("0:|" + encodeURIComponent(timeLabels))
+    chartUrl += "&chd=" + encodeURIComponent("t:" + cpuData + "|" + memData)
+
+    return chartUrl
+  }
+
+  result = []
+
+  getIterator(ds_azure_instances_metrics).Each(function(vm) {
+    var cpu_stats = null
+    var mem_stats = null
+
+    _.each(vm['value'], function(stat) {
+      if (stat["timeseries"][0] != undefined) {
+        if (stat['name']['value'] == "Percentage CPU") {
+          cpu_stats = stat["timeseries"][0]["data"]
+        }
+
+        if (stat['name']['value'] == "Available Memory Percentage") {
+          mem_stats = stat["timeseries"][0]["data"]
+        }
+      }
+    })
+
+    // Generate chart URL using "average" stat for display
+    var chartUrl = generateChartUrl(cpu_stats, mem_stats, "average", vm['resourceName'])
+    var chartUrlField = null
+    if (chartUrl) {
+      chartUrlField = vm['resourceName'] + " Utilization Chart||" + chartUrl + "&from_pt=true"
+    }
+
+    // CPU calculations
+    var cpu_avg = 0
+    var cpu_avg_count = 0
+    var cpu_all_stats = []
+
+    if (cpu_stats != null && cpu_stats != undefined) {
+      _.each(cpu_stats, function(item) {
+        if (item["average"] != undefined && item["average"] != null) {
+          cpu_all_stats.push(item["average"])
+          cpu_avg += item["average"]
+          cpu_avg_count += 1
+        }
+
+        if (item["minimum"] != undefined && item["minimum"] != null) {
+          cpu_all_stats.push(item["minimum"])
+        }
+
+        if (item["maximum"] != undefined && item["maximum"] != null) {
+          cpu_all_stats.push(item["maximum"])
+        }
+      })
+    }
+
+    if (cpu_avg_count != 0) { cpu_avg = cpu_avg / cpu_avg_count }
+
+    var cpu_p95 = 0
+    if (cpu_all_stats.length > 0) {
+      cpu_p95 = percentile(cpu_all_stats, 95)
+    }
+
+    // Memory calculations (Available Memory Percentage -> convert to Used %)
+    var mem_all_stats = []
+
+    if (mem_stats != null && mem_stats != undefined) {
+      _.each(mem_stats, function(item) {
+        if (item["average"] != undefined && item["average"] != null) {
+          mem_all_stats.push(100 - item["average"])
+        }
+
+        if (item["minimum"] != undefined && item["minimum"] != null) {
+          mem_all_stats.push(100 - item["minimum"])
+        }
+
+        if (item["maximum"] != undefined && item["maximum"] != null) {
+          mem_all_stats.push(100 - item["maximum"])
+        }
+      })
+    }
+
+    var mem_p95 = 0
+    if (mem_all_stats.length > 0) {
+      mem_p95 = percentile(mem_all_stats, 95)
+    }
+
+    // has_mem_data is true only when actual memory data points were received and processed.
+    // Checking mem_all_stats.length (after processing) avoids a false positive when the
+    // Azure metrics API returns a timeseries entry but with an empty data array.
+    var has_mem_data = mem_all_stats.length > 0
+
+    // Compute power state
+    var status_codes = _.pluck(vm['statuses'], 'code')
+    var powerstate = _.find(status_codes, function(code) { return code && code.indexOf('PowerState') === 0 })
+    var state = powerstate ? powerstate.split('/')[1] : 'unknown'
+
+    result.push({
+      resourceName: vm['resourceName'],
+      resourceGroup: vm['resourceGroup'],
+      resourceID: vm['resourceID'],
+      resourceKind: vm['resourceKind'],
+      region: vm['region'],
+      imagePublisher: vm['imagePublisher'],
+      imageOffer: vm['imageOffer'],
+      imageSKU: vm['imageSKU'],
+      osType: vm['osType'],
+      dataDiskCount: vm['dataDiskCount'],
+      nicCount: vm['nicCount'],
+      resourceType: vm['resourceType'],
+      accountID: vm['subscriptionId'],
+      accountName: vm['subscriptionName'],
+      tags: vm['tags'],
+      statuses: vm['statuses'],
+      state: state,
+      has_mem_data: has_mem_data,
+      has_cpu_data: cpu_all_stats.length > 0,
+      cpu_average: Math.round(cpu_avg * 100) / 100,
+      cpu_p95: Math.round(cpu_p95 * 100) / 100,
+      mem_p95: Math.round(mem_p95 * 100) / 100,
+      chartUrl: chartUrl,
+      chartUrlField: chartUrlField,
+      service: "Microsoft.Compute"
+    })
+  })
+EOS
+end
+
+datasource "ds_instance_costs" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    run_script $js_instance_costs, val(iter_item, 'id'), $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resourceID", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_instance_costs", type: "javascript" do
+  parameters "subscription_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  var end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  var start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      dimensions: ["resource_id"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              {
+                "dimension": "resource_id",
+                "type": "substring",
+                "substring": "/providers/Microsoft.Compute/virtualMachines/"
+              },
+              {
+                "dimension": "resource_id",
+                "type": "substring",
+                "substring": "/providers/microsoft.compute/virtualmachines/"
+              }
+            ]
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": subscription_id
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_instance_costs_grouped" do
+  run_script $js_instance_costs_grouped, $ds_instance_costs
+end
+
+script "js_instance_costs_grouped", type: "javascript" do
+  parameters "ds_instance_costs"
+  result "result"
+  code <<-'EOS'
+  // Multiply a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  var cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_instance_costs, function(item) {
+    var id = item['resourceID'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+# Build unique subscription+region pairs for available size lookups
+datasource "ds_azure_subs_regions" do
+  run_script $js_azure_subs_regions, $ds_azure_instances_metrics_organized
+end
+
+script "js_azure_subs_regions", type: "javascript" do
+  parameters "ds_azure_instances_metrics_organized"
+  result "result"
+  code <<-'EOS'
+  result = []
+  var seen = {}
+
+  _.each(ds_azure_instances_metrics_organized, function(vm) {
+    var key = vm['accountID'] + '|' + vm['region']
+    if (!seen[key]) {
+      seen[key] = true
+      result.push({ subscriptionId: vm['accountID'], region: vm['region'] })
+    }
+  })
+EOS
+end
+
+# Fetch available VM SKUs per subscription+region via the Resource SKUs API.
+# Unlike the deprecated /vmSizes endpoint, this API includes restriction data so that
+# SKUs unavailable for the subscription in that region are excluded from recommendations.
+datasource "ds_azure_instance_size_details" do
+  iterate $ds_azure_subs_regions
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.Compute/skus"])
+    query "api-version", "2021-07-01"
+    query "$filter", join(["location eq '", val(iter_item, "region"), "'"])
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", val(iter_item, "subscriptionId")
+      field "region", val(iter_item, "region")
+      field "name", jmes_path(col_item, "name")
+      field "resourceType", jmes_path(col_item, "resourceType")
+      field "restrictions", jmes_path(col_item, "restrictions")
+    end
+  end
+end
+
+# Build lookup: subscriptionId -> region -> {instanceName: true}
+datasource "ds_azure_available_sizes" do
+  run_script $js_azure_available_sizes, $ds_azure_instance_size_details
+end
+
+script "js_azure_available_sizes", type: "javascript" do
+  parameters "ds_azure_instance_size_details"
+  result "result"
+  code <<-'EOS'
+  result = {}
+
+  _.each(ds_azure_instance_size_details, function(size) {
+    // Only consider VM SKUs; the Resource SKUs API returns all compute resource types
+    if (size['resourceType'] !== 'virtualMachines') { return }
+
+    // Exclude SKUs with a NotAvailableForSubscription restriction — these cannot be deployed
+    var is_restricted = _.any(size['restrictions'] || [], function(r) {
+      return r['reasonCode'] === 'NotAvailableForSubscription'
+    })
+    if (is_restricted) { return }
+
+    var sub = size['subscriptionId']
+    var reg = size['region']
+    if (!result[sub]) { result[sub] = {} }
+    if (!result[sub][reg]) { result[sub][reg] = {} }
+    result[sub][reg][size['name']] = true
+  })
+EOS
+end
+
+datasource "ds_azure_compute_instance_types" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/azure_compute_instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_azure_vm_pricing" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/azure_vm_pricing.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_region_table" do
+  run_script $js_region_table
+end
+
+script "js_region_table", type: "javascript" do
+  result "result"
+  code <<-'EOS'
+  result = {
+    "ukwest": "UK West",
+    "usgovvirginia": "US Gov Virginia",
+    "eastus2": "US East 2",
+    "uaenorth": "AE North",
+    "southafricawest": "ZA West",
+    "francesouth": "FR South",
+    "westcentralus": "US West Central",
+    "koreacentral": "KR Central",
+    "westeurope": "EU West",
+    "southafricanorth": "ZA North",
+    "southeastasia": "AP Southeast",
+    "centralindia": "IN Central",
+    "switzerlandwest": "CH West",
+    "norwayeast": "NO East",
+    "germanywestcentral": "DE West Central",
+    "westus2": "US West 2",
+    "australiacentral": "AU Central",
+    "italynorth": "IT North",
+    "centralus": "US Central",
+    "germanynorth": "DE North",
+    "brazilsoutheast": "BR Southeast",
+    "southindia": "IN South",
+    "swedencentral": "SE Central",
+    "francecentral": "FR Central",
+    "australiasoutheast": "AU Southeast",
+    "northeurope": "EU North",
+    "koreasouth": "KR South",
+    "usgovtexas": "US Gov TX",
+    "polandcentral": "PL Central",
+    "japaneast": "JA East",
+    "westindia": "IN West",
+    "japanwest": "JA West",
+    "westus": "US West",
+    "jioindiawest": "IN West Jio",
+    "northcentralus": "US North Central",
+    "southcentralus": "US South Central",
+    "eastasia": "AP East",
+    "jioindiacentral": "IN Central Jio",
+    "australiacentral2": "AU Central 2",
+    "canadaeast": "CA East",
+    "eastus": "US East",
+    "uaecentral": "AE Central",
+    "norwaywest": "NO West",
+    "canadacentral": "CA Central",
+    "uksouth": "UK South",
+    "qatarcentral": "QA Central",
+    "swedensouth": "SE South",
+    "brazilsouth": "BR South",
+    "australiaeast": "AU East",
+    "switzerlandnorth": "CH North",
+    "usgovarizona": "US Gov AZ",
+    "westus3": "US West 3"
+  }
+EOS
+end
+
+# Main recommendation logic: idle detection and cross-family rightsizing
+datasource "ds_idle_and_rightsize_instances" do
+  run_script $js_idle_and_rightsize_instances, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_compute_instance_types, $ds_azure_vm_pricing, $ds_azure_available_sizes, $ds_applied_policy, $ds_currency, $ds_flexera_api_hosts, $ds_region_table, $param_stats_lookback, $param_stats_safety_factor, $param_allow_mixed_x86_vendors, $param_min_savings, rs_org_id, rs_project_id
+end
+
+script "js_idle_and_rightsize_instances", type: "javascript" do
+  parameters "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_compute_instance_types", "ds_azure_vm_pricing", "ds_azure_available_sizes", "ds_applied_policy", "ds_currency", "ds_flexera_api_hosts", "ds_region_table", "param_stats_lookback", "param_stats_safety_factor", "param_allow_mixed_x86_vendors", "param_min_savings", "rs_org_id", "rs_project_id"
+  result "result"
+  code <<-'EOS'
+  function formatNumber(number, separator) {
+    var formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        var withSeparator = ""
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+        formatted_number = withSeparator
+      }
+
+      var decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  // Detect AMD instances by checking for 'a' as first letter after the size digits.
+  // HB and HC series are AMD EPYC HPC instances and must be detected explicitly because
+  // their naming convention (e.g., Standard_HB120rs_v3) does not use the 'a' suffix.
+  // Some GPU AMD families (e.g., Standard_NVads_A10_v5, Standard_NGads_V620_v1) have no
+  // size digits before the AMD 'a' suffix; the /_[A-Z]+ads_/ pattern covers these.
+  function isAMD(instanceName) {
+    if (/Standard_H[BC]/i.test(instanceName)) { return true }
+    if (/_[A-Z]+ads_/.test(instanceName)) { return true }
+    var match = instanceName.match(/_[A-Z]+\d+([a-z])/i)
+    if (match && match[1]) { return match[1].toLowerCase() === 'a' }
+    return false
+  }
+
+  // Tiered idle CPU threshold based on vCPU count — larger instances need less % utilization
+  // to constitute "real" usage, so the threshold scales down as core count grows.
+  function getIdleCpuThreshold(vcpus) {
+    if (vcpus <= 2) { return 5 }
+    if (vcpus <= 4) { return 4 }
+    if (vcpus <= 8) { return 3 }
+    if (vcpus <= 16) { return 2 }
+    return 1
+  }
+
+  // Build instance type lookup by name
+  var instance_type_map = {}
+  _.each(ds_azure_compute_instance_types, function(inst) {
+    if (inst['name'] != undefined) { instance_type_map[inst['name']] = inst }
+  })
+
+  var currency = ds_currency['symbol'] || '$'
+  var currency_sep = ds_currency['separator'] || ','
+
+  var rightsize_list = []
+  var idle_list = []
+  var rightsize_no_memory_count = 0
+  var rightsize_total_savings = 0.0
+  var idle_total_savings = 0.0
+
+  _.each(ds_azure_instances_metrics_organized, function(vm) {
+    var instance_type = vm['resourceType']
+    var inst_info = instance_type_map[instance_type]
+    if (!inst_info) { return }
+
+    var region = vm['region']
+    var subscription_id = vm['accountID']
+    var cco_cost = ds_instance_costs_grouped[vm['resourceID'].toLowerCase()] || 0
+
+    // p95 CPU and memory
+    var cpu_p95 = vm['cpu_p95'] || 0
+    var cpu_average = vm['cpu_average'] || 0
+    var mem_p95 = vm['mem_p95'] || 0
+    var has_mem_data = vm['has_mem_data'] === true
+    var has_cpu_data = vm['has_cpu_data'] === true
+
+    // Skip VMs with no CPU metrics — we cannot determine idle state or rightsizing requirements
+    if (!has_cpu_data) { return }
+
+    // Tags
+    var vm_tags = []
+    if (typeof(vm['tags']) == 'object') {
+      _.each(Object.keys(vm['tags']), function(key) {
+        vm_tags.push(key + '=' + vm['tags'][key])
+      })
+    }
+
+    // Power state
+    var state = vm['state'] || 'unknown'
+
+    // === IDLE DETECTION (average CPU, tiered threshold by vCPU count) ===
+    var cpu_spec_for_idle = parseInt(inst_info['specs']['vCPUs'])
+    var idle_cpu_threshold = getIdleCpuThreshold(cpu_spec_for_idle)
+    if (cpu_average < idle_cpu_threshold) {
+      var idle_savings = parseFloat(parseFloat(cco_cost).toFixed(3))
+
+      var rec_details_idle = [
+        "Delete or power off Azure virtual machine ", vm['resourceName'],
+        " in Azure Subscription ", vm['accountName'],
+        " (", vm['accountID'], ")"
+      ].join('')
+
+      if (vm['chartUrl']) {
+        rec_details_idle += "\n\n![Utilization Chart](" + vm['chartUrl'] + "&from_pt=true)"
+      }
+
+      if (idle_savings >= param_min_savings) {
+        idle_total_savings += cco_cost
+        idle_list.push({
+          accountID: vm['accountID'],
+          accountName: vm['accountName'],
+          resourceGroup: vm['resourceGroup'],
+          resourceID: vm['resourceID'],
+          resourceName: vm['resourceName'],
+          resourceType: vm['resourceType'],
+          newResourceType: "Delete/Power Off Virtual Machine",
+          region: region,
+          osType: vm['osType'],
+          tags: vm_tags.join(', '),
+          state: state,
+          dataDiskCount: vm['dataDiskCount'],
+          imagePublisher: vm['imagePublisher'],
+          imageOffer: vm['imageOffer'],
+          imageSKU: vm['imageSKU'],
+          recommendationDetails: rec_details_idle,
+          lookbackPeriod: param_stats_lookback,
+          cpuAverage: Math.round(cpu_average * 100) / 100,
+          cpuP95: Math.round(cpu_p95 * 100) / 100,
+          savings: idle_savings,
+          savingsCurrency: currency,
+          service: "Microsoft.Compute",
+          chartUrlField: vm['chartUrlField'],
+          recommendedAction: "idle",
+          policy_name: ds_applied_policy['name'],
+          idle_message: "",
+          idle_total_savings: ""
+        })
+      }
+      return
+    }
+
+    // === CROSS-FAMILY RIGHTSIZING ===
+
+    // Get current instance specs
+    var cpu_spec = parseInt(inst_info['specs']['vCPUs'])
+    var mem_spec_gb = parseFloat(inst_info['specs']['MemoryGB'])
+    var current_max_data_disks = parseInt(inst_info['specs']['MaxDataDiskCount'])
+    var current_max_nic = parseInt(inst_info['specs']['MaxNetworkInterfaces'])
+    var current_arch = inst_info['specs']['CpuArchitectureType']
+    var current_hyper_v = inst_info['specs']['HyperVGenerations'] || 'V1,V2'
+    var current_premium_io = inst_info['specs']['PremiumIO'] === true
+    var current_local_disk = inst_info['localDisk'] === true
+    var current_accel_net = inst_info['specs']['AcceleratedNetworkingEnabled'] === true
+    var current_is_amd = (current_arch === 'x64') && isAMD(instance_type)
+    var current_hyper_v_gens = current_hyper_v.split(',')
+
+    // Current VM's observed usage
+    var data_disk_count = vm['dataDiskCount'] || 0
+    var nic_count = vm['nicCount'] || 1
+
+    // Compute required resources
+    var safety = param_stats_safety_factor
+    var required_vcpus = Math.ceil((cpu_p95 / 100) * cpu_spec * safety)
+    if (required_vcpus < 1) { required_vcpus = 1 }
+
+    var required_mem_gb
+    if (has_mem_data) {
+      required_mem_gb = (mem_p95 / 100) * mem_spec_gb * safety
+      if (required_mem_gb < 1.0) { required_mem_gb = 1.0 }
+    } else {
+      required_mem_gb = mem_spec_gb
+    }
+
+    // Get pricing for current instance
+    var os_type = (vm['osType'] && vm['osType'].toLowerCase().indexOf('windows') !== -1) ? 'Windows' : 'Linux'
+    var pretty_region = ds_region_table[region]
+    if (!pretty_region) { return }
+
+    var current_price = null
+    if (ds_azure_vm_pricing[pretty_region] &&
+        ds_azure_vm_pricing[pretty_region][instance_type] &&
+        ds_azure_vm_pricing[pretty_region][instance_type][os_type]) {
+      current_price = ds_azure_vm_pricing[pretty_region][instance_type][os_type]['pricePerUnit']
+    }
+    if (!current_price) { return }
+
+    // Get available sizes for this subscription+region
+    var available_for_sub_region = {}
+    if (ds_azure_available_sizes[subscription_id] && ds_azure_available_sizes[subscription_id][region]) {
+      available_for_sub_region = ds_azure_available_sizes[subscription_id][region]
+    }
+
+    var best_candidate_name = null
+    var best_price = current_price
+
+    _.each(ds_azure_compute_instance_types, function(candidate) {
+      var cand_name = candidate['name']
+      if (!cand_name || cand_name === instance_type) { return }
+      if (candidate['superseded']) { return }
+
+      var cand_specs = candidate['specs']
+
+      // Gate 1: Not restricted/unavailable in this subscription+region
+      if (!available_for_sub_region[cand_name]) { return }
+
+      // Gate 2: Same CPU architecture
+      if (cand_specs['CpuArchitectureType'] !== current_arch) { return }
+
+      // Gate 3: Intel/AMD vendor gate (for x64 only)
+      if (current_arch === 'x64' && param_allow_mixed_x86_vendors !== 'Yes') {
+        var cand_is_amd = isAMD(cand_name)
+        if (cand_is_amd !== current_is_amd) { return }
+      }
+
+      // Gate 4: vCPU requirement
+      if (parseInt(cand_specs['vCPUs']) < required_vcpus) { return }
+
+      // Gate 5: Memory requirement
+      if (parseFloat(cand_specs['MemoryGB']) < required_mem_gb) { return }
+
+      // Gate 6: HyperV generation -- candidate must support all generations the current type does
+      var cand_hyper_v = cand_specs['HyperVGenerations'] || 'V1,V2'
+      var cand_hyper_v_gens = cand_hyper_v.split(',')
+      var gen_ok = _.every(current_hyper_v_gens, function(g) {
+        return _.contains(cand_hyper_v_gens, g.trim())
+      })
+      if (!gen_ok) { return }
+
+      // Gate 7: Premium storage
+      if (current_premium_io && cand_specs['PremiumIO'] !== true) { return }
+
+      // Gate 8: Local/temp disk
+      if (current_local_disk && candidate['localDisk'] !== true) { return }
+
+      // Gate 9: Data disk count
+      if (parseInt(cand_specs['MaxDataDiskCount']) < data_disk_count) { return }
+
+      // Gate 10: NIC count
+      if (parseInt(cand_specs['MaxNetworkInterfaces']) < nic_count) { return }
+
+      // Gate 11: Accelerated networking
+      if (current_accel_net && cand_specs['AcceleratedNetworkingEnabled'] !== true) { return }
+
+      // Pricing check
+      var cand_price = null
+      if (ds_azure_vm_pricing[pretty_region] &&
+          ds_azure_vm_pricing[pretty_region][cand_name] &&
+          ds_azure_vm_pricing[pretty_region][cand_name][os_type]) {
+        cand_price = ds_azure_vm_pricing[pretty_region][cand_name][os_type]['pricePerUnit']
+      }
+      if (!cand_price) { return }
+      if (cand_price >= best_price) { return }
+
+      best_price = cand_price
+      best_candidate_name = cand_name
+    })
+
+    if (best_candidate_name) {
+      var cand_info = instance_type_map[best_candidate_name]
+      var savings_ratio = (current_price - best_price) / current_price
+      var monthly_savings = cco_cost * savings_ratio
+
+      if (monthly_savings >= param_min_savings) {
+        var rec_details = [
+          "Resize Azure virtual machine ", vm['resourceName'],
+          " in Azure Subscription ", vm['accountName'],
+          " (", vm['accountID'], ") ",
+          "from ", instance_type, " to ", best_candidate_name
+        ].join('')
+
+        if (vm['chartUrl']) {
+          rec_details += "\n\n![Utilization Chart](" + vm['chartUrl'] + "&from_pt=true)"
+        }
+
+        rightsize_total_savings += monthly_savings
+        if (!has_mem_data) { rightsize_no_memory_count++ }
+
+        rightsize_list.push({
+          accountID: vm['accountID'],
+          accountName: vm['accountName'],
+          resourceGroup: vm['resourceGroup'],
+          resourceID: vm['resourceID'],
+          resourceName: vm['resourceName'],
+          resourceType: instance_type,
+          newResourceType: best_candidate_name,
+          region: region,
+          osType: vm['osType'],
+          tags: vm_tags.join(', '),
+          state: state,
+          dataDiskCount: vm['dataDiskCount'],
+          nicCount: nic_count,
+          imagePublisher: vm['imagePublisher'],
+          imageOffer: vm['imageOffer'],
+          imageSKU: vm['imageSKU'],
+          currentLocalDisk: current_local_disk ? "Yes" : "No",
+          recommendedLocalDisk: cand_info ? (cand_info['localDisk'] ? "Yes" : "No") : "Unknown",
+          hasMemoryData: has_mem_data ? "Yes" : "No",
+          cpuP95: Math.round(cpu_p95 * 100) / 100,
+          memP95: has_mem_data ? Math.round(mem_p95 * 100) / 100 : null,
+          requiredVcpus: required_vcpus,
+          requiredMemGB: Math.round(required_mem_gb * 100) / 100,
+          currentVcpus: cpu_spec,
+          currentMemGB: mem_spec_gb,
+          currentListPrice: Math.round(current_price * 730 * 100) / 100,
+          recommendedListPrice: Math.round(best_price * 730 * 100) / 100,
+          recommendationDetails: rec_details,
+          lookbackPeriod: param_stats_lookback,
+          savings: parseFloat(monthly_savings.toFixed(3)),
+          savingsCurrency: currency,
+          service: "Microsoft.Compute",
+          chartUrlField: vm['chartUrlField'],
+          recommendedAction: "resize",
+          policy_name: ds_applied_policy['name'],
+          rightsize_message: "",
+          rightsize_total_savings: ""
+        })
+      }
+    }
+  })
+
+  // Sort by savings descending
+  rightsize_list = _.sortBy(rightsize_list, function(item) { return item['savings'] * -1 })
+  idle_list = _.sortBy(idle_list, function(item) { return item['savings'] * -1 })
+
+  var instances_total = ds_azure_instances_metrics_organized.length.toString()
+
+  // Build messages
+  var idle_total_savings_str = currency + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), currency_sep)
+  var rightsize_total_savings_str = currency + ' ' + formatNumber(parseFloat(rightsize_total_savings).toFixed(2), currency_sep)
+
+  var applied_policy_url = "https://" + ds_flexera_api_hosts["ui"]
+  if (typeof(ds_applied_policy['policyAggregateId']) == 'string') {
+    applied_policy_url += "/orgs/" + rs_org_id + "/automation/applied-policies?policyId=" + ds_applied_policy['policyAggregateId']
+  } else {
+    applied_policy_url += "/orgs/" + rs_org_id + "/automation/applied-policies/projects/" + rs_project_id + "?policyId=" + ds_applied_policy['id']
+  }
+  var disclaimer = "The above settings can be modified by editing the [" + ds_applied_policy['name'] + "](" + applied_policy_url + ") applied policy.\n\n"
+
+  var instances_total_num = parseInt(instances_total)
+  var idle_pct = instances_total_num > 0 ? (idle_list.length / instances_total_num * 100).toFixed(2) : "0.00"
+  var rightsize_pct = instances_total_num > 0 ? (rightsize_list.length / instances_total_num * 100).toFixed(2) : "0.00"
+
+  var idle_message = [
+    "Out of ", instances_total, " Azure virtual machines analyzed, ",
+    idle_list.length.toString(), " (", idle_pct, "%) are idle and recommended for termination or power-off.\n\n",
+    "An instance is considered idle when its average CPU utilization over the lookback period falls below a ",
+    "size-adjusted threshold: \u22642 vCPUs: 5%, \u22644 vCPUs: 4%, \u22648 vCPUs: 3%, \u226416 vCPUs: 2%, >16 vCPUs: 1%. ",
+    "CPU usage was analyzed over the last ", param_stats_lookback.toString(), " days ",
+    "at a 15-minute metric granularity.\n\n",
+    disclaimer
+  ].join('')
+
+  var rightsize_message_parts = [
+    "Out of ", instances_total, " Azure virtual machines analyzed, ",
+    rightsize_list.length.toString(), " (", rightsize_pct, "%) are underutilized and recommended for cross-family rightsizing.\n\n",
+    "The recommended instance type is the cheapest available type that satisfies all compatibility requirements ",
+    "based on p95 CPU and memory utilization with a safety factor of ", param_stats_safety_factor.toString(), "x. ",
+    "Metrics were analyzed over the last ", param_stats_lookback.toString(), " days ",
+    "at a 15-minute granularity.\n\n"
+  ]
+
+  if (rightsize_no_memory_count > 0) {
+    rightsize_message_parts.push(
+      "**Note:** ", rightsize_no_memory_count.toString(), " of these recommendations were produced without memory utilization data. ",
+      "For these instances, the recommended type is required to have at least as much memory as the current instance, ",
+      "but actual memory usage is unknown. Install the Azure Monitor Agent with memory metrics enabled for more precise recommendations.\n\n"
+    )
+  }
+
+  rightsize_message_parts.push(disclaimer)
+  var rightsize_message = rightsize_message_parts.join('')
+
+  if (idle_list.length > 0) {
+    idle_list[0]['idle_message'] = idle_message
+    idle_list[0]['idle_total_savings'] = idle_total_savings_str
+  }
+
+  if (rightsize_list.length > 0) {
+    rightsize_list[0]['rightsize_message'] = rightsize_message
+    rightsize_list[0]['rightsize_total_savings'] = rightsize_total_savings_str
+  }
+
+  result = {
+    rightsize_list: rightsize_list,
+    idle_list: idle_list
+  }
+EOS
+end
+
+datasource "ds_rightsize_instances" do
+  run_script $js_rightsize_instances, $ds_idle_and_rightsize_instances
+end
+
+script "js_rightsize_instances", type: "javascript" do
+  parameters "ds_idle_and_rightsize_instances"
+  result "result"
+  code <<-'EOS'
+  result = [{
+    recommendedAction: "",
+    resourceID: "",
+    savings: "",
+    savingsCurrency: "",
+    tags: "",
+    rightsize_message: "",
+    rightsize_total_savings: ""
+  }]
+
+  result = ds_idle_and_rightsize_instances['rightsize_list'].concat(result)
+EOS
+end
+
+datasource "ds_idle_instances" do
+  run_script $js_idle_instances, $ds_idle_and_rightsize_instances
+end
+
+script "js_idle_instances", type: "javascript" do
+  parameters "ds_idle_and_rightsize_instances"
+  result "result"
+  code <<-'EOS'
+  result = [{
+    recommendedAction: "",
+    resourceID: "",
+    savings: "",
+    savingsCurrency: "",
+    tags: "",
+    idle_message: "",
+    idle_total_savings: ""
+  }]
+
+  result = ds_idle_and_rightsize_instances['idle_list'].concat(result)
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_utilization" do
+  validate_each $ds_rightsize_instances do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Underutilized Virtual Machines Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .rightsize_total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .rightsize_message }}{{ end }}
+    EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendedAction"), "resize"))
+    escalate $esc_email
+    escalate $esc_downsize_instances
+    hash_exclude "tags", "savings", "savingsCurrency", "cpuP95", "memP95"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "osType" do
+        label "Operating System"
+      end
+      field "dataDiskCount" do
+        label "Attached Disks (#)"
+      end
+      field "nicCount" do
+        label "Attached NICs (#)"
+      end
+      field "currentLocalDisk" do
+        label "Current Instance Local Disk"
+      end
+      field "recommendedLocalDisk" do
+        label "Recommended Instance Local Disk"
+      end
+      field "hasMemoryData" do
+        label "Memory Data Available"
+      end
+      field "state" do
+        label "Power State"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "cpuP95" do
+        label "CPU p95 %"
+      end
+      field "memP95" do
+        label "Memory p95 %"
+      end
+      field "requiredVcpus" do
+        label "Required vCPUs"
+      end
+      field "requiredMemGB" do
+        label "Required Memory (GB)"
+      end
+      field "currentVcpus" do
+        label "Current vCPUs"
+      end
+      field "currentMemGB" do
+        label "Current Memory (GB)"
+      end
+      field "currentListPrice" do
+        label "Current List Price (Monthly)"
+      end
+      field "recommendedListPrice" do
+        label "Recommended List Price (Monthly)"
+      end
+      field "imagePublisher" do
+        label "Image Publisher"
+      end
+      field "imageOffer" do
+        label "Image Offer"
+      end
+      field "imageSKU" do
+        label "Image SKU"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "chartUrlField" do
+        label "Utilization Chart External Link"
+        format "link-external"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+  validate_each $ds_idle_instances do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Idle Virtual Machines Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .idle_total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .idle_message }}{{ end }}
+    EOS
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendedAction"), "idle"))
+    escalate $esc_email
+    escalate $esc_poweroff_instances
+    escalate $esc_delete_instances
+    hash_exclude "tags", "savings", "savingsCurrency", "cpuAverage", "cpuP95"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "osType" do
+        label "Operating System"
+      end
+      field "dataDiskCount" do
+        label "Attached Disks (#)"
+      end
+      field "state" do
+        label "Power State"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "cpuP95" do
+        label "CPU p95 %"
+      end
+      field "imagePublisher" do
+        label "Image Publisher"
+      end
+      field "imageOffer" do
+        label "Image Offer"
+      end
+      field "imageSKU" do
+        label "Image SKU"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "chartUrlField" do
+        label "Utilization Chart External Link"
+        format "link-external"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+  validate $ds_no_subscriptions_error do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to access any Azure Subscriptions.
+
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end -}}
+
+    **Recommended Actions:**
+    1. Verify that the Azure credential has the required permissions to list subscriptions.
+    2. Ensure the credential has not expired or been revoked.
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email_errors_identified" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
+end
+
+escalation "esc_downsize_instances" do
+  automatic contains($param_automatic_action, "Downsize Underutilized Instances")
+  label "Downsize Underutilized Instances"
+  description "Approval to downsize all selected instances"
+  run "downsize_instances", data, $param_azure_endpoint
+end
+
+escalation "esc_poweroff_instances" do
+  automatic contains($param_automatic_action, "Power Off Idle Instances")
+  label "Power Off Idle Instances"
+  description "Approval to power off all selected instances"
+  run "poweroff_instances", data, $param_azure_endpoint, $param_skipshutdown
+end
+
+escalation "esc_delete_instances" do
+  automatic contains($param_automatic_action, "Delete Idle Instances")
+  label "Delete Idle Instances"
+  description "Approval to delete all selected instances"
+  run "delete_instances", data, $param_azure_endpoint
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define downsize_instances($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      if $instance["newResourceType"] != "Delete/Power Off Virtual Machine"
+        call downsize_instance($instance, $param_azure_endpoint) retrieve $downsize_response
+      end
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define downsize_instance($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2024-07-01"
+  $url = $host + $href + $params
+  task_label("PATCH " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "patch",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2024-07-01" },
+    body: {
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": $instance["newResourceType"]
+        }
+      }
+    }
+  )
+
+  task_label("Patch Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response patching Azure VM instance: " + $instance["id"] + " " + to_json($response)
+  else
+    task_label("Patch Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+define poweroff_instances($data, $param_azure_endpoint, $param_skipshutdown) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) retrieve $poweroff_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"] + "/powerOff"
+  $params = "?api-version=2024-07-01"
+  $query_strings = { "api-version": "2024-07-01" }
+
+  if $param_skipshutdown == "Forced"
+    $query_strings["skipShutdown"] = "true"
+    $params = $params + "&skipShutdown=true"
+  end
+
+  $url = $host + $href + $params
+  task_label("POST " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: $href,
+    query_strings: $query_strings
+  )
+
+  task_label("Power off Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response powering off Azure VM instance: " + $instance["id"] + " " + to_json($response)
+  else
+    task_label("Power off Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+define delete_instances($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_instance($instance, $param_azure_endpoint) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_instance($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["id"]
+  $params = "?api-version=2024-07-01"
+  $url = $host + $href + $params
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2024-07-01" }
+  )
+
+  task_label("Delete Azure VM instance response: " + $instance["id"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure VM instance: " + $instance["id"] + " " + to_json($response)
+  else
+    task_label("Delete Azure VM instance successful: " + $instance["id"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  # We check for errors at the end, and raise them all together
+  # Skip errors handled by this definition
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_parent_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
+  result "result"
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
+  end
+end
+
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
+  result "result"
+  code 'result = { path: "/"}'
+end
