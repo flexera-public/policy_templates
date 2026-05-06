@@ -4,6 +4,10 @@
 
 This policy template identifies Azure virtual machines that are idle or underutilized and recommends the cheapest available instance type across all Azure VM families that satisfies the workload's requirements. Unlike within-family rightsizing, this template scans every available VM SKU in the region and selects the optimal replacement based on observed p95 CPU and memory utilization, peak disk IOPS and throughput, a configurable safety factor, and a set of hard compatibility gates. Idle instances (those whose average CPU utilization and average network throughput both fall below configurable thresholds) are flagged for termination or power-off. Underutilized instances are recommended for cross-family rightsizing when a cheaper, compatible alternative is available. The policy integrates with Flexera Cloud Cost Optimization (CCO) to calculate estimated monthly savings from each recommendation.
 
+NOTE: It is recommended that you use this policy template *or* the [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances) policy template but not both at the same time to avoid duplicate recommendations.
+
+NOTE: This policy template only reports on underutilized and idle virtual machines. Please use the [Azure Overutilized Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/overutilized_compute_instances) policy template to report on overutilized instances.
+
 ## How It Works
 
 For each running Azure virtual machine, the policy collects CPU, memory, disk, and network metrics from Azure Monitor over the configured lookback period at 15-minute granularity. It then determines whether the instance is idle or underutilized:
