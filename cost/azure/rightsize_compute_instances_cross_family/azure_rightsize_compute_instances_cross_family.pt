@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.3.0",
+  version: "0.1.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -102,6 +102,15 @@ parameter "param_allow_mixed_x86_vendors" do
   category "Filters"
   label "Allow Intel/AMD Recommendations"
   description "Whether to allow rightsizing recommendations that change the CPU manufacturer between Intel and AMD (both x86_64 architecture). Such recommendations are generally safe but may affect licensing or workload performance."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_exclude_databricks" do
+  type "string"
+  category "Filters"
+  label "Exclude Databricks Instances"
+  description "Whether or not to filter virtual machines used for Azure Databricks from the results. If set to \"Yes\", virtual machines for Azure Databricks will not be included in the results."
   allowed_values "Yes", "No"
   default "No"
 end
@@ -600,16 +609,38 @@ script "js_azure_instances_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_instances_databricks_filtered" do
+  run_script $js_azure_instances_databricks_filtered, $ds_azure_instances_region_filtered, $param_exclude_databricks
+end
+
+script "js_azure_instances_databricks_filtered", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered", "param_exclude_databricks"
+  result "result"
+  code <<-'EOS'
+  if (param_exclude_databricks == "Yes") {
+    result = _.filter(ds_azure_instances_region_filtered, function(vm) {
+      var imageOffer = ""
+      if (typeof(vm['imageOffer']) == 'string') { imageOffer = vm['imageOffer'] }
+      var imagePublisher = ""
+      if (typeof(vm['imagePublisher']) == 'string') { imagePublisher = vm['imagePublisher'] }
+      return imageOffer.toLowerCase().indexOf('databricks') == -1 && imagePublisher.toLowerCase().indexOf('databricks') == -1
+    })
+  } else {
+    result = ds_azure_instances_region_filtered
+  }
+EOS
+end
+
 # Always filter to running instances only for cross-family rightsizing
 datasource "ds_azure_instances_status_filtered" do
-  run_script $js_azure_instances_status_filtered, $ds_azure_instances_region_filtered
+  run_script $js_azure_instances_status_filtered, $ds_azure_instances_databricks_filtered
 end
 
 script "js_azure_instances_status_filtered", type: "javascript" do
-  parameters "ds_azure_instances_region_filtered"
+  parameters "ds_azure_instances_databricks_filtered"
   result "result"
   code <<-'EOS'
-  result = _.filter(ds_azure_instances_region_filtered, function(vm) {
+  result = _.filter(ds_azure_instances_databricks_filtered, function(vm) {
     var status_codes = _.pluck(vm['statuses'], 'code')
     return _.contains(status_codes, 'PowerState/running')
   })

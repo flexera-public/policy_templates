@@ -8,12 +8,12 @@ This policy template identifies Azure virtual machines that are idle or underuti
 
 For each running Azure virtual machine, the policy collects CPU, memory, disk, and network metrics from Azure Monitor over the configured lookback period at 15-minute granularity. It then determines whether the instance is idle or underutilized:
 
-- **Idle detection:** If the average CPU utilization over the lookback period falls below a size-adjusted threshold AND the average network throughput is below 500 MB/day, the instance is flagged as idle. The CPU threshold scales with vCPU count: ≤2 vCPUs → 5%, ≤4 vCPUs → 4%, ≤8 vCPUs → 3%, ≤16 vCPUs → 2%, >16 vCPUs → 1%. If network data is unavailable, only the CPU threshold is applied. The estimated monthly savings equals the full CCO-reported monthly cost.
-- **Cross-family rightsizing:** For non-idle instances, the policy computes required vCPUs and memory using the p95 utilization values multiplied by the `Rightsizing Safety Factor`. Peak disk IOPS and throughput are derived from the maximum observed 15-minute interval values (read + write combined) and also multiplied by the safety factor. The policy then scans all available VM SKUs in the subscription and region, filtering candidates through compatibility gates, and selects the cheapest qualifying candidate that is also cheaper than the current instance. The estimated monthly savings is the CCO cost multiplied by the ratio of the price reduction.
+- **Idle detection:** If the average CPU utilization over the lookback period falls below a size-adjusted threshold AND the average network throughput is below 500 MiB/day, the instance is flagged as idle. The CPU threshold scales with vCPU count: ≤2 vCPUs → 5%, ≤4 vCPUs → 4%, ≤8 vCPUs → 3%, ≤16 vCPUs → 2%, >16 vCPUs → 1%. If network data is unavailable, only the CPU threshold is applied. The estimated monthly savings equals the full CCO-reported monthly cost.
+- **Rightsizing:** For non-idle instances, the policy computes required vCPUs and memory using the p95 utilization values multiplied by the `Rightsizing Safety Factor`. Peak disk IOPS and throughput are derived from the maximum observed 15-minute interval values (read + write combined) and also multiplied by the safety factor. The policy then scans all available VM SKUs in the subscription and region, filtering candidates through compatibility gates, and selects the cheapest qualifying candidate that is also cheaper than the current instance. The estimated monthly savings is the CCO cost multiplied by the ratio of the price reduction.
 
 **Compatibility gates applied to every candidate instance:**
 
-1. Must be available in the VM's subscription and region (via the Azure vmSizes API)
+1. Must be available in the VM's subscription and region (via the Azure Resource SKUs API; SKUs with `NotAvailableForSubscription` restrictions are excluded)
 1. Must share the same CPU architecture (x86_64 or Arm64) — never cross architecture families
 1. Intel/AMD vendor match enforced by default (configurable via `Allow Intel/AMD Recommendations`)
 1. Must meet the required vCPU count (p95 usage × safety factor, rounded up)
@@ -57,7 +57,8 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Allow/Deny Regions* - Allow or Deny entered regions. See the README for more details.
 - *Allow/Deny Regions List* - A list of allowed or denied regions. See the README for more details.
 - *Allow Intel/AMD Recommendations* - Whether to allow rightsizing recommendations that change the CPU manufacturer between Intel and AMD (both x86_64 architecture). Such recommendations are generally safe but may affect licensing or workload performance.
-- *Statistic Lookback Period* - How many days back to look at CPU and memory data for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
+- *Exclude Databricks Instances* - Whether or not to filter virtual machines used for Azure Databricks from the results. If set to "Yes", virtual machines for Azure Databricks will not be included in the results.
+- *Statistic Lookback Period* - How many days back to look at CPU, memory, disk, and network metrics for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
 - *Rightsizing Safety Factor* - A multiplier applied to p95 utilization when computing the required resources for a rightsized instance. For example, 1.5x means the recommended instance must handle 1.5 times the observed peak utilization.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action. Allowed values: `Downsize Underutilized Instances`, `Power Off Idle Instances`, `Delete Idle Instances`.
 - *Power Off Type* - Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances.
@@ -81,7 +82,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Compute/virtualMachines/read`
   - `Microsoft.Insights/metrics/read`
-  - `Microsoft.Compute/locations/vmSizes/read`
+  - `Microsoft.Compute/skus/read`
   - `Microsoft.Compute/virtualMachines/write`*
   - `Microsoft.Compute/virtualMachines/powerOff/action`*
   - `Microsoft.Compute/virtualMachines/delete`*
