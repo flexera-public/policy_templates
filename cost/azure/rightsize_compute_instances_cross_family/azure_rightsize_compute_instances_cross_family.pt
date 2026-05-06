@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.4",
+  version: "0.3.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -110,7 +110,7 @@ parameter "param_stats_lookback" do
   type "number"
   category "Statistics"
   label "Statistic Lookback Period"
-  description "How many days back to look at CPU and memory data for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  description "How many days back to look at CPU, memory, disk, and network metrics for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
   min_value 1
   max_value 90
   default 30
@@ -120,7 +120,7 @@ parameter "param_stats_safety_factor" do
   type "number"
   category "Statistics"
   label "Rightsizing Safety Factor"
-  description "A multiplier applied to p95 utilization when computing the required resources for a rightsized instance. For example, 1.5x means the recommended instance must handle 1.5 times the observed peak utilization."
+  description "A multiplier applied to p95 CPU/memory utilization and peak disk throughput/IOPS when computing the required resources for a rightsized instance. For example, 1.5x means the recommended instance must handle 1.5 times the observed peak utilization and disk activity."
   min_value 1
   default 1.5
 end
@@ -444,7 +444,7 @@ datasource "ds_azure_instance_statuses" do
     pagination $pagination_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Compute/virtualMachines"])
-    query "api-version", "2024-03-01"
+    query "api-version", "2024-07-01"
     query "statusOnly", "true"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
@@ -696,15 +696,15 @@ script "js_azure_metrics_batch", type: "javascript" do
     pagination: "pagination_azure",
     host: get_host_by_region(ds_azure_instances_batch[0].region),
     verb: "POST",
-    path: "subscriptions/" + ds_azure_instances_batch[0].subscriptionId + "/metrics:getBatch",
+    path: "/subscriptions/" + ds_azure_instances_batch[0].subscriptionId + "/metrics:getBatch",
     query_params: {
       "api-version": "2023-10-01",
       "starttime": start_date.toISOString(),
       "endtime": end_date.toISOString(),
       "interval": "PT15M",
-      "metricnames": "Percentage CPU,Available Memory Percentage",
+      "metricnames": "Percentage CPU,Available Memory Percentage,Disk Read Bytes,Disk Write Bytes,Disk Read Operations/Sec,Disk Write Operations/Sec,Network In Total,Network Out Total",
       "metricnamespace": "Microsoft.Compute/VirtualMachines",
-      "aggregation": "average,maximum,minimum"
+      "aggregation": "average,maximum,minimum,total"
     },
     headers: {
       "User-Agent": "RS Policies",
@@ -756,11 +756,11 @@ EOS
 end
 
 datasource "ds_azure_instances_metrics_organized" do
-  run_script $js_azure_instances_metrics_organized, $ds_azure_instances_metrics, $param_stats_lookback, rs_org_id, rs_project_id
+  run_script $js_azure_instances_metrics_organized, $ds_azure_instances_metrics, rs_org_id, rs_project_id
 end
 
 script "js_azure_instances_metrics_organized", type: "javascript" do
-  parameters "ds_azure_instances_metrics", "param_stats_lookback", "rs_org_id", "rs_project_id"
+  parameters "ds_azure_instances_metrics", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
   // Function to calculate percentiles from a sorted array
@@ -811,13 +811,13 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
     chartUrl += "&chxs=0,000000,12,-1,lt,000000,s,min90"
     chartUrl += "&chdl=" + encodeURIComponent("CPU Usage%25%20%20%20%20%20%20%20%20%20%20|Memory Usage%25")
     chartUrl += "&chdlp=b"
-    chartUrl += "&chtt=" + encodeURIComponent(stat_name_Proper + "+Resource+Utilization|" + encodeURIComponent(resource_name))
+    chartUrl += "&chtt=" + encodeURIComponent(stat_name_Proper + "+Resource+Utilization|" + resource_name)
     chartUrl += "&chma=10,10,10,10"
     chartUrl += "&chxr=1,0,100"
     chartUrl += "&chls=" + encodeURIComponent("4|4")
     chartUrl += "&chf=bg,s,FFFFFF00"
     chartUrl += "&chg=" + encodeURIComponent("20,50,5,5,CECECE")
-    chartUrl += "&chxl=" + encodeURIComponent("0:|" + encodeURIComponent(timeLabels))
+    chartUrl += "&chxl=" + encodeURIComponent("0:|" + timeLabels)
     chartUrl += "&chd=" + encodeURIComponent("t:" + cpuData + "|" + memData)
 
     return chartUrl
@@ -828,6 +828,12 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
   getIterator(ds_azure_instances_metrics).Each(function(vm) {
     var cpu_stats = null
     var mem_stats = null
+    var disk_read_stats = null
+    var disk_write_stats = null
+    var disk_read_ops_stats = null
+    var disk_write_ops_stats = null
+    var net_in_stats = null
+    var net_out_stats = null
 
     _.each(vm['value'], function(stat) {
       if (stat["timeseries"][0] != undefined) {
@@ -837,6 +843,30 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
 
         if (stat['name']['value'] == "Available Memory Percentage") {
           mem_stats = stat["timeseries"][0]["data"]
+        }
+
+        if (stat['name']['value'] == "Disk Read Bytes") {
+          disk_read_stats = stat["timeseries"][0]["data"]
+        }
+
+        if (stat['name']['value'] == "Disk Write Bytes") {
+          disk_write_stats = stat["timeseries"][0]["data"]
+        }
+
+        if (stat['name']['value'] == "Disk Read Operations/Sec") {
+          disk_read_ops_stats = stat["timeseries"][0]["data"]
+        }
+
+        if (stat['name']['value'] == "Disk Write Operations/Sec") {
+          disk_write_ops_stats = stat["timeseries"][0]["data"]
+        }
+
+        if (stat['name']['value'] == "Network In Total") {
+          net_in_stats = stat["timeseries"][0]["data"]
+        }
+
+        if (stat['name']['value'] == "Network Out Total") {
+          net_out_stats = stat["timeseries"][0]["data"]
         }
       }
     })
@@ -856,15 +886,11 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
     if (cpu_stats != null && cpu_stats != undefined) {
       _.each(cpu_stats, function(item) {
         if (item["average"] != undefined && item["average"] != null) {
-          cpu_all_stats.push(item["average"])
           cpu_avg += item["average"]
           cpu_avg_count += 1
         }
 
-        if (item["minimum"] != undefined && item["minimum"] != null) {
-          cpu_all_stats.push(item["minimum"])
-        }
-
+        // Use only maximum per interval for p95 — most conservative sizing metric
         if (item["maximum"] != undefined && item["maximum"] != null) {
           cpu_all_stats.push(item["maximum"])
         }
@@ -883,16 +909,9 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
 
     if (mem_stats != null && mem_stats != undefined) {
       _.each(mem_stats, function(item) {
-        if (item["average"] != undefined && item["average"] != null) {
-          mem_all_stats.push(100 - item["average"])
-        }
-
+        // minimum available % = maximum used % — most conservative sizing metric
         if (item["minimum"] != undefined && item["minimum"] != null) {
           mem_all_stats.push(100 - item["minimum"])
-        }
-
-        if (item["maximum"] != undefined && item["maximum"] != null) {
-          mem_all_stats.push(100 - item["maximum"])
         }
       })
     }
@@ -906,6 +925,52 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
     // Checking mem_all_stats.length (after processing) avoids a false positive when the
     // Azure metrics API returns a timeseries entry but with an empty data array.
     var has_mem_data = mem_all_stats.length > 0
+
+    // Disk throughput (bytes/sec): peak combined read+write across all 15-min intervals.
+    // "Disk Read/Write Bytes" are per-second rates; "maximum" gives peak rate per interval.
+    var disk_peak_bps = 0
+    var disk_intervals = Math.max(
+      disk_read_stats ? disk_read_stats.length : 0,
+      disk_write_stats ? disk_write_stats.length : 0
+    )
+    for (var di = 0; di < disk_intervals; di++) {
+      var read_bps = (disk_read_stats && disk_read_stats[di] && disk_read_stats[di]['maximum'] != null) ? disk_read_stats[di]['maximum'] : 0
+      var write_bps = (disk_write_stats && disk_write_stats[di] && disk_write_stats[di]['maximum'] != null) ? disk_write_stats[di]['maximum'] : 0
+      var interval_bps = read_bps + write_bps
+      if (interval_bps > disk_peak_bps) { disk_peak_bps = interval_bps }
+    }
+
+    // Disk IOPS: peak combined read+write ops/sec across all 15-min intervals.
+    // "Disk Read/Write Operations/Sec" are per-second rates; "maximum" gives peak rate per interval,
+    // which is the conservative choice for sizing gates (consistent with disk throughput above).
+    var disk_peak_iops = 0
+    var ops_intervals = Math.max(
+      disk_read_ops_stats ? disk_read_ops_stats.length : 0,
+      disk_write_ops_stats ? disk_write_ops_stats.length : 0
+    )
+    for (var oi = 0; oi < ops_intervals; oi++) {
+      var read_ops = (disk_read_ops_stats && disk_read_ops_stats[oi] && disk_read_ops_stats[oi]['maximum'] != null) ? disk_read_ops_stats[oi]['maximum'] : 0
+      var write_ops = (disk_write_ops_stats && disk_write_ops_stats[oi] && disk_write_ops_stats[oi]['maximum'] != null) ? disk_write_ops_stats[oi]['maximum'] : 0
+      var interval_ops = read_ops + write_ops
+      if (interval_ops > disk_peak_iops) { disk_peak_iops = interval_ops }
+    }
+
+    // Network: total bytes transferred (in + out) over the entire lookback period.
+    // "Network In/Out Total" use "total" aggregation (cumulative bytes per 15-min interval).
+    var net_total_bytes = 0
+    var has_net_data = false
+    if (net_in_stats && net_in_stats.length > 0) {
+      has_net_data = true
+      _.each(net_in_stats, function(item) {
+        if (item['total'] != null && item['total'] != undefined) { net_total_bytes += item['total'] }
+      })
+    }
+    if (net_out_stats && net_out_stats.length > 0) {
+      has_net_data = true
+      _.each(net_out_stats, function(item) {
+        if (item['total'] != null && item['total'] != undefined) { net_total_bytes += item['total'] }
+      })
+    }
 
     // Compute power state
     var status_codes = _.pluck(vm['statuses'], 'code')
@@ -931,10 +996,14 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
       statuses: vm['statuses'],
       state: state,
       has_mem_data: has_mem_data,
-      has_cpu_data: cpu_all_stats.length > 0,
+      has_cpu_data: cpu_avg_count > 0,
+      has_net_data: has_net_data,
       cpu_average: Math.round(cpu_avg * 100) / 100,
       cpu_p95: Math.round(cpu_p95 * 100) / 100,
       mem_p95: Math.round(mem_p95 * 100) / 100,
+      disk_peak_bps: disk_peak_bps,
+      disk_peak_iops: disk_peak_iops,
+      net_total_bytes: net_total_bytes,
       chartUrl: chartUrl,
       chartUrlField: chartUrlField,
       service: "Microsoft.Compute"
@@ -1145,67 +1214,95 @@ datasource "ds_azure_vm_pricing" do
   end
 end
 
+datasource "ds_azure_regions" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 datasource "ds_region_table" do
-  run_script $js_region_table
+  run_script $js_region_table, $ds_azure_regions
 end
 
 script "js_region_table", type: "javascript" do
+  parameters "ds_azure_regions"
   result "result"
   code <<-'EOS'
-  result = {
-    "ukwest": "UK West",
-    "usgovvirginia": "US Gov Virginia",
-    "eastus2": "US East 2",
-    "uaenorth": "AE North",
-    "southafricawest": "ZA West",
-    "francesouth": "FR South",
-    "westcentralus": "US West Central",
-    "koreacentral": "KR Central",
-    "westeurope": "EU West",
-    "southafricanorth": "ZA North",
-    "southeastasia": "AP Southeast",
-    "centralindia": "IN Central",
-    "switzerlandwest": "CH West",
-    "norwayeast": "NO East",
-    "germanywestcentral": "DE West Central",
-    "westus2": "US West 2",
-    "australiacentral": "AU Central",
-    "italynorth": "IT North",
-    "centralus": "US Central",
-    "germanynorth": "DE North",
-    "brazilsoutheast": "BR Southeast",
-    "southindia": "IN South",
-    "swedencentral": "SE Central",
-    "francecentral": "FR Central",
-    "australiasoutheast": "AU Southeast",
-    "northeurope": "EU North",
-    "koreasouth": "KR South",
-    "usgovtexas": "US Gov TX",
-    "polandcentral": "PL Central",
-    "japaneast": "JA East",
-    "westindia": "IN West",
-    "japanwest": "JA West",
-    "westus": "US West",
-    "jioindiawest": "IN West Jio",
-    "northcentralus": "US North Central",
-    "southcentralus": "US South Central",
-    "eastasia": "AP East",
-    "jioindiacentral": "IN Central Jio",
-    "australiacentral2": "AU Central 2",
-    "canadaeast": "CA East",
-    "eastus": "US East",
-    "uaecentral": "AE Central",
-    "norwaywest": "NO West",
-    "canadacentral": "CA Central",
-    "uksouth": "UK South",
-    "qatarcentral": "QA Central",
-    "swedensouth": "SE South",
-    "brazilsouth": "BR South",
-    "australiaeast": "AU East",
-    "switzerlandnorth": "CH North",
-    "usgovarizona": "US Gov AZ",
-    "westus3": "US West 3"
+  result = {}
+
+  // Maps regions.json "name" values to azure_vm_pricing.json region keys
+  var name_to_pricing_key = {
+    "UAE Central": "AE Central",
+    "UAE North": "AE North",
+    "East Asia": "AP East",
+    "Southeast Asia": "AP Southeast",
+    "Australia Central": "AU Central",
+    "Australia Central 2": "AU Central 2",
+    "Australia East": "AU East",
+    "Australia Southeast": "AU Southeast",
+    "Brazil South": "BR South",
+    "Brazil Southeast": "BR Southeast",
+    "Canada Central": "CA Central",
+    "Canada East": "CA East",
+    "Switzerland North": "CH North",
+    "Switzerland West": "CH West",
+    "Germany North": "DE North",
+    "Germany West Central": "DE West Central",
+    "Spain Central": "ES Central",
+    "North Europe": "EU North",
+    "West Europe": "EU West",
+    "France Central": "FR Central",
+    "France South": "FR South",
+    "Israel Central": "IL Central",
+    "Central India": "IN Central",
+    "Jio India Central": "IN Central Jio",
+    "South India": "IN South",
+    "West India": "IN West",
+    "Jio India West": "IN West Jio",
+    "Italy North": "IT North",
+    "Japan East": "JA East",
+    "Japan West": "JA West",
+    "Korea Central": "KR Central",
+    "Korea South": "KR South",
+    "Mexico Central": "MX Central",
+    "New Zealand North": "NZ North",
+    "Norway East": "NO East",
+    "Norway West": "NO West",
+    "Poland Central": "PL Central",
+    "Qatar Central": "QA Central",
+    "Sweden Central": "SE Central",
+    "South Africa North": "ZA North",
+    "South Africa West": "ZA West",
+    "UK South": "UK South",
+    "UK West": "UK West",
+    "Central US": "US Central",
+    "East US": "US East",
+    "East US 2": "US East 2",
+    "North Central US": "US North Central",
+    "South Central US": "US South Central",
+    "West US": "US West",
+    "West US 2": "US West 2",
+    "West US 3": "US West 3",
+    "West Central US": "US West Central",
+    "Austria East": "AT East",
+    "Belgium Central": "BE Central",
+    "Chile Central": "CL Central",
+    "Denmark East": "DK East",
+    "Indonesia Central": "ID Central",
+    "Malaysia West": "MY West",
+    "Sweden South": "SE South",
+    "US Gov Arizona": "US Gov AZ",
+    "US Gov Iowa": "US Gov Iowa",
+    "US Gov Texas": "US Gov TX",
+    "US Gov Virginia": "US Gov Virginia"
   }
+
+  _.each(ds_azure_regions, function(item) {
+    var pricing_key = name_to_pricing_key[item["name"]]
+    if (pricing_key) { result[item["region"]] = pricing_key }
+  })
 EOS
 end
 
@@ -1294,6 +1391,15 @@ script "js_idle_and_rightsize_instances", type: "javascript" do
     var has_mem_data = vm['has_mem_data'] === true
     var has_cpu_data = vm['has_cpu_data'] === true
 
+    // Disk and network metrics
+    var disk_peak_bps = vm['disk_peak_bps'] || 0
+    var disk_peak_iops = vm['disk_peak_iops'] || 0
+    var net_total_bytes = vm['net_total_bytes'] || 0
+    var has_net_data = vm['has_net_data'] === true
+    var network_idle_threshold_bytes = 524288000  // 500 MiB/day
+    var net_avg_bytes_per_day = (param_stats_lookback > 0) ? (net_total_bytes / param_stats_lookback) : 0
+    var is_net_idle = !has_net_data || (net_avg_bytes_per_day < network_idle_threshold_bytes)
+
     // Skip VMs with no CPU metrics — we cannot determine idle state or rightsizing requirements
     if (!has_cpu_data) { return }
 
@@ -1308,10 +1414,10 @@ script "js_idle_and_rightsize_instances", type: "javascript" do
     // Power state
     var state = vm['state'] || 'unknown'
 
-    // === IDLE DETECTION (average CPU, tiered threshold by vCPU count) ===
+    // === IDLE DETECTION (average CPU + network, tiered CPU threshold by vCPU count) ===
     var cpu_spec_for_idle = parseInt(inst_info['specs']['vCPUs'])
     var idle_cpu_threshold = getIdleCpuThreshold(cpu_spec_for_idle)
-    if (cpu_average < idle_cpu_threshold) {
+    if (cpu_average < idle_cpu_threshold && is_net_idle) {
       var idle_savings = parseFloat(parseFloat(cco_cost).toFixed(3))
 
       var rec_details_idle = [
@@ -1346,6 +1452,7 @@ script "js_idle_and_rightsize_instances", type: "javascript" do
           lookbackPeriod: param_stats_lookback,
           cpuAverage: Math.round(cpu_average * 100) / 100,
           cpuP95: Math.round(cpu_p95 * 100) / 100,
+          networkAvgMbPerDay: Math.round(net_avg_bytes_per_day / 1048576 * 100) / 100,
           savings: idle_savings,
           savingsCurrency: currency,
           service: "Microsoft.Compute",
@@ -1364,13 +1471,18 @@ script "js_idle_and_rightsize_instances", type: "javascript" do
     // Get current instance specs
     var cpu_spec = parseInt(inst_info['specs']['vCPUs'])
     var mem_spec_gb = parseFloat(inst_info['specs']['MemoryGB'])
-    var current_max_data_disks = parseInt(inst_info['specs']['MaxDataDiskCount'])
-    var current_max_nic = parseInt(inst_info['specs']['MaxNetworkInterfaces'])
     var current_arch = inst_info['specs']['CpuArchitectureType']
     var current_hyper_v = inst_info['specs']['HyperVGenerations'] || 'V1,V2'
     var current_premium_io = inst_info['specs']['PremiumIO'] === true
     var current_local_disk = inst_info['localDisk'] === true
-    var current_accel_net = inst_info['specs']['AcceleratedNetworkingEnabled'] === true
+    // Check whether any attached NIC actually has AcceleratedNetworking enabled.
+    // The VM list API does not return enableAcceleratedNetworking inline in networkProfile
+    // NIC references, so this will typically be false unless the API starts returning it.
+    // This avoids over-restricting recommendations for VMs whose instance type supports
+    // AccelNet but whose NICs do not actually have it enabled.
+    var current_accel_net = _.any(vm['networkInterfaces'] || [], function(nic) {
+      return nic['properties'] && nic['properties']['enableAcceleratedNetworking'] === true
+    })
     var current_is_amd = (current_arch === 'x64') && isAMD(instance_type)
     var current_hyper_v_gens = current_hyper_v.split(',')
 
@@ -1461,6 +1573,18 @@ script "js_idle_and_rightsize_instances", type: "javascript" do
       // Gate 11: Accelerated networking
       if (current_accel_net && cand_specs['AcceleratedNetworkingEnabled'] !== true) { return }
 
+      // Gate 12: Disk throughput (only applied when peak throughput data is available)
+      if (disk_peak_bps > 0) {
+        var cand_disk_bps = parseInt(cand_specs['UncachedDiskBytesPerSecond']) || 0
+        if (cand_disk_bps > 0 && cand_disk_bps < (disk_peak_bps * safety)) { return }
+      }
+
+      // Gate 13: Disk IOPS (only applied when peak IOPS data is available)
+      if (disk_peak_iops > 0) {
+        var cand_disk_iops = parseInt(cand_specs['UncachedDiskIOPS']) || 0
+        if (cand_disk_iops > 0 && cand_disk_iops < (disk_peak_iops * safety)) { return }
+      }
+
       // Pricing check
       var cand_price = null
       if (ds_azure_vm_pricing[pretty_region] &&
@@ -1517,6 +1641,9 @@ script "js_idle_and_rightsize_instances", type: "javascript" do
           hasMemoryData: has_mem_data ? "Yes" : "No",
           cpuP95: Math.round(cpu_p95 * 100) / 100,
           memP95: has_mem_data ? Math.round(mem_p95 * 100) / 100 : null,
+          diskPeakMbps: Math.round(disk_peak_bps / 1048576 * 100) / 100,
+          diskPeakIops: Math.round(disk_peak_iops * 100) / 100,
+          networkAvgMbPerDay: Math.round(net_avg_bytes_per_day / 1048576 * 100) / 100,
           requiredVcpus: required_vcpus,
           requiredMemGB: Math.round(required_mem_gb * 100) / 100,
           currentVcpus: cpu_spec,
@@ -1563,18 +1690,20 @@ script "js_idle_and_rightsize_instances", type: "javascript" do
   var idle_message = [
     "Out of ", instances_total, " Azure virtual machines analyzed, ",
     idle_list.length.toString(), " (", idle_pct, "%) are idle and recommended for termination or power-off.\n\n",
-    "An instance is considered idle when its average CPU utilization over the lookback period falls below a ",
-    "size-adjusted threshold: \u22642 vCPUs: 5%, \u22644 vCPUs: 4%, \u22648 vCPUs: 3%, \u226416 vCPUs: 2%, >16 vCPUs: 1%. ",
-    "CPU usage was analyzed over the last ", param_stats_lookback.toString(), " days ",
-    "at a 15-minute metric granularity.\n\n",
+    "An instance is considered idle when its average CPU utilization falls below a size-adjusted threshold ",
+    "(\u22642 vCPUs: 5%, \u22644 vCPUs: 4%, \u22648 vCPUs: 3%, \u226416 vCPUs: 2%, >16 vCPUs: 1%) ",
+    "AND its average network throughput is below 500 MiB/day. ",
+    "CPU and network usage were analyzed over the last ", param_stats_lookback.toString(), " days ",
+    "at a 15-minute metric granularity. If network data is unavailable, only the CPU threshold is applied.\n\n",
     disclaimer
   ].join('')
 
   var rightsize_message_parts = [
     "Out of ", instances_total, " Azure virtual machines analyzed, ",
-    rightsize_list.length.toString(), " (", rightsize_pct, "%) are underutilized and recommended for cross-family rightsizing.\n\n",
+    rightsize_list.length.toString(), " (", rightsize_pct, "%) are underutilized and recommended for rightsizing.\n\n",
     "The recommended instance type is the cheapest available type that satisfies all compatibility requirements ",
     "based on p95 CPU and memory utilization with a safety factor of ", param_stats_safety_factor.toString(), "x. ",
+    "Disk throughput and IOPS requirements are derived from peak 15-minute disk metrics and are also applied as compatibility gates. ",
     "Metrics were analyzed over the last ", param_stats_lookback.toString(), " days ",
     "at a 15-minute granularity.\n\n"
   ]
@@ -1621,6 +1750,12 @@ script "js_rightsize_instances", type: "javascript" do
     savings: "",
     savingsCurrency: "",
     tags: "",
+    cpuP95: "",
+    memP95: "",
+    diskPeakMbps: "",
+    diskPeakIops: "",
+    networkAvgMbPerDay: "",
+    chartUrlField: "",
     rightsize_message: "",
     rightsize_total_savings: ""
   }]
@@ -1643,6 +1778,10 @@ script "js_idle_instances", type: "javascript" do
     savings: "",
     savingsCurrency: "",
     tags: "",
+    cpuAverage: "",
+    cpuP95: "",
+    networkAvgMbPerDay: "",
+    chartUrlField: "",
     idle_message: "",
     idle_total_savings: ""
   }]
@@ -1667,7 +1806,7 @@ policy "pol_utilization" do
     check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendedAction"), "resize"))
     escalate $esc_email
     escalate $esc_downsize_instances
-    hash_exclude "tags", "savings", "savingsCurrency", "cpuP95", "memP95"
+    hash_exclude "tags", "savings", "savingsCurrency", "cpuP95", "memP95", "diskPeakMbps", "diskPeakIops", "networkAvgMbPerDay", "chartUrlField", "requiredVcpus", "requiredMemGB", "currentListPrice", "recommendedListPrice"
     export do
       resource_level true
       field "accountID" do
@@ -1691,14 +1830,14 @@ policy "pol_utilization" do
       field "recommendationDetails" do
         label "Recommendation"
       end
+      field "region" do
+        label "Region"
+      end
       field "resourceType" do
         label "Instance Size"
       end
       field "newResourceType" do
         label "Recommended Instance Size"
-      end
-      field "region" do
-        label "Region"
       end
       field "osType" do
         label "Operating System"
@@ -1736,17 +1875,26 @@ policy "pol_utilization" do
       field "memP95" do
         label "Memory p95 %"
       end
+      field "diskPeakMbps" do
+        label "Disk Peak Throughput (MiB/s)"
+      end
+      field "diskPeakIops" do
+        label "Disk Peak IOPS"
+      end
+      field "networkAvgMbPerDay" do
+        label "Network Average (MiB/day)"
+      end
       field "requiredVcpus" do
         label "Required vCPUs"
       end
       field "requiredMemGB" do
-        label "Required Memory (GB)"
+        label "Required Memory (GiB)"
       end
       field "currentVcpus" do
         label "Current vCPUs"
       end
       field "currentMemGB" do
-        label "Current Memory (GB)"
+        label "Current Memory (GiB)"
       end
       field "currentListPrice" do
         label "Current List Price (Monthly)"
@@ -1788,7 +1936,7 @@ policy "pol_utilization" do
     escalate $esc_email
     escalate $esc_poweroff_instances
     escalate $esc_delete_instances
-    hash_exclude "tags", "savings", "savingsCurrency", "cpuAverage", "cpuP95"
+    hash_exclude "tags", "savings", "savingsCurrency", "cpuAverage", "cpuP95", "networkAvgMbPerDay", "chartUrlField"
     export do
       resource_level true
       field "accountID" do
@@ -1812,14 +1960,14 @@ policy "pol_utilization" do
       field "recommendationDetails" do
         label "Recommendation"
       end
+      field "region" do
+        label "Region"
+      end
       field "resourceType" do
         label "Instance Size"
       end
       field "newResourceType" do
         label "Recommended Instance Size"
-      end
-      field "region" do
-        label "Region"
       end
       field "osType" do
         label "Operating System"
@@ -1844,6 +1992,9 @@ policy "pol_utilization" do
       end
       field "cpuP95" do
         label "CPU p95 %"
+      end
+      field "networkAvgMbPerDay" do
+        label "Network Average (MiB/day)"
       end
       field "imagePublisher" do
         label "Image Publisher"
@@ -1937,7 +2088,7 @@ define downsize_instances($data, $param_azure_endpoint) return $all_responses do
 
   foreach $instance in $data do
     sub on_error: handle_error() do
-      if $instance["newResourceType"] != "Delete/Power Off Virtual Machine"
+      if $instance["newResourceType"] != "Delete Virtual Machine"
         call downsize_instance($instance, $param_azure_endpoint) retrieve $downsize_response
       end
     end
@@ -1951,7 +2102,7 @@ end
 define downsize_instance($instance, $param_azure_endpoint) return $response do
   $host = $param_azure_endpoint
   $href = $instance["id"]
-  $params = "?api-version=2024-07-01"
+  $params = "?api-version=2023-07-01"
   $url = $host + $href + $params
   task_label("PATCH " + $url)
 
@@ -1961,9 +2112,9 @@ define downsize_instance($instance, $param_azure_endpoint) return $response do
     verb: "patch",
     host: $host,
     href: $href,
-    query_strings: { "api-version": "2024-07-01" },
+    query_strings: { "api-version": "2023-07-01" },
     body: {
-      "properties": {
+      "properties":{
         "hardwareProfile": {
           "vmSize": $instance["newResourceType"]
         }
@@ -1972,10 +2123,10 @@ define downsize_instance($instance, $param_azure_endpoint) return $response do
   )
 
   task_label("Patch Azure VM instance response: " + $instance["id"] + " " + to_json($response))
-  $$all_responses << to_json({"req": "PATCH " + $url, "resp": $response})
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response patching Azure VM instance: " + $instance["id"] + " " + to_json($response)
+    raise "Unexpected response patching Azure VM instance: "+ $instance["id"] + " " + to_json($response)
   else
     task_label("Patch Azure VM instance successful: " + $instance["id"])
   end
@@ -1998,16 +2149,16 @@ end
 define poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) return $response do
   $host = $param_azure_endpoint
   $href = $instance["id"] + "/powerOff"
-  $params = "?api-version=2024-07-01"
-  $query_strings = { "api-version": "2024-07-01" }
+  $params = "?api-version=2023-07-01"
+  $url = $host + $href + $params
+  task_label("POST " + $url)
+
+  $query_strings = { "api-version": "2023-07-01" }
 
   if $param_skipshutdown == "Forced"
     $query_strings["skipShutdown"] = "true"
     $params = $params + "&skipShutdown=true"
   end
-
-  $url = $host + $href + $params
-  task_label("POST " + $url)
 
   $response = http_request(
     auth: $$auth_azure,
@@ -2022,7 +2173,7 @@ define poweroff_instance($instance, $param_azure_endpoint, $param_skipshutdown) 
   $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response powering off Azure VM instance: " + $instance["id"] + " " + to_json($response)
+    raise "Unexpected response powering off Azure VM instance: "+ $instance["id"] + " " + to_json($response)
   else
     task_label("Power off Azure VM instance successful: " + $instance["id"])
   end
@@ -2045,7 +2196,7 @@ end
 define delete_instance($instance, $param_azure_endpoint) return $response do
   $host = $param_azure_endpoint
   $href = $instance["id"]
-  $params = "?api-version=2024-07-01"
+  $params = "?api-version=2023-07-01"
   $url = $host + $href + $params
   task_label("DELETE " + $url)
 
@@ -2055,14 +2206,14 @@ define delete_instance($instance, $param_azure_endpoint) return $response do
     verb: "delete",
     host: $host,
     href: $href,
-    query_strings: { "api-version": "2024-07-01" }
+    query_strings: { "api-version": "2023-07-01" }
   )
 
   task_label("Delete Azure VM instance response: " + $instance["id"] + " " + to_json($response))
   $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
-    raise "Unexpected response deleting Azure VM instance: " + $instance["id"] + " " + to_json($response)
+    raise "Unexpected response deleting Azure VM instance: "+ $instance["id"] + " " + to_json($response)
   else
     task_label("Delete Azure VM instance successful: " + $instance["id"])
   end

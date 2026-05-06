@@ -2,14 +2,14 @@
 
 ## What It Does
 
-This policy template identifies Azure virtual machines that are idle or underutilized and recommends the cheapest available instance type across all Azure VM families that satisfies the workload's requirements. Unlike within-family rightsizing, this template scans every available VM SKU in the region and selects the optimal replacement based on observed p95 CPU and memory utilization, a configurable safety factor, and a set of hard compatibility gates. Idle instances (those whose average CPU utilization falls below a configurable threshold) are flagged for termination or power-off. Underutilized instances are recommended for cross-family rightsizing when a cheaper, compatible alternative is available. The policy integrates with Flexera Cloud Cost Optimization (CCO) to calculate estimated monthly savings from each recommendation.
+This policy template identifies Azure virtual machines that are idle or underutilized and recommends the cheapest available instance type across all Azure VM families that satisfies the workload's requirements. Unlike within-family rightsizing, this template scans every available VM SKU in the region and selects the optimal replacement based on observed p95 CPU and memory utilization, peak disk IOPS and throughput, a configurable safety factor, and a set of hard compatibility gates. Idle instances (those whose average CPU utilization and average network throughput both fall below configurable thresholds) are flagged for termination or power-off. Underutilized instances are recommended for cross-family rightsizing when a cheaper, compatible alternative is available. The policy integrates with Flexera Cloud Cost Optimization (CCO) to calculate estimated monthly savings from each recommendation.
 
 ## How It Works
 
-For each running Azure virtual machine, the policy collects CPU and memory metrics from Azure Monitor over the configured lookback period at 15-minute granularity. It then determines whether the instance is idle or underutilized:
+For each running Azure virtual machine, the policy collects CPU, memory, disk, and network metrics from Azure Monitor over the configured lookback period at 15-minute granularity. It then determines whether the instance is idle or underutilized:
 
-- **Idle detection:** If the average CPU utilization over the lookback period falls below a size-adjusted threshold, the instance is flagged as idle. The threshold scales with vCPU count to account for the fact that larger instances handling real workloads typically show lower overall CPU percentages: ≤2 vCPUs → 5%, ≤4 vCPUs → 4%, ≤8 vCPUs → 3%, ≤16 vCPUs → 2%, >16 vCPUs → 1%. The estimated monthly savings equals the full CCO-reported monthly cost.
-- **Cross-family rightsizing:** For non-idle instances, the policy computes required vCPUs and memory using the p95 utilization values multiplied by the `Rightsizing Safety Factor`. It then scans all available VM SKUs in the subscription and region, filtering candidates through compatibility gates, and selects the cheapest qualifying candidate that is also cheaper than the current instance. The estimated monthly savings is the CCO cost multiplied by the ratio of the price reduction.
+- **Idle detection:** If the average CPU utilization over the lookback period falls below a size-adjusted threshold AND the average network throughput is below 500 MB/day, the instance is flagged as idle. The CPU threshold scales with vCPU count: ≤2 vCPUs → 5%, ≤4 vCPUs → 4%, ≤8 vCPUs → 3%, ≤16 vCPUs → 2%, >16 vCPUs → 1%. If network data is unavailable, only the CPU threshold is applied. The estimated monthly savings equals the full CCO-reported monthly cost.
+- **Cross-family rightsizing:** For non-idle instances, the policy computes required vCPUs and memory using the p95 utilization values multiplied by the `Rightsizing Safety Factor`. Peak disk IOPS and throughput are derived from the maximum observed 15-minute interval values (read + write combined) and also multiplied by the safety factor. The policy then scans all available VM SKUs in the subscription and region, filtering candidates through compatibility gates, and selects the cheapest qualifying candidate that is also cheaper than the current instance. The estimated monthly savings is the CCO cost multiplied by the ratio of the price reduction.
 
 **Compatibility gates applied to every candidate instance:**
 
@@ -24,6 +24,8 @@ For each running Azure virtual machine, the policy collects CPU and memory metri
 1. Data disk capacity preserved (candidate must support at least as many data disks as currently attached)
 1. NIC count preserved (candidate must support at least as many NICs as currently attached)
 1. Accelerated networking preserved (if current instance has accelerated networking, candidate must too)
+1. Disk throughput preserved (candidate `UncachedDiskBytesPerSecond` must meet peak observed throughput × safety factor)
+1. Disk IOPS preserved (candidate `UncachedDiskIOPS` must meet peak observed IOPS × safety factor)
 
 ### Policy Savings Details
 
@@ -36,6 +38,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
 - Instances for which memory utilization data is not available (Azure Monitor Agent not installed) will use the current memory size as the minimum memory requirement. These recommendations are marked with `Memory Data Available: No` in the incident report.
+- When disk metric data is unavailable (no disk activity observed), disk throughput and IOPS gates are skipped and the fields will show 0 in the incident report.
 
 ## Input Parameters
 

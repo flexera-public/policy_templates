@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.3.0
+
+- Added disk throughput and IOPS as compatibility sizing gates: `Disk Read/Write Bytes` and `Disk Read/Write Operations/Sec` metrics are collected from Azure Monitor and used to compute peak combined throughput (MB/s) and peak IOPS across the lookback period. Candidate instance types whose `UncachedDiskBytesPerSecond` or `UncachedDiskIOPS` spec falls below the observed peak (multiplied by the safety factor) are excluded from recommendations.
+- Added network throughput as an idle detection signal: `Network In Total` and `Network Out Total` metrics are collected from Azure Monitor and used to compute average daily network bytes. An instance is now only considered idle when both its average CPU falls below the size-adjusted threshold AND its average network throughput is below 500 MB/day. If network data is unavailable, only the CPU threshold is applied.
+- Added `Disk Peak Throughput (MB/s)`, `Disk Peak IOPS`, and `Network Average (MB/day)` fields to the rightsizing incident report.
+- Added `Network Average (MB/day)` field to the idle instances incident report.
+
+## v0.2.5
+
+- Fixed issue where `param_stats_lookback` was passed to the metrics organization script but never used. The parameter is now only passed to the scripts that actually use it.
+- Fixed issue where the `has_cpu_data` flag was derived from `cpu_all_stats` (which includes minimum and maximum values) rather than from whether any `average` data points were present. Since idle detection uses only average CPU values, a VM with only min/max data (no averages) would incorrectly have `has_cpu_data = true` and `cpu_average = 0`, causing a false idle classification. The flag is now based on `cpu_avg_count > 0` to be consistent with idle detection logic.
+- Fixed API version inconsistency: `ds_azure_instance_statuses` now uses `2024-07-01` to match `ds_azure_instances`, as both call the same Azure Compute VM list endpoint.
+- Fixed region coverage: replaced the hardcoded 54-entry region-to-pricing-key table with a dynamic lookup driven by `data/azure/regions.json`. All regions in that file are now mapped automatically; additional regions not in `regions.json` (Austria East, Belgium Central, Chile Central, Denmark East, Indonesia Central, Malaysia West, Sweden South, and US Government regions) are still covered via hardcoded fallbacks.
+- Fixed issue where `chartUrlField` was missing from `hash_exclude` in both validate blocks. Because the chart URL contains timestamped metric data, its value changes on every policy run, causing incident hashes to change weekly and incidents to cycle (resolve then reopen) unnecessarily.
+- Fixed issue where the Accelerated Networking compatibility gate used the instance type's `AcceleratedNetworkingEnabled` capability flag rather than whether the VM's NICs actually have AccelNet enabled. The gate now checks inline NIC properties from the VM list response. Since the Azure VM list API does not return `enableAcceleratedNetworking` on NIC reference objects, the gate effectively defaults to off, expanding the recommendation pool for VMs whose instance type supports AccelNet but whose NICs do not have it enabled.
+
 ## v0.2.4
 
 - Fixed issue where `Memory Data Available` could incorrectly show `"Yes"` when the Azure metrics API returned a timeseries entry with an empty data array. The `has_mem_data` flag is now derived from whether any memory data points were actually processed, rather than whether the timeseries object was present.
