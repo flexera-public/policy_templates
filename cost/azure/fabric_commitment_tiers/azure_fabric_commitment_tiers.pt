@@ -1,0 +1,983 @@
+name "Azure Microsoft Fabric Commitment Tier Recommendations"
+rs_pt_ver 20180301
+type "policy"
+short_description "Identifies Azure Microsoft Fabric capacities where switching from Pay-As-You-Go pricing to a 1-year reserved capacity would reduce costs. Evaluates historical CU utilization from Azure Monitor over the configured lookback period and recommends the most cost-effective F-SKU reservation tier. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/fabric_commitment_tiers) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/azure/fabric_commitment_tiers"
+severity "medium"
+category "Cost"
+default_frequency "weekly"
+info(
+  version: "0.2.0",
+  provider: "Azure",
+  service: "Microsoft Fabric",
+  policy_set: "Commitment Tiers",
+  recommendation_type: "Rate Reduction",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential monthly savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at Azure Monitor CU utilization data when calculating average and peak utilization for each capacity. This value cannot be set higher than 90 because Azure Monitor does not retain platform metrics for longer than 93 days, and a conservative limit of 90 days is applied."
+  min_value 7
+  max_value 90
+  default 30
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+pagination "pagination_azure_pricing" do
+  get_page_marker do
+    body_path "NextPageLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+    host_table = {
+      "api.optima.flexeraeng.com": {
+        flexera: "api.flexera.com",
+        fsm: "api.fsm.flexeraeng.com",
+        grs: "governance.rightscale.com",
+        optima: "api.optima.flexeraeng.com",
+        api: "api.flexera.com",
+        ui: "app.flexera.com",
+        tld: "flexera.com"
+      },
+      "api.optima-eu.flexeraeng.com": {
+        flexera: "api.flexera.eu",
+        fsm: "api.fsm-eu.flexeraeng.com",
+        grs: "governance.rightscale.com",
+        optima: "api.optima-eu.flexeraeng.com",
+        api: "api.flexera.eu",
+        ui: "app.flexera.eu",
+        tld: "flexera.eu"
+      },
+      "api.optima-apac.flexeraeng.com": {
+        flexera: "api.flexera.au",
+        fsm: "api.fsm-apac.flexeraeng.com",
+        grs: "governance.rightscale.com",
+        optima: "api.optima-apac.flexeraeng.com",
+        api: "api.flexera.au",
+        ui: "app.flexera.au",
+        tld: "flexera.au"
+      }
+    }
+    result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "name", jmes_path(response, "name")
+  end
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency_target" do
+  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency_target", type: "javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  // Default to USD if currency is not found
+  result = ds_currency_reference['USD']
+
+  if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
+    result = ds_currency_reference[ds_currency_code['value']]
+  }
+EOS
+end
+
+datasource "ds_conditional_currency_conversion" do
+  run_script $js_conditional_currency_conversion, $ds_currency_target
+end
+
+script "js_conditional_currency_conversion", type: "javascript" do
+  parameters "ds_currency_target"
+  result "result"
+  code <<-'EOS'
+  result = []
+  // Prices from Azure Retail Prices API are always in USD; convert only if org currency differs
+  if (ds_currency_target['code'] != 'USD') {
+    result = [{ from: 'USD' }]
+  }
+EOS
+end
+
+datasource "ds_currency_conversion" do
+  iterate $ds_conditional_currency_conversion
+  request do
+    host "api.xe-auth.flexeraeng.com"
+    path "/prod/{proxy+}"
+    query "from", val(iter_item, "from")
+    query "to", val($ds_currency_target, "code")
+    query "amount", "1"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 404, 502]
+  end
+  result do
+    encoding "json"
+    field "from", jmes_path(response, "from")
+    field "to", jmes_path(response, "to")
+    field "amount", jmes_path(response, "amount")
+    field "year", jmes_path(response, "year")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
+end
+
+script "js_currency", type: "javascript" do
+  parameters "ds_currency_target", "ds_currency_conversion"
+  result "result"
+  code <<-'EOS'
+  result = ds_currency_target
+  result['exchange_rate'] = 1
+
+  if (ds_currency_conversion.length > 0) {
+    currency_code = ds_currency_target['code']
+    current_month = parseInt(new Date().toISOString().split('-')[1])
+
+    conversion_block = _.find(ds_currency_conversion[0]['to'][currency_code], function(item) {
+      return item['month'] == current_month
+    })
+
+    if (conversion_block != undefined) {
+      result['exchange_rate'] = conversion_block['monthlyAverage']
+    }
+  }
+EOS
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2022-12-01"
+    header "User-Agent", "RS Policies"
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-'EOS'
+    if (param_subscriptions_list.length > 0) {
+      result = _.filter(ds_azure_subscriptions, function(subscription) {
+        include_subscription = _.contains(param_subscriptions_list, subscription["id"]) ||
+                               _.contains(param_subscriptions_list, subscription["name"])
+        if (param_subscriptions_allow_or_deny == "Deny") {
+          include_subscription = !include_subscription
+        }
+        return include_subscription
+      })
+    } else {
+      result = ds_azure_subscriptions
+    }
+EOS
+end
+
+datasource "ds_no_subscriptions_error" do
+  run_script $js_no_subscriptions_error, $ds_azure_subscriptions, $ds_applied_policy
+end
+
+script "js_no_subscriptions_error", type: "javascript" do
+  parameters "ds_azure_subscriptions", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (ds_azure_subscriptions.length == 0) {
+    result = [{
+      policy_name: ds_applied_policy['name'],
+      error: "No Azure Subscriptions found. This is usually caused by a lack of permissions or an expired/invalid credential."
+    }]
+  }
+EOS
+end
+
+datasource "ds_fabric_capacities" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Fabric/capacities"])
+    query "api-version", "2023-11-01"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "location", jmes_path(col_item, "location")
+      field "sku", jmes_path(col_item, "sku.name")
+      field "state", jmes_path(col_item, "properties.state")
+      field "tags", jmes_path(col_item, "tags")
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_fabric_capacities_normalized" do
+  run_script $js_fabric_capacities_normalized, $ds_fabric_capacities
+end
+
+script "js_fabric_capacities_normalized", type: "javascript" do
+  parameters "ds_fabric_capacities"
+  result "result"
+  code <<-'EOS'
+    result = _.map(ds_fabric_capacities, function(cap) {
+      var parts = cap["id"].split("/")
+      var rg = ""
+      for (var i = 0; i < parts.length; i++) {
+        if (parts[i].toLowerCase() === "resourcegroups" && i + 1 < parts.length) {
+          rg = parts[i + 1]
+          break
+        }
+      }
+      return {
+        id: cap["id"],
+        name: cap["name"],
+        location: cap["location"],
+        resourceGroup: rg,
+        sku: cap["sku"],
+        state: cap["state"],
+        tags: cap["tags"],
+        subscriptionId: cap["subscriptionId"],
+        subscriptionName: cap["subscriptionName"]
+      }
+    })
+EOS
+end
+
+datasource "ds_pricing_regions" do
+  run_script $js_pricing_regions, $ds_fabric_capacities_normalized
+end
+
+script "js_pricing_regions", type: "javascript" do
+  parameters "ds_fabric_capacities_normalized"
+  result "result"
+  code <<-'EOS'
+    var regions = _.uniq(_.pluck(ds_fabric_capacities_normalized, "location"))
+    result = _.map(regions, function(r) { return { region: r } })
+EOS
+end
+
+datasource "ds_fabric_pricing" do
+  iterate $ds_pricing_regions
+  request do
+    pagination $pagination_azure_pricing
+    host "prices.azure.com"
+    path "/api/retail/prices"
+    query "api-version", "2023-01-01-preview"
+    query "$filter", join(["serviceName eq 'Microsoft Fabric' and armRegionName eq '", val(iter_item, "region"), "'"])
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Items[*]") do
+      field "region", val(iter_item, "region")
+      field "skuName", jmes_path(col_item, "skuName")
+      field "meterName", jmes_path(col_item, "meterName")
+      field "productName", jmes_path(col_item, "productName")
+      field "unitOfMeasure", jmes_path(col_item, "unitOfMeasure")
+      field "retailPrice", jmes_path(col_item, "retailPrice")
+      field "unitPrice", jmes_path(col_item, "unitPrice")
+      field "currencyCode", jmes_path(col_item, "currencyCode")
+      field "priceType", jmes_path(col_item, "type")
+      field "reservationTerm", jmes_path(col_item, "reservationTerm")
+    end
+  end
+end
+
+datasource "ds_fabric_metrics_raw" do
+  iterate $ds_fabric_capacities_normalized
+  request do
+    run_script $js_fabric_metrics_request, iter_item, $param_stats_lookback, $param_azure_endpoint
+  end
+  result do
+    encoding "json"
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "subscriptionId", val(iter_item, "subscriptionId")
+    field "subscriptionName", val(iter_item, "subscriptionName")
+    field "resourceGroup", val(iter_item, "resourceGroup")
+    field "location", val(iter_item, "location")
+    field "sku", val(iter_item, "sku")
+    field "state", val(iter_item, "state")
+    field "tags", val(iter_item, "tags")
+    field "data", jmes_path(response, "value[0].timeseries[0].data")
+  end
+end
+
+script "js_fabric_metrics_request", type: "javascript" do
+  parameters "capacity", "param_stats_lookback", "param_azure_endpoint"
+  result "request"
+  code <<-'EOS'
+    var end_date = new Date()
+    var start_date = new Date()
+    start_date.setDate(start_date.getDate() - param_stats_lookback)
+    var timespan = start_date.toISOString() + "/" + end_date.toISOString()
+
+    request = {
+      auth: "auth_azure",
+      verb: "GET",
+      host: param_azure_endpoint,
+      path: "/subscriptions/" + capacity["subscriptionId"] + "/resourceGroups/" + capacity["resourceGroup"] + "/providers/Microsoft.Fabric/capacities/" + capacity["name"] + "/providers/microsoft.insights/metrics",
+      query_params: {
+        "api-version": "2023-10-01",
+        "metricnames": "CapacityUnitConsumptionPercent",
+        "aggregation": "Average,Maximum",
+        "timespan": timespan,
+        "interval": "P1D",
+        "metricnamespace": "microsoft.fabric/capacities"
+      },
+      headers: { "User-Agent": "RS Policies" },
+      ignore_status: [400, 403, 404]
+    }
+EOS
+end
+
+datasource "ds_fabric_metrics" do
+  run_script $js_fabric_metrics, $ds_fabric_metrics_raw
+end
+
+script "js_fabric_metrics", type: "javascript" do
+  parameters "ds_fabric_metrics_raw"
+  result "result"
+  code <<-'EOS'
+    result = []
+
+    _.each(ds_fabric_metrics_raw, function(cap) {
+      var data = cap["data"] || []
+      var daily_avg_pcts = []
+      var daily_max_pcts = []
+      var active_days = 0
+
+      _.each(data, function(point) {
+        var avg = point["average"]
+        var max = point["maximum"]
+        if (avg != null && !isNaN(avg)) {
+          daily_avg_pcts.push(avg)
+          if (avg > 0) { active_days++ }
+        }
+        if (max != null && !isNaN(max)) {
+          daily_max_pcts.push(max)
+        }
+      })
+
+      var days_observed = daily_avg_pcts.length
+      var avg_util_pct = 0
+      var peak_util_pct = 0
+
+      if (active_days > 0) {
+        var active_avgs = _.filter(daily_avg_pcts, function(v) { return v > 0 })
+        avg_util_pct = _.reduce(active_avgs, function(sum, v) { return sum + v }, 0) / active_avgs.length
+      }
+
+      if (daily_max_pcts.length > 0) {
+        peak_util_pct = _.max(daily_max_pcts)
+      }
+
+      result.push({
+        id: cap["id"],
+        name: cap["name"],
+        subscriptionId: cap["subscriptionId"],
+        subscriptionName: cap["subscriptionName"],
+        resourceGroup: cap["resourceGroup"],
+        location: cap["location"],
+        sku: cap["sku"],
+        state: cap["state"],
+        tags: cap["tags"],
+        activeDays: active_days,
+        daysObserved: days_observed,
+        avgUtilPct: avg_util_pct,
+        peakUtilPct: peak_util_pct
+      })
+    })
+EOS
+end
+
+datasource "ds_fabric_incident" do
+  run_script $js_fabric_incident, $ds_fabric_metrics, $ds_fabric_pricing, $ds_currency, $ds_applied_policy, $param_stats_lookback, $param_min_savings, $param_incident_csv
+end
+
+script "js_fabric_incident", type: "javascript" do
+  parameters "ds_fabric_metrics", "ds_fabric_pricing", "ds_currency", "ds_applied_policy", "param_stats_lookback", "param_min_savings", "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+    function formatNumber(number, separator) {
+      var formatted_number = "0"
+      if (number) {
+        formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+        if (separator) {
+          var withSeparator = ""
+          for (var i = 0; i < formatted_number.length; i++) {
+            if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+            withSeparator += formatted_number[i]
+          }
+          formatted_number = withSeparator
+        }
+        var decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+        if (decimal) { formatted_number += "." + decimal }
+      }
+      return formatted_number
+    }
+
+    // F-SKU ladder and CU counts: each tier doubles the CUs of the previous
+    var sku_ladder = ["F2", "F4", "F8", "F16", "F32", "F64", "F128", "F256", "F512", "F1024", "F2048"]
+    var sku_cu_map = {
+      "F2": 2, "F4": 4, "F8": 8, "F16": 16, "F32": 32, "F64": 64,
+      "F128": 128, "F256": 256, "F512": 512, "F1024": 1024, "F2048": 2048
+    }
+
+    // Build pricing lookup: region → { payg_per_cu: hourly_rate_per_cu, reservation_1yr_per_cu: annual_total_per_cu }
+    // The Azure Retail Prices API returns per-CU pricing for Fabric — there are no per-F-SKU price entries.
+    // The skuName is "Fabric Capacity" (not "F64" etc.), so entries are matched by meterName.
+    // PAYG: retailPrice is the per-CU per-hour rate.
+    // 1-year reservation: retailPrice is the total annual cost per CU (despite unitOfMeasure showing "1 Hour").
+    // Multiply the per-CU rate by the target F-SKU's CU count to get the total cost for that SKU.
+    var pricing_by_region = {}
+    _.each(ds_fabric_pricing, function(item) {
+      var region = item["region"]
+      if (!pricing_by_region[region]) {
+        pricing_by_region[region] = { payg_per_cu: 0, reservation_1yr_per_cu: 0 }
+      }
+
+      var price_type = (item["priceType"] || "").toLowerCase()
+      var meter_name = (item["meterName"] || "").toLowerCase()
+      var unit = (item["unitOfMeasure"] || "").toLowerCase()
+      var price = item["retailPrice"] || 0
+      var reservation_term = (item["reservationTerm"] || "").toLowerCase()
+
+      if (price <= 0) { return }
+
+      // meterName "Fabric Capacity CU" (or similar) identifies per-CU Fabric pricing entries
+      if (meter_name.indexOf("fabric capacity") < 0) { return }
+
+      if (price_type === "consumption" && unit.indexOf("hour") >= 0) {
+        // PAYG: retailPrice is the per-CU per-hour rate
+        if (pricing_by_region[region]["payg_per_cu"] === 0 || price < pricing_by_region[region]["payg_per_cu"]) {
+          pricing_by_region[region]["payg_per_cu"] = price
+        }
+      }
+
+      if (price_type === "reservation" && reservation_term.indexOf("1 year") >= 0) {
+        // 1-year reservation: retailPrice is the total annual cost per CU
+        if (pricing_by_region[region]["reservation_1yr_per_cu"] === 0 || price < pricing_by_region[region]["reservation_1yr_per_cu"]) {
+          pricing_by_region[region]["reservation_1yr_per_cu"] = price
+        }
+      }
+    })
+
+    var result = []
+    var total_savings = 0.0
+    var exchange_rate = ds_currency["exchange_rate"]
+
+    _.each(ds_fabric_metrics, function(capacity) {
+      var region = capacity["location"]
+      var pricing = pricing_by_region[region]
+      if (!pricing) { return }
+
+      var current_sku = capacity["sku"] || ""
+      var current_cus = sku_cu_map[current_sku] || 0
+      if (!current_sku || current_cus === 0) { return }
+
+      var payg_per_cu = (pricing["payg_per_cu"] || 0) * exchange_rate
+      if (payg_per_cu <= 0) { return }
+
+      var active_days = capacity["activeDays"] || 0
+      var days_observed = capacity["daysObserved"] || 0
+      var avg_util_pct = capacity["avgUtilPct"] || 0
+      var peak_util_pct = capacity["peakUtilPct"] || 0
+
+      // Skip capacities with no observed active usage — reservations would add cost, not save it
+      if (active_days === 0 || days_observed === 0) { return }
+
+      // Estimate monthly active hours: (active days / observed days) * 30.44 days/month * 24 hours/day
+      // Note: treats any day with non-zero utilization as fully active (24 hours).
+      // Capacities started/stopped within a single day may have slightly overstated PAYG costs.
+      var monthly_active_hours = (active_days / days_observed) * 30.44 * 24
+      // PAYG monthly cost: per-CU-per-hour rate × current SKU CU count × estimated monthly active hours
+      var payg_monthly_cost = monthly_active_hours * payg_per_cu * current_cus
+
+      // Peak CU demand: if no Maximum metric data was returned (peak_util_pct = 0), fall back to
+      // avg_util_pct to avoid recommending the smallest F-SKU for any capacity with no peak data.
+      var effective_peak_pct = peak_util_pct > 0 ? peak_util_pct : avg_util_pct
+      var peak_cu_demand = (effective_peak_pct / 100) * current_cus
+
+      // Evaluate all F-SKU reservation tiers; find the one with the greatest savings.
+      // A candidate SKU must have enough CUs to cover the observed peak with 10% headroom.
+      var best_sku = null
+      var best_savings = 0
+      var best_monthly_reservation_cost = payg_monthly_cost
+
+      var reservation_per_cu_annual = (pricing["reservation_1yr_per_cu"] || 0) * exchange_rate
+      _.each(sku_ladder, function(sku) {
+        var sku_cus = sku_cu_map[sku]
+        if (sku_cus < peak_cu_demand * 1.1) { return }
+        if (reservation_per_cu_annual <= 0) { return }
+
+        // Monthly reservation cost = total annual cost per CU × SKU CU count / 12 months
+        var monthly_reservation_cost = reservation_per_cu_annual * sku_cus / 12
+        var savings = payg_monthly_cost - monthly_reservation_cost
+
+        if (savings > best_savings) {
+          best_sku = sku
+          best_savings = savings
+          best_monthly_reservation_cost = monthly_reservation_cost
+        }
+      })
+
+      if (!best_sku || best_savings < param_min_savings) { return }
+
+      total_savings += best_savings
+
+      var savings_rounded = Math.round(best_savings * 100) / 100
+      var payg_monthly_rounded = Math.round(payg_monthly_cost * 100) / 100
+      var reservation_monthly_rounded = Math.round(best_monthly_reservation_cost * 100) / 100
+
+      var current_tier_label = current_sku + " (Pay-As-You-Go)"
+      var recommended_tier_label = best_sku + " (1-Year Reservation)"
+
+      var sizing_note = ""
+      if (best_sku !== current_sku) {
+        sizing_note = " This also includes right-sizing from " + current_sku + " (" + current_cus + " CUs) to " + best_sku + " (" + sku_cu_map[best_sku] + " CUs), which is sufficient for the estimated peak demand of " + (Math.round(peak_cu_demand * 10) / 10) + " CUs."
+      }
+
+      var recommendation_details = "Switch Fabric capacity '" + capacity["name"] + "' from " + current_tier_label + " to a " + recommended_tier_label + "."
+      recommendation_details += " Based on " + active_days + " active day(s) out of " + days_observed + " observed days"
+      recommendation_details += " (average " + (Math.round(avg_util_pct * 100) / 100) + "% CU utilization, peak " + (Math.round(effective_peak_pct * 100) / 100) + "%)"
+      recommendation_details += ", this change is estimated to save " + ds_currency["symbol"] + savings_rounded + " per month." + sizing_note
+
+      var tags = []
+      if (capacity["tags"] && typeof(capacity["tags"]) == "object") {
+        _.each(capacity["tags"], function(value, key) { tags.push(key + "=" + value) })
+      }
+
+      result.push({
+        accountID: capacity["subscriptionId"],
+        accountName: capacity["subscriptionName"],
+        resourceID: capacity["id"],
+        resourceName: capacity["name"],
+        tags: tags.join(", "),
+        recommendationDetails: recommendation_details,
+        region: capacity["location"],
+        resourceGroup: capacity["resourceGroup"],
+        state: capacity["state"],
+        currentTier: current_tier_label,
+        recommendedTier: recommended_tier_label,
+        currentSku: current_sku,
+        recommendedSku: best_sku,
+        currentCUs: current_cus,
+        recommendedCUs: sku_cu_map[best_sku],
+        avgUtilPct: Math.round(avg_util_pct * 100) / 100,
+        peakUtilPct: Math.round(peak_util_pct * 100) / 100,
+        activeDays: active_days,
+        daysObserved: days_observed,
+        currentMonthlyCost: payg_monthly_rounded,
+        newMonthlyCost: reservation_monthly_rounded,
+        savings: savings_rounded,
+        savingsCurrency: ds_currency["symbol"],
+        lookbackPeriod: param_stats_lookback,
+        service: "Microsoft.Fabric/capacities",
+        policy_name: ds_applied_policy["name"],
+        total_savings: "",
+        message: ""
+      })
+    })
+
+    result = _.sortBy(result, function(item) { return item["savings"] * -1 })
+
+    result.push({ policy_name: "", total_savings: "", message: "", savings: -1 })
+
+    var savings_message = ds_currency["symbol"] + " " + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency["t_separator"])
+
+    var message = "The following settings were used when generating recommendations:\n" +
+      "- Look Back Period: " + param_stats_lookback + " days\n" +
+      "- Minimum Savings Threshold: " + param_min_savings + "\n\n"
+
+    var disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+    var empty_fields = "Empty fields indicate information that is not applicable to that particular recommendation.\n\n"
+    var csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
+    result[0]["total_savings"] = savings_message
+    result[0]["message"] = message + disclaimer + empty_fields + csv_message
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_fabric_commitment_tier_recommendations" do
+  validate_each $ds_fabric_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Microsoft Fabric Commitment Tier Recommendations"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, lt(val(item, "savings"), 0))
+    escalate $esc_email
+    hash_exclude "tags", "savings", "savingsCurrency", "avgUtilPct", "peakUtilPct", "activeDays", "daysObserved", "currentMonthlyCost", "newMonthlyCost"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Capacity Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "state" do
+        label "State"
+      end
+      field "currentTier" do
+        label "Current Pricing Tier"
+      end
+      field "recommendedTier" do
+        label "Recommended Pricing Tier"
+      end
+      field "currentSku" do
+        label "Current SKU"
+      end
+      field "recommendedSku" do
+        label "Recommended SKU"
+      end
+      field "currentCUs" do
+        label "Current Capacity Units"
+      end
+      field "recommendedCUs" do
+        label "Recommended Capacity Units"
+      end
+      field "avgUtilPct" do
+        label "Average CU Utilization (%)"
+      end
+      field "peakUtilPct" do
+        label "Peak CU Utilization (%)"
+      end
+      field "activeDays" do
+        label "Active Days Observed"
+      end
+      field "daysObserved" do
+        label "Days Observed"
+      end
+      field "currentMonthlyCost" do
+        label "Current Estimated Monthly Cost"
+      end
+      field "newMonthlyCost" do
+        label "New Estimated Monthly Cost"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+  validate $ds_no_subscriptions_error do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to access any Azure Subscriptions.
+
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end -}}
+
+    **Recommended Actions:**
+    1. Verify that the Azure credential has the required permissions to list subscriptions.
+    2. Ensure the credential has not expired or been revoked.
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email_errors_identified" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_parent_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+    ignore_status [404]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
+  result "result"
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
+  end
+end
+
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
+  result "result"
+  code 'result = { path: "/"}'
+end
