@@ -9,6 +9,7 @@
 - Fixed potential "NaN%" display in the incident message when no GP2 volumes are found in the account.
 - Fixed upstream list price filter to use strict greater-than (`savings > 0`) instead of greater-than-or-equal, excluding volumes where GP2 and GP3 list prices are identical and no savings opportunity exists.
 - Incident will no longer re-trigger if `Estimated Monthly Cost` changes but the actual recommendation is the same.
+- Fixed bug where the currency conversion API failure disclaimer would incorrectly appear in the incident message when the org currency is USD (in which case currency conversion is intentionally skipped, not failing).
 
 ## v6.5.6
 
