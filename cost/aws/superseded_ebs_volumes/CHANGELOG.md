@@ -1,5 +1,15 @@
 # Changelog
 
+## v6.6.0
+
+- Updated savings calculation to use the percentage difference between GP2 and GP3 list prices applied to the actual cost of the resource in Flexera CCO, rather than the raw list price difference. This ensures that savings estimates reflect Flexera adjustment rules and cloud provider discounts.
+- Fixed bug where the `Resource ID` export field had an incorrect path alias, causing the column to be blank in incident exports.
+- Fixed bug where the `Resource Name` export field had an incorrect path alias, causing the column to be blank in incident exports.
+- Fixed incorrect description for the `AWS Regional Pricing API` parameter, which incorrectly referred to "unused IP addresses" instead of EBS volumes.
+- Fixed potential "NaN%" display in the incident message when no GP2 volumes are found in the account.
+- Fixed upstream list price filter to use strict greater-than (`savings > 0`) instead of greater-than-or-equal, excluding volumes where GP2 and GP3 list prices are identical and no savings opportunity exists.
+- Incident will no longer re-trigger if `Estimated Monthly Cost` changes but the actual recommendation is the same.
+
 ## v6.5.6
 
 - Fixed issue with incident table that cause policy execution to fail

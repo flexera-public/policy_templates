@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "6.5.6",
+  version: "6.6.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Inefficient Disk Usage",
@@ -49,7 +49,7 @@ parameter "param_pricing_api_endpoint" do
   type "string"
   category "Policy Settings"
   label "AWS Regional Pricing API"
-  description "The regional AWS Pricing API to use when retrieving pricing data for unused IP addresses. Pricing may vary based on region. See README for more details."
+  description "The regional AWS Pricing API to use when retrieving pricing data for EBS volumes. Pricing may vary based on region. See README for more details."
   allowed_values "US East", "EU Central", "AP South"
   default "US East"
 end
@@ -906,7 +906,7 @@ script "js_volumes_with_prices", type: "javascript" do
     gp3_price = getGP3Price(volume, gp3_pricelist) * ds_currency['exchange_rate']
     savings = gp2_price - gp3_price
 
-    if (savings >= 0 && gp2_price != 0 && gp3_price != 0) {
+    if (savings > 0 && gp2_price != 0 && gp3_price != 0) {
       tags = []
       volumeName = ""
 
@@ -1038,7 +1038,7 @@ script "js_volume_costs_grouped", type: "javascript" do
   parameters "ds_volume_costs"
   result "result"
   code <<-'EOS'
-  // Multiple a single day's cost by the average number of days in a month.
+  // Multiply a single day's cost by the average number of days in a month.
   // The 0.25 is to account for leap years for extra precision.
   cost_multiplier = 365.25 / 12
 
@@ -1093,12 +1093,21 @@ script "js_underutil_volumes", type: "javascript" do
   total_savings = 0.0
 
   _.each(ds_volumes_with_prices, function(volume) {
-    if (volume['savings'] >= param_min_savings) {
-      total_savings += volume['savings']
+    id = volume['volumeId'].toLowerCase()
+    cost = ds_volume_costs_grouped[id]
+    if (typeof(cost) != 'number') { cost = 0.0 }
 
-      id = volume['volumeId'].toLowerCase()
-      cost = ds_volume_costs_grouped[id]
-      if (typeof(cost) != 'number') { cost = 0.0 }
+    // Calculate savings as a percentage of actual CCO cost derived from list price comparison.
+    // e.g. if GP2 list price is $50 and GP3 list price is $25, that is a 50% reduction.
+    // That 50% is then applied to the actual CCO cost to estimate real-world savings.
+    savings_pct = 0.0
+    if (volume['gp2_price'] > 0) {
+      savings_pct = (volume['gp2_price'] - volume['gp3_price']) / volume['gp2_price']
+    }
+    savings = cost * savings_pct
+
+    if (savings >= param_min_savings) {
+      total_savings += savings
 
       startDate = new Date(volume['createTime']) // Volume Created Date
       endDate = new Date()
@@ -1129,7 +1138,7 @@ script "js_underutil_volumes", type: "javascript" do
         region: volume['region'],
         gp2_price: parseFloat(volume['gp2_price'].toFixed(3)),
         gp3_price: parseFloat(volume['gp3_price'].toFixed(3)),
-        savings: parseFloat(volume['savings'].toFixed(3)),
+        savings: parseFloat(savings.toFixed(3)),
         savingsCurrency: volume['savingsCurrency'],
         cost: parseFloat(cost.toFixed(3)),
         age: parseFloat(daysDifference),
@@ -1151,9 +1160,14 @@ script "js_underutil_volumes", type: "javascript" do
     formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['t_separator'])
   ].join('')
 
-  total_volumes = ds_volumes_tag_filtered.length.toString()
-  total_underutil_volumes = result.length.toString()
-  underutil_volumes_percentage = (total_underutil_volumes / total_volumes * 100).toFixed(2).toString() + '%'
+  total_volumes = ds_volumes_tag_filtered.length
+  total_underutil_volumes = result.length
+
+  if (total_volumes > 0) {
+    underutil_volumes_percentage = (total_underutil_volumes / total_volumes * 100).toFixed(2).toString() + '%'
+  } else {
+    underutil_volumes_percentage = "0%"
+  }
 
   volume_noun = "volume"
   if (total_volumes > 1) { volume_noun = "volumes" }
@@ -1170,7 +1184,7 @@ script "js_underutil_volumes", type: "javascript" do
   api_disclaimer = "\n\n"
 
   if (ds_currency_conversion.length == 0 || (ds_currency_conversion[0]['to'] == undefined && ds_currency['code'] != 'USD')) {
-    api_disclaimer = "\n\nPrice and savings values are in USD due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue.\n\n"
+    api_disclaimer = "\n\nThe 'Current Monthly List Price' and 'New Monthly List Price' values are displayed in USD due to a malfunction with Flexera's internal currency conversion API. Estimated savings values are not affected as they are derived from actual cost data in Flexera CCO. Please contact Flexera support to report this issue.\n\n"
   }
 
   // Dummy item to ensure the policy's check statement always executes at least once
@@ -1294,7 +1308,7 @@ policy "pol_underutil_volumes" do
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_upgrade_volumes
-    hash_exclude "age", "tags", "resourceName", "savings", "savingsCurrency", "attachmentStatus"
+    hash_exclude "age", "cost", "tags", "resourceName", "savings", "savingsCurrency", "attachmentStatus"
     export do
       resource_level true
       field "accountID" do
@@ -1305,11 +1319,9 @@ policy "pol_underutil_volumes" do
       end
       field "resourceID" do
         label "Resource ID"
-        path "volume_id"
       end
       field "resourceName" do
         label "Resource Name"
-        path "tags.Name"
       end
       field "tags" do
         label "Resource Tags"
