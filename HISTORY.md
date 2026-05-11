@@ -6,6 +6,42 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#4416](https://github.com/flexera-public/policy_templates/pull/4416): POL-1758 New Policy Template: AWS Rightsize EC2 Instances (Cross-Family)
+
+*New Policy Template*
+
+#### Description
+
+> Adds a new policy template, `AWS Rightsize EC2 Instances (Cross-Family)`, that provides cross-family recommendations and can be used as an alternative to the `AWS Rightsize EC2 Instances` policy template. Enough had to fundamentally change to make this work to make it a new policy template.
+>
+> Also updates the AWS EC2 pricing script/data to be more accurate, since this policy template relies on list pricing to make sure it's finding the cheapest possible size that fits the workload.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Rightsize EC2 Instances (Cross-Family)](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances_cross_family/README.md), [Meta Parent: AWS Rightsize EC2 Instances (Cross-Family)](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances_cross_family/README.md)
+- **Merged At**: 2026-05-08 18:44:19 UTC
+
+---
+
+### PR [#4418](https://github.com/flexera-public/policy_templates/pull/4418): POL-1760 New Policy Template: Azure Rightsize Compute Instances (Cross-Family)
+
+*New Policy Template*
+
+#### Description
+
+> Adds a new policy template, `Azure Rightsize Compute Instances (Cross-Family)`, that provides cross-family recommendations and can be used as an alternative to the `Azure Rightsize Compute Instances` policy template. Enough had to fundamentally change to make this work to make it a new policy template.
+>
+> Also adds some missing regions to the Azure `regions.json` file and makes a minor fix to our policy testing Github Workflow to prevent future issues.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize Compute Instances (Cross-Family)](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances_cross_family/README.md), [Meta Parent: Azure Rightsize Compute Instances (Cross-Family)](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances_cross_family/README.md)
+- **Merged At**: 2026-05-08 18:37:10 UTC
+
+---
+
 ### PR [#4390](https://github.com/flexera-public/policy_templates/pull/4390): POL-1423 Azure Hybrid Use Benefit Policies: Ignore "Azure Plan for DevTest" Subscriptions
 
 *Minor Update*
@@ -2110,47 +2146,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Google Idle Persistent Disk Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/idle_persistent_disk_recommendations/README.md), [Meta Parent: Google Idle Persistent Disk Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/idle_persistent_disk_recommendations/README.md)
 - **Merged At**: 2025-11-21 13:16:02 UTC
-
----
-
-### PR [#3765](https://github.com/flexera-public/policy_templates/pull/3765): feat: Add automatic actions parameter to Dynamic Dashboard Policy Template
-
-*Minor Update*
-
-#### Description
-
-> - Added "Automatic Actions" parameter to allow automatic creation/updating of dashboards without manual approval
-> - Fixed Widgets Date Granularity to use user-configurable Dashboard setting instead of hardcoded "monthly" value
-> - Fixed identification of existing dashboards for Create or Update logic
->
-
-#### Metadata
-
-- **Policies**: [Dynamic Dashboards](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/dynamic_dashboards/README.md)
-- **Merged At**: 2025-11-19 15:10:09 UTC
-
----
-
-### PR [#3737](https://github.com/flexera-public/policy_templates/pull/3737): POL-1683 AWS Oversized S3 Buckets - Datasource Not Defined fix
-
-*Bug Fix*
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> The AWS Oversized S3 Buckets currently fails due to an incorrect datasource reference. This issue was identified during a review of applied policies in Flexera, where the default template failed to execute correctly across multiple customer orgs.
->
-> This change updates the policy to fix the datasource reference and prevent widespread failures.
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: [AWS Oversized S3 Buckets](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_bucket_size/README.md)
-- **Merged At**: 2025-11-18 14:09:18 UTC
 
 ---
 
