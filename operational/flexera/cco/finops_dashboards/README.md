@@ -28,6 +28,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
+### AI/ML Views Dashboard
+
+The "AI/ML Views" dashboard requires that additional AI-related dimensions be enabled in the Flexera environment. Please contact Flexera support or speak to your account manager to enable these before using this dashboard.
+
 ## Supported Clouds
 
 - Flexera
