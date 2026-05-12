@@ -42,6 +42,7 @@ The `config` object contains the following fields:
 
 | File | Dashboard Name |
 | --- | --- |
+| [finops_aiml_views.json](finops_aiml_views.json) | FinOps - AI/ML Views |
 | [finops_business_product.json](finops_business_product.json) | FinOps - Business / Product Owner |
 | [finops_engineering_operations.json](finops_engineering_operations.json) | FinOps - Engineering / Operations |
 | [finops_executive_summary.json](finops_executive_summary.json) | FinOps - Executive Summary |
