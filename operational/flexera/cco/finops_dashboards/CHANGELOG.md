@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.1
+
+- Removed "AI/ML Views" dashboard from default for "Dashboards (Built-In)" parameter.
+
 ## v0.2.0
 
 - Added "AI/ML Views" dashboard to the built-in dashboards added by this policy template.
