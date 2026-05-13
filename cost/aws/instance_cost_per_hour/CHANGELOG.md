@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.6
+
+- Fixed several bugs that could cause policy execution to fail.
+- Fixed bug that could sometimes cause the chart to be rendered incorrectly.
+- Policy template is now published in the policy catalog.
+
 ## v0.2.5
 
 - Updated documentation link in policy description. Functionality unchanged.

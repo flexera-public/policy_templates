@@ -4,6 +4,8 @@
 
 This policy template checks all of the EC2 instances in an AWS Account for CPU and Memory usage over a user-specified number of days. If the usage is less than the user provided Idle Instance CPU/Memory percentage threshold then the EC2 instance is recommended for termination. If the usage is less than the user provided Underutilized Instance CPU/Memory percentage threshold then the EC2 instance is recommended for downsizing. Both sets of EC2 instances returned from this policy are emailed to the user.
 
+NOTE: It is recommended that you use this policy template *or* the [AWS Rightsize EC2 Instances (Cross-Family)](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances_cross_family) policy template but not both at the same time to avoid duplicate recommendations.
+
 NOTE: This policy template only reports on underutilized and idle EC2 instances. Please use the [AWS Overutilized EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/overutilized_ec2_instances) policy template to report on overutilized EC2 instances.
 
 ## How It Works

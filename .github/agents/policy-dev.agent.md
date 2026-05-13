@@ -50,7 +50,7 @@ You are an expert Flexera policy template developer working in the `flexera-publ
 - **Always run `fpt check`** after writing or modifying any `.pt` file, even for small changes
 - **Always bump the version** in the `info()` block for any `.pt` file change, including non-functional changes; check `git status` first to avoid double-bumping
 - **Never add `publish: "false"`** unless the user explicitly requests it
-- **Always include `logic_or($ds_parent_policy_terminated, ...)`** as the first argument of every `check` in the `policy` block
+- **Only add Meta Policy support** (`logic_or($ds_parent_policy_terminated, ...)`, the Meta Policy block, `param_aws_account_number`, etc.) to templates that iterate through AWS accounts, Azure subscriptions, or Google projects — **do not** add Meta Policy support to pure CCO/billing templates, report-only templates, or any template that only queries Flexera APIs
 
 ## FinOps — Background and Context
 
@@ -891,7 +891,8 @@ end
 policy "pol_example" do
   validate_each $ds_items do
     # IMPORTANT: 'check' fires the incident when it evaluates to FALSE (not true).
-    # Use logic_or with $ds_parent_policy_terminated for all Meta Policy-compatible templates.
+    # Use logic_or with $ds_parent_policy_terminated ONLY in Meta Policy-compatible templates
+    # (i.e. templates that iterate through AWS accounts, Azure subscriptions, or Google projects).
     check logic_or($ds_parent_policy_terminated, eq(val(item, "id"), ""))
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Items Found"
     detail_template <<-'EOS'
@@ -1057,7 +1058,7 @@ end
 
 **`check` semantics:** Incident fires when `check` evaluates to `false`, `0`, empty string, empty array, or empty object. Multiple `check` statements evaluate in order, stopping at first failure. `eq(val(item, "id"), "")` is the standard sentinel for "no incident when datasource is empty".
 
-**Meta Policy termination check:** Always include `logic_or($ds_parent_policy_terminated, ...)` as first argument in `check` for Meta Policy support.
+**Meta Policy termination check:** Include `logic_or($ds_parent_policy_terminated, ...)` as first argument in `check` only when the template supports Meta Policies (see below). Do **not** add it to pure CCO/billing templates or any template that does not iterate through cloud accounts.
 
 **`hash_exclude`:** Prevents listed fields from contributing to incident deduplication hash. Exclude volatile fields (tags, savings) that change without indicating meaningful state change. **Only list fields that are actually declared in the `export` block** — listing a field that is not exported has no effect and is misleading.
 
@@ -1554,6 +1555,13 @@ datasource "ds_cloud_vendor_accounts" do
   end
 end
 ```
+
+**When to add Meta Policy support:** Meta Policies work by deploying one child policy per cloud account. This only makes sense for templates that iterate through and make API calls to individual AWS accounts, Azure subscriptions, or Google projects. **Do not add Meta Policy support to:**
+- Pure CCO/billing templates (templates that only query Flexera APIs — no cloud provider credential needed)
+- Report-only templates that aggregate data across the entire org
+- Any template that does not iterate through cloud accounts
+
+**Do add Meta Policy support to** any template that uses `ds_describe_regions` (AWS), `ds_azure_subscriptions` (Azure), or `ds_google_projects` (Google) — i.e. templates that make per-account cloud API calls.
 
 For Meta Policy support, the complete Meta Policy block **must be placed at the very bottom of the policy template file**, after the `# Escalations` section. It must begin with the exact comment `# Meta Policy [alpha]` (the compiler checks for this string). Never place any part of this block earlier in the file — not in the `# Datasources & Scripts` section and not before the `# Policy` section.
 

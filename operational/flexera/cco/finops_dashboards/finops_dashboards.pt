@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "monthly"
 info(
-  version: "0.1.4",
+  version: "0.2.1",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -32,7 +32,7 @@ parameter "param_dashboards" do
   category "Policy Settings"
   label "Dashboards (Built-In)"
   description "Select the specific built-in dashboards you wish to create."
-  allowed_values [ "Global CIO YTD View", "Marketplace / Operating System Overview", "Business / Product Owner", "Engineering / Operations", "Executive Summary", "Finance & Procurement", "Reservation Coverage", "Reservation Management" ]
+  allowed_values [ "Global CIO YTD View", "Marketplace / Operating System Overview", "Business / Product Owner", "Engineering / Operations", "Executive Summary", "Finance & Procurement", "Reservation Coverage", "Reservation Management", "AI/ML Views" ]
   default [ "Global CIO YTD View", "Marketplace / Operating System Overview", "Business / Product Owner", "Engineering / Operations", "Executive Summary", "Finance & Procurement", "Reservation Coverage", "Reservation Management" ]
 end
 
@@ -64,6 +64,38 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": { flexera: "api.flexera.com", optima: "api.optima.flexeraeng.com" },
+    "api.optima-eu.flexeraeng.com": { flexera: "api.flexera.eu", optima: "api.optima-eu.flexeraeng.com" },
+    "api.optima-apac.flexeraeng.com": { flexera: "api.flexera.au", optima: "api.optima-apac.flexeraeng.com" }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Retrieves the applied policy's name to populate {{ .policy_name }} in the incident report title.
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", policy_id])
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "name", jmes_path(response, "name")
+  end
+end
+
 datasource "ds_dashboards_to_get" do
   run_script $js_dashboards_to_get, $param_dashboards, $param_dashboards_external
 end
@@ -80,10 +112,17 @@ script "js_dashboards_to_get", type: "javascript" do
     "Executive Summary": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_executive_summary.json",
     "Finance & Procurement": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_finance_procurement.json",
     "Reservation Coverage": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_reservation_coverage.json",
-    "Reservation Management": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_reservation_management.json"
+    "Reservation Management": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_reservation_management.json",
+    "AI/ML Views": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/dashboards/finops_aiml_views.json"
   }
 
-  urls = _.map(param_dashboards, function(item) { return url_table[item] }).concat(param_dashboards_external)
+  // Map each selected dashboard name to its GitHub raw URL; filter removes any
+  // names not found in url_table (e.g. unrecognised values passed via param_dashboards).
+  urls = _.filter(_.map(param_dashboards, function(item) {
+    return url_table[item]
+  }), function(url) {
+    return url != undefined
+  }).concat(param_dashboards_external)
 
   result = _.map(urls, function(url) {
     parts = url.split("/")
@@ -123,7 +162,9 @@ script "js_dashboards_to_create", type: "javascript" do
   parameters "ds_dashboards"
   result "result"
   code <<-'EOS'
-  result = _.map(ds_dashboards, function(dashboard) {
+  // Build the POST payload for each dashboard, skipping entries where name or config
+  // is null — this happens when a download URL returned 404 and was silently ignored above.
+  result = _.filter(_.map(ds_dashboards, function(dashboard) {
     return {
       area: "OrgDashboard",
       id: "new-dashboard",
@@ -132,6 +173,8 @@ script "js_dashboards_to_create", type: "javascript" do
       visibility: "public",
       isDefault: false
     }
+  }), function(item) {
+    return item["name"] != null && item["config"] != null
   })
 EOS
 end
@@ -168,13 +211,34 @@ datasource "ds_create_dashboards" do
   end
 end
 
+datasource "ds_finops_dashboards" do
+  run_script $js_finops_dashboards, $ds_create_dashboards, $ds_applied_policy
+end
+
+script "js_finops_dashboards", type: "javascript" do
+  parameters "ds_create_dashboards", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  // Exclude rows where id is null or empty — a 409 "already exists" response does not
+  // return a newly-created resource, so those rows should not appear in the incident.
+  result = _.filter(ds_create_dashboards, function(dashboard) {
+    return dashboard["id"] != null && dashboard["id"] != ""
+  })
+
+  // Attach the policy name to the first row so summary_template can render {{ .policy_name }}.
+  if (result.length > 0) {
+    result[0]["policy_name"] = ds_applied_policy["name"]
+  }
+EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "pol_utilization" do
-  validate_each $ds_create_dashboards do
-    summary_template "FinOps Dashboards: {{ len data }} Dashboards Created"
+policy "pol_finops_dashboards" do
+  validate_each $ds_finops_dashboards do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Dashboards Created"
     check eq(val(item, "id"), "")
     escalate $esc_email
     export do

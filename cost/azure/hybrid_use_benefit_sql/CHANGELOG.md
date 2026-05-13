@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.7.0
+
+- Subscriptions with an Azure Plan for DevTest are now always excluded from SQL Virtual Machine results. Windows VMs in these subscriptions already receive free Windows licenses, so AHUB recommendations do not apply to them. This does not affect SQL Elastic Pools, SQL Databases, or SQL Managed Instances recommendations.
+
 ## v4.6.0
 
 - Added error incident when no Azure Subscriptions are found, indicating a potential credential or permissions issue.
