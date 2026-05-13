@@ -10,7 +10,7 @@ __NOTE: This policy template only needs to execute once to perform the above tas
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new Rule-Based Dimensions are created.
 - *Rule-Based Dimensions (Built-In)* - The specific pre-built Rule-Based Dimensions you wish to create. Available options: AI Models, AI Tokens, AI Tools, Object Storage Tier Category, Object Storage Usage Category.
-- *Rule-Based Dimensions (External)* - The full URLs of any external Rule-Based Dimension JSON files you wish to also create. External files must be publicly accessible and in JSON format matching the Flexera Rule-Based Dimensions API. The JSON file must contain `name`, `id`, and `rules` fields at the top level. Example: `https://awebdomain.com/path/rbd_file.json`
+- *Rule-Based Dimensions (External)* - The full URLs of any external Rule-Based Dimension JSON files you wish to also create. External files must be publicly accessible and in JSON format. The JSON file must contain `name`, `id`, and `rules` fields at the top level, with `rules` being a list of rules matching the [Rule-Based Dimension API format](https://developer.flexera.com/docs/api/finops-customizations/v1#/). Example: `https://awebdomain.com/path/rbd_file.json`
 - *Effective Date* - Year/month you want the Rule-Based Dimension rules to start applying in YYYY-MM format. Defaults to `2010-01` so that rules apply to all historical cost data.
 
 ## Policy Actions
