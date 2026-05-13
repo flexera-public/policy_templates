@@ -1,4 +1,4 @@
-# Custom Rule-Based Dimensions
+# Additional Dimensions
 
 ## What It Does
 
