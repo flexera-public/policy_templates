@@ -6,13 +6,13 @@ This Policy Template reports any Committed Use Discount Recommendations generate
 
 ## How It Works
 
-Recommendations are obtained via requests to the [Google Recommender API](https://cloud.google.com/docs/cuds-recommender?hl=en) using either the project scope (`/v1/projects/{id}/locations/{region}/recommenders/...`) or billing account scope (`/v1/billingAccounts/{id}/locations/{region}/recommenders/...`), depending on the `Recommendation Scope` parameter.
+Recommendations are obtained via requests to the [Google Recommender API](https://docs.cloud.google.com/docs/cuds-recommender?hl=en) using either the project scope (`/v1/projects/{id}/locations/{region}/recommenders/...`) or billing account scope (`/v1/billingAccounts/{id}/locations/{region}/recommenders/...`), depending on the `Recommendation Scope` parameter.
 
 ### Policy Savings Details
 
-The policy template includes the estimated savings. The estimated savings is recognized if the recommended CUD is purchased. The savings values are provided directly by the [Google Recommender API](https://cloud.google.com/docs/cuds-recommender?hl=en).
+The policy template includes the estimated savings. The estimated savings is recognized if the recommended CUD is purchased. The savings values are provided directly by the [Google Recommender API](https://docs.cloud.google.com/docs/cuds-recommender?hl=en).
 
-If the Flexera organization is configured to use a currency other than the one the [Google Recommender API](https://cloud.google.com/docs/cuds-recommender?hl=en) returns, the savings values will be converted using the exchange rate at the time that the policy executes.
+If the Flexera organization is configured to use a currency other than the one the [Google Recommender API](https://docs.cloud.google.com/docs/cuds-recommender?hl=en) returns, the savings values will be converted using the exchange rate at the time that the policy executes.
 
 ## Input Parameters
 
@@ -31,7 +31,7 @@ This policy template has the following input parameters:
 - *Recommendation Algorithm* - The algorithm to use for generating recommendations. Can be set to either `Optimal` or `Stable Usage`.
   - `Stable Usage` covers minimum stable usage over time.
   - `Optimal` is based on overall usage and might cover resources that are not active all the time.
-  - See [Google's documentation](https://cloud.google.com/docs/cuds-recommender?hl=en#understanding-recommendations) for more information.
+  - See [Google's documentation](https://docs.cloud.google.com/docs/cuds-recommender?hl=en#understanding-recommendations) for more information.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
