@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.6.0",
+  version: "4.7.0",
   provider: "Google",
   service: "Compute",
   recommendation_type: "Rate Reduction",
@@ -37,6 +37,15 @@ parameter "param_min_savings" do
   default 0
 end
 
+parameter "param_recommendation_scope" do
+  type "string"
+  category "Policy Settings"
+  label "Recommendation Scope"
+  description "Whether to fetch project-level recommendations, billing account-level recommendations, or both. Billing account-level recommendations require additional IAM permissions on the Google credential (billing.accounts.list and roles/recommender.computeCommitmentViewer at the billing account level). See the README for more details."
+  allowed_values "Project", "Billing Account", "Both"
+  default "Project"
+end
+
 parameter "param_projects_allow_or_deny" do
   type "string"
   category "Filters"
@@ -50,7 +59,7 @@ parameter "param_projects_list" do
   type "list"
   category "Filters"
   label "Allow/Deny Projects List"
-  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  description "A list of allowed or denied project IDs/names. See the README for more details."
   default []
 end
 
@@ -171,7 +180,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -179,7 +188,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -187,7 +196,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
@@ -238,7 +247,7 @@ datasource "ds_currency_target" do
   run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
 end
 
-script "js_currency_target", type:"javascript" do
+script "js_currency_target", type: "javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
   code <<-'EOS'
@@ -259,7 +268,7 @@ datasource "ds_google_projects" do
     encoding "json"
     collect jmes_path(response, "projects[*]") do
       field "id", jmes_path(col_item, "projectId")
-      field "name", jmes_path(col_item, "name")
+      field "name", jmes_path(col_item, "displayName")
       field "labels", jmes_path(col_item, "labels")
     end
   end
@@ -313,21 +322,28 @@ EOS
 end
 
 datasource "ds_no_projects_error" do
-  run_script $js_no_projects_error, $ds_google_projects, $ds_applied_policy
+  run_script $js_no_projects_error, $ds_google_projects, $ds_applied_policy, $param_recommendation_scope, $param_regions_list
 end
 
 script "js_no_projects_error", type: "javascript" do
-  parameters "ds_google_projects", "ds_applied_policy"
+  parameters "ds_google_projects", "ds_applied_policy", "param_recommendation_scope", "param_regions_list"
   result "result"
   code <<-'EOS'
   result = []
 
-  if (ds_google_projects.length == 0) {
-    var policy_name = "Google Policy"
-    if (ds_applied_policy && ds_applied_policy.name) { policy_name = ds_applied_policy.name }
+  var policy_name = "Google Policy"
+  if (ds_applied_policy && ds_applied_policy.name) { policy_name = ds_applied_policy.name }
 
+  if (param_recommendation_scope != "Billing Account" && ds_google_projects.length == 0) {
     result = [{
       error: "No Google projects were returned. This typically indicates that the Google credential does not have the required 'resourcemanager.projects.get' permission, or that there are no accessible Google projects associated with this credential.",
+      policy_name: policy_name
+    }]
+  }
+
+  if (param_recommendation_scope == "Billing Account" && ds_google_projects.length == 0 && param_regions_list.length == 0) {
+    result = [{
+      error: "Recommendation Scope is set to 'Billing Account' but no Google projects are accessible and no Allow/Deny Regions List has been configured. At least one of these is required to determine which regions to query for billing account recommendations. Either ensure the credential has project access or provide a list of regions using the Allow/Deny Regions List parameter.",
       policy_name: policy_name
     }]
   }
@@ -377,24 +393,60 @@ script "js_google_regions_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_billing_account_scope_enabled" do
+  run_script $js_billing_account_scope_enabled, $param_recommendation_scope
+end
+
+script "js_billing_account_scope_enabled", type: "javascript" do
+  parameters "param_recommendation_scope"
+  result "result"
+  code <<-'EOS'
+  result = []
+  if (param_recommendation_scope != "Project") {
+    result = [{}]
+  }
+EOS
+end
+
+datasource "ds_google_billing_accounts" do
+  iterate $ds_billing_account_scope_enabled
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "cloudbilling.googleapis.com"
+    path "/v1/billingAccounts"
+    ignore_status [400, 401, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "billingAccounts[*]") do
+      field "id", jmes_path(col_item, "name")
+      field "displayName", jmes_path(col_item, "displayName")
+      field "open", jmes_path(col_item, "open")
+    end
+  end
+end
+
 datasource "ds_recommender_requests" do
-  run_script $js_recommender_requests, $ds_google_regions_filtered
+  run_script $js_recommender_requests, $ds_google_regions_filtered, $param_recommendation_scope
 end
 
 script "js_recommender_requests", type: "javascript" do
-  parameters "ds_google_regions_filtered"
+  parameters "ds_google_regions_filtered", "param_recommendation_scope"
   result "result"
   code <<-'EOS'
   result = []
 
-  _.each(ds_google_regions_filtered, function(region) {
-    result.push({
-      projectId: region['projectId'],
-      projectName: region['projectName'],
-      region: region['region'],
-      number: result.length + 1
+  if (param_recommendation_scope != "Billing Account") {
+    _.each(ds_google_regions_filtered, function(region) {
+      result.push({
+        projectId: region['projectId'],
+        projectName: region['projectName'],
+        region: region['region'],
+        number: result.length + 1
+      })
     })
-  })
+  }
 EOS
 end
 
@@ -409,7 +461,7 @@ datasource "ds_recommendations" do
       field "projectId", val(iter_item, "projectId")
       field "projectName", val(iter_item, "projectName")
       field "region", val(iter_item, "region")
-      field "id", val(col_item, "name")
+      field "id", jmes_path(col_item, "name")
       field "description", jmes_path(col_item, "description")
       field "content", jmes_path(col_item, "content")
       field "operationGroups", jmes_path(col_item, "content.operationGroups")
@@ -442,10 +494,123 @@ script "js_recommendations", type: "javascript" do
     pagination: "pagination_google",
     host: "recommender.googleapis.com",
     ignore_status: [400, 401, 403],
-    path: "/v1/projects/"+ projectId + "/locations/" + region + "/recommenders/google.compute.commitment.UsageCommitmentRecommender/recommendations",
+    path: "/v1/projects/" + projectId + "/locations/" + region + "/recommenders/google.compute.commitment.UsageCommitmentRecommender/recommendations",
     query_params: { filter: "stateInfo.state=ACTIVE" },
     query_strings: { alt: "json" }
   }
+EOS
+end
+
+datasource "ds_billing_account_recommender_requests" do
+  run_script $js_billing_account_recommender_requests, $ds_google_billing_accounts, $ds_google_regions_filtered, $ds_recommender_requests, $param_recommendation_scope, $param_regions_list
+end
+
+script "js_billing_account_recommender_requests", type: "javascript" do
+  parameters "ds_google_billing_accounts", "ds_google_regions_filtered", "ds_recommender_requests", "param_recommendation_scope", "param_regions_list"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (param_recommendation_scope != "Project") {
+    var unique_regions = []
+    var start_number = ds_recommender_requests.length
+
+    if (param_regions_list.length > 0) {
+      unique_regions = param_regions_list
+    } else {
+      unique_regions = _.uniq(_.pluck(ds_google_regions_filtered, "region"))
+    }
+
+    _.each(ds_google_billing_accounts, function(billing_account) {
+      if (billing_account['open'] == true) {
+        var ba_id = billing_account['id'].split('/').pop()
+
+        _.each(unique_regions, function(region) {
+          result.push({
+            billingAccountId: ba_id,
+            billingAccountDisplayName: billing_account['displayName'],
+            region: region,
+            number: start_number + result.length + 1
+          })
+        })
+      }
+    })
+  }
+EOS
+end
+
+datasource "ds_billing_account_recommendations" do
+  iterate $ds_billing_account_recommender_requests
+  request do
+    run_script $js_billing_account_recommendations, val(iter_item, "billingAccountId"), val(iter_item, "region"), val(iter_item, "number")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "recommendations[*]") do
+      field "billingAccountId", val(iter_item, "billingAccountId")
+      field "billingAccountDisplayName", val(iter_item, "billingAccountDisplayName")
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "content", jmes_path(col_item, "content")
+      field "operationGroups", jmes_path(col_item, "content.operationGroups")
+      field "algorithm", jmes_path(col_item, "content.overview.algorithm")
+      field "primaryImpact", jmes_path(col_item, "primaryImpact")
+      field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
+      field "costNanos", jmes_path(col_item, "primaryImpact.costProjection.cost.nanos")
+      field "duration", jmes_path(col_item, "primaryImpact.costProjection.duration")
+      field "currency", jmes_path(col_item, "primaryImpact.costProjection.cost.currencyCode")
+      field "priority", jmes_path(col_item, "priority")
+      field "recommenderSubtype", jmes_path(col_item, "recommenderSubtype")
+      field "state", jmes_path(col_item, "stateInfo.state")
+    end
+  end
+end
+
+script "js_billing_account_recommendations", type: "javascript" do
+  parameters "billingAccountId", "region", "number"
+  result "request"
+  code <<-'EOS'
+  // If 100 requests have been made, wait 1 minute to avoid throttling
+  if (number % 100 === 0) {
+    now = new Date().getTime()
+    wait_time = 60000 // Amount of time to wait in milliseconds
+    while(new Date().getTime() < now + wait_time) { /* Do nothing */ }
+  }
+
+  var request = {
+    auth: "auth_google",
+    pagination: "pagination_google",
+    host: "recommender.googleapis.com",
+    ignore_status: [400, 401, 403],
+    path: "/v1/billingAccounts/" + billingAccountId + "/locations/" + region + "/recommenders/google.compute.commitment.UsageCommitmentRecommender/recommendations",
+    query_params: { filter: "stateInfo.state=ACTIVE" },
+    query_strings: { alt: "json" }
+  }
+EOS
+end
+
+datasource "ds_recommendations_all" do
+  run_script $js_recommendations_all, $ds_recommendations, $ds_billing_account_recommendations
+end
+
+script "js_recommendations_all", type: "javascript" do
+  parameters "ds_recommendations", "ds_billing_account_recommendations"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(ds_recommendations, function(rec) {
+    result.push(_.extend({}, rec, { recommendationScope: "Project" }))
+  })
+
+  _.each(ds_billing_account_recommendations, function(rec) {
+    result.push(_.extend({}, rec, {
+      recommendationScope: "Billing Account",
+      projectId: rec['billingAccountId'],
+      projectName: rec['billingAccountDisplayName']
+    }))
+  })
 EOS
 end
 
@@ -453,18 +618,18 @@ end
 # This datasource returns an empty array if the target currency is USD.
 # This prevents ds_currency_conversion from running if it's not needed.
 datasource "ds_conditional_currency_conversion" do
-  run_script $js_conditional_currency_conversion, $ds_currency_target, $ds_recommendations
+  run_script $js_conditional_currency_conversion, $ds_currency_target, $ds_recommendations_all
 end
 
 script "js_conditional_currency_conversion", type: "javascript" do
-  parameters "ds_currency_target", "ds_recommendations"
+  parameters "ds_currency_target", "ds_recommendations_all"
   result "result"
   code <<-'EOS'
   result = []
   from_currency = "USD"
 
-  if (ds_recommendations.length > 0) {
-    from_currency = ds_recommendations[0]["currency"]
+  if (ds_recommendations_all.length > 0 && ds_recommendations_all[0]["currency"]) {
+    from_currency = ds_recommendations_all[0]["currency"]
   }
 
   // Make the request only if the target currency is not USD
@@ -499,7 +664,7 @@ datasource "ds_currency" do
   run_script $js_currency, $ds_currency_target, $ds_currency_conversion
 end
 
-script "js_currency", type:"javascript" do
+script "js_currency", type: "javascript" do
   parameters "ds_currency_target", "ds_currency_conversion"
   result "result"
   code <<-'EOS'
@@ -522,11 +687,11 @@ EOS
 end
 
 datasource "ds_recommendations_incident" do
-  run_script $js_recommendations_incident, $ds_recommendations, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings, $param_term, $param_algorithm, $param_incident_csv
+  run_script $js_recommendations_incident, $ds_recommendations_all, $ds_currency, $ds_currency_conversion, $ds_applied_policy, $param_min_savings, $param_term, $param_algorithm, $param_incident_csv, $param_recommendation_scope
 end
 
-script "js_recommendations_incident", type:"javascript" do
-  parameters "ds_recommendations", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings", "param_term", "param_algorithm", "param_incident_csv"
+script "js_recommendations_incident", type: "javascript" do
+  parameters "ds_recommendations_all", "ds_currency", "ds_currency_conversion", "ds_applied_policy", "param_min_savings", "param_term", "param_algorithm", "param_incident_csv", "param_recommendation_scope"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -568,7 +733,7 @@ script "js_recommendations_incident", type:"javascript" do
   }
 
   // Filter recommendations by algorithm
-  filtered_recommendations = _.filter(ds_recommendations, function(recommendation) {
+  filtered_recommendations = _.filter(ds_recommendations_all, function(recommendation) {
     return recommendation['algorithm'] == algorithm_table[param_algorithm]['value']
   })
 
@@ -583,14 +748,14 @@ script "js_recommendations_incident", type:"javascript" do
 
     costNanos = recommendation['costNanos']
     if (costNanos == null || costNanos == undefined) { costNanos = 0 }
-    if (costNanos != null && costNanos != undefined) { costNanos = Number(costNanos) * -1 }
+    costNanos = Number(costNanos) * -1
 
     costUnits = recommendation['costUnits']
     if (costUnits == null || costUnits == undefined) { costUnits = 0 }
-    if (costUnits != null && costUnits != undefined) { costUnits = Number(costUnits) * -1 }
+    costUnits = Number(costUnits) * -1
 
     savings = 0.0
-    duration = parseFloat(recommendation['duration'].replace("s", "")) / 2628288
+    duration = recommendation['duration'] ? parseFloat(recommendation['duration'].replace("s", "")) / 2628288 : 0
     if (duration != 0) { savings = (costUnits + costNanos * Math.pow(10, -9)) / duration * ds_currency['exchange_rate']}
 
     term = null
@@ -637,6 +802,7 @@ script "js_recommendations_incident", type:"javascript" do
         term: term,
         service: "Compute Engine",
         paymentOption: "No Upfront",
+        recommendationScope: recommendation['recommendationScope'],
         policy_name: ds_applied_policy['name'],
         total_savings: "",
         message: ""
@@ -660,6 +826,7 @@ script "js_recommendations_incident", type:"javascript" do
 
   message = [
     "The following settings were used when generating recommendations:\n",
+    "- Recommendation Scope: ", param_recommendation_scope, "\n",
     "- Recommendation Algorithm: ", param_algorithm, "\n",
     "- Term: ", param_term, "\n",
     "- Minimum Savings Threshold: ", param_min_savings, "\n\n"
@@ -695,6 +862,7 @@ script "js_recommendations_incident", type:"javascript" do
     term: "",
     service: "",
     paymentOption: "",
+    recommendationScope: "",
     policy_name: "",
     total_savings: "",
     message: ""
@@ -723,10 +891,10 @@ policy "pol_recommendations" do
     export do
       resource_level true
       field "accountID" do
-        label "Project ID"
+        label "Account ID"
       end
       field "accountName" do
-        label "Project Name"
+        label "Account Name"
       end
       field "resourceID" do
         label "Resource ID"
@@ -734,11 +902,14 @@ policy "pol_recommendations" do
       field "resourceName" do
         label "Resource Name"
       end
+      field "resourcesToPurchase" do
+        label "Resources To Purchase"
+      end
       field "resourceType" do
         label "Resource Type"
       end
-      field "resourcesToPurchase" do
-        label "Resources To Purchase"
+      field "recommendationDetails" do
+        label "Recommendation"
       end
       field "region" do
         label "Region"
@@ -752,15 +923,6 @@ policy "pol_recommendations" do
       field "paymentOption" do
         label "Payment Option"
       end
-      field "recommendationDetails" do
-        label "Recommendation"
-      end
-      field "savings" do
-        label "Estimated Monthly Savings"
-      end
-      field "savingsCurrency" do
-        label "Currency"
-      end
       field "priority" do
         label "Priority"
       end
@@ -769,6 +931,15 @@ policy "pol_recommendations" do
       end
       field "state" do
         label "State"
+      end
+      field "recommendationScope" do
+        label "Recommendation Scope"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
       end
       field "service" do
         label "Service"
@@ -783,7 +954,7 @@ policy "pol_recommendations" do
   validate $ds_no_projects_error do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
     detail_template <<-'EOS'
-    The policy was unable to retrieve any Google projects. This typically indicates a permissions issue with the Google credential.
+    The policy encountered one or more errors that prevented it from running normally.
 
     **Error Details:**
     {{ range data -}}
@@ -791,9 +962,9 @@ policy "pol_recommendations" do
     {{ end -}}
 
     **Recommended Actions:**
-    1. Verify that the Google credential has the 'resourcemanager.projects.get' permission.
-    1. Ensure that the credential has access to at least one Google project.
+    1. If no Google projects were returned, verify that the Google credential has the `resourcemanager.projects.get` permission and has access to at least one Google project.
     1. If using project filtering parameters, verify that the filtered list includes accessible projects.
+    1. If using Billing Account scope with no accessible projects, configure the `Allow/Deny Regions List` parameter to specify the regions to query.
     EOS
     check eq(size(data), 0)
     escalate $esc_email_errors_identified
