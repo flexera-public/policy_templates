@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.0
+
+- Added error incident when no Azure Subscriptions are found, indicating a potential credential or permissions issue.
+
 ## v0.2.0
 
 - Added `Incident Table Rows for Email Body` and `Attach CSV To Incident Email` parameters to support sending a CSV attachment with incident emails.

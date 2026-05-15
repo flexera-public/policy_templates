@@ -67,6 +67,7 @@ def extract_intermediate_files(raw_filename, product_filename, terms_filename):
                     pf.write(line)
                 elif ('"sku"' in stripped or '"instanceType"' in stripped or
                       '"operatingSystem"' in stripped or '"preInstalledSw"' in stripped or
+                      '"tenancy"' in stripped or '"capacitystatus"' in stripped or
                       '"attributes"' in stripped):
                     pf.write(line)
                 elif '"regionCode"' in stripped:
@@ -108,10 +109,17 @@ def build_starting_list(raw_data_products, raw_data_terms):
             sku = raw_data_products[key]["sku"]
             operatingSystem = raw_data_products[key]["attributes"]["operatingSystem"]
             preInstalledSw = raw_data_products[key]["attributes"]["preInstalledSw"]
+            tenancy = raw_data_products[key]["attributes"].get("tenancy", "")
+            capacitystatus = raw_data_products[key]["attributes"].get("capacitystatus", "")
             prices = []
 
-            # Only process entries with no pre-installed software (NA) that have OnDemand terms
-            if key in raw_data_terms["terms"]["OnDemand"] and preInstalledSw == "NA":
+            # Only process standard shared on-demand entries with no pre-installed software.
+            # Filtering tenancy==Shared excludes Dedicated Instance and Dedicated Host SKUs.
+            # Dedicated Host SKUs price only the per-instance OS license surcharge, not the
+            # full hourly on-demand rate, so including them produces incorrect (too-low) prices.
+            # Filtering capacitystatus==Used excludes capacity reservation SKUs.
+            if (key in raw_data_terms["terms"]["OnDemand"] and preInstalledSw == "NA" and
+                    tenancy == "Shared" and capacitystatus == "Used"):
                 for pricing_key in raw_data_terms["terms"]["OnDemand"][key]:
                     offerTermCode = raw_data_terms["terms"]["OnDemand"][key][pricing_key]["offerTermCode"]
                     priceDimensions = []
@@ -164,10 +172,15 @@ def build_final_pricing(starting_list):
             final_list[regionCode][instanceType] = {}
 
         if pricePerUnit != -1:
-            final_list[regionCode][instanceType][operatingSystem] = {
-                "sku": sku,
-                "pricePerUnit": pricePerUnit
-            }
+            # Keep the highest price seen for this (region, instanceType, OS) combination.
+            # Multiple SKUs can match (e.g. standard on-demand vs BYOL); the standard
+            # on-demand price is always the highest and is the one we want.
+            existing = final_list[regionCode][instanceType].get(operatingSystem, {})
+            if pricePerUnit > existing.get("pricePerUnit", -1):
+                final_list[regionCode][instanceType][operatingSystem] = {
+                    "sku": sku,
+                    "pricePerUnit": pricePerUnit
+                }
 
     return final_list
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.1
+
+- Updated policy template to use correct Flexera documentation URL in the policy description.
+
 ## v3.1.0
 
 - Added support for attaching CSV files to incident emails.

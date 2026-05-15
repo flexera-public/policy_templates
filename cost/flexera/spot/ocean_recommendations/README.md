@@ -10,6 +10,7 @@ This policy template provides rightsizing recommendations for Kubernetes cluster
 - It filters the suggestions based on user-defined parameters, such as minimum savings threshold and whether to include recommendations with undefined requests.
 - The policy calculates potential savings and generates a detailed report with recommendations.
 - An email notification is sent with the report.
+- If any clusters fail to return recommendations (e.g., due to API errors such as `FAILED_TO_GET_RECOMMENDATIONS`), a separate incident is raised with error details, troubleshooting steps, and links to Spot documentation.
 
 ## Input Parameters
 
@@ -26,6 +27,7 @@ This policy template has the following input parameters:
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report with rightsizing recommendations.
+- Send an email notification if any clusters failed to return rightsizing recommendations, with troubleshooting guidance.
 
 ## Prerequisites
 

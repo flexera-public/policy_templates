@@ -1,14 +1,14 @@
 name "Azure Blob Storage Accounts Without Logging Enabled"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report any blob storage accounts that are not configured to log read, write, and delete requests. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/azure/blob_storage_logging) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Report any blob storage accounts that are not configured to log read, write, and delete requests. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/azure/blob_storage_logging) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/tree/master/security/azure/blob_storage_logging"
 category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "3.1.0",
+  version: "3.2.0",
   provider: "Azure",
   service: "Storage",
   policy_set: "CIS",
@@ -253,6 +253,25 @@ script "js_azure_subscriptions_filtered", type: "javascript" do
     })
   } else {
     result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_no_subscriptions_error" do
+  run_script $js_no_subscriptions_error, $ds_azure_subscriptions, $ds_applied_policy
+end
+
+script "js_no_subscriptions_error", type: "javascript" do
+  parameters "ds_azure_subscriptions", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (ds_azure_subscriptions.length == 0) {
+    result = [{
+      policy_name: ds_applied_policy['name'],
+      error: "No Azure Subscriptions found. This is usually caused by a lack of permissions or an expired/invalid credential."
+    }]
   }
 EOS
 end
@@ -607,11 +626,35 @@ policy "pol_bad_storage_accounts" do
       end
     end
   end
+  validate $ds_no_subscriptions_error do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to access any Azure Subscriptions.
+
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end -}}
+
+    **Recommended Actions:**
+    1. Verify that the Azure credential has the required permissions to list subscriptions.
+    2. Ensure the credential has not expired or been revoked.
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
 end
 
 ###############################################################################
 # Escalations
 ###############################################################################
+
+escalation "esc_email_errors_identified" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
 
 escalation "esc_email" do
   automatic true

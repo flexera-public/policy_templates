@@ -8,11 +8,11 @@ severity "low"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "0.2.5",
+  version: "0.2.6",
   provider: "AWS",
   service: "Compute",
   policy_set: "Unit Economics",
-  publish: "false"
+  hide_skip_approvals: "true"
 )
 
 ###############################################################################
@@ -88,7 +88,7 @@ script "js_flexera_api_hosts", type: "javascript" do
   code <<-'EOS'
   host_table = {
     "api.optima.flexeraeng.com": {
-	    api: "api.flexera.com",
+      api: "api.flexera.com",
       flexera: "api.flexera.com",
       fsm: "api.fsm.flexeraeng.com",
       grs: "grs-front.iam-us-east-1.flexeraeng.com",
@@ -96,7 +96,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.com"
     },
     "api.optima-eu.flexeraeng.com": {
-	    api: "api.flexera.eu",
+      api: "api.flexera.eu",
       flexera: "api.flexera.eu",
       fsm: "api.fsm-eu.flexeraeng.com",
       grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
@@ -104,7 +104,7 @@ script "js_flexera_api_hosts", type: "javascript" do
       tld: "flexera.eu"
     },
     "api.optima-apac.flexeraeng.com": {
-	    api: "api.flexera.au",
+      api: "api.flexera.au",
       flexera: "api.flexera.au",
       fsm: "api.fsm-apac.flexeraeng.com",
       grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
@@ -131,8 +131,10 @@ datasource "ds_billing_centers" do
     auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -360,7 +362,7 @@ script "js_normalized_cost_instance_hour_data", type: "javascript" do
     normalized_usage_amount = data['usage_amount'] * normalization_factor
 
     return {
-      billing_center_id: data['billing_center_id']
+      billing_center_id: data['billing_center_id'],
       instance_type: data['instance_type'],
       usage_unit: data['usage_unit'],
       cost: data['cost'],
@@ -459,7 +461,7 @@ script "js_chart_creation", type: "javascript" do
   chart_data = "chd=t:" + data_parts.join('|')
 
   //Create chart scale
-  normalized_costs = _.pluck(ds_normalized_cost_instance_hour_data, 'avg_normalized_cost_instance_hr').sort()
+  normalized_costs = _.pluck(ds_normalized_cost_instance_hour_data, 'avg_normalized_cost_instance_hr').sort(function(a, b) { return a - b })
   min = Math.round(normalized_costs[0] * 0.9 * 1000) / 1000
   max = Math.round(normalized_costs.reverse()[0] * 1.1 * 1000) / 1000
   chart_range = "chxr=0," + min + "," + max
@@ -474,7 +476,7 @@ script "js_chart_creation", type: "javascript" do
     chartLegend: encodeURI(chart_legend),
     chartLegendPosition: encodeURI("chdlp=r"),
     chartAxis: encodeURI("chxt=y,x"),
-    chartAxisFormat: encodeURI("chxs=0N*c" + ds_currency['code'] + "2z*|1,min40"),
+    chartAxisFormat: encodeURI("chxs=0N*c" + ds_currency['code'] + "3z*|1,min40"),
     chartAxisLabel: encodeURI(chart_axis_labels),
     chartScale: encodeURI(chart_range),
     chartLineStyle: encodeURI("chls=2|2|2|2|2|2|2|2|2|2|2|2|2|2|2|2"),

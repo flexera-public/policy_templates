@@ -7,23 +7,20 @@ This policy template checks all GP2 volumes on an AWS Account to see if the GP3 
 ## How It Works
 
 - The policy leverages the AWS API to retrieve a list of all volumes in an AWS Account
-- The policy identifies all GP2 volumes and uses the AWS Pricing API to retrieve the current cost, and the cost of the volume if it were a GP3 volume type.
-- If there is a cost savings associated with moving the volume type from GP2 to GP3, this will provide a recommendation.
+- The policy identifies all GP2 volumes and uses the AWS Pricing API to retrieve the list price of both the current GP2 volume type and the equivalent GP3 configuration.
+- If the GP3 list price is lower than the GP2 list price, a recommendation is generated. The estimated savings are calculated by applying the list price percentage difference to the actual cost of the resource as found in Flexera CCO.
 
 ### Policy Savings Details
 
-The policy template includes the estimated savings. The estimated savings is recognized if the volume is upgraded from GP2 to GP3. The AWS Pricing API is used to retrieve and calculate the estimated savings which is the expected GP3 cost subtracted from the estimated current GP2 cost of the volume. The incident message detail includes the sum of each resource *Estimated Monthly Saving* as *Potential Monthly Savings*.
+The policy template includes the estimated monthly savings. The estimated monthly savings is recognized if the volume is upgraded from GP2 to GP3.
 
-If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
-
-The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the volume is upgraded from GP2 to GP3.
-
-- The `Estimated Monthly Cost` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month. This value is not used for calculating savings but is provided as a reference.
-- Since the `Estimated Monthly Cost` of individual resources is obtained from Flexera CCO, it will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
-- The AWS Pricing API is used to retrieve the list price of the current volume type and the recommended volume type. The `Estimated Monthly Savings` is calculated by subtracting the estimated price of the recommended GP3 volume type from the price of the current GP2 volume type.
-- Since `Estimated Monthly Savings` is calculated based on list prices obtained from the AWS Pricing API, they will *not* take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
+- The `Estimated Monthly Cost` is calculated by multiplying the amortized cost of the resource for 1 day, as found within Flexera CCO, by 30.44, which is the average number of days in a month. This value is provided as a reference and is used to calculate the `Estimated Monthly Savings`.
+- Since the costs of individual resources are obtained from Flexera CCO, they will take into account any Flexera adjustment rules or cloud provider discounts present in the Flexera platform.
+- The AWS Pricing API is used to retrieve the list price of the current GP2 volume type and the recommended GP3 volume type. The percentage difference between these list prices is calculated and applied to the actual CCO cost to produce the `Estimated Monthly Savings`. For example, if the GP2 list price is $50/month and the GP3 list price is $25/month, that represents a 50% reduction in list price. This percentage is then applied to the actual CCO cost of the resource to estimate the dollar savings. If the actual CCO cost of the volume is $80/month, the `Estimated Monthly Savings` would be $40 (50% of $80).
+- The `Current Monthly List Price` and `New Monthly List Price` fields in the incident report show the AWS Pricing API list prices for the GP2 and GP3 volume types respectively. These are provided for reference.
+- If the resource cannot be found in Flexera CCO, the `Estimated Monthly Savings` is 0.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
-- If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
+- Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
 
 ## Input Parameters
 

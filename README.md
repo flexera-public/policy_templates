@@ -53,6 +53,7 @@ These templates can generate savings estimates for your environment. The inciden
   * [AWS EC2 Compute Optimizer Recommendations](./cost/aws/ec2_compute_optimizer)
   * [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
   * [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
+  * [AWS Rightsize EC2 Instances (Cross-Family)](./cost/aws/rightsize_ec2_instances_cross_family)
   * [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
   * [AWS Superseded EBS Volumes](./cost/aws/superseded_ebs_volumes)
   * [AWS Superseded EC2 Instances](./cost/aws/superseded_instances)
@@ -107,6 +108,7 @@ These templates can generate savings estimates for your environment. The inciden
   * [Azure Long Stopped Compute Instances](./cost/azure/long_stopped_instances)
   * [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
   * [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
+  * [Azure Rightsize Compute Instances (Cross-Family)](./cost/azure/rightsize_compute_instances_cross_family)
   * [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
   * [Azure Superseded Compute Instances](./cost/azure/superseded_instances)
   * [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
@@ -326,6 +328,7 @@ These templates can generate savings estimates for your environment. The inciden
 * Compute
 
   * [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
+  * [AWS Cost Report - EC2 Instance Cost Per Hour](./cost/aws/instance_cost_per_hour)
   * [AWS EKS Clusters Without Spot Instances](./cost/aws/eks_without_spot)
   * [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration)
   * [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
@@ -350,6 +353,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Compute
 
+  * [Azure Cost Report - VM Instance Cost Per Hour](./cost/azure/instance_cost_per_hour)
   * [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
   * [Azure Expiring Savings Plans](./cost/azure/savings_plan/expiration)
   * [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
@@ -421,6 +425,7 @@ These templates can generate savings estimates for your environment. The inciden
 * Compute
 
   * [Google Committed Use Discount Report](./cost/google/cud_report)
+  * [Google Cost Report - VM Instance Cost Per Hour](./cost/google/instance_cost_per_hour)
   * [Google Expiring Committed Use Discounts (CUD)](./cost/google/cud_expiration)
   * [Google Schedule Instance](./cost/google/schedule_instance)
 
@@ -509,9 +514,11 @@ These templates can generate savings estimates for your environment. The inciden
 * Cloud Cost Optimization
 
   * [Cloud Bill Processing Error Notification](./operational/flexera/cco/bill_processing_errors_notification)
+  * [Container Cost Visibility Setup](./automation/flexera/spot/container_cost_visibility)
   * [Dynamic Dashboards](./operational/flexera/cco/dynamic_dashboards)
   * [FinOps Dashboards](./operational/flexera/cco/finops_dashboards)
   * [Flexera Billing Centers from Dimension Values](./operational/flexera/cco/billing_centers_from_dimensions)
+  * [Flexera CCO Additional Dimensions](./automation/flexera/additional_dimensions)
   * [MSP Invoiceable Spend Report](./operational/flexera/msp/msp_invoiceable_spend_report)
   * [Rule-Based Dimensions from CSV - AWS S3](./operational/flexera/cco/rbd_from_csv_aws_s3)
   * [Rule-Based Dimensions from CSV - Azure Storage](./operational/flexera/cco/rbd_from_csv_azure_storage)

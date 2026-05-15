@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.7
+
+- Minor code formatting fixes. Functionality unchanged.
+
 ## v0.5.6
 
 - Updated documentation link in policy description. Functionality unchanged.

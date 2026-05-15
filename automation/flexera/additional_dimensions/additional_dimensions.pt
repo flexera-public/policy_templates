@@ -1,0 +1,316 @@
+name "Flexera CCO Additional Dimensions"
+rs_pt_ver 20180301
+type "policy"
+short_description "Adds custom pre-built Rule-Based Dimensions (RBDs) within the Flexera One organization. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/additional_dimensions/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/additional_dimensions/"
+category "Operational"
+severity "low"
+default_frequency "monthly"
+info(
+  version: "0.2.0",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: "Automation",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify when new Rule-Based Dimensions are created."
+  default []
+end
+
+parameter "param_rbds" do
+  type "list"
+  category "Policy Settings"
+  label "Rule-Based Dimensions (Built-In)"
+  description "Select the specific built-in Rule-Based Dimensions you wish to create."
+  allowed_values ["AI Models", "AI Tokens", "AI Tools", "Object Storage Tier Category", "Object Storage Usage Category"]
+  default []
+end
+
+parameter "param_rbds_external" do
+  type "list"
+  category "Policy Settings"
+  label "Rule-Based Dimensions (External)"
+  description "Provide the full URLs of any external Rule-Based Dimension JSON files you wish to also create. External files must be publicly accessible and in JSON format. Please see README for more information."
+  allowed_pattern /^https:\/\/.*\.json$/
+  default []
+end
+
+parameter "param_effective_date" do
+  type "string"
+  category "Policy Settings"
+  label "Effective Date"
+  description "Year/month you want the Rule-Based Dimension rules to start applying in YYYY-MM format."
+  default "2010-01"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credential."
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": { flexera: "api.flexera.com", optima: "api.optima.flexeraeng.com" },
+    "api.optima-eu.flexeraeng.com": { flexera: "api.flexera.eu", optima: "api.optima-eu.flexeraeng.com" },
+    "api.optima-apac.flexeraeng.com": { flexera: "api.flexera.au", optima: "api.optima-apac.flexeraeng.com" }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", policy_id])
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "name", jmes_path(response, "name")
+  end
+end
+
+datasource "ds_rbds_to_get" do
+  run_script $js_rbds_to_get, $param_rbds, $param_rbds_external
+end
+
+script "js_rbds_to_get", type: "javascript" do
+  parameters "param_rbds", "param_rbds_external"
+  result "result"
+  code <<-'EOS'
+  url_table = {
+    "AI Models": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/custom_dimensions/ai_models.json",
+    "AI Tokens": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/custom_dimensions/ai_tokens.json",
+    "AI Tools": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/custom_dimensions/ai_tools.json",
+    "Object Storage Tier Category": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/custom_dimensions/object_storage_tier_category.json",
+    "Object Storage Usage Category": "https://raw.githubusercontent.com/flexera-public/policy_templates/master/data/custom_dimensions/object_storage_usage_category.json"
+  }
+
+  // Map each selected RBD name to its GitHub raw URL; filter removes any
+  // names not found in url_table (e.g. unrecognized values passed via param_rbds).
+  urls = _.filter(_.map(param_rbds, function(item) {
+    return url_table[item]
+  }), function(url) {
+    return url != undefined
+  }).concat(param_rbds_external)
+
+  result = _.map(urls, function(url) {
+    parts = url.split("/")
+
+    parts.shift()
+    parts.shift()
+    host = parts.shift()
+
+    return {
+      host: host,
+      path: "/" + parts.join("/")
+    }
+  })
+EOS
+end
+
+datasource "ds_rbds_json" do
+  iterate $ds_rbds_to_get
+  request do
+    host val(iter_item, "host")
+    path val(iter_item, "path")
+    header "User-Agent", "RS Policies"
+    ignore_status [404]
+  end
+  result do
+    encoding "json"
+    field "name", jmes_path(response, "name")
+    field "id", jmes_path(response, "id")
+    field "rules", jmes_path(response, "rules")
+  end
+end
+
+datasource "ds_existing_rbds" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_rbds_to_create" do
+  run_script $js_rbds_to_create, $ds_rbds_json, $ds_existing_rbds, $param_effective_date
+end
+
+script "js_rbds_to_create", type: "javascript" do
+  parameters "ds_rbds_json", "ds_existing_rbds", "param_effective_date"
+  result "result"
+  code <<-'EOS'
+  existing_ids = _.pluck(ds_existing_rbds, "id")
+
+  // Skip RBDs where the downloaded JSON is missing required fields.
+  // Use PATCH for existing RBDs (update) and POST for new ones (create).
+  result = _.filter(_.map(ds_rbds_json, function(rbd) {
+    return {
+      id: rbd["id"],
+      name: rbd["name"],
+      rules: rbd["rules"],
+      effective_at: param_effective_date,
+      verb: _.contains(existing_ids, rbd["id"]) ? "PATCH" : "POST"
+    }
+  }), function(item) {
+    return item["name"] != null && item["id"] != null && item["rules"] != null
+  })
+EOS
+end
+
+datasource "ds_create_rbds" do
+  iterate $ds_rbds_to_create
+  request do
+    run_script $js_create_rbds, val(iter_item, "id"), val(iter_item, "name"), val(iter_item, "verb"), val($ds_flexera_api_hosts, "flexera"), rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_create_rbds", type: "javascript" do
+  parameters "rbd_id", "name", "verb", "api_host", "rs_org_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    verb: verb,
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id].join(""),
+    body_fields: { name: name }
+  }
+EOS
+end
+
+datasource "ds_apply_rbd_rules" do
+  iterate $ds_rbds_to_create
+  request do
+    # $ds_create_rbds is passed as a parameter to ensure it executes before ds_apply_rbd_rules.
+    run_script $js_apply_rbd_rules, val(iter_item, "id"), val(iter_item, "effective_at"), val(iter_item, "rules"), val($ds_flexera_api_hosts, "flexera"), $ds_create_rbds, rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_apply_rbd_rules", type: "javascript" do
+  parameters "rbd_id", "effective_at", "rules", "api_host", "ds_create_rbds", "rs_org_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    verb: "PUT",
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id, "/rules/", effective_at].join(""),
+    body_fields: { rules: rules }
+  }
+EOS
+end
+
+datasource "ds_custom_rbds" do
+  run_script $js_custom_rbds, $ds_rbds_to_create, $ds_apply_rbd_rules, $ds_applied_policy
+end
+
+script "js_custom_rbds", type: "javascript" do
+  parameters "ds_rbds_to_create", "ds_apply_rbd_rules", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  // Build incident rows for all created/updated RBDs.
+  // ds_apply_rbd_rules is passed only to guarantee execution order.
+  result = _.map(ds_rbds_to_create, function(rbd) {
+    return {
+      id: rbd["id"],
+      name: rbd["name"],
+      effective_at: rbd["effective_at"],
+      rules_count: rbd["rules"] ? rbd["rules"].length : 0,
+      action: rbd["verb"] == "POST" ? "Created" : "Updated"
+    }
+  })
+
+  if (result.length > 0) {
+    result[0]["policy_name"] = ds_applied_policy["name"]
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_custom_rbds" do
+  validate_each $ds_custom_rbds do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Rule-Based Dimensions Created or Updated"
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    export do
+      resource_level true
+      field "id" do
+        label "ID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "effective_at" do
+        label "Effective Date"
+      end
+      field "rules_count" do
+        label "Number of Rules"
+      end
+      field "action" do
+        label "Action"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

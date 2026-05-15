@@ -168,8 +168,9 @@ def general_bad_urls?(file, file_diff)
           # Test again when the file isn't found and the URL points to this repo.
           # URLs referencing /master/ may legitimately 404 before the PR is merged
           # (e.g. new files, moved files). Retry with the PR branch name to confirm
-          # the resource will exist once merged.
-          if response.code == '404' && url_string.include?('github.com/flexera-public/policy_templates/') && url_string.include?('/master/')
+          # the resource will exist once merged. Covers both github.com (rendered
+          # pages/tree links) and raw.githubusercontent.com (raw file content links).
+          if response.code == '404' && (url_string.include?('github.com/flexera-public/policy_templates/') || url_string.include?('raw.githubusercontent.com/flexera-public/policy_templates/')) && url_string.include?('/master/')
             # Modify URL string and convert it back into a proper URI object
             url_string = url.to_s.gsub('/master/', "/#{github.branch_for_head}/").gsub(')','')
             url = URI(url_string)

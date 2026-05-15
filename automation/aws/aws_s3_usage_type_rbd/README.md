@@ -1,5 +1,9 @@
 # AWS S3 Usage Type Rule-Based Dimension
 
+## Deprecated
+
+This policy template is no longer being updated. The [Flexera CCO Additional Dimensions](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/additional_dimensions/) policy template is recommended instead and will add appropriate S3 dimensions as needed.
+
 ## What It Does
 
 This policy template creates and updates a custom Rule-Based Dimension for S3 usage types. This rule-based dimension will contain more general, human-readable usage types than the built-in `Usage Type` dimension that comes with the Flexera One platform.

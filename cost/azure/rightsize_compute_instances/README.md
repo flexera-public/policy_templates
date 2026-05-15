@@ -4,6 +4,8 @@
 
 This policy template checks all the instances in Azure Subscriptions for the average or maximum CPU and/or memory usage over a user-specified number of days. If the usage is less than the user provided Idle Instance CPU and/or memory percentage threshold then the Virtual Machine is recommended for deletion. If the usage is less than the user provided Underutilized Instance CPU and/or Memory percentage threshold, and the total number of currently attached disks is supported with a smaller instance size, then the Virtual Machine is recommended for downsizing. Both sets of Virtual Machines returned from this policy are emailed to the user.
 
+NOTE: It is recommended that you use this policy template *or* the [Azure Rightsize Compute Instances (Cross-Family)](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances_cross_family) policy template but not both at the same time to avoid duplicate recommendations.
+
 NOTE: This policy template only reports on underutilized and idle virtual machines. Please use the [Azure Overutilized Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/overutilized_compute_instances) policy template to report on overutilized instances.
 
 ## How It Works

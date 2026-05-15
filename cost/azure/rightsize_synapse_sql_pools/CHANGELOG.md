@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.0
+
+- Added error incident when no Azure Subscriptions are found, indicating a potential credential or permissions issue.
+- Minor code cleanup.
+
 ## v0.2.3
 
 - Updated documentation link in policy description. Functionality unchanged.
