@@ -4,7 +4,6 @@
 
 - Added new `Recommendation Scope` parameter to support fetching CUD recommendations at the billing account level in addition to, or instead of, the existing project level.
 - Incident message now includes the selected Recommendation Scope setting for easier auditing.
-- The "no projects" error incident is suppressed when scope is set to `Billing Account` only.
 
 ## v4.6.0
 
