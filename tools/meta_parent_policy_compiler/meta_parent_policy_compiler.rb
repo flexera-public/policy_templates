@@ -64,7 +64,7 @@ EXCLUDED_PARAMS = %w[
 # Compile Meta Parent Policy Definition
 # This function takes a child policy template file path
 # as input and outputs a meta parent policy definition
-def compile_meta_parent_policy(file_path, specified_parent_pt_path)
+def compile_meta_parent_policy(file_path, specified_parent_pt_path, output_suffix: "_meta_parent.pt", force_publish: nil)
   print("Reading child  policy template: "+file_path+"\n") # Intentional extra space after child so the Read/Write output lines up
   pt = File.binread(file_path)
 
@@ -302,11 +302,11 @@ end
   parent_pt = File.binread(parent_pt_path)
   # Copy the parent_pt to output_pt so we can manipulate it safely
   output_pt = parent_pt
-  output_pt_path = File.basename(file_path).split(".")[0] + "_meta_parent.pt"
+  output_pt_path = File.basename(file_path).split(".")[0] + output_suffix
   # Replace __PLACEHOLDER_FOR_CHILD_POLICY_NAME__ with the name of the child policy
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_NAME__", name)
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_VERSION__", version)
-  output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PUBLISH__", publish)
+  output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PUBLISH__", force_publish || publish)
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_DEPRECATED__", deprecated)
 
   if !hide_skip_approvals.empty?
@@ -422,5 +422,20 @@ if $PROGRAM_NAME == __FILE__
   # Loop through all Policy Templates specified
   child_policy_template_files.each do |child_policy_template|
     compile_meta_parent_policy(child_policy_template, specified_parent_pt_path)
+
+    # For Azure templates that have resource group filter params, also generate
+    # an RG-variant meta parent that creates one child policy per subscription/RG combo
+    is_azure = child_policy_template.include?("azure") || specified_parent_pt_path == "azure_meta_parent.pt.template"
+    if is_azure
+      pt_content = File.binread(child_policy_template)
+      if pt_content.include?("param_resource_groups_list")
+        compile_meta_parent_policy(
+          child_policy_template,
+          "azure_meta_parent_rg.pt.template",
+          output_suffix: "_meta_parent_rg.pt",
+          force_publish: "false"
+        )
+      end
+    end
   end
 end
