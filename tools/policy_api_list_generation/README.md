@@ -110,8 +110,37 @@ The script automatically detects and categorizes API calls to:
 - **Microsoft Graph** - Microsoft Graph API
 - **ServiceNow** - ServiceNow APIs
 - **Okta** - Okta identity APIs
+- **Databricks** - Databricks workspace APIs
 - **Spot by NetApp** - Spot optimization APIs
+- **Alibaba Cloud** - Alibaba Cloud APIs
+- **VMware Aria** - VMware Aria (CloudHealth) APIs
+- **Apptio Cloudability** - Apptio Cloudability FinOps APIs
+- **Snowflake** - Snowflake Data Cloud APIs
+- **Datadog** - Datadog monitoring and observability APIs
+- **PagerDuty** - PagerDuty incident management APIs
+- **Jira** - Atlassian Jira project management APIs
+- **Slack** - Slack messaging APIs
+- **Zoom** - Zoom video conferencing APIs
+- **Workday** - Workday HCM and finance APIs
+- **SolarWinds** - SolarWinds Orion platform APIs
+- **Qualys** - Qualys cloud security APIs
+- **Tenable** - Tenable cloud security APIs
+- **CrowdStrike** - CrowdStrike Falcon platform APIs
+- **Lacework** - Lacework cloud security APIs
 - **Unknown** - Dynamic or placeholder endpoints
+
+## Data Files
+
+The script loads several lookup tables from JSON files in the `data/` subdirectory. These files can be extended without modifying the Python script itself.
+
+| File | Description |
+| --- | --- |
+| `data/service_patterns.json` | Maps service names (AWS, Azure, GCP, etc.) to lists of URL regex patterns used to identify which cloud provider an API call targets. Add new patterns here when new services or endpoint domains are encountered. |
+| `data/aws_service_map.json` | AWS service mappings: `host_to_service` maps first-subdomain of an AWS hostname to its IAM service prefix; `version_to_service` maps API version date strings to service prefixes; `query_action_services` is the list of services that use the query-action (`?Action=`) API style. |
+| `data/gcp_service_map.json` | Maps GCP API hostnames (e.g., `compute.googleapis.com`) to their IAM service prefix (e.g., `compute`). |
+| `data/gcp_recommender_permissions.json` | Maps GCP Recommender type IDs (e.g., `google.compute.instance.IdleResourceRecommender`) to their required IAM permission string. Add new recommender types here as Google releases them. |
+| `data/gcp_cwf_permissions.json` | Nested permission table for GCP Compute Engine operations performed via Cloud Workflow (CWF) `http_*` calls on resource selfLinks. Structure: `resource → HTTP method → action suffix → IAM permission`. |
+| `data/azure_sub_resource_permissions.json` | Maps Azure ARM sub-resource path suffixes (e.g., `agentPools`, `databases`) to their ARM RBAC permission strings. Used when the full ARM path has no `/providers/` segment but ends with a recognizable sub-resource. |
 
 ## Automated Workflow
 

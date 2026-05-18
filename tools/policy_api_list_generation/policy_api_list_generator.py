@@ -28,72 +28,32 @@ import urllib.parse
 from pathlib import Path
 
 
+# Canonical ordered list of fields written to the CSV output.
+# Any new field added to api_call records must also be added here.
+CSV_OUTPUT_FIELDS = [
+    'policy_name', 'policy_file', 'policy_version', 'datasource_name',
+    'api_service', 'method', 'endpoint', 'operation', 'field', 'permission',
+]
+
+# Directory containing this script — used to locate the data/ subdirectory
+_TOOL_DIR = Path(__file__).parent
+
+
+def _load_data_file(filename):
+    """Load a JSON data file from this script's data/ subdirectory.
+
+    Raises FileNotFoundError / json.JSONDecodeError on failure so that missing
+    or malformed data files produce an immediate, clear error rather than silent
+    wrong output.
+    """
+    with open(_TOOL_DIR / 'data' / filename) as f:
+        return json.load(f)
+
 class PolicyTemplateParser:
     """Parser for Flexera Policy Template files."""
 
-    # Service patterns to identify which service/cloud the API call targets
-    # Order matters - more specific patterns should come first
-    SERVICE_PATTERNS = {
-        'Turbonomic': [
-            r'turbonomic',  # Turbonomic (IBM) instances
-            r'turbonomic_host',  # Turbonomic host variable
-            r'^flexera$',  # Turbonomic API with flexera as placeholder host
-        ],
-        'AWS': [
-            r'amazonaws\.com',
-        ],
-        'Azure': [
-            r'management\.azure\.com',
-            r'management\.chinacloudapi\.cn',
-            r'\.azure\.com',
-            r'\.azure\.cn',
-            r'\.windows\.net',  # Azure Storage (blob, queue, table, file)
-            r'monitor\.azure\.',  # Azure Monitor (handles malformed URLs missing .com)
-        ],
-        'GCP': [
-            r'\.googleapis\.com',
-        ],
-        'Oracle': [
-            r'\.oraclecloud\.com',
-        ],
-        'Flexera': [
-            r'api\.flexera\.(com|eu|jp)',
-            r'optima\.flexeraeng\.com',
-            r'governance\.rightscale\.com',
-            r'us-3\.rightscale\.com',
-            r'us-4\.rightscale\.com',
-            r'api\.rsc\.flexeraeng\.com',
-            r'rs_optima_host',  # Flexera built-in variable
-            r'rs_governance_host',  # Flexera built-in variable
-            r'flexera_api_host',  # Common pattern for Flexera API hosts
-            r'^api_host$',  # CWF variable resolved from dict field (e.g. $policy["api_host"])
-            r'flexnetmanager',  # FlexNet Manager
-            r'fnms',  # FlexNet Manager Service abbreviation
-            r'FlexNet Manager',  # FlexNet Manager full name
-            r'api\.app\.',  # Flexera API endpoints (partial domains)
-            r'Entire Estate',  # Flexera internal estate references
-            r'ComplianceAPIService',  # FlexNet Compliance API
-            r'flexeraeng\.com',  # Flexera engineering domain
-            r'^false/',  # Placeholder URLs that are actually Flexera internal
-            r'^Monthly/',  # Flexera reporting URLs
-        ],
-        'Spot by NetApp': [
-            r'api\.spotinst\.io',
-        ],
-        'GitHub': [
-            r'api\.github\.com',
-            r'raw\.githubusercontent\.com',
-        ],
-        'Okta': [
-            r'\.okta\.com',
-        ],
-        'ServiceNow': [
-            r'\.service-now\.com',
-        ],
-        'Microsoft Graph': [
-            r'graph\.microsoft\.com',
-        ],
-    }
+    # Loaded from data/service_patterns.json
+    SERVICE_PATTERNS = _load_data_file('service_patterns.json')
 
     # Maps common CWF host variable expressions to resolved host values
     CWF_HOST_MAP = {
@@ -122,57 +82,11 @@ class PolicyTemplateParser:
 
     # ----- AWS constants -----
 
-    # Maps the first subdomain of an AWS hostname to its IAM service prefix.
-    # Used by _aws_service_from_host to identify the service from the host alone.
-    AWS_HOST_TO_SERVICE = {
-        "monitoring": "cloudwatch",
-        "organizations": "organizations",
-        "sts": "sts",
-        "ec2": "ec2",
-        "iam": "iam",
-        "cloudtrail": "cloudtrail",
-        "kms": "kms",
-        "savingsplans": "savingsplans",
-        "eks": "eks",
-        "lambda": "lambda",
-        "s3": "s3",
-        "s3-external-1": "s3",
-        "config": "config",
-        "ce": "ce",
-        "compute-optimizer": "compute-optimizer",
-        "fsx": "fsx",
-        "elasticloadbalancing": "elasticloadbalancing",
-        "rds": "rds",
-        "elasticache": "elasticache",
-        "redshift": "redshift",
-        "access-analyzer": "access-analyzer",
-        "tagging": "tag",
-        "ecs": "ecs",
-    }
-
-    # Maps AWS API version date strings to their IAM service prefix.
-    # Used when the host is bare "amazonaws.com" and service must be inferred
-    # from the ?Version= query parameter.
-    AWS_VERSION_TO_SERVICE = {
-        "2016-11-15": "ec2",
-        "2014-10-31": "rds",
-        "2015-02-02": "elasticache",
-        "2012-12-01": "redshift",
-        "2010-05-08": "iam",
-        "2011-06-15": "sts",
-        "2015-12-01": "elasticloadbalancing",
-        "2012-06-01": "elasticloadbalancing",
-    }
-
-    # AWS services that use the query-action API style (?Action=XxxYyy).
-    # Only these services should have their Action= param used as the IAM action.
-    # REST-style services (S3, EKS, Lambda, etc.) must NOT use Action= for permissions.
-    AWS_QUERY_ACTION_SERVICES = {
-        "ec2", "sts", "iam", "autoscaling", "elasticloadbalancing", "elb",
-        "monitoring", "cloudwatch", "sqs", "rds", "sns", "cloudformation",
-        "organizations", "ecs", "route53", "tagging", "support", "cloudtrail",
-        "elasticache", "kms", "redshift",
-    }
+    # All three AWS constants loaded from data/aws_service_map.json
+    _aws_service_map = _load_data_file('aws_service_map.json')
+    AWS_HOST_TO_SERVICE = _aws_service_map['host_to_service']
+    AWS_VERSION_TO_SERVICE = _aws_service_map['version_to_service']
+    AWS_QUERY_ACTION_SERVICES = set(_aws_service_map['query_action_services'])
 
     # Query-string keys that uniquely identify S3 bucket/object sub-operations.
     # Presence of any of these keys in the URL query string means this is an S3 call,
@@ -207,28 +121,8 @@ class PolicyTemplateParser:
         "kubecost_host": "{kubecost_host}",
     }
 
-    # Maps a trailing sub-resource suffix (after /{id}/) to its ARM RBAC permission.
-    # Used in _azure_permission when the full ARM path has no /providers/ segment
-    # but the path ends in a recognisable sub-resource suffix.
-    SUB_RESOURCE_MAP = {
-        "agentPools":                        "Microsoft.ContainerService/managedClusters/agentPools/read",
-        "blobServices/default":              "Microsoft.Storage/storageAccounts/blobServices/read",
-        "elasticPools":                      "Microsoft.Sql/servers/elasticPools/read",
-        "databases":                         "Microsoft.Sql/servers/databases/read",
-        "instanceView":                      "Microsoft.Compute/virtualMachines/instanceView/read",
-        "configurations/tls_version":        "Microsoft.DBforMySQL/flexibleServers/configurations/read",
-        "configurations/log_retention_days": "Microsoft.DBForPostgreSql/servers/configurations/read",
-        "configurations/connection_throttling": "Microsoft.DBForPostgreSql/servers/configurations/read",
-        "transparentDataEncryption/current": "Microsoft.Sql/servers/databases/transparentDataEncryption/read",
-        "vulnerabilityAssessments/default":  "Microsoft.Sql/servers/vulnerabilityAssessments/read",
-        "auditingSettings/default":          "Microsoft.Sql/servers/auditingSettings/read",
-        "administrators":                    "Microsoft.Sql/servers/administrators/read",
-        "securityAlertPolicies/Default":     "Microsoft.Sql/servers/securityAlertPolicies/read",
-        "managementPolicies/default":        "Microsoft.Storage/storageAccounts/managementPolicies/read",
-        "sites":                             "Microsoft.Web/serverfarms/sites/read",
-        "connections":                       "Microsoft.Network/virtualNetworkGateways/connections/read",
-        "config/web":                        "Microsoft.Web/sites/config/read",
-    }
+    # Loaded from data/azure_sub_resource_permissions.json
+    SUB_RESOURCE_MAP = _load_data_file('azure_sub_resource_permissions.json')
 
     # Maps CWF action suffixes (e.g. "/start") to the ARM resource type they target.
     # Used in _resolve_azure_cwf_href when the escalation context is missing or invalid.
@@ -250,96 +144,14 @@ class PolicyTemplateParser:
 
     # ----- GCP constants -----
 
-    # Maps GCP API hostnames to their IAM service prefix.
-    # Used by _gcp_permission to identify the service from the request host.
-    GCP_HOST_SERVICE = {
-        "compute.googleapis.com": "compute",
-        "www.googleapis.com": "compute",
-        "storage.googleapis.com": "storage",
-        "bigquery.googleapis.com": "bigquery",
-        "sqladmin.googleapis.com": "cloudsql",
-        "cloudresourcemanager.googleapis.com": "resourcemanager",
-        "recommender.googleapis.com": "recommender",
-        "logging.googleapis.com": "logging",
-        "monitoring.googleapis.com": "monitoring",
-    }
+    # Loaded from data/gcp_service_map.json
+    GCP_HOST_SERVICE = _load_data_file('gcp_service_map.json')
 
-    # Maps literal GCP Recommender type IDs to their IAM permission.
-    # Used by both _gcp_permission (URL path lookup) and
-    # _extract_gcp_recommender_permissions (template literal lookup).
-    # This is the unified superset of the former inline RECOMMENDER_ID_MAP and
-    # RECOMMENDER_TYPE_TO_PERMISSION dicts, which were identical in meaning but used
-    # slightly different key formats for a handful of entries (see comments below).
-    RECOMMENDER_TYPE_TO_PERMISSION = {
-        # --- google.accounts ---
-        "google.accounts.security.SecurityKeyRecommender":
-            "recommender.cloudSecurityGeneralRecommendations.list",
-        # --- google.cloudsql ---
-        "google.cloudsql.instance.IdleRecommender":
-            "recommender.cloudsqlIdleInstanceRecommendations.list",
-        "google.cloudsql.instance.OutOfDiskRecommender":
-            "recommender.cloudsqlInstanceOutOfDiskRecommendations.list",
-        "google.cloudsql.instance.OverprovisionedRecommender":
-            "recommender.cloudsqlOverprovisionedInstanceRecommendations.list",
-        # Legacy key used by some older templates
-        "google.cloudsql.security.GeneralRecommender":
-            "recommender.cloudSecurityGeneralRecommendations.list",
-        # --- google.compute ---
-        "google.compute.address.IdleResourceRecommender":
-            "recommender.computeAddressIdleResourceRecommendations.list",
-        "google.compute.commitment.UsageCommitmentRecommender":
-            "recommender.usageCommitmentRecommendations.list",
-        "google.compute.disk.IdleResourceRecommender":
-            "recommender.computeDiskIdleResourceRecommendations.list",
-        "google.compute.image.IdleResourceRecommender":
-            "recommender.computeImageIdleResourceRecommendations.list",
-        "google.compute.instance.IdleResourceRecommender":
-            "recommender.computeInstanceIdleResourceRecommendations.list",
-        "google.compute.instance.MachineTypeRecommender":
-            "recommender.computeInstanceMachineTypeRecommendations.list",
-        "google.compute.instanceGroupManager.MachineTypeRecommender":
-            "recommender.computeInstanceGroupManagerMachineTypeRecommendations.list",
-        # --- google.container ---
-        "google.container.DiagnosisRecommender":
-            "recommender.containerDiagnosisRecommendations.list",
-        # --- google.iam ---
-        "google.iam.policy.Recommender":
-            "recommender.iamPolicyRecommendations.list",
-        # --- google.logging (two key formats used by different code paths) ---
-        "google.logging.ProductSuggestionRecommender":
-            "recommender.loggingProductSuggestionContainerRecommendations.list",
-        "google.logging.productSuggestion.ContainerRecommender":
-            "recommender.loggingProductSuggestionContainerRecommendations.list",
-        # --- google.monitoring (two key formats used by different code paths) ---
-        "google.monitoring.ProductSuggestionRecommender":
-            "recommender.monitoringProductSuggestionComputeRecommendations.list",
-        "google.monitoring.productSuggestion.ComputeRecommender":
-            "recommender.monitoringProductSuggestionComputeRecommendations.list",
-        # --- google.resourcemanager (two key formats) ---
-        "google.resourcemanager.ProjectUtilizationRecommender":
-            "recommender.resourcemanagerProjectUtilizationRecommendations.list",
-        "google.resourcemanager.projectUtilization.Recommender":
-            "recommender.resourcemanagerProjectUtilizationRecommendations.list",
-        # --- google.run ---
-        "google.run.service.SecurityRecommender":
-            "recommender.runServiceSecurityRecommendations.list",
-    }
+    # Loaded from data/gcp_recommender_permissions.json
+    RECOMMENDER_TYPE_TO_PERMISSION = _load_data_file('gcp_recommender_permissions.json')
 
-    # Compute Engine CWF permission table keyed by (resource_hint, method, action_suffix).
-    # Used by _gcp_cwf_permission for http_* calls operating on Compute Engine selfLinks.
-    GCP_COMPUTE_CWF_PERMISSIONS = {
-        ("instance", "DELETE", ""):              "compute.instances.delete",
-        ("instance", "POST", "setMachineType"):  "compute.instances.setMachineType",
-        ("instance", "POST", "start"):           "compute.instances.start",
-        ("instance", "POST", "stop"):            "compute.instances.stop",
-        ("instance", "GET", ""):                 "compute.instances.get",
-        ("instance", "POST", "setLabels"):       "compute.instances.setLabels",
-        ("disk", "DELETE", ""):                  "compute.disks.delete",
-        ("disk", "POST", "createSnapshot"):      "compute.disks.createSnapshot",
-        ("snapshot", "DELETE", ""):              "compute.snapshots.delete",
-        ("address", "DELETE", ""):               "compute.addresses.delete",
-        ("operation", "GET", ""):                "compute.zoneOperations.get",
-    }
+    # Loaded from data/gcp_cwf_permissions.json — nested dict: resource → method → action → permission
+    GCP_COMPUTE_CWF_PERMISSIONS = _load_data_file('gcp_cwf_permissions.json')
 
     # Map: source GCP permission -> companion permissions implicitly required alongside it.
     # Some GCP operations always require a second permission on a different resource type.
@@ -403,6 +215,28 @@ class PolicyTemplateParser:
     # _gcp_cwf_permission skips the generic fallback path for these names.
     GCP_GENERIC_VAR_NAMES = {"resource", "item", "data", "object", "result", "response"}
 
+    # GCP Compute Engine resources scoped to the global namespace (not zonal/regional).
+    # Used when building synthetic selfLink endpoint URLs in CWF define blocks.
+    GCP_GLOBAL_CWF_RESOURCES = {
+        "snapshot", "image", "firewall", "route", "network",
+        "instanceTemplate", "httpHealthCheck", "httpsHealthCheck",
+        "targetHttpProxy", "targetHttpsProxy", "backendService", "urlMap",
+    }
+
+    # GCP Compute Engine resources scoped to a region (not zone-specific).
+    GCP_REGIONAL_CWF_RESOURCES = {
+        "address", "subnetwork", "forwardingRule",
+    }
+
+    # Common English words that end in 's' but are NOT plurals.
+    # Used by _format_operation_from_method to avoid spurious "List X" operation names.
+    NON_PLURAL_WORDS = {
+        "access", "address", "alias", "analysis", "basis", "bonus", "canvas",
+        "class", "compress", "crisis", "express", "focus", "gas", "glass",
+        "grass", "minus", "nexus", "process", "radius", "series", "status",
+        "stress", "success", "synthesis", "terminus", "virus",
+    }
+
     # Maps variable name prefixes to Azure ARM resource types.
     # Used in _resolve_azure_cwf_href when href is a parameter with no body assignment
     # and the variable name itself hints at the resource type (e.g. $snapshotId → snapshots).
@@ -433,11 +267,47 @@ class PolicyTemplateParser:
         self.file_path = Path(file_path)
         self.content = self.file_path.read_text()
         self.policy_name = self._extract_policy_name()
+        # Build a cache of parameter default/allowed_values at construction time to avoid
+        # repeated full-file regex scans inside _resolve_parameter_from_content().
+        self._param_cache = self._build_param_cache()
+        # Memoization cache for _trace_datasource_api() to avoid redundant recursive scans.
+        self._trace_cache = {}
+        # Lazy-populated caches for expensive full-file scans.
+        self._datasources_cache = None
+        self._define_blocks_cache = None
+        self.verbose = False
 
     def _extract_policy_name(self):
         """Extract the policy template name from the file."""
         match = re.search(r'^name\s+"([^"]+)"', self.content, re.MULTILINE)
         return match.group(1) if match else self.file_path.stem
+
+    def _build_param_cache(self):
+        """Build a {param_name: default_or_first_allowed_value} cache from all parameter blocks.
+
+        Called once in __init__ so that _resolve_parameter_from_content() can do a
+        single dict lookup instead of a full-file regex search for every call.
+        """
+        cache = {}
+        for match in re.finditer(
+            r'parameter\s+"([^"]+)"\s+do(.*?)^end\b',
+            self.content, re.DOTALL | re.MULTILINE
+        ):
+            param_name = match.group(1)
+            block_body = match.group(2)
+            default_match = re.search(r'default\s+"([^"]+)"', block_body)
+            if default_match:
+                cache[param_name] = default_match.group(1)
+            else:
+                # Also capture unquoted numeric/boolean defaults
+                unquoted_match = re.search(r'default\s+([\d.]+|true|false)\b', block_body)
+                if unquoted_match:
+                    cache[param_name] = unquoted_match.group(1)
+                else:
+                    allowed_match = re.search(r'allowed_values\s+"([^"]+)"', block_body)
+                    if allowed_match:
+                        cache[param_name] = allowed_match.group(1)
+        return cache
 
     def _var_to_placeholder(self, var_name):
         """Map a variable name to a URL path placeholder string.
@@ -518,10 +388,10 @@ class PolicyTemplateParser:
         current = ''
         depth = 0
         for ch in s:
-            if ch == '(':
+            if ch in ('(', '[', '{'):
                 depth += 1
                 current += ch
-            elif ch == ')':
+            elif ch in (')', ']', '}'):
                 depth -= 1
                 current += ch
             elif ch == ',' and depth == 0:
@@ -598,31 +468,12 @@ class PolicyTemplateParser:
         """
         Resolve a variable reference to its default value from parameter definitions.
         E.g., param_azure_endpoint -> management.azure.com
+
+        Uses the _param_cache built at construction time to avoid repeated full-file scans.
         """
         if not var_name:
             return None
-
-        # Escape special regex characters in the variable name
-        escaped_var_name = re.escape(var_name)
-
-        # Match parameter block and extract default value from within it only.
-        # We stop at 'end' to avoid bleeding across parameter boundaries.
-        param_pattern = rf'parameter\s+"{escaped_var_name}"\s+do(.*?)^end\b'
-        param_match = re.search(param_pattern, self.content, re.DOTALL | re.MULTILINE)
-
-        if param_match:
-            block_body = param_match.group(1)
-            default_match = re.search(r'default\s+"([^"]+)"', block_body)
-            if default_match:
-                return default_match.group(1)
-            # Fallback: use the first allowed_value when no default is set.
-            # This covers parameters like param_fnms_host whose allowed_values list
-            # contains the real hostnames (e.g. "slo.app.flexera.com").
-            allowed_match = re.search(r'allowed_values\s+"([^"]+)"', block_body)
-            if allowed_match:
-                return allowed_match.group(1)
-
-        return None
+        return self._param_cache.get(var_name)
 
     def _determine_api_service(self, host, path=None):
         """Determine which service/cloud the API call is targeting based on the host.
@@ -633,9 +484,9 @@ class PolicyTemplateParser:
         if not host:
             return 'Unknown'
 
-        # Databricks uses dynamic workspace URLs; /api/2.0/ paths indicate Azure Databricks
+        # Databricks uses dynamic workspace URLs; /api/2.0/ paths indicate Databricks
         if host == '{dynamic_host}' and path and '/api/2.0/' in path:
-            return 'Azure'
+            return 'Databricks'
 
         for service, patterns in self.SERVICE_PATTERNS.items():
             for pattern in patterns:
@@ -648,6 +499,8 @@ class PolicyTemplateParser:
 
     def _extract_datasources(self):
         """Extract all datasource blocks from the policy template."""
+        if self._datasources_cache is not None:
+            return self._datasources_cache
         datasources = []
         lines = self.content.split('\n')
 
@@ -664,19 +517,27 @@ class PolicyTemplateParser:
                 depth = 1  # Track nesting depth
 
                 # Collect lines until we find the matching 'end'
+                in_heredoc = False
                 while i < len(lines) and depth > 0:
                     current_line = lines[i]
 
-                    # Ignore commented lines for depth tracking
-                    if not re.match(r'^\s*#', current_line):
-                        # Check for nested 'do' statements
-                        if re.search(r'\bdo\s*$', current_line):
-                            depth += 1
-                        # Check for 'end' statements
-                        elif re.match(r'^\s*end\s*$', current_line):
-                            depth -= 1
-                            if depth == 0:
-                                break
+                    # Track EOS heredoc boundaries to avoid counting do/end inside them
+                    if in_heredoc:
+                        if re.match(r'^EOS\s*$', current_line):
+                            in_heredoc = False
+                    else:
+                        if re.search(r"<<-?'?EOS'?", current_line):
+                            in_heredoc = True
+                        # Ignore commented lines for depth tracking
+                        elif not re.match(r'^\s*#', current_line):
+                            # Check for nested 'do' statements
+                            if re.search(r'\bdo\s*$', current_line):
+                                depth += 1
+                            # Check for 'end' statements
+                            elif re.match(r'^\s*end\s*$', current_line):
+                                depth -= 1
+                                if depth == 0:
+                                    break
 
                     datasource_lines.append(current_line)
                     i += 1
@@ -688,6 +549,7 @@ class PolicyTemplateParser:
 
             i += 1
 
+        self._datasources_cache = datasources
         return datasources
 
     def _extract_request_info(self, datasource_body):
@@ -776,7 +638,7 @@ class PolicyTemplateParser:
                     request_info['host'] = host_with_vars
                 elif len(host_parts) == 1:
                     # Single part with dynamic variable
-                    items = [x.strip() for x in join_content.split(',')]
+                    items = self._split_args_top_level(join_content)
                     if len(items) > len(host_parts):
                         # Has variables - add placeholders
                         if variables:
@@ -912,7 +774,8 @@ class PolicyTemplateParser:
                         except Exception:
                             pass
             except Exception as e:
-                # If parsing fails, use placeholder
+                if self.verbose:
+                    print(f"  [WARN] path extraction failed for {self.file_path}: {e}")
                 request_info['path'] = '/{dynamic}'
         else:
             # Try simple path pattern with single or double quotes
@@ -930,6 +793,11 @@ class PolicyTemplateParser:
                     # the same dict each time this code path is reached)
                     if arm_field_match and arm_field_match.group(1) in self.FIELD_TO_ARM_PATH:
                         request_info['path'] = self.FIELD_TO_ARM_PATH[arm_field_match.group(1)]
+                    elif arm_field_match and arm_field_match.group(1) == 'uri':
+                        # 'uri' field not in FIELD_TO_ARM_PATH — try to trace back to the generating
+                        # script and extract a sample URI path for permission inference.
+                        uri_path = self._resolve_uri_field_from_iterate(datasource_body)
+                        request_info['path'] = uri_path if uri_path else '/{dynamic}'
                     else:
                         request_info['path'] = '/{dynamic}'
                 else:
@@ -941,9 +809,12 @@ class PolicyTemplateParser:
             request_info['script_name'] = script_match.group(1)
 
         # Extract query parameters (with double or single quotes, allow empty values)
-        for query_match in re.finditer(r'query\s+["\']([^"\']+)["\']\s*,\s*["\']([^"\']*)["\']', datasource_body):
-            param_name = query_match.group(1)
-            param_value = query_match.group(2)
+        for query_match in re.finditer(
+            r'''query\s+(?:"([^"]+)"|'([^']+)')\s*,\s*(?:"([^"]*)"|'([^']*)')''',
+            datasource_body
+        ):
+            param_name = query_match.group(1) or query_match.group(2)
+            param_value = query_match.group(3) if query_match.group(3) is not None else (query_match.group(4) or '')
             request_info['query_params'][param_name] = param_value
         # Also capture query directives with dynamic values (val(), variables, etc.)
         for query_match in re.finditer(r'query\s+["\']([^"\']+)["\']\s*,\s*(?!["\'])([^\n]+)', datasource_body):
@@ -1051,10 +922,17 @@ class PolicyTemplateParser:
                     func_match = re.search(r'function\s+(\w+)\s*\([^)]*\)\s*\{([^}]+)\}', js_code, re.DOTALL)
                     if func_match:
                         func_body = func_match.group(2)
-                        # Look for return statements with string patterns
-                        return_match = re.search(r'return\s+([^;]+)', func_body)
-                        if return_match:
-                            return_expr = return_match.group(1).strip()
+                        # Collect all return expressions; prefer non-China (non-.cn) endpoints
+                        all_returns = re.findall(r'return\s+([^;]+)', func_body)
+                        # Prefer a return expression that doesn't contain a China TLD
+                        return_expr = None
+                        for ret in all_returns:
+                            if '.cn' not in ret.lower():
+                                return_expr = ret.strip()
+                                break
+                        if return_expr is None and all_returns:
+                            return_expr = all_returns[0].strip()
+                        if return_expr:
                             # Extract string literals from the return expression
                             strings = re.findall(r'["\']([^"\']+)["\']', return_expr)
                             # Extract variable names
@@ -1081,10 +959,18 @@ class PolicyTemplateParser:
                                 request_info['host'] = '{region}.monitor.azure.com' if 'azure' in func_body.lower() else None
                 # Check if this is a concatenated string (contains +)
                 elif '+' in host_line:
-                    # Extract all string literals from the concatenation
-                    strings = re.findall(r'["\']([^"\']+)["\']', host_line)
-                    # Extract variable names
-                    variables = re.findall(r'\+\s*(\w+)\s*\+', host_line)
+                    # Strip dict-key accessors (e.g. ["region"]) so inner key names
+                    # are not captured as string literals.
+                    # e.g. "monitoring." + query["region"] + ".amazonaws.com" would
+                    # otherwise capture "monitoring.", "region", ".amazonaws.com"
+                    # instead of just "monitoring." and ".amazonaws.com".
+                    dict_key_vars = re.findall(r'\w+\[["\'](\w+)["\']\]', host_line)
+                    host_line_clean = re.sub(r'\[["\'][^"\']*["\']\]', '', host_line)
+                    # Extract all string literals from the cleaned line
+                    strings = re.findall(r'["\']([^"\']+)["\']', host_line_clean)
+                    # Use dict-key variable names as placeholders if available,
+                    # otherwise fall back to the + var + pattern.
+                    variables = dict_key_vars if dict_key_vars else re.findall(r'\+\s*(\w+)\s*\+', host_line_clean)
 
                     if strings and len(strings) > 1:
                         # Join them with semantic placeholders between
@@ -1109,7 +995,14 @@ class PolicyTemplateParser:
 
                         request_info['host'] = '.'.join(parts)
                     elif strings:
-                        request_info['host'] = strings[0]
+                        host_str = strings[0]
+                        # If the only string literal starts with '.', the variable before it was stripped;
+                        # prepend a placeholder so the hostname is valid (e.g. "{id}.service-now.com").
+                        if host_str.startswith('.') and '+' in host_line:
+                            before_dot = re.search(r'(\w+)\s*\+', host_line)
+                            ph = self._get_semantic_placeholder(before_dot.group(1)) if before_dot else '{id}'
+                            host_str = ph + host_str
+                        request_info['host'] = host_str
                 else:
                     # Check if it's an object/array access pattern first (e.g., ds_flexera_api_hosts["flexera"])
                     if '[' in host_line and ']' in host_line:
@@ -1146,7 +1039,7 @@ class PolicyTemplateParser:
                                 # a `path:` field, confirming this is an HTTP request builder
                                 # and not a data transformation script that happens to name
                                 # a return object field "host".
-                                if re.search(r'\bpath\s*:', js_code):
+                                if re.search(r'\bpath\s*:', js_code) and re.search(r'\b(?:host|verb|auth)\s*:', js_code):
                                     local_assign = re.search(
                                         rf'\b{re.escape(var_name)}\s*=\s*["\']([^"\']+)["\']',
                                         js_code)
@@ -1227,19 +1120,30 @@ class PolicyTemplateParser:
             if path_line_match:
                 path_line = path_line_match.group(1).strip()
                 if '+' in path_line:
+                    # Strip dict/array key accesses (e.g. obj["subscriptionId"]) so inner key names
+                    # are not mistaken for path segments.
+                    path_line_clean = re.sub(r'\[["\'][^"\']*["\']\]', '', path_line)
                     # Try concatenation pattern: "string" + variable + "string"
                     # Extract all string literals and variable names from the concatenation
-                    strings = re.findall(r'["\']([^"\']+)["\']', path_line)
+                    strings = re.findall(r'["\']([^"\']+)["\']', path_line_clean)
 
                     # Also extract variable names to provide better placeholders
                     # Look for common variable patterns between the strings
-                    variables = re.findall(r'\+\s*(\w+)\s*\+', path_line)
+                    variables = re.findall(r'\+\s*(\w+)\s*\+', path_line_clean)
 
                     if strings:
                         # Build path with placeholders for variables
                         # Use semantic placeholders based on variable names
                         path_with_vars = ''
                         var_idx = 0
+
+                        # Check if the path expression starts with a variable (before the first string literal).
+                        # e.g. "resource_id + \"/providers/...\"" — the leading variable would be dropped
+                        # by the string extraction, so prepend its placeholder explicitly.
+                        leading_var_m = re.match(r'^(\w+)\s*\+', path_line_clean)
+                        if leading_var_m and not path_line_clean.lstrip().startswith(('"', "'")):
+                            leading_ph = self._var_to_placeholder(leading_var_m.group(1)) or '{id}'
+                            path_with_vars = leading_ph
 
                         for i, s in enumerate(strings):
                             path_with_vars += s
@@ -1261,6 +1165,17 @@ class PolicyTemplateParser:
                     if path_match:
                         request_info['path'] = path_match.group(1)
 
+        # Fallback: if path is still unresolved but path_line was a variable name,
+        # search the JS body for any direct assignments to that variable.
+        if 'path' not in request_info and path_line_match:
+            path_var = path_line_match.group(1).strip()
+            if re.match(r'^\w+$', path_var):  # simple identifier, not a string or expression
+                # Collect all `varname = "/..."` assignments (including inside if/else blocks)
+                assign_matches = re.findall(
+                    rf'\b{re.escape(path_var)}\s*=\s*["\']([^"\']+)["\']', js_code)
+                if assign_matches:
+                    request_info['path'] = assign_matches[0]
+
         # Extract query_params object from JavaScript
         query_params_match = re.search(r'query_params:\s*\{([^}]+)\}', js_code, re.DOTALL)
         if query_params_match:
@@ -1281,9 +1196,8 @@ class PolicyTemplateParser:
             if action_match:
                 request_info['query_params']['Action'] = action_match.group(1)
 
-        # Extract body_fields object from JavaScript
-        body_fields_match = re.search(r'body_fields:\s*\{([^}]+)\}', js_code, re.DOTALL)
-        if body_fields_match:
+        # Extract body_fields object from JavaScript (handle multiple occurrences for conditional requests)
+        for body_fields_match in re.finditer(r'body_fields:\s*\{([^}]+)\}', js_code, re.DOTALL):
             params_str = body_fields_match.group(1)
             # Extract key-value pairs
             param_pattern = r'["\']([^"\']+)["\']'
@@ -1329,10 +1243,13 @@ class PolicyTemplateParser:
         """Find fields accessed from an API response by downstream processing scripts.
 
         Scans the datasource body for run_script references, then delegates to
-        _extract_fields_from_script for each script found. In practice this call
-        chain rarely produces results because most processing scripts use local
-        variable names rather than the standard field-access patterns; it is kept
-        for completeness.
+        _extract_fields_from_script for each script found.
+
+        NOTE: In practice this method almost never produces useful results, because
+        most data-transformation scripts access fields via local variable names (e.g.
+        ``item['id']``) that are not distinguished from the request-script patterns
+        searched by _extract_fields_from_script. It is retained for completeness but
+        should not be relied upon for accurate field coverage.
 
         Args:
             datasource_body: The raw text of the datasource block.
@@ -1603,6 +1520,26 @@ class PolicyTemplateParser:
         else:
             return f'{method_upper} Resource'
 
+    def _default_operation_from_path(self, path, method):
+        """Extract a human-readable operation name from a URL path using the HTTP method.
+
+        Shared fallback used by multiple service branches in _extract_operation_name when
+        no service-specific logic applies. Filters out placeholder segments and version
+        strings, then delegates to _format_operation_from_method.
+        """
+        if not path:
+            return self._get_generic_operation_from_method(method)
+        segments = [
+            s for s in path.split('/') if s
+            and '{' not in s.lower()
+            and not re.match(r'^v\d', s, re.IGNORECASE)
+            and s not in ('beta', 'alpha')
+            and s.lower() not in self.SKIP_PLACEHOLDERS
+        ]
+        if segments:
+            return self._format_operation_from_method(method, segments[-1])
+        return self._get_generic_operation_from_method(method)
+
     def _extract_operation_name(self, endpoint, method, api_service, request_info):
         """Extract a human-readable operation name from the endpoint and request information.
 
@@ -1645,18 +1582,23 @@ class PolicyTemplateParser:
                     params_dict[k] = [v] if v else ['']
 
             # Check if it's an S3 bucket operation (path contains bucket name or is simple)
-            # Common S3 query parameters that indicate operations
-            s3_ops = self.RESOURCE_MAPPINGS.get('AWS', {})
-            for param_key in params_dict.keys():
-                param_lower = param_key.lower()
-                if param_lower in s3_ops:
-                    return f'Get Bucket {s3_ops[param_lower]}'
-                # Handle special S3 operations
-                elif param_lower == 'intelligent-tiering':
-                    return 'Get Bucket Intelligent Tiering Configuration'
-                # If no mapping, use the parameter name itself (but skip common filters and AWS action params)
-                elif param_lower not in ['maxkeys', 'prefix', 'delimiter', 'marker', 'api-version', 'view', 'action', 'version', 'filter']:
-                    return f'Get Bucket {self._format_resource_name(param_key)}'
+            # Common S3 query parameters that indicate operations.
+            # Guard: only fire when the endpoint is actually an S3 host; otherwise
+            # query params like MaxItems=1 or Qualifier=... on Lambda/EC2/etc. endpoints
+            # would be misidentified as S3 bucket operations.
+            _op_host_s3 = parsed_url.netloc.lower() if endpoint else ''
+            if 's3' in _op_host_s3 or '{bucket}' in _op_host_s3:
+                s3_ops = self.RESOURCE_MAPPINGS.get('AWS', {})
+                for param_key in params_dict.keys():
+                    param_lower = param_key.lower()
+                    if param_lower in s3_ops:
+                        return f'Get Bucket {s3_ops[param_lower]}'
+                    # Handle special S3 operations
+                    elif param_lower == 'intelligent-tiering':
+                        return 'Get Bucket Intelligent Tiering Configuration'
+                    # If no mapping, use the parameter name itself (but skip common filters and AWS action params)
+                    elif param_lower not in ['maxkeys', 'prefix', 'delimiter', 'marker', 'api-version', 'view', 'action', 'version', 'filter']:
+                        return f'Get Bucket {self._format_resource_name(param_key)}'
 
             # If path is just hostname or '/', and no useful query params
             if not path or path == '/' or path == '/{name}':
@@ -1693,6 +1635,10 @@ class PolicyTemplateParser:
                 if resource.lower() in self.RESOURCE_MAPPINGS.get('AWS', {}):
                     resource = self.RESOURCE_MAPPINGS['AWS'][resource.lower()]
                     return f'Get {resource}'
+                # PascalCase last segment is an action name (e.g. /DescribeSavingsPlans) —
+                # return it directly rather than mangling it through word-split + verb prefix.
+                if re.match(r'^[A-Z][a-zA-Z]+$', resource) and re.search(r'[a-z][A-Z]', resource):
+                    return resource
                 return self._format_operation_from_method(method, resource)
 
         # Azure: Extract from URL path
@@ -1795,7 +1741,12 @@ class PolicyTemplateParser:
                 resource_name = resource.title().replace('_', ' ')
                 return f'{operation_name} {resource_name}'
 
-            segments = [s for s in path.split('/') if s and '{' not in s.lower() and s not in ('v1', 'v2', 'v3')]
+            # Determine if the last path segment was a placeholder (single-resource GET)
+            raw_segments = [s for s in path.split('/') if s]
+            last_raw = raw_segments[-1] if raw_segments else ''
+            is_single_resource_get = ('{' in last_raw) and method.upper() == 'GET'
+
+            segments = [s for s in path.split('/') if s and '{' not in s.lower() and not re.match(r'^v\d', s, re.IGNORECASE) and s not in ('beta', 'alpha')]
             # Filter out placeholder segments
             segments = [s for s in segments if s.lower() not in self.SKIP_PLACEHOLDERS]
             if segments:
@@ -1806,6 +1757,9 @@ class PolicyTemplateParser:
                     # Already in final form (e.g., 'Buckets'), just add method prefix
                     method_upper = method.upper()
                     if method_upper == 'GET':
+                        if is_single_resource_get:
+                            singular = resource.rstrip('s') if resource.endswith('s') else resource
+                            return f'Describe {singular}'
                         return f'List {resource}'
                     elif method_upper == 'POST':
                         return f'Create {resource}'
@@ -1815,6 +1769,13 @@ class PolicyTemplateParser:
                         return f'Delete {resource}'
                     else:
                         return f'{method_upper} {resource}'
+                if is_single_resource_get:
+                    # Build a singular form of the resource name for "Describe X"
+                    clean = re.sub(r'([a-z])([A-Z])', r'\1 \2', resource).replace('-', ' ').replace('_', ' ')
+                    words = clean.split()
+                    clean = ' '.join(w.capitalize() for w in words)
+                    singular = clean.rstrip('s') if clean.endswith('s') else clean
+                    return f'Describe {singular}'
                 return self._format_operation_from_method(method, resource)
 
         # Flexera: Extract from URL path
@@ -1833,7 +1794,7 @@ class PolicyTemplateParser:
                 elif '/costs/select' in path:
                     return 'Request Selected Costs'
 
-            segments = [s for s in path.split('/') if s and '{' not in s.lower() and s not in ('v1', 'v2', 'v3')]
+            segments = [s for s in path.split('/') if s and '{' not in s.lower() and not re.match(r'^v\d', s, re.IGNORECASE) and s not in ('beta', 'alpha')]
             # Filter out placeholder segments
             segments = [s for s in segments if s.lower() not in self.SKIP_PLACEHOLDERS]
             if segments:
@@ -1846,12 +1807,7 @@ class PolicyTemplateParser:
         # Oracle: Extract from URL path
         elif api_service == 'Oracle':
             path = self._get_url_path(endpoint)
-
-            if not path:
-                return self._get_generic_operation_from_method(method)
-
-            segments = [s for s in path.split('/') if s and '{' not in s.lower()]
-            # Filter out placeholder segments
+            segments = [s for s in path.split('/') if s and '{' not in s.lower()] if path else []
             segments = [s for s in segments if s.lower() not in self.SKIP_PLACEHOLDERS]
             if segments:
                 resource = segments[-1]
@@ -1859,37 +1815,17 @@ class PolicyTemplateParser:
                 if resource.lower() in self.RESOURCE_MAPPINGS.get('Oracle', {}):
                     resource = self.RESOURCE_MAPPINGS['Oracle'][resource.lower()]
                 return self._format_operation_from_method(method, resource)
+            return self._get_generic_operation_from_method(method)
 
         # GitHub: Extract from URL path
         elif api_service == 'GitHub':
             if 'raw.githubusercontent.com' in endpoint:
                 return 'Get Raw Content'
-
-            path = self._get_url_path(endpoint)
-
-            if not path:
-                return self._get_generic_operation_from_method(method)
-
-            segments = [s for s in path.split('/') if s and '{' not in s.lower()]
-            # Filter out placeholder segments
-            segments = [s for s in segments if s.lower() not in self.SKIP_PLACEHOLDERS]
-            if segments:
-                resource = segments[-1]
-                return self._format_operation_from_method(method, resource)
+            return self._default_operation_from_path(self._get_url_path(endpoint), method)
 
         # Default: Extract from URL path
         else:
-            path = self._get_url_path(endpoint)
-
-            if not path:
-                return self._get_generic_operation_from_method(method)
-
-            segments = [s for s in path.split('/') if s and '{' not in s.lower()]
-            # Filter out placeholder segments
-            segments = [s for s in segments if s.lower() not in self.SKIP_PLACEHOLDERS]
-            if segments:
-                resource = segments[-1]
-                return self._format_operation_from_method(method, resource)
+            return self._default_operation_from_path(self._get_url_path(endpoint), method)
 
         # Ultimate fallback - use HTTP method to provide generic operation
         return self._get_generic_operation_from_method(method)
@@ -1977,6 +1913,11 @@ class PolicyTemplateParser:
                 return 'lambda:ListVersionsByFunction'
             if re.search(r'/provisioned-concurrency', path):
                 return 'lambda:GetProvisionedConcurrencyConfig'
+            # Single function operations: /functions/{name} or /functions/{placeholder}
+            if re.search(r'/functions/[^/?]+/?$', path):
+                if method == 'DELETE':
+                    return 'lambda:DeleteFunction'
+                return 'lambda:GetFunction'
 
         # EKS
         if service == 'eks':
@@ -2004,7 +1945,7 @@ class PolicyTemplateParser:
             if 'encryption' in qs_keys:
                 return 's3:PutEncryptionConfiguration' if method == 'PUT' else 's3:GetEncryptionConfiguration'
             if 'tagging' in qs_keys:
-                return 's3:GetBucketTagging'
+                return 's3:PutBucketTagging' if method == 'PUT' else 's3:GetBucketTagging'
             if 'versioning' in qs_keys:
                 return 's3:GetBucketVersioning'
             if 'publicAccessBlock' in qs_keys:
@@ -2020,18 +1961,24 @@ class PolicyTemplateParser:
             # Root list
             if path in ('/', '') or not path.strip('/'):
                 return 's3:ListAllMyBuckets'
-            # Object operations
-            if method in ('GET', 'HEAD'):
-                return 's3:GetObject'
-            if method == 'PUT':
-                return 's3:PutObject'
-            if method == 'DELETE':
-                # Bucket-level DELETE has only one path segment (the bucket name / placeholder).
-                # Object-level DELETE has two or more segments (bucket + key).
-                all_segs = [p for p in path.strip('/').split('/') if p]
-                if len(all_segs) <= 1:
+            # Distinguish bucket-level (1 segment) from object-level (2+ segments)
+            all_segs = [p for p in path.strip('/').split('/') if p]
+            if len(all_segs) <= 1:
+                # Bucket-level operations
+                if method in ('GET', 'HEAD'):
+                    return 's3:ListBucket'
+                if method == 'PUT':
+                    return 's3:CreateBucket'
+                if method == 'DELETE':
                     return 's3:DeleteBucket'
-                return 's3:DeleteObject'
+            else:
+                # Object-level operations
+                if method in ('GET', 'HEAD'):
+                    return 's3:GetObject'
+                if method == 'PUT':
+                    return 's3:PutObject'
+                if method == 'DELETE':
+                    return 's3:DeleteObject'
 
         # CloudWatch
         if service == 'cloudwatch':
@@ -2168,7 +2115,7 @@ class PolicyTemplateParser:
 
         # Azure Monitor batch metrics
         if 'metrics:getBatch' in endpoint or path.endswith('metrics:getBatch'):
-            return 'microsoft.insights/metrics/read'
+            return 'Microsoft.Insights/metrics/read'
 
         # Blob tier change: PUT /{id}?comp=tier
         parsed_qs = urllib.parse.parse_qs(parsed.query)
@@ -2196,8 +2143,8 @@ class PolicyTemplateParser:
         if 'savingsPlan' in path or 'savingsplan' in path_lower:
             return 'Microsoft.BillingBenefits/savingsPlanOrders/savingsPlans/read'
 
-        if 'microsoft.insights/metrics' in path_lower or '/metrics' in path_lower and 'monitor' in endpoint.lower():
-            return 'microsoft.insights/metrics/read'
+        if 'microsoft.insights/metrics' in path_lower or ('/metrics' in path_lower and 'monitor' in endpoint.lower()):
+            return 'Microsoft.Insights/metrics/read'
 
         # Activity Log events: 'management' is a fixed path segment, not an instance name
         if re.search(r'/providers/microsoft\.insights/eventtypes/management/values', path, re.IGNORECASE):
@@ -2206,7 +2153,9 @@ class PolicyTemplateParser:
         # ARM management.azure.com calls
         m = re.search(r'/providers/([^/?]+)/([^/?/]+)', path, re.IGNORECASE)
         if m:
-            namespace = m.group(1)
+            # Normalize provider namespace to PascalCase — ARM RBAC permissions require it
+            # e.g. "microsoft.operationalinsights" → "Microsoft.Operationalinsights"
+            namespace = '.'.join(seg[0].upper() + seg[1:] if seg else seg for seg in m.group(1).split('.'))
             resource_type = m.group(2)
             after_provider = path[m.end():]
 
@@ -2248,9 +2197,8 @@ class PolicyTemplateParser:
                             perm = perm.rsplit('/', 1)[0] + '/' + _verb(method)
                         return perm
 
-        # blob container listing — path is /{container} on blob endpoint (handled above)
-        # data lake blob listing: path is / or /{container} on blob host
-        if '.blob.core.windows.net' in endpoint or '.blob.' in endpoint:
+        # Data lake / blob-variant endpoints not already caught above
+        if '.blob.' in endpoint:
             return 'Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read'
 
         if re.search(r'/subscriptions/[^/]+/resources/?$', path_lower):
@@ -2260,7 +2208,7 @@ class PolicyTemplateParser:
             return 'Microsoft.Resources/tenants/read'
 
         if re.search(r'/subscriptions/[^/]+/metrics:getBatch', path_lower):
-            return 'microsoft.insights/metrics/read'
+            return 'Microsoft.Insights/metrics/read'
 
         return None
 
@@ -2297,7 +2245,7 @@ class PolicyTemplateParser:
         # Resource Manager
         if service == 'resourcemanager':
             if re.search(r'/projects:search', path):
-                return 'resourcemanager.projects.search'
+                return 'resourcemanager.projects.get'
             if re.search(r'/projects/[^/]+$', path):
                 return 'resourcemanager.projects.get'
             if re.search(r'/projects/?$', path) or re.search(r'/projects$', path):
@@ -2324,7 +2272,14 @@ class PolicyTemplateParser:
                 return 'storage.objects.list'
             if re.search(r'/b/?$', path) or re.search(r'/b\?', endpoint):
                 return 'storage.buckets.list'
-            return 'storage.buckets.list'
+            m_upper = method.upper()
+            if m_upper in ('PUT', 'PATCH'):
+                return 'storage.buckets.update'
+            if m_upper == 'DELETE':
+                return 'storage.buckets.delete'
+            if m_upper == 'POST':
+                return 'storage.buckets.create'
+            return 'storage.buckets.get'
 
         # BigQuery
         if service == 'bigquery':
@@ -2401,8 +2356,8 @@ class PolicyTemplateParser:
         # Map method to operation prefix
         method = method.upper()
         if method == 'GET':
-            # If plural, use List, otherwise use Get
-            if resource.endswith('s') and len(resource) > 1:
+            # If plural (and not a known non-plural word ending in 's'), use List; otherwise Get
+            if resource.endswith('s') and len(resource) > 1 and resource.lower() not in self.NON_PLURAL_WORDS:
                 return f'List {resource}'
             else:
                 return f'Get {resource}'
@@ -2428,7 +2383,7 @@ class PolicyTemplateParser:
         if not path:
             return False
         if 'googleapis.com' in host:
-            return any(s in path for s in ['/compute/', '/sql/', '/v1/', '/storage/', '/bigtable/'])
+            return any(s in path for s in ['/compute/', '/sql/', '/storage/', '/bigtable/'])
         if 'azure.com' in host or 'management.azure' in host:
             return '/providers/' in path
         # For other hosts (AWS, etc.) any non-trivial path is specific
@@ -2438,8 +2393,12 @@ class PolicyTemplateParser:
         """Recursively trace a datasource chain to find its underlying API host and path.
 
         Returns (host, path) or (None, None).
+        Top-level calls (depth==0) are memoized in self._trace_cache.
         """
         if visited is None:
+            # Check memo cache for top-level calls only
+            if ds_name in self._trace_cache:
+                return self._trace_cache[ds_name]
             visited = set()
         if depth > 10 or ds_name in visited:
             return None, None
@@ -2471,8 +2430,11 @@ class PolicyTemplateParser:
             # path join([...])
             path_join_match = re.search(r'path\s+join\(\s*\[([^\]]+)\]\s*\)', ds_body)
             if path_join_match:
-                lits = re.findall(r'"([^"]+)"', path_join_match.group(1))
-                path = ''.join(lits)
+                path_join_str = re.sub(r'\[["\'][^"\']*["\']\]', '', path_join_match.group(1))
+                # Also strip val(...) calls so their quoted arguments are not captured as path segments
+                path_join_str = re.sub(r'\bval\s*\([^)]+\)', '', path_join_str)
+                lits = re.findall(r'"([^"]+)"', path_join_str)
+                path = '{id}'.join(lits)
                 if self._cwf_path_is_specific(host, path):
                     return host, path
                 # Pattern: join([val(iter_item, "id"), "/suffix"]) — literal suffix appended to
@@ -2508,9 +2470,13 @@ class PolicyTemplateParser:
 
         # Return host with no path if we know the cloud provider but found no specific path
         if host:
-            return host, None
-
-        return None, None
+            result = (host, None)
+        else:
+            result = (None, None)
+        # Memoize top-level results (depth > 0 results depend on visited set so skip)
+        if depth == 0:
+            self._trace_cache[ds_name] = result
+        return result
 
     def _build_cwf_define_context(self):
         """Build a mapping of define_name -> (api_host, arm_or_gcp_path).
@@ -2664,9 +2630,9 @@ class PolicyTemplateParser:
 
         # Compute Engine permission lookup — use class-level table
         for hint in [hint_orig, hint_stripped]:
-            key = (hint, method, action)
-            if key in self.GCP_COMPUTE_CWF_PERMISSIONS:
-                return self.GCP_COMPUTE_CWF_PERMISSIONS[key]
+            perm = self.GCP_COMPUTE_CWF_PERMISSIONS.get(hint, {}).get(method, {}).get(action)
+            if perm:
+                return perm
 
         # Generic fallback: build a permission from the resource variable name.
         # Skip variable names so generic they don't identify a real GCP resource type.
@@ -2709,6 +2675,7 @@ class PolicyTemplateParser:
             ARM path string, or None if the path cannot be resolved.
         """
         action_suffix = ''
+        _base_var_hint = ''
         href_expr = href_expr.strip().rstrip(',').strip()
         inline_concat_match = re.match(
             r'\$(\w+)\[["\'][\w]+["\']\]\s*\+\s*"(/[^"]*)"', href_expr
@@ -2806,7 +2773,7 @@ class PolicyTemplateParser:
             # 2. Variable-name hint (e.g. $instance["resourceID"] → virtualMachines)
             synthetic_type = (
                 self.ACTION_TO_ARM_TYPE.get(action_suffix)
-                or self.VAR_HINT_TO_ARM_TYPE.get(locals().get('_base_var_hint', ''))
+                or self.VAR_HINT_TO_ARM_TYPE.get(_base_var_hint)
             )
             if synthetic_type:
                 return (
@@ -2820,6 +2787,8 @@ class PolicyTemplateParser:
 
     def _extract_define_blocks(self):
         """Extract all CWF define...do...end blocks from the policy template."""
+        if self._define_blocks_cache is not None:
+            return self._define_blocks_cache
         define_blocks = []
         lines = self.content.split('\n')
         i = 0
@@ -2832,17 +2801,23 @@ class PolicyTemplateParser:
                 define_lines = []
                 depth = 1  # header line opens with 'do'
                 i += 1
+                in_heredoc = False
                 while i < len(lines) and depth > 0:
                     current_line = lines[i]
                     stripped = current_line.strip()
-                    if not stripped.startswith('#'):
+                    if in_heredoc:
+                        if re.match(r'^EOS\s*$', stripped):
+                            in_heredoc = False
+                    elif not stripped.startswith('#'):
+                        if re.search(r"<<-?'?EOS'?", stripped):
+                            in_heredoc = True
                         # Each CWF block maps to exactly one 'end'.
                         # Count a line as ONE opener if it ends with 'do'
                         # (covers: foreach/while/sub/standalone do blocks).
                         # Count a line as ONE opener if it starts with 'if' or 'case'
                         # (these use end without a leading 'do').
                         # Never double-count (e.g. "foreach x do" is one opener, not two).
-                        if re.match(r'^end\s*$', stripped):
+                        elif re.match(r'^end\s*$', stripped):
                             depth -= 1
                             if depth == 0:
                                 break
@@ -2857,7 +2832,48 @@ class PolicyTemplateParser:
                     'body': '\n'.join(define_lines)
                 })
             i += 1
+        self._define_blocks_cache = define_blocks
         return define_blocks
+
+    def _resolve_uri_field_from_iterate(self, datasource_body):
+        """When path val(iter_item, 'uri') is used, try to find the URI pattern by
+        looking at the generator script of the iterate datasource."""
+        # Find the iterate datasource name
+        iter_ds_m = re.search(r'\biterate\s+\$(ds_\w+)', datasource_body)
+        if not iter_ds_m:
+            return None
+        iter_ds_name = iter_ds_m.group(1)
+        # Find that datasource block in the policy content
+        iter_ds_m2 = re.search(
+            rf'datasource\s+"{re.escape(iter_ds_name)}"\s+do\b(.+?)\nend\b',
+            self.content, re.DOTALL
+        )
+        if not iter_ds_m2:
+            return None
+        iter_ds_body = iter_ds_m2.group(1)
+        # Find the run_script reference in that datasource
+        script_ref_m = re.search(r'run_script\s+\$(\w+)', iter_ds_body)
+        if not script_ref_m:
+            return None
+        script_name = script_ref_m.group(1)
+        # Find that script block in the policy content
+        script_m = re.search(
+            rf'script\s+"{re.escape(script_name)}"[^\n]*\bdo\b(.+?)\nend\b',
+            self.content, re.DOTALL
+        )
+        if not script_m:
+            return None
+        script_body = script_m.group(1)
+        # Look for uri: "/path/..." patterns
+        uri_m = re.search(r'["\']uri["\']\s*:\s*["\']([^"\']+)["\']', script_body)
+        if not uri_m:
+            uri_m = re.search(r'\buri\s*=\s*["\']([^"\']+)["\']', script_body)
+        if uri_m:
+            uri_val = uri_m.group(1)
+            # Strip any protocol/host prefix if present
+            parsed = urllib.parse.urlparse(uri_val)
+            return parsed.path if parsed.scheme else uri_val
+        return None
 
     def _resolve_cwf_host(self, host_expr, define_body):
         """Resolve a CWF host expression to an actual hostname or placeholder.
@@ -2893,7 +2909,14 @@ class PolicyTemplateParser:
                         parts.append(s)
                         if j < len(strings) - 1:
                             parts.append('{id}')
-                    return ''.join(parts)
+                    result = ''.join(parts)
+                    # If the single string literal starts with '.', the variable before the '+' was stripped;
+                    # prepend a placeholder so the hostname is valid.
+                    if result.startswith('.'):
+                        before_dot = re.search(r'(\w+)\s*\+', host_expr)
+                        ph = self._get_semantic_placeholder(before_dot.group(1)) if before_dot else '{id}'
+                        result = ph + result
+                    return result
 
         # Backwards variable lookup: look for $varname = "..." + $var + "..." in define body
         var_name = re.sub(r'^\$+', '', host_expr)
@@ -3135,10 +3158,22 @@ class PolicyTemplateParser:
                                 ep_path = f'/sql/v1beta4/projects/{{id}}/instances/{{id}}{action_suffix}'
                             else:
                                 ep_host = 'compute.googleapis.com'
-                                ep_path = (
-                                    f'/compute/v1/projects/{{id}}/zones/{{id}}'
-                                    f'/{resource_var}s/{{id}}{action_suffix}'
-                                )
+                                r_lower = resource_var.lower()
+                                if r_lower in self.GCP_GLOBAL_CWF_RESOURCES:
+                                    ep_path = (
+                                        f'/compute/v1/projects/{{id}}/global'
+                                        f'/{resource_var}s/{{id}}{action_suffix}'
+                                    )
+                                elif r_lower in self.GCP_REGIONAL_CWF_RESOURCES:
+                                    ep_path = (
+                                        f'/compute/v1/projects/{{id}}/regions/{{id}}'
+                                        f'/{resource_var}s/{{id}}{action_suffix}'
+                                    )
+                                else:
+                                    ep_path = (
+                                        f'/compute/v1/projects/{{id}}/zones/{{id}}'
+                                        f'/{resource_var}s/{{id}}{action_suffix}'
+                                    )
                             endpoint = f'https://{ep_host}{ep_path}'
                             api_calls.append({
                                 'policy_name': self.policy_name,
@@ -3207,6 +3242,13 @@ class PolicyTemplateParser:
                                         'operation': operation, 'field': '{entire response}',
                                         'api_service': api_service, 'permission': permission,
                                     })
+                    # Unrecognised url: pattern — log if verbose so coverage gaps are visible.
+                    if self.verbose:
+                        print(
+                            f"  [CWF] {self.policy_name}: unrecognized url: pattern in "
+                            f"define_{define_name}: {raw_url_expr!r}",
+                            file=sys.stderr,
+                        )
                     continue
 
                 # ----------------------------------------------------------------
@@ -3259,20 +3301,65 @@ class PolicyTemplateParser:
                             vname = re.escape(var_expr.lstrip('$'))
                             lit_m = re.search(r'\$' + vname + r'\s*=\s*"([^"]*)"', define_body)
                             if lit_m:
-                                # If the assignment is actually a concatenation (e.g. "/" + $var),
-                                # the literal match only captures the prefix — use /{id} instead.
+                                # If the assignment is actually a concatenation (e.g. "/prefix/" + $var + "/suffix"),
+                                # rebuild the path from the full RHS using string literals and placeholders.
                                 concat_m = re.search(r'\$' + vname + r'\s*=\s*"[^"]*"\s*\+', define_body)
                                 if concat_m:
-                                    path = '/{id}'
+                                    full_assign = re.search(r'\$' + vname + r'\s*=\s*([^\n]+)', define_body)
+                                    if full_assign:
+                                        rhs = full_assign.group(1).strip()
+                                        path_parts = []
+                                        for seg in re.split(r'\s*\+\s*', rhs):
+                                            seg = seg.strip()
+                                            # Segment like $item["id"] or $obj["fieldName"] — produce a placeholder, not the key name
+                                            if re.match(r'^\$\w+\[', seg):
+                                                field_m = re.search(r'\[["\']?(\w+)["\']?\]', seg)
+                                                ph = self._get_semantic_placeholder(field_m.group(1)) if field_m else '{id}'
+                                                path_parts.append(ph)
+                                            else:
+                                                str_m2 = re.search(r'"([^"]*)"', seg)
+                                                if str_m2:
+                                                    path_parts.append(str_m2.group(1))
+                                                else:
+                                                    var_m2 = re.search(r'\$(\w+)', seg)
+                                                    ph = self._get_semantic_placeholder(var_m2.group(1)) if var_m2 else '{id}'
+                                                    path_parts.append(ph)
+                                        path = ''.join(path_parts) or '/{id}'
+                                    else:
+                                        path = (lit_m.group(1) or '') + '/{id}'
                                 else:
                                     path = lit_m.group(1) or '/'
-                            elif 'azure' in (host or '').lower() or host == 'management.azure.com':
-                                # For Azure, try to resolve the href expression to a full ARM path
-                                resolved = self._resolve_azure_cwf_href(
-                                    var_expr, define_body, define_name, cwf_context
+                            else:
+                                # Check for join([...]) variable assignment:
+                                # $varname = join(["/prefix/", $var["field"], ...])
+                                # This pattern is used e.g. in Lambda CWF defines:
+                                # $href = join(["/2015-03-31/functions/", $function["resourceName"]])
+                                # Use a pattern that handles one level of nested brackets
+                                # (e.g. $var["key"] inside the join array).
+                                _join_m = re.search(
+                                    r'\$' + vname + r'\s*=\s*join\(\[([^\[\]]*(?:\[[^\]]*\][^\[\]]*)*)\]\)',
+                                    define_body
                                 )
-                                if resolved:
-                                    path = resolved
+                                if _join_m:
+                                    _join_content = _join_m.group(1)
+                                    # Strip dict-key accessors so inner keys aren't captured as path segments
+                                    _join_clean = re.sub(r'\[["\'][^"\']*["\']\]', '', _join_content)
+                                    _join_strings = re.findall(r'"([^"]+)"', _join_clean)
+                                    if _join_strings:
+                                        path = '/{id}'.join(_join_strings)
+                                        # If the cleaned join content ends with a variable (not a
+                                        # quoted string), append a placeholder for it.
+                                        # e.g. join(["/functions/", $fn["name"]]) → "/functions/{id}"
+                                        _last_elem = _join_clean.rsplit(',', 1)[-1].strip()
+                                        if _last_elem and not (_last_elem.startswith('"') or _last_elem.startswith("'")):
+                                            path += '{id}' if path.endswith('/') else '/{id}'
+                                elif 'azure' in (host or '').lower() or host == 'management.azure.com':
+                                    # For Azure, try to resolve the href expression to a full ARM path
+                                    resolved = self._resolve_azure_cwf_href(
+                                        var_expr, define_body, define_name, cwf_context
+                                    )
+                                    if resolved:
+                                        path = resolved
                             if not path:
                                 path = '/{id}'
 
@@ -3392,9 +3479,10 @@ class PolicyTemplateParser:
                 # Extract fields from the response
                 fields = self._extract_fields(datasource['body'])
 
-                # Also extract fields from processing scripts
-                processing_fields = self._extract_fields_from_processing_script(datasource['body'])
-                fields.extend(processing_fields)
+                # Also extract fields from processing scripts (verbose only — near-useless in practice)
+                if self.verbose:
+                    processing_fields = self._extract_fields_from_processing_script(datasource['body'])
+                    fields.extend(processing_fields)
 
                 # Deduplicate fields while preserving order
                 seen = set()
@@ -3491,10 +3579,10 @@ class PolicyTemplateParser:
         # prefix from the path and all Recommender suffix literals from the template, then
         # combine. Invalid combinations are filtered out by the lookup table.
         for prefix_match in re.finditer(
-            r'recommenders/(google\.[^"]+)"\s*\+\s*type', self.content
+            r'recommenders/(google\.[^"\']+)["\'][\s\S]*?\+\s*\w+', self.content
         ):
             prefix = prefix_match.group(1).rstrip('.')
-            for suffix in re.findall(r',\s*"(\w+Recommender)"', self.content):
+            for suffix in re.findall(r'["\'](\w+Recommender)["\']', self.content):
                 found_type_ids.add(f'{prefix}.{suffix}')
 
         result = []
@@ -3576,17 +3664,21 @@ class PolicyTemplateParser:
             return api_calls
 
         # --- Step 2: Map generator datasource → script name ---
+        # Build a single combined regex to find any known script name reference in a datasource
+        # body. This is O(datasources) rather than the naive O(datasources × scripts) double loop.
         gen_ds_map = {}  # ds_name -> script_name
+        _any_script_pat = re.compile(
+            r'\$(' + '|'.join(re.escape(sname) for sname in js_types) + r')\b'
+        )
         for m in re.finditer(
             r'\bdatasource\s+"([^"]+)".*?^end\b',
             self.content, re.MULTILINE | re.DOTALL
         ):
             ds_name = m.group(1)
             body = m.group(0)
-            for sname in js_types:
-                if re.search(r'\$' + re.escape(sname) + r'\b', body):
-                    gen_ds_map[ds_name] = sname
-                    break
+            sname_m = _any_script_pat.search(body)
+            if sname_m:
+                gen_ds_map[ds_name] = sname_m.group(1)
 
         # --- Step 3: Map suffix → types by tracing iterate → path ---
         suffix_types = {'aggregatedList': [], 'list': []}
@@ -3647,6 +3739,12 @@ def main():
         default=None,
         help='Write output files to DIR instead of the default data/policy_api_list/ directory.'
     )
+    parser.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        default=False,
+        help='Print per-policy progress and warning details.'
+    )
     args = parser.parse_args()
 
     # Get the repository root directory (two levels up from script location)
@@ -3689,8 +3787,9 @@ def main():
 
         try:
             # Parse the policy template
-            parser = PolicyTemplateParser(str(policy_file))
-            api_calls = parser.extract_api_calls()
+            pt_parser = PolicyTemplateParser(str(policy_file))
+            pt_parser.verbose = args.verbose
+            api_calls = pt_parser.extract_api_calls()
 
             # Add policy metadata to each API call
             for call in api_calls:
@@ -3700,15 +3799,40 @@ def main():
             all_api_calls.extend(api_calls)
             processed_count += 1
 
-            if processed_count % 50 == 0:
+            if args.verbose:
+                print(f"  [{processed_count}/{len(policies)}] {policy_info['file_name']}: {len(api_calls)} calls")
+            elif processed_count % 50 == 0:
                 print(f"  Processed {processed_count}/{len(policies)} policies...")
 
         except Exception as e:
             print(f"Error processing {policy_file}: {e}", file=sys.stderr)
+            if args.verbose:
+                import traceback
+                traceback.print_exc(file=sys.stderr)
             error_count += 1
 
+    # Deduplicate truly identical rows (same policy + datasource + method + endpoint +
+    # operation + field + permission). This can happen when a datasource is reachable via
+    # multiple CWF paths and gets processed more than once.
+    _seen_keys = set()
+    _deduped = []
+    for _call in all_api_calls:
+        _key = (
+            _call.get('policy_file', ''),
+            _call.get('datasource_name', ''),
+            _call.get('method', ''),
+            _call.get('endpoint', ''),
+            _call.get('operation', ''),
+            _call.get('field', ''),
+            _call.get('permission', ''),
+        )
+        if _key not in _seen_keys:
+            _seen_keys.add(_key)
+            _deduped.append(_call)
+    all_api_calls = _deduped
+
     print(f"\nProcessed {processed_count} policies successfully, {error_count} errors")
-    print(f"Extracted {len(all_api_calls)} total API call fields")
+    print(f"Extracted {len(all_api_calls)} unique API call rows (after deduplication)")
 
     # Create output directory if it doesn't exist
     if args.output_dir:
@@ -3729,8 +3853,7 @@ def main():
     # Write to CSV
     csv_output_file = output_dir / 'policy_api_list.csv'
     with open(csv_output_file, 'w', newline='') as csvfile:
-        fieldnames = ['policy_name', 'policy_file', 'policy_version', 'datasource_name', 'api_service', 'method', 'endpoint', 'operation', 'field', 'permission']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer = csv.DictWriter(csvfile, fieldnames=CSV_OUTPUT_FIELDS)
 
         writer.writeheader()
         for call in all_api_calls:
