@@ -1,7 +1,7 @@
-name "Meta Parent (Resource Group): __PLACEHOLDER_FOR_CHILD_POLICY_NAME__"
+name "Meta Parent (Resource Group): Azure Network Security Groups With Inbound RDP Open"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [__PLACEHOLDER_FOR_CHILD_POLICY_NAME__](__PLACEHOLDER_FOR_CHILD_POLICY_GITHUB_URL__) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Network Security Groups With Inbound RDP Open](https://github.com/flexera-public/policy_templates/tree/master/security/azure/restrict_rdp_internet) Policies."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md"
 severity "low"
@@ -9,10 +9,10 @@ category "Meta"
 default_frequency "hourly"
 info(
   provider: "Azure",
-  version: "__PLACEHOLDER_FOR_CHILD_POLICY_VERSION__", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "3.3.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false",
-  deprecated: "__PLACEHOLDER_FOR_CHILD_POLICY_DEPRECATED__",
-  hide_skip_approvals: "__PLACEHOLDER_FOR_CHILD_POLICY_HIDE_SKIP_APPROVALS__"
+  deprecated: "false",
+  hide_skip_approvals: "true"
 )
 
 ##############################################################################
@@ -59,13 +59,13 @@ parameter "param_policy_schedule" do
   label "Child Policy Schedule"
   description "The interval at which the child policy checks for conditions and generates incidents."
   default "weekly"
-  allowed_values __PLACEHOLDER_FOR_CHILD_POLICY_SCHEDULE_OPTIONS__
+  allowed_values "daily", "weekly", "monthly"
 end
 
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"__PLACEHOLDER_FOR_CHILD_POLICY_NAME__\" Policy Template from Catalog.  Optionally, you can use the \"__PLACEHOLDER_FOR_CHILD_POLICY_NAME__\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"Azure Network Security Groups With Inbound RDP Open\" Policy Template from Catalog.  Optionally, you can use the \"Azure Network Security Groups With Inbound RDP Open\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
@@ -89,13 +89,49 @@ parameter "param_combined_incident_table_size" do
 end
 
 ## Child Policy Parameters
-__PLACEHOLDER_FOR_CHILD_POLICY_PARAMETERS_BLOCKS__
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-__PLACEHOLDER_FOR_CHILD_POLICY_CREDENTIALS_BLOCKS__
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
 
 ###############################################################################
 # Pagination
@@ -254,7 +290,7 @@ script "js_published_child_policy_information", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = _.filter(ds_get_published_child_policy_information, function(item) {
-    return item['name'] == "__PLACEHOLDER_FOR_CHILD_POLICY_NAME__" && item['created_by'] == "support@flexera.com"
+    return item['name'] == "Azure Network Security Groups With Inbound RDP Open" && item['created_by'] == "support@flexera.com"
   })
 EOS
 end
@@ -287,7 +323,7 @@ script "js_project_child_policy_information", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = _.filter(ds_get_project_child_policy_information, function(item) {
-    return item['name'] == "__PLACEHOLDER_FOR_CHILD_POLICY_NAME__"
+    return item['name'] == "Azure Network Security Groups With Inbound RDP Open"
   })
 EOS
 end
@@ -963,7 +999,28 @@ datasource "ds_child_incident_details" do
   end
 end
 
-__PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_DATASOURCES__
+datasource "ds_bad_azure_netsecgroups_combined_incidents" do
+  run_script $js_ds_bad_azure_netsecgroups_combined_incidents, $ds_child_incident_details
+end
+
+script "js_ds_bad_azure_netsecgroups_combined_incidents", type: "javascript" do
+  parameters "ds_child_incident_details"
+  result "result"
+  code <<-'EOS'
+  result = []
+  _.each(ds_child_incident_details, function(incident) {
+    s = incident["summary"];
+    // If the incident summary contains "Azure Network Security Groups With Inbound RDP Open Found" then include it in the filter result
+    if (s.indexOf("Azure Network Security Groups With Inbound RDP Open Found") > -1) {
+      _.each(incident["violation_data"], function(violation) {
+        violation["incident_id"] = incident["id"];
+        result.push(violation);
+      });
+    }
+  });
+EOS
+end
+
 
 ###############################################################################
 # Policy
@@ -975,7 +1032,41 @@ __PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_DATASOURCES__
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-  __PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_CHECKS__
+    # Consolidated incident for Azure Network Security Groups With Inbound RDP Open Found
+  validate $ds_bad_azure_netsecgroups_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Azure Network Security Groups With Inbound RDP Open Found"
+    escalate $esc_email
+    
+    check eq(size(data), 0)
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "id" do
+        label "ID"
+      end
+      field "resourceName" do
+        label "Name"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "provisioningState" do
+        label "Provisioning State"
+      end
+      field "incident_id" do
+        label "Child Incident ID"
+      end
+    end
+  end
+
   # Status Incident Check
   validate $ds_take_in_parameters do
     summary_template "{{ data.parent_policy.name }}: Status of Child Policies"
@@ -1186,7 +1277,7 @@ end
 # Escalations
 ###############################################################################
 
-__PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_ESCALATIONS__
+
 # Used only for emailing the combined child incident if so desired
 escalation "esc_email" do
   automatic true

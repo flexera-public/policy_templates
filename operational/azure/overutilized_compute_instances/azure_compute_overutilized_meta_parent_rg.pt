@@ -1,7 +1,7 @@
-name "Meta Parent (Resource Group): __PLACEHOLDER_FOR_CHILD_POLICY_NAME__"
+name "Meta Parent (Resource Group): Azure Overutilized Compute Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [__PLACEHOLDER_FOR_CHILD_POLICY_NAME__](__PLACEHOLDER_FOR_CHILD_POLICY_GITHUB_URL__) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Overutilized Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/overutilized_compute_instances) Policies."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md"
 severity "low"
@@ -9,10 +9,10 @@ category "Meta"
 default_frequency "hourly"
 info(
   provider: "Azure",
-  version: "__PLACEHOLDER_FOR_CHILD_POLICY_VERSION__", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "0.4.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false",
-  deprecated: "__PLACEHOLDER_FOR_CHILD_POLICY_DEPRECATED__",
-  hide_skip_approvals: "__PLACEHOLDER_FOR_CHILD_POLICY_HIDE_SKIP_APPROVALS__"
+  deprecated: "false",
+  hide_skip_approvals: "true"
 )
 
 ##############################################################################
@@ -59,13 +59,13 @@ parameter "param_policy_schedule" do
   label "Child Policy Schedule"
   description "The interval at which the child policy checks for conditions and generates incidents."
   default "weekly"
-  allowed_values __PLACEHOLDER_FOR_CHILD_POLICY_SCHEDULE_OPTIONS__
+  allowed_values "daily", "weekly", "monthly"
 end
 
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"__PLACEHOLDER_FOR_CHILD_POLICY_NAME__\" Policy Template from Catalog.  Optionally, you can use the \"__PLACEHOLDER_FOR_CHILD_POLICY_NAME__\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"Azure Overutilized Compute Instances\" Policy Template from Catalog.  Optionally, you can use the \"Azure Overutilized Compute Instances\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
@@ -89,13 +89,150 @@ parameter "param_combined_incident_table_size" do
 end
 
 ## Child Policy Parameters
-__PLACEHOLDER_FOR_CHILD_POLICY_PARAMETERS_BLOCKS__
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclude_stopped" do
+  type "string"
+  category "Filters"
+  label "Exclude Stopped Virtual Machines"
+  description "Whether or not to filter stopped virtual machines from the results. If set to \"Yes\", only running virtual machines will be included in the results."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_exclude_databricks" do
+  type "string"
+  category "Filters"
+  label "Exclude Databricks"
+  description "Whether or not to filter virtual machines used for Azure Databricks from the results. If set to \"Yes\", virtual machines for Azure Databricks will not be included in the results."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_stats_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'overutilized' and therefore be flagged for upsizing. Set to -1 to ignore CPU utilization"
+  min_value -1
+  max_value 100
+  default 80
+end
+
+parameter "param_stats_threshold_mem_value" do
+  type "number"
+  category "Statistics"
+  label "Instance Memory Threshold (%)"
+  description "The Memory threshold at which to consider an instance to be 'overutilized' and therefore be flagged for upsizing. Set to -1 to ignore memory utilization"
+  min_value -1
+  max_value 100
+  default 80
+end
+
+parameter "param_stats_check_both" do
+  type "string"
+  category "Statistics"
+  label "Both CPU and Memory or Either"
+  description "Set whether an instance should be considered overutilized only if both CPU and memory are over the thresholds or if either CPU or memory are over. Note: this parameter is only functional when neither the CPU nor the Memory threshold is set to -1."
+  allowed_values "Both CPU and Memory", "Either CPU or Memory"
+  default "Either CPU or Memory"
+end
+
+parameter "param_stats_threshold" do
+  type "string"
+  category "Statistics"
+  label "Threshold Statistic"
+  description "Statistic to use when determining if an instance is overutilized."
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
+  default "Average"
+end
+
+parameter "param_stats_interval" do
+  type "string"
+  category "Statistics"
+  label "Statistic Interval"
+  description "The interval to use when gathering Azure metrics data. Smaller intervals produce more accurate results at the expense of policy memory usage and completion time due to larger data sets."
+  allowed_values "1 Minute", "5 Minutes", "15 Minutes", "30 Minutes", "1 Hour", "6 Hours", "12 Hours", "1 Day"
+  default "15 Minutes"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at CPU and/or memory data for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 90
+  default 30
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values [ "Upsize Overutilized Instances" ]
+  default []
+end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-__PLACEHOLDER_FOR_CHILD_POLICY_CREDENTIALS_BLOCKS__
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
 
 ###############################################################################
 # Pagination
@@ -254,7 +391,7 @@ script "js_published_child_policy_information", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = _.filter(ds_get_published_child_policy_information, function(item) {
-    return item['name'] == "__PLACEHOLDER_FOR_CHILD_POLICY_NAME__" && item['created_by'] == "support@flexera.com"
+    return item['name'] == "Azure Overutilized Compute Instances" && item['created_by'] == "support@flexera.com"
   })
 EOS
 end
@@ -287,7 +424,7 @@ script "js_project_child_policy_information", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = _.filter(ds_get_project_child_policy_information, function(item) {
-    return item['name'] == "__PLACEHOLDER_FOR_CHILD_POLICY_NAME__"
+    return item['name'] == "Azure Overutilized Compute Instances"
   })
 EOS
 end
@@ -963,7 +1100,28 @@ datasource "ds_child_incident_details" do
   end
 end
 
-__PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_DATASOURCES__
+datasource "ds_overutil_instances_combined_incidents" do
+  run_script $js_ds_overutil_instances_combined_incidents, $ds_child_incident_details
+end
+
+script "js_ds_overutil_instances_combined_incidents", type: "javascript" do
+  parameters "ds_child_incident_details"
+  result "result"
+  code <<-'EOS'
+  result = []
+  _.each(ds_child_incident_details, function(incident) {
+    s = incident["summary"];
+    // If the incident summary contains "Azure Overutilized Virtual Machines Found" then include it in the filter result
+    if (s.indexOf("Azure Overutilized Virtual Machines Found") > -1) {
+      _.each(incident["violation_data"], function(violation) {
+        violation["incident_id"] = incident["id"];
+        result.push(violation);
+      });
+    }
+  });
+EOS
+end
+
 
 ###############################################################################
 # Policy
@@ -975,7 +1133,131 @@ __PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_DATASOURCES__
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-  __PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_CHECKS__
+    # Consolidated incident for Azure Overutilized Virtual Machines Found
+  validate $ds_overutil_instances_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Azure Overutilized Virtual Machines Found"
+    escalate $esc_email
+    escalate $esc_upsize_instances
+    check eq(size(data), 0)
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "osType" do
+        label "Operating System"
+      end
+      field "dataDiskCount" do
+        label "Attached Disks (#)"
+      end
+      field "imagePublisher" do
+        label "Image Publisher"
+      end
+      field "imageOffer" do
+        label "Image Offer"
+      end
+      field "imageSKU" do
+        label "Image SKU"
+      end
+      field "state" do
+        label "Power State"
+      end
+      field "cost" do
+        label "Estimated Monthly Cost"
+      end
+      field "currency" do
+        label "Currency"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "cpuP90" do
+        label "CPU p90"
+      end
+      field "cpuP95" do
+        label "CPU p95"
+      end
+      field "cpuP99" do
+        label "CPU p99"
+      end
+      field "memMaximum" do
+        label "Memory Maximum %"
+      end
+      field "memMinimum" do
+        label "Memory Minimum %"
+      end
+      field "memAverage" do
+        label "Memory Average %"
+      end
+      field "memP90" do
+        label "Memory p90"
+      end
+      field "memP95" do
+        label "Memory p95"
+      end
+      field "memP99" do
+        label "Memory p99"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "threshold" do
+        label "CPU Threshold"
+      end
+      field "memoryThreshold" do
+        label "Memory Threshold"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+      end
+      field "incident_id" do
+        label "Child Incident ID"
+      end
+    end
+  end
+
   # Status Incident Check
   validate $ds_take_in_parameters do
     summary_template "{{ data.parent_policy.name }}: Status of Child Policies"
@@ -1186,7 +1468,20 @@ end
 # Escalations
 ###############################################################################
 
-__PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_ESCALATIONS__
+# Escalation for Upsize Overutilized Instances
+escalation "esc_upsize_instances" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
+  label "Upsize Overutilized Instances"
+  description "Approval to upsize all selected instances"
+
+  # Run declaration should go at end, after any parameters that may exist
+  run "esc_upsize_instances", data, rs_governance_host, rs_project_id
+end
+define esc_upsize_instances($data, $governance_host, $rs_project_id) do
+  $action_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Upsize Overutilized Instances", $action_options)
+end
+
 # Used only for emailing the combined child incident if so desired
 escalation "esc_email" do
   automatic true

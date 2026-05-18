@@ -1,7 +1,7 @@
-name "Meta Parent (Resource Group): __PLACEHOLDER_FOR_CHILD_POLICY_NAME__"
+name "Meta Parent (Resource Group): Azure Savings Plan Recommendations"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [__PLACEHOLDER_FOR_CHILD_POLICY_NAME__](__PLACEHOLDER_FOR_CHILD_POLICY_GITHUB_URL__) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Savings Plan Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/savings_plan/recommendations) Policies."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md"
 severity "low"
@@ -9,10 +9,10 @@ category "Meta"
 default_frequency "hourly"
 info(
   provider: "Azure",
-  version: "__PLACEHOLDER_FOR_CHILD_POLICY_VERSION__", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "3.6.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false",
-  deprecated: "__PLACEHOLDER_FOR_CHILD_POLICY_DEPRECATED__",
-  hide_skip_approvals: "__PLACEHOLDER_FOR_CHILD_POLICY_HIDE_SKIP_APPROVALS__"
+  deprecated: "false",
+  hide_skip_approvals: "true"
 )
 
 ##############################################################################
@@ -59,13 +59,13 @@ parameter "param_policy_schedule" do
   label "Child Policy Schedule"
   description "The interval at which the child policy checks for conditions and generates incidents."
   default "weekly"
-  allowed_values __PLACEHOLDER_FOR_CHILD_POLICY_SCHEDULE_OPTIONS__
+  allowed_values "daily", "weekly", "monthly"
 end
 
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"__PLACEHOLDER_FOR_CHILD_POLICY_NAME__\" Policy Template from Catalog.  Optionally, you can use the \"__PLACEHOLDER_FOR_CHILD_POLICY_NAME__\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"Azure Savings Plan Recommendations\" Policy Template from Catalog.  Optionally, you can use the \"Azure Savings Plan Recommendations\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
@@ -89,13 +89,77 @@ parameter "param_combined_incident_table_size" do
 end
 
 ## Child Policy Parameters
-__PLACEHOLDER_FOR_CHILD_POLICY_PARAMETERS_BLOCKS__
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_days" do
+  type "string"
+  category "Savings Plan Settings"
+  label "Look Back Period"
+  description "Number of days of prior usage to analyze."
+  allowed_values "Last 7 Days", "Last 30 Days", "Last 60 Days"
+  default "Last 30 Days"
+end
+
+parameter "param_term" do
+  type "string"
+  category "Savings Plan Settings"
+  label "Savings Plan Term"
+  description "Length of savings plan term to provide recommendations for."
+  allowed_values "1 Year", "3 Year"
+  default "1 Year"
+end
+
+parameter "param_scope" do
+  type "string"
+  category "Savings Plan Settings"
+  label "Savings Plan Scope"
+  description "The scope to provide recommendations for. Select 'Shared' to not have recommendations scoped to individual Subscriptions or Resource Groups."
+  allowed_values "Subscription", "Resource Group", "Shared"
+  default "Subscription"
+end
+
+parameter "param_payment_option" do
+  type "string"
+  category "Savings Plan Settings"
+  label "Payment Option"
+  description "Whether or not to report recommendations as 'No Upfront' or 'All Upfront'. Default value of 'No Upfront' recommended in most cases. Has no impact on the recommendations themselves; Azure does not offer discounts or differing options if you paying up front."
+  allowed_values "No Upfront", "All Upfront"
+  default "No Upfront"
+end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-__PLACEHOLDER_FOR_CHILD_POLICY_CREDENTIALS_BLOCKS__
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
 
 ###############################################################################
 # Pagination
@@ -254,7 +318,7 @@ script "js_published_child_policy_information", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = _.filter(ds_get_published_child_policy_information, function(item) {
-    return item['name'] == "__PLACEHOLDER_FOR_CHILD_POLICY_NAME__" && item['created_by'] == "support@flexera.com"
+    return item['name'] == "Azure Savings Plan Recommendations" && item['created_by'] == "support@flexera.com"
   })
 EOS
 end
@@ -287,7 +351,7 @@ script "js_project_child_policy_information", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = _.filter(ds_get_project_child_policy_information, function(item) {
-    return item['name'] == "__PLACEHOLDER_FOR_CHILD_POLICY_NAME__"
+    return item['name'] == "Azure Savings Plan Recommendations"
   })
 EOS
 end
@@ -963,7 +1027,28 @@ datasource "ds_child_incident_details" do
   end
 end
 
-__PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_DATASOURCES__
+datasource "ds_sp_incident_combined_incidents" do
+  run_script $js_ds_sp_incident_combined_incidents, $ds_child_incident_details
+end
+
+script "js_ds_sp_incident_combined_incidents", type: "javascript" do
+  parameters "ds_child_incident_details"
+  result "result"
+  code <<-'EOS'
+  result = []
+  _.each(ds_child_incident_details, function(incident) {
+    s = incident["summary"];
+    // If the incident summary contains "Azure Savings Plan Purchase Recommendations" then include it in the filter result
+    if (s.indexOf("Azure Savings Plan Purchase Recommendations") > -1) {
+      _.each(incident["violation_data"], function(violation) {
+        violation["incident_id"] = incident["id"];
+        result.push(violation);
+      });
+    }
+  });
+EOS
+end
+
 
 ###############################################################################
 # Policy
@@ -975,7 +1060,89 @@ __PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_DATASOURCES__
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-  __PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_CHECKS__
+    # Consolidated incident for Azure Savings Plan Purchase Recommendations
+  validate $ds_sp_incident_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Azure Savings Plan Purchase Recommendations"
+    escalate $esc_email
+    
+    check eq(size(data), 0)
+    export do
+      resource_level false
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "name" do
+        label "Recommendation Name"
+      end
+      field "resourceType" do
+        label "Recommendation Type"
+      end
+      field "term" do
+        label "Term"
+      end
+      field "paymentOption" do
+        label "Payment Option"
+      end
+      field "recommendedQuantity" do
+        label "Recommended Quantity to Purchase"
+      end
+      field "savingsCurrency" do
+        label "Currency"
+      end
+      field "costWithoutBenefit" do
+        label "Current Monthly Cost"
+      end
+      field "totalCost" do
+        label "New Monthly Cost with Savings Plan"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsPercentage" do
+        label "Savings Percentage (%)"
+      end
+      field "totalHours" do
+        label "Total Hours"
+      end
+      field "benefitCost" do
+        label "Benefit Cost (Hours)"
+      end
+      field "wastageCost" do
+        label "Wastage Cost (Hours)"
+      end
+      field "overageCost" do
+        label "Overage Cost (Hours)"
+      end
+      field "coveragePercentage" do
+        label "Coverage Percentage"
+      end
+      field "commitmentGranularity" do
+        label "Commitment Granularity"
+      end
+      field "scope" do
+        label "Scope"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "Recommendation ID"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period"
+      end
+      field "incident_id" do
+        label "Child Incident ID"
+      end
+    end
+  end
+
   # Status Incident Check
   validate $ds_take_in_parameters do
     summary_template "{{ data.parent_policy.name }}: Status of Child Policies"
@@ -1186,7 +1353,7 @@ end
 # Escalations
 ###############################################################################
 
-__PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_ESCALATIONS__
+
 # Used only for emailing the combined child incident if so desired
 escalation "esc_email" do
   automatic true

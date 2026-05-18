@@ -1,7 +1,7 @@
-name "Meta Parent (Resource Group): __PLACEHOLDER_FOR_CHILD_POLICY_NAME__"
+name "Meta Parent (Resource Group): Azure Rightsize Compute Instances (Cross-Family)"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [__PLACEHOLDER_FOR_CHILD_POLICY_NAME__](__PLACEHOLDER_FOR_CHILD_POLICY_GITHUB_URL__) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Rightsize Compute Instances (Cross-Family)](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances_cross_family) Policies."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md"
 severity "low"
@@ -9,10 +9,10 @@ category "Meta"
 default_frequency "hourly"
 info(
   provider: "Azure",
-  version: "__PLACEHOLDER_FOR_CHILD_POLICY_VERSION__", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "0.2.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false",
-  deprecated: "__PLACEHOLDER_FOR_CHILD_POLICY_DEPRECATED__",
-  hide_skip_approvals: "__PLACEHOLDER_FOR_CHILD_POLICY_HIDE_SKIP_APPROVALS__"
+  deprecated: "false",
+  hide_skip_approvals: "true"
 )
 
 ##############################################################################
@@ -59,13 +59,13 @@ parameter "param_policy_schedule" do
   label "Child Policy Schedule"
   description "The interval at which the child policy checks for conditions and generates incidents."
   default "weekly"
-  allowed_values __PLACEHOLDER_FOR_CHILD_POLICY_SCHEDULE_OPTIONS__
+  allowed_values "daily", "weekly", "monthly"
 end
 
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"__PLACEHOLDER_FOR_CHILD_POLICY_NAME__\" Policy Template from Catalog.  Optionally, you can use the \"__PLACEHOLDER_FOR_CHILD_POLICY_NAME__\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"Azure Rightsize Compute Instances (Cross-Family)\" Policy Template from Catalog.  Optionally, you can use the \"Azure Rightsize Compute Instances (Cross-Family)\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
@@ -89,13 +89,130 @@ parameter "param_combined_incident_table_size" do
 end
 
 ## Child Policy Parameters
-__PLACEHOLDER_FOR_CHILD_POLICY_PARAMETERS_BLOCKS__
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_allow_mixed_x86_vendors" do
+  type "string"
+  category "Filters"
+  label "Allow Intel/AMD Recommendations"
+  description "Whether to allow rightsizing recommendations that change the CPU manufacturer between Intel and AMD (both x86_64 architecture). Such recommendations are generally safe but may affect licensing or workload performance."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_exclude_databricks" do
+  type "string"
+  category "Filters"
+  label "Exclude Databricks Instances"
+  description "Whether or not to filter virtual machines used for Azure Databricks from the results. If set to \"Yes\", virtual machines for Azure Databricks will not be included in the results."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at CPU, memory, disk, and network metrics for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 90
+  default 30
+end
+
+parameter "param_stats_safety_factor" do
+  type "number"
+  category "Statistics"
+  label "Rightsizing Safety Factor"
+  description "A multiplier applied to p95 CPU/memory utilization and peak disk throughput/IOPS when computing the required resources for a rightsized instance. For example, 1.5x means the recommended instance must handle 1.5 times the observed peak utilization and disk activity."
+  min_value 1
+  default 1.5
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Downsize Underutilized Instances", "Power Off Idle Instances", "Delete Idle Instances"]
+  default []
+end
+
+parameter "param_skipshutdown" do
+  type "string"
+  category "Actions"
+  label "Power Off Type"
+  description "Whether to perform a graceful shutdown or a forced shutdown when powering off idle instances. Only applicable when taking action against instances."
+  allowed_values "Graceful", "Forced"
+  default "Graceful"
+end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-__PLACEHOLDER_FOR_CHILD_POLICY_CREDENTIALS_BLOCKS__
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
 
 ###############################################################################
 # Pagination
@@ -254,7 +371,7 @@ script "js_published_child_policy_information", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = _.filter(ds_get_published_child_policy_information, function(item) {
-    return item['name'] == "__PLACEHOLDER_FOR_CHILD_POLICY_NAME__" && item['created_by'] == "support@flexera.com"
+    return item['name'] == "Azure Rightsize Compute Instances (Cross-Family)" && item['created_by'] == "support@flexera.com"
   })
 EOS
 end
@@ -287,7 +404,7 @@ script "js_project_child_policy_information", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = _.filter(ds_get_project_child_policy_information, function(item) {
-    return item['name'] == "__PLACEHOLDER_FOR_CHILD_POLICY_NAME__"
+    return item['name'] == "Azure Rightsize Compute Instances (Cross-Family)"
   })
 EOS
 end
@@ -963,7 +1080,50 @@ datasource "ds_child_incident_details" do
   end
 end
 
-__PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_DATASOURCES__
+datasource "ds_rightsize_instances_combined_incidents" do
+  run_script $js_ds_rightsize_instances_combined_incidents, $ds_child_incident_details
+end
+
+script "js_ds_rightsize_instances_combined_incidents", type: "javascript" do
+  parameters "ds_child_incident_details"
+  result "result"
+  code <<-'EOS'
+  result = []
+  _.each(ds_child_incident_details, function(incident) {
+    s = incident["summary"];
+    // If the incident summary contains "Azure Underutilized Virtual Machines Found" then include it in the filter result
+    if (s.indexOf("Azure Underutilized Virtual Machines Found") > -1) {
+      _.each(incident["violation_data"], function(violation) {
+        violation["incident_id"] = incident["id"];
+        result.push(violation);
+      });
+    }
+  });
+EOS
+end
+
+datasource "ds_idle_instances_combined_incidents" do
+  run_script $js_ds_idle_instances_combined_incidents, $ds_child_incident_details
+end
+
+script "js_ds_idle_instances_combined_incidents", type: "javascript" do
+  parameters "ds_child_incident_details"
+  result "result"
+  code <<-'EOS'
+  result = []
+  _.each(ds_child_incident_details, function(incident) {
+    s = incident["summary"];
+    // If the incident summary contains "Azure Idle Virtual Machines Found" then include it in the filter result
+    if (s.indexOf("Azure Idle Virtual Machines Found") > -1) {
+      _.each(incident["violation_data"], function(violation) {
+        violation["incident_id"] = incident["id"];
+        result.push(violation);
+      });
+    }
+  });
+EOS
+end
+
 
 ###############################################################################
 # Policy
@@ -975,7 +1135,223 @@ __PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_DATASOURCES__
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-  __PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_CHECKS__
+    # Consolidated incident for Azure Underutilized Virtual Machines Found
+  validate $ds_rightsize_instances_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Azure Underutilized Virtual Machines Found"
+    escalate $esc_email
+    escalate $esc_downsize_instances
+    check eq(size(data), 0)
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
+      field "osType" do
+        label "Operating System"
+      end
+      field "dataDiskCount" do
+        label "Attached Disks (#)"
+      end
+      field "nicCount" do
+        label "Attached NICs (#)"
+      end
+      field "currentLocalDisk" do
+        label "Current Instance Local Disk"
+      end
+      field "recommendedLocalDisk" do
+        label "Recommended Instance Local Disk"
+      end
+      field "hasMemoryData" do
+        label "Memory Data Available"
+      end
+      field "state" do
+        label "Power State"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "cpuP95" do
+        label "CPU p95 %"
+      end
+      field "memP95" do
+        label "Memory p95 %"
+      end
+      field "diskPeakMbps" do
+        label "Disk Peak Throughput (MiB/s)"
+      end
+      field "diskPeakIops" do
+        label "Disk Peak IOPS"
+      end
+      field "networkAvgMbPerDay" do
+        label "Network Average (MiB/day)"
+      end
+      field "requiredVcpus" do
+        label "Required vCPUs"
+      end
+      field "requiredMemGB" do
+        label "Required Memory (GiB)"
+      end
+      field "currentVcpus" do
+        label "Current vCPUs"
+      end
+      field "currentMemGB" do
+        label "Current Memory (GiB)"
+      end
+      field "currentListPrice" do
+        label "Current List Price (Monthly)"
+      end
+      field "recommendedListPrice" do
+        label "Recommended List Price (Monthly)"
+      end
+      field "imagePublisher" do
+        label "Image Publisher"
+      end
+      field "imageOffer" do
+        label "Image Offer"
+      end
+      field "imageSKU" do
+        label "Image SKU"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "chartUrlField" do
+        label "Utilization Chart External Link"
+        format "link-external"
+      end
+      field "id" do
+        label "ID"
+      end
+      field "incident_id" do
+        label "Child Incident ID"
+      end
+    end
+  end
+
+  # Consolidated incident for Azure Idle Virtual Machines Found
+  validate $ds_idle_instances_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Azure Idle Virtual Machines Found"
+    escalate $esc_email
+    escalate $esc_poweroff_instances
+    escalate $esc_delete_instances
+    check eq(size(data), 0)
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
+      field "osType" do
+        label "Operating System"
+      end
+      field "dataDiskCount" do
+        label "Attached Disks (#)"
+      end
+      field "state" do
+        label "Power State"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "cpuP95" do
+        label "CPU p95 %"
+      end
+      field "networkAvgMbPerDay" do
+        label "Network Average (MiB/day)"
+      end
+      field "imagePublisher" do
+        label "Image Publisher"
+      end
+      field "imageOffer" do
+        label "Image Offer"
+      end
+      field "imageSKU" do
+        label "Image SKU"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "chartUrlField" do
+        label "Utilization Chart External Link"
+        format "link-external"
+      end
+      field "id" do
+        label "ID"
+      end
+      field "incident_id" do
+        label "Child Incident ID"
+      end
+    end
+  end
+
   # Status Incident Check
   validate $ds_take_in_parameters do
     summary_template "{{ data.parent_policy.name }}: Status of Child Policies"
@@ -1186,7 +1562,48 @@ end
 # Escalations
 ###############################################################################
 
-__PLACEHOLDER_FOR_CONSOLIDATED_INCIDENT_ESCALATIONS__
+# Escalation for Downsize Underutilized Instances
+escalation "esc_downsize_instances" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
+  label "Downsize Underutilized Instances"
+  description "Approval to downsize all selected instances"
+
+  # Run declaration should go at end, after any parameters that may exist
+  run "esc_downsize_instances", data, rs_governance_host, rs_project_id
+end
+define esc_downsize_instances($data, $governance_host, $rs_project_id) do
+  $action_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Downsize Underutilized Instances", $action_options)
+end
+
+# Escalation for Power Off Idle Instances
+escalation "esc_poweroff_instances" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
+  label "Power Off Idle Instances"
+  description "Approval to power off all selected instances"
+
+  # Run declaration should go at end, after any parameters that may exist
+  run "esc_poweroff_instances", data, rs_governance_host, rs_project_id
+end
+define esc_poweroff_instances($data, $governance_host, $rs_project_id) do
+  $action_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Power Off Idle Instances", $action_options)
+end
+
+# Escalation for Delete Idle Instances
+escalation "esc_delete_instances" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
+  label "Delete Idle Instances"
+  description "Approval to delete all selected instances"
+
+  # Run declaration should go at end, after any parameters that may exist
+  run "esc_delete_instances", data, rs_governance_host, rs_project_id
+end
+define esc_delete_instances($data, $governance_host, $rs_project_id) do
+  $action_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Delete Idle Instances", $action_options)
+end
+
 # Used only for emailing the combined child incident if so desired
 escalation "esc_email" do
   automatic true
