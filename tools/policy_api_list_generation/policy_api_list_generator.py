@@ -385,10 +385,10 @@ class PolicyTemplateParser:
         current = ''
         depth = 0
         for ch in s:
-            if ch == '(':
+            if ch in ('(', '[', '{'):
                 depth += 1
                 current += ch
-            elif ch == ')':
+            elif ch in (')', ']', '}'):
                 depth -= 1
                 current += ch
             elif ch == ',' and depth == 0:
@@ -802,9 +802,12 @@ class PolicyTemplateParser:
             request_info['script_name'] = script_match.group(1)
 
         # Extract query parameters (with double or single quotes, allow empty values)
-        for query_match in re.finditer(r'query\s+["\']([^"\']+)["\']\s*,\s*["\']([^"\']*)["\']', datasource_body):
-            param_name = query_match.group(1)
-            param_value = query_match.group(2)
+        for query_match in re.finditer(
+            r'''query\s+(?:"([^"]+)"|'([^']+)')\s*,\s*(?:"([^"]*)"|'([^']*)')''',
+            datasource_body
+        ):
+            param_name = query_match.group(1) or query_match.group(2)
+            param_value = query_match.group(3) if query_match.group(3) is not None else (query_match.group(4) or '')
             request_info['query_params'][param_name] = param_value
         # Also capture query directives with dynamic values (val(), variables, etc.)
         for query_match in re.finditer(r'query\s+["\']([^"\']+)["\']\s*,\s*(?!["\'])([^\n]+)', datasource_body):
@@ -1118,6 +1121,14 @@ class PolicyTemplateParser:
                         # Use semantic placeholders based on variable names
                         path_with_vars = ''
                         var_idx = 0
+
+                        # Check if the path expression starts with a variable (before the first string literal).
+                        # e.g. "resource_id + \"/providers/...\"" — the leading variable would be dropped
+                        # by the string extraction, so prepend its placeholder explicitly.
+                        leading_var_m = re.match(r'^(\w+)\s*\+', path_line_clean)
+                        if leading_var_m and not path_line_clean.lstrip().startswith(('"', "'")):
+                            leading_ph = self._var_to_placeholder(leading_var_m.group(1)) or '{id}'
+                            path_with_vars = leading_ph
 
                         for i, s in enumerate(strings):
                             path_with_vars += s
@@ -1706,6 +1717,11 @@ class PolicyTemplateParser:
                 resource_name = resource.title().replace('_', ' ')
                 return f'{operation_name} {resource_name}'
 
+            # Determine if the last path segment was a placeholder (single-resource GET)
+            raw_segments = [s for s in path.split('/') if s]
+            last_raw = raw_segments[-1] if raw_segments else ''
+            is_single_resource_get = ('{' in last_raw) and method.upper() == 'GET'
+
             segments = [s for s in path.split('/') if s and '{' not in s.lower() and not re.match(r'^v\d', s, re.IGNORECASE) and s not in ('beta', 'alpha')]
             # Filter out placeholder segments
             segments = [s for s in segments if s.lower() not in self.SKIP_PLACEHOLDERS]
@@ -1717,6 +1733,9 @@ class PolicyTemplateParser:
                     # Already in final form (e.g., 'Buckets'), just add method prefix
                     method_upper = method.upper()
                     if method_upper == 'GET':
+                        if is_single_resource_get:
+                            singular = resource.rstrip('s') if resource.endswith('s') else resource
+                            return f'Describe {singular}'
                         return f'List {resource}'
                     elif method_upper == 'POST':
                         return f'Create {resource}'
@@ -1726,6 +1745,13 @@ class PolicyTemplateParser:
                         return f'Delete {resource}'
                     else:
                         return f'{method_upper} {resource}'
+                if is_single_resource_get:
+                    # Build a singular form of the resource name for "Describe X"
+                    clean = re.sub(r'([a-z])([A-Z])', r'\1 \2', resource).replace('-', ' ').replace('_', ' ')
+                    words = clean.split()
+                    clean = ' '.join(w.capitalize() for w in words)
+                    singular = clean.rstrip('s') if clean.endswith('s') else clean
+                    return f'Describe {singular}'
                 return self._format_operation_from_method(method, resource)
 
         # Flexera: Extract from URL path
@@ -2190,7 +2216,7 @@ class PolicyTemplateParser:
         # Resource Manager
         if service == 'resourcemanager':
             if re.search(r'/projects:search', path):
-                return 'resourcemanager.projects.search'
+                return 'resourcemanager.projects.get'
             if re.search(r'/projects/[^/]+$', path):
                 return 'resourcemanager.projects.get'
             if re.search(r'/projects/?$', path) or re.search(r'/projects$', path):
@@ -2376,8 +2402,10 @@ class PolicyTemplateParser:
             path_join_match = re.search(r'path\s+join\(\s*\[([^\]]+)\]\s*\)', ds_body)
             if path_join_match:
                 path_join_str = re.sub(r'\[["\'][^"\']*["\']\]', '', path_join_match.group(1))
+                # Also strip val(...) calls so their quoted arguments are not captured as path segments
+                path_join_str = re.sub(r'\bval\s*\([^)]+\)', '', path_join_str)
                 lits = re.findall(r'"([^"]+)"', path_join_str)
-                path = ''.join(lits)
+                path = '{id}'.join(lits)
                 if self._cwf_path_is_specific(host, path):
                     return host, path
                 # Pattern: join([val(iter_item, "id"), "/suffix"]) — literal suffix appended to
@@ -3251,13 +3279,19 @@ class PolicyTemplateParser:
                                         path_parts = []
                                         for seg in re.split(r'\s*\+\s*', rhs):
                                             seg = seg.strip()
-                                            str_m2 = re.search(r'"([^"]*)"', seg)
-                                            if str_m2:
-                                                path_parts.append(str_m2.group(1))
-                                            else:
-                                                var_m2 = re.search(r'\$(\w+)', seg)
-                                                ph = self._get_semantic_placeholder(var_m2.group(1)) if var_m2 else '{id}'
+                                            # Segment like $item["id"] or $obj["fieldName"] — produce a placeholder, not the key name
+                                            if re.match(r'^\$\w+\[', seg):
+                                                field_m = re.search(r'\[["\']?(\w+)["\']?\]', seg)
+                                                ph = self._get_semantic_placeholder(field_m.group(1)) if field_m else '{id}'
                                                 path_parts.append(ph)
+                                            else:
+                                                str_m2 = re.search(r'"([^"]*)"', seg)
+                                                if str_m2:
+                                                    path_parts.append(str_m2.group(1))
+                                                else:
+                                                    var_m2 = re.search(r'\$(\w+)', seg)
+                                                    ph = self._get_semantic_placeholder(var_m2.group(1)) if var_m2 else '{id}'
+                                                    path_parts.append(ph)
                                         path = ''.join(path_parts) or '/{id}'
                                     else:
                                         path = (lit_m.group(1) or '') + '/{id}'
