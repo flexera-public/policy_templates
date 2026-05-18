@@ -272,6 +272,9 @@ class PolicyTemplateParser:
         self._param_cache = self._build_param_cache()
         # Memoization cache for _trace_datasource_api() to avoid redundant recursive scans.
         self._trace_cache = {}
+        # Lazy-populated caches for expensive full-file scans.
+        self._datasources_cache = None
+        self._define_blocks_cache = None
         self.verbose = False
 
     def _extract_policy_name(self):
@@ -496,7 +499,7 @@ class PolicyTemplateParser:
 
     def _extract_datasources(self):
         """Extract all datasource blocks from the policy template."""
-        if hasattr(self, '_datasources_cache'):
+        if self._datasources_cache is not None:
             return self._datasources_cache
         datasources = []
         lines = self.content.split('\n')
@@ -2784,7 +2787,7 @@ class PolicyTemplateParser:
 
     def _extract_define_blocks(self):
         """Extract all CWF define...do...end blocks from the policy template."""
-        if hasattr(self, '_define_blocks_cache'):
+        if self._define_blocks_cache is not None:
             return self._define_blocks_cache
         define_blocks = []
         lines = self.content.split('\n')
