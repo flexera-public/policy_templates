@@ -496,6 +496,8 @@ class PolicyTemplateParser:
 
     def _extract_datasources(self):
         """Extract all datasource blocks from the policy template."""
+        if hasattr(self, '_datasources_cache'):
+            return self._datasources_cache
         datasources = []
         lines = self.content.split('\n')
 
@@ -544,6 +546,7 @@ class PolicyTemplateParser:
 
             i += 1
 
+        self._datasources_cache = datasources
         return datasources
 
     def _extract_request_info(self, datasource_body):
@@ -768,7 +771,8 @@ class PolicyTemplateParser:
                         except Exception:
                             pass
             except Exception as e:
-                # If parsing fails, use placeholder
+                if self.verbose:
+                    print(f"  [WARN] path extraction failed for {self.file_path}: {e}")
                 request_info['path'] = '/{dynamic}'
         else:
             # Try simple path pattern with single or double quotes
@@ -952,10 +956,18 @@ class PolicyTemplateParser:
                                 request_info['host'] = '{region}.monitor.azure.com' if 'azure' in func_body.lower() else None
                 # Check if this is a concatenated string (contains +)
                 elif '+' in host_line:
-                    # Extract all string literals from the concatenation
-                    strings = re.findall(r'["\']([^"\']+)["\']', host_line)
-                    # Extract variable names
-                    variables = re.findall(r'\+\s*(\w+)\s*\+', host_line)
+                    # Strip dict-key accessors (e.g. ["region"]) so inner key names
+                    # are not captured as string literals.
+                    # e.g. "monitoring." + query["region"] + ".amazonaws.com" would
+                    # otherwise capture "monitoring.", "region", ".amazonaws.com"
+                    # instead of just "monitoring." and ".amazonaws.com".
+                    dict_key_vars = re.findall(r'\w+\[["\'](\w+)["\']\]', host_line)
+                    host_line_clean = re.sub(r'\[["\'][^"\']*["\']\]', '', host_line)
+                    # Extract all string literals from the cleaned line
+                    strings = re.findall(r'["\']([^"\']+)["\']', host_line_clean)
+                    # Use dict-key variable names as placeholders if available,
+                    # otherwise fall back to the + var + pattern.
+                    variables = dict_key_vars if dict_key_vars else re.findall(r'\+\s*(\w+)\s*\+', host_line_clean)
 
                     if strings and len(strings) > 1:
                         # Join them with semantic placeholders between
@@ -1567,18 +1579,23 @@ class PolicyTemplateParser:
                     params_dict[k] = [v] if v else ['']
 
             # Check if it's an S3 bucket operation (path contains bucket name or is simple)
-            # Common S3 query parameters that indicate operations
-            s3_ops = self.RESOURCE_MAPPINGS.get('AWS', {})
-            for param_key in params_dict.keys():
-                param_lower = param_key.lower()
-                if param_lower in s3_ops:
-                    return f'Get Bucket {s3_ops[param_lower]}'
-                # Handle special S3 operations
-                elif param_lower == 'intelligent-tiering':
-                    return 'Get Bucket Intelligent Tiering Configuration'
-                # If no mapping, use the parameter name itself (but skip common filters and AWS action params)
-                elif param_lower not in ['maxkeys', 'prefix', 'delimiter', 'marker', 'api-version', 'view', 'action', 'version', 'filter']:
-                    return f'Get Bucket {self._format_resource_name(param_key)}'
+            # Common S3 query parameters that indicate operations.
+            # Guard: only fire when the endpoint is actually an S3 host; otherwise
+            # query params like MaxItems=1 or Qualifier=... on Lambda/EC2/etc. endpoints
+            # would be misidentified as S3 bucket operations.
+            _op_host_s3 = parsed_url.netloc.lower() if endpoint else ''
+            if 's3' in _op_host_s3 or '{bucket}' in _op_host_s3:
+                s3_ops = self.RESOURCE_MAPPINGS.get('AWS', {})
+                for param_key in params_dict.keys():
+                    param_lower = param_key.lower()
+                    if param_lower in s3_ops:
+                        return f'Get Bucket {s3_ops[param_lower]}'
+                    # Handle special S3 operations
+                    elif param_lower == 'intelligent-tiering':
+                        return 'Get Bucket Intelligent Tiering Configuration'
+                    # If no mapping, use the parameter name itself (but skip common filters and AWS action params)
+                    elif param_lower not in ['maxkeys', 'prefix', 'delimiter', 'marker', 'api-version', 'view', 'action', 'version', 'filter']:
+                        return f'Get Bucket {self._format_resource_name(param_key)}'
 
             # If path is just hostname or '/', and no useful query params
             if not path or path == '/' or path == '/{name}':
@@ -1615,6 +1632,10 @@ class PolicyTemplateParser:
                 if resource.lower() in self.RESOURCE_MAPPINGS.get('AWS', {}):
                     resource = self.RESOURCE_MAPPINGS['AWS'][resource.lower()]
                     return f'Get {resource}'
+                # PascalCase last segment is an action name (e.g. /DescribeSavingsPlans) —
+                # return it directly rather than mangling it through word-split + verb prefix.
+                if re.match(r'^[A-Z][a-zA-Z]+$', resource) and re.search(r'[a-z][A-Z]', resource):
+                    return resource
                 return self._format_operation_from_method(method, resource)
 
         # Azure: Extract from URL path
@@ -1889,6 +1910,11 @@ class PolicyTemplateParser:
                 return 'lambda:ListVersionsByFunction'
             if re.search(r'/provisioned-concurrency', path):
                 return 'lambda:GetProvisionedConcurrencyConfig'
+            # Single function operations: /functions/{name} or /functions/{placeholder}
+            if re.search(r'/functions/[^/?]+/?$', path):
+                if method == 'DELETE':
+                    return 'lambda:DeleteFunction'
+                return 'lambda:GetFunction'
 
         # EKS
         if service == 'eks':
@@ -2758,6 +2784,8 @@ class PolicyTemplateParser:
 
     def _extract_define_blocks(self):
         """Extract all CWF define...do...end blocks from the policy template."""
+        if hasattr(self, '_define_blocks_cache'):
+            return self._define_blocks_cache
         define_blocks = []
         lines = self.content.split('\n')
         i = 0
@@ -2801,6 +2829,7 @@ class PolicyTemplateParser:
                     'body': '\n'.join(define_lines)
                 })
             i += 1
+        self._define_blocks_cache = define_blocks
         return define_blocks
 
     def _resolve_uri_field_from_iterate(self, datasource_body):
@@ -2813,7 +2842,7 @@ class PolicyTemplateParser:
         iter_ds_name = iter_ds_m.group(1)
         # Find that datasource block in the policy content
         iter_ds_m2 = re.search(
-            rf'datasource\s+"{re.escape(iter_ds_name)}"\s*\{{([^{{}}]*(?:\{{[^{{}}]*\}}[^{{}}]*)*)\}}',
+            rf'datasource\s+"{re.escape(iter_ds_name)}"\s+do\b(.+?)\nend\b',
             self.content, re.DOTALL
         )
         if not iter_ds_m2:
@@ -2826,7 +2855,7 @@ class PolicyTemplateParser:
         script_name = script_ref_m.group(1)
         # Find that script block in the policy content
         script_m = re.search(
-            rf'script\s+"{re.escape(script_name)}"\s*,\s*type:\s*"[^"]+"\s*\{{(.*?)\n\}}',
+            rf'script\s+"{re.escape(script_name)}"[^\n]*\bdo\b(.+?)\nend\b',
             self.content, re.DOTALL
         )
         if not script_m:
@@ -3297,13 +3326,37 @@ class PolicyTemplateParser:
                                         path = (lit_m.group(1) or '') + '/{id}'
                                 else:
                                     path = lit_m.group(1) or '/'
-                            elif 'azure' in (host or '').lower() or host == 'management.azure.com':
-                                # For Azure, try to resolve the href expression to a full ARM path
-                                resolved = self._resolve_azure_cwf_href(
-                                    var_expr, define_body, define_name, cwf_context
+                            else:
+                                # Check for join([...]) variable assignment:
+                                # $varname = join(["/prefix/", $var["field"], ...])
+                                # This pattern is used e.g. in Lambda CWF defines:
+                                # $href = join(["/2015-03-31/functions/", $function["resourceName"]])
+                                # Use a pattern that handles one level of nested brackets
+                                # (e.g. $var["key"] inside the join array).
+                                _join_m = re.search(
+                                    r'\$' + vname + r'\s*=\s*join\(\[([^\[\]]*(?:\[[^\]]*\][^\[\]]*)*)\]\)',
+                                    define_body
                                 )
-                                if resolved:
-                                    path = resolved
+                                if _join_m:
+                                    _join_content = _join_m.group(1)
+                                    # Strip dict-key accessors so inner keys aren't captured as path segments
+                                    _join_clean = re.sub(r'\[["\'][^"\']*["\']\]', '', _join_content)
+                                    _join_strings = re.findall(r'"([^"]+)"', _join_clean)
+                                    if _join_strings:
+                                        path = '/{id}'.join(_join_strings)
+                                        # If the cleaned join content ends with a variable (not a
+                                        # quoted string), append a placeholder for it.
+                                        # e.g. join(["/functions/", $fn["name"]]) → "/functions/{id}"
+                                        _last_elem = _join_clean.rsplit(',', 1)[-1].strip()
+                                        if _last_elem and not (_last_elem.startswith('"') or _last_elem.startswith("'")):
+                                            path += '{id}' if path.endswith('/') else '/{id}'
+                                elif 'azure' in (host or '').lower() or host == 'management.azure.com':
+                                    # For Azure, try to resolve the href expression to a full ARM path
+                                    resolved = self._resolve_azure_cwf_href(
+                                        var_expr, define_body, define_name, cwf_context
+                                    )
+                                    if resolved:
+                                        path = resolved
                             if not path:
                                 path = '/{id}'
 
@@ -3423,9 +3476,10 @@ class PolicyTemplateParser:
                 # Extract fields from the response
                 fields = self._extract_fields(datasource['body'])
 
-                # Also extract fields from processing scripts
-                processing_fields = self._extract_fields_from_processing_script(datasource['body'])
-                fields.extend(processing_fields)
+                # Also extract fields from processing scripts (verbose only — near-useless in practice)
+                if self.verbose:
+                    processing_fields = self._extract_fields_from_processing_script(datasource['body'])
+                    fields.extend(processing_fields)
 
                 # Deduplicate fields while preserving order
                 seen = set()
@@ -3607,17 +3661,21 @@ class PolicyTemplateParser:
             return api_calls
 
         # --- Step 2: Map generator datasource → script name ---
+        # Build a single combined regex to find any known script name reference in a datasource
+        # body. This is O(datasources) rather than the naive O(datasources × scripts) double loop.
         gen_ds_map = {}  # ds_name -> script_name
+        _any_script_pat = re.compile(
+            r'\$(' + '|'.join(re.escape(sname) for sname in js_types) + r')\b'
+        )
         for m in re.finditer(
             r'\bdatasource\s+"([^"]+)".*?^end\b',
             self.content, re.MULTILINE | re.DOTALL
         ):
             ds_name = m.group(1)
             body = m.group(0)
-            for sname in js_types:
-                if re.search(r'\$' + re.escape(sname) + r'\b', body):
-                    gen_ds_map[ds_name] = sname
-                    break
+            sname_m = _any_script_pat.search(body)
+            if sname_m:
+                gen_ds_map[ds_name] = sname_m.group(1)
 
         # --- Step 3: Map suffix → types by tracing iterate → path ---
         suffix_types = {'aggregatedList': [], 'list': []}
