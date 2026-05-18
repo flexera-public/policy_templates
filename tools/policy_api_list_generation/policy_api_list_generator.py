@@ -3808,9 +3808,9 @@ def main():
                 traceback.print_exc(file=sys.stderr)
             error_count += 1
 
-    # Deduplicate rows: a single (policy_file, datasource, method, endpoint, permission)
-    # combination may appear multiple times when a datasource result block has many
-    # field declarations, all sharing the same permission. Keep only the first occurrence.
+    # Deduplicate truly identical rows (same policy + datasource + method + endpoint +
+    # operation + field + permission). This can happen when a datasource is reachable via
+    # multiple CWF paths and gets processed more than once.
     _seen_keys = set()
     _deduped = []
     for _call in all_api_calls:
@@ -3819,6 +3819,8 @@ def main():
             _call.get('datasource_name', ''),
             _call.get('method', ''),
             _call.get('endpoint', ''),
+            _call.get('operation', ''),
+            _call.get('field', ''),
             _call.get('permission', ''),
         )
         if _key not in _seen_keys:
