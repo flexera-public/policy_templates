@@ -29,6 +29,8 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
+- *Allow/Deny Resource Groups* - Whether to allow or deny filtering by the resource groups specified in the `Allow/Deny Resource Groups List` parameter.
+- *Allow/Deny Resource Groups List* - A list of Resource Group names to allow or deny for filtering. Leave blank to not filter results by resource group.
 - *Show Upsize Recommendations* - Whether or not to include upsize recommendations for pools and volumes
 - *Resource Types* - Whether to produce recommendations only for pools or for both pools and volumes
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation

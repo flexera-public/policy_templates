@@ -36,6 +36,8 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
+- *Allow/Deny Resource Groups* - Whether to allow or deny the resource groups in the Allow/Deny Resource Groups List. See the [README](../README.md) for more details.
+- *Allow/Deny Resource Groups List* - A list of allowed or denied resource group names.
 - *Exclude Stopped Virtual Machines* - Whether or not to filter stopped virtual machines from the results. If set to `Yes`, only running virtual machines will be included in the results.
 - *Exclude Databricks* - Whether or not to filter virtual machines used for Azure Databricks from the results. If set to `Yes`, virtual machines for Azure Databricks will not be included in the results.
 - *Filter Recommendations That Change Local Disk* - Whether to exclude downsize recommendations where the recommended instance type has a different local disk configuration than the current instance type. Set to `Exclude` to filter out downsize recommendations where local disk support changes. Default: `Include All`

@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.2.0",
+  version: "0.3.0",
   provider: "Azure",
   service: "Sentinel",
   policy_set: "Commitment Tiers",
@@ -70,6 +70,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names. See the README for more details."
   default []
 end
 
@@ -557,6 +574,28 @@ script "js_workspace_ingestion", type: "javascript" do
 EOS
 end
 
+datasource "ds_workspace_ingestion_rg_filtered" do
+  run_script $js_workspace_ingestion_rg_filtered, $ds_workspace_ingestion, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_workspace_ingestion_rg_filtered", type: "javascript" do
+  parameters "ds_workspace_ingestion", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_workspace_ingestion, function(resource) {
+        include_resource = _.contains(param_resource_groups_list, resource['resourceGroup'])
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_workspace_ingestion
+    }
+EOS
+end
+
 datasource "ds_pricing_regions" do
   run_script $js_pricing_regions, $ds_workspace_ingestion
 end
@@ -598,11 +637,11 @@ datasource "ds_pricing" do
 end
 
 datasource "ds_sentinel_incident" do
-  run_script $js_sentinel_incident, $ds_workspace_ingestion, $ds_pricing, $ds_currency, $ds_applied_policy, $param_lookback_days, $param_min_savings, $param_incident_csv
+  run_script $js_sentinel_incident, $ds_workspace_ingestion_rg_filtered, $ds_pricing, $ds_currency, $ds_applied_policy, $param_lookback_days, $param_min_savings, $param_incident_csv
 end
 
 script "js_sentinel_incident", type: "javascript" do
-  parameters "ds_workspace_ingestion", "ds_pricing", "ds_currency", "ds_applied_policy", "param_lookback_days", "param_min_savings", "param_incident_csv"
+  parameters "ds_workspace_ingestion_rg_filtered", "ds_pricing", "ds_currency", "ds_applied_policy", "param_lookback_days", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
     function formatNumber(number, separator) {
@@ -698,7 +737,7 @@ script "js_sentinel_incident", type: "javascript" do
     var total_savings = 0.0
     var exchange_rate = ds_currency["exchange_rate"]
 
-    _.each(ds_workspace_ingestion, function(ws) {
+    _.each(ds_workspace_ingestion_rg_filtered, function(ws) {
       var region = ws["location"]
       var pricing = pricing_by_region[region]
 

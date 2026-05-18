@@ -11,6 +11,8 @@ This policy template reports any Azure PostgreSQL Servers that do not have log r
 - *Log Retention Days* - Minimum number of days of log retention to consider sufficient. Instances configured for log retention for fewer days than this will be included in the results.
 - *Allow/Deny Subscriptions* - Allow or Deny entered Subscriptions to filter results.
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions.
+- *Allow/Deny Resource Groups* - Whether to allow or deny the resource groups in the Allow/Deny Resource Groups List. See the [README](../README.md) for more details.
+- *Allow/Deny Resource Groups List* - A list of allowed or denied resource group names. See the [README](../README.md) for more details.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
 - *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:

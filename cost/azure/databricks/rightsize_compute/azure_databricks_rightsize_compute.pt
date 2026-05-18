@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.7.0",
+  version: "0.8.0",
   provider: "Azure",
   service: "Databricks",
   policy_set: "Databricks",
@@ -68,6 +68,23 @@ parameter "param_regions_list" do
   category "Filters"
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names. See the README for more details."
   default []
 end
 
@@ -538,18 +555,40 @@ script "js_databricks_workspaces_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_databricks_workspaces_rg_filtered" do
+  run_script $js_databricks_workspaces_rg_filtered, $ds_databricks_workspaces_region_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_databricks_workspaces_rg_filtered", type: "javascript" do
+  parameters "ds_databricks_workspaces_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_databricks_workspaces_region_filtered, function(resource) {
+        include_resource = _.contains(param_resource_groups_list, resource['resourceGroup'])
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_databricks_workspaces_region_filtered
+    }
+EOS
+end
+
 datasource "ds_databricks_workspaces_filtered" do
-  run_script $js_databricks_workspaces_filtered, $ds_databricks_workspaces_region_filtered, $param_databricks_workspace_list
+  run_script $js_databricks_workspaces_filtered, $ds_databricks_workspaces_rg_filtered, $param_databricks_workspace_list
 end
 
 script "js_databricks_workspaces_filtered", type: "javascript" do
-  parameters "ds_databricks_workspaces_region_filtered", "param_databricks_workspace_list"
+  parameters "ds_databricks_workspaces_rg_filtered", "param_databricks_workspace_list"
   result "results"
   code <<-'EOS'
   var results = []
   if ( param_databricks_workspace_list.length != 0 ) {
     _.each(param_databricks_workspace_list, function(workspace){
-      var found_workspace = _.find(ds_databricks_workspaces_region_filtered, function(item) {
+      var found_workspace = _.find(ds_databricks_workspaces_rg_filtered, function(item) {
         return item.workspaceId.toLowerCase() == workspace.toLowerCase() || item.name.toLowerCase() == workspace.toLowerCase()
       });
       if (found_workspace != undefined) {
@@ -557,7 +596,7 @@ script "js_databricks_workspaces_filtered", type: "javascript" do
       }
     });
   } else {
-    results = ds_databricks_workspaces_region_filtered
+    results = ds_databricks_workspaces_rg_filtered
   }
 EOS
 end

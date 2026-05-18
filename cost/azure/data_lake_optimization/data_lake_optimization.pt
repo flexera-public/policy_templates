@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.3.0",
+  version: "0.4.0",
   provider: "Azure",
   service: "Storage Accounts",
   policy_set: "Data Lake Optimization",
@@ -59,6 +59,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names. See the README for more details."
   default []
 end
 
@@ -637,15 +654,37 @@ script "js_azure_blobs_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_blobs_rg_filtered" do
+  run_script $js_azure_blobs_rg_filtered, $ds_azure_blobs_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_azure_blobs_rg_filtered", type: "javascript" do
+  parameters "ds_azure_blobs_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_azure_blobs_filtered, function(resource) {
+        include_resource = _.contains(param_resource_groups_list, resource['resourceGroup'])
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_azure_blobs_filtered
+    }
+EOS
+end
+
 datasource "ds_azure_blobs_with_tier" do
-  run_script $js_azure_blobs_with_tier, $ds_azure_blobs_filtered, $param_cool_tier_days, $param_archive_tier_days, $param_new_storage_tier
+  run_script $js_azure_blobs_with_tier, $ds_azure_blobs_rg_filtered, $param_cool_tier_days, $param_archive_tier_days, $param_new_storage_tier
 end
 
 script "js_azure_blobs_with_tier", type: "javascript" do
-  parameters "ds_azure_blobs_filtered", "param_cool_tier_days", "param_archive_tier_days", "param_new_storage_tier"
+  parameters "ds_azure_blobs_rg_filtered", "param_cool_tier_days", "param_archive_tier_days", "param_new_storage_tier"
   result "result"
   code <<-'EOS'
-  result = _.map(ds_azure_blobs_filtered, function(blob) {
+  result = _.map(ds_azure_blobs_rg_filtered, function(blob) {
     sa_tags = []
 
     if (typeof(blob['sa_tags']) == 'blob') {

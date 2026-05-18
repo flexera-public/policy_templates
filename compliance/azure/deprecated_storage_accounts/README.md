@@ -14,6 +14,8 @@ More information is available on [Microsoft Learn](https://learn.microsoft.com/e
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
 - *Allow/Deny Subscriptions* - Allow or Deny entered Subscriptions to filter results.
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions.
+- *Allow/Deny Resource Groups* - Whether to allow or deny the resource groups in the **Allow/Deny Resource Groups List** parameter. Has no effect if the list is empty.
+- *Allow/Deny Resource Groups List* - A list of resource group names to allow or deny. If empty, no filtering is performed.
 - *Allow/Deny Regions* - Allow or Deny entered regions to filter results.
 - *Allow/Deny Regions List* - A list of allowed or denied regions. Leave blank to check all Subscriptions.
 - *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:

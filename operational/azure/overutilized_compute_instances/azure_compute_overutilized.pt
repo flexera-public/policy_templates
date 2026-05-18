@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.3.0",
+  version: "0.4.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Overutilized Compute Instances",
@@ -67,6 +67,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names. See the README for more details."
   default []
 end
 
@@ -649,16 +666,38 @@ script "js_azure_instances_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_instances_rg_filtered" do
+  run_script $js_azure_instances_rg_filtered, $ds_azure_instances_region_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_azure_instances_rg_filtered", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+  if (param_resource_groups_list.length > 0) {
+    result = _.filter(ds_azure_instances_region_filtered, function(resource) {
+      include_resource = _.contains(param_resource_groups_list, resource['resourceGroup'])
+      if (param_resource_groups_allow_or_deny == "Deny") {
+        include_resource = !include_resource
+      }
+      return include_resource
+    })
+  } else {
+    result = ds_azure_instances_region_filtered
+  }
+EOS
+end
+
 datasource "ds_azure_instances_databricks_filtered" do
-  run_script $js_azure_instances_databricks_filtered, $ds_azure_instances_region_filtered, $param_exclude_databricks
+  run_script $js_azure_instances_databricks_filtered, $ds_azure_instances_rg_filtered, $param_exclude_databricks
 end
 
 script "js_azure_instances_databricks_filtered", type: "javascript" do
-  parameters "ds_azure_instances_region_filtered", "param_exclude_databricks"
+  parameters "ds_azure_instances_rg_filtered", "param_exclude_databricks"
   result "result"
   code <<-'EOS'
   if (param_exclude_databricks == "Yes") {
-    result = _.filter(ds_azure_instances_region_filtered, function(vm) {
+    result = _.filter(ds_azure_instances_rg_filtered, function(vm) {
       imageOffer = ""
       if (typeof(vm['imageOffer']) == 'string') { imageOffer = vm['imageOffer'] }
 
@@ -668,7 +707,7 @@ script "js_azure_instances_databricks_filtered", type: "javascript" do
       return imageOffer.toLowerCase().indexOf('databricks') == -1 && imagePublisher.toLowerCase().indexOf('databricks') == -1
     })
   } else {
-    result = ds_azure_instances_region_filtered
+    result = ds_azure_instances_rg_filtered
   }
 EOS
 end
@@ -1156,11 +1195,11 @@ EOS
 end
 
 datasource "ds_overutil_instances" do
-  run_script $js_overutil_instances, $ds_azure_instances_region_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_stats_interval, $ds_azure_disk_count_table, $ds_currency, $ds_applied_policy, $param_stats_threshold_cpu_value, $param_stats_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_stats_lookback, $param_exclude_databricks, $param_incident_csv
+  run_script $js_overutil_instances, $ds_azure_instances_rg_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_stats_interval, $ds_azure_disk_count_table, $ds_currency, $ds_applied_policy, $param_stats_threshold_cpu_value, $param_stats_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_stats_lookback, $param_exclude_databricks, $param_incident_csv
 end
 
 script "js_overutil_instances", type:"javascript" do
-  parameters "ds_azure_instances_region_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_stats_interval", "ds_azure_disk_count_table", "ds_currency", "ds_applied_policy", "param_stats_threshold_cpu_value", "param_stats_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_stats_lookback", "param_exclude_databricks", "param_incident_csv"
+  parameters "ds_azure_instances_rg_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_stats_interval", "ds_azure_disk_count_table", "ds_currency", "ds_applied_policy", "param_stats_threshold_cpu_value", "param_stats_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_stats_lookback", "param_exclude_databricks", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -1278,7 +1317,7 @@ script "js_overutil_instances", type:"javascript" do
 
   // Build out the detail_template for the incidents
   if (checking_cpu || checking_mem) {
-    instances_total = ds_azure_instances_region_filtered.length.toString()
+    instances_total = ds_azure_instances_rg_filtered.length.toString()
     overutil_instances_total = result.length.toString()
     overutil_instances_percentage = (overutil_instances_total / instances_total * 100).toFixed(2).toString() + '%'
 

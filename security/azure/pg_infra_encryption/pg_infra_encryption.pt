@@ -8,7 +8,7 @@ category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "3.2.0",
+  version: "3.3.0",
   provider: "Azure",
   service: "PostgreSQL",
   policy_set: "CIS",
@@ -55,6 +55,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names. See the README for more details."
   default []
 end
 
@@ -396,17 +413,39 @@ script "js_pg_servers_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_pg_servers_rg_filtered" do
+  run_script $js_pg_servers_rg_filtered, $ds_pg_servers_region_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_pg_servers_rg_filtered", type: "javascript" do
+  parameters "ds_pg_servers_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+  if (param_resource_groups_list.length > 0) {
+    result = _.filter(ds_pg_servers_region_filtered, function(resource) {
+      include_resource = _.contains(param_resource_groups_list, resource['resourceGroup'])
+      if (param_resource_groups_allow_or_deny == "Deny") {
+        include_resource = !include_resource
+      }
+      return include_resource
+    })
+  } else {
+    result = ds_pg_servers_region_filtered
+  }
+EOS
+end
+
 datasource "ds_bad_pg_servers" do
-  run_script $js_bad_pg_servers, $ds_pg_servers_region_filtered, $ds_applied_policy, $param_incident_csv
+  run_script $js_bad_pg_servers, $ds_pg_servers_rg_filtered, $ds_applied_policy, $param_incident_csv
 end
 
 script "js_bad_pg_servers", type: "javascript" do
-  parameters "ds_pg_servers_region_filtered", "ds_applied_policy", "param_incident_csv"
+  parameters "ds_pg_servers_rg_filtered", "ds_applied_policy", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
-  bad_servers = _.filter(ds_pg_servers_region_filtered, function(db) {
+  bad_servers = _.filter(ds_pg_servers_rg_filtered, function(db) {
     return db['infrastructureEncryption'] != "Enabled"
   })
 

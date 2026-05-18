@@ -22,6 +22,8 @@ This policy template has the following input parameters:
 - *Email addresses* - Email addresses of the recipients you wish to notify.
 - *Azure Endpoint* - Azure Endpoint to access resources
 - *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked
+- *Allow/Deny Resource Groups* - Whether to allow or deny the resource groups in the **Allow/Deny Resource Groups List** parameter. Has no effect if the list is empty.
+- *Allow/Deny Resource Groups List* - A list of resource group names to allow or deny. If empty, no filtering is performed.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 

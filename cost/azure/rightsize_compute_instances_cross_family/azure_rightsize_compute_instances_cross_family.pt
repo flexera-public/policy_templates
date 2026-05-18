@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.0",
+  version: "0.2.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -77,6 +77,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names. See the README for more details."
   default []
 end
 
@@ -647,16 +664,38 @@ script "js_azure_instances_status_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_instances_rg_filtered" do
+  run_script $js_azure_instances_rg_filtered, $ds_azure_instances_status_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_azure_instances_rg_filtered", type: "javascript" do
+  parameters "ds_azure_instances_status_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_azure_instances_status_filtered, function(resource) {
+        include_resource = _.contains(param_resource_groups_list, resource['resourceGroup'])
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_azure_instances_status_filtered
+    }
+EOS
+end
+
 datasource "ds_azure_instances_batch" do
-  run_script $js_azure_instances_batch, $ds_azure_instances_status_filtered
+  run_script $js_azure_instances_batch, $ds_azure_instances_rg_filtered
 end
 
 script "js_azure_instances_batch", type: "javascript" do
-  parameters "ds_azure_instances_status_filtered"
+  parameters "ds_azure_instances_rg_filtered"
   result "result"
   code <<-'EOS'
   // Group by subscription
-  var instances_by_subscription = _.values(_.groupBy(ds_azure_instances_status_filtered, function(instance) {
+  var instances_by_subscription = _.values(_.groupBy(ds_azure_instances_rg_filtered, function(instance) {
     return instance.subscriptionId
   }))
 
@@ -748,15 +787,15 @@ end
 
 datasource "ds_azure_instances_metrics" do
   batch true
-  run_script $js_azure_instances_metrics, $ds_azure_metrics_batch, $ds_azure_instances_status_filtered
+  run_script $js_azure_instances_metrics, $ds_azure_metrics_batch, $ds_azure_instances_rg_filtered
 end
 
 script "js_azure_instances_metrics", type: "javascript" do
-  parameters "ds_azure_metrics_batch", "ds_azure_instances_status_filtered"
+  parameters "ds_azure_metrics_batch", "ds_azure_instances_rg_filtered"
   result "result"
   code <<-'EOS'
   var instances_map = {}
-  _.each(ds_azure_instances_status_filtered, function(instance) {
+  _.each(ds_azure_instances_rg_filtered, function(instance) {
     instances_map[instance.resourceID.toLowerCase()] = instance
   })
 

@@ -8,7 +8,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.5.0",
+  version: "3.6.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Untagged Resources",
@@ -101,6 +101,23 @@ parameter "param_regions_list" do
   category "Filters"
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names. See the README for more details."
   default []
 end
 
@@ -415,12 +432,34 @@ script "js_azure_resources_type_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_resources_rg_filtered" do
+  run_script $js_azure_resources_rg_filtered, $ds_azure_resources_type_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_azure_resources_rg_filtered", type: "javascript" do
+  parameters "ds_azure_resources_type_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_azure_resources_type_filtered, function(resource) {
+        include_resource = _.contains(param_resource_groups_list, resource['resourceGroup'])
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_azure_resources_type_filtered
+    }
+EOS
+end
+
 datasource "ds_azure_resources_missing_tags" do
-  run_script $js_azure_resources_missing_tags, $ds_azure_subscriptions_with_tags, $ds_azure_resource_groups, $ds_azure_resources_type_filtered, $param_tags, $param_tags_boolean, $param_include_account
+  run_script $js_azure_resources_missing_tags, $ds_azure_subscriptions_with_tags, $ds_azure_resource_groups, $ds_azure_resources_rg_filtered, $param_tags, $param_tags_boolean, $param_include_account
 end
 
 script "js_azure_resources_missing_tags", type: "javascript" do
-  parameters "ds_azure_subscriptions_with_tags", "ds_azure_resource_groups", "ds_azure_resources_type_filtered", "param_tags", "param_tags_boolean", "param_include_account"
+  parameters "ds_azure_subscriptions_with_tags", "ds_azure_resource_groups", "ds_azure_resources_rg_filtered", "param_tags", "param_tags_boolean", "param_include_account"
   result "result"
   code <<-'EOS'
   result = []
@@ -457,9 +496,9 @@ script "js_azure_resources_missing_tags", type: "javascript" do
 
   if (comparators.length > 0) {
     if (param_include_account == "Include Subscription/Resource Group") {
-      resources = ds_azure_resources_type_filtered.concat(ds_azure_subscriptions_with_tags, ds_azure_resource_groups)
+      resources = ds_azure_resources_rg_filtered.concat(ds_azure_subscriptions_with_tags, ds_azure_resource_groups)
     } else {
-      resources = [].concat(ds_azure_resources_type_filtered)
+      resources = [].concat(ds_azure_resources_rg_filtered)
     }
 
     // Check each VM for missing tags

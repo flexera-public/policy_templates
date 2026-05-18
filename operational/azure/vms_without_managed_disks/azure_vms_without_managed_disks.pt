@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.2.0",
+  version: "4.3.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "",
@@ -50,6 +50,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names. See the README for more details."
   default []
 end
 
@@ -387,17 +404,39 @@ script "js_azure_instances_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_instances_rg_filtered" do
+  run_script $js_azure_instances_rg_filtered, $ds_azure_instances_region_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_azure_instances_rg_filtered", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_azure_instances_region_filtered, function(resource) {
+        include_resource = _.contains(param_resource_groups_list, resource['resourceGroup'])
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_azure_instances_region_filtered
+    }
+EOS
+end
+
 datasource "ds_azure_instances_unmanaged_disk" do
-  run_script $js_azure_instances_unmanaged_disk, $ds_azure_instances_region_filtered, $ds_applied_policy, $param_incident_csv
+  run_script $js_azure_instances_unmanaged_disk, $ds_azure_instances_rg_filtered, $ds_applied_policy, $param_incident_csv
 end
 
 script "js_azure_instances_unmanaged_disk", type: "javascript" do
-  parameters "ds_azure_instances_region_filtered", "ds_applied_policy", "param_incident_csv"
+  parameters "ds_azure_instances_rg_filtered", "ds_applied_policy", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
-  unmanaged_disk_vms = _.filter(ds_azure_instances_region_filtered, function(vm) {
+  unmanaged_disk_vms = _.filter(ds_azure_instances_rg_filtered, function(vm) {
     return vm['osDisk']['vhd'] != null && vm['osDisk']['vhd'] != undefined
   })
 

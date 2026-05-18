@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.4.0",
+  version: "0.5.0",
   provider: "Azure",
   service: "Network",
   policy_set: "Unused Firewalls",
@@ -70,6 +70,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names. See the README for more details."
   default []
 end
 
@@ -502,8 +519,30 @@ script "js_azure_firewalls_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_firewalls_rg_filtered" do
+  run_script $js_azure_firewalls_rg_filtered, $ds_azure_firewalls_region_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_azure_firewalls_rg_filtered", type: "javascript" do
+  parameters "ds_azure_firewalls_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_azure_firewalls_region_filtered, function(resource) {
+        include_resource = _.contains(param_resource_groups_list, resource['resourceGroup'])
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_azure_firewalls_region_filtered
+    }
+EOS
+end
+
 datasource "ds_azure_firewalls_metrics" do
-  iterate $ds_azure_firewalls_region_filtered
+  iterate $ds_azure_firewalls_rg_filtered
   request do
     run_script $js_azure_firewalls_metrics, val(iter_item, "id"), $param_azure_endpoint, $param_stats_lookback
   end
@@ -749,11 +788,11 @@ EOS
 end
 
 datasource "ds_azure_unused_firewalls_incident" do
-  run_script $js_azure_unused_firewalls_incident, $ds_azure_firewalls_region_filtered, $ds_azure_unused_firewalls, $ds_azure_firewall_costs_grouped, $ds_applied_policy, $ds_currency, $param_min_savings, $param_stats_lookback, $param_incident_csv
+  run_script $js_azure_unused_firewalls_incident, $ds_azure_firewalls_rg_filtered, $ds_azure_unused_firewalls, $ds_azure_firewall_costs_grouped, $ds_applied_policy, $ds_currency, $param_min_savings, $param_stats_lookback, $param_incident_csv
 end
 
 script "js_azure_unused_firewalls_incident", type: "javascript" do
-  parameters "ds_azure_firewalls_region_filtered", "ds_azure_unused_firewalls", "ds_azure_firewall_costs_grouped", "ds_applied_policy", "ds_currency", "param_min_savings", "param_stats_lookback", "param_incident_csv"
+  parameters "ds_azure_firewalls_rg_filtered", "ds_azure_unused_firewalls", "ds_azure_firewall_costs_grouped", "ds_applied_policy", "ds_currency", "param_min_savings", "param_stats_lookback", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -829,7 +868,7 @@ script "js_azure_unused_firewalls_incident", type: "javascript" do
   })
 
   // Message for incident output
-  total_firewalls = ds_azure_firewalls_region_filtered.length.toString()
+  total_firewalls = ds_azure_firewalls_rg_filtered.length.toString()
   total_unused_firewalls = result.length.toString()
   unused_firewalls_percentage = (total_unused_firewalls / total_firewalls * 100).toFixed(2).toString() + '%'
 

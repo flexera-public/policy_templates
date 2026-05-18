@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.6.0
+
+- Added `Allow/Deny Resource Groups` and `Allow/Deny Resource Groups List` filter parameters to allow filtering resources by resource group
+
 ## v5.5.0
 
 - Subscriptions with an Azure Plan for DevTest are now always excluded from results. Windows VMs in these subscriptions already receive free Windows licenses, so AHUB recommendations do not apply to them.

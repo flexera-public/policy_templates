@@ -32,6 +32,8 @@ The savings is displayed in the Estimated Monthly Savings column. The incident m
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
+- *Allow/Deny Resource Groups* - Whether to treat Allow/Deny Resource Groups List parameter as allow or deny list. Has no effect if Allow/Deny Resource Groups List is left empty.
+- *Allow/Deny Resource Groups List* - Filter results by resource group, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the resource groups.
 - *Databricks Workspace Allowed List* - Allowed Databricks Workspace. If empty, all workspaces will be checked
 - *Databricks Cluster Allowed List* - Allowed Databricks Clusters. Name or Cluster ID can be provided.  If empty, all clusters will be checked
 - *Idle/Utilized for both CPU/Memory or either* - Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1

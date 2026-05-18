@@ -8,7 +8,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "1.3.0",
+  version: "1.4.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Untagged Resources",
@@ -67,6 +67,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names. See the README for more details."
   default []
 end
 
@@ -327,12 +344,34 @@ script "js_azure_instances_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_instances_rg_filtered" do
+  run_script $js_azure_instances_rg_filtered, $ds_azure_instances_region_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_azure_instances_rg_filtered", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_azure_instances_region_filtered, function(resource) {
+        include_resource = _.contains(param_resource_groups_list, resource['resourceGroup'])
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_azure_instances_region_filtered
+    }
+EOS
+end
+
 datasource "ds_azure_instances_missing_tags" do
-  run_script $js_azure_instances_missing_tags, $ds_azure_instances_region_filtered, $param_tags, $param_tags_boolean
+  run_script $js_azure_instances_missing_tags, $ds_azure_instances_rg_filtered, $param_tags, $param_tags_boolean
 end
 
 script "js_azure_instances_missing_tags", type: "javascript" do
-  parameters "ds_azure_instances_region_filtered", "param_tags", "param_tags_boolean"
+  parameters "ds_azure_instances_rg_filtered", "param_tags", "param_tags_boolean"
   result "result"
   code <<-'EOS'
   result = []
@@ -369,7 +408,7 @@ script "js_azure_instances_missing_tags", type: "javascript" do
 
   if (comparators.length > 0) {
     // Check each VM for missing tags
-    _.each(ds_azure_instances_region_filtered, function(vm) {
+    _.each(ds_azure_instances_rg_filtered, function(vm) {
       vm_tags = vm['tags']
       if (typeof(vm_tags) != 'object') { vm_tags = {} }
 

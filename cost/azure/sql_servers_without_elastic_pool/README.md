@@ -12,6 +12,8 @@ This policy reports any Azure SQL Servers that do not have any elastic pools. Op
 - *Allow/Deny Subscriptions List* - Filter results by subscription ID/name, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the subscriptions.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
+- *Allow/Deny Resource Groups* - Whether to allow or deny filtering by the resource groups specified in the `Allow/Deny Resource Groups List` parameter.
+- *Allow/Deny Resource Groups List* - A list of Resource Group names to allow or deny for filtering. Leave blank to not filter results by resource group.
 - *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.
   - `Key==Value` - Filter all resources with the specified tag key:value pair.

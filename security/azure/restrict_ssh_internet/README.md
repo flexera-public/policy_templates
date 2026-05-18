@@ -10,6 +10,8 @@ This policy template reports any Azure Network Security Groups that have SSH (TC
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
 - *Allow/Deny Subscriptions* - Allow or Deny entered Subscriptions to filter results.
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions.
+- *Allow/Deny Resource Groups* - Whether to allow or deny the resource groups in the Allow/Deny Resource Groups List. See the [README](../README.md) for more details.
+- *Allow/Deny Resource Groups List* - A list of allowed or denied resource group names. See the [README](../README.md) for more details.
 - *Allow/Deny Regions* - Allow or Deny entered regions to filter results.
 - *Allow/Deny Regions List* - A list of allowed or denied regions. Leave blank to check all Subscriptions.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
