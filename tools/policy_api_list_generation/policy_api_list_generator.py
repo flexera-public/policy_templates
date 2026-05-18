@@ -786,6 +786,11 @@ class PolicyTemplateParser:
                     # the same dict each time this code path is reached)
                     if arm_field_match and arm_field_match.group(1) in self.FIELD_TO_ARM_PATH:
                         request_info['path'] = self.FIELD_TO_ARM_PATH[arm_field_match.group(1)]
+                    elif arm_field_match and arm_field_match.group(1) == 'uri':
+                        # 'uri' field not in FIELD_TO_ARM_PATH — try to trace back to the generating
+                        # script and extract a sample URI path for permission inference.
+                        uri_path = self._resolve_uri_field_from_iterate(datasource_body)
+                        request_info['path'] = uri_path if uri_path else '/{dynamic}'
                     else:
                         request_info['path'] = '/{dynamic}'
                 else:
@@ -972,7 +977,14 @@ class PolicyTemplateParser:
 
                         request_info['host'] = '.'.join(parts)
                     elif strings:
-                        request_info['host'] = strings[0]
+                        host_str = strings[0]
+                        # If the only string literal starts with '.', the variable before it was stripped;
+                        # prepend a placeholder so the hostname is valid (e.g. "{id}.service-now.com").
+                        if host_str.startswith('.') and '+' in host_line:
+                            before_dot = re.search(r'(\w+)\s*\+', host_line)
+                            ph = self._get_semantic_placeholder(before_dot.group(1)) if before_dot else '{id}'
+                            host_str = ph + host_str
+                        request_info['host'] = host_str
                 else:
                     # Check if it's an object/array access pattern first (e.g., ds_flexera_api_hosts["flexera"])
                     if '[' in host_line and ']' in host_line:
@@ -1090,13 +1102,16 @@ class PolicyTemplateParser:
             if path_line_match:
                 path_line = path_line_match.group(1).strip()
                 if '+' in path_line:
+                    # Strip dict/array key accesses (e.g. obj["subscriptionId"]) so inner key names
+                    # are not mistaken for path segments.
+                    path_line_clean = re.sub(r'\[["\'][^"\']*["\']\]', '', path_line)
                     # Try concatenation pattern: "string" + variable + "string"
                     # Extract all string literals and variable names from the concatenation
-                    strings = re.findall(r'["\']([^"\']+)["\']', path_line)
+                    strings = re.findall(r'["\']([^"\']+)["\']', path_line_clean)
 
                     # Also extract variable names to provide better placeholders
                     # Look for common variable patterns between the strings
-                    variables = re.findall(r'\+\s*(\w+)\s*\+', path_line)
+                    variables = re.findall(r'\+\s*(\w+)\s*\+', path_line_clean)
 
                     if strings:
                         # Build path with placeholders for variables
@@ -1123,6 +1138,17 @@ class PolicyTemplateParser:
                     path_match = re.search(r'["\']([^"\']+)["\']', path_line)
                     if path_match:
                         request_info['path'] = path_match.group(1)
+
+        # Fallback: if path is still unresolved but path_line was a variable name,
+        # search the JS body for any direct assignments to that variable.
+        if 'path' not in request_info and path_line_match:
+            path_var = path_line_match.group(1).strip()
+            if re.match(r'^\w+$', path_var):  # simple identifier, not a string or expression
+                # Collect all `varname = "/..."` assignments (including inside if/else blocks)
+                assign_matches = re.findall(
+                    rf'\b{re.escape(path_var)}\s*=\s*["\']([^"\']+)["\']', js_code)
+                if assign_matches:
+                    request_info['path'] = assign_matches[0]
 
         # Extract query_params object from JavaScript
         query_params_match = re.search(r'query_params:\s*\{([^}]+)\}', js_code, re.DOTALL)
@@ -2072,7 +2098,9 @@ class PolicyTemplateParser:
         # ARM management.azure.com calls
         m = re.search(r'/providers/([^/?]+)/([^/?/]+)', path, re.IGNORECASE)
         if m:
-            namespace = m.group(1)
+            # Normalize provider namespace to PascalCase — ARM RBAC permissions require it
+            # e.g. "microsoft.operationalinsights" → "Microsoft.Operationalinsights"
+            namespace = '.'.join(seg[0].upper() + seg[1:] if seg else seg for seg in m.group(1).split('.'))
             resource_type = m.group(2)
             after_provider = path[m.end():]
 
@@ -2347,7 +2375,8 @@ class PolicyTemplateParser:
             # path join([...])
             path_join_match = re.search(r'path\s+join\(\s*\[([^\]]+)\]\s*\)', ds_body)
             if path_join_match:
-                lits = re.findall(r'"([^"]+)"', path_join_match.group(1))
+                path_join_str = re.sub(r'\[["\'][^"\']*["\']\]', '', path_join_match.group(1))
+                lits = re.findall(r'"([^"]+)"', path_join_str)
                 path = ''.join(lits)
                 if self._cwf_path_is_specific(host, path):
                     return host, path
@@ -2746,6 +2775,46 @@ class PolicyTemplateParser:
             i += 1
         return define_blocks
 
+    def _resolve_uri_field_from_iterate(self, datasource_body):
+        """When path val(iter_item, 'uri') is used, try to find the URI pattern by
+        looking at the generator script of the iterate datasource."""
+        # Find the iterate datasource name
+        iter_ds_m = re.search(r'\biterate\s+\$(ds_\w+)', datasource_body)
+        if not iter_ds_m:
+            return None
+        iter_ds_name = iter_ds_m.group(1)
+        # Find that datasource block in the policy content
+        iter_ds_m2 = re.search(
+            rf'datasource\s+"{re.escape(iter_ds_name)}"\s*\{{([^{{}}]*(?:\{{[^{{}}]*\}}[^{{}}]*)*)\}}',
+            self.content, re.DOTALL
+        )
+        if not iter_ds_m2:
+            return None
+        iter_ds_body = iter_ds_m2.group(1)
+        # Find the run_script reference in that datasource
+        script_ref_m = re.search(r'run_script\s+\$(\w+)', iter_ds_body)
+        if not script_ref_m:
+            return None
+        script_name = script_ref_m.group(1)
+        # Find that script block in the policy content
+        script_m = re.search(
+            rf'script\s+"{re.escape(script_name)}"\s*,\s*type:\s*"[^"]+"\s*\{{(.*?)\n\}}',
+            self.content, re.DOTALL
+        )
+        if not script_m:
+            return None
+        script_body = script_m.group(1)
+        # Look for uri: "/path/..." patterns
+        uri_m = re.search(r'["\']uri["\']\s*:\s*["\']([^"\']+)["\']', script_body)
+        if not uri_m:
+            uri_m = re.search(r'\buri\s*=\s*["\']([^"\']+)["\']', script_body)
+        if uri_m:
+            uri_val = uri_m.group(1)
+            # Strip any protocol/host prefix if present
+            parsed = urllib.parse.urlparse(uri_val)
+            return parsed.path if parsed.scheme else uri_val
+        return None
+
     def _resolve_cwf_host(self, host_expr, define_body):
         """Resolve a CWF host expression to an actual hostname or placeholder.
 
@@ -2780,7 +2849,14 @@ class PolicyTemplateParser:
                         parts.append(s)
                         if j < len(strings) - 1:
                             parts.append('{id}')
-                    return ''.join(parts)
+                    result = ''.join(parts)
+                    # If the single string literal starts with '.', the variable before the '+' was stripped;
+                    # prepend a placeholder so the hostname is valid.
+                    if result.startswith('.'):
+                        before_dot = re.search(r'(\w+)\s*\+', host_expr)
+                        ph = self._get_semantic_placeholder(before_dot.group(1)) if before_dot else '{id}'
+                        result = ph + result
+                    return result
 
         # Backwards variable lookup: look for $varname = "..." + $var + "..." in define body
         var_name = re.sub(r'^\$+', '', host_expr)
@@ -3165,11 +3241,26 @@ class PolicyTemplateParser:
                             vname = re.escape(var_expr.lstrip('$'))
                             lit_m = re.search(r'\$' + vname + r'\s*=\s*"([^"]*)"', define_body)
                             if lit_m:
-                                # If the assignment is actually a concatenation (e.g. "/" + $var),
-                                # the literal match only captures the prefix — use /{id} instead.
+                                # If the assignment is actually a concatenation (e.g. "/prefix/" + $var + "/suffix"),
+                                # rebuild the path from the full RHS using string literals and placeholders.
                                 concat_m = re.search(r'\$' + vname + r'\s*=\s*"[^"]*"\s*\+', define_body)
                                 if concat_m:
-                                    path = '/{id}'
+                                    full_assign = re.search(r'\$' + vname + r'\s*=\s*([^\n]+)', define_body)
+                                    if full_assign:
+                                        rhs = full_assign.group(1).strip()
+                                        path_parts = []
+                                        for seg in re.split(r'\s*\+\s*', rhs):
+                                            seg = seg.strip()
+                                            str_m2 = re.search(r'"([^"]*)"', seg)
+                                            if str_m2:
+                                                path_parts.append(str_m2.group(1))
+                                            else:
+                                                var_m2 = re.search(r'\$(\w+)', seg)
+                                                ph = self._get_semantic_placeholder(var_m2.group(1)) if var_m2 else '{id}'
+                                                path_parts.append(ph)
+                                        path = ''.join(path_parts) or '/{id}'
+                                    else:
+                                        path = (lit_m.group(1) or '') + '/{id}'
                                 else:
                                     path = lit_m.group(1) or '/'
                             elif 'azure' in (host or '').lower() or host == 'management.azure.com':
