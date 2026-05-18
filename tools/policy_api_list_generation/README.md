@@ -112,6 +112,21 @@ The script automatically detects and categorizes API calls to:
 - **Okta** - Okta identity APIs
 - **Databricks** - Databricks workspace APIs
 - **Spot by NetApp** - Spot optimization APIs
+- **Alibaba Cloud** - Alibaba Cloud APIs
+- **VMware Aria** - VMware Aria (CloudHealth) APIs
+- **Apptio Cloudability** - Apptio Cloudability FinOps APIs
+- **Snowflake** - Snowflake Data Cloud APIs
+- **Datadog** - Datadog monitoring and observability APIs
+- **PagerDuty** - PagerDuty incident management APIs
+- **Jira** - Atlassian Jira project management APIs
+- **Slack** - Slack messaging APIs
+- **Zoom** - Zoom video conferencing APIs
+- **Workday** - Workday HCM and finance APIs
+- **SolarWinds** - SolarWinds Orion platform APIs
+- **Qualys** - Qualys cloud security APIs
+- **Tenable** - Tenable cloud security APIs
+- **CrowdStrike** - CrowdStrike Falcon platform APIs
+- **Lacework** - Lacework cloud security APIs
 - **Unknown** - Dynamic or placeholder endpoints
 
 ## Data Files
