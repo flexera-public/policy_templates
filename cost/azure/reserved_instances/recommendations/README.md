@@ -36,7 +36,7 @@ These values are obtained from the [Azure Consumption API](https://learn.microso
 - *Allow/Deny Regions* - Allow or Deny entered regions to filter results.
 - *Allow/Deny Regions List* - A list of allowed or denied regions. Leave blank to check all Regions.
 - *Allow/Deny Resource Groups* - Whether to treat Allow/Deny Resource Groups List parameter as allow or deny list. Has no effect if Allow/Deny Resource Groups List is left empty.
-- *Allow/Deny Resource Groups List* - Filter results by resource group, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the resource groups.
+- *Allow/Deny Resource Groups List* - A list of allowed or denied Resource Group names to filter the results by. Entries can be in the format `resource_group_name` to filter all resource groups with that name regardless of subscription, or `subscription_id/resource_group_name` to filter a resource group within a specific subscription. Leave blank to consider all resource groups.
 - *Look Back Period* - Number of days of prior usage to analyze.
 - *Resource Types* - Types of resources to provide recommendations for. Items can be removed by clicking X to the right of the name.
   - Note: For large cloud estates, it is recommended that this policy be applied once for each resource type recommendations are desired for rather than attempting to gather all recommendations with a single applied policy.

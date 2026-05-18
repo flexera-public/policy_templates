@@ -30,7 +30,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as an allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all regions.
 - *Allow/Deny Resource Groups* - Whether to allow or deny filtering by the resource groups specified in the `Allow/Deny Resource Groups List` parameter.
-- *Allow/Deny Resource Groups List* - A list of Resource Group names to allow or deny for filtering. Leave blank to not filter results by resource group.
+- *Allow/Deny Resource Groups List* - A list of allowed or denied Resource Group names to filter the results by. Entries can be in the format `resource_group_name` to filter all resource groups with that name regardless of subscription, or `subscription_id/resource_group_name` to filter a resource group within a specific subscription. Leave blank to consider all resource groups.
 - *Threshold* - Threshold to use when determining if a pool is underutilized.
 - *Statistic Lookback Period* - How many days back to look at metrics. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
 - *Minimum Time Active (Days)* - Only include pools in the results if they have not been paused for at least the number of specified days. Set to '0' to disable this filter and not consider the minimum time active in the results.

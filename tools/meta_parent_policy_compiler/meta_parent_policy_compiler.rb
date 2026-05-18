@@ -56,6 +56,8 @@ EXCLUDED_PARAMS = %w[
   param_project
   param_projects_list
   param_projects_allow_or_deny
+  param_resource_groups_list
+  param_resource_groups_allow_or_deny
   param_schedule
 ].freeze
 

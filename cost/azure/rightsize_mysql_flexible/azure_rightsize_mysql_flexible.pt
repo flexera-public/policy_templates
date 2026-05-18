@@ -76,7 +76,7 @@ parameter "param_resource_groups_list" do
   type "list"
   category "Filters"
   label "Allow/Deny Resource Groups List"
-  description "A list of allowed or denied Resource Group names. See the README for more details."
+  description "A list of allowed or denied Resource Group names to filter the results by. Optionally, entries can use the format SUBSCRIPTION_ID/RESOURCE_GROUP_NAME to limit filtering to a specific subscription. See the README for more details."
   default []
 end
 
@@ -623,7 +623,15 @@ script "js_azure_mysql_rg_filtered", type: "javascript" do
   code <<-'EOS'
     if (param_resource_groups_list.length > 0) {
       result = _.filter(azure_mysql_region_filtered, function(resource) {
-        include_resource = _.contains(param_resource_groups_list, resource['resourceGroup'])
+        rg = resource['resourceGroup']
+        sub = resource['subscriptionId'] || resource['subscriptionID']
+        include_resource = _.any(param_resource_groups_list, function(rg_entry) {
+          if (rg_entry.indexOf('/') != -1) {
+            entry_parts = rg_entry.split('/')
+            return sub == entry_parts[0] && rg == entry_parts[1]
+          }
+          return rg == rg_entry
+        })
         if (param_resource_groups_allow_or_deny == "Deny") {
           include_resource = !include_resource
         }

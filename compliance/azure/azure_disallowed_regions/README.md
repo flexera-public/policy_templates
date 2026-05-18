@@ -12,7 +12,7 @@ This policy template finds all Azure virtual machines within a user-specified li
 - *Allow/Deny Subscriptions* - Determines whether the Allow/Deny Subscriptions List parameter functions as an allow list (only providing results for the listed subscriptions) or a deny list (providing results for all subscriptions except for the listed subscriptions).
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
 - *Allow/Deny Resource Groups* - Whether to allow or deny the resource groups in the **Allow/Deny Resource Groups List** parameter. Has no effect if the list is empty.
-- *Allow/Deny Resource Groups List* - A list of resource group names to allow or deny. If empty, no filtering is performed.
+- *Allow/Deny Resource Groups List* - A list of allowed or denied Resource Group names to filter the results by. Entries can be in the format `resource_group_name` to filter all resource groups with that name regardless of subscription, or `subscription_id/resource_group_name` to filter a resource group within a specific subscription. Leave blank to consider all resource groups.
 - *Disallow/Allow Regions* - Whether to allow or disallow the regions specified in the `Disallow/Allow Regions List` parameter. If set to "Allow", all virtual machines outside of the listed regions will be considered out of compliance. If set to "Disallow", all virtual machines within the listed regions will be considered out of compliance.
 - *Disallow/Allow Regions List* - A list of regions to disallow or allow. Example: eastus
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).

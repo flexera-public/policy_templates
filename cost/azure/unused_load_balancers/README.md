@@ -31,7 +31,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Allow/Deny Regions* - Allow or Deny entered regions to filter results.
 - *Allow/Deny Regions List* - A list of allowed or denied regions. Leave blank to check all Subscriptions.
 - *Allow/Deny Resource Groups* - Whether to allow or deny the resource groups in the Allow/Deny Resource Groups List. See the [README](../README.md) for more details.
-- *Allow/Deny Resource Groups List* - A list of allowed or denied resource group names. See the [README](../README.md) for more details.
+- *Allow/Deny Resource Groups List* - A list of allowed or denied Resource Group names to filter the results by. Entries can be in the format `resource_group_name` to filter all resource groups with that name regardless of subscription, or `subscription_id/resource_group_name` to filter a resource group within a specific subscription. Leave blank to consider all resource groups.
 - *Exclusion Tags* - The policy template will filter resources containing the specified tags from the results. The following formats are supported:
   - `Key` - Filter all resources with the specified tag key.
   - `Key==Value` - Filter all resources with the specified tag key:value pair.
