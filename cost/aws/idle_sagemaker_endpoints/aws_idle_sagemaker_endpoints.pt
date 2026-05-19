@@ -1,0 +1,1434 @@
+name "AWS Idle SageMaker Endpoints"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports AWS SageMaker real-time inference endpoints in InService status that have zero or near-zero invocations over a configurable lookback window. Idle endpoints represent ongoing waste because dedicated compute instances are billed continuously regardless of traffic. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/idle_sagemaker_endpoints) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/aws/idle_sagemaker_endpoints"
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.2.0",
+  provider: "AWS",
+  service: "ML",
+  policy_set: "Idle SageMaker Endpoints",
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  category "Policy Settings"
+  label "Account Number"
+  description "Leave blank; this is for automated use with Meta Policies. See README for more details."
+  default ""
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at CloudWatch invocation data when assessing whether a SageMaker endpoint is idle. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 90
+  default 30
+end
+
+parameter "param_min_invocations" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Invocations Threshold"
+  description "Endpoints with total invocations at or below this number over the lookback period are considered idle. Set to 0 to report only endpoints with zero invocations. Increase this value to also capture near-zero usage endpoints."
+  min_value 0
+  default 0
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Delete Idle SageMaker Endpoints"]
+  default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws_json" do
+  get_page_marker do
+    body_path jmes_path(response, "NextToken")
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", policy_id])
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "name", jmes_path(response, "name")
+  end
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+# Get AWS account info fallback
+datasource "ds_billing_centers_aws_acc" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs_aws_acc" do
+  run_script $js_top_level_bcs_aws_acc, $ds_billing_centers_aws_acc
+end
+
+script "js_top_level_bcs_aws_acc", type: "javascript" do
+  parameters "ds_billing_centers_aws_acc"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers_aws_acc, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_cloud_vendor_accounts_fallback" do
+  request do
+    run_script $js_cloud_vendor_accounts_fallback, $ds_top_level_bcs_aws_acc, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "id", jmes_path(col_item, "dimensions.vendor_account")
+      field "name", jmes_path(col_item, "dimensions.vendor_account_name")
+    end
+  end
+end
+
+script "js_cloud_vendor_accounts_fallback", type: "javascript" do
+  parameters "ds_top_level_bcs_aws_acc", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      dimensions: ["vendor_account", "vendor_account_name"],
+      granularity: "day",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs_aws_acc
+    },
+    headers: {
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    host "sts.amazonaws.com"
+    path "/"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_cloud_vendor_accounts_fallback, $ds_get_caller_identity
+end
+
+script "js_aws_account", type: "javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_cloud_vendor_accounts_fallback", "ds_get_caller_identity"
+  result "result"
+  code <<-'EOS'
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the Flexera List Cloud Accounts API does not return the relevant account info
+  if (result == undefined) {
+    result = _.find(ds_cloud_vendor_accounts_fallback, function(account) {
+      return account['id'] == ds_get_caller_identity[0]['account']
+    })
+
+    if (result) {
+      result["tags"] = {}
+    }
+  }
+
+  // This is in case both the Flexera List Cloud Accounts API and the Flexera Cost data do not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type: "javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_aws_sagemaker_pricing" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/aws/aws_sagemaker_pricing.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_describe_regions" do
+  request do
+    auth $auth_aws
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+datasource "ds_regions" do
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
+end
+
+script "js_regions", type: "javascript" do
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
+  result "result"
+  code <<-'EOS'
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
+    })
+  } else {
+    result = ds_describe_regions
+  }
+EOS
+end
+
+# Probe each region to check SageMaker accessibility
+# SageMaker uses a JSON POST protocol, so we use run_script to build the request
+datasource "ds_region_check" do
+  iterate $ds_regions
+  request do
+    run_script $js_region_check_request, val(iter_item, "region")
+  end
+  result do
+    encoding "json"
+    field "region", val(iter_item, "region")
+    field "status", "OK"
+  end
+end
+
+script "js_region_check_request", type: "javascript" do
+  parameters "region"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_aws",
+    host: "api.sagemaker." + region + ".amazonaws.com",
+    verb: "POST",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/x-amz-json-1.1",
+      "x-amz-target": "SageMaker.ListEndpoints"
+    },
+    body: JSON.stringify({ "MaxResults": 1 }),
+    ignore_status: [403, 401]
+  }
+EOS
+end
+
+# List all InService SageMaker endpoints per region
+datasource "ds_sagemaker_endpoints" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_json
+    verb "POST"
+    host join(["api.sagemaker.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "application/x-amz-json-1.1"
+    header "x-amz-target", "SageMaker.ListEndpoints"
+    body_field "MaxResults", 100
+    body_field "StatusEquals", "InService"
+    ignore_status [403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Endpoints[*]") do
+      field "endpointName", jmes_path(col_item, "EndpointName")
+      field "endpointArn", jmes_path(col_item, "EndpointArn")
+      field "endpointStatus", jmes_path(col_item, "EndpointStatus")
+      field "creationTime", jmes_path(col_item, "CreationTime")
+      field "lastModifiedTime", jmes_path(col_item, "LastModifiedTime")
+      field "region", val(iter_item, "region")
+    end
+  end
+end
+
+# Describe each endpoint to get production variant details (instance type, instance count)
+datasource "ds_sagemaker_endpoints_detailed" do
+  iterate $ds_sagemaker_endpoints
+  request do
+    run_script $js_describe_endpoint_request, val(iter_item, "region"), val(iter_item, "endpointName")
+  end
+  result do
+    encoding "json"
+    field "endpointName", jmes_path(response, "EndpointName")
+    field "endpointArn", jmes_path(response, "EndpointArn")
+    field "endpointStatus", jmes_path(response, "EndpointStatus")
+    field "endpointConfigName", jmes_path(response, "EndpointConfigName")
+    field "creationTime", jmes_path(response, "CreationTime")
+    field "lastModifiedTime", jmes_path(response, "LastModifiedTime")
+    field "productionVariants", jmes_path(response, "ProductionVariants")
+    field "region", val(iter_item, "region")
+  end
+end
+
+script "js_describe_endpoint_request", type: "javascript" do
+  parameters "region", "endpoint_name"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_aws",
+    host: "api.sagemaker." + region + ".amazonaws.com",
+    verb: "POST",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/x-amz-json-1.1",
+      "x-amz-target": "SageMaker.DescribeEndpoint"
+    },
+    body: JSON.stringify({ "EndpointName": endpoint_name }),
+    ignore_status: [403, 404]
+  }
+EOS
+end
+
+# Get tags for each endpoint
+datasource "ds_sagemaker_endpoints_tags" do
+  iterate $ds_sagemaker_endpoints_detailed
+  request do
+    run_script $js_list_tags_request, val(iter_item, "region"), val(iter_item, "endpointArn")
+  end
+  result do
+    encoding "json"
+    field "endpointArn", val(iter_item, "endpointArn")
+    field "tags", jmes_path(response, "Tags")
+  end
+end
+
+script "js_list_tags_request", type: "javascript" do
+  parameters "region", "endpoint_arn"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_aws",
+    host: "api.sagemaker." + region + ".amazonaws.com",
+    verb: "POST",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/x-amz-json-1.1",
+      "x-amz-target": "SageMaker.ListTags"
+    },
+    body: JSON.stringify({ "ResourceArn": endpoint_arn }),
+    ignore_status: [403, 404]
+  }
+EOS
+end
+
+# Join tags with endpoint detailed data
+datasource "ds_sagemaker_endpoints_with_tags" do
+  run_script $js_sagemaker_endpoints_with_tags, $ds_sagemaker_endpoints_detailed, $ds_sagemaker_endpoints_tags
+end
+
+script "js_sagemaker_endpoints_with_tags", type: "javascript" do
+  parameters "ds_sagemaker_endpoints_detailed", "ds_sagemaker_endpoints_tags"
+  result "result"
+  code <<-'EOS'
+  tags_by_arn = {}
+  _.each(ds_sagemaker_endpoints_tags, function(item) {
+    tags_by_arn[item['endpointArn']] = item['tags'] || []
+  })
+
+  result = _.map(ds_sagemaker_endpoints_detailed, function(endpoint) {
+    var e = {
+      endpointName: endpoint['endpointName'],
+      endpointArn: endpoint['endpointArn'],
+      endpointStatus: endpoint['endpointStatus'],
+      endpointConfigName: endpoint['endpointConfigName'],
+      creationTime: endpoint['creationTime'],
+      lastModifiedTime: endpoint['lastModifiedTime'],
+      productionVariants: endpoint['productionVariants'],
+      region: endpoint['region'],
+      tags: tags_by_arn[endpoint['endpointArn']] || []
+    }
+    return e
+  })
+EOS
+end
+
+# Apply exclusion tag filter
+# SageMaker tags come as [{Key: "k", Value: "v"}] arrays
+datasource "ds_sagemaker_endpoints_tag_filtered" do
+  run_script $js_sagemaker_endpoints_tag_filtered, $ds_sagemaker_endpoints_with_tags, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_sagemaker_endpoints_tag_filtered", type: "javascript" do
+  parameters "ds_sagemaker_endpoints_with_tags", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-'EOS'
+  comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    // If = is present but none of the above are, assume user error and that the user intended ==
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    // Assume we're just testing for a key if none of the comparators are found
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_sagemaker_endpoints_with_tags, function(resource) {
+      // SageMaker tags come back as [{Key: "k", Value: "v"}] arrays
+      resource_tags = {}
+      if (typeof(resource['tags']) == 'object' && resource['tags'] != null) {
+        _.each(resource['tags'], function(tag) {
+          resource_tags[tag['Key']] = tag['Value']
+        })
+      }
+
+      // Store a list of found tags
+      found_tags = []
+
+      _.each(comparators, function(comparator) {
+        comparison = comparator['comparison']
+        value = comparator['value']
+        string = comparator['string']
+        resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      all_tags_found = found_tags.length == comparators.length
+      any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = ds_sagemaker_endpoints_with_tags
+  }
+EOS
+end
+
+# Build CloudWatch metric queries for each endpoint, keyed by region
+datasource "ds_cloudwatch_queries" do
+  run_script $js_cloudwatch_queries, $ds_sagemaker_endpoints_tag_filtered, $param_stats_lookback
+end
+
+script "js_cloudwatch_queries", type: "javascript" do
+  parameters "ds_sagemaker_endpoints_tag_filtered", "param_stats_lookback"
+  result "result"
+  code <<-'EOS'
+  // Create the CloudWatch queries we're going to send for each endpoint
+  result = {}
+
+  _.each(ds_sagemaker_endpoints_tag_filtered, function(resource) {
+    // Make sure the queries object has an array for the region to push items to
+    if (result[resource['region']] == undefined || result[resource['region']] == null) {
+      result[resource['region']] = []
+    }
+
+    // CloudWatch metric IDs must match [a-zA-Z][a-zA-Z0-9_]*
+    // Sanitize the endpoint name to a valid metric ID
+    cw_id = resource['endpointName'].replace(/[^a-zA-Z0-9]/g, '_')
+    // If the sanitized name starts with a digit, prefix with 'e'
+    if (/^[0-9]/.test(cw_id)) { cw_id = 'e' + cw_id }
+
+    // Period covers the entire lookback window in one data point
+    lookback = param_stats_lookback * 86400
+
+    var query = {
+      "Id": "invocations_" + cw_id,
+      "MetricStat": {
+        "Metric": {
+          "Namespace": "AWS/SageMaker",
+          "MetricName": "Invocations",
+          "Dimensions": [
+            { "Name": "EndpointName", "Value": resource['endpointName'] }
+          ]
+        },
+        "Period": lookback,
+        "Stat": "Sum"
+      },
+      "ReturnData": true
+    }
+
+    result[resource['region']].push(query)
+  })
+EOS
+end
+
+# Combine queries into 500 item blocks so we can make bulk requests to CloudWatch
+datasource "ds_cloudwatch_requests" do
+  run_script $js_cloudwatch_requests, $ds_cloudwatch_queries, $param_stats_lookback
+end
+
+script "js_cloudwatch_requests", type: "javascript" do
+  parameters "ds_cloudwatch_queries", "param_stats_lookback"
+  result "result"
+  code <<-'EOS'
+  // Organize the queries into discrete requests to send in.
+  // Queries are first sorted by region and then split into 500 item blocks.
+  result = []
+  query_block_size = 500
+
+  // Align to day boundaries to get a clean single data point spanning the lookback window
+  end_date = new Date()
+  end_date.setHours(0, 0, 0, 0)
+  end_date = parseInt(end_date.getTime() / 1000)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date.setHours(0, 0, 0, 0)
+  start_date = parseInt(start_date.getTime() / 1000)
+
+  _.each(Object.keys(ds_cloudwatch_queries), function(region) {
+    for (var i = 0; i < ds_cloudwatch_queries[region].length; i += query_block_size) {
+      chunk = ds_cloudwatch_queries[region].slice(i, i + query_block_size)
+
+      result.push({
+        body: {
+          "StartTime": start_date,
+          "EndTime": end_date,
+          "MetricDataQueries": chunk
+        },
+        region: region
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_cloudwatch_data" do
+  iterate $ds_cloudwatch_requests
+  request do
+    run_script $js_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
+script "js_cloudwatch_data", type: "javascript" do
+  parameters "region", "body"
+  result "request"
+  code <<-'EOS'
+  // Slow down rate of requests to avoid CloudWatch throttling
+  api_wait = 5
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  var request = {
+    auth: "auth_aws",
+    host: "monitoring." + region + ".amazonaws.com",
+    verb: "POST",
+    path: "/",
+    query_params: {
+      "Version": "2010-08-01"
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    },
+    body: JSON.stringify(body)
+  }
+EOS
+end
+
+datasource "ds_cloudwatch_data_sorted" do
+  run_script $js_cloudwatch_data_sorted, $ds_cloudwatch_data
+end
+
+script "js_cloudwatch_data_sorted", type: "javascript" do
+  parameters "ds_cloudwatch_data"
+  result "result"
+  code <<-'EOS'
+  // Sort the CloudWatch data into an object keyed by region -> sanitized_endpoint_name -> total_invocations.
+  // The ID format is "invocations_<sanitized_name>" -- strip the prefix to recover the sanitized name.
+  result = {}
+
+  _.each(ds_cloudwatch_data, function(item) {
+    region = item['region']
+
+    // Strip the "invocations_" prefix to get the sanitized endpoint name
+    cw_name = item['id'].replace(/^invocations_/, '')
+
+    // Sum all values returned (handles edge cases where CloudWatch returns multiple data points)
+    total = 0
+    if (item['values'] && item['values'].length > 0) {
+      _.each(item['values'], function(v) { total += v })
+    }
+
+    if (result[region] == undefined) { result[region] = {} }
+    // If the same sanitized name appears more than once (unlikely), accumulate
+    if (result[region][cw_name] == undefined) {
+      result[region][cw_name] = total
+    } else {
+      result[region][cw_name] += total
+    }
+  })
+EOS
+end
+
+# Final transform: identify idle SageMaker endpoints
+datasource "ds_idle_sagemaker_endpoints" do
+  run_script $js_idle_sagemaker_endpoints, $ds_sagemaker_endpoints_tag_filtered, $ds_cloudwatch_data_sorted, $ds_aws_sagemaker_pricing, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_stats_lookback, $param_min_invocations, $param_min_savings, $param_incident_csv
+end
+
+script "js_idle_sagemaker_endpoints", type: "javascript" do
+  parameters "ds_sagemaker_endpoints_tag_filtered", "ds_cloudwatch_data_sorted", "ds_aws_sagemaker_pricing", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_stats_lookback", "param_min_invocations", "param_min_savings", "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator) {
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  result = []
+  total_savings = 0.0
+
+  // Average hours per calendar month
+  hours_per_month = 730.5
+
+  _.each(ds_sagemaker_endpoints_tag_filtered, function(resource) {
+    region = resource['region']
+
+    // Sanitize endpoint name to match CloudWatch ID format (same transform as js_cloudwatch_queries)
+    cw_id = resource['endpointName'].replace(/[^a-zA-Z0-9]/g, '_')
+    if (/^[0-9]/.test(cw_id)) { cw_id = 'e' + cw_id }
+
+    // Look up total invocations from CloudWatch data
+    invocations = 0
+    if (ds_cloudwatch_data_sorted[region] != undefined) {
+      if (ds_cloudwatch_data_sorted[region][cw_id] != undefined) {
+        invocations = ds_cloudwatch_data_sorted[region][cw_id]
+      }
+    }
+
+    // Skip endpoints that exceed the minimum invocations threshold
+    if (invocations > param_min_invocations) { return }
+
+    // Build production variant details and compute monthly cost from AWS pricing data
+    instanceType = ""
+    instanceCount = 0
+    variantDetails = ""
+    monthly_cost = 0.0
+    savings_source = "Not Found in Pricing Data"
+
+    if (resource['productionVariants'] && resource['productionVariants'].length > 0) {
+      var variant_parts = []
+
+      _.each(resource['productionVariants'], function(variant, idx) {
+        vtype = variant['CurrentInstanceType'] || variant['VariantName'] || ""
+        vcount = variant['CurrentInstanceCount'] || 1
+
+        if (idx == 0) {
+          instanceType = vtype
+          instanceCount = vcount
+        }
+
+        variant_parts.push(variant['VariantName'] + " (" + vtype + " x" + vcount + ")")
+
+        // Accumulate cost from pricing data for this variant
+        if (vtype && ds_aws_sagemaker_pricing[region] != undefined && ds_aws_sagemaker_pricing[region][vtype] != undefined) {
+          hourly_rate = ds_aws_sagemaker_pricing[region][vtype]
+          monthly_cost += hourly_rate * vcount * hours_per_month
+          savings_source = "AWS Pricing Data"
+        }
+      })
+
+      variantDetails = variant_parts.join(", ")
+    }
+
+    monthly_cost = Math.round(monthly_cost * 1000) / 1000
+
+    // Skip if savings fall below the minimum threshold
+    if (monthly_cost < param_min_savings) { return }
+
+    total_savings += monthly_cost
+
+    // Build a flat tags string from SageMaker [{Key: k, Value: v}] array
+    tags = []
+    if (typeof(resource['tags']) == 'object' && resource['tags'] != null) {
+      _.each(resource['tags'], function(tag) {
+        tags.push(tag['Key'] + '=' + tag['Value'])
+      })
+    }
+
+    // Convert SageMaker Unix epoch timestamps to ISO strings
+    creationTime = ""
+    if (resource['creationTime']) {
+      creationTime = new Date(resource['creationTime'] * 1000).toISOString()
+    }
+
+    lastModifiedTime = ""
+    if (resource['lastModifiedTime']) {
+      lastModifiedTime = new Date(resource['lastModifiedTime'] * 1000).toISOString()
+    }
+
+    recommendationDetails = [
+      "Delete AWS SageMaker endpoint ", resource['endpointName'],
+      " in region ", region,
+      " in AWS Account ", ds_aws_account['name'],
+      " (", ds_aws_account['id'], ")"
+    ].join('')
+
+    result.push({
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      resourceID: resource['endpointArn'],
+      resourceName: resource['endpointName'],
+      endpointConfigName: resource['endpointConfigName'] || "",
+      region: region,
+      state: resource['endpointStatus'],
+      instanceType: instanceType,
+      instanceCount: instanceCount,
+      variantDetails: variantDetails,
+      creationTime: creationTime,
+      lastModifiedTime: lastModifiedTime,
+      invocations: invocations,
+      lookbackPeriod: param_stats_lookback,
+      tags: tags.join(', '),
+      savings: monthly_cost,
+      savingsCurrency: ds_currency['symbol'],
+      savingsSource: savings_source,
+      recommendationDetails: recommendationDetails,
+      service: "AmazonSageMaker",
+      policy_name: ds_applied_policy['name'],
+      message: '',
+      total_savings: ''
+    })
+  })
+
+  // Sort by descending order of savings value
+  result = _.sortBy(result, 'savings').reverse()
+
+  // Message for incident output
+  total_endpoints = ds_sagemaker_endpoints_tag_filtered.length.toString()
+  total_idle = result.length.toString()
+  idle_percentage = (total_idle / total_endpoints * 100).toFixed(2).toString() + '%'
+
+  endpoint_noun = "endpoint"
+  if (total_endpoints != 1) { endpoint_noun += "s" }
+
+  idle_verb = "is"
+  if (total_idle != 1) { idle_verb = "are" }
+
+  findings = [
+    "Out of ", total_endpoints, " AWS SageMaker ", endpoint_noun, " analyzed, ",
+    total_idle, " (", idle_percentage, ") ", idle_verb,
+    " idle and recommended for deletion. "
+  ].join('')
+
+  day_noun = "day"
+  if (param_stats_lookback != 1) { day_noun += 's' }
+
+  settings = [
+    "Endpoints are considered idle if they have ", param_min_invocations,
+    " or fewer total invocations over the last ", param_stats_lookback, " ", day_noun, ". ",
+    "Savings estimates are derived from the AWS Price List API using on-demand hourly rates ",
+    "for each production variant instance type and count. ",
+    "If a variant's instance type is not found in the pricing data, its cost contribution is 0.\n\n"
+  ].join('')
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+
+  formatted_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+
+  // Dummy item to ensure the policy's check statement always executes at least once
+  result.push({
+    accountID: "",
+    accountName: "",
+    resourceID: "",
+    resourceName: "",
+    endpointConfigName: "",
+    region: "",
+    state: "",
+    instanceType: "",
+    instanceCount: "",
+    variantDetails: "",
+    creationTime: "",
+    lastModifiedTime: "",
+    invocations: "",
+    lookbackPeriod: "",
+    tags: "",
+    savings: "",
+    savingsCurrency: "",
+    savingsSource: "",
+    recommendationDetails: "",
+    service: "",
+    policy_name: "",
+    message: "",
+    total_savings: ""
+  })
+
+  result[0]['message'] = findings + settings + disclaimer + csv_message
+  result[0]['total_savings'] = formatted_total_savings
+EOS
+end
+
+datasource "ds_identify_errors" do
+  run_script $js_identify_errors, $ds_regions, $ds_region_check, $ds_applied_policy, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_identify_errors", type: "javascript" do
+  parameters "ds_regions", "ds_region_check", "ds_applied_policy", "param_regions_allow_or_deny", "param_regions_list"
+  result "errors"
+  code <<-'EOS'
+  var errors = []
+
+  var region_responses = {}
+  _.each(ds_region_check, function(item) {
+    if (item.region) { region_responses[item.region] = "OK" }
+  })
+
+  var allowed_regions = _.keys(region_responses)
+  var forbidden_regions = []
+
+  _.each(ds_regions, function(region_obj) {
+    if (!_.contains(allowed_regions, region_obj.region)) {
+      forbidden_regions.push(region_obj.region)
+    }
+  })
+
+  if (forbidden_regions.length > 0) {
+    var regions_string = forbidden_regions.sort().join(", ")
+    var successful_regions = allowed_regions.sort().join(", ")
+    var filter_guidance = ""
+
+    if (param_regions_list.length > 0) {
+      filter_guidance = " You are currently using the 'Allow/Deny Regions List' parameter. "
+      filter_guidance += "You can update this list to exclude the inaccessible regions if appropriate."
+    } else {
+      filter_guidance = " You can use the 'Allow/Deny Regions List' parameter to exclude these regions from the policy scope."
+    }
+
+    errors.push(
+      "HTTP error received when attempting to list SageMaker endpoints in some AWS region(s).\n" +
+      "\n - Failed Regions: " + regions_string +
+      "\n - Successful Regions: " + successful_regions +
+      "\n\nThis typically indicates that the AWS credential does not have the required 'sagemaker:ListEndpoints' permission " +
+      "for these regions, or these regions may not be enabled in your AWS account. " +
+      "To resolve this issue: " +
+      "(1) Verify the AWS credential has 'sagemaker:ListEndpoints' permission for these regions, " +
+      "(2) Ensure these regions are enabled in your AWS account (some regions require explicit opt-in), or " +
+      "(3) Exclude these regions from policy evaluation using the region filter parameters." +
+      filter_guidance
+    )
+  }
+
+  errors = _.uniq(errors)
+  errors = _.map(errors, function(err) { return { "error": err } })
+
+  if (errors.length > 0) {
+    var policy_name = "AWS Idle SageMaker Endpoints"
+    if (ds_applied_policy && ds_applied_policy.name) { policy_name = ds_applied_policy.name }
+    errors[0].policy_name = policy_name
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_idle_sagemaker_endpoints" do
+  validate_each $ds_idle_sagemaker_endpoints do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Idle AWS SageMaker Endpoints Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_delete_endpoints
+    hash_exclude "tags", "savings", "savingsCurrency", "invocations"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Endpoint ARN"
+      end
+      field "resourceName" do
+        label "Endpoint Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "state" do
+        label "State"
+      end
+      field "endpointConfigName" do
+        label "Endpoint Config Name"
+      end
+      field "instanceType" do
+        label "Instance Type"
+      end
+      field "instanceCount" do
+        label "Instance Count"
+      end
+      field "variantDetails" do
+        label "Production Variants"
+      end
+      field "creationTime" do
+        label "Created At"
+      end
+      field "lastModifiedTime" do
+        label "Last Modified"
+      end
+      field "invocations" do
+        label "Total Invocations"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+
+  validate $ds_identify_errors do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to retrieve SageMaker endpoint data from one or more AWS regions due to permission or configuration errors.
+
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end -}}
+
+    **Recommended Actions:**
+    1. Verify that the AWS credential has the `sagemaker:ListEndpoints` permission for all regions where the policy should execute.
+    2. Ensure that the required AWS regions are enabled in your AWS account (some regions require explicit opt-in).
+    3. Consider updating the **Allow/Deny Regions List** parameter to exclude regions that are not accessible or not relevant to your use case.
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email_errors_identified" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
+end
+
+escalation "esc_delete_endpoints" do
+  automatic contains($param_automatic_action, "Delete Idle SageMaker Endpoints")
+  label "Delete Idle SageMaker Endpoints"
+  description "Approval to delete all selected idle SageMaker endpoints"
+  run "delete_endpoints", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_endpoints($data) return $all_responses do
+  $$all_responses = []
+  $$errors = []
+
+  foreach $endpoint in $data do
+    sub on_error: handle_error() do
+      call delete_endpoint($endpoint) retrieve $response
+    end
+    $$all_responses << $response
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_endpoint($endpoint) return $response do
+  $host = "api.sagemaker." + $endpoint["region"] + ".amazonaws.com"
+  $url = "https://" + $host + "/"
+  task_label("POST " + $url + " (DeleteEndpoint: " + $endpoint["resourceName"] + ")")
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    host: $host,
+    href: "/",
+    headers: {
+      "Content-Type": "application/x-amz-json-1.1",
+      "x-amz-target": "SageMaker.DeleteEndpoint"
+    },
+    body: to_json({"EndpointName": $endpoint["resourceName"]})
+  )
+
+  task_label("POST " + $url + " response: " + $endpoint["resourceName"] + " " + to_json($response))
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response deleting AWS SageMaker Endpoint " + $endpoint["resourceName"] + ": " + to_json($response)
+  else
+    task_label("Successfully deleted SageMaker Endpoint: " + $endpoint["resourceName"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_parent_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+    ignore_status [404]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
+  result "result"
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
+  end
+end
+
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
+  result "result"
+  code 'result = { path: "/"}'
+end
