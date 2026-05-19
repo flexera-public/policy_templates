@@ -1640,11 +1640,13 @@ def policy_bad_comma_spacing?(file, file_lines)
     parts = []
 
     # Skip image charts stuff
-    next if line.include?("chxt=") || line.include?("chxs=") || line.include?("chco=") || line.include?("chdls=") || line.include?("chls=") || line.include?("chma=") || line.include?("chxr=") || line.include?("chg=")
+    next if line.include?("chxt=") || line.include?("chxs=") || line.include?("chco=") || line.include?("chdls=") || line.include?("chls=") || line.include?("chma=") || line.include?("chxr=") || line.include?("chg=") || line.include?("chf=")
 
-    # Look for stuff quotations and remove those
-    # This is to reduce false positives
-    parts = line.split("\"") if line.include?("\"") && !line.include?("'") && !line.start_with?("\"")
+    # Strip content inside quotation marks to avoid false positives from comma-separated
+    # API parameter strings (e.g. metricnames, aggregation) and other string literal values.
+    # Lines starting with a quote are included so that JSON-style key-value pairs like
+    # `"metricnames": "Percentage CPU,Memory"` have their string values stripped correctly.
+    parts = line.split("\"") if line.include?("\"") && !line.include?("'")
     parts = line.split("'") if !line.include?("\"") && line.include?("'") && !line.start_with?("'")
 
     if parts.length > 2
