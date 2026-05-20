@@ -24,14 +24,16 @@ OUTPUT_FILENAME = "data/aws/aws_sagemaker_pricing.json"
 PRICING_REGION = "us-east-1"
 PRICING_SERVICE_CODE = "AmazonSageMaker"
 
-# Operations that identify real-time inference endpoint hosting.
-# This excludes training, batch transform, processing, notebook, and Studio usage.
-REALTIME_HOSTING_OPERATIONS = {"SageMaker:Hosting"}
+# The 'component' attribute value that identifies real-time inference endpoint hosting.
+# Confirmed by inspection of the AWS Price List API for AmazonSageMaker.
+# Excludes training (component=Training), batch transform (component=BatchTransform),
+# async inference (component=AsyncInf), processing (component=Processing),
+# notebooks (component=Notebook), Studio, and all other SageMaker compute types.
+REALTIME_HOSTING_COMPONENT = "Hosting"
 
 # Map AWS usagetype region prefixes to canonical AWS region codes.
-# SageMaker usagetype values follow the pattern '{PREFIX}Hosting:{instance_type}',
-# where PREFIX is a short region code followed by a dash (e.g. 'USE1-', 'USW2-').
-# Entries with no prefix (e.g. "Hosting:ml.m5.xlarge") belong to us-east-1.
+# SageMaker real-time hosting usagetype values follow the pattern '{PREFIX}Host:{instance_type}',
+# where PREFIX is a short region code followed by a dash (e.g. 'USE1-', 'EU-').
 # This map is used as a fallback when the product's 'regionCode' attribute is absent.
 USAGETYPE_PREFIX_MAP = {
     # US
@@ -85,17 +87,19 @@ USAGETYPE_PREFIX_MAP = {
 
 
 def region_from_usagetype(usagetype):
-    """Extract the AWS region code from a SageMaker usagetype string.
+    """Extract the AWS region code from a SageMaker real-time hosting usagetype string.
 
-    SageMaker usagetype values follow the pattern '{PREFIX}Hosting:{instance_type}'.
-    The prefix is a short region code followed by a dash, or absent for us-east-1.
+    Real-time hosting usagetype values follow the pattern '{PREFIX}-Host:{instance_type}'.
+    The prefix is a short region code (e.g. 'USE1', 'EU', 'APN1'), or absent for us-east-1.
     Returns None if the prefix is not in USAGETYPE_PREFIX_MAP.
     """
-    hosting_pos = usagetype.find("Hosting")
-    if hosting_pos < 0:
-        return None
-    prefix = usagetype[:hosting_pos]
-    return USAGETYPE_PREFIX_MAP.get(prefix)
+    host_pos = usagetype.find("-Host:")
+    if host_pos >= 0:
+        prefix = usagetype[:host_pos] + "-"  # e.g. "USE1-", "EU-"
+        return USAGETYPE_PREFIX_MAP.get(prefix)
+    if usagetype.startswith("Host:"):
+        return USAGETYPE_PREFIX_MAP.get("")  # no prefix = us-east-1
+    return None
 
 
 def get_products_with_retry(client, max_retries=3, backoff=5, **kwargs):
@@ -113,13 +117,18 @@ def get_products_with_retry(client, max_retries=3, backoff=5, **kwargs):
 
 
 def fetch_sagemaker_products(client):
-    """Fetch all SageMaker product entries from the AWS Price List API.
+    """Fetch all SageMaker real-time hosting product entries from the AWS Price List API.
 
+    Uses an API-level TERM_MATCH filter on component=Hosting to avoid fetching the
+    thousands of unrelated SageMaker SKUs (training, batch transform, notebooks, etc.).
     Returns a list of parsed product dicts. Paginates automatically using NextToken.
     """
     products = []
     kwargs = {
         "ServiceCode": PRICING_SERVICE_CODE,
+        "Filters": [
+            {"Type": "TERM_MATCH", "Field": "component", "Value": REALTIME_HOSTING_COMPONENT},
+        ],
         "MaxResults": 100,
     }
 
@@ -144,12 +153,11 @@ def fetch_sagemaker_products(client):
 def is_realtime_hosting(attrs):
     """Return True if the product represents a real-time inference hosting instance.
 
-    Filters to usagetype containing 'Hosting' and operation in REALTIME_HOSTING_OPERATIONS.
-    This excludes training, batch transform, processing, notebook, and Studio usage types.
+    Uses the 'component' attribute, which is 'Hosting' for real-time inference endpoints
+    and distinct values for all other SageMaker compute types (Training, BatchTransform,
+    AsyncInf, Processing, Notebook, Cluster, etc.).
     """
-    usagetype = attrs.get("usagetype", "")
-    operation = attrs.get("operation", "")
-    return "Hosting" in usagetype and operation in REALTIME_HOSTING_OPERATIONS
+    return attrs.get("component", "") == REALTIME_HOSTING_COMPONENT
 
 
 def extract_hourly_price(terms):
@@ -192,7 +200,17 @@ def build_pricing(products, regions_filter=None):
         if not is_realtime_hosting(attrs):
             continue
 
-        instance_type = attrs.get("instanceType", "")
+        # Use 'instanceName' for the clean instance type key (e.g. "ml.m5.xlarge").
+        # The 'instanceType' attribute has a use-type suffix (e.g. "ml.m5.xlarge-Hosting")
+        # and should not be used directly as a pricing key.
+        instance_type = attrs.get("instanceName", "")
+        if not instance_type:
+            # Fallback: strip the '-Hosting' suffix from instanceType
+            raw = attrs.get("instanceType", "")
+            if raw.lower().endswith("-hosting"):
+                instance_type = raw[:-8]
+            else:
+                instance_type = raw
         if not instance_type:
             continue
 
