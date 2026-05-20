@@ -4,10 +4,12 @@
 
 This policy template reports AWS SageMaker real-time inference endpoints in `InService` status that have zero or near-zero invocations over a configurable lookback window. Idle endpoints represent ongoing waste because dedicated compute instances are billed continuously by the hour regardless of whether predictions are being served. The policy optionally deletes reported endpoints after manual or automatic approval.
 
+Endpoints configured for [SageMaker Serverless Inference](https://docs.aws.amazon.com/sagemaker/latest/dg/serverless-endpoints.html) are excluded from results — serverless endpoints do not provision dedicated instances and incur no continuous compute cost, so there is no spend to eliminate by deleting them.
+
 ## How It Works
 
 - The policy uses the AWS SageMaker `ListEndpoints` API to enumerate all `InService` endpoints in each enabled region.
-- For each endpoint, `DescribeEndpoint` is called to retrieve production variant details including instance type and instance count.
+- For each endpoint, `DescribeEndpoint` is called to retrieve production variant details including instance type and instance count. Endpoints where all production variants use [Serverless Inference](https://docs.aws.amazon.com/sagemaker/latest/dg/serverless-endpoints.html) (i.e. have no dedicated instance type) are excluded from evaluation.
 - The AWS CloudWatch `GetMetricData` API is used to retrieve the `Invocations` metric (Sum statistic) from the `AWS/SageMaker` namespace for each endpoint over the configured lookback window. Endpoints whose total invocation count is at or below the **Minimum Invocations Threshold** parameter are flagged as idle and recommended for deletion.
 
 ### Policy Savings Details
@@ -31,7 +33,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Allow/Deny Regions List* - A list of allowed or denied regions. See the README for more details.
 - *Exclusion Tags* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field.
-- *Automatic Actions* - When this value is set, this policy will automatically take the selected action. Allowed values: `Delete Idle SageMaker Endpoints`.
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email.
 

@@ -428,7 +428,8 @@ end
 datasource "ds_aws_sagemaker_pricing" do
   request do
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/aws/aws_sagemaker_pricing.json"
+    #path "/flexera-public/policy_templates/master/data/aws/aws_sagemaker_pricing.json"
+    path "/flexera-public/policy_templates/refs/heads/POL-1765-sagemaker/data/aws/aws_sagemaker_pricing.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -504,7 +505,7 @@ script "js_region_check_request", type: "javascript" do
       "x-amz-target": "SageMaker.ListEndpoints"
     },
     body: JSON.stringify({ "MaxResults": 1 }),
-    ignore_status: [403, 401]
+    ignore_status: [400, 403, 401]
   }
 EOS
 end
@@ -523,7 +524,7 @@ datasource "ds_sagemaker_endpoints" do
     header "x-amz-target", "SageMaker.ListEndpoints"
     body_field "MaxResults", 100
     body_field "StatusEquals", "InService"
-    ignore_status [403, 404]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -572,7 +573,7 @@ script "js_describe_endpoint_request", type: "javascript" do
       "x-amz-target": "SageMaker.DescribeEndpoint"
     },
     body: JSON.stringify({ "EndpointName": endpoint_name }),
-    ignore_status: [403, 404]
+    ignore_status: [400, 403, 404]
   }
 EOS
 end
@@ -605,7 +606,7 @@ script "js_list_tags_request", type: "javascript" do
       "x-amz-target": "SageMaker.ListTags"
     },
     body: JSON.stringify({ "ResourceArn": endpoint_arn }),
-    ignore_status: [403, 404]
+    ignore_status: [400, 403, 404]
   }
 EOS
 end
@@ -953,6 +954,14 @@ script "js_idle_sagemaker_endpoints", type: "javascript" do
     // Skip endpoints that exceed the minimum invocations threshold
     if (invocations > param_min_invocations) { return }
 
+    // Skip serverless endpoints — they have no dedicated compute and incur no continuous cost
+    if (resource['productionVariants'] && resource['productionVariants'].length > 0) {
+      var all_serverless = _.every(resource['productionVariants'], function(v) {
+        return !!(v['CurrentServerlessConfig'] || v['ServerlessConfig'])
+      })
+      if (all_serverless) { return }
+    }
+
     // Build production variant details and compute monthly cost from AWS pricing data
     instanceType = ""
     instanceCount = 0
@@ -964,22 +973,45 @@ script "js_idle_sagemaker_endpoints", type: "javascript" do
       var variant_parts = []
 
       _.each(resource['productionVariants'], function(variant, idx) {
-        vtype = variant['CurrentInstanceType'] || variant['VariantName'] || ""
-        vcount = variant['CurrentInstanceCount'] || 1
+        // Detect serverless variants — they have CurrentServerlessConfig instead of CurrentInstanceType
+        var serverless_config = variant['CurrentServerlessConfig'] || variant['ServerlessConfig']
+        var vtype = variant['CurrentInstanceType'] || ""
+        var vcount = variant['CurrentInstanceCount'] || 0
+        var variant_label
 
-        if (idx == 0) {
-          instanceType = vtype
-          instanceCount = vcount
+        if (serverless_config) {
+          // Serverless inference: no dedicated instance, no continuous instance cost
+          var mem = serverless_config['MemorySizeInMB'] || "?"
+          var concurrency = serverless_config['MaxConcurrency'] || "?"
+          variant_label = variant['VariantName'] + " (Serverless " + mem + "MB, max concurrency " + concurrency + ")"
+          if (idx == 0) {
+            instanceType = "Serverless"
+            instanceCount = 0
+          }
+        } else if (vtype) {
+          // Dedicated real-time instance variant
+          if (vcount == 0) { vcount = 1 }
+          variant_label = variant['VariantName'] + " (" + vtype + " x" + vcount + ")"
+          if (idx == 0) {
+            instanceType = vtype
+            instanceCount = vcount
+          }
+          // Accumulate cost from pricing data for this variant
+          if (ds_aws_sagemaker_pricing[region] != undefined && ds_aws_sagemaker_pricing[region][vtype] != undefined) {
+            hourly_rate = ds_aws_sagemaker_pricing[region][vtype]
+            monthly_cost += hourly_rate * vcount * hours_per_month
+            savings_source = "AWS Pricing Data"
+          }
+        } else {
+          // Unknown variant type (e.g. pending state before instance type is assigned)
+          variant_label = variant['VariantName'] + " (instance type unavailable)"
+          if (idx == 0) {
+            instanceType = "Unknown"
+            instanceCount = 0
+          }
         }
 
-        variant_parts.push(variant['VariantName'] + " (" + vtype + " x" + vcount + ")")
-
-        // Accumulate cost from pricing data for this variant
-        if (vtype && ds_aws_sagemaker_pricing[region] != undefined && ds_aws_sagemaker_pricing[region][vtype] != undefined) {
-          hourly_rate = ds_aws_sagemaker_pricing[region][vtype]
-          monthly_cost += hourly_rate * vcount * hours_per_month
-          savings_source = "AWS Pricing Data"
-        }
+        variant_parts.push(variant_label)
       })
 
       variantDetails = variant_parts.join(", ")
@@ -1026,7 +1058,7 @@ script "js_idle_sagemaker_endpoints", type: "javascript" do
       endpointConfigName: resource['endpointConfigName'] || "",
       region: region,
       state: resource['endpointStatus'],
-      instanceType: instanceType,
+      resourceType: instanceType,
       instanceCount: instanceCount,
       variantDetails: variantDetails,
       creationTime: creationTime,
@@ -1089,7 +1121,7 @@ script "js_idle_sagemaker_endpoints", type: "javascript" do
     endpointConfigName: "",
     region: "",
     state: "",
-    instanceType: "",
+    resourceType: "",
     instanceCount: "",
     variantDetails: "",
     creationTime: "",
@@ -1218,7 +1250,7 @@ policy "pol_idle_sagemaker_endpoints" do
       field "endpointConfigName" do
         label "Endpoint Config Name"
       end
-      field "instanceType" do
+      field "resourceType" do
         label "Instance Type"
       end
       field "instanceCount" do
