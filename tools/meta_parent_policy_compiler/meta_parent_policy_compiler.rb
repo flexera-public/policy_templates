@@ -57,6 +57,7 @@ EXCLUDED_PARAMS = %w[
   param_projects_list
   param_projects_allow_or_deny
   param_schedule
+  param_skip_consolidated_incident
 ].freeze
 
 # Compile Meta Parent Policy Definition
@@ -189,7 +190,7 @@ end
     summary_template "Consolidated Incident: {{ len data }} __PLACEHOLDER_FOR_CHILD_POLICY_RESOURCE_TYPE_NAME__"
     escalate $esc_email
     __PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_ESCALATIONS__
-    check eq(size(data), 0)
+    check logic_or(eq($param_skip_consolidated_incident, "Yes"), eq(size(data), 0))
     export do
       resource_level __PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_RESOURCE_LEVEL__
       __PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_FIELDS__
