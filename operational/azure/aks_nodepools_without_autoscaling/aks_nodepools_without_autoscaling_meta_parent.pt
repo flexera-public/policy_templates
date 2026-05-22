@@ -88,6 +88,15 @@ parameter "param_combined_incident_table_size" do
   default 100000
 end
 
+parameter "param_skip_consolidated_incident" do
+  type "string"
+  category "Incident Settings"
+  label "Skip Consolidated Incident"
+  description "Whether or not to skip generating the consolidated incident that combines violations from all child policy incidents. When set to 'Yes', only the status incident showing child policy management activity will be generated. Default value of 'No' preserves the standard behavior of generating a consolidated incident."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
 ## Child Policy Parameters
 parameter "param_azure_endpoint" do
   type "string"
@@ -230,7 +239,7 @@ script "js_child_policy_options", type: "javascript" do
   // Filter Options that are not appropriate for Child Policy
   var options = _.map(ds_self_policy_information.options, function(option){
     // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes", param_policy_schedule are exclusion to Meta Parent Policy Parameters
-    if (!_.contains(["param_combined_incident_email", "param_combined_incident_csv", "param_combined_incident_table_size", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
+    if (!_.contains(["param_combined_incident_email", "param_combined_incident_csv", "param_combined_incident_table_size", "param_skip_consolidated_incident", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
       return { "name": option.name, "value": option.value };
     }
   });
@@ -1046,7 +1055,7 @@ policy "policy_scheduled_report" do
     summary_template "Consolidated Incident: {{ len data }} AKS Node Pools Without Autoscaling Found"
     escalate $esc_email
     
-    check eq(size(data), 0)
+    check logic_or(eq($param_skip_consolidated_incident, "Yes"), eq(size(data), 0))
     export do
       resource_level true
       field "accountID" do

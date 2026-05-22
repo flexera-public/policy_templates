@@ -1,15 +1,15 @@
-name "Meta Parent: Google Rightsize Persistent Disks"
+name "Meta Parent: AWS Old Snapshots"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Google Rightsize Persistent Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_persistent_disks) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [AWS Old Snapshots](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/old_snapshots) Policies."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md"
 severity "low"
 category "Meta"
 default_frequency "hourly"
 info(
-  provider: "Google",
-  version: "0.2.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  provider: "AWS",
+  version: "8.6.6", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "true",
   deprecated: "false",
   hide_skip_approvals: "true"
@@ -32,10 +32,10 @@ parameter "param_dimension_filter_includes" do
   type "list"
   label "Dimension Include Filters"
   description <<-EOS
-  Filters [`dimension_name=dimension_value` and `dimension_name=~dimension_value` pairs] to determine which Google Projects returned by the Flexera Bill Analysis API to **INCLUDE** and be applied to.
+  Filters [`dimension_name=dimension_value` and `dimension_name=~dimension_value` pairs] to determine which AWS Accounts returned by the Flexera Bill Analysis API to **INCLUDE** and be applied to.
   Use = to match the entire value and =~ to match a substring contained in the value.
-  During each run this policy will select Google Projects who match **all** the filters defined and apply a child policy for each.
-  If no include filters are provided, then all Google Projects are included by default.
+  During each run this policy will select AWS Accounts who match **all** the filters defined and apply a child policy for each.
+  If no include filters are provided, then all AWS Accounts are included by default.
   Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
   EOS
   default []
@@ -45,10 +45,10 @@ parameter "param_dimension_filter_excludes" do
   type "list"
   label "Dimension Exclude Filters"
   description <<-EOS
-  Filters [`dimension_name=dimension_value` and `dimension_name=~dimension_value` pairs] to determine which Google Projects returned by  the Flexera Bill Analysis API to **EXCLUDE** and *not* have policy applied to.
+  Filters [`dimension_name=dimension_value` and `dimension_name=~dimension_value` pairs] to determine which AWS Accounts returned by  the Flexera Bill Analysis API to **EXCLUDE** and *not* have policy applied to.
   Use = to match the entire value and =~ to match a substring contained in the value.
-  During each run this policy will select Google Projects who match **all** the filters defined here and excludes them from results.
-  Can be used to exclude specific Google Projects [`vendor_account=123456789012`]
+  During each run this policy will select AWS Accounts who match **all** the filters defined here and excludes them from results.
+  Can be used to exclude specific AWS Accounts [`vendor_account=123456789012`]
   Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
   EOS
   default []
@@ -65,7 +65,7 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"Google Rightsize Persistent Disks\" Policy Template from Catalog.  Optionally, you can use the \"Google Rightsize Persistent Disks\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"AWS Old Snapshots\" Policy Template from Catalog.  Optionally, you can use the \"AWS Old Snapshots\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
@@ -98,6 +98,24 @@ parameter "param_skip_consolidated_incident" do
 end
 
 ## Child Policy Parameters
+parameter "param_snapshot_age" do
+  type "number"
+  category "Policy Settings"
+  label "Snapshot Age Threshold"
+  description "The number of days since the snapshot was created to consider a snapshot old."
+  min_value 1
+  default 30
+end
+
+parameter "param_snapshot_include_ami" do
+  type "string"
+  category "Policy Settings"
+  label "Include Snapshots with AMI"
+  description "Whether or not to produce recommendations for snapshots with an associated registered AMI (Amazon Machine Image)."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
 parameter "param_min_savings" do
   type "number"
   category "Policy Settings"
@@ -106,74 +124,6 @@ parameter "param_min_savings" do
   min_value 0
   default 0
 end
-
-parameter "param_days_unattached" do
-  type "number"
-  category "Policy Settings"
-  label "Days Unattached"
-  description "The number of days a disk needs to be detached to be considered unused. If this value is set to 0, all unattached disks will be considered unused."
-  min_value 0
-  default 30
-end
-
-parameter "param_stats_lookback" do
-  type "number"
-  category "Statistics"
-  label "Statistic Lookback Period"
-  description "How many days back to look at Cloud Monitoring data when assessing disk utilization. This value cannot be set higher than 42 because Google does not retain metrics for longer than 42 days (6 weeks)."
-  min_value 1
-  max_value 42
-  default 30
-end
-
-parameter "param_stats_threshold" do
-  type "string"
-  category "Statistics"
-  label "Threshold Statistic"
-  description "Statistic to use when determining if a disk is underutilized."
-  allowed_values "Average", "Maximum", "p99", "p95", "p90"
-  default "Maximum"
-end
-
-parameter "param_iops_threshold" do
-  type "number"
-  category "Statistics"
-  label "IOPS Threshold (%)"
-  description "The IOPS utilization threshold below which a disk is considered underutilized and a downgrade recommendation is generated. Set to -1 to disable IOPS-based recommendations."
-  min_value -1
-  max_value 100
-  default 30
-end
-
-parameter "param_throughput_threshold" do
-  type "number"
-  category "Statistics"
-  label "Throughput Threshold (%)"
-  description "The throughput utilization threshold below which a disk is considered underutilized and a downgrade recommendation is generated. Set to -1 to disable throughput-based recommendations."
-  min_value -1
-  max_value 100
-  default 30
-end
-
-parameter "param_projects_ignore_sys" do
-  type "string"
-  category "Filters"
-  label "Ignore System Projects"
-  description "Whether or not to automatically ignore system projects in child policies e.g. projects whose id begins with 'sys-'. Default value of 'Yes' is recommended."
-  allowed_values "Yes", "No"
-  default "Yes"
-end
-
-
-parameter "param_projects_ignore_app" do
-  type "string"
-  category "Filters"
-  label "Ignore Google Apps Script Projects"
-  description "Whether or not to automatically ignore Google Apps Script projects in child policies e.g. projects whose id begins with 'app-'. Default value of 'Yes' is recommended."
-  allowed_values "Yes", "No"
-  default "Yes"
-end
-
 
 parameter "param_regions_allow_or_deny" do
   type "string"
@@ -189,41 +139,59 @@ parameter "param_regions_list" do
   category "Filters"
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. See the README for more details."
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   default []
 end
 
-parameter "param_exclusion_labels" do
+parameter "param_exclusion_services" do
   type "list"
   category "Filters"
-  label "Exclusion Labels"
-  description "Cloud native labels to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  label "Exclusion Service Types"
+  description "Exclude the selected services. If left blank, all services will be analyzed."
+  allowed_values ["EC2", "RDS"]
   default []
 end
 
-parameter "param_exclusion_labels_boolean" do
-  type "string"
+parameter "param_exclusion_description" do
+  type "list"
   category "Filters"
-  label "Exclusion Labels: Any / All"
-  description "Whether to filter instances containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Labels' field."
-  allowed_values "Any", "All"
-  default "Any"
+  label "Exclusion EC2 Snapshot Description"
+  description "Exclude EC2 snapshots with the provided descriptions. If left blank, all EC2 snapshots will be analyzed. This setting has no effect on RDS snapshots."
+  default []
 end
 
-parameter "param_take_snapshot" do
+parameter "param_exclusion_types" do
+  type "list"
+  category "Filters"
+  label "Exclusion RDS Snapshot Types"
+  description "Exclude the selected RDS snapshot types. If left blank, all types will be analyzed. This setting has no effect on EC2 snapshots."
+  allowed_values ["Manual", "Automated", "Shared", "Public", "AWS Backup"]
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
   type "string"
-  category "Actions"
-  label "Create Final Snapshot"
-  description "Whether or not to take a final snapshot before deleting a disk."
-  allowed_values "Yes", "No"
-  default "Yes"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
 end
 
 parameter "param_automatic_action" do
   type "list"
   category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Delete Unused Disks"]
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Delete Snapshots"]
   default []
 end
 
@@ -231,11 +199,12 @@ end
 # Authentication
 ###############################################################################
 
-credentials "auth_google" do
-  schemes "oauth2"
-  label "Google"
-  description "Select the Google Cloud Credential from the list."
-  tags "provider=gce"
+credentials "auth_aws" do
+  schemes "aws", "aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
 end
 
 credentials "auth_flexera" do
@@ -249,15 +218,6 @@ end
 # Pagination
 ###############################################################################
 
-pagination "pagination_google" do
-  get_page_marker do
-    body_path "nextPageToken"
-  end
-  set_page_marker do
-    query "pageToken"
-  end
-end
-
 pagination "pagination_flexera_policy" do
   get_page_marker do
     body_path "nextPage"
@@ -268,7 +228,7 @@ pagination "pagination_flexera_policy" do
 end
 
 ###############################################################################
-# Datasources & Scripts
+# Datasources
 ###############################################################################
 
 datasource "ds_flexera_api_hosts" do
@@ -324,7 +284,7 @@ script "js_child_policy_options", type: "javascript" do
   code <<-'EOS'
   // Filter Options that are not appropriate for Child Policy
   var options = _.map(ds_self_policy_information.options, function(option){
-    // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes", param_policy_schedule are exclusion to Meta Parent Policy Parameters
+    // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes, param_policy_schedule are exclusion to Meta Parent Policy Parameters
     if (!_.contains(["param_combined_incident_email", "param_combined_incident_csv", "param_combined_incident_table_size", "param_skip_consolidated_incident", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
       return { "name": option.name, "value": option.value };
     }
@@ -402,7 +362,7 @@ script "js_published_child_policy_information", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = _.filter(ds_get_published_child_policy_information, function(item) {
-    return item['name'] == "Google Rightsize Persistent Disks" && item['created_by'] == "support@flexera.com"
+    return item['name'] == "AWS Old Snapshots" && item['created_by'] == "support@flexera.com"
   })
 EOS
 end
@@ -435,7 +395,7 @@ script "js_project_child_policy_information", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = _.filter(ds_get_project_child_policy_information, function(item) {
-    return item['name'] == "Google Rightsize Persistent Disks"
+    return item['name'] == "AWS Old Snapshots"
   })
 EOS
 end
@@ -462,16 +422,16 @@ datasource "ds_get_billing_centers" do
   end
 end
 
-# Get the Google projects
-datasource "ds_get_google_projects" do
+# Get the AWS acounts
+datasource "ds_get_aws_accounts" do
   request do
     run_script $js_make_billing_center_request, rs_org_id, rs_optima_host, $ds_get_billing_centers, $param_dimension_filter_includes, $param_dimension_filter_excludes
   end
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
-      field "projectID", jmes_path(col_item, "dimensions.vendor_account")
-      field "projectName", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "aws_account_id", jmes_path(col_item, "dimensions.vendor_account")
+      field "aws_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
     end
   end
 end
@@ -496,7 +456,7 @@ script "js_make_billing_center_request", type: "javascript" do
   // Default dimensions and filter expressions required for meta parent policy
   var dimensions = ["vendor_account", "vendor_account_name"];
   var filter_expressions = [
-    { dimension: "vendor", type: "equal", value: "GCP" }
+    { dimension: "vendor", type: "equal", value: "AWS" }
   ]
 
   // Append to default dimensions and filter expressions using parent policy params
@@ -651,7 +611,7 @@ end
 
 # format
 # duplicates logic should compare updated at
-# we can validate update here when destructing the existing policy options, don't need updated at
+# we can validate update here when destructring the existing policy options, don't need updated at
 # format options
 script "js_format_existing_policies", type: "javascript" do
   parameters "ds_get_existing_policies", "ds_format_incidents"
@@ -668,13 +628,13 @@ script "js_format_existing_policies", type: "javascript" do
   result = {}
   formatted = {}
   duplicates = []
-  // tracking holds all existing policies and later can be used to determine if existing policies should be deleted [i.e. if cloud subscription was removed]
+  // tracking holds all existing policies and later can be used to determine if existing policies should be deleted [i.e. if cloud account was removed]
   tracking = {}
 
   for (x=0; x<ds_get_existing_policies.length; x++) {
     options = format_options_keyvalue(ds_get_existing_policies[x].options);
 
-    projectID=options["param_projects_list"][0]
+    aws_account_id=options["param_aws_account_number"]
 
     incident = null
     incident2 = null
@@ -687,9 +647,9 @@ script "js_format_existing_policies", type: "javascript" do
       incident3 = ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]][2]
     }
 
-    if (formatted[projectID] == undefined) {
-      formatted[projectID] = {
-        "accountID": projectID,
+    if (formatted[aws_account_id] == undefined) {
+      formatted[aws_account_id] = {
+        "accountID": aws_account_id,
         "applied_policy_id": ds_get_existing_policies[x]["applied_policy_id"],
         "applied_policy_name": ds_get_existing_policies[x]["name"],
         "status": ds_get_existing_policies[x]["status"],
@@ -699,16 +659,16 @@ script "js_format_existing_policies", type: "javascript" do
         "incident3": incident3,
         "options": options
       }
-      tracking[projectID] = false
+      tracking[aws_account_id] = false
     } else {
-      current = formatted[projectID]
+      current = formatted[aws_account_id]
 
       currDate = new Date(current.updated_at)
       newDate = new Date(ds_get_existing_policies[x].updated_at)
 
       if (currDate > newDate) {
         duplicates.push({
-          "accountID": projectID,
+          "accountID": aws_account_id,
           "applied_policy_id": ds_get_existing_policies[x]["applied_policy_id"],
           "applied_policy_name": ds_get_existing_policies[x]["name"],
           "status": ds_get_existing_policies[x]["status"],
@@ -719,7 +679,7 @@ script "js_format_existing_policies", type: "javascript" do
         })
       } else {
         duplicates.push({
-          "accountID": projectID,
+          "accountID": aws_account_id,
           "applied_policy_id": current["applied_policy_id"],
           "applied_policy_name": current["applied_policy_name"],
           "status": current["status"],
@@ -728,8 +688,8 @@ script "js_format_existing_policies", type: "javascript" do
           "incident2": current["incident2"],
           "incident3": current["incident3"]
         })
-        formatted[projectID] = {
-          "accountID": projectID,
+        formatted[aws_account_id] = {
+          "accountID": aws_account_id,
           "applied_policy_id": ds_get_existing_policies[x]["applied_policy_id"],
           "applied_policy_name": ds_get_existing_policies[x]["name"],
           "status": ds_get_existing_policies[x]["status"],
@@ -751,20 +711,20 @@ script "js_format_existing_policies", type: "javascript" do
 end
 
 datasource "ds_take_in_parameters" do
-  run_script $js_take_in_parameters, $ds_get_google_projects, $ds_format_self, first($ds_published_child_policy_information), first($ds_project_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $ds_flexera_api_hosts, $param_template_source, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
+  run_script $js_take_in_parameters, $ds_get_aws_accounts, $ds_format_self, first($ds_published_child_policy_information), first($ds_project_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $ds_flexera_api_hosts, $param_template_source, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
 end
 
 # hardcode template href with id from catalog
 # catalog policies show in customer's published templates with their org id
 # "template_href": "/api/governance/orgs/" + rs_org_id + "/published_templates/62618616e3dff80001572bf0"
 # update logic: the only reason we're going to update the child policies for is changes to options
-# and only some options, email is always blank and projectID is tied to the idenity of each policy, so: new project creation, removal of project: termination
+# and only some options, email is always blank and aws_account_id is tied to the idenity of each policy, so: new account creation, removal of account: termination
 # param_automatic_action is a list with only one action, unless the person is applying using an API and putting the same value multiple times this should either be a length of 0 or 1
 # param_log_to_cm_audit_entries is a String of Yes or No
 # param_exclude_tags and param_allowed_regions are arrays. I'm doing an update on the order changing but the values remaining the same.
 # If we only want to do an update on the values changing we could sort before doing the equality check.
 script "js_take_in_parameters", type: "javascript" do
-  parameters "ds_get_google_projects", "ds_format_self", "ds_published_child_policy_information", "ds_project_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "ds_flexera_api_hosts", "param_template_source", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
+  parameters "ds_get_aws_accounts", "ds_format_self", "ds_published_child_policy_information", "ds_project_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "ds_flexera_api_hosts", "param_template_source", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
   result "grid_and_cwf"
   code <<-'EOS'
   // Convert schedule label to iCal RRULE frequency string
@@ -796,9 +756,9 @@ script "js_take_in_parameters", type: "javascript" do
     parent_policy: ds_format_self
   }
 
-  // Copy tracking map from existing policies. Each key is a Google project ID; value starts
-  // as false (meaning "candidate for deletion") and is set to true when the project is
-  // still present in the current Google project list.
+  // Copy tracking map from existing policies. Each key is an AWS account ID; value starts
+  // as false (meaning "candidate for deletion") and is set to true when the account is
+  // still present in the current AWS account list.
   var should_keep = ds_format_existing_policies.tracking
 
   // Build UI URL prefixes used for deep-linking to policies and incidents in Flexera One
@@ -835,7 +795,7 @@ script "js_take_in_parameters", type: "javascript" do
     grid_and_cwf.grid.push(policy_status)
   }
 
-  // Schedule duplicate child policies (same project applied more than once) for deletion.
+  // Schedule duplicate child policies (same account applied more than once) for deletion.
   // ds_format_existing_policies retains only the newest copy in 'formatted'; the rest are duplicates.
   _.each(ds_format_existing_policies.duplicates, function(duplicate) {
     if (grid_and_cwf.to_delete.length < max_actions) {
@@ -851,22 +811,22 @@ script "js_take_in_parameters", type: "javascript" do
     }
   })
 
-  // For each Google project, decide whether to create a new child policy, update the existing
+  // For each AWS account, decide whether to create a new child policy, update the existing
   // one, or leave it running unchanged.
-  _.each(ds_get_google_projects, function(project) {
-    var cur_account_id = project.projectID
+  _.each(ds_get_aws_accounts, function(account) {
+    var cur_account_id = account.aws_account_id.replace(/['"]+/g, '')
 
     // Name and description are the same for both create and update operations
-    var name = child_policy_information.name + ": " + project.projectName + " (" + cur_account_id + ") (child policy)"
-    var description = child_policy_information.name + " policy applied by [" + ds_format_self.name + "](" + applied_policy_url_prefix + meta_parent_policy_id + ") to Google Project **" + project.projectName + "** (`" + cur_account_id + "`).  " + child_policy_information.short_description
+    var name = child_policy_information.name + ": " + account.aws_account_name + " (" + cur_account_id + ") (child policy)"
+    var description = child_policy_information.name + " policy applied by [" + ds_format_self.name + "](" + applied_policy_url_prefix + meta_parent_policy_id + ") to AWS Account **" + account.aws_account_name + "** (`" + cur_account_id + "`).  " + child_policy_information.short_description
 
-    // Build the child policy options list: parent options plus the project-specific project ID
+    // Build the child policy options list: parent options plus the account-specific account number
     var options = _.toArray(ds_child_policy_options)
-    options.push({ "name": "param_projects_list", "value": [cur_account_id] })
+    options.push({ "name": "param_aws_account_number", "value": cur_account_id })
 
     if (!_.contains(_.keys(ds_format_existing_policies.formatted), cur_account_id)) {
-      // No existing child policy for this project — schedule creation
-      console.log("Child policy for project " + cur_account_id + " does not exist and should be created")
+      // No existing child policy for this account — schedule creation
+      console.log("Child policy for " + cur_account_id + " does not exist and should be created")
 
       if (grid_and_cwf.to_create.length < max_actions) {
         grid_and_cwf.to_create.push({
@@ -899,7 +859,7 @@ script "js_take_in_parameters", type: "javascript" do
       }
     } else {
       // Existing child policy found — mark it as to-keep and check whether an update is needed
-      console.log("Child policy for project " + cur_account_id + " exists and may need to be updated or kept")
+      console.log("Child policy for " + cur_account_id + " exists and may need to be updated or kept")
       should_keep[cur_account_id] = true
 
       // Compare each parent param value against the child's current value to detect drift
@@ -937,7 +897,7 @@ script "js_take_in_parameters", type: "javascript" do
     }
   })
 
-  // Delete child policies whose Google projects are no longer in the current project list
+  // Delete child policies whose AWS accounts are no longer in the current account list
   _.each(should_keep, function(keep, account_id) {
     if (!keep) {
       if (grid_and_cwf.to_delete.length < max_actions) {
@@ -1103,41 +1063,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_unused_disks_incident_combined_incidents" do
-  run_script $js_ds_unused_disks_incident_combined_incidents, $ds_child_incident_details
+datasource "ds_snapshots_cost_mapping_combined_incidents" do
+  run_script $js_ds_snapshots_cost_mapping_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_unused_disks_incident_combined_incidents", type: "javascript" do
+script "js_ds_snapshots_cost_mapping_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-'EOS'
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Unused Google Persistent Disks Found" then include it in the filter result
-    if (s.indexOf("Unused Google Persistent Disks Found") > -1) {
-      _.each(incident["violation_data"], function(violation) {
-        violation["incident_id"] = incident["id"];
-        result.push(violation);
-      });
-    }
-  });
-EOS
-end
-
-datasource "ds_rightsize_disks_incident_combined_incidents" do
-  run_script $js_ds_rightsize_disks_incident_combined_incidents, $ds_child_incident_details
-end
-
-script "js_ds_rightsize_disks_incident_combined_incidents", type: "javascript" do
-  parameters "ds_child_incident_details"
-  result "result"
-  code <<-'EOS'
-  result = []
-  _.each(ds_child_incident_details, function(incident) {
-    s = incident["summary"];
-    // If the incident summary contains "Underutilized Google Persistent Disks Found" then include it in the filter result
-    if (s.indexOf("Underutilized Google Persistent Disks Found") > -1) {
+    // If the incident summary contains "AWS Old Snapshots Found" then include it in the filter result
+    if (s.indexOf("AWS Old Snapshots Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -1158,19 +1096,19 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Unused Google Persistent Disks Found
-  validate $ds_unused_disks_incident_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Unused Google Persistent Disks Found"
+    # Consolidated incident for AWS Old Snapshots Found
+  validate $ds_snapshots_cost_mapping_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} AWS Old Snapshots Found"
     escalate $esc_email
-    escalate $esc_delete_disks
+    escalate $esc_delete_snapshot
     check logic_or(eq($param_skip_consolidated_incident, "Yes"), eq(size(data), 0))
     export do
       resource_level true
       field "accountID" do
-        label "Project ID"
+        label "Account ID"
       end
       field "accountName" do
-        label "Project Name"
+        label "Account Name"
       end
       field "resourceID" do
         label "Resource ID"
@@ -1178,172 +1116,53 @@ policy "policy_scheduled_report" do
       field "resourceName" do
         label "Resource Name"
       end
-      field "region" do
-        label "Region"
-      end
-      field "zone" do
-        label "Zone"
-      end
       field "tags" do
-        label "Labels"
+        label "Resource Tags"
       end
-      field "state" do
-        label "Status"
+      field "age" do
+        label "Age (Days)"
       end
-      field "type" do
-        label "Disk Type"
-      end
-      field "sizeGb" do
+      field "size" do
         label "Size (GB)"
       end
-      field "created_at" do
-        label "Created At"
-      end
-      field "detachDate" do
-        label "Detached At"
-      end
-      field "detachDays" do
-        label "Days Unattached"
+      field "service" do
+        label "Service"
       end
       field "recommendationDetails" do
         label "Recommendation"
       end
-      field "savings" do
-        label "Estimated Monthly Savings"
+      field "parentType" do
+        label "Parent Resource Type"
       end
-      field "savingsCurrency" do
-        label "Savings Currency"
+      field "parentId" do
+        label "Parent Resource ID"
       end
-      field "lookbackPeriod" do
-        label "Look Back Period (Days)"
+      field "snapshotType" do
+        label "Snapshot Type"
       end
-      field "service" do
-        label "Service"
+      field "description" do
+        label "Description"
       end
-      field "selfLink" do
-        label "Resource Link"
+      field "type" do
+        label "Type"
       end
-      field "id" do
-        label "ID"
-      end
-      field "incident_id" do
-        label "Child Incident ID"
-      end
-    end
-  end
-
-  # Consolidated incident for Underutilized Google Persistent Disks Found
-  validate $ds_rightsize_disks_incident_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Underutilized Google Persistent Disks Found"
-    escalate $esc_email
-    
-    check logic_or(eq($param_skip_consolidated_incident, "Yes"), eq(size(data), 0))
-    export do
-      resource_level true
-      field "accountID" do
-        label "Project ID"
-      end
-      field "accountName" do
-        label "Project Name"
-      end
-      field "resourceID" do
-        label "Resource ID"
-      end
-      field "resourceName" do
-        label "Resource Name"
+      field "imageId" do
+        label "AMI"
       end
       field "region" do
         label "Region"
       end
-      field "zone" do
-        label "Zone"
-      end
-      field "tags" do
-        label "Labels"
-      end
-      field "state" do
-        label "Status"
-      end
-      field "resourceType" do
-        label "Disk Type"
-      end
-      field "resourceTypeSize" do
-        label "Disk Size (GB)"
-      end
-      field "resourceTypeMaxIops" do
-        label "Disk Max IOPS"
-      end
-      field "resourceTypeMaxThroughput" do
-        label "Disk Max Throughput (MB/s)"
-      end
-      field "newResourceType" do
-        label "Recommended Disk Type"
-      end
-      field "newResourceTypeMaxIops" do
-        label "Recommended Disk Max IOPS"
-      end
-      field "newResourceTypeMaxThroughput" do
-        label "Recommended Disk Max Throughput (MB/s)"
-      end
-      field "recommendationDetails" do
-        label "Recommendation"
-      end
       field "savings" do
         label "Estimated Monthly Savings"
       end
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "iopsAverage" do
-        label "IOPS Average"
-      end
-      field "iopsMaximum" do
-        label "IOPS Maximum"
-      end
-      field "iopsP99" do
-        label "IOPS p99"
-      end
-      field "iopsP95" do
-        label "IOPS p95"
-      end
-      field "iopsP90" do
-        label "IOPS p90"
-      end
-      field "iopsUtilPct" do
-        label "IOPS Utilization %"
-      end
-      field "iopsThreshold" do
-        label "IOPS Threshold %"
-      end
-      field "throughputAverage" do
-        label "Throughput Average (MB/s)"
-      end
-      field "throughputMaximum" do
-        label "Throughput Maximum (MB/s)"
-      end
-      field "throughputP99" do
-        label "Throughput p99 (MB/s)"
-      end
-      field "throughputP95" do
-        label "Throughput p95 (MB/s)"
-      end
-      field "throughputP90" do
-        label "Throughput p90 (MB/s)"
-      end
-      field "throughputUtilPct" do
-        label "Throughput Utilization %"
-      end
-      field "throughputThreshold" do
-        label "Throughput Threshold %"
-      end
       field "lookbackPeriod" do
-        label "Look Back Period (Days)"
+        label "Snapshot Age Threshold (Days)"
       end
-      field "service" do
-        label "Service"
-      end
-      field "selfLink" do
-        label "Resource Link"
+      field "resourceARN" do
+        label "Resource ARN"
       end
       field "id" do
         label "ID"
@@ -1362,11 +1181,11 @@ The current status of Child Policies for **{{ data.parent_policy.name }}**:
 
 Total Child Applied Policies: {{ len data.grid }}
 EOS
-    check false
+    check false # always trigger this status incident
     export "grid" do
       resource_level true
       field "accountID" do
-        label "Google Project ID"
+        label "AWS Account ID"
       end
       field "id" do
         label "Applied Policy ID"
@@ -1435,7 +1254,7 @@ EOS
     export do
       resource_level false
       field "accountID" do
-        label "Google Project ID"
+        label "AWS Account ID"
       end
       field "name" do
         label "Name"
@@ -1476,7 +1295,7 @@ EOS
     export do
       resource_level false
       field "accountID" do
-        label "Google Project ID"
+        label "AWS Account ID"
       end
       field "name" do
         label "Name"
@@ -1502,7 +1321,7 @@ EOS
     export do
       resource_level false
       field "accountID" do
-        label "Google Project ID"
+        label "AWS Account ID"
       end
       field "name" do
         label "Name"
@@ -1529,7 +1348,7 @@ EOS
     export "grid" do
       resource_level true
       field "accountID" do
-        label "Google Project ID"
+        label "AWS Account ID"
       end
       field "id" do
         label "Applied Policy ID"
@@ -1564,18 +1383,18 @@ end
 # Escalations
 ###############################################################################
 
-# Escalation for Delete Unused Disks
-escalation "esc_delete_disks" do
+# Escalation for Delete Snapshots
+escalation "esc_delete_snapshot" do
   automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
-  label "Delete Unused Disks"
-  description "Approval to delete all selected unused disks"
+  label "Delete Snapshots"
+  description "Approval to delete all selected snapshots"
 
   # Run declaration should go at end, after any parameters that may exist
-  run "esc_delete_disks", data, rs_governance_host, rs_project_id
+  run "esc_delete_snapshot", data, rs_governance_host, rs_project_id
 end
-define esc_delete_disks($data, $governance_host, $rs_project_id) do
+define esc_delete_snapshot($data, $governance_host, $rs_project_id) do
   $action_options = []
-  call child_run_action($data, $governance_host, $rs_project_id, "Delete Unused Disks", $action_options)
+  call child_run_action($data, $governance_host, $rs_project_id, "Delete Snapshots", $action_options)
 end
 
 # Used only for emailing the combined child incident if so desired
