@@ -24,7 +24,7 @@ from collections import defaultdict
 
 from google.cloud import billing_v1
 
-OUTPUT_FILENAME = "data/google/gcp_vertex_ai_pricing.json"
+OUTPUT_FILENAME = "data/google/google_vertex_ai_pricing.json"
 
 # Vertex AI online prediction supported machine types and their resource specs.
 # Source: https://cloud.google.com/vertex-ai/docs/predictions/configure-compute
