@@ -19,47 +19,65 @@ Free-tier and $0 SKUs are excluded.
 
 import json
 import os
+import re
+from collections import defaultdict
 
 from google.cloud import billing_v1
 
-OUTPUT_FILENAME = "data/gcp/gcp_vertex_ai_pricing.json"
+OUTPUT_FILENAME = "data/google/gcp_vertex_ai_pricing.json"
 
 # Vertex AI online prediction supported machine types and their resource specs.
 # Source: https://cloud.google.com/vertex-ai/docs/predictions/configure-compute
-# gpus: number of A100 GPUs (a2-highgpu-* types only)
+# gpu_type: billing SKU GPU label (a2-highgpu-* use Tesla A100 40GB)
 MACHINE_TYPE_SPECS = {
-    "n1-standard-2":  {"vcpus": 2,  "memory_gb": 7.5},
-    "n1-standard-4":  {"vcpus": 4,  "memory_gb": 15.0},
-    "n1-standard-8":  {"vcpus": 8,  "memory_gb": 30.0},
-    "n1-standard-16": {"vcpus": 16, "memory_gb": 60.0},
-    "n1-standard-32": {"vcpus": 32, "memory_gb": 120.0},
-    "n1-standard-64": {"vcpus": 64, "memory_gb": 240.0},
-    "n1-standard-96": {"vcpus": 96, "memory_gb": 360.0},
-    "n1-highmem-2":   {"vcpus": 2,  "memory_gb": 13.0},
-    "n1-highmem-4":   {"vcpus": 4,  "memory_gb": 26.0},
-    "n1-highmem-8":   {"vcpus": 8,  "memory_gb": 52.0},
-    "n1-highmem-16":  {"vcpus": 16, "memory_gb": 104.0},
-    "n1-highmem-32":  {"vcpus": 32, "memory_gb": 208.0},
-    "n1-highmem-64":  {"vcpus": 64, "memory_gb": 416.0},
-    "n1-highmem-96":  {"vcpus": 96, "memory_gb": 624.0},
-    "n1-highcpu-2":   {"vcpus": 2,  "memory_gb": 1.8},
-    "n1-highcpu-4":   {"vcpus": 4,  "memory_gb": 3.6},
-    "n1-highcpu-8":   {"vcpus": 8,  "memory_gb": 7.2},
-    "n1-highcpu-16":  {"vcpus": 16, "memory_gb": 14.4},
-    "n1-highcpu-32":  {"vcpus": 32, "memory_gb": 28.8},
-    "n1-highcpu-64":  {"vcpus": 64, "memory_gb": 57.6},
-    "n1-highcpu-96":  {"vcpus": 96, "memory_gb": 86.4},
-    "a2-highgpu-1g":  {"vcpus": 12, "memory_gb": 85.0,  "gpus": 1},
-    "a2-highgpu-2g":  {"vcpus": 24, "memory_gb": 170.0, "gpus": 2},
-    "a2-highgpu-4g":  {"vcpus": 48, "memory_gb": 340.0, "gpus": 4},
-    "a2-highgpu-8g":  {"vcpus": 96, "memory_gb": 680.0, "gpus": 8},
+    "n1-standard-2":  {"vcpus": 2,  "memory_gb": 7.5,   "family": "N1"},
+    "n1-standard-4":  {"vcpus": 4,  "memory_gb": 15.0,  "family": "N1"},
+    "n1-standard-8":  {"vcpus": 8,  "memory_gb": 30.0,  "family": "N1"},
+    "n1-standard-16": {"vcpus": 16, "memory_gb": 60.0,  "family": "N1"},
+    "n1-standard-32": {"vcpus": 32, "memory_gb": 120.0, "family": "N1"},
+    "n1-standard-64": {"vcpus": 64, "memory_gb": 240.0, "family": "N1"},
+    "n1-standard-96": {"vcpus": 96, "memory_gb": 360.0, "family": "N1"},
+    "n1-highmem-2":   {"vcpus": 2,  "memory_gb": 13.0,  "family": "N1"},
+    "n1-highmem-4":   {"vcpus": 4,  "memory_gb": 26.0,  "family": "N1"},
+    "n1-highmem-8":   {"vcpus": 8,  "memory_gb": 52.0,  "family": "N1"},
+    "n1-highmem-16":  {"vcpus": 16, "memory_gb": 104.0, "family": "N1"},
+    "n1-highmem-32":  {"vcpus": 32, "memory_gb": 208.0, "family": "N1"},
+    "n1-highmem-64":  {"vcpus": 64, "memory_gb": 416.0, "family": "N1"},
+    "n1-highmem-96":  {"vcpus": 96, "memory_gb": 624.0, "family": "N1"},
+    "n1-highcpu-2":   {"vcpus": 2,  "memory_gb": 1.8,   "family": "N1"},
+    "n1-highcpu-4":   {"vcpus": 4,  "memory_gb": 3.6,   "family": "N1"},
+    "n1-highcpu-8":   {"vcpus": 8,  "memory_gb": 7.2,   "family": "N1"},
+    "n1-highcpu-16":  {"vcpus": 16, "memory_gb": 14.4,  "family": "N1"},
+    "n1-highcpu-32":  {"vcpus": 32, "memory_gb": 28.8,  "family": "N1"},
+    "n1-highcpu-64":  {"vcpus": 64, "memory_gb": 57.6,  "family": "N1"},
+    "n1-highcpu-96":  {"vcpus": 96, "memory_gb": 86.4,  "family": "N1"},
+    "a2-highgpu-1g":  {"vcpus": 12, "memory_gb": 85.0,  "family": "A2", "gpus": 1, "gpu_type": "tesla_a100"},
+    "a2-highgpu-2g":  {"vcpus": 24, "memory_gb": 170.0, "family": "A2", "gpus": 2, "gpu_type": "tesla_a100"},
+    "a2-highgpu-4g":  {"vcpus": 48, "memory_gb": 340.0, "family": "A2", "gpus": 4, "gpu_type": "tesla_a100"},
+    "a2-highgpu-8g":  {"vcpus": 96, "memory_gb": 680.0, "family": "A2", "gpus": 8, "gpu_type": "tesla_a100"},
 }
 
-# Substrings (case-insensitive) that identify non-prediction Vertex AI SKUs to exclude.
-EXCLUDE_TERMS = [
-    "training", "automl", "batch", "pipeline", "feature store",
-    "metadata", "tensorboard", "dataset", "hyperparameter", "nas",
-    "experiment", "model monitoring", "custom job", "data labeling", "tuning",
+# Regex to extract machine family token from SKU descriptions.
+# Matches e.g. "N1", "A2", "N2D", "C3" regardless of surrounding context.
+_FAMILY_RE = re.compile(
+    r"\b(N1|N2D|N2|A2|C2D|C2|C3D|C3|C4A|C4D|C4|E2|N4A|N4|G2|G4|A3)\b",
+    re.IGNORECASE,
+)
+
+# Ordered GPU patterns: each tuple is (compiled regex, canonical gpu_type key).
+# "Tesla A100" (40 GB) and "A100 80gb" are different hardware; do not conflate.
+_GPU_PATTERNS = [
+    (re.compile(r"Nvidia\s+A100\s+80\s*gb", re.IGNORECASE),          "a100_80gb"),
+    (re.compile(r"NVIDIA\s+A100\s+80\s*GB",  re.IGNORECASE),          "a100_80gb"),
+    (re.compile(r"Nvidia\s+Tesla\s+A100\b",  re.IGNORECASE),          "tesla_a100"),
+    (re.compile(r"Nvidia\s+H100\s+Mega",     re.IGNORECASE),          "h100_mega"),
+    (re.compile(r"Nvidia\s+H100\b",          re.IGNORECASE),          "h100"),
+    (re.compile(r"Nvidia\s+Tesla\s+V100\b",  re.IGNORECASE),          "tesla_v100"),
+    (re.compile(r"Nvidia\s+Tesla\s+P100\b",  re.IGNORECASE),          "tesla_p100"),
+    (re.compile(r"Nvidia\s+Tesla\s+P4\b",    re.IGNORECASE),          "tesla_p4"),
+    (re.compile(r"Nvidia\s+Tesla\s+K80\b",   re.IGNORECASE),          "tesla_k80"),
+    (re.compile(r"Nvidia\s+L4\b",            re.IGNORECASE),          "l4"),
+    (re.compile(r"Nvidia\s+RTX\s+6000\b",    re.IGNORECASE),          "rtx_6000"),
 ]
 
 
@@ -76,20 +94,26 @@ def get_sku_price(sku):
     return 0.0
 
 
-def make_description(machine_type, vcpus, gpus):
+def make_description(machine_type, vcpus, memory_gb, gpus, gpu_type):
     """Build a human-readable description string for the machine type."""
     parts = machine_type.split("-")
     series = parts[0].upper()
     family_map = {
         "standard": "Standard",
-        "highmem": "High Memory",
-        "highcpu": "High CPU",
-        "highgpu": "High GPU",
+        "highmem":  "High Memory",
+        "highcpu":  "High CPU",
+        "highgpu":  "High GPU",
     }
     family_label = family_map.get(parts[1], parts[1].capitalize()) if len(parts) > 1 else ""
     if gpus:
-        return "Vertex AI online prediction - {} {} - {} GPU".format(series, family_label, gpus)
-    return "Vertex AI online prediction - {} {} - {} vCPU".format(series, family_label, vcpus)
+        return (
+            "Vertex AI online prediction - {} {} - {} vCPU, {:.0f} GiB RAM, {}x {}".format(
+                series, family_label, vcpus, memory_gb, gpus, gpu_type.replace("_", " ")
+            )
+        )
+    return "Vertex AI online prediction - {} {} - {} vCPU, {:.4g} GiB RAM".format(
+        series, family_label, vcpus, memory_gb
+    )
 
 
 def main():
@@ -99,10 +123,10 @@ def main():
 
     client = billing_v1.CloudCatalogClient()
 
-    # Find the Vertex AI billing service
+    # Find the Vertex AI billing service by exact display name match
     vertex_service_name = None
     for service in client.list_services():
-        if "Vertex AI" in service.display_name or "AI Platform" in service.display_name:
+        if service.display_name == "Vertex AI":
             vertex_service_name = service.name
             print(f"  Found service: {service.display_name} ({service.name})")
             break
@@ -113,30 +137,28 @@ def main():
             "Ensure credentials are valid and have billing catalog read access."
         )
 
-    all_skus = list(client.list_skus(parent=vertex_service_name, currency_code="USD"))
+    request = billing_v1.ListSkusRequest(parent=vertex_service_name, currency_code="USD")
+    all_skus = list(client.list_skus(request=request))
     print(f"  Downloaded {len(all_skus)} SKUs.")
 
     print("Processing data...")
 
-    vcpu_prices = {}  # {region: price_per_vcpu_hour}
-    ram_prices = {}   # {region: price_per_gib_ram_hour}
-    gpu_prices = {}   # {region: price_per_a100_gpu_hour}
+    # Accumulate per-region rates by (family, component) — sums base + management fees.
+    # rates[(family, component)][region] = total_rate_per_unit_per_hour
+    # component is 'core' (per vCPU), 'ram' (per GiB), or a gpu_type key (per GPU).
+    rates = defaultdict(lambda: defaultdict(float))
 
     for sku in all_skus:
-        desc = sku.description.lower()
+        desc = sku.description
 
-        # Only include online prediction SKUs
-        if "predict" not in desc:
-            continue
-
-        # Skip non-online-prediction SKUs
-        if any(term in desc for term in EXCLUDE_TERMS):
+        # Only process Online/Batch Prediction compute SKUs
+        if "Online/Batch Prediction" not in desc:
             continue
 
         try:
             price = get_sku_price(sku)
         except Exception as e:
-            print(f"Warning: could not parse price for SKU '{sku.description}': {e}")
+            print(f"Warning: could not parse price for SKU '{desc}': {e}")
             continue
 
         if price <= 0:
@@ -146,59 +168,72 @@ def main():
         if not regions:
             continue
 
-        # Classify as CPU, RAM, or GPU component based on description keywords
-        if "vcpu" in desc or (
-            "cpu" in desc
-            and "ram" not in desc
-            and "memory" not in desc
-            and "gpu" not in desc
-        ):
-            for region in regions:
-                vcpu_prices[region] = min(vcpu_prices.get(region, price), price)
-        elif "ram" in desc or "memory" in desc:
-            for region in regions:
-                ram_prices[region] = min(ram_prices.get(region, price), price)
-        elif "gpu" in desc or "a100" in desc:
-            for region in regions:
-                gpu_prices[region] = min(gpu_prices.get(region, price), price)
+        desc_lower = desc.lower()
 
-    if not vcpu_prices:
-        print("Warning: No Vertex AI vCPU prediction pricing found. Output may be empty.")
-    if not ram_prices:
-        print("Warning: No Vertex AI RAM prediction pricing found. Output may be empty.")
+        if "instance core" in desc_lower:
+            # Per-vCPU-hour charge — determine machine family
+            m = _FAMILY_RE.search(desc)
+            if not m:
+                continue
+            family = m.group(1).upper()
+            for region in regions:
+                rates[(family, "core")][region] += price
 
-    fallback_vcpu = vcpu_prices.get("us-central1", 0)
-    fallback_ram = ram_prices.get("us-central1", 0)
-    fallback_gpu = gpu_prices.get("us-central1", 0)
+        elif "instance ram" in desc_lower:
+            # Per-GiB-RAM-hour charge — determine machine family
+            m = _FAMILY_RE.search(desc)
+            if not m:
+                continue
+            family = m.group(1).upper()
+            for region in regions:
+                rates[(family, "ram")][region] += price
+
+        else:
+            # GPU charge — identify GPU type from ordered patterns
+            for pattern, gpu_type in _GPU_PATTERNS:
+                if pattern.search(desc):
+                    for region in regions:
+                        rates[("GPU", gpu_type)][region] += price
+                    break
+
+    # Verify we found N1 pricing at minimum
+    if not rates.get(("N1", "core")):
+        print("Warning: No N1 vCPU prediction pricing found. Output may be empty.")
+    if not rates.get(("N1", "ram")):
+        print("Warning: No N1 RAM prediction pricing found. Output may be empty.")
 
     final_output = {}
-    all_regions = set(vcpu_prices.keys()) | set(ram_prices.keys())
 
-    for region in sorted(all_regions):
-        vcpu_price = vcpu_prices.get(region, fallback_vcpu)
-        ram_price = ram_prices.get(region, fallback_ram)
-        gpu_price = gpu_prices.get(region, fallback_gpu)
+    for machine_type, specs in sorted(MACHINE_TYPE_SPECS.items()):
+        family   = specs["family"]
+        vcpus    = specs["vcpus"]
+        mem_gb   = specs["memory_gb"]
+        gpus     = specs.get("gpus", 0)
+        gpu_type = specs.get("gpu_type")
 
-        if vcpu_price == 0 and ram_price == 0:
-            continue
+        core_by_region = rates.get((family, "core"), {})
+        ram_by_region  = rates.get((family, "ram"),  {})
+        gpu_by_region  = rates.get(("GPU", gpu_type), {}) if gpu_type else {}
 
-        for machine_type, specs in MACHINE_TYPE_SPECS.items():
-            vcpus = specs["vcpus"]
-            memory_gb = specs["memory_gb"]
-            gpus = specs.get("gpus", 0)
+        all_regions = set(core_by_region) | set(ram_by_region)
+        for region in sorted(all_regions):
+            core_rate = core_by_region.get(region, 0.0)
+            ram_rate  = ram_by_region.get(region,  0.0)
+            gpu_rate  = gpu_by_region.get(region,  0.0)
 
-            price_per_hour = (vcpus * vcpu_price) + (memory_gb * ram_price)
-            if gpus and gpu_price:
-                price_per_hour += gpus * gpu_price
+            if core_rate == 0.0 and ram_rate == 0.0:
+                continue
+
+            price_per_hour = (vcpus * core_rate) + (mem_gb * ram_rate)
+            if gpus and gpu_rate:
+                price_per_hour += gpus * gpu_rate
 
             price_per_hour = round(price_per_hour, 4)
             if price_per_hour <= 0:
                 continue
 
-            if region not in final_output:
-                final_output[region] = {}
-            final_output[region][machine_type] = {
-                "description": make_description(machine_type, vcpus, gpus),
+            final_output.setdefault(region, {})[machine_type] = {
+                "description": make_description(machine_type, vcpus, mem_gb, gpus, gpu_type),
                 "pricePerHour": price_per_hour,
             }
 
