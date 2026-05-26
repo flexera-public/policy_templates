@@ -2,9 +2,53 @@
 
 Various Google-specific data assets, such as pricing data. Some assets are manually maintained and some are generated through automation; see the [Cloud Data Scripts README](https://github.com/flexera-public/policy_templates/blob/master/tools/cloud_data/README.md) for more information on how these assets are generated.
 
+## Auto-Generated Files (Scheduled)
+
+The following files are produced by scripts in [`tools/cloud_data/google/`](https://github.com/flexera-public/policy_templates/tree/master/tools/cloud_data/google) and are regenerated automatically on a weekly schedule via GitHub Actions workflows.
+
+### google_vertex_ai_pricing.json
+
+**Script:** [`tools/cloud_data/google/gcp_vertex_ai_pricing.py`](https://github.com/flexera-public/policy_templates/blob/master/tools/cloud_data/google/gcp_vertex_ai_pricing.py)
+
+**Workflow:** [`.github/workflows/generate-gcp-vertex-ai-pricing-json.yaml`](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-gcp-vertex-ai-pricing-json.yaml)
+
+**Description:** Estimated on-demand hourly prices in USD for Vertex AI online prediction dedicated instance machine types, per region. Prices are fetched from the Google Cloud Billing Catalog API. Used by policy templates that estimate costs or calculate savings for Vertex AI endpoint recommendations.
+
+**Note:** Requires Google Application Default Credentials with `cloudbilling.services.get` permission to run.
+
+**Structure:** Object keyed by region → machine type name → pricing object.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `description` | string | Human-readable SKU description including vCPU, RAM, and GPU specs |
+| `pricePerHour` | number | Estimated on-demand hourly price in USD |
+
+**Example:**
+
+```json
+{
+  "us-central1": {
+    "n1-standard-4": {
+      "description": "Vertex AI online prediction - N1 standard - 4 vCPU, 15 GiB RAM",
+      "pricePerHour": 0.19
+    },
+    "a2-highgpu-1g": {
+      "description": "Vertex AI online prediction - A2 highgpu - 12 vCPU, 85 GiB RAM, 1x Tesla A100 40GB",
+      "pricePerHour": 3.6739
+    }
+  },
+  "europe-west4": {
+    "n1-standard-4": {
+      "description": "Vertex AI online prediction - N1 standard - 4 vCPU, 15 GiB RAM",
+      "pricePerHour": 0.2128
+    }
+  }
+}
+```
+
 ## Auto-Generated Files (Manual Run)
 
-The following files are produced by scripts in [`tools/cloud_data/google/`](https://github.com/flexera-public/policy_templates/tree/master/tools/cloud_data/google). Unlike the AWS and Azure scripts, there are no scheduled GitHub Actions workflows for these files; they must be regenerated manually by running the scripts locally when an update is needed.
+The following files are produced by scripts in [`tools/cloud_data/google/`](https://github.com/flexera-public/policy_templates/tree/master/tools/cloud_data/google). There are no scheduled GitHub Actions workflows for these files; they must be regenerated manually by running the scripts locally when an update is needed.
 
 ### google_compute_instance_types.json
 
