@@ -42,7 +42,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 
 ## Policy Actions
 
-- Sends an email notification with the list of recommended Commitment Tier upgrades.
+- Sends an email notification.
 
 ## Prerequisites
 
