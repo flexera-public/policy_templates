@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.2.0",
+  version: "0.2.1",
   provider: "Flexera",
   service: "Identity & Access Management",
   policy_set: "Identity & Access Management",
@@ -150,33 +150,62 @@ datasource "ds_users" do
   end
 end
 
-datasource "ds_groups" do
+datasource "ds_groups_without_users" do
   request do
     auth $auth_flexera
-    host val($ds_flexera_api_hosts, "grs")
-    path join(["/grs/orgs/", rs_org_id, "/groups"])
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/iam/v1/orgs/", rs_org_id, "/groups"])
     query "view", "extended"
-    header "X-Api-Version", "2.0"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    collect jmes_path(response, "[*]") do
+    collect jmes_path(response, "values[*]") do
       field "id", jmes_path(col_item, "id")
-      field "href", jmes_path(col_item, "href")
       field "name", jmes_path(col_item, "name")
       field "description", jmes_path(col_item, "description")
+      field "ref", jmes_path(col_item, "ref")
       field "kind", jmes_path(col_item, "kind")
-      field "users", jmes_path(col_item, "users")
-      field "createdAt", jmes_path(col_item, "timestamps.created_at")
-      field "updatedAt", jmes_path(col_item, "timestamps.updated_at")
-      field "orgId", jmes_path(col_item, "org.id")
-      field "orgHref", jmes_path(col_item, "org.href")
-      field "orgName", jmes_path(col_item, "org.name")
-      field "orgKind", jmes_path(col_item, "org.kind")
-      field "orgCreatedAt", jmes_path(col_item, "org.timestamps.created_at")
-      field "orgUpdatedAt", jmes_path(col_item, "org.timestamps.updated_at")
+      field "createdAt", jmes_path(col_item, "createdAt")
+      field "updatedAt", jmes_path(col_item, "updatedAt")
     end
+  end
+end
+
+datasource "ds_groups" do
+  iterate $ds_groups_without_users
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/iam/v1/orgs/", rs_org_id, "/groups/", val(iter_item, "id"), "/memberships"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "description", val(iter_item, "description")
+    field "ref", val(iter_item, "ref")
+    field "kind", val(iter_item, "kind")
+    field "createdAt", val(iter_item, "createdAt")
+    field "updatedAt", val(iter_item, "updatedAt")
+    field "users", response
+    # API response:
+    # {
+    #   "id":
+    #   "ref":
+    #   "kind":
+    #   "user": {
+    #     "kind":
+    #     "ref":
+    #     "id":
+    #     "email":
+    #     "firstName":
+    #     "lastName":
+    #     "createdAt":
+    #     "updatedAt":
+    #   }
+    # }
   end
 end
 
@@ -254,10 +283,12 @@ script "js_groups_by_user", type: "javascript" do
       group_with_rules['rules'] = ds_rules_by_subject['group:' + group['id']]
     }
 
-    _.each(group['users'], function(user) {
-      if (result[user['id'].toString()] == undefined) { result[user['id'].toString()] = [] }
-      result[user['id'].toString()].push(group_with_rules)
-    })
+    if (group['users']) {
+      _.each(group['users'], function(user) {
+        if (result[user['user']['id'].toString()] == undefined) { result[user['user']['id'].toString()] = [] }
+        result[user['user']['id'].toString()].push(group_with_rules)
+      })
+    }
   })
 EOS
 end
