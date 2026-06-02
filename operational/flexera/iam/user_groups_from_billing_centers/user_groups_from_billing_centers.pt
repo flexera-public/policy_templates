@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "daily"
 info(
-  version: "0.2.0",
+  version: "0.2.1",
   provider: "Flexera",
   service: "Identity & Access Management",
   policy_set: "Automation",
@@ -330,42 +330,6 @@ datasource "ds_users" do
   end
 end
 
-# Get all access rules to look up role IDs for CWF grant/revoke
-datasource "ds_access_rules" do
-  request do
-    auth $auth_flexera
-    host val($ds_flexera_api_hosts, "flexera")
-    path join(["/iam/v1/orgs/", rs_org_id, "/access-rules"])
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "values[*]") do
-      field "roleId", jmes_path(col_item, "role.id")
-      field "roleName", jmes_path(col_item, "role.name")
-    end
-  end
-end
-
-# Extract role ID mapping from access rules
-datasource "ds_role_ids" do
-  run_script $js_role_ids, $ds_access_rules
-end
-
-script "js_role_ids", type: "javascript" do
-  parameters "ds_access_rules"
-  result "result"
-  code <<-'EOS'
-  result = {}
-
-  _.each(ds_access_rules, function(rule) {
-    if (rule["roleName"] && rule["roleId"]) {
-      result[rule["roleName"]] = rule["roleId"]
-    }
-  })
-EOS
-end
-
 # Filter groups to only those managed by this applied policy
 datasource "ds_managed_groups" do
   run_script $js_managed_groups, $ds_groups, $ds_applied_policy, $ds_billing_centers
@@ -415,17 +379,17 @@ end
 
 # Compare billing centers to managed groups, produce create/delete/exists actions
 datasource "ds_user_groups_crud" do
-  run_script $js_user_groups_crud, $ds_billing_centers_filtered, $ds_managed_groups, $ds_applied_policy, $ds_role_ids, $param_group_name_prefix, $param_role, $param_bc_name_strategy
+  run_script $js_user_groups_crud, $ds_billing_centers_filtered, $ds_managed_groups, $ds_applied_policy, $param_group_name_prefix, $param_role, $param_bc_name_strategy, $param_incident_csv
 end
 
 script "js_user_groups_crud", type: "javascript" do
-  parameters "ds_billing_centers_filtered", "ds_managed_groups", "ds_applied_policy", "ds_role_ids", "param_group_name_prefix", "param_role", "param_bc_name_strategy"
+  parameters "ds_billing_centers_filtered", "ds_managed_groups", "ds_applied_policy", "param_group_name_prefix", "param_role", "param_bc_name_strategy", "param_incident_csv"
   result "result"
   code <<-'EOS'
   result = []
   var policyName = ds_applied_policy["name"]
-  var roleId = ds_role_ids[param_role] || ""
   var trimmedPrefix = param_group_name_prefix.trim()
+  var csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   // Build lookup of managed groups keyed by billing center ID
   // Split comma-separated BC IDs (from Allow Collisions) to register under each
@@ -500,8 +464,8 @@ script "js_user_groups_crud", type: "javascript" do
         userGroupRef: managedGroup["ref"] || "",
         userGroupDescription: description,
         role: param_role,
-        roleId: String(roleId),
-        policyName: policyName
+        policyName: policyName,
+        csv_message: csv_message
       })
     } else {
       result.push({
@@ -516,8 +480,8 @@ script "js_user_groups_crud", type: "javascript" do
         userGroupRef: "",
         userGroupDescription: description,
         role: param_role,
-        roleId: String(roleId),
-        policyName: policyName
+        policyName: policyName,
+        csv_message: csv_message
       })
     }
   })
@@ -543,8 +507,8 @@ script "js_user_groups_crud", type: "javascript" do
         userGroupRef: group["ref"] || "",
         userGroupDescription: group["description"],
         role: param_role,
-        roleId: String(roleId),
-        policyName: policyName
+        policyName: policyName,
+        csv_message: csv_message
       })
     }
   })
@@ -849,6 +813,7 @@ policy "pol_user_groups" do
 
   validate $ds_groups_to_delete do
     summary_template "{{ with index data 0 }}{{ .policyName }}{{ end }}: {{ len data }} User Groups to Delete"
+    detail_template "{{ with index data 0 }}{{ .csv_message }}{{ end }}"
     check eq(size(data), 0)
     escalate $esc_email
     escalate $esc_delete_user_groups
@@ -1039,24 +1004,25 @@ define create_user_groups($data, $rs_org_id, $rs_optima_host) do
         call log_message("Created user group: " + $item["userGroupName"] + " with ID: " + to_s($group_id))
       end
 
-      # Step 2: Grant access rule on each Billing Center via the billing center access API
+      # Step 2: Grant access rule on each Billing Center via the IAM access-rules API
       # billingCenterId may be comma-separated for Allow Collisions (1::Many)
       if $group_id != null
         $bc_ids = split($item["billingCenterId"], ", ")
 
         foreach $bc_id in $bc_ids do
           $grant_body = {
-            "role": { "href": join(["/grs/orgs/", $rs_org_id, "/roles/", $item["roleId"]]) },
-            "subject": { "href": join(["/grs/orgs/", $rs_org_id, "/groups/", to_s($group_id)]) }
+            "role": { "name": $item["role"] },
+            "scope": { "ref": join(["ref::::iam:billing_center:", $bc_id]) },
+            "subject": { "ref": join(["ref::::iam:group:", to_s($group_id)]) }
           }
 
           $grant_response = http_request(
             auth: $$auth_flexera,
             verb: "put",
             https: true,
-            host: $rs_optima_host,
-            href: join(["/analytics/orgs/", $rs_org_id, "/billing_centers/", $bc_id, "/access_rules/grant"]),
-            headers: { "Api-Version": "0.1", "User-Agent": "RS Policies" },
+            host: $flexera_api_host,
+            href: join(["/iam/v1/orgs/", $rs_org_id, "/access-rules/grant"]),
+            headers: { "User-Agent": "RS Policies" },
             body: $grant_body
           )
 
@@ -1104,17 +1070,18 @@ define delete_user_groups($data, $rs_org_id, $rs_optima_host) do
       foreach $bc_id in $bc_ids do
         sub on_error: skip do
           $revoke_body = {
-            "role": { "href": join(["/grs/orgs/", $rs_org_id, "/roles/", $item["roleId"]]) },
-            "subject": { "href": join(["/grs/orgs/", $rs_org_id, "/groups/", $item["userGroupId"]]) }
+            "role": { "name": $item["role"] },
+            "scope": { "ref": join(["ref::::iam:billing_center:", $bc_id]) },
+            "subject": { "ref": join(["ref::::iam:group:", $item["userGroupId"]]) }
           }
 
           $revoke_response = http_request(
             auth: $$auth_flexera,
             verb: "put",
             https: true,
-            host: $rs_optima_host,
-            href: join(["/analytics/orgs/", $rs_org_id, "/billing_centers/", $bc_id, "/access_rules/revoke"]),
-            headers: { "Api-Version": "0.1", "User-Agent": "RS Policies" },
+            host: $flexera_api_host,
+            href: join(["/iam/v1/orgs/", $rs_org_id, "/access-rules/revoke"]),
+            headers: { "User-Agent": "RS Policies" },
             body: $revoke_body
           )
 
