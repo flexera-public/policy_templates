@@ -2,8 +2,8 @@
 
 ## v0.2.1
 
-- Updated group grant and revoke actions to use the newer Flexera IAM API (`PUT /iam/v1/orgs/{org_id}/access-rules/grant` and `/access-rules/revoke`) instead of the deprecated billing center grant/revoke endpoints.
-- Removed unused `ds_access_rules` and `ds_role_ids` datasources.
+- Updated API requests to use newer Flexera API and general code cleanup. Functionality unchanged.
+- Fixed issue where incident would not report that a CSV file is attached.
 
 ## v0.2.0
 
