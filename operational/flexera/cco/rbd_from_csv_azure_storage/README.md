@@ -17,7 +17,7 @@ This policy template creates and updates Flexera Rule-Based Dimensions (RBDs) fr
 ### CSV Format
 
 ```csv
-Vendor Account,Cloud Vendor,tag_app_code,||DIVIDER||,rbd_business_unit,rbd_cost_center
+Cloud Vendor Account,Cloud Vendor,tag_app_code,||DIVIDER||,rbd_business_unit,rbd_cost_center
 123456789012,AWS,APP-001,,Engineering,CC-1234
 234567890123,AWS,APP-002,,Marketing,CC-5678
 ```

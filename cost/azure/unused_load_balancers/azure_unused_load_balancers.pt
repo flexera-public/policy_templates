@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.3.0",
+  version: "0.4.0",
   provider: "Azure",
   service: "Network",
   policy_set: "Unused Load Balancers",
@@ -70,6 +70,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names to filter the results by. Optionally, entries can use the format SUBSCRIPTION_ID/RESOURCE_GROUP_NAME to limit filtering to a specific subscription. See the README for more details."
   default []
 end
 
@@ -508,8 +525,38 @@ script "js_azure_loadbalancers_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_loadbalancers_rg_filtered" do
+  run_script $js_azure_loadbalancers_rg_filtered, $ds_azure_loadbalancers_region_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_azure_loadbalancers_rg_filtered", type: "javascript" do
+  parameters "ds_azure_loadbalancers_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_azure_loadbalancers_region_filtered, function(resource) {
+        rg = resource['resourceGroup']
+        sub = resource['subscriptionId'] || resource['subscriptionID']
+        include_resource = _.any(param_resource_groups_list, function(rg_entry) {
+          if (rg_entry.indexOf('/') != -1) {
+            entry_parts = rg_entry.split('/')
+            return sub == entry_parts[0] && rg == entry_parts[1]
+          }
+          return rg == rg_entry
+        })
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_azure_loadbalancers_region_filtered
+    }
+EOS
+end
+
 datasource "ds_azure_loadbalancers_metrics" do
-  iterate $ds_azure_loadbalancers_region_filtered
+  iterate $ds_azure_loadbalancers_rg_filtered
   request do
     run_script $js_azure_loadbalancers_metrics, val(iter_item, "id"), $param_azure_endpoint, $param_stats_lookback
   end
@@ -560,15 +607,15 @@ EOS
 end
 
 datasource "ds_azure_loadbalancers_metrics_organized" do
-  run_script $js_azure_loadbalancers_metrics_organized, $ds_azure_loadbalancers_metrics, $ds_azure_loadbalancers_region_filtered, $param_stats_lookback
+  run_script $js_azure_loadbalancers_metrics_organized, $ds_azure_loadbalancers_metrics, $ds_azure_loadbalancers_rg_filtered, $param_stats_lookback
 end
 
 script "js_azure_loadbalancers_metrics_organized", type: "javascript" do
-  parameters "ds_azure_loadbalancers_metrics", "ds_azure_loadbalancers_region_filtered", "param_stats_lookback"
+  parameters "ds_azure_loadbalancers_metrics", "ds_azure_loadbalancers_rg_filtered", "param_stats_lookback"
   result "result"
   code <<-'EOS'
   lbs_by_id = {}
-  _.each(ds_azure_loadbalancers_region_filtered, function(lb) { lbs_by_id[lb['id']] = lb })
+  _.each(ds_azure_loadbalancers_rg_filtered, function(lb) { lbs_by_id[lb['id']] = lb })
 
   result = _.map(ds_azure_loadbalancers_metrics, function(lb) {
     lb_by_id = lbs_by_id[lb["id"]]
@@ -770,11 +817,11 @@ EOS
 end
 
 datasource "ds_azure_unused_loadbalancers_incident" do
-  run_script $js_azure_unused_loadbalancers_incident, $ds_azure_loadbalancers_region_filtered, $ds_azure_unused_loadbalancers, $ds_azure_loadbalancers_costs_grouped, $ds_applied_policy, $ds_currency, $param_min_savings, $param_stats_lookback, $param_incident_csv
+  run_script $js_azure_unused_loadbalancers_incident, $ds_azure_loadbalancers_rg_filtered, $ds_azure_unused_loadbalancers, $ds_azure_loadbalancers_costs_grouped, $ds_applied_policy, $ds_currency, $param_min_savings, $param_stats_lookback, $param_incident_csv
 end
 
 script "js_azure_unused_loadbalancers_incident", type: "javascript" do
-  parameters "ds_azure_loadbalancers_region_filtered", "ds_azure_unused_loadbalancers", "ds_azure_loadbalancers_costs_grouped", "ds_applied_policy", "ds_currency", "param_min_savings", "param_stats_lookback", "param_incident_csv"
+  parameters "ds_azure_loadbalancers_rg_filtered", "ds_azure_unused_loadbalancers", "ds_azure_loadbalancers_costs_grouped", "ds_applied_policy", "ds_currency", "param_min_savings", "param_stats_lookback", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -854,7 +901,7 @@ script "js_azure_unused_loadbalancers_incident", type: "javascript" do
   })
 
   // Message for incident output
-  total_loadbalancers = ds_azure_loadbalancers_region_filtered.length.toString()
+  total_loadbalancers = ds_azure_loadbalancers_rg_filtered.length.toString()
   total_unused_loadbalancers = result.length.toString()
   unused_loadbalancers_percentage = (total_unused_loadbalancers / total_loadbalancers * 100).toFixed(2).toString() + '%'
 

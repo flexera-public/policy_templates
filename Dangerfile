@@ -58,9 +58,9 @@ changed_rb_files = changed_files.select{ |file| file.end_with?(".rb") || file ==
 # Changed Python files.
 changed_py_files = changed_files.select{ |file| file.end_with?(".py") }
 # Changed Policy Template files. Ignore meta policy files.
-changed_pt_files = changed_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
+changed_pt_files = changed_files.select{ |file| file.end_with?(".pt") && !file.include?("_meta_parent") }
 # Changed Meta Policy Template files.
-changed_meta_pt_files = changed_files.select{ |file| file.end_with?("meta_parent.pt") }
+changed_meta_pt_files = changed_files.select{ |file| file.end_with?(".pt") && file.include?("_meta_parent") }
 # Changed README files.
 changed_readme_files = changed_files.select{ |file| file.end_with?("/README.md") && POLICY_CATEGORY_DIRS.any? { |dir| file.start_with?(dir) } }
 # Changed Changelog files.
@@ -72,7 +72,7 @@ changed_json_files = changed_files.select{ |file| file.end_with?(".json") }
 # Changed YAML files.
 changed_yaml_files = changed_files.select{ |file| file.end_with?(".yaml") || file.end_with?(".yml") }
 # New Policy Template files. Ignore meta policy files.
-new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.end_with?("meta_parent.pt") }
+new_pt_files = git.added_files.select{ |file| file.end_with?(".pt") && !file.include?("_meta_parent") }
 
 ###############################################################################
 # File Loading
