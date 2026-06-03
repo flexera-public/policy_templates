@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "4.2.0",
+  version: "4.3.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Superseded Compute Instances",
@@ -77,6 +77,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names to filter the results by. Optionally, entries can use the format SUBSCRIPTION_ID/RESOURCE_GROUP_NAME to limit filtering to a specific subscription. See the README for more details."
   default []
 end
 
@@ -646,15 +663,45 @@ script "js_azure_instances_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_instances_rg_filtered" do
+  run_script $js_azure_instances_rg_filtered, $ds_azure_instances_region_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_azure_instances_rg_filtered", type: "javascript" do
+  parameters "ds_azure_instances_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_azure_instances_region_filtered, function(resource) {
+        rg = resource['resourceGroup']
+        sub = resource['subscriptionId'] || resource['subscriptionID']
+        include_resource = _.any(param_resource_groups_list, function(rg_entry) {
+          if (rg_entry.indexOf('/') != -1) {
+            entry_parts = rg_entry.split('/')
+            return sub == entry_parts[0] && rg == entry_parts[1]
+          }
+          return rg == rg_entry
+        })
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_azure_instances_region_filtered
+    }
+EOS
+end
+
 datasource "ds_azure_instances_subscriptions" do
-  run_script $js_azure_instances_subscriptions, $ds_azure_instances_region_filtered
+  run_script $js_azure_instances_subscriptions, $ds_azure_instances_rg_filtered
 end
 
 script "js_azure_instances_subscriptions", type: "javascript" do
-  parameters "ds_azure_instances_region_filtered"
+  parameters "ds_azure_instances_rg_filtered"
   result "result"
   code <<-'EOS'
-  result = _.compact(_.uniq(_.pluck(ds_azure_instances_region_filtered, 'subscriptionId')))
+  result = _.compact(_.uniq(_.pluck(ds_azure_instances_rg_filtered, 'subscriptionId')))
 EOS
 end
 
@@ -778,21 +825,21 @@ EOS
 end
 
 datasource "ds_azure_regions_for_instance_sizes" do
-  run_script $js_azure_regions_for_instance_sizes, $ds_azure_instances_region_filtered
+  run_script $js_azure_regions_for_instance_sizes, $ds_azure_instances_rg_filtered
 end
 
 script "js_azure_regions_for_instance_sizes", type: "javascript" do
-  parameters "ds_azure_instances_region_filtered"
+  parameters "ds_azure_instances_rg_filtered"
   result "result"
   code <<-'EOS'
   result = []
 
-  if (ds_azure_instances_region_filtered.length > 0) {
-    regions = _.uniq(_.compact(_.pluck(ds_azure_instances_region_filtered, "region")))
+  if (ds_azure_instances_rg_filtered.length > 0) {
+    regions = _.uniq(_.compact(_.pluck(ds_azure_instances_rg_filtered, "region")))
 
     result = _.map(regions, function(region) {
       return {
-        subscriptionId: ds_azure_instances_region_filtered[0]['subscriptionId'],
+        subscriptionId: ds_azure_instances_rg_filtered[0]['subscriptionId'],
         region: region
       }
     })
@@ -835,11 +882,11 @@ EOS
 end
 
 datasource "ds_superseded_instances" do
-  run_script $js_superseded_instances, $ds_azure_instances_region_filtered, $ds_instance_costs_grouped, $ds_azure_instance_type_map, $ds_azure_instance_cost_map, $ds_region_table, $ds_azure_disk_count_table, $ds_currency_conversion, $ds_currency, $ds_applied_policy, $param_min_savings, $param_incident_csv
+  run_script $js_superseded_instances, $ds_azure_instances_rg_filtered, $ds_instance_costs_grouped, $ds_azure_instance_type_map, $ds_azure_instance_cost_map, $ds_region_table, $ds_azure_disk_count_table, $ds_currency_conversion, $ds_currency, $ds_applied_policy, $param_min_savings, $param_incident_csv
 end
 
 script "js_superseded_instances", type: "javascript" do
-  parameters "ds_azure_instances_region_filtered", "ds_instance_costs_grouped", "ds_azure_instance_type_map", "ds_azure_instance_cost_map", "ds_region_table", "ds_azure_disk_count_table", "ds_currency_conversion", "ds_currency", "ds_applied_policy", "param_min_savings", "param_incident_csv"
+  parameters "ds_azure_instances_rg_filtered", "ds_instance_costs_grouped", "ds_azure_instance_type_map", "ds_azure_instance_cost_map", "ds_region_table", "ds_azure_disk_count_table", "ds_currency_conversion", "ds_currency", "ds_applied_policy", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -872,7 +919,7 @@ script "js_superseded_instances", type: "javascript" do
   result = []
   total_savings = 0.0
 
-  _.each(ds_azure_instances_region_filtered, function(instance) {
+  _.each(ds_azure_instances_rg_filtered, function(instance) {
     id = instance['resourceId'].toLowerCase()
     instance_type = instance['resourceType']
     operating_system = instance['osType']
@@ -1024,7 +1071,7 @@ script "js_superseded_instances", type: "javascript" do
     formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['t_separator'])
   ].join('')
 
-  total_instances = ds_azure_instances_region_filtered.length.toString()
+  total_instances = ds_azure_instances_rg_filtered.length.toString()
   total_superseded = result.length.toString()
   superseded_percentage = (total_superseded / total_instances * 100).toFixed(2).toString() + '%'
 

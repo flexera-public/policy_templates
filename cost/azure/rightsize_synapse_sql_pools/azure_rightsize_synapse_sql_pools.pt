@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.3.0",
+  version: "0.4.0",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Synapse SQL Pools",
@@ -51,6 +51,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names to filter the results by. Optionally, entries can use the format SUBSCRIPTION_ID/RESOURCE_GROUP_NAME to limit filtering to a specific subscription. See the README for more details."
   default []
 end
 
@@ -594,8 +611,38 @@ script "js_azure_synapse_sql_pools_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_synapse_sql_pools_rg_filtered" do
+  run_script $js_azure_synapse_sql_pools_rg_filtered, $ds_azure_synapse_sql_pools_region_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_azure_synapse_sql_pools_rg_filtered", type: "javascript" do
+  parameters "ds_azure_synapse_sql_pools_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_azure_synapse_sql_pools_region_filtered, function(resource) {
+        rg = resource['resourceGroup']
+        sub = resource['subscriptionId'] || resource['subscriptionID']
+        include_resource = _.any(param_resource_groups_list, function(rg_entry) {
+          if (rg_entry.indexOf('/') != -1) {
+            entry_parts = rg_entry.split('/')
+            return sub == entry_parts[0] && rg == entry_parts[1]
+          }
+          return rg == rg_entry
+        })
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_azure_synapse_sql_pools_region_filtered
+    }
+EOS
+end
+
 datasource "ds_azure_synapse_sql_pool_terminate_metrics" do
-  iterate $ds_azure_synapse_sql_pools_region_filtered
+  iterate $ds_azure_synapse_sql_pools_rg_filtered
   request do
     run_script $js_azure_synapse_sql_pool_metrics, val(iter_item, "resourceId"), val(iter_item, "creationDate"), $param_azure_endpoint, $param_terminate_lookback, "FULL", "Connections", "maximum"
   end
@@ -615,7 +662,7 @@ datasource "ds_azure_synapse_sql_pool_terminate_metrics" do
 end
 
 datasource "ds_azure_synapse_sql_pool_pause_metrics" do
-  iterate $ds_azure_synapse_sql_pools_region_filtered
+  iterate $ds_azure_synapse_sql_pools_rg_filtered
   request do
     run_script $js_azure_synapse_sql_pool_metrics, val(iter_item, "resourceId"), val(iter_item, "creationDate"), $param_azure_endpoint, $param_pause_lookback, "FULL", "DWUUsed|DWUUsedPercent|CPUPercent|MemoryUsedPercent|Connections", "average|maximum"
   end
@@ -635,7 +682,7 @@ datasource "ds_azure_synapse_sql_pool_pause_metrics" do
 end
 
 datasource "ds_azure_synapse_sql_pool_downsize_metrics" do
-  iterate $ds_azure_synapse_sql_pools_region_filtered
+  iterate $ds_azure_synapse_sql_pools_rg_filtered
   request do
     run_script $js_azure_synapse_sql_pool_metrics, val(iter_item, "resourceId"), val(iter_item, "creationDate"), $param_azure_endpoint, $param_downsize_lookback, "FULL", "DWUUsed|DWUUsedPercent|CPUPercent|MemoryUsedPercent|Connections", "average|maximum"
   end
@@ -655,7 +702,7 @@ datasource "ds_azure_synapse_sql_pool_downsize_metrics" do
 end
 
 datasource "ds_azure_synapse_sql_pool_percentile_metrics" do
-  iterate $ds_azure_synapse_sql_pools_region_filtered
+  iterate $ds_azure_synapse_sql_pools_rg_filtered
   request do
     run_script $js_azure_synapse_sql_pool_metrics, val(iter_item, "resourceId"), val(iter_item, "creationDate"), $param_azure_endpoint, $param_downsize_lookback, "PT1H", "DWUUsedPercent", "maximum"
   end
@@ -667,7 +714,7 @@ datasource "ds_azure_synapse_sql_pool_percentile_metrics" do
 end
 
 datasource "ds_azure_synapse_sql_pool_min_active_metrics" do
-  iterate $ds_azure_synapse_sql_pools_region_filtered
+  iterate $ds_azure_synapse_sql_pools_rg_filtered
   request do
     run_script $js_azure_synapse_sql_pool_metrics, val(iter_item, "resourceId"), val(iter_item, "creationDate"), $param_azure_endpoint, $param_downsize_lookback, "P1D", "DWUUsed", "average"
   end
@@ -873,11 +920,11 @@ EOS
 end
 
 datasource "ds_azure_synapse_underutil_and_idle_pools" do
-  run_script $js_azure_synapse_underutil_and_idle_pools, $ds_azure_synapse_sql_pool_terminate_metrics, $ds_azure_synapse_sql_pool_pause_metrics, $ds_azure_synapse_sql_pool_downsize_metrics, $ds_azure_synapse_sql_pool_percentile_metrics, $ds_azure_synapse_sql_pool_min_active_metrics, $ds_azure_synapse_sql_pools_region_filtered, $ds_azure_synapse_sql_pool_costs_grouped, $ds_applied_policy, $ds_currency, $ds_azure_synapse_size_map, $param_terminate_lookback, $param_pause_lookback, $param_downsize_lookback, $param_stats_threshold, $param_min_savings, $param_min_active, $param_filter_stats, $param_incident_csv
+  run_script $js_azure_synapse_underutil_and_idle_pools, $ds_azure_synapse_sql_pool_terminate_metrics, $ds_azure_synapse_sql_pool_pause_metrics, $ds_azure_synapse_sql_pool_downsize_metrics, $ds_azure_synapse_sql_pool_percentile_metrics, $ds_azure_synapse_sql_pool_min_active_metrics, $ds_azure_synapse_sql_pools_rg_filtered, $ds_azure_synapse_sql_pool_costs_grouped, $ds_applied_policy, $ds_currency, $ds_azure_synapse_size_map, $param_terminate_lookback, $param_pause_lookback, $param_downsize_lookback, $param_stats_threshold, $param_min_savings, $param_min_active, $param_filter_stats, $param_incident_csv
 end
 
 script "js_azure_synapse_underutil_and_idle_pools", type: "javascript" do
-  parameters "ds_azure_synapse_sql_pool_terminate_metrics", "ds_azure_synapse_sql_pool_pause_metrics", "ds_azure_synapse_sql_pool_downsize_metrics", "ds_azure_synapse_sql_pool_percentile_metrics", "ds_azure_synapse_sql_pool_min_active_metrics", "ds_azure_synapse_sql_pools_region_filtered", "ds_azure_synapse_sql_pool_costs_grouped", "ds_applied_policy", "ds_currency", "ds_azure_synapse_size_map", "param_terminate_lookback", "param_pause_lookback", "param_downsize_lookback", "param_stats_threshold", "param_min_savings", "param_min_active", "param_filter_stats", "param_incident_csv"
+  parameters "ds_azure_synapse_sql_pool_terminate_metrics", "ds_azure_synapse_sql_pool_pause_metrics", "ds_azure_synapse_sql_pool_downsize_metrics", "ds_azure_synapse_sql_pool_percentile_metrics", "ds_azure_synapse_sql_pool_min_active_metrics", "ds_azure_synapse_sql_pools_rg_filtered", "ds_azure_synapse_sql_pool_costs_grouped", "ds_applied_policy", "ds_currency", "ds_azure_synapse_size_map", "param_terminate_lookback", "param_pause_lookback", "param_downsize_lookback", "param_stats_threshold", "param_min_savings", "param_min_active", "param_filter_stats", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -950,7 +997,7 @@ script "js_azure_synapse_underutil_and_idle_pools", type: "javascript" do
   var idle_list = []
   var underutil_list = []
 
-  _.each(ds_azure_synapse_sql_pools_region_filtered, function (item) {
+  _.each(ds_azure_synapse_sql_pools_rg_filtered, function (item) {
     var id = item['resourceId'].toLowerCase()
     pools[id] = item
   })
@@ -1279,7 +1326,7 @@ script "js_azure_synapse_underutil_and_idle_pools", type: "javascript" do
   })
 
   if (terminate_list.length > 0) {
-    var items_total = ds_azure_synapse_sql_pools_region_filtered.length.toString()
+    var items_total = ds_azure_synapse_sql_pools_rg_filtered.length.toString()
     var terminate_items_total = terminate_list.length.toString()
     var terminate_items_percentage = (terminate_items_total / items_total * 100).toFixed(2).toString() + '%'
     var terminate_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(terminate_total_savings).toFixed(2), ds_currency['separator'])
@@ -1305,7 +1352,7 @@ script "js_azure_synapse_underutil_and_idle_pools", type: "javascript" do
   }
 
   if (idle_list.length > 0) {
-    items_total = ds_azure_synapse_sql_pools_region_filtered.length.toString()
+    items_total = ds_azure_synapse_sql_pools_rg_filtered.length.toString()
     var idle_items_total = idle_list.length.toString()
     var idle_items_percentage = (idle_items_total / items_total * 100).toFixed(2).toString() + '%'
     idle_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), ds_currency['separator'])
@@ -1331,7 +1378,7 @@ script "js_azure_synapse_underutil_and_idle_pools", type: "javascript" do
   }
 
   if (underutil_list.length > 0) {
-    items_total = ds_azure_synapse_sql_pools_region_filtered.length.toString()
+    items_total = ds_azure_synapse_sql_pools_rg_filtered.length.toString()
     underutil_items_total = underutil_list.length.toString()
     underutil_items_percentage = (underutil_items_total / items_total * 100).toFixed(2).toString() + '%'
     underutil_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(underutil_total_savings).toFixed(2), ds_currency['separator'])
