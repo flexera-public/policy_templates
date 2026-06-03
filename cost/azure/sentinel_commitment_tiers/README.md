@@ -37,6 +37,8 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Statistic Lookback Period* - How many days back to look at Log Analytics ingestion data when calculating average and peak daily ingestion volumes.
 - *Allow/Deny Subscriptions* - Allow or Deny entered subscriptions. See the README for more details.
 - *Allow/Deny Subscriptions List* - A list of allowed or denied subscription IDs/names. See the README for more details.
+- *Allow/Deny Resource Groups* - Whether to treat Allow/Deny Resource Groups List parameter as allow or deny list. Has no effect if Allow/Deny Resource Groups List is left empty.
+- *Allow/Deny Resource Groups List* - A list of allowed or denied Resource Group names to filter the results by. Entries can be in the format `resource_group_name` to filter all resource groups with that name regardless of subscription, or `subscription_id/resource_group_name` to filter a resource group within a specific subscription. Leave blank to consider all resource groups.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email.
 

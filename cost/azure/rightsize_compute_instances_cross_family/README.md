@@ -60,6 +60,8 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Allow/Deny Subscriptions List* - A list of allowed or denied subscription IDs/names. See the README for more details.
 - *Allow/Deny Regions* - Allow or Deny entered regions. See the README for more details.
 - *Allow/Deny Regions List* - A list of allowed or denied regions. See the README for more details.
+- *Allow/Deny Resource Groups* - Whether to allow or deny the resource groups in the Allow/Deny Resource Groups List. See the [README](../README.md) for more details.
+- *Allow/Deny Resource Groups List* - A list of allowed or denied Resource Group names to filter the results by. Entries can be in the format `resource_group_name` to filter all resource groups with that name regardless of subscription, or `subscription_id/resource_group_name` to filter a resource group within a specific subscription. Leave blank to consider all resource groups.
 - *Allow Intel/AMD Recommendations* - Whether to allow rightsizing recommendations that change the CPU manufacturer between Intel and AMD (both x86_64 architecture). Such recommendations are generally safe but may affect licensing or workload performance.
 - *Exclude Databricks Instances* - Whether or not to filter virtual machines used for Azure Databricks from the results. If set to "Yes", virtual machines for Azure Databricks will not be included in the results.
 - *Statistic Lookback Period* - How many days back to look at CPU, memory, disk, and network metrics for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.

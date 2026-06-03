@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "4.6.0",
+  version: "4.7.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Reserved Instances",
@@ -86,6 +86,23 @@ parameter "param_regions_list" do
   category "Filters"
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. Leave blank to check all regions."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names to filter the results by. Optionally, entries can use the format SUBSCRIPTION_ID/RESOURCE_GROUP_NAME to limit filtering to a specific subscription. See the README for more details."
   default []
 end
 
@@ -672,12 +689,42 @@ script "js_ri_recommendations_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_ri_recommendations_rg_filtered" do
+  run_script $js_ri_recommendations_rg_filtered, $ds_ri_recommendations_region_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_ri_recommendations_rg_filtered", type: "javascript" do
+  parameters "ds_ri_recommendations_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_ri_recommendations_region_filtered, function(resource) {
+        rg = resource['resourceGroup']
+        sub = resource['subscriptionId'] || resource['subscriptionID']
+        include_resource = _.any(param_resource_groups_list, function(rg_entry) {
+          if (rg_entry.indexOf('/') != -1) {
+            entry_parts = rg_entry.split('/')
+            return sub == entry_parts[0] && rg == entry_parts[1]
+          }
+          return rg == rg_entry
+        })
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_ri_recommendations_region_filtered
+    }
+EOS
+end
+
 datasource "ds_ri_incident" do
-  run_script $js_ri_incident, $ds_ri_recommendations_region_filtered, $ds_currency, $ds_currency_conversion, $ds_azure_currency_code, $ds_azure_billing_accounts, $ds_applied_policy, $param_term, $param_days, $param_service, $param_scope, $param_min_savings, $param_incident_csv, $param_payment_option
+  run_script $js_ri_incident, $ds_ri_recommendations_rg_filtered, $ds_currency, $ds_currency_conversion, $ds_azure_currency_code, $ds_azure_billing_accounts, $ds_applied_policy, $param_term, $param_days, $param_service, $param_scope, $param_min_savings, $param_incident_csv, $param_payment_option
 end
 
 script "js_ri_incident", type: "javascript" do
-  parameters "ds_ri_recommendations_region_filtered", "ds_currency", "ds_currency_conversion", "ds_azure_currency_code", "ds_azure_billing_accounts", "ds_applied_policy", "param_term", "param_days", "param_service", "param_scope", "param_min_savings", "param_incident_csv", "param_payment_option"
+  parameters "ds_ri_recommendations_rg_filtered", "ds_currency", "ds_currency_conversion", "ds_azure_currency_code", "ds_azure_billing_accounts", "ds_applied_policy", "param_term", "param_days", "param_service", "param_scope", "param_min_savings", "param_incident_csv", "param_payment_option"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -715,7 +762,7 @@ script "js_ri_incident", type: "javascript" do
   term_table = { "1 Year": "P1Y", "3 Year": "P3Y" }
   term_filter = term_table[param_term]
 
-  getIterator(ds_ri_recommendations_region_filtered).Each(function(recommendation, idx) {
+  getIterator(ds_ri_recommendations_rg_filtered).Each(function(recommendation, idx) {
     if (recommendation['kind'] == 'legacy') {
       costWithNoRI = recommendation["costWithNoRI"]
       totalCostWithRI = recommendation["totalCostWithRI"]

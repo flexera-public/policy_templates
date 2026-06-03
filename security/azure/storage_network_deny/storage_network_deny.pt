@@ -8,7 +8,7 @@ category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "3.2.0",
+  version: "3.3.0",
   provider: "Azure",
   service: "Storage",
   policy_set: "CIS",
@@ -63,6 +63,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names to filter the results by. Optionally, entries can use the format SUBSCRIPTION_ID/RESOURCE_GROUP_NAME to limit filtering to a specific subscription. See the README for more details."
   default []
 end
 
@@ -421,17 +438,47 @@ script "js_azure_storage_accounts_name_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_storage_accounts_rg_filtered" do
+  run_script $js_azure_storage_accounts_rg_filtered, $ds_azure_storage_accounts_name_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_azure_storage_accounts_rg_filtered", type: "javascript" do
+  parameters "ds_azure_storage_accounts_name_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_azure_storage_accounts_name_filtered, function(resource) {
+        rg = resource['resourceGroup']
+        sub = resource['subscriptionId'] || resource['subscriptionID']
+        include_resource = _.any(param_resource_groups_list, function(rg_entry) {
+          if (rg_entry.indexOf('/') != -1) {
+            entry_parts = rg_entry.split('/')
+            return sub == entry_parts[0] && rg == entry_parts[1]
+          }
+          return rg == rg_entry
+        })
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_azure_storage_accounts_name_filtered
+    }
+EOS
+end
+
 datasource "ds_bad_storage_accounts" do
-  run_script $js_bad_storage_accounts, $ds_azure_storage_accounts_name_filtered, $ds_applied_policy, $param_incident_csv
+  run_script $js_bad_storage_accounts, $ds_azure_storage_accounts_rg_filtered, $ds_applied_policy, $param_incident_csv
 end
 
 script "js_bad_storage_accounts", type: "javascript" do
-  parameters "ds_azure_storage_accounts_name_filtered", "ds_applied_policy", "param_incident_csv"
+  parameters "ds_azure_storage_accounts_rg_filtered", "ds_applied_policy", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
-  bad_accounts = _.filter(ds_azure_storage_accounts_name_filtered, function(resource) {
+  bad_accounts = _.filter(ds_azure_storage_accounts_rg_filtered, function(resource) {
     return resource['networkDefaultAction'] == "Allow"
   })
 

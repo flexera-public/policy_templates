@@ -32,6 +32,8 @@ This policy template has the following input parameters:
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Allow/Deny Subscriptions* - Allow or Deny entered Subscriptions to filter results.
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions.
+- *Allow/Deny Resource Groups* - Whether to treat Allow/Deny Resource Groups List parameter as allow or deny list. Has no effect if Allow/Deny Resource Groups List is left empty.
+- *Allow/Deny Resource Groups List* - A list of allowed or denied Resource Group names to filter the results by. Entries can be in the format `resource_group_name` to filter all resource groups with that name regardless of subscription, or `subscription_id/resource_group_name` to filter a resource group within a specific subscription. Leave blank to consider all resource groups.
 - *Look Back Period* - Number of days of prior usage to analyze.
 - *Savings Plan Term* - Length of reservation term to provide recommendations for. Can be set to either `1 Year` or `3 Year`
 - *Savings Plan Scope* - The scope to provide recommendations for. Select `Shared` to not have recommendations scoped to individual Subscriptions or Resource Groups.
