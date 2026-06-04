@@ -2151,7 +2151,11 @@ class PolicyTemplateParser:
             return 'Microsoft.Insights/eventtypes/management/values/read'
 
         # ARM management.azure.com calls
-        m = re.search(r'/providers/([^/?]+)/([^/?/]+)', path, re.IGNORECASE)
+        # Use the LAST /providers/ segment — Azure extension resources are always governed by the
+        # innermost (child) provider namespace, not the parent. Requiring a dot in the namespace
+        # prevents plain path words (e.g. the literal "providers") from matching as a namespace.
+        _provider_matches = list(re.finditer(r'/providers/([A-Za-z][^/?]*\.[^/?]+)/([^/?]+)', path, re.IGNORECASE))
+        m = _provider_matches[-1] if _provider_matches else None
         if m:
             # Normalize provider namespace to PascalCase — ARM RBAC permissions require it
             # e.g. "microsoft.operationalinsights" → "Microsoft.Operationalinsights"
