@@ -1,5 +1,12 @@
 # Changelog
 
+## v4.0.0
+
+- The `Savings Plan Type` parameter now accepts multiple selections (list) instead of a single value. Leave it blank to return results for all Savings Plan types.
+- Added `Everything` option to the `Payment Option` parameter. When selected, the policy makes separate API requests for each payment option and combines the results.
+- Added `Any` option to the `Savings Plan Term` parameter. When selected, the policy makes separate API requests for each term length and combines the results.
+- Selecting both `Any` for term and `Everything` for payment option will result in up to 6 API requests per selected Savings Plan type.
+
 ## v3.4.6
 
 - Updated documentation link in policy description. Functionality unchanged.

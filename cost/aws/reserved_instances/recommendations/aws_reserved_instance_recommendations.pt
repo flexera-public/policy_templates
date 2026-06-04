@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.7.4",
+  version: "3.8.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Reserved Instances",
@@ -372,11 +372,11 @@ EOS
 end
 
 datasource "ds_ri_types" do
-  run_script $js_ri_types, $param_service
+  run_script $js_ri_types, $param_service, $param_payment_option, $param_term
 end
 
 script "js_ri_types", type: "javascript" do
-  parameters "param_service"
+  parameters "param_service", "param_payment_option", "param_term"
   result "result"
   code <<-'EOS'
   if (param_service.length == 0) {
@@ -401,8 +401,38 @@ script "js_ri_types", type: "javascript" do
     })
   }
 
-  result = _.map(services, function(service) {
-    return { service: service }
+  var payment_option_table = {
+    "No Upfront": "NO_UPFRONT",
+    "Partial Upfront": "PARTIAL_UPFRONT",
+    "All Upfront": "ALL_UPFRONT"
+  }
+
+  var payment_options = []
+  if (param_payment_option == "Everything") {
+    payment_options = ["NO_UPFRONT", "PARTIAL_UPFRONT", "ALL_UPFRONT"]
+  } else {
+    payment_options = [payment_option_table[param_payment_option]]
+  }
+
+  var term_table = {
+    "1 Year": "ONE_YEAR",
+    "3 Year": "THREE_YEARS"
+  }
+
+  var terms = []
+  if (param_term == "Any") {
+    terms = ["ONE_YEAR", "THREE_YEARS"]
+  } else {
+    terms = [term_table[param_term]]
+  }
+
+  result = []
+  _.each(services, function(service) {
+    _.each(payment_options, function(payment_option) {
+      _.each(terms, function(term) {
+        result.push({ service: service, payment_option: payment_option, term: term })
+      })
+    })
   })
 EOS
 end
@@ -410,7 +440,7 @@ end
 datasource "ds_ri_recommendations" do
   iterate $ds_ri_types
   request do
-    run_script $js_ri_recommendations, val(iter_item, 'service'), $param_days, $param_payment_option, $param_service_spec, $param_term, $param_scope
+    run_script $js_ri_recommendations, val(iter_item, 'service'), val(iter_item, 'payment_option'), val(iter_item, 'term'), $param_days, $param_service_spec, $param_scope
   end
   result do
     encoding "json"
@@ -463,7 +493,7 @@ datasource "ds_ri_recommendations" do
 end
 
 script "js_ri_recommendations", type: "javascript" do
-  parameters "service", "param_days", "param_payment_option", "param_service_spec", "param_term", "param_scope"
+  parameters "service", "payment_option", "term", "param_days", "param_service_spec", "param_scope"
   result "request"
   code <<-'EOS'
   // Tables to convert human-readable parameter values to their API equivalents
@@ -483,30 +513,20 @@ script "js_ri_recommendations", type: "javascript" do
     "MemoryDB": "Amazon MemoryDB Service"
   }
 
-  term_table = {
-    "1 Year": "ONE_YEAR",
-    "3 Year": "THREE_YEARS"
-  }
-
-  // Build out the body of the request based on parameters
-  body_fields = {
+  // Build out the body of the request based on parameters.
+  // payment_option and term are pre-converted to API format by js_ri_types.
+  var body_fields = {
     LookbackPeriodInDays: period_table[param_days],
     AccountScope: param_scope.toUpperCase(),
-    Service: service_table[service]
-  }
-
-  if (param_payment_option != "Everything") {
-    body_fields['PaymentOption'] = param_payment_option.replace(' ', '_').toUpperCase()
+    Service: service_table[service],
+    PaymentOption: payment_option,
+    TermInYears: term
   }
 
   if (service == "Elastic Compute Cloud (EC2)") {
     body_fields['ServiceSpecification'] = {
       EC2Specification: { OfferingClass: param_service_spec.toUpperCase() }
     }
-  }
-
-  if (param_term != "Any") {
-    body_fields['TermInYears'] = term_table[param_term]
   }
 
   var request = {

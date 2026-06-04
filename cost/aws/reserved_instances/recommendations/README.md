@@ -27,8 +27,8 @@ This policy template has the following input parameters:
 - *Service* - AWS Services to scan for recommendations. Items can be removed by clicking X to the right of the name.
 - *EC2 Reservation Type* - The type of reservation recommendations to produce for EC2. Standard reservations are less flexible than convertible ones but provide a higher discount. Has no effect on recommendations for services other than `Elastic Compute Cloud (EC2)`
 - *Account Scope* - The account scope that you want your recommendations for. Select `Payer` to produce results aggregated across the entire AWS Organization (Master Payer and Linked accounts), or `Linked` to produce results for each linked account individually.
-- *Reservation Term* - Length of reservation term to provide recommendations for.
-- *Payment Option* - Reservation purchase option to provide recommendations for. Select `Everything` to produce recommendations for all three.
+- *Reservation Term* - Length of reservation term to provide recommendations for. Select `Any` to produce recommendations for both 1-year and 3-year terms; the policy will make a separate API call for each term and combine the results.
+- *Payment Option* - Reservation purchase option to provide recommendations for. Select `Everything` to produce recommendations for all three payment options (No Upfront, Partial Upfront, All Upfront); the policy will make a separate API call for each option and combine the results.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
