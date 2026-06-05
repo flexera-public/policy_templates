@@ -690,6 +690,7 @@ EOS
 end
 
 datasource "ds_ri_recommendations_rg_filtered" do
+  batch true
   run_script $js_ri_recommendations_rg_filtered, $ds_ri_recommendations_region_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
 end
 
@@ -698,7 +699,7 @@ script "js_ri_recommendations_rg_filtered", type: "javascript" do
   result "result"
   code <<-'EOS'
     if (param_resource_groups_list.length > 0) {
-      result = _.filter(ds_ri_recommendations_region_filtered, function(resource) {
+      getIterator(ds_ri_recommendations_region_filtered).Each(function(resource, idx) {
         rg = resource['resourceGroup']
         sub = resource['subscriptionId'] || resource['subscriptionID']
         include_resource = _.any(param_resource_groups_list, function(rg_entry) {
@@ -711,10 +712,10 @@ script "js_ri_recommendations_rg_filtered", type: "javascript" do
         if (param_resource_groups_allow_or_deny == "Deny") {
           include_resource = !include_resource
         }
-        return include_resource
+        if (include_resource) { appendToResult(resource) }
       })
     } else {
-      result = ds_ri_recommendations_region_filtered
+      getIterator(ds_ri_recommendations_region_filtered).Each(appendToResult)
     }
 EOS
 end
@@ -764,14 +765,16 @@ script "js_ri_incident", type: "javascript" do
   term_filter = param_term == "Any" ? null : term_table[param_term]
 
   getIterator(ds_ri_recommendations_rg_filtered).Each(function(recommendation, idx) {
+    if (!recommendation || !recommendation['term']) { return }
+
     if (recommendation['kind'] == 'legacy') {
       costWithNoRI = recommendation["costWithNoRI"]
       totalCostWithRI = recommendation["totalCostWithRI"]
       netSavings = recommendation["netSavings"]
     } else {
-      costWithNoRI = recommendation["costWithNoRI"]["value"]
-      totalCostWithRI = recommendation["totalCostWithRI"]["value"]
-      netSavings = recommendation["netSavings"]["value"]
+      costWithNoRI = recommendation["costWithNoRI"] != null ? recommendation["costWithNoRI"]["value"] : 0
+      totalCostWithRI = recommendation["totalCostWithRI"] != null ? recommendation["totalCostWithRI"]["value"] : 0
+      netSavings = recommendation["netSavings"] != null ? recommendation["netSavings"]["value"] : 0
     }
 
     term_matches = (term_filter == null) || (term_filter == recommendation['term'])
