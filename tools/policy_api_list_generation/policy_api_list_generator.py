@@ -2249,11 +2249,21 @@ class PolicyTemplateParser:
         # Resource Manager
         if service == 'resourcemanager':
             if re.search(r'/projects:search', path):
-                return 'resourcemanager.projects.get'
+                return 'resourcemanager.projects.search'
             if re.search(r'/projects/[^/]+$', path):
                 return 'resourcemanager.projects.get'
             if re.search(r'/projects/?$', path) or re.search(r'/projects$', path):
                 return 'resourcemanager.projects.list'
+            return None
+
+        # Cloud Billing
+        if service == 'cloudbilling':
+            if re.search(r'/billingAccounts/[^/]+/projects', path):
+                return 'billing.resourceAssociations.list'
+            if re.search(r'/billingAccounts/?$', path):
+                return 'billing.accounts.list'
+            if re.search(r'/billingAccounts/[^/]+$', path):
+                return 'billing.accounts.get'
             return None
 
         # Logging
