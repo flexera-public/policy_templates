@@ -27,7 +27,7 @@ This policy template has the following input parameters:
 - *Ignore Google Apps Script Projects* - Whether or not to automatically ignore Google Apps Script projects e.g. projects whose id begins with `app-`
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions. When using billing account scope and no projects are accessible, this list is also used directly as the set of regions to query per billing account.
-- *Term* - Length of CUD term to provide recommendations for. Can be set to either `1 Year` or `3 Year`
+- *Term* - Length of CUD term to provide recommendations for. Select `Any` to return combined results for all terms.
 - *Recommendation Algorithm* - The algorithm to use for generating recommendations. Can be set to either `Optimal` or `Stable Usage`.
   - `Stable Usage` covers minimum stable usage over time.
   - `Optimal` is based on overall usage and might cover resources that are not active all the time.
