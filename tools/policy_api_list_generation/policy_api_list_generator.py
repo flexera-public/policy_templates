@@ -718,13 +718,26 @@ class PolicyTemplateParser:
                 join_content = path_match.group(1)
 
                 # Parse the join array to maintain proper order of strings and val() calls
-                # Split by comma but be careful with nested function calls
+                # Split by comma but be careful with nested function calls and string literals.
+                # String-literal awareness is required because some paths contain parentheses
+                # inside quoted strings (e.g. "SecurityInsights(" in OperationsManagement paths),
+                # which would otherwise corrupt the depth counter and cause parts to merge.
                 parts = []
                 current_part = ''
                 depth = 0
+                in_string = False
+                string_char = None
 
                 for char in join_content + ',':
-                    if char in '([':
+                    if in_string:
+                        current_part += char
+                        if char == string_char:
+                            in_string = False
+                    elif char in ('"', "'"):
+                        in_string = True
+                        string_char = char
+                        current_part += char
+                    elif char in '([':
                         depth += 1
                         current_part += char
                     elif char in ')]':
