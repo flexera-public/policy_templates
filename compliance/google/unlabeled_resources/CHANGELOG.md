@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.5.0
+
+- Added `Consider Tag Dimensions` parameter to allow Flexera Tag Dimensions to be considered when reporting on unlabeled resources
+
 ## v3.4.0
 
 - Added error incident if no Google projects are returned by the credential, to alert users to potential permission issues.

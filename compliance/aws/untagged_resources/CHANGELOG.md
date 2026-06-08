@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.6.2
+
+- Fixed `Consider Tag Dimensions` feature not working due to incorrect string comparison
+
 ## v5.6.1
 
 - Fixed issue with incident table that cause policy execution to fail

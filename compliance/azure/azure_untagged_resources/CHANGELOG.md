@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.7.0
+
+- Added `Consider Tag Dimensions` parameter to allow Flexera Tag Dimensions to be considered when reporting on untagged resources
+
 ## v3.6.0
 
 - Added `Allow/Deny Resource Groups` and `Allow/Deny Resource Groups List` filter parameters to allow filtering resources by resource group
