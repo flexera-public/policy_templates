@@ -6,6 +6,112 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#4510](https://github.com/flexera-public/policy_templates/pull/4510): POL-1776 Google Committed Use Discount Recommender: "Any" Option
+
+*Minor Update*
+
+#### Description
+
+> Adds an 'Any' option to the term parameter for `Google Committed Use Discount Recommender` to enable reporting of both 1 Year and 3 Year commitments.
+>
+> Also updates the Policy API script to solve some false positives associated with this policy template.
+>
+
+#### Metadata
+
+- **Policies**: [Google Committed Use Discount Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_recommendations/README.md)
+- **Merged At**: 2026-06-05 14:13:38 UTC
+
+---
+
+### PR [#4508](https://github.com/flexera-public/policy_templates/pull/4508): POL-1775 Azure RI/SP - Fixes for Multiple Options
+
+*Minor Update*
+
+#### Description
+
+> Updates the `Azure Reserved Instances Recommendations` and `Azure Savings Plan Recommendations` policy templates so that, when I user selects multiple terms or payment types, multiple API calls are made and the results genuinely contain all of the recommendations.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/recommendations/README.md), [Azure Savings Plan Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/savings_plan/recommendations/README.md)
+- **Merged At**: 2026-06-05 12:59:01 UTC
+
+---
+
+### PR [#4491](https://github.com/flexera-public/policy_templates/pull/4491): POL-1770 Fix Calculation: Azure Sentinel Commitment Tier Recommendations
+
+*Minor Update*
+
+#### Description
+
+> `Azure Sentinel Commitment Tier Recommendations`
+> - Fixed incorrect overage billing calculation: usage exceeding a commitment tier's daily GB level is now billed at the tier's effective per-GB rate (`Tier Daily Rate / Tier GB Level`) rather than the Pay-As-You-Go rate, consistent with Microsoft Sentinel pricing.
+>
+> `tools/policy_api_list_generation/policy_api_list_generator.py`
+> - Fixed issue causing false positives with Microsoft.Sentinel API calls.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Sentinel Commitment Tier Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/sentinel_commitment_tiers/README.md), [Meta Parent: Azure Sentinel Commitment Tier Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/sentinel_commitment_tiers/README.md)
+- **Merged At**: 2026-06-04 16:48:26 UTC
+
+---
+
+### PR [#4501](https://github.com/flexera-public/policy_templates/pull/4501): POL-1774 AWS RI/SP - Fixes for Multiple Options
+
+*Major Update, Minor Update*
+
+#### Description
+
+> Updates the `AWS Reserved Instances Recommendations` policy template so that, when a user selects multiple terms or payment types, multiple API calls are made and the results genuinely contain all of the recommendations. This functionality has also been added to the `AWS Savings Plan Recommendations` policy template.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/reserved_instances/recommendations/README.md), [AWS Savings Plan Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/recommendations/README.md)
+- **Merged At**: 2026-06-04 13:39:12 UTC
+
+---
+
+### PR [#4477](https://github.com/flexera-public/policy_templates/pull/4477): POL-1564 Resource Group Filtering / Metas
+
+*Unpublished, Minor Update*
+
+#### Description
+
+> This makes two changes to Azure policy templates throughout the catalog:
+> - Adds Resource Group level filtering, similar to the existing Subscription filtering parameters.
+> - Adds *unpublished* meta policies that create a child policy per Resource Group instead of Subscription. This is intended for rare situations where even individual Subscriptions have too many resources for the policy engine to handle but likely has its own downsides. Should be used with caution and only with guidance from someone at Flexera.
+>
+> It also makes some tweaks to the Dangerfile to avoid false positives. Remaining Dangerfile warnings are false positives unrelated to the above changes.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4477) for these details.
+- **Merged At**: 2026-06-03 12:43:54 UTC
+
+---
+
+### PR [#4493](https://github.com/flexera-public/policy_templates/pull/4493): POL-1772 Update "Flexera One User Access Report" Policy Template to use api.flexera.com
+
+*Minor Update*
+
+#### Description
+
+> Updates "Flexera One User Access Report" Policy Template to use api.flexera.com when listing groups. The GRS API currently used is being deprecated and was only used at the time because api.flexera.com did not yet support listing groups or their membership.
+>
+
+#### Metadata
+
+- **Policies**: [Flexera One User Access Report](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/iam/iam_user_report/README.md)
+- **Merged At**: 2026-06-02 18:08:26 UTC
+
+---
+
 ### PR [#4481](https://github.com/flexera-public/policy_templates/pull/4481): POL-1768 Meta Policies: New Option To Skip Consolidated Incidents
 
 #### Description
@@ -1989,132 +2095,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [AWS Savings Plan Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/recommendations/README.md)
 - **Merged At**: 2025-12-09 16:45:09 UTC
-
----
-
-### PR [#3831](https://github.com/flexera-public/policy_templates/pull/3831): POL-1673 New Policy: Oracle Tag Cardinality 
-
-*New Policy Template*
-
-#### Description
-
-> Adds a new Oracle Tag Cardinality Report policy template that is similar to the ones for other cloud providers.
->
-
-#### Metadata
-
-- **Policies**: [Oracle Tag Cardinality Report](https://github.com/flexera-public/policy_templates/tree/master/operational/oracle/tag_cardinality/README.md)
-- **Merged At**: 2025-12-03 14:30:12 UTC
-
----
-
-### PR [#3830](https://github.com/flexera-public/policy_templates/pull/3830): POL-1697 Google Long Running VM Instances Policy
-
-*New Policy Template*
-
-#### Description
-
-> New Policy: Google Long Running VM Instances. Functions similarly to the AWS/Azure counterparts.
->
-> Also fixed a minor issue in the Google Long Stopped VM Instances policy and did some work on the Long Running policy READMEs for consistency.
->
-
-#### Metadata
-
-- **Policies**: [Google Long Stopped VM Instances](https://github.com/flexera-public/policy_templates/tree/master/compliance/google/long_stopped_instances/README.md), [Google Long Running VM Instances](https://github.com/flexera-public/policy_templates/tree/master/operational/google/long_running_instances/README.md)
-- **Merged At**: 2025-12-03 13:59:42 UTC
-
----
-
-### PR [#3826](https://github.com/flexera-public/policy_templates/pull/3826): POL-1698 Azure Rightsize NetApp Resources - Undefined variable fix
-
-*Bug Fix*
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> The Azure Rightsize NetApp Resources applied policy fails to run with `ReferenceError: 'endpool' is not defined`
->
-> This is due to the incorrect naming of a variable and/or the code referencing a variable that does not exist.
->
-> This change adds a fix to mitigate the non-instantiated variable
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: [Azure Rightsize NetApp Resources](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_netapp/README.md)
-- **Merged At**: 2025-12-02 14:00:09 UTC
-
----
-
-### PR [#3823](https://github.com/flexera-public/policy_templates/pull/3823): POL-1696 Heredoc Improvements
-
-*Unpublished, Minor Update*
-
-#### Description
-
-> Updates all heredocs to use the `<<-'EOS'` format (instead of `<<-EOS` without single quotes) to conform with new Dangerfile testing and code standards.
->
-> Dangerfile warnings/errors are false positives that are not related to this change.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3823) for these details.
-- **Merged At**: 2025-12-01 21:12:47 UTC
-
----
-
-### PR [#3806](https://github.com/flexera-public/policy_templates/pull/3806): FOPTS-16932 Fetch only ACTIVE recommendations from Google Recommender API
-
-*Minor Update*
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
->
-> Usage of google recommenders API. The Google Recommenders API returns duplicate recommendations for the same resource ID in different states i.e active, claimed, dismissed, succeeded, failed. "ACTIVE" includes recommendations that haven't been claimed, dismissed, succeeded, or failed yet in google cloud.
->
->
-> https://[raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/cost/google/cud_recommendations/google_committed_use_discount_recommendations.pt](https://raw.githubusercontent.com/flexera-public/policy_templates/refs/heads/master/cost/google/cud_recommendations/google_committed_use_discount_recommendations.pt)
->
-> ### Google Recommenders API Docs
-> https://docs.cloud.google.com/recommender/docs/reference/rest/v1/projects.locations.recommenders.recommendations/list#query-parameters
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
-> https://flexera.atlassian.net/browse/FOPTS-16932
-
-#### Metadata
-
-- **Policies**: [Google Committed Use Discount Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_recommendations/README.md), [Meta Parent: Google Committed Use Discount Recommender](https://github.com/flexera-public/policy_templates/tree/master/cost/google/cud_recommendations/README.md)
-- **Merged At**: 2025-12-01 14:04:10 UTC
-
----
-
-### PR [#3781](https://github.com/flexera-public/policy_templates/pull/3781): POL-1688 AWS Oversized S3 Buckets - Capture Missing Buckets in Incident
-
-*Bug Fix*
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This change fixes a gap where bucket size stats data from CloudWatch wasn’t being captured in the policy for many S3 buckets. This fix ensures users now get a more complete picture when reviewing recommendations for oversized S3 buckets.
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: [AWS Oversized S3 Buckets](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/s3_bucket_size/README.md)
-- **Merged At**: 2025-11-27 09:23:10 UTC
 
 ---
 
