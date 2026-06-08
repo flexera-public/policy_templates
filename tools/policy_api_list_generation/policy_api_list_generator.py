@@ -2616,7 +2616,7 @@ class PolicyTemplateParser:
 
     # ===== GCP CWF PERMISSION HELPERS =====
 
-    def _gcp_cwf_permission(self, resource_var, method, action_suffix, is_cloudsql=False):
+    def _gcp_cwf_permission(self, resource_var, method, action_suffix, is_cloudsql=False, define_name=""):
         """Return the GCP IAM permission for a CWF http_* call.
 
         Args:
@@ -2651,6 +2651,18 @@ class PolicyTemplateParser:
         # Generic fallback: build a permission from the resource variable name.
         # Skip variable names so generic they don't identify a real GCP resource type.
         if hint_orig in self.GCP_GENERIC_VAR_NAMES or hint_stripped in self.GCP_GENERIC_VAR_NAMES:
+            # When the resource variable is too generic, try to infer the resource type
+            # from the define name (e.g. "label_bucket" → "bucket", "label_project" → "project").
+            if define_name:
+                for part in reversed(define_name.lower().split('_')):
+                    if part in self.GCP_GENERIC_VAR_NAMES:
+                        continue
+                    perm = self.GCP_COMPUTE_CWF_PERMISSIONS.get(part, {}).get(method, {}).get(action)
+                    if perm:
+                        return perm
+                    if part == 'project' and method in ('PATCH', 'PUT'):
+                        return 'resourcemanager.projects.update'
+                    break
             return None
         hint = hint_orig
         resource_plural = hint if hint.endswith('s') else hint + 's'
@@ -2887,7 +2899,69 @@ class PolicyTemplateParser:
             # Strip any protocol/host prefix if present
             parsed = urllib.parse.urlparse(uri_val)
             return parsed.path if parsed.scheme else uri_val
+
+        # Fallback: handle URI values built by concatenation where a path suffix
+        # comes from a script parameter (e.g. uri: '/prefix/' + var + endpoint).
+        # This pattern occurs when a single shared URI-generation script is called
+        # multiple times with different endpoint arguments (one per resource type).
+        uri_concat_m = re.search(r'\buri\s*:\s*([^\n,]+)', script_body)
+        if uri_concat_m:
+            expr = uri_concat_m.group(1).strip()
+            # Find all lowercase identifier tokens in the expression
+            id_tokens = re.findall(r'\b([a-z_]\w*)\b', expr)
+            params_decl_m = re.search(r'parameters\s+((?:["\'][^"\']+["\']\s*,?\s*)+)', script_body)
+            if params_decl_m and id_tokens:
+                param_names = re.findall(r'["\']([^"\']+)["\']', params_decl_m.group(1))
+                # Find the last identifier in the expression that is a declared parameter;
+                # in a URI like '/prefix/' + variable + endpoint, the path suffix
+                # parameter is typically the last variable in the concatenation.
+                path_param = next(
+                    (tok for tok in reversed(id_tokens) if tok in param_names),
+                    None
+                )
+                if path_param:
+                    param_idx = param_names.index(path_param)
+                    # Extract the arguments passed to run_script in the iterate datasource,
+                    # skipping the leading script reference ($script_name,).
+                    rs_args_m = re.search(r'run_script\s+\$\w+\s*,\s*(.+)', iter_ds_body)
+                    if rs_args_m:
+                        args = [a.strip() for a in rs_args_m.group(1).split(',')]
+                        if param_idx < len(args):
+                            literal_m = re.match(r'''['"](/[^'"]+)['"]''', args[param_idx])
+                            if literal_m:
+                                return literal_m.group(1)
         return None
+
+    def _scan_compute_selflink_resource_types(self):
+        """Scan template datasource result blocks for compute.googleapis.com datasources
+        that expose a selfLink field. Returns a set of resource type keys
+        (e.g. {'disk', 'instance', 'snapshot'}) for CWF action permission inference
+        when the resource variable name is too generic to identify the type directly.
+        """
+        resource_types = set()
+        ds_pattern = re.compile(r'datasource\s+"(?:\w+)"\s+do\b(.+?)\nend\b', re.DOTALL)
+        for ds_match in ds_pattern.finditer(self.content):
+            ds_body = ds_match.group(1)
+            if 'compute.googleapis.com' not in ds_body:
+                continue
+            if 'selfLink' not in ds_body:
+                continue
+            # Get the path for this datasource
+            if 'path val(iter_item' in ds_body:
+                path = self._resolve_uri_field_from_iterate(ds_body)
+            else:
+                path_m = re.search(r'path\s+["\']([^"\']+)["\']', ds_body)
+                path = path_m.group(1) if path_m else None
+            if not path:
+                continue
+            # Extract resource type from last meaningful path segment
+            seg_m = re.search(r'/(?:aggregated|global|zones/[^/]+|regions/[^/]+)/([^/?]+)/?$', path)
+            if seg_m:
+                resource_plural = seg_m.group(1)
+                # Strip one trailing 's' to get singular form matching gcp_cwf_permissions.json keys
+                resource = resource_plural[:-1] if resource_plural.endswith('s') else resource_plural
+                resource_types.add(resource)
+        return resource_types
 
     def _resolve_cwf_host(self, host_expr, define_body):
         """Resolve a CWF host expression to an actual hostname or placeholder.
@@ -3150,6 +3224,55 @@ class PolicyTemplateParser:
                                 })
                             continue
 
+                    # Pattern: join([$var["selfLink"], "/action"]) — GCP CWF action via join()
+                    # This is used when the action suffix must be appended to the selfLink URL,
+                    # e.g. join([$resource["selfLink"], "/setLabels"]).
+                    join_selflink_m = re.match(
+                        r'join\s*\(\s*\[\s*\$(\w+)\s*\[\s*[\'"]selfLink[\'"]\s*\]\s*'
+                        r',\s*[\'"]([^\'"]*)[\'"]',
+                        url_expr
+                    )
+                    if join_selflink_m:
+                        resource_var = join_selflink_m.group(1)
+                        action_suffix = join_selflink_m.group(2)
+                        is_cloudsql = bool(re.search(r'sqladmin\.googleapis\.com', self.content))
+                        permission = self._gcp_cwf_permission(
+                            resource_var, method, action_suffix, is_cloudsql, define_name
+                        )
+                        if permission:
+                            ep_host = 'sqladmin.googleapis.com' if is_cloudsql else 'compute.googleapis.com'
+                            ep_path = f'/compute/v1/projects/{{id}}/setLabels/{action_suffix.lstrip("/")}' if not is_cloudsql else f'/sql/v1beta4/projects/{{id}}/instances/{{id}}{action_suffix}'
+                            endpoint = f'https://{ep_host}{ep_path}'
+                            api_calls.append({
+                                'policy_name': self.policy_name,
+                                'datasource_name': 'define_' + define_name,
+                                'method': method,
+                                'endpoint': endpoint,
+                                'operation': action_suffix.lstrip('/'),
+                                'field': '{entire response}',
+                                'api_service': 'GCP',
+                                'permission': permission,
+                            })
+                        elif resource_var.lower() in self.GCP_GENERIC_VAR_NAMES:
+                            # Generic resource variable with action suffix: scan template
+                            # datasources for compute resources with selfLink to enumerate types.
+                            action = action_suffix.lstrip('/')
+                            for rt in self._scan_compute_selflink_resource_types():
+                                perm = self.GCP_COMPUTE_CWF_PERMISSIONS.get(rt, {}).get(method, {}).get(action)
+                                if perm:
+                                    endpoint = f'https://compute.googleapis.com/compute/v1/projects/{{id}}/{rt}s/{{id}}/{action}'
+                                    api_calls.append({
+                                        'policy_name': self.policy_name,
+                                        'datasource_name': 'define_' + define_name,
+                                        'method': method,
+                                        'endpoint': endpoint,
+                                        'operation': action,
+                                        'field': '{entire response}',
+                                        'api_service': 'GCP',
+                                        'permission': perm,
+                                    })
+                        continue
+
                     # Pattern: $var['selfLink'] or $var['selfLink'] + '/action'
                     self_link_match = re.match(
                         r"\$(\w+)\[[\'\"]selfLink[\'\"]\](?:\s*\+\s*['\"]([^'\"]*)['\"])?",
@@ -3164,7 +3287,7 @@ class PolicyTemplateParser:
                         is_cloudsql = bool(re.search(r'sqladmin\.googleapis\.com', self.content))
 
                         permission = self._gcp_cwf_permission(
-                            resource_var, method, action_suffix, is_cloudsql
+                            resource_var, method, action_suffix, is_cloudsql, define_name
                         )
                         if permission:
                             if is_cloudsql:
