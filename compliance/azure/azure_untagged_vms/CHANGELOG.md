@@ -2,7 +2,7 @@
 
 ## v1.5.0
 
-- Added `Consider Tag Dimensions` parameter to allow Flexera Tag Dimensions to be considered when reporting on untagged resources
+- Added `Consider Tag Dimensions` parameter to allow Flexera Tag Dimensions to be considered when reporting on untagged resources.
 
 ## v1.4.0
 

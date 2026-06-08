@@ -2,7 +2,7 @@
 
 ## v5.6.2
 
-- Fixed `Consider Tag Dimensions` feature not working due to incorrect string comparison
+- Fixed bug with `Consider Tag Dimensions` feature that would sometimes cause it to not work correctly.
 
 ## v5.6.1
 
