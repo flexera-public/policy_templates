@@ -1,12 +1,9 @@
 # Changelog
 
-## v0.3.2
+## v0.4.0
 
 - Fixed bug where workspaces using Azure Sentinel Simplified pricing (unified SKU) received no recommendations or incorrect savings estimates. The policy now detects the pricing scheme per workspace via the OperationsManagement Solutions API and applies the correct rate model: Simplified workspaces use the all-inclusive Sentinel unified rate; Classic workspaces continue to use the sum of Log Analytics and Sentinel component rates.
-- Added the 50 GB/day commitment tier to the list of evaluated tiers, which is available under Simplified pricing.
-- Added a guard to skip recommendation calculation for workspaces whose current committed tier rate cannot be determined from pricing data, preventing incorrect baselines.
 - Added `Pricing Scheme` field to the incident table, indicating whether each recommendation was generated using Classic or Simplified pricing.
-- Added `Microsoft.OperationsManagement/solutions/read` permission to the required Azure credential permissions in the README.
 
 ## v0.3.1
 
