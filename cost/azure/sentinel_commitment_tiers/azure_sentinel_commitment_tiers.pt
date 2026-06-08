@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.3.1",
+  version: "0.3.2",
   provider: "Azure",
   service: "Sentinel",
   policy_set: "Commitment Tiers",
@@ -472,8 +472,49 @@ script "js_sentinel_workspaces", type: "javascript" do
 EOS
 end
 
-datasource "ds_workspace_ingestion_raw" do
+datasource "ds_sentinel_pricing_scheme" do
   iterate $ds_sentinel_workspaces
+  request do
+    auth $auth_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/resourceGroups/", val(iter_item, "resourceGroup"), "/providers/Microsoft.OperationsManagement/solutions/SecurityInsights(", val(iter_item, "name"), ")"])
+    query "api-version", "2015-11-01-preview"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    field "workspaceId", val(iter_item, "workspaceId")
+    field "skuName", jmes_path(response, "properties.sku.name")
+  end
+end
+
+datasource "ds_sentinel_workspaces_with_scheme" do
+  run_script $js_sentinel_workspaces_with_scheme, $ds_sentinel_workspaces, $ds_sentinel_pricing_scheme
+end
+
+script "js_sentinel_workspaces_with_scheme", type: "javascript" do
+  parameters "ds_sentinel_workspaces", "ds_sentinel_pricing_scheme"
+  result "result"
+  code <<-'EOS'
+    var scheme_map = {}
+    _.each(ds_sentinel_pricing_scheme, function(item) {
+      if (item["workspaceId"] && item["skuName"] != null && item["skuName"] != undefined) {
+        var sku = item["skuName"].toLowerCase().trim()
+        scheme_map[item["workspaceId"]] = (sku === "unified") ? "Simplified" : "Classic"
+      }
+    })
+    result = _.map(ds_sentinel_workspaces, function(ws) {
+      var new_ws = {}
+      _.each(ws, function(v, k) { new_ws[k] = v })
+      new_ws["pricingScheme"] = scheme_map[ws["workspaceId"]] || "Unknown"
+      return new_ws
+    })
+EOS
+end
+
+datasource "ds_workspace_ingestion_raw" do
+  iterate $ds_sentinel_workspaces_with_scheme
   request do
     run_script $js_workspace_ingestion_raw, iter_item, $param_lookback_days, $param_azure_endpoint
   end
@@ -489,6 +530,7 @@ datasource "ds_workspace_ingestion_raw" do
     field "capacityReservationLevel", val(iter_item, "capacityReservationLevel")
     field "tags", val(iter_item, "tags")
     field "resourceID", val(iter_item, "id")
+    field "pricingScheme", val(iter_item, "pricingScheme")
     field "columns", jmes_path(response, "tables[0].columns")
     field "rows", jmes_path(response, "tables[0].rows")
   end
@@ -565,6 +607,7 @@ script "js_workspace_ingestion", type: "javascript" do
         capacityReservationLevel: ws["capacityReservationLevel"],
         tags: ws["tags"],
         resourceID: ws["resourceID"],
+        pricingScheme: ws["pricingScheme"] || "Unknown",
         avgDailyGB: avg_daily_gb,
         peakDailyGB: peak_daily_gb,
         totalGB: total_gb,
@@ -670,13 +713,13 @@ script "js_sentinel_incident", type: "javascript" do
       return formatted_number
     }
 
-    var commitment_tiers = [100, 200, 300, 400, 500, 1000, 2000, 5000]
+    var commitment_tiers = [50, 100, 200, 300, 400, 500, 1000, 2000, 5000]
 
     var pricing_by_region = {}
     _.each(ds_pricing, function(item) {
       var region = item["region"]
       if (!pricing_by_region[region]) {
-        pricing_by_region[region] = { la_payg: 0, sentinel_payg: 0, la_tiers: {}, sentinel_tiers: {} }
+        pricing_by_region[region] = { la_payg: 0, sentinel_payg: 0, la_tiers: {}, sentinel_tiers: {}, unified_payg: 0, unified_tiers: {} }
       }
 
       var service = (item["serviceName"] || "").toLowerCase()
@@ -697,6 +740,9 @@ script "js_sentinel_incident", type: "javascript" do
         if (pricing_by_region[region]["sentinel_payg"] == 0 || price < pricing_by_region[region]["sentinel_payg"]) {
           pricing_by_region[region]["sentinel_payg"] = price
         }
+        if (pricing_by_region[region]["unified_payg"] == 0 || price < pricing_by_region[region]["unified_payg"]) {
+          pricing_by_region[region]["unified_payg"] = price
+        }
       }
 
       if (unit.indexOf("day") >= 0) {
@@ -715,6 +761,9 @@ script "js_sentinel_incident", type: "javascript" do
           if (service.indexOf("sentinel") >= 0) {
             if (!pricing_by_region[region]["sentinel_tiers"][tier_gb] || price < pricing_by_region[region]["sentinel_tiers"][tier_gb]) {
               pricing_by_region[region]["sentinel_tiers"][tier_gb] = price
+            }
+            if (!pricing_by_region[region]["unified_tiers"][tier_gb] || price < pricing_by_region[region]["unified_tiers"][tier_gb]) {
+              pricing_by_region[region]["unified_tiers"][tier_gb] = price
             }
           }
         }
@@ -749,10 +798,21 @@ script "js_sentinel_incident", type: "javascript" do
     _.each(ds_workspace_ingestion_rg_filtered, function(ws) {
       var region = ws["location"]
       var pricing = pricing_by_region[region]
+      var scheme = ws["pricingScheme"] || "Unknown"
 
-      if (!pricing || pricing["la_payg"] <= 0 || pricing["sentinel_payg"] <= 0) { return }
+      if (!pricing || scheme === "Unknown") { return }
 
-      var payg_rate = pricing["payg_rate"] * exchange_rate
+      var payg_rate, active_tier_rates
+      if (scheme === "Simplified") {
+        if (pricing["unified_payg"] <= 0) { return }
+        payg_rate = pricing["unified_payg"] * exchange_rate
+        active_tier_rates = pricing["unified_tiers"]
+      } else {
+        if (pricing["la_payg"] <= 0 || pricing["sentinel_payg"] <= 0) { return }
+        payg_rate = pricing["payg_rate"] * exchange_rate
+        active_tier_rates = pricing["tier_rates"]
+      }
+
       var avg_daily_gb = ws["avgDailyGB"] || 0
 
       if (avg_daily_gb <= 0) { return }
@@ -764,7 +824,8 @@ script "js_sentinel_incident", type: "javascript" do
 
       var current_tier_rate = 0
       if (current_tier_gb > 0) {
-        current_tier_rate = (pricing["tier_rates"][current_tier_gb] || 0) * exchange_rate
+        current_tier_rate = (active_tier_rates[current_tier_gb] || 0) * exchange_rate
+        if (current_tier_rate <= 0) { return }
       }
 
       var current_daily_cost = calculateDailyCost(avg_daily_gb, current_tier_gb, current_tier_rate, payg_rate)
@@ -775,7 +836,7 @@ script "js_sentinel_incident", type: "javascript" do
 
       _.each(commitment_tiers, function(tier_gb) {
         if (tier_gb > current_tier_gb) {
-          var tier_rate = (pricing["tier_rates"][tier_gb] || 0) * exchange_rate
+          var tier_rate = (active_tier_rates[tier_gb] || 0) * exchange_rate
           if (tier_rate > 0) {
             var tier_cost = calculateDailyCost(avg_daily_gb, tier_gb, tier_rate, payg_rate)
             if (tier_cost < best_daily_cost) {
@@ -818,6 +879,7 @@ script "js_sentinel_incident", type: "javascript" do
         recommendationDetails: recommendation_details,
         region: ws["location"],
         resourceGroup: ws["resourceGroup"],
+        pricingScheme: scheme,
         currentTier: current_tier_label,
         recommendedTier: recommended_tier_label,
         avgDailyGB: Math.round(avg_daily_gb * 100) / 100,
@@ -894,6 +956,9 @@ policy "pol_sentinel_commitment_tier_recommendations" do
       end
       field "region" do
         label "Region"
+      end
+      field "pricingScheme" do
+        label "Pricing Scheme"
       end
       field "currentTier" do
         label "Current Pricing Tier"
