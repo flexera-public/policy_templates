@@ -2887,6 +2887,37 @@ class PolicyTemplateParser:
             # Strip any protocol/host prefix if present
             parsed = urllib.parse.urlparse(uri_val)
             return parsed.path if parsed.scheme else uri_val
+
+        # Fallback: handle URI values built by concatenation where a path suffix
+        # comes from a script parameter (e.g. uri: '/prefix/' + var + endpoint).
+        # This pattern occurs when a single shared URI-generation script is called
+        # multiple times with different endpoint arguments (one per resource type).
+        uri_concat_m = re.search(r'\buri\s*:\s*([^\n,]+)', script_body)
+        if uri_concat_m:
+            expr = uri_concat_m.group(1).strip()
+            # Find all lowercase identifier tokens in the expression
+            id_tokens = re.findall(r'\b([a-z_]\w*)\b', expr)
+            params_decl_m = re.search(r'parameters\s+((?:["\'][^"\']+["\']\s*,?\s*)+)', script_body)
+            if params_decl_m and id_tokens:
+                param_names = re.findall(r'["\']([^"\']+)["\']', params_decl_m.group(1))
+                # Find the last identifier in the expression that is a declared parameter;
+                # in a URI like '/prefix/' + variable + endpoint, the path suffix
+                # parameter is typically the last variable in the concatenation.
+                path_param = next(
+                    (tok for tok in reversed(id_tokens) if tok in param_names),
+                    None
+                )
+                if path_param:
+                    param_idx = param_names.index(path_param)
+                    # Extract the arguments passed to run_script in the iterate datasource,
+                    # skipping the leading script reference ($script_name,).
+                    rs_args_m = re.search(r'run_script\s+\$\w+\s*,\s*(.+)', iter_ds_body)
+                    if rs_args_m:
+                        args = [a.strip() for a in rs_args_m.group(1).split(',')]
+                        if param_idx < len(args):
+                            literal_m = re.match(r'''['"](/[^'"]+)['"]''', args[param_idx])
+                            if literal_m:
+                                return literal_m.group(1)
         return None
 
     def _resolve_cwf_host(self, host_expr, define_body):
