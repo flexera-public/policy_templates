@@ -11,8 +11,9 @@ The policy template performs the following steps:
 1. All Azure subscriptions are enumerated and filtered based on the configured allow/deny list.
 1. All Log Analytics workspaces in each subscription are listed.
 1. For each workspace, the Microsoft Sentinel onboarding state is checked via the SecurityInsights API; workspaces without Sentinel enabled are excluded.
+1. For each Sentinel-enabled workspace, the Sentinel pricing scheme is determined by checking the `Microsoft.OperationsManagement/solutions/SecurityInsights({workspaceName})` resource. If the solution SKU is `Unified`, the workspace uses **Simplified pricing** — a single all-inclusive Microsoft Sentinel rate that covers both log analytics ingestion and Sentinel analysis. All other workspaces use **Classic pricing** — two separate, additive cost components: Log Analytics data ingestion and Microsoft Sentinel analysis.
 1. For each Sentinel-enabled workspace, the Log Analytics Query API is used to retrieve daily billable data ingestion volumes (in GB) over the configured lookback period.
-1. The Azure Retail Prices API is queried for the current pricing for each workspace's Azure region. Because a Sentinel-enabled workspace incurs two separate, additive cost components — Log Analytics data ingestion (sourced from the `Log Analytics` and `Azure Monitor` service listings) and Microsoft Sentinel analysis (sourced from the `Sentinel` service listing) — pricing is fetched from all three service names and combined.
+1. The Azure Retail Prices API is queried for the current pricing for each workspace's Azure region. For **Classic** workspaces, pricing is fetched from the `Log Analytics`, `Azure Monitor`, and `Sentinel` service listings and the two components are summed. For **Simplified** workspaces, only the `Sentinel` service listing is used, as that rate is all-inclusive.
 1. For each workspace, the estimated daily cost is calculated at the current tier and at each available higher tier.
 1. The tier with the lowest estimated cost that is higher than the current tier is identified as the recommended tier.
 1. An incident is raised if the recommended tier saves more than the configured minimum savings threshold.
@@ -21,9 +22,11 @@ The policy template performs the following steps:
 
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the workspace's pricing tier is upgraded to the recommended Commitment Tier.
 
-- Pricing data is retrieved in real time from the [Azure Retail Prices API](https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices) for each workspace's Azure region. Costs for a Sentinel-enabled workspace are the sum of two additive components: the Log Analytics data ingestion cost (fetched from the `Log Analytics` and `Azure Monitor` service listings) and the Microsoft Sentinel analysis cost (fetched from the `Sentinel` service listing). The combined Pay-As-You-Go per-GB rate and each combined Commitment Tier daily rate are used for all cost calculations.
+- Pricing data is retrieved in real time from the [Azure Retail Prices API](https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices) for each workspace's Azure region. How pricing is computed depends on the workspace's pricing scheme, shown in the **Pricing Scheme** column of the incident table:
+  - **Classic**: Costs are the sum of two additive components — the Log Analytics data ingestion cost (fetched from the `Log Analytics` and `Azure Monitor` service listings) and the Microsoft Sentinel analysis cost (fetched from the `Sentinel` service listing).
+  - **Simplified**: A single unified Sentinel rate covers both log analytics ingestion and Sentinel analysis (available for workspaces created after July 2023). Only the `Sentinel` service listing is used; no Log Analytics component is added.
 - The `Estimated Monthly Savings` is calculated as the difference between the current estimated monthly cost and the estimated monthly cost at the recommended tier, multiplied by 30.44 (average days per month).
-- The estimated monthly cost at a given tier is: `(Tier Daily Rate + max(0, Average Daily Ingestion − Tier GB Level) × (Tier Daily Rate / Tier GB Level)) × 30.44`. For Pay-As-You-Go: `Average Daily Ingestion × Pay-as-you-go Rate per GB × 30.44`. The overage rate for a commitment tier is the tier's own effective per-GB rate (`Tier Daily Rate / Tier GB Level`), not the Pay-as-you-go rate, consistent with [Microsoft Sentinel pricing](https://www.microsoft.com/en-us/security/pricing/microsoft-sentinel/). `Tier Daily Rate` and `Pay-as-you-go Rate per GB` are composite values equal to the sum of the Log Analytics component and the Microsoft Sentinel component for the given tier and region.
+- The estimated monthly cost at a given tier is: `(Tier Daily Rate + max(0, Average Daily Ingestion − Tier GB Level) × (Tier Daily Rate / Tier GB Level)) × 30.44`. For Pay-As-You-Go: `Average Daily Ingestion × Pay-as-you-go Rate per GB × 30.44`. The overage rate for a commitment tier is the tier's own effective per-GB rate (`Tier Daily Rate / Tier GB Level`), not the Pay-as-you-go rate, consistent with [Microsoft Sentinel pricing](https://www.microsoft.com/en-us/security/pricing/microsoft-sentinel/). For Classic workspaces, `Tier Daily Rate` and `Pay-as-you-go Rate per GB` are composite values equal to the sum of the Log Analytics and Sentinel components. For Simplified workspaces, these rates come directly from the unified Sentinel pricing.
 - `Average Daily Ingestion` is computed from the Log Analytics `Usage` table over the configured lookback period using only billable data (`IsBillable == true`).
 - If no pricing data is available for the workspace's region, the workspace is excluded from recommendations.
 - The incident message detail includes the sum of each workspace's `Estimated Monthly Savings` as `Potential Monthly Savings`.
@@ -53,8 +56,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Resources/subscriptions/read`
   - `Microsoft.OperationalInsights/workspaces/read`
-  - `Microsoft.SecurityInsights/onboardingStates/read`
   - `Microsoft.OperationalInsights/workspaces/query/action`
+  - `Microsoft.OperationsManagement/solutions/read`
+  - `Microsoft.SecurityInsights/onboardingStates/read`
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
