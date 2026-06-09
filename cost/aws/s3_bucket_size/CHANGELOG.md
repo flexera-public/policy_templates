@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.0.3
+
+- Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match
+
+
 ## v4.0.2
 
 - Updated documentation link in policy description. Functionality unchanged.

@@ -1,5 +1,10 @@
 # Changelog
 
+## v6.3.1
+
+- Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match
+
+
 ## v6.3.0
 
 - Added `Allow/Deny Resource Groups` and `Allow/Deny Resource Groups List` filter parameters to allow filtering resources by resource group
