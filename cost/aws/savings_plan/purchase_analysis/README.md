@@ -4,6 +4,14 @@
 
 This policy template performs a purchase analysis via the [AWS Savings Plans Purchase Analyzer](https://aws.amazon.com/blogs/aws-cloud-financial-management/announcing-savings-plans-purchase-analyzer/) tool included in AWS Cost Explorer and reports the results. Optionally, this report can be emailed.
 
+### Analysis Types
+
+The `Analysis Type` parameter controls the mode of analysis performed by AWS:
+
+- **Custom Commitment** (`CUSTOM_COMMITMENT`) — You specify an exact hourly spend commitment via the `Hourly Purchase Commitment` parameter. AWS calculates the estimated savings, coverage, utilization, and ROI you would achieve by purchasing a Savings Plan at that commitment level. Use this mode when you already have a specific budget in mind and want to understand what that commitment would buy you.
+
+- **Target Average Coverage** (`TARGET_AVERAGE_COVERAGE`) — You specify a desired coverage percentage via the `Target Coverage Percentage` parameter. AWS works backwards to determine the hourly commitment needed to achieve that level of Savings Plan coverage across your usage. Use this mode when you have a coverage goal (e.g. "I want 80% of my compute spend covered by Savings Plans") and want AWS to recommend the commitment amount required to reach it.
+
 ### Currency Details
 
 If the Flexera organization is configured to use a currency other than the one the [AWS Savings Plans Purchase Analyzer](https://aws.amazon.com/blogs/aws-cloud-financial-management/announcing-savings-plans-purchase-analyzer/) tool returns, currency values will be converted using the exchange rate at the time that the policy executes.
@@ -15,11 +23,13 @@ This policy template has the following input parameters:
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws)
 - *Account Scope* - The account scope that you want your recommendations for. Select Payer to produce results only for a Master Payer account, or Linked to produce results for all linked accounts as well.
+- *Analysis Type* - The type of analysis to perform. `Custom Commitment` analyzes a specific hourly commitment amount. `Target Average Coverage` determines what commitment would be needed to reach a target coverage level. The `Hourly Purchase Commitment` parameter is only applicable when this is set to `Custom Commitment`; the `Target Coverage Percentage` parameter is only applicable when this is set to `Target Average Coverage`.
+- *Target Coverage Percentage* - The target Savings Plan coverage percentage to aim for when Analysis Type is set to `Target Average Coverage`. Must be a value between 0 and 100. Not used when Analysis Type is set to `Custom Commitment`.
 - *Look Back Period* - Number of days of prior usage to analyze
 - *Savings Plan Term* - Length of savings plan term to provide recommendations for.
 - *Savings Plan Type* - Type of Savings Plan to provide recommendations for.
 - *Payment Option* - Savings Plan purchase option to provide recommendations for.
-- *Hourly Purchase Commitment* - The amount of currency to commit to spending per hour on Savings Plans. Must be in whatever currency the AWS account is configured to use.
+- *Hourly Purchase Commitment* - The amount of currency to commit to spending per hour on Savings Plans. Must be in whatever currency the AWS account is configured to use. Only applicable when Analysis Type is set to `Custom Commitment`.
 - *Region* - The region to scope the results to. Leave blank to analyze all regions.
 - *Instance Family* - The instance family to scope the results to. Leave blank to analyze all instance families.
 - *Offering ID* - The offering ID to scope the results to. Leave blank to analyze all offering IDs.
