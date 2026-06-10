@@ -39,9 +39,9 @@ parameter "param_scope" do
   type "string"
   category "Savings Plan Settings"
   label "Account Scope"
-  description "The account scope that you want your recommendations for. Select Payer to produce results only for a Master Payer account, or Linked to produce results for all linked accounts as well."
-  allowed_values "Payer", "Linked"
-  default "Payer"
+  description "The account scope for the analysis. 'Payer' analyzes all linked accounts in the organization and requires credentials from the management/payer account. 'Linked' analyzes a single linked account and requires credentials from the management/payer account. 'Automatic (Linked Account Credentials)' omits the scope field entirely and lets AWS infer it from the caller identity - use this when the configured credentials belong to a member/linked account rather than the management account."
+  allowed_values "Payer", "Linked", "Automatic (Linked Account Credentials)"
+  default "Automatic (Linked Account Credentials)"
 end
 
 parameter "param_analysis_type" do
@@ -382,31 +382,38 @@ script "js_start_analysis", type: "javascript" do
     sp_to_add["SavingsPlansCommitment"] = param_hourly_commitment
   }
 
-  if (param_region) { sp_to_add["Region"] = param_region }
-  if (param_instance_family) { sp_to_add["InstanceFamily"] = param_instance_family }
-  if (param_offering_id) { sp_to_add["OfferingId"] = param_offering_id }
+  sp_config = {
+    "AnalysisType": analysis_type_table[param_analysis_type],
+    "LookBackTimePeriod": {
+      "Start": start_time,
+      "End": end_time
+    },
+    "SavingsPlansToAdd": [sp_to_add]
+  }
+
+  // AccountScope and AccountId are omitted when using linked account credentials;
+  // AWS infers the scope from the caller identity in that case.
+  if (param_scope != "Automatic (Linked Account Credentials)") {
+    sp_config["AccountScope"] = param_scope.toUpperCase()
+    sp_config["AccountId"] = ds_aws_account["id"].toString()
+  }
 
   body_fields = {
     "CommitmentPurchaseAnalysisConfiguration": {
-      "SavingsPlansPurchaseAnalysisConfiguration": {
-        "AccountId": ds_aws_account["id"].toString(),
-        "AccountScope": param_scope.toUpperCase(),
-        "AnalysisType": analysis_type_table[param_analysis_type],
-        "LookBackTimePeriod": {
-          "Start": start_time,
-          "End": end_time
-        },
-        "SavingsPlansToAdd": [sp_to_add]
-      }
+      "SavingsPlansPurchaseAnalysisConfiguration": sp_config
     }
   }
 
-  // SavingsPlansTargetCoverage only applies to the Target Average Coverage analysis type
+  // SavingsPlansTargetCoverage only applies to the Target Average Coverage analysis type.
+  // Note: despite the AWS docs showing this as {"CoveragePercentage": number}, the live
+  // API expects the coverage percentage as a bare number, not a wrapped structure.
   if (param_analysis_type == "Target Average Coverage") {
-    body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansTargetCoverage"] = {
-      "CoveragePercentage": param_target_coverage
-    }
+    body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansTargetCoverage"] = param_target_coverage
   }
+
+  if (param_region) { body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansToAdd"][0]["Region"] = param_region }
+  if (param_instance_family) { body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansToAdd"][0]["InstanceFamily"] = param_instance_family }
+  if (param_offering_id) { body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansToAdd"][0]["OfferingId"] = param_offering_id }
 
   var request = {
     auth: "auth_aws",
@@ -612,9 +619,23 @@ script "js_analysis_incident", type: "javascript" do
     return formatted_number
   }
 
-  // Used for rounding and currency conversion
-  function convertCurrency(number) {
-    return number ? Math.round(number * ds_currency['exchange_rate'] * 1000) / 1000 : ""
+  // Safely parse a value that may be a string number from the API, undefined, or null
+  function safeFloat(val) {
+    if (val === undefined || val === null || val === "") { return null }
+    var n = parseFloat(val)
+    return isNaN(n) ? null : n
+  }
+
+  // Round to 2 decimal places; return null if value is missing or non-numeric
+  function safeRound(val) {
+    var n = safeFloat(val)
+    return n === null ? null : Math.round(n * 100) / 100
+  }
+
+  // Currency conversion with rounding to 3 decimal places; return null if value is missing
+  function convertCurrency(val) {
+    var n = safeFloat(val)
+    return n === null ? null : Math.round(n * ds_currency['exchange_rate'] * 1000) / 1000
   }
 
   // Messaging for currency conversion
@@ -637,12 +658,14 @@ script "js_analysis_incident", type: "javascript" do
     conversion_message = "Currency values are in ", currency, " due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
   }
 
+  scope_display = param_scope == "Automatic (Linked Account Credentials)" ? "Automatic (Linked Account Credentials - Inferred by AWS)" : param_scope
+
   message = [
     conversion_message,
     "The following settings were used for the commitment purchase analysis:\n",
     "- Analysis Type: ", param_analysis_type, "\n",
     "- Savings Plan Type: ", param_savings_plan_type, "\n",
-    "- Account Scope: ", param_scope, "\n",
+    "- Account Scope: ", scope_display, "\n",
     "- Term: ", param_term, "\n",
     "- Look Back Period: ", param_days, "\n",
     "- Payment Option: ", param_payment_option, "\n"
@@ -663,26 +686,28 @@ script "js_analysis_incident", type: "javascript" do
     "SageMaker Savings Plans": "SageMaker"
   }
 
+  details = ds_collect_analysis[0]["analysisDetails"] || {}
+
   result = [{
-    additionalMetadata: ds_collect_analysis[0]["analysisDetails"]["AdditionalMetadata"],
-    currentAverageCoverage: Math.round(ds_collect_analysis[0]["analysisDetails"]["CurrentAverageCoverage"] * 100) / 100,
-    currentAverageHourlyOnDemandSpend: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["CurrentAverageHourlyOnDemandSpend"]) * 100) / 100,
-    currentMaximumHourlyOnDemandSpend: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["CurrentMaximumHourlyOnDemandSpend"]) * 100) / 100,
-    currentMinimumHourlyOnDemandSpend: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["CurrentMinimumHourlyOnDemandSpend"]) * 100) / 100,
-    currentOnDemandSpend: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["CurrentOnDemandSpend"]) * 100) / 100,
-    estimatedAverageCoverage: Math.round(ds_collect_analysis[0]["analysisDetails"]["EstimatedAverageCoverage"] * 100) / 100,
-    estimatedAverageUtilization: Math.round(ds_collect_analysis[0]["analysisDetails"]["EstimatedAverageUtilization"] * 100) / 100,
-    estimatedCommitmentCost: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["EstimatedCommitmentCost"]) * 100) / 100,
-    estimatedOnDemandCost: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["EstimatedOnDemandCost"]) * 100) / 100,
-    estimatedOnDemandCostWithCurrentCommitment: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["EstimatedOnDemandCostWithCurrentCommitment"]) * 100) / 100,
-    estimatedROI: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["EstimatedROI"]) * 100) / 100,
-    estimatedSavingsAmount: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["EstimatedSavingsAmount"]) * 100) / 100,
-    estimatedSavingsPercentage: Math.round(ds_collect_analysis[0]["analysisDetails"]["EstimatedSavingsPercentage"] * 100) / 100,
-    existingHourlyCommitment: Math.round(ds_collect_analysis[0]["analysisDetails"]["ExistingHourlyCommitment"] * 100) / 100,
-    hourlyCommitmentToPurchase: Math.round(ds_collect_analysis[0]["analysisDetails"]["HourlyCommitmentToPurchase"] * 100) / 100,
-    latestUsageTimestamp: ds_collect_analysis[0]["analysisDetails"]["LatestUsageTimestamp"],
-    lookbackPeriodInHours: Math.round(ds_collect_analysis[0]["analysisDetails"]["LookbackPeriodInHours"] * 100) / 100,
-    upfrontCost: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["UpfrontCost"]) * 100) / 100,
+    additionalMetadata: details["AdditionalMetadata"],
+    currentAverageCoverage: safeRound(details["CurrentAverageCoverage"]),
+    currentAverageHourlyOnDemandSpend: safeRound(convertCurrency(details["CurrentAverageHourlyOnDemandSpend"])),
+    currentMaximumHourlyOnDemandSpend: safeRound(convertCurrency(details["CurrentMaximumHourlyOnDemandSpend"])),
+    currentMinimumHourlyOnDemandSpend: safeRound(convertCurrency(details["CurrentMinimumHourlyOnDemandSpend"])),
+    currentOnDemandSpend: safeRound(convertCurrency(details["CurrentOnDemandSpend"])),
+    estimatedAverageCoverage: safeRound(details["EstimatedAverageCoverage"]),
+    estimatedAverageUtilization: safeRound(details["EstimatedAverageUtilization"]),
+    estimatedCommitmentCost: safeRound(convertCurrency(details["EstimatedCommitmentCost"])),
+    estimatedOnDemandCost: safeRound(convertCurrency(details["EstimatedOnDemandCost"])),
+    estimatedOnDemandCostWithCurrentCommitment: safeRound(convertCurrency(details["EstimatedOnDemandCostWithCurrentCommitment"])),
+    estimatedROI: safeRound(convertCurrency(details["EstimatedROI"])),
+    estimatedSavingsAmount: safeRound(convertCurrency(details["EstimatedSavingsAmount"])),
+    estimatedSavingsPercentage: safeRound(details["EstimatedSavingsPercentage"]),
+    existingHourlyCommitment: safeRound(details["ExistingHourlyCommitment"]),
+    hourlyCommitmentToPurchase: safeRound(details["HourlyCommitmentToPurchase"]),
+    latestUsageTimestamp: details["LatestUsageTimestamp"],
+    lookbackPeriodInHours: safeRound(details["LookbackPeriodInHours"]),
+    upfrontCost: safeRound(convertCurrency(details["UpfrontCost"])),
     currency: ds_currency['symbol'],
     accountID: ds_aws_account["id"],
     accountName: ds_aws_account["name"],

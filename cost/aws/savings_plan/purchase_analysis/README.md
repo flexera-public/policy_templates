@@ -22,10 +22,10 @@ This policy template has the following input parameters:
 
 - *Email Addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws)
-- *Account Scope* - The account scope that you want your recommendations for. Select Payer to produce results only for a Master Payer account, or Linked to produce results for all linked accounts as well.
+- *Account Scope* - The account scope for the analysis. `Payer` analyzes all linked accounts in the organization and requires credentials from the management/payer account. `Linked` analyzes a single linked account and requires credentials from the management/payer account. `Automatic (Linked Account Credentials)` omits the scope field entirely and lets AWS infer it from the caller identity — use this when the configured credentials belong to a member/linked account rather than the management account.
 - *Analysis Type* - The type of analysis to perform. `Custom Commitment` analyzes a specific hourly commitment amount. `Target Average Coverage` determines what commitment would be needed to reach a target coverage level. The `Hourly Purchase Commitment` parameter is only applicable when this is set to `Custom Commitment`; the `Target Coverage Percentage` parameter is only applicable when this is set to `Target Average Coverage`.
 - *Target Coverage Percentage* - The target Savings Plan coverage percentage to aim for when Analysis Type is set to `Target Average Coverage`. Must be a value between 0 and 100. Not used when Analysis Type is set to `Custom Commitment`.
-- *Look Back Period* - Number of days of prior usage to analyze
+- *Look Back Period* - Number of days of prior usage to analyze.
 - *Savings Plan Term* - Length of savings plan term to provide recommendations for.
 - *Savings Plan Type* - Type of Savings Plan to provide recommendations for.
 - *Payment Option* - Savings Plan purchase option to provide recommendations for.
@@ -37,13 +37,26 @@ This policy template has the following input parameters:
 
 ## Policy Actions
 
-The following policy actions are taken on any resources found to be out of compliance.
+The following policy actions are taken on completion of the analysis.
 
 - Send an email report
 
 ## Prerequisites
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
+
+- [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
+  - `sts:GetCallerIdentity`
+  - `ce:StartCommitmentPurchaseAnalysis`
+  - `ce:GetCommitmentPurchaseAnalysis`
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+  - `policy_viewer`
+
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) to use with this policy, the following information is needed:
 
 - [**AWS Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#aws) (*provider=aws*) which has the following permissions:
   - `sts:GetCallerIdentity`
@@ -69,13 +82,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   }
   ```
 
-- [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
-  - `billing_center_viewer`
-  - `policy_viewer`
-
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-Additionally, this policy template requires that [AWS Cost Explorer be enabled](https://docs.aws.amazon.com/cost-management/latest/userguide/ce-enable.html) in the management account.
+Additionally, this policy template requires that [AWS Cost Explorer be enabled](https://docs.aws.amazon.com/cost-management/latest/userguide/ce-enable.html) in the relevant AWS account.
 
 ## Supported Clouds
 
