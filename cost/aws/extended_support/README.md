@@ -7,6 +7,7 @@ This policy template uses the AWS APIs (RDS, EKS, and ElastiCache) to identify a
 ## How It Works
 
 - The policy queries the AWS APIs (RDS, EKS, and ElastiCache) across all opted-in regions to enumerate all running resources.
+- Region values shown in incidents and exports are reported using AWS API region identifiers (for example, `us-east-1`) for consistency with other AWS optimization policy sets.
 - Each discovered resource's version is matched against the reference data file at `data/aws/aws_extended_support_dates.json` to determine if it is currently under extended support or will enter extended support within the number of days specified by the `Days Until Extended Support` parameter.
 - The policy also pulls resource-level billing data from the Flexera CCO platform from 3 days ago, filtered to resources with a `Usage Type` that contains `ExtendedSupport`. This data is used only for obtaining actual costs for resources already incurring extended support charges. Data from 3 days ago is used to ensure that we have available, processed billing data to search through.
 
