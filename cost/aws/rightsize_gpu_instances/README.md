@@ -8,10 +8,10 @@ Reports on AWS GPU EC2 instances that are idle or underutilized based on GPU and
 
 1. **Instance discovery** — The policy enumerates all running EC2 instances across the configured regions and filters to GPU instance types (e.g. `p3`, `p4d`, `g4dn`, `g5`).
 1. **Metric collection** — For each GPU instance, the following CloudWatch metrics are retrieved over the configured lookback period (default: 30 days). The selected statistic (`Average`, `Maximum`, `p99`, `p95`, or `p90`) is used for all threshold comparisons:
-   - **CPU utilization** — standard `CPUUtilization` metric from EC2.
-   - **Memory utilization** — `mem_used_percent` (Linux) or `Memory % Committed Bytes In Use` (Windows), published by the CloudWatch Agent.
-   - **GPU compute utilization** — `nvidia_smi_utilization_gpu`, published by the CloudWatch Agent NVIDIA GPU plugin.
-   - **GPU memory used** — `nvidia_smi_memory_used` (MB, normalized to MiB by the policy), published by the CloudWatch Agent NVIDIA GPU plugin. GPU memory utilization percentage is derived by dividing this value by the total GPU memory of the instance type.
+  - **CPU utilization** — standard `CPUUtilization` metric from EC2.
+  - **Memory utilization** — `mem_used_percent` (Linux) or `Memory % Committed Bytes In Use` (Windows), published by the CloudWatch Agent.
+  - **GPU compute utilization** — `nvidia_smi_utilization_gpu`, published by the CloudWatch Agent NVIDIA GPU plugin.
+  - **GPU memory used** — `nvidia_smi_memory_used` (MB, normalized to MiB by the policy), published by the CloudWatch Agent NVIDIA GPU plugin. GPU memory utilization percentage is derived by dividing this value by the total GPU memory of the instance type.
 1. **Idle detection** — An instance is classified as **idle** when all enabled metric checks pass. The thresholds are configurable individually via the *Idle Instance CPU Threshold (%)*, *Idle Instance Memory Threshold (%)*, *Idle Instance GPU Utilization Threshold (%)*, and *Idle Instance GPU Memory Threshold (%)* parameters (set any to `-1` to disable that specific check). Memory and GPU memory data are optional — if those metrics are unavailable, those checks are skipped automatically. Idle instances are recommended for **termination**, with estimated monthly savings equal to the full current monthly cost of the instance.
 1. **Rightsizing** — Instances that are not idle are assessed for downsizing. The required resources are computed by applying the configured Safety Factor to the observed peak utilization:
 
