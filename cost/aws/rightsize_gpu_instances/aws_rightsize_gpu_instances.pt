@@ -610,9 +610,9 @@ script "js_cloudwatch_metric_names", type: "javascript" do
       "region": reg["region"]
     })
 
-    // GPU memory used in MiB via CloudWatch Agent NVIDIA plugin
+    // GPU memory used via CloudWatch Agent NVIDIA plugin (published in MB)
     result.push({
-      "metricName": "nvidia_smi_fb_memory_usage_used",
+      "metricName": "nvidia_smi_memory_used",
       "region": reg["region"]
     })
   })
@@ -701,7 +701,7 @@ script "js_cloudwatch_metrics_by_instance", type: "javascript" do
       if (!existing) {
         result[inst_id]['gpuDimensions'].push({ index: gpu_index, dimensions: metric.dimensions })
       }
-    } else if (metric.metricName == 'nvidia_smi_fb_memory_usage_used') {
+    } else if (metric.metricName == 'nvidia_smi_memory_used') {
       var gpu_index = '0'
       _.each(dims, function(dim) {
         if (dim.name == 'index') { gpu_index = dim.value }
@@ -1181,7 +1181,7 @@ script "js_cloudwatch_queries", type: "javascript" do
             "MetricStat": {
               "Metric": {
                 "Namespace": "CWAgent",
-                "MetricName": "nvidia_smi_fb_memory_usage_used",
+                "MetricName": "nvidia_smi_memory_used",
                 "Dimensions": dimensions
               },
               "Period": lookback,
@@ -1322,15 +1322,16 @@ script "js_cloudwatch_data_sorted", type: "javascript" do
           }
         }
       } else if (metric.indexOf('gpumem') != -1) {
-        // GPU memory used (MiB): "gpumem0Average" -> key "gpuMemUsedAverage", aggregate sum across indices
+        // GPU memory used: agent publishes nvidia_smi_memory_used in MB; normalize to MiB before storing
         var gpu_index = metric.charAt(6)
         var stat = metric.slice(7)
         var key = 'gpuMemUsed' + stat
         if (value != null && value != undefined) {
+          var value_mib = value * 1000000 / 1048576
           if (result[region][instance_name][key] == undefined) {
-            result[region][instance_name][key] = value
+            result[region][instance_name][key] = value_mib
           } else {
-            result[region][instance_name][key] += value
+            result[region][instance_name][key] += value_mib
           }
         }
       } else if (metric.indexOf('mem') != -1) {
