@@ -1678,6 +1678,7 @@ script "js_idle_and_underutil_instances", type: "javascript" do
       instance['savings'] = parseFloat(parseFloat(total_cost).toFixed(3))
       instance['recommendationType'] = 'Terminate'
       instance['newResourceType'] = null
+      instance['recommendedResourceType'] = null
       instance['newGpuCount'] = null
 
       recommendationDetails = 'Terminate AWS GPU EC2 instance ' + id + ' in AWS Account ' + instance['accountName'] + ' (' + instance['accountID'] + ')'
@@ -1722,6 +1723,12 @@ script "js_idle_and_underutil_instances", type: "javascript" do
         required_gpu_count = Math.max(1, active_count)
       }
       if (instance['gpuCountLocked']) { required_gpu_count = current_specs['gpu']['count'] }
+      var peak_per_gpu_mem_mib = 0
+      _.each(_.keys(mem_by_index), function(idx) {
+        if (mem_by_index[idx] && mem_by_index[idx]['Maximum'] != undefined) {
+          if (mem_by_index[idx]['Maximum'] > peak_per_gpu_mem_mib) { peak_per_gpu_mem_mib = mem_by_index[idx]['Maximum'] }
+        }
+      })
       var required_gpu_mem_mib = (gpu_mem_used_mib != null)
         ? Math.ceil(gpu_mem_used_mib * SAFETY_FACTOR)
         : 0
@@ -1740,7 +1747,11 @@ script "js_idle_and_underutil_instances", type: "javascript" do
         if (!inst['gpu'] || inst['gpu']['count'] < required_gpu_count) { return }
         if (required_gpu_mem_mib > 0 && (!inst['gpu'] || inst['gpu']['totalGpuMemoryInMiB'] < required_gpu_mem_mib)) { return }
         if (inst['gpu']['manufacturer'] != current_specs['gpu']['manufacturer']) { return }
-        if (inst['gpu']['memoryInMiB'] < current_specs['gpu']['memoryInMiB']) { return }
+        if (peak_per_gpu_mem_mib > 0) {
+          if (inst['gpu']['memoryInMiB'] < peak_per_gpu_mem_mib * SAFETY_FACTOR) { return }
+        } else {
+          if (inst['gpu']['memoryInMiB'] < current_specs['gpu']['memoryInMiB']) { return }
+        }
         candidate_instances.push({ inst: inst, price: candidate_price })
       })
 
@@ -1751,8 +1762,10 @@ script "js_idle_and_underutil_instances", type: "javascript" do
       if (best) {
         var new_instance = best.inst
         var count_reduced = new_instance['gpu']['count'] < current_specs['gpu']['count']
+        var is_multi_gpu_advisory = count_reduced && current_specs['gpu']['count'] > 1
         instance['recommendationType'] = 'Downsize'
-        instance['newResourceType'] = (count_reduced && current_specs['gpu']['count'] > 1) ? null : new_instance['name']
+        instance['newResourceType'] = is_multi_gpu_advisory ? null : new_instance['name']
+        instance['recommendedResourceType'] = new_instance['name']
         instance['newGpuCount'] = new_instance['gpu']['count']
 
         // Calculate savings using list price ratio applied to CCO cost
@@ -1765,6 +1778,9 @@ script "js_idle_and_underutil_instances", type: "javascript" do
         var new_gpu_mem_gib = Math.round(new_instance['gpu']['totalGpuMemoryInMiB'] / 1024)
 
         recommendationDetails = 'Change instance type of AWS GPU EC2 instance ' + id + ' in AWS Account ' + instance['accountName'] + ' (' + instance['accountID'] + ') from ' + instance['resourceType'] + ' (' + current_specs['gpu']['count'] + ' GPU(s), ' + current_gpu_mem_gib + ' GiB GPU memory) to ' + new_instance['name'] + ' (' + new_instance['gpu']['count'] + ' GPU(s), ' + new_gpu_mem_gib + ' GiB GPU memory)'
+        if (is_multi_gpu_advisory) {
+          recommendationDetails += ' This recommendation reduces GPU count on a multi-GPU instance and requires manual review before applying.'
+        }
         if (instance['chartUrl']) {
           instance['chartUrlField'] = id + ' Utilization Chart||' + instance['chartUrl'] + '&from_pt=true'
           recommendationDetails += '\n\n![Utilization Chart](' + instance['chartUrl'] + '&from_pt=true)'
@@ -1806,6 +1822,8 @@ script "js_idle_and_underutil_instances", type: "javascript" do
 
   var dummy_underutil = {
     recommendationType: '',
+    newResourceType: null,
+    recommendedResourceType: null,
     policy_name: policy_name,
     underutil_message: underutil_message,
     underutil_total_savings: 'Total Estimated Monthly Savings: ' + underutil_total_savings_str,
@@ -1823,6 +1841,8 @@ script "js_idle_and_underutil_instances", type: "javascript" do
 
   var dummy_idle = {
     recommendationType: '',
+    newResourceType: null,
+    recommendedResourceType: null,
     policy_name: policy_name,
     idle_message: idle_message,
     idle_total_savings: 'Total Estimated Monthly Savings: ' + idle_total_savings_str,
@@ -1910,8 +1930,11 @@ policy "pol_utilization" do
       field "resourceType" do
         label "Instance Size"
       end
-      field "newResourceType" do
+      field "recommendedResourceType" do
         label "Recommended Instance Size"
+      end
+      field "newResourceType" do
+        label "Auto-Resize Target"
       end
       field "gpuCount" do
         label "GPU Count"
