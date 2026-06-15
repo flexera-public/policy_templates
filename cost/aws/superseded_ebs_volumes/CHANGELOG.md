@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.6.1
+
+- Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match
+
 ## v6.6.0
 
 - Updated savings calculation to use the percentage difference between GP2 and GP3 list prices applied to the actual cost of the resource in Flexera CCO, rather than the raw list price difference. This ensures that savings estimates reflect Flexera adjustment rules and cloud provider discounts.

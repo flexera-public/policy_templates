@@ -32,10 +32,12 @@ This policy template has the following input parameters:
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Allow/Deny Subscriptions* - Allow or Deny entered Subscriptions to filter results.
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions.
+- *Allow/Deny Resource Groups* - Whether to treat Allow/Deny Resource Groups List parameter as allow or deny list. Has no effect if Allow/Deny Resource Groups List is left empty.
+- *Allow/Deny Resource Groups List* - A list of allowed or denied Resource Group names to filter the results by. Entries can be in the format `resource_group_name` to filter all resource groups with that name regardless of subscription, or `subscription_id/resource_group_name` to filter a resource group within a specific subscription. Leave blank to consider all resource groups.
 - *Look Back Period* - Number of days of prior usage to analyze.
-- *Savings Plan Term* - Length of reservation term to provide recommendations for. Can be set to either `1 Year` or `3 Year`
+- *Savings Plan Term* - Length of savings plan term to provide recommendations for. Can be set to `1 Year`, `3 Year`, or `Any`. Select `Any` to return combined results for both term lengths.
 - *Savings Plan Scope* - The scope to provide recommendations for. Select `Shared` to not have recommendations scoped to individual Subscriptions or Resource Groups.
-- *Payment Option* - Whether or not to report recommendations as 'No Upfront' or 'All Upfront'. Default value of 'No Upfront' recommended in most cases. Has no impact on the recommendations themselves; Azure does not offer discounts or differing options if you paying up front.
+- *Payment Option* - Payment option label to apply to recommendations. Has no impact on the recommendations themselves; Azure does not offer discounts or differing options based on payment timing. Select `Everything` to return combined results for all payment options.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 

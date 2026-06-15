@@ -1,5 +1,14 @@
 # Changelog
 
+## v4.8.0
+
+- Added `Any` option to `Term` parameter to return combined results for both 1-year and 3-year terms.
+
+## v4.7.0
+
+- Added new `Recommendation Scope` parameter to support fetching CUD recommendations at the billing account level in addition to, or instead of, the existing project level.
+- Incident message now includes the selected Recommendation Scope setting for easier auditing.
+
 ## v4.6.0
 
 - Added error incident if no Google projects are returned by the credential, to alert users to potential permission issues.

@@ -9,7 +9,7 @@ category "Meta"
 default_frequency "hourly"
 info(
   provider: "Google",
-  version: "4.6.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "4.8.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "true",
   deprecated: "false",
   hide_skip_approvals: "true"
@@ -88,6 +88,15 @@ parameter "param_combined_incident_table_size" do
   default 100000
 end
 
+parameter "param_skip_consolidated_incident" do
+  type "string"
+  category "Incident Settings"
+  label "Skip Consolidated Incident"
+  description "Whether or not to skip generating the consolidated incident that combines violations from all child policy incidents. When set to 'Yes', only the status incident showing child policy management activity will be generated. Default value of 'No' preserves the standard behavior of generating a consolidated incident."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
 ## Child Policy Parameters
 parameter "param_min_savings" do
   type "number"
@@ -96,6 +105,15 @@ parameter "param_min_savings" do
   description "Minimum potential savings required to generate a recommendation."
   min_value 0
   default 0
+end
+
+parameter "param_recommendation_scope" do
+  type "string"
+  category "Policy Settings"
+  label "Recommendation Scope"
+  description "Whether to fetch project-level recommendations, billing account-level recommendations, or both. Billing account-level recommendations require additional IAM permissions; see the README for more details."
+  allowed_values "Project", "Billing Account", "Both"
+  default "Project"
 end
 
 parameter "param_projects_ignore_sys" do
@@ -139,8 +157,8 @@ parameter "param_term" do
   type "string"
   category "Reservation Settings"
   label "Term"
-  description "Length of Committed Use Discount term to provide recommendations for."
-  allowed_values "1 Year", "3 Year"
+  description "Length of Committed Use Discount term to provide recommendations for. Select 'Any' to return combined results for all terms."
+  allowed_values "1 Year", "3 Year", "Any"
   default "1 Year"
 end
 
@@ -251,7 +269,7 @@ script "js_child_policy_options", type: "javascript" do
   // Filter Options that are not appropriate for Child Policy
   var options = _.map(ds_self_policy_information.options, function(option){
     // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes", param_policy_schedule are exclusion to Meta Parent Policy Parameters
-    if (!_.contains(["param_combined_incident_email", "param_combined_incident_csv", "param_combined_incident_table_size", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
+    if (!_.contains(["param_combined_incident_email", "param_combined_incident_csv", "param_combined_incident_table_size", "param_skip_consolidated_incident", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
       return { "name": option.name, "value": option.value };
     }
   });
@@ -1067,7 +1085,7 @@ policy "policy_scheduled_report" do
     summary_template "Consolidated Incident: {{ len data }} Google Committed Use Discount Recommendations"
     escalate $esc_email
     
-    check eq(size(data), 0)
+    check logic_or(eq($param_skip_consolidated_incident, "Yes"), eq(size(data), 0))
     export do
       resource_level true
       field "accountID" do
@@ -1076,17 +1094,26 @@ policy "policy_scheduled_report" do
       field "accountName" do
         label "Project Name"
       end
+      field "billingAccountID" do
+        label "Billing Account ID"
+      end
+      field "billingAccountName" do
+        label "Billing Account Name"
+      end
       field "resourceID" do
         label "Resource ID"
       end
       field "resourceName" do
         label "Resource Name"
       end
+      field "resourcesToPurchase" do
+        label "Resources To Purchase"
+      end
       field "resourceType" do
         label "Resource Type"
       end
-      field "resourcesToPurchase" do
-        label "Resources To Purchase"
+      field "recommendationDetails" do
+        label "Recommendation"
       end
       field "region" do
         label "Region"
@@ -1100,15 +1127,6 @@ policy "policy_scheduled_report" do
       field "paymentOption" do
         label "Payment Option"
       end
-      field "recommendationDetails" do
-        label "Recommendation"
-      end
-      field "savings" do
-        label "Estimated Monthly Savings"
-      end
-      field "savingsCurrency" do
-        label "Currency"
-      end
       field "priority" do
         label "Priority"
       end
@@ -1117,6 +1135,15 @@ policy "policy_scheduled_report" do
       end
       field "state" do
         label "State"
+      end
+      field "recommendationScope" do
+        label "Recommendation Scope"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
       end
       field "service" do
         label "Service"

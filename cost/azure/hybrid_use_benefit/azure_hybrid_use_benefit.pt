@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "5.5.0",
+  version: "5.6.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Hybrid Use Benefit",
@@ -60,6 +60,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names to filter the results by. Optionally, entries can use the format SUBSCRIPTION_ID/RESOURCE_GROUP_NAME to limit filtering to a specific subscription. See the README for more details."
   default []
 end
 
@@ -560,8 +577,7 @@ script "js_azure_instances_tag_filtered", type: "javascript" do
         }
 
         if (comparison == '!~') {
-          if (resource_tag == undefined) { found_tags.push(string) }
-          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+          if (resource_tag == undefined || !value.test(resource_tag)) { found_tags.push(string) }
         }
       })
 
@@ -597,6 +613,36 @@ script "js_azure_instances_region_filtered", type: "javascript" do
   } else {
     result = ds_azure_instances_tag_filtered
   }
+EOS
+end
+
+datasource "ds_azure_instances_rg_filtered" do
+  run_script $js_azure_instances_rg_filtered, $ds_azure_instances_region_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_azure_instances_rg_filtered", type: "javascript" do
+  parameters "azure_instances_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(azure_instances_region_filtered, function(resource) {
+        rg = resource['resourceGroup']
+        sub = resource['subscriptionId'] || resource['subscriptionID']
+        include_resource = _.any(param_resource_groups_list, function(rg_entry) {
+          if (rg_entry.indexOf('/') != -1) {
+            entry_parts = rg_entry.split('/')
+            return sub == entry_parts[0] && rg == entry_parts[1]
+          }
+          return rg == rg_entry
+        })
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = azure_instances_region_filtered
+    }
 EOS
 end
 
@@ -760,11 +806,11 @@ EOS
 end
 
 datasource "ds_ahub_recommendations" do
-  run_script $js_ahub_recommendations, $ds_instance_costs_grouped, $ds_azure_instances_region_filtered, $ds_region_table, $ds_azure_pricing, $ds_currency, $ds_applied_policy, $param_min_savings, $param_incident_csv
+  run_script $js_ahub_recommendations, $ds_instance_costs_grouped, $ds_azure_instances_rg_filtered, $ds_region_table, $ds_azure_pricing, $ds_currency, $ds_applied_policy, $param_min_savings, $param_incident_csv
 end
 
 script "js_ahub_recommendations", type: "javascript" do
-  parameters "ds_instance_costs_grouped", "ds_azure_instances_region_filtered", "ds_region_table", "ds_azure_pricing", "ds_currency", "ds_applied_policy", "param_min_savings", "param_incident_csv"
+  parameters "ds_instance_costs_grouped", "ds_azure_instances_rg_filtered", "ds_region_table", "ds_azure_pricing", "ds_currency", "ds_applied_policy", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -797,7 +843,7 @@ script "js_ahub_recommendations", type: "javascript" do
   result = []
   total_savings = 0.0
 
-  _.each(ds_azure_instances_region_filtered, function(vm) {
+  _.each(ds_azure_instances_rg_filtered, function(vm) {
     tags = []
 
     if (typeof(vm['tags']) == 'object') {
@@ -875,7 +921,7 @@ script "js_ahub_recommendations", type: "javascript" do
   })
 
   // Message for incident output
-  total_vms = ds_azure_instances_region_filtered.length.toString()
+  total_vms = ds_azure_instances_rg_filtered.length.toString()
   total_ahub_vms = result.length.toString()
   ahub_vms_percentage = (total_ahub_vms / total_vms * 100).toFixed(2).toString() + '%'
 

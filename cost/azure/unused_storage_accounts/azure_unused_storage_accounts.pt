@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.3.0",
+  version: "0.4.1",
   provider: "Azure",
   service: "Storage",
   policy_set: "Unused Storage Accounts",
@@ -59,6 +59,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names to filter the results by. Optionally, entries can use the format SUBSCRIPTION_ID/RESOURCE_GROUP_NAME to limit filtering to a specific subscription. See the README for more details."
   default []
 end
 
@@ -474,8 +491,7 @@ script "js_azure_storage_accounts_tag_filtered", type: "javascript" do
         }
 
         if (comparison == '!~') {
-          if (resource_tag == undefined) { found_tags.push(string) }
-          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+          if (resource_tag == undefined || !value.test(resource_tag)) { found_tags.push(string) }
         }
       })
 
@@ -510,16 +526,46 @@ script "js_azure_storage_accounts_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_storage_accounts_rg_filtered" do
+  run_script $js_azure_storage_accounts_rg_filtered, $ds_azure_storage_accounts_region_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_azure_storage_accounts_rg_filtered", type: "javascript" do
+  parameters "ds_azure_storage_accounts_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_azure_storage_accounts_region_filtered, function(resource) {
+        rg = resource['resourceGroup']
+        sub = resource['subscriptionId'] || resource['subscriptionID']
+        include_resource = _.any(param_resource_groups_list, function(rg_entry) {
+          if (rg_entry.indexOf('/') != -1) {
+            entry_parts = rg_entry.split('/')
+            return sub == entry_parts[0] && rg == entry_parts[1]
+          }
+          return rg == rg_entry
+        })
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_azure_storage_accounts_region_filtered
+    }
+EOS
+end
+
 datasource "ds_azure_storage_accounts_batch" do
-  run_script $js_azure_storage_accounts_batch, $ds_azure_storage_accounts_region_filtered
+  run_script $js_azure_storage_accounts_batch, $ds_azure_storage_accounts_rg_filtered
 end
 
 script "js_azure_storage_accounts_batch", type: "javascript" do
-  parameters "ds_azure_storage_accounts_region_filtered"
+  parameters "ds_azure_storage_accounts_rg_filtered"
   result "result"
   code <<-'EOS'
   // group by subscription
-  instances_by_subscription = _.values(_.groupBy(ds_azure_storage_accounts_region_filtered, function(instance) {
+  instances_by_subscription = _.values(_.groupBy(ds_azure_storage_accounts_rg_filtered, function(instance) {
     return instance['subscriptionID']
   }))
 
@@ -609,17 +655,17 @@ EOS
 end
 
 datasource "ds_azure_storage_accounts_with_metrics" do
-  run_script $js_azure_storage_accounts_with_metrics, $ds_azure_storage_accounts_region_filtered, $ds_azure_metrics_batch
+  run_script $js_azure_storage_accounts_with_metrics, $ds_azure_storage_accounts_rg_filtered, $ds_azure_metrics_batch
 end
 
 script "js_azure_storage_accounts_with_metrics", type: "javascript" do
-  parameters "ds_azure_storage_accounts_region_filtered", "ds_azure_metrics_batch"
+  parameters "ds_azure_storage_accounts_rg_filtered", "ds_azure_metrics_batch"
   result "result"
   code <<-'EOS'
   metrics_by_resource = {}
   _.each(ds_azure_metrics_batch, function(item) { metrics_by_resource[item["resourceID"]] = item["value"] })
 
-  result = _.map(ds_azure_storage_accounts_region_filtered, function(item) {
+  result = _.map(ds_azure_storage_accounts_rg_filtered, function(item) {
     new_item = {}
     _.each(_.keys(item), function(key) { new_item[key] = item[key] })
 

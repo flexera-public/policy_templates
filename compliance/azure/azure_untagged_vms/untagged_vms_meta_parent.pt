@@ -9,7 +9,7 @@ category "Meta"
 default_frequency "hourly"
 info(
   provider: "Azure",
-  version: "1.3.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "2.0.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "true",
   deprecated: "false",
   hide_skip_approvals: "true"
@@ -88,6 +88,15 @@ parameter "param_combined_incident_table_size" do
   default 100000
 end
 
+parameter "param_skip_consolidated_incident" do
+  type "string"
+  category "Incident Settings"
+  label "Skip Consolidated Incident"
+  description "Whether or not to skip generating the consolidated incident that combines violations from all child policy incidents. When set to 'Yes', only the status incident showing child policy management activity will be generated. Default value of 'No' preserves the standard behavior of generating a consolidated incident."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
 ## Child Policy Parameters
 parameter "param_azure_endpoint" do
   type "string"
@@ -130,6 +139,15 @@ parameter "param_regions_list" do
   label "Allow/Deny Regions List"
   description "A list of allowed or denied regions. See the README for more details."
   default []
+end
+
+parameter "param_consider_tag_dimensions" do
+  type "string"
+  category "Filters"
+  label "Consider Tag Dimensions"
+  description "Exclude results when a tag has a value for a tag key normalized by a Tag Dimension. Please see README for more details."
+  allowed_values "Consider Tag Dimensions", "Do Not Consider Tag Dimensions"
+  default "Consider Tag Dimensions"
 end
 
 parameter "param_automatic_action" do
@@ -248,7 +266,7 @@ script "js_child_policy_options", type: "javascript" do
   // Filter Options that are not appropriate for Child Policy
   var options = _.map(ds_self_policy_information.options, function(option){
     // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes", param_policy_schedule are exclusion to Meta Parent Policy Parameters
-    if (!_.contains(["param_combined_incident_email", "param_combined_incident_csv", "param_combined_incident_table_size", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
+    if (!_.contains(["param_combined_incident_email", "param_combined_incident_csv", "param_combined_incident_table_size", "param_skip_consolidated_incident", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
       return { "name": option.name, "value": option.value };
     }
   });
@@ -1066,7 +1084,7 @@ policy "policy_scheduled_report" do
     escalate $esc_tag_instances
     escalate $esc_poweroff_instances
     escalate $esc_delete_instances
-    check eq(size(data), 0)
+    check logic_or(eq($param_skip_consolidated_incident, "Yes"), eq(size(data), 0))
     export do
       resource_level true
       field "accountID" do

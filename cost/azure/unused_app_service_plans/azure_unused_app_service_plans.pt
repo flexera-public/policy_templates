@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.3.0",
+  version: "0.4.1",
   provider: "Azure",
   service: "PaaS",
   policy_set: "PaaS Optimization",
@@ -60,6 +60,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names to filter the results by. Optionally, entries can use the format SUBSCRIPTION_ID/RESOURCE_GROUP_NAME to limit filtering to a specific subscription. See the README for more details."
   default []
 end
 
@@ -466,8 +483,7 @@ script "js_azure_app_service_plans_tag_filtered", type: "javascript" do
         }
 
         if (comparison == '!~') {
-          if (resource_tag == undefined) { found_tags.push(string) }
-          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+          if (resource_tag == undefined || !value.test(resource_tag)) { found_tags.push(string) }
         }
       })
 
@@ -502,8 +518,38 @@ script "js_azure_app_service_plans_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_app_service_plans_rg_filtered" do
+  run_script $js_azure_app_service_plans_rg_filtered, $ds_azure_app_service_plans_region_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_azure_app_service_plans_rg_filtered", type: "javascript" do
+  parameters "ds_azure_app_service_plans_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_azure_app_service_plans_region_filtered, function(resource) {
+        rg = resource['resourceGroup']
+        sub = resource['subscriptionId'] || resource['subscriptionID']
+        include_resource = _.any(param_resource_groups_list, function(rg_entry) {
+          if (rg_entry.indexOf('/') != -1) {
+            entry_parts = rg_entry.split('/')
+            return sub == entry_parts[0] && rg == entry_parts[1]
+          }
+          return rg == rg_entry
+        })
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_azure_app_service_plans_region_filtered
+    }
+EOS
+end
+
 datasource "ds_azure_web_apps" do
-  iterate $ds_azure_app_service_plans_region_filtered
+  iterate $ds_azure_app_service_plans_rg_filtered
   request do
     auth $auth_azure
     pagination $pagination_azure
@@ -532,14 +578,14 @@ datasource "ds_azure_web_apps" do
 end
 
 datasource "ds_azure_app_service_plan_subscriptions" do
-  run_script $js_azure_app_service_plan_subscriptions, $ds_azure_app_service_plans_region_filtered
+  run_script $js_azure_app_service_plan_subscriptions, $ds_azure_app_service_plans_rg_filtered
 end
 
 script "js_azure_app_service_plan_subscriptions", type: "javascript" do
-  parameters "ds_azure_app_service_plans_region_filtered"
+  parameters "ds_azure_app_service_plans_rg_filtered"
   result "result"
   code <<-'EOS'
-  subscriptions = _.uniq(_.pluck(ds_azure_app_service_plans_region_filtered, 'subscriptionId'))
+  subscriptions = _.uniq(_.pluck(ds_azure_app_service_plans_rg_filtered, 'subscriptionId'))
   result = _.map(subscriptions, function(sub) { return { id: sub } })
 EOS
 end
@@ -651,11 +697,11 @@ EOS
 end
 
 datasource "ds_bad_azure_app_service_plans" do
-  run_script $js_bad_azure_app_service_plans, $ds_azure_app_service_plans_region_filtered, $ds_azure_web_apps, $ds_azure_app_service_plan_costs_grouped, $ds_currency, $ds_applied_policy, $param_min_savings, $param_incident_csv
+  run_script $js_bad_azure_app_service_plans, $ds_azure_app_service_plans_rg_filtered, $ds_azure_web_apps, $ds_azure_app_service_plan_costs_grouped, $ds_currency, $ds_applied_policy, $param_min_savings, $param_incident_csv
 end
 
 script "js_bad_azure_app_service_plans", type: "javascript" do
-  parameters "ds_azure_app_service_plans_region_filtered", "ds_azure_web_apps", "ds_azure_app_service_plan_costs_grouped", "ds_currency", "ds_applied_policy", "param_min_savings", "param_incident_csv"
+  parameters "ds_azure_app_service_plans_rg_filtered", "ds_azure_web_apps", "ds_azure_app_service_plan_costs_grouped", "ds_currency", "ds_applied_policy", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -685,7 +731,7 @@ script "js_bad_azure_app_service_plans", type: "javascript" do
     return formatted_number
   }
 
-  bad_app_service_plans = _.reject(ds_azure_app_service_plans_region_filtered, function(app_service_plan) {
+  bad_app_service_plans = _.reject(ds_azure_app_service_plans_rg_filtered, function(app_service_plan) {
     return _.contains(_.pluck(ds_azure_web_apps, 'servicePlanId'), app_service_plan['id']) && app_service_plan['provisioningState'] == "Succeeded"
   })
 
@@ -741,7 +787,7 @@ script "js_bad_azure_app_service_plans", type: "javascript" do
   })
 
   // Message for incident output
-  total_app_service_plans = ds_azure_app_service_plans_region_filtered.length.toString()
+  total_app_service_plans = ds_azure_app_service_plans_rg_filtered.length.toString()
   total_unused_app_service_plans = result.length.toString()
   unused_app_service_plans_percentage = (total_unused_app_service_plans / total_app_service_plans * 100).toFixed(2).toString() + '%'
 
