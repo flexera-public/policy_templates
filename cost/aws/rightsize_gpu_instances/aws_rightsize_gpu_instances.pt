@@ -157,6 +157,14 @@ parameter "param_exclusion_tags_boolean" do
   default "Any"
 end
 
+parameter "param_gpu_count_lock_tag" do
+  type "string"
+  category "Filters"
+  label "GPU Count Lock Tag"
+  description "A tag key. Instances carrying this tag (any value) will have their GPU count preserved and will not receive a GPU-count reduction recommendation. Other rightsizing dimensions (vCPU, RAM, GPU memory) may still produce a recommendation. Leave blank to disable."
+  default ""
+end
+
 parameter "param_automatic_action" do
   type "list"
   category "Actions"
@@ -1310,28 +1318,40 @@ script "js_cloudwatch_data_sorted", type: "javascript" do
         // CPU: e.g. "cpuAverage", "cpuMinimum"
         result[region][instance_name][metric] = value
       } else if (metric.indexOf('gpuutil') != -1) {
-        // GPU utilization: "gpuutil0Average" -> key "gpuUtilAverage", aggregate max across indices
-        var gpu_index = metric.charAt(7)
-        var stat = metric.slice(8)
-        var key = 'gpuUtil' + stat
-        if (value != null && value != undefined) {
-          if (result[region][instance_name][key] == undefined) {
-            result[region][instance_name][key] = value
-          } else {
-            result[region][instance_name][key] = Math.max(result[region][instance_name][key], value)
+        // GPU utilization: "gpuutil<N><Stat>" -> key "gpuUtil<Stat>", aggregate max; also stored per-index
+        var re_match = metric.match(/^gpuutil(\d+)(.+)$/)
+        if (re_match) {
+          var gpu_index = re_match[1]
+          var stat = re_match[2]
+          var key = 'gpuUtil' + stat
+          if (value != null && value != undefined) {
+            if (result[region][instance_name][key] == undefined) {
+              result[region][instance_name][key] = value
+            } else {
+              result[region][instance_name][key] = Math.max(result[region][instance_name][key], value)
+            }
+            if (!result[region][instance_name]['gpuUtilByIndex']) { result[region][instance_name]['gpuUtilByIndex'] = {} }
+            if (!result[region][instance_name]['gpuUtilByIndex'][gpu_index]) { result[region][instance_name]['gpuUtilByIndex'][gpu_index] = {} }
+            result[region][instance_name]['gpuUtilByIndex'][gpu_index][stat] = value
           }
         }
       } else if (metric.indexOf('gpumem') != -1) {
-        // GPU memory used: agent publishes nvidia_smi_memory_used in MB; normalize to MiB before storing
-        var gpu_index = metric.charAt(6)
-        var stat = metric.slice(7)
-        var key = 'gpuMemUsed' + stat
-        if (value != null && value != undefined) {
-          var value_mib = value * 1000000 / 1048576
-          if (result[region][instance_name][key] == undefined) {
-            result[region][instance_name][key] = value_mib
-          } else {
-            result[region][instance_name][key] += value_mib
+        // GPU memory used: agent publishes nvidia_smi_memory_used in MB; normalize to MiB; also stored per-index
+        var re_match = metric.match(/^gpumem(\d+)(.+)$/)
+        if (re_match) {
+          var gpu_index = re_match[1]
+          var stat = re_match[2]
+          var key = 'gpuMemUsed' + stat
+          if (value != null && value != undefined) {
+            var value_mib = value * 1000000 / 1048576
+            if (result[region][instance_name][key] == undefined) {
+              result[region][instance_name][key] = value_mib
+            } else {
+              result[region][instance_name][key] += value_mib
+            }
+            if (!result[region][instance_name]['gpuMemUsedByIndex']) { result[region][instance_name]['gpuMemUsedByIndex'] = {} }
+            if (!result[region][instance_name]['gpuMemUsedByIndex'][gpu_index]) { result[region][instance_name]['gpuMemUsedByIndex'][gpu_index] = {} }
+            result[region][instance_name]['gpuMemUsedByIndex'][gpu_index][stat] = value_mib
           }
         }
       } else if (metric.indexOf('mem') != -1) {
@@ -1363,11 +1383,11 @@ EOS
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_currency, $param_stats_threshold, $param_stats_lookback, rs_org_id, rs_project_id
+  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_currency, $param_stats_threshold, $param_stats_lookback, $param_gpu_count_lock_tag, rs_org_id, rs_project_id
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_cloudwatch_data_sorted", "ds_instances", "ds_aws_account", "ds_currency", "param_stats_threshold", "param_stats_lookback", "rs_org_id", "rs_project_id"
+  parameters "ds_cloudwatch_data_sorted", "ds_instances", "ds_aws_account", "ds_currency", "param_stats_threshold", "param_stats_lookback", "param_gpu_count_lock_tag", "rs_org_id", "rs_project_id"
   result "result"
   code <<-'EOS'
   function generateChartUrl(cpu_stats, mem_stats, gpu_stats, stat_name, resource_name, rs_org_id, rs_project_id) {
@@ -1470,6 +1490,15 @@ script "js_merged_metrics", type: "javascript" do
       })
     }
 
+    var gpu_count_locked = false
+    if (param_gpu_count_lock_tag != '') {
+      if (instance['tags'] != undefined && instance['tags'] != null) {
+        _.each(instance['tags'], function(tag) {
+          if (tag['key'] == param_gpu_count_lock_tag) { gpu_count_locked = true }
+        })
+      }
+    }
+
     var resourceARN = 'arn:aws:ec2:' + region + ':' + ds_aws_account['id'] + ':instance/' + id
 
     var resource_identifier = resourceName ? resourceName + ' (' + id + ')' : id
@@ -1516,6 +1545,9 @@ script "js_merged_metrics", type: "javascript" do
       savingsCurrency: ds_currency['symbol'],
       thresholdType: param_stats_threshold,
       lookbackPeriod: param_stats_lookback,
+      gpuUtilByIndex: cw['gpuUtilByIndex'] != undefined ? cw['gpuUtilByIndex'] : {},
+      gpuMemUsedByIndex: cw['gpuMemUsedByIndex'] != undefined ? cw['gpuMemUsedByIndex'] : {},
+      gpuCountLocked: gpu_count_locked,
       service: 'EC2',
       underutil_message: '',
       idle_message: '',
@@ -1669,7 +1701,27 @@ script "js_idle_and_underutil_instances", type: "javascript" do
       var required_ram_mib = (mem_pct != null && mem_pct != undefined)
         ? Math.ceil(current_specs['memory']['sizeInMiB'] * mem_pct / 100 * SAFETY_FACTOR)
         : 0
-      var required_gpu_count = Math.max(1, Math.ceil(current_specs['gpu']['count'] * gpu_util / 100 * SAFETY_FACTOR))
+      // Occupancy model: count GPU indices that were active over the lookback window
+      var gpu_util_floor = param_stats_gpu_idle >= 0 ? param_stats_gpu_idle : 0
+      var gpu_mem_floor = param_stats_gpu_mem_idle >= 0 ? param_stats_gpu_mem_idle : 0
+      var per_gpu_mem_mib = current_specs['gpu']['memoryInMiB']
+      var util_by_index = instance['gpuUtilByIndex'] || {}
+      var mem_by_index = instance['gpuMemUsedByIndex'] || {}
+      var all_indices = _.union(_.keys(util_by_index), _.keys(mem_by_index))
+      var required_gpu_count
+      if (all_indices.length == 0) {
+        required_gpu_count = current_specs['gpu']['count']
+      } else {
+        var active_count = 0
+        _.each(all_indices, function(idx) {
+          var peak_util = (util_by_index[idx] && util_by_index[idx]['Maximum'] != undefined) ? util_by_index[idx]['Maximum'] : 0
+          var peak_mem_mib = (mem_by_index[idx] && mem_by_index[idx]['Maximum'] != undefined) ? mem_by_index[idx]['Maximum'] : 0
+          var peak_mem_pct = per_gpu_mem_mib > 0 ? peak_mem_mib / per_gpu_mem_mib * 100 : 0
+          if (peak_util > gpu_util_floor || peak_mem_pct > gpu_mem_floor) { active_count++ }
+        })
+        required_gpu_count = Math.max(1, active_count)
+      }
+      if (instance['gpuCountLocked']) { required_gpu_count = current_specs['gpu']['count'] }
       var required_gpu_mem_mib = (gpu_mem_used_mib != null)
         ? Math.ceil(gpu_mem_used_mib * SAFETY_FACTOR)
         : 0
@@ -1688,6 +1740,7 @@ script "js_idle_and_underutil_instances", type: "javascript" do
         if (!inst['gpu'] || inst['gpu']['count'] < required_gpu_count) { return }
         if (required_gpu_mem_mib > 0 && (!inst['gpu'] || inst['gpu']['totalGpuMemoryInMiB'] < required_gpu_mem_mib)) { return }
         if (inst['gpu']['manufacturer'] != current_specs['gpu']['manufacturer']) { return }
+        if (inst['gpu']['memoryInMiB'] < current_specs['gpu']['memoryInMiB']) { return }
         candidate_instances.push({ inst: inst, price: candidate_price })
       })
 
@@ -1697,8 +1750,9 @@ script "js_idle_and_underutil_instances", type: "javascript" do
 
       if (best) {
         var new_instance = best.inst
+        var count_reduced = new_instance['gpu']['count'] < current_specs['gpu']['count']
         instance['recommendationType'] = 'Downsize'
-        instance['newResourceType'] = new_instance['name']
+        instance['newResourceType'] = (count_reduced && current_specs['gpu']['count'] > 1) ? null : new_instance['name']
         instance['newGpuCount'] = new_instance['gpu']['count']
 
         // Calculate savings using list price ratio applied to CCO cost

@@ -16,13 +16,15 @@ Reports on AWS GPU EC2 instances that are idle or underutilized based on GPU and
 1. **Rightsizing** — Instances that are not idle are assessed for downsizing. The required resources are computed by applying the configured Safety Factor to the observed peak utilization:
 
    ```text
-   required_vcpus        = ceil(current_vcpus        × cpu_stat  / 100 × safety_factor)
-   required_ram_mib      = ceil(current_ram_mib       × mem_stat  / 100 × safety_factor)
-   required_gpu_count    = max(1, ceil(current_gpu_count × gpu_stat  / 100 × safety_factor))
+   required_vcpus        = ceil(current_vcpus   × cpu_stat / 100 × safety_factor)
+   required_ram_mib      = ceil(current_ram_mib  × mem_stat / 100 × safety_factor)
+   required_gpu_count    = max(1, count of GPU indices active over the lookback window)
    required_gpu_mem_mib  = ceil(gpu_mem_used_mib × safety_factor)
    ```
 
-   The policy searches **all GPU instance types** available in the region (across all GPU families) for the cheapest instance type that satisfies all resource requirements and has a lower list price than the current instance. Savings are estimated using the list price ratio between the current and recommended instance types applied to the CCO monthly cost:
+   A GPU index is counted as active when its peak (Maximum) utilization over the window exceeds the GPU utilization idle threshold OR its peak memory usage (as a percentage of per-GPU memory) exceeds the GPU memory idle threshold. A disabled threshold (`-1`) is treated as a floor of 0, so any nonzero peak counts as active. When no per-index data is available the count defaults to the current GPU count (fail-safe). Instances tagged with the key configured in *GPU Count Lock Tag* always keep their current GPU count. When a candidate would reduce the GPU count on a multi-GPU instance the recommendation is recorded as advisory only and will not be applied automatically.
+
+   The policy searches **all GPU instance types** available in the region (across all GPU families, same GPU manufacturer and CPU architecture as the current instance) for the cheapest instance type that satisfies all resource requirements and has a lower list price than the current instance. Candidates must also have per-GPU memory ≥ the current instance's per-GPU memory. Savings are estimated using the list price ratio between the current and recommended instance types applied to the CCO monthly cost:
 
    ```text
    estimated_monthly_savings = current_monthly_cost × (1 - new_list_price / current_list_price)
@@ -59,6 +61,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Minimum Instance Age (Days)* - The minimum age in days that an instance must be before it is considered for rightsizing or termination recommendations. Set to 0 to evaluate instances of any age. Default is 7.
 - *Exclusion Tags* - Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field.
+- *GPU Count Lock Tag* - A tag key. Instances carrying this tag (any value) will have their GPU count preserved and will not receive a GPU-count reduction recommendation. Other rightsizing dimensions (vCPU, RAM, GPU memory) may still produce a recommendation. Leave blank to disable.
 - *Automatic Actions* - When set, the policy will automatically take the selected action(s) without manual approval. Options: `Downsize Instances`, `Stop Instances`, `Terminate Instances`.
 - *Attach Incident CSV* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Size* - The number of results to include in the incident table in the incident email. Set to `0` to not show an incident table at all, and `100000` to include all results.
