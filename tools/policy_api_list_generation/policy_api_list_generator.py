@@ -2319,10 +2319,13 @@ class PolicyTemplateParser:
         # Compute
         if service == 'compute':
             # Aggregated list: /compute/v1/projects/{id}/aggregated/{resource}
+            # GCP IAM does not have a separate 'aggregatedList' permission; the IAM
+            # permission for both the per-zone 'list' and cross-zone 'aggregatedList'
+            # API calls is simply compute.{resource}.list.
             agg_match = re.search(r'/aggregated/([^/?]+)', path)
             if agg_match:
                 resource = agg_match.group(1).rstrip('/')
-                return f'compute.{resource}.aggregatedList'
+                return f'compute.{resource}.list'
 
             # /compute/v1/projects/{id}/regions
             if re.search(r'/projects/[^/]+/regions/?$', path):
@@ -3682,7 +3685,7 @@ class PolicyTemplateParser:
 
         # Expand placeholder GCP permissions where resource type is a runtime variable.
         # Scans the template source for literal 'types = [...]' JS arrays and replaces
-        # e.g. compute.{type}.aggregatedList with compute.addresses.aggregatedList, etc.
+        # e.g. compute.{type}.list with compute.addresses.list, compute.disks.list, etc.
         api_calls = self._expand_dynamic_gcp_type_permissions(api_calls)
 
         # Add implicit companion GCP permissions that are always required alongside
@@ -3783,16 +3786,19 @@ class PolicyTemplateParser:
     def _expand_dynamic_gcp_type_permissions(self, api_calls):
         """
         Replace placeholder GCP compute permissions that contain a variable resource type
-        (e.g. compute.{type}.aggregatedList or compute.{type}.list) with one entry per
-        literal type found in the template source.
+        (e.g. compute.{type}.list) with one entry per literal type found in the template source.
+
+        GCP IAM uses compute.{resource}.list for both the per-zone 'list' API endpoint and
+        the cross-zone 'aggregatedList' API endpoint, so both /aggregated/ and /global/ paths
+        map to the same 'list' permission suffix.
 
         When multiple 'types = [...]' JS arrays exist (e.g. separate arrays for /global/
         and /aggregated/ paths), this method traces the chain:
           JS script (types) → generator datasource (run_script) → consumer datasource (iterate, path)
-        to associate each type list with the correct suffix (aggregatedList vs list).
-        Falls back to using all types for all placeholders when the chain cannot be traced.
+        to collect all relevant types into a single pool for expansion.
+        Falls back to using all types when the chain cannot be traced.
         """
-        placeholder_re = re.compile(r'^compute\.\{[^}]+\}\.(aggregatedList|list)$')
+        placeholder_re = re.compile(r'^compute\.\{[^}]+\}\.list$')
         if not any(placeholder_re.match(c.get('permission') or '') for c in api_calls):
             return api_calls
 
@@ -3830,8 +3836,10 @@ class PolicyTemplateParser:
             if sname_m:
                 gen_ds_map[ds_name] = sname_m.group(1)
 
-        # --- Step 3: Map suffix → types by tracing iterate → path ---
-        suffix_types = {'aggregatedList': [], 'list': []}
+        # --- Step 3: Map types by tracing iterate → path ---
+        # Both /aggregated/ and /global/ paths require compute.{resource}.list in GCP IAM,
+        # so all types go into a single 'list' bucket regardless of the path pattern.
+        suffix_types = {'list': []}
         for m in re.finditer(
             r'\bdatasource\s+"[^"]*".*?^end\b',
             self.content, re.MULTILINE | re.DOTALL
@@ -3842,15 +3850,13 @@ class PolicyTemplateParser:
                 continue
             sname = gen_ds_map[iter_m.group(1)]
             types = js_types[sname]
-            # Identify suffix from path string inside this datasource
+            # Identify whether this datasource uses an /aggregated/ or /global/ compute path
             path_src = ' '.join(re.findall(r'"(/compute/v1[^"]+)"', body))
             path_src += ' '.join(re.findall(r"'(/compute/v1[^']+)'", body))
             for join_args in re.findall(r'join\(\s*\[([^\]]+)\]', body):
                 path_src += ''.join(re.findall(r'"([^"]+)"', join_args))
                 path_src += ''.join(re.findall(r"'([^']+)'", join_args))
-            if '/aggregated/' in path_src:
-                suffix_types['aggregatedList'].extend(types)
-            elif '/global/' in path_src:
+            if '/aggregated/' in path_src or '/global/' in path_src:
                 suffix_types['list'].extend(types)
 
         for k in suffix_types:
@@ -3866,14 +3872,13 @@ class PolicyTemplateParser:
             perm = call.get('permission') or ''
             m = placeholder_re.match(perm)
             if m:
-                suffix = m.group(1)
-                types = suffix_types.get(suffix) or all_types
+                types = suffix_types.get('list') or all_types
                 if not types:
                     expanded.append(call)
                     continue
                 for resource_type in types:
                     expanded_call = dict(call)
-                    expanded_call['permission'] = f'compute.{resource_type}.{suffix}'
+                    expanded_call['permission'] = f'compute.{resource_type}.list'
                     expanded.append(expanded_call)
             else:
                 expanded.append(call)

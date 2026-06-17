@@ -75,7 +75,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:
   - `resourcemanager.projects.search`
   - `monitoring.timeSeries.list`
-  - `compute.instances.aggregatedList`
+  - `compute.instances.list`
   - `compute.instances.get`*
   - `compute.instances.start`*
   - `compute.instances.stop`*
