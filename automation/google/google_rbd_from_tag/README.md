@@ -2,13 +2,13 @@
 
 ## What It Does
 
-This policy template creates and updates custom Rule-Based Dimensions that surface the specified Google Cloud resource manager tag key short names in the Flexera One platform. Resource manager tags are an organizational governance construct distinct from project labels: they are key-value resources managed at the organization, folder, or project level and can be inherited by resources across the resource hierarchy. This allows costs to be sliced by the values of the tag keys in question. Rules added to these rule-based dimensions manually, or by other policy templates, will not be deleted.
-
-Projects are retrieved using the Cloud Resource Manager v3 API (`cloudresourcemanager.googleapis.com`). For each project, the effective resource manager tags are fetched from the `effectiveTags.list` endpoint, which returns both directly-attached tags and tags inherited from parent folders and organizations.
+This policy template creates and updates custom Rule-Based Dimensions that surface the specified Google Cloud resource manager tag key short names in the Flexera One platform. This allows costs to be sliced by the values of the tag keys in question. Rules added to these rule-based dimensions manually, or by other policy templates, will not be deleted.
 
 NOTE: If applying this policy template multiple times, please give each applied policy a distinct name. This is to ensure the policy templates do not overwrite each other's work.
 
 NOTE: Unlike labels, resource manager tags use namespaced keys in the format `{parentNamespace}/{keyShortName}`. This policy matches tag keys by their **short name** only (the last path segment). For example, `environment` matches the tag key `myorg.example.com/environment`.
+
+**NOTE: Resource manager tags are an organizational governance construct distinct from project labels: they are key-value resources managed at the organization, folder, or project level and can be inherited by resources across the resource hierarchy. If you want to use project labels, please use the [Google Rule-Based Dimension From Project Labels](https://github.com/flexera-public/policy_templates/tree/master/automation/google/google_rbd_from_label) policy template.**
 
 ## Input Parameters
 
@@ -30,7 +30,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:
   - `resourcemanager.projects.list`
-  - `resourcemanager.tagBindings.list`
+  - `resourcemanager.hierarchyNodes.listEffectiveTags`
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
   - `observer`
