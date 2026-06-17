@@ -327,6 +327,7 @@ These templates can generate savings estimates for your environment. The inciden
 
 * Compute
 
+  * [AWS Auto Scaling Group Recommendations](./cost/aws/asg_recommendations)
   * [AWS Burstable EC2 Instances](./cost/aws/burstable_ec2_instances)
   * [AWS Cost Report - EC2 Instance Cost Per Hour](./cost/aws/instance_cost_per_hour)
   * [AWS EKS Clusters Without Spot Instances](./cost/aws/eks_without_spot)
