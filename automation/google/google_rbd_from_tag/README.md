@@ -30,7 +30,6 @@ This policy template has the following input parameters:
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:
-  - `resourcemanager.projects.list`
   - `cloudasset.assets.searchAllResources`
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
@@ -39,8 +38,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `policy_viewer`
 
 Note: The Cloud Asset Inventory API (`cloudasset.googleapis.com`) must be enabled in the Google Cloud project associated with the service account credential. The `cloudasset.assets.searchAllResources` permission must be granted at the resource scope specified in the *Cloud Asset Scope* parameter.
-
-Note: The `resourcemanager.projects.list` permission must cover at least the same set of Google Projects as the *Cloud Asset Scope* query returns. If this permission is scoped more narrowly than the Cloud Asset Inventory scope, rules for any projects visible to CAI but not to the project list API will be silently omitted from the generated Rule-Based Dimensions.
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 

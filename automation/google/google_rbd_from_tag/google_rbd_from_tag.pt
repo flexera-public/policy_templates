@@ -153,29 +153,6 @@ datasource "ds_applied_policy" do
   end
 end
 
-# Get all active Google Projects via the CRM v1 API.
-# Used solely to build a project-number-to-project-ID lookup table.
-# The Cloud Asset Inventory API identifies Project assets by numeric project
-# number in the resource name (//cloudresourcemanager.googleapis.com/projects/{number})
-# rather than the human-readable project ID string. The CRM v1 API is the
-# reliable source for this mapping.
-datasource "ds_google_projects" do
-  request do
-    auth $auth_google
-    pagination $pagination_google
-    host "cloudresourcemanager.googleapis.com"
-    path "/v1/projects/"
-    query "filter", "lifecycleState=ACTIVE"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "projects[*]") do
-      field "id", jmes_path(col_item, "projectId")
-      field "number", jmes_path(col_item, "projectNumber")
-    end
-  end
-end
-
 # Retrieve all Project assets within the configured scope using a single bulk
 # Cloud Asset Inventory query. The effectiveTags field is not returned by default
 # and must be requested explicitly via readMask. Results are paginated at up to
@@ -192,6 +169,7 @@ datasource "ds_cai_projects" do
     encoding "json"
     collect jmes_path(response, "results[*]") do
       field "name", jmes_path(col_item, "name")
+      field "projectId", jmes_path(col_item, "additionalAttributes.projectId")
       field "effectiveTags", jmes_path(col_item, "effectiveTags")
     end
   end
@@ -208,7 +186,7 @@ script "js_cai_request", type: "javascript" do
     path: "/v1/" + param_scope + ":searchAllResources",
     query_params: {
       "assetTypes": "cloudresourcemanager.googleapis.com/Project",
-      "readMask": "name,effectiveTags",
+      "readMask": "name,additionalAttributes,effectiveTags",
       "pageSize": "500"
     }
   }
@@ -216,34 +194,29 @@ EOS
 end
 
 datasource "ds_google_projects_normalized" do
-  run_script $js_google_projects_normalized, $ds_cai_projects, $ds_google_projects, $param_inherit_tags
+  run_script $js_google_projects_normalized, $ds_cai_projects, $param_inherit_tags
 end
 
 script "js_google_projects_normalized", type: "javascript" do
-  parameters "cai_projects", "projects", "param_inherit_tags"
+  parameters "cai_projects", "param_inherit_tags"
   result "result"
   code <<-'EOS'
   result = []
-
-  // Build a project-number -> project-ID lookup table from the CRM v1 results.
-  // CAI resource names use the numeric project number, e.g.:
-  //   //cloudresourcemanager.googleapis.com/projects/123456789
-  // We need this mapping to obtain the project ID string (e.g. "my-project")
-  // that Flexera stores as the vendor_account dimension.
-  var project_lookup = {}
-  _.each(projects, function(project) {
-    project_lookup[project['number']] = project['id']
-  })
+  var resolved_count = 0
 
   _.each(cai_projects, function(cai_project) {
     var resource_name = cai_project['name']
     if (typeof(resource_name) != 'string' || resource_name == '') { return }
 
-    // Strip the CAI full resource name prefix to extract the numeric project number
-    var prefix = "//cloudresourcemanager.googleapis.com/projects/"
-    var project_number = resource_name.replace(prefix, "")
-    var project_id = project_lookup[project_number]
+    // Project ID is sourced directly from additionalAttributes.projectId in the CAI
+    // result. This is the authoritative field for the project ID string (e.g. "my-project")
+    // used as the vendor_account dimension in Flexera billing data. The CAI resource
+    // name itself (used below for attachedResource comparisons) may carry either the
+    // project ID string or the numeric project number depending on API version, so it
+    // is not parsed for the ID here.
+    var project_id = cai_project['projectId']
     if (typeof(project_id) != 'string' || project_id == '') { return }
+    resolved_count++
 
     var tags = {}
 
@@ -291,6 +264,35 @@ script "js_google_projects_normalized", type: "javascript" do
       tags: tags
     })
   })
+
+  // If CAI returned Project assets but none yielded a usable project ID from
+  // additionalAttributes.projectId, surface a sentinel entry so the normalization-errors
+  // datasource can raise a visible incident. An empty string id is used intentionally:
+  // js_new_rules guards on account['id'] != '' and will skip this entry safely.
+  if (cai_projects.length > 0 && resolved_count == 0) {
+    result.push({
+      id: '',
+      tags: {},
+      resolution_error: 'CAI returned ' + cai_projects.length + ' Project asset(s) but additionalAttributes.projectId was absent from every result. Verify that the Cloud Asset Inventory API (cloudasset.googleapis.com) is enabled and that the readMask includes additionalAttributes.'
+    })
+  }
+EOS
+end
+
+datasource "ds_normalization_errors" do
+  run_script $js_normalization_errors, $ds_google_projects_normalized, $ds_applied_policy
+end
+
+script "js_normalization_errors", type: "javascript" do
+  parameters "normalized", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(normalized, function(item) {
+    return typeof(item['resolution_error']) == 'string' && item['resolution_error'] != ''
+  })
+  if (result.length > 0 && ds_applied_policy['name']) {
+    result[0]['policy_name'] = ds_applied_policy['name']
+  }
 EOS
 end
 
@@ -540,6 +542,15 @@ end
 ###############################################################################
 
 policy "pol_rbds" do
+  validate $ds_normalization_errors do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Project ID Resolution Failure"
+    detail_template <<-'EOS'
+    {{ range data -}}
+    {{ .resolution_error }}
+    {{ end -}}
+    EOS
+    check eq(size(data), 0)
+  end
   validate $ds_apply_rbds do
     summary_template "RBDs Generated & Applied"
     detail_template ""
