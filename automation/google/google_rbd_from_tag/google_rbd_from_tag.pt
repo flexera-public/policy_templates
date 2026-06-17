@@ -35,15 +35,6 @@ parameter "param_name_list" do
   default []
 end
 
-parameter "param_scope" do
-  type "string"
-  category "Policy Settings"
-  label "Cloud Asset Scope"
-  description "The Cloud Asset Inventory scope to search for Google Projects and their resource manager tags. Must be in the format 'organizations/{id}', 'folders/{id}', or 'projects/{id}'. The Google credential must have the cloudasset.assets.searchAllResources permission granted at this scope level."
-  allowed_pattern /^(organizations|folders|projects)\/.+$/
-  constraint_description "Must be in the format 'organizations/{id}', 'folders/{id}', or 'projects/{id}'."
-end
-
 parameter "param_inherit_tags" do
   type "string"
   category "Policy Settings"
@@ -153,146 +144,102 @@ datasource "ds_applied_policy" do
   end
 end
 
-# Retrieve all Project assets within the configured scope using a single bulk
-# Cloud Asset Inventory query. The effectiveTags field is not returned by default
-# and must be requested explicitly via readMask. Results are paginated at up to
-# 500 items per page using the standard nextPageToken / pageToken mechanism.
-# The request is constructed in a script to preserve literal characters that the
-# DSL query directive would percent-encode: the custom method colon in the path
-# (:searchAllResources), the forward slash in the asset type value, and the comma
-# in the readMask field list.
-datasource "ds_cai_projects" do
+# Get all active Google Projects using the Cloud Resource Manager v3 API.
+# Uses run_script to avoid the DSL path directive URL-encoding the colon
+# in the custom method ":search".
+datasource "ds_google_projects" do
   request do
-    run_script $js_cai_request, $param_scope
+    run_script $js_google_projects
   end
   result do
     encoding "json"
-    collect jmes_path(response, "results[*]") do
-      field "name", jmes_path(col_item, "name")
-      field "projectId", jmes_path(col_item, "additionalAttributes.projectId")
-      field "effectiveTags", jmes_path(col_item, "effectiveTags")
+    collect jmes_path(response, "projects[*]") do
+      field "id", jmes_path(col_item, "projectId")
+      field "name", jmes_path(col_item, "displayName")
     end
   end
 end
 
-script "js_cai_request", type: "javascript" do
-  parameters "param_scope"
+script "js_google_projects", type: "javascript" do
   result "request"
   code <<-'EOS'
   var request = {
     auth: "auth_google",
     pagination: "pagination_google",
-    host: "cloudasset.googleapis.com",
-    path: "/v1/" + param_scope + ":searchAllResources",
-    query_params: {
-      "assetTypes": "cloudresourcemanager.googleapis.com/Project",
-      "readMask": "name,additionalAttributes,effectiveTags",
-      "pageSize": "500"
-    }
+    host: "cloudresourcemanager.googleapis.com",
+    path: "/v3/projects:search",
+    query_params: { "query": "state:ACTIVE" }
   }
 EOS
+end
+
+# Get the effective resource manager tags for each project.
+# The effectiveTags.list endpoint returns both directly-attached tags and tags
+# inherited from parent folders/organizations. Each returned EffectiveTag carries
+# an "inherited" boolean that the normalization script uses to apply the
+# Include Inherited Tags filter.
+datasource "ds_google_project_tags" do
+  iterate $ds_google_projects
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "cloudresourcemanager.googleapis.com"
+    path "/v3/effectiveTags"
+    query "parent", join(["//cloudresourcemanager.googleapis.com/projects/", val(iter_item, "id")])
+    ignore_status [403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "effectiveTags[*]") do
+      field "projectId", val(iter_item, "id")
+      field "namespacedTagKey", jmes_path(col_item, "namespacedTagKey")
+      field "namespacedTagValue", jmes_path(col_item, "namespacedTagValue")
+      field "inherited", jmes_path(col_item, "inherited")
+    end
+  end
 end
 
 datasource "ds_google_projects_normalized" do
-  run_script $js_google_projects_normalized, $ds_cai_projects, $param_inherit_tags
+  run_script $js_google_projects_normalized, $ds_google_projects, $ds_google_project_tags, $param_inherit_tags
 end
 
 script "js_google_projects_normalized", type: "javascript" do
-  parameters "cai_projects", "param_inherit_tags"
+  parameters "google_projects", "google_project_tags", "param_inherit_tags"
   result "result"
   code <<-'EOS'
-  result = []
-  var resolved_count = 0
-
-  _.each(cai_projects, function(cai_project) {
-    var resource_name = cai_project['name']
-    if (typeof(resource_name) != 'string' || resource_name == '') { return }
-
-    // Project ID is sourced directly from additionalAttributes.projectId in the CAI
-    // result. This is the authoritative field for the project ID string (e.g. "my-project")
-    // used as the vendor_account dimension in Flexera billing data. The CAI resource
-    // name itself (used below for attachedResource comparisons) may carry either the
-    // project ID string or the numeric project number depending on API version, so it
-    // is not parsed for the ID here.
-    var project_id = cai_project['projectId']
+  // Build a per-project tag map from the flat effectiveTags list.
+  // Each entry has: projectId, namespacedTagKey, namespacedTagValue, inherited.
+  //   namespacedTagKey:   "{parentNamespace}/{keyShortName}"
+  //   namespacedTagValue: "{parentNamespace}/{keyShortName}/{valueShortName}"
+  // Short names are the trailing path segments; there are no separate short-name fields.
+  // The effectiveTags.list API already resolves inheritance (closer ancestor wins),
+  // so there is at most one entry per key per project in the effective set.
+  var tags_by_project = {}
+  _.each(google_project_tags, function(tag) {
+    if (param_inherit_tags == "No" && tag['inherited'] === true) { return }
+    var project_id = tag['projectId']
     if (typeof(project_id) != 'string' || project_id == '') { return }
-    resolved_count++
-
-    var tags = {}
-
-    // CAI returns effectiveTags as an array of EffectiveTagDetails objects.
-    // Each EffectiveTagDetails element has:
-    //   attachedResource: full resource name of the ancestor the tags flow from
-    //   effectiveTags:    array of Tag objects (note: same field name as outer)
-    // Each Tag has:
-    //   tagKey:   namespaced key   "{orgId}/{keyShortName}"
-    //   tagValue: namespaced value "{orgId}/{keyShortName}/{valueShortName}"
-    // Short names are the trailing segments; there are no separate short-name fields.
-    if (cai_project['effectiveTags'] != null && typeof(cai_project['effectiveTags']) == 'object') {
-      // Separate EffectiveTagDetails into directly-attached (project-level) and inherited
-      // (ancestor) entries. Process inherited first, then direct, so that project-level
-      // bindings always overwrite the same key from an ancestor regardless of the order
-      // Google returns EffectiveTagDetails entries in the response.
-      // When param_inherit_tags is "No", only the direct entries are processed at all.
-      var all_details = cai_project['effectiveTags']
-      var direct_details = _.filter(all_details, function(td) { return td['attachedResource'] == resource_name })
-      var inherited_details = _.filter(all_details, function(td) { return td['attachedResource'] != resource_name })
-      var ordered_details = (param_inherit_tags == "No") ? direct_details : inherited_details.concat(direct_details)
-      _.each(ordered_details, function(tag_detail) {
-        if (tag_detail['effectiveTags'] != null && typeof(tag_detail['effectiveTags']) == 'object') {
-          _.each(tag_detail['effectiveTags'], function(tag) {
-            var namespaced_key = tag['tagKey']
-            var namespaced_value = tag['tagValue']
-            if (typeof(namespaced_key) == 'string' && typeof(namespaced_value) == 'string') {
-              // Key short name: last segment of "{orgId}/{keyShortName}"
-              var key_parts = namespaced_key.split('/')
-              var key_short = key_parts[key_parts.length - 1].toLowerCase().trim()
-              // Value short name: last segment of "{orgId}/{keyShortName}/{valueShortName}"
-              var value_parts = namespaced_value.split('/')
-              var value_short = value_parts[value_parts.length - 1].trim()
-              if (key_short != '' && value_short != '') {
-                tags[key_short] = value_short
-              }
-            }
-          })
-        }
-      })
+    if (!tags_by_project[project_id]) { tags_by_project[project_id] = {} }
+    var namespaced_key = tag['namespacedTagKey']
+    var namespaced_value = tag['namespacedTagValue']
+    if (typeof(namespaced_key) == 'string' && typeof(namespaced_value) == 'string') {
+      var key_parts = namespaced_key.split('/')
+      var key_short = key_parts[key_parts.length - 1].toLowerCase().trim()
+      var value_parts = namespaced_value.split('/')
+      var value_short = value_parts[value_parts.length - 1].trim()
+      if (key_short != '' && value_short != '') {
+        tags_by_project[project_id][key_short] = value_short
+      }
     }
-
-    result.push({
-      id: project_id,
-      tags: tags
-    })
   })
 
-  // If CAI returned Project assets but none yielded a usable project ID from
-  // additionalAttributes.projectId, surface a sentinel entry so the normalization-errors
-  // datasource can raise a visible incident. An empty string id is used intentionally:
-  // js_new_rules guards on account['id'] != '' and will skip this entry safely.
-  if (cai_projects.length > 0 && resolved_count == 0) {
+  result = []
+  _.each(google_projects, function(project) {
     result.push({
-      id: '',
-      tags: {},
-      resolution_error: 'CAI returned ' + cai_projects.length + ' Project asset(s) but additionalAttributes.projectId was absent from every result. Verify that the Cloud Asset Inventory API (cloudasset.googleapis.com) is enabled and that the readMask includes additionalAttributes.'
+      id: project['id'],
+      tags: tags_by_project[project['id']] || {}
     })
-  }
-EOS
-end
-
-datasource "ds_normalization_errors" do
-  run_script $js_normalization_errors, $ds_google_projects_normalized, $ds_applied_policy
-end
-
-script "js_normalization_errors", type: "javascript" do
-  parameters "normalized", "ds_applied_policy"
-  result "result"
-  code <<-'EOS'
-  result = _.filter(normalized, function(item) {
-    return typeof(item['resolution_error']) == 'string' && item['resolution_error'] != ''
   })
-  if (result.length > 0 && ds_applied_policy['name']) {
-    result[0]['policy_name'] = ds_applied_policy['name']
-  }
 EOS
 end
 
@@ -542,15 +489,6 @@ end
 ###############################################################################
 
 policy "pol_rbds" do
-  validate $ds_normalization_errors do
-    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: Project ID Resolution Failure"
-    detail_template <<-'EOS'
-    {{ range data -}}
-    {{ .resolution_error }}
-    {{ end -}}
-    EOS
-    check eq(size(data), 0)
-  end
   validate $ds_apply_rbds do
     summary_template "RBDs Generated & Applied"
     detail_template ""
