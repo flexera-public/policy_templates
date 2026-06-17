@@ -1,0 +1,548 @@
+name "Google Rule-Based Dimension From Project Tags"
+rs_pt_ver 20180301
+type "policy"
+short_description "Creates and/or updates individual Rule-Based Dimensions based on Google Cloud resource manager tags bound to Projects. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/google/google_rbd_from_tag) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/automation/google/google_rbd_from_tag"
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: "Automation",
+  publish: "false"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_tag_list" do
+  type "list"
+  category "Policy Settings"
+  label "Tag Keys"
+  description "A list of Google resource manager tag key short names to build Rule-Based Dimensions from. Short names are the last segment of the namespaced key (e.g., 'environment' from 'myorg.example.com/environment'). Multiple tag keys can be specified for a single dimension by placing a single entry with each tag key separated by a semicolon (;) character. See README for more info."
+  # No default value, user input required
+end
+
+parameter "param_name_list" do
+  type "list"
+  category "Policy Settings"
+  label "Dimension Names"
+  description "A list of names to give the Rule-Based Dimensions in the Flexera platform. Enter names in the same order as the tag keys in the 'Tag Keys' field. Dimension names will be derived from tag keys directly if this list is left empty."
+  default []
+end
+
+parameter "param_scope" do
+  type "string"
+  category "Policy Settings"
+  label "Cloud Asset Scope"
+  description "The Cloud Asset Inventory scope to search for Google Projects and their resource manager tags. Must be in the format 'organizations/{id}', 'folders/{id}', or 'projects/{id}'. The Google credential must have the cloudasset.assets.searchAllResources permission granted at this scope level."
+  allowed_pattern /^(organizations|folders|projects)\/.+$/
+  constraint_description "Must be in the format 'organizations/{id}', 'folders/{id}', or 'projects/{id}'."
+end
+
+parameter "param_inherit_tags" do
+  type "string"
+  category "Policy Settings"
+  label "Include Inherited Tags"
+  description "Whether to include tags inherited from parent folders and organizations ('Yes'), or only tags directly attached to the Project ('No'). When set to 'Yes', Google's effective tag resolution applies: a tag bound at a closer ancestor overrides the same key bound further up the hierarchy."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+
+parameter "param_effective_date" do
+  type "string"
+  category "Policy Settings"
+  label "Effective Date"
+  description "Year/month you want rules to start applying in YYYY-MM format"
+  default "2010-01"
+end
+
+parameter "param_normalize_case" do
+  type "string"
+  category "Policy Settings"
+  label "Lowercase Values"
+  description "Whether or not to normalize all values by converting them to lowercase. Note that, if the same value appears multiple times with different casing, and this option is disabled, the rule-based dimension will be rejected and this policy template will fail."
+  allowed_values "Yes", "No"
+  default "Yes"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credential."
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_google" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+end
+
+# Get all active Google Projects via the CRM v1 API.
+# Used solely to build a project-number-to-project-ID lookup table.
+# The Cloud Asset Inventory API identifies Project assets by numeric project
+# number in the resource name (//cloudresourcemanager.googleapis.com/projects/{number})
+# rather than the human-readable project ID string. The CRM v1 API is the
+# reliable source for this mapping.
+datasource "ds_google_projects" do
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+    query "filter", "lifecycleState=ACTIVE"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "id", jmes_path(col_item, "projectId")
+      field "number", jmes_path(col_item, "projectNumber")
+    end
+  end
+end
+
+# Retrieve all Project assets within the configured scope using a single bulk
+# Cloud Asset Inventory query. The effectiveTags field is not returned by default
+# and must be requested explicitly via readMask. Results are paginated at up to
+# 500 items per page using the standard nextPageToken / pageToken mechanism.
+# The request is constructed in a script to preserve literal characters that the
+# DSL query directive would percent-encode: the custom method colon in the path
+# (:searchAllResources), the forward slash in the asset type value, and the comma
+# in the readMask field list.
+datasource "ds_cai_projects" do
+  request do
+    run_script $js_cai_request, $param_scope
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "results[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "effectiveTags", jmes_path(col_item, "effectiveTags")
+    end
+  end
+end
+
+script "js_cai_request", type: "javascript" do
+  parameters "param_scope"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_google",
+    pagination: "pagination_google",
+    host: "cloudasset.googleapis.com",
+    path: "/v1/" + param_scope + ":searchAllResources",
+    query_params: {
+      "assetTypes": "cloudresourcemanager.googleapis.com/Project",
+      "readMask": "name,effectiveTags",
+      "pageSize": "500"
+    }
+  }
+EOS
+end
+
+datasource "ds_google_projects_normalized" do
+  run_script $js_google_projects_normalized, $ds_cai_projects, $ds_google_projects, $param_inherit_tags
+end
+
+script "js_google_projects_normalized", type: "javascript" do
+  parameters "cai_projects", "projects", "param_inherit_tags"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  // Build a project-number -> project-ID lookup table from the CRM v1 results.
+  // CAI resource names use the numeric project number, e.g.:
+  //   //cloudresourcemanager.googleapis.com/projects/123456789
+  // We need this mapping to obtain the project ID string (e.g. "my-project")
+  // that Flexera stores as the vendor_account dimension.
+  var project_lookup = {}
+  _.each(projects, function(project) {
+    project_lookup[project['number']] = project['id']
+  })
+
+  _.each(cai_projects, function(cai_project) {
+    var resource_name = cai_project['name']
+    if (typeof(resource_name) != 'string' || resource_name == '') { return }
+
+    // Strip the CAI full resource name prefix to extract the numeric project number
+    var prefix = "//cloudresourcemanager.googleapis.com/projects/"
+    var project_number = resource_name.replace(prefix, "")
+    var project_id = project_lookup[project_number]
+    if (typeof(project_id) != 'string' || project_id == '') { return }
+
+    var tags = {}
+
+    // CAI returns effectiveTags as an array of EffectiveTagDetails objects.
+    // Each EffectiveTagDetails element has:
+    //   attachedResource: full resource name of the ancestor the tags flow from
+    //   effectiveTags:    array of Tag objects (note: same field name as outer)
+    // Each Tag has:
+    //   tagKey:   namespaced key   "{orgId}/{keyShortName}"
+    //   tagValue: namespaced value "{orgId}/{keyShortName}/{valueShortName}"
+    // Short names are the trailing segments; there are no separate short-name fields.
+    if (cai_project['effectiveTags'] != null && typeof(cai_project['effectiveTags']) == 'object') {
+      // Separate EffectiveTagDetails into directly-attached (project-level) and inherited
+      // (ancestor) entries. Process inherited first, then direct, so that project-level
+      // bindings always overwrite the same key from an ancestor regardless of the order
+      // Google returns EffectiveTagDetails entries in the response.
+      // When param_inherit_tags is "No", only the direct entries are processed at all.
+      var all_details = cai_project['effectiveTags']
+      var direct_details = _.filter(all_details, function(td) { return td['attachedResource'] == resource_name })
+      var inherited_details = _.filter(all_details, function(td) { return td['attachedResource'] != resource_name })
+      var ordered_details = (param_inherit_tags == "No") ? direct_details : inherited_details.concat(direct_details)
+      _.each(ordered_details, function(tag_detail) {
+        if (tag_detail['effectiveTags'] != null && typeof(tag_detail['effectiveTags']) == 'object') {
+          _.each(tag_detail['effectiveTags'], function(tag) {
+            var namespaced_key = tag['tagKey']
+            var namespaced_value = tag['tagValue']
+            if (typeof(namespaced_key) == 'string' && typeof(namespaced_value) == 'string') {
+              // Key short name: last segment of "{orgId}/{keyShortName}"
+              var key_parts = namespaced_key.split('/')
+              var key_short = key_parts[key_parts.length - 1].toLowerCase().trim()
+              // Value short name: last segment of "{orgId}/{keyShortName}/{valueShortName}"
+              var value_parts = namespaced_value.split('/')
+              var value_short = value_parts[value_parts.length - 1].trim()
+              if (key_short != '' && value_short != '') {
+                tags[key_short] = value_short
+              }
+            }
+          })
+        }
+      })
+    }
+
+    result.push({
+      id: project_id,
+      tags: tags
+    })
+  })
+EOS
+end
+
+datasource "ds_new_rules" do
+  run_script $js_new_rules, $ds_google_projects_normalized, $param_name_list, $param_tag_list, $param_effective_date, $param_normalize_case
+end
+
+script "js_new_rules", type: "javascript" do
+  parameters "accounts", "param_name_list", "param_tag_list", "param_effective_date", "param_normalize_case"
+  result "result"
+  code <<-'EOS'
+  rule_lists = []
+
+  _.each(param_tag_list, function(tag, index) {
+    rbd_name = tag.replace('.', ' ').replace('-', ' ')
+    rbd_name = rbd_name.replace(/\W/g, " ").trim()
+
+    // Use user-specified name instead of derived one
+    if (param_tag_list.length == param_name_list.length) { rbd_name = param_name_list[index] }
+
+    rbd_id = "rbd_" + rbd_name.toLowerCase().replace(/\s+/g, '').replace(/\W/g, "").replace('.', '').replace('-', '').trim()
+
+    tag_keys = _.map(tag.split(';'), function(key) { return key.toLowerCase().trim() })
+
+    rules = []
+
+    _.each(accounts, function(account) {
+      if (typeof(account['id']) == 'string' && account['id'] != '' && typeof(account['tags']) == 'object') {
+        value = null
+
+        _.each(tag_keys, function(key) {
+          if (typeof(account['tags'][key]) == 'string') {
+            if (account['tags'][key].trim() != '') { value = account['tags'][key].trim() }
+          }
+        })
+
+        if (value) {
+          if (param_normalize_case == "Yes") { value = value.toLowerCase() }
+
+          rules.push({
+            condition: { type: "dimension_equals", dimension: "vendor_account", value: account['id'] },
+            value: { text: value }
+          })
+        }
+      }
+    })
+
+    if (rules.length > 0) {
+      rule_lists.push({
+        id: rbd_id,
+        name: rbd_name,
+        effective_at: param_effective_date,
+        rules: rules
+      })
+    }
+  })
+
+  result = {
+    rule_lists: rule_lists,
+    dummy: "dummy"
+  }
+EOS
+end
+
+datasource "ds_existing_rbds" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions"])
+    # This is just to ensure that the new rules are generated before we gather existing RBDs
+    header "dummy", val($ds_new_rules, "dummy")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_existing_rbds_that_match" do
+  run_script $js_existing_rbds_that_match, $ds_existing_rbds, $ds_new_rules
+end
+
+script "js_existing_rbds_that_match", type: "javascript" do
+  parameters "ds_existing_rbds", "ds_new_rules"
+  result "result"
+  code <<-'EOS'
+  new_ids = _.pluck(ds_new_rules["rule_lists"], "id")
+  result = _.filter(ds_existing_rbds, function(rbd) { return _.contains(new_ids, rbd["id"]) })
+EOS
+end
+
+datasource "ds_existing_rbds_with_rules" do
+  iterate $ds_existing_rbds_that_match
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", $param_effective_date])
+    # We simply skip RBDs that don't have a ruleset with a conflicting date
+    ignore_status [ 400, 401, 403, 404, 429 ]
+  end
+  result do
+    encoding "json"
+    field "rules", jmes_path(response, "rules")
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+  end
+end
+
+datasource "ds_rbds" do
+  run_script $js_rbds, $ds_new_rules, $ds_existing_rbds, $ds_existing_rbds_with_rules, $ds_applied_policy
+end
+
+script "js_rbds", type: "javascript" do
+  parameters "ds_new_rules", "ds_existing_rbds", "ds_existing_rbds_with_rules", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  existing_rbd_ids = _.pluck(ds_existing_rbds, "id")
+
+  // Create rules that mark the beginning and end of the generated Google rules.
+  start_block_value = "Start: " + ds_applied_policy["name"]
+  end_block_value = "End: " + ds_applied_policy["name"]
+
+  block_start_rule = {
+    condition: { dimension: "vendor_account", type: "dimension_equals", value: start_block_value },
+    value: { text: start_block_value }
+  }
+
+  block_end_rule = {
+    condition: { dimension: "vendor_account", type: "dimension_equals", value: end_block_value },
+    value: { text: end_block_value }
+  }
+
+  // Create tables to easily reference the existing rules and our generated rules by RBD ID
+  new_rules_table = {}
+  _.each(ds_new_rules["rule_lists"], function(rbd) { new_rules_table[rbd["id"]] = rbd })
+
+  existing_rules_table = {}
+  _.each(ds_existing_rbds_with_rules, function(rbd) { existing_rules_table[rbd["id"]] = rbd["rules"] })
+
+  result = []
+
+  // Build combined rule sets
+  _.each(_.keys(new_rules_table), function(rbd_id) {
+    rules = []
+
+    // Track whether we've found an existing block of generated rules or not.
+    // Also track whether we've replaced them with the newly generated rules
+    found_block = false
+    injected_rules = false
+
+    if (existing_rules_table[rbd_id]) {
+      _.each(existing_rules_table[rbd_id], function(rule) {
+        if (!found_block) {
+          // When we find the beginning of the existing block of generated rules,
+          // replace them with our new rules
+          if (rule["condition"]["value"] == start_block_value) {
+            found_block = true
+            injected_rules = true
+
+            rules.push(block_start_rule)
+            rules = rules.concat(new_rules_table[rbd_id]["rules"])
+            rules.push(block_end_rule)
+          } else {
+            rules.push(rule)
+          }
+        }
+
+        if (found_block && rule["condition"]["value"] == end_block_value) { found_block = false }
+      })
+    }
+
+    // If we never injected the rules because we never found an existing block of generated rules,
+    // add them now to the end of the rules instead.
+    if (!injected_rules) {
+      rules.push(block_start_rule)
+      rules = rules.concat(new_rules_table[rbd_id]["rules"])
+      rules.push(block_end_rule)
+    }
+
+    if (rules.length > 0) {
+      result.push({
+        id: rbd_id,
+        name: new_rules_table[rbd_id]["name"],
+        verb: _.contains(existing_rbd_ids, rbd_id) ? "PATCH" : "POST",
+        effective_at: new_rules_table[rbd_id]["effective_at"],
+        rules: rules
+      })
+    }
+  })
+EOS
+end
+
+datasource "ds_create_rbds" do
+  iterate $ds_rbds
+  request do
+    run_script $js_create_rbds, val(iter_item, "id"), val(iter_item, "verb"), val(iter_item, "name"), val($ds_flexera_api_hosts, "flexera"), rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_create_rbds", type: "javascript" do
+  parameters "rbd_id", "verb", "name", "api_host", "rs_org_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    verb: verb,
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id].join(''),
+    body_fields: { name: name }
+  }
+EOS
+end
+
+datasource "ds_apply_rbds" do
+  iterate $ds_rbds
+  request do
+    # ds_create_rbds is a parameter to ensure that it executes before ds_apply_rbds does
+    run_script $js_apply_rbds, val(iter_item, "id"), val(iter_item, "effective_at"), val(iter_item, "rules"), val($ds_flexera_api_hosts, "flexera"), $ds_create_rbds, rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_apply_rbds", type: "javascript" do
+  parameters "rbd_id", "effective_at", "rules", "api_host", "ds_create_rbds", "rs_org_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    verb: "PUT",
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id, "/rules/", effective_at].join(''),
+    body_fields: { rules: rules }
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_rbds" do
+  validate $ds_apply_rbds do
+    summary_template "RBDs Generated & Applied"
+    detail_template ""
+    check eq(0, 0)
+  end
+end
