@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.8.1
+
+- Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match
+
+## v4.8.0
+
+- Added `Allow/Deny Resource Groups` and `Allow/Deny Resource Groups List` filter parameters to allow filtering resources by resource group
+
 ## v4.7.0
 
 - Subscriptions with an Azure Plan for DevTest are now always excluded from SQL Virtual Machine results. Windows VMs in these subscriptions already receive free Windows licenses, so AHUB recommendations do not apply to them. This does not affect SQL Elastic Pools, SQL Databases, or SQL Managed Instances recommendations.

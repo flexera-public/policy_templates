@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.2.6
+
+- Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match
+
 ## v5.2.5
 
 - Fixed issue with incident table that cause policy execution to fail

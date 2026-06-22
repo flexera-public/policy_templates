@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "7.4.0",
+  version: "7.5.1",
   provider: "Azure",
   service: "Storage",
   policy_set: "Old Snapshots",
@@ -69,6 +69,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied Subscription IDs/names. Leave blank to check all Subscriptions."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names to filter the results by. Optionally, entries can use the format SUBSCRIPTION_ID/RESOURCE_GROUP_NAME to limit filtering to a specific subscription. See the README for more details."
   default []
 end
 
@@ -465,8 +482,7 @@ script "js_azure_snapshots_tag_filtered", type: "javascript" do
         }
 
         if (comparison == '!~') {
-          if (resource_tag == undefined) { found_tags.push(string) }
-          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+          if (resource_tag == undefined || !value.test(resource_tag)) { found_tags.push(string) }
         }
       })
 
@@ -505,17 +521,47 @@ script "js_azure_snapshots_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_snapshots_rg_filtered" do
+  run_script $js_azure_snapshots_rg_filtered, $ds_azure_snapshots_region_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_azure_snapshots_rg_filtered", type: "javascript" do
+  parameters "ds_azure_snapshots_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_azure_snapshots_region_filtered, function(resource) {
+        rg = resource['resourceGroup']
+        sub = resource['subscriptionId'] || resource['subscriptionID']
+        include_resource = _.any(param_resource_groups_list, function(rg_entry) {
+          if (rg_entry.indexOf('/') != -1) {
+            entry_parts = rg_entry.split('/')
+            return sub == entry_parts[0] && rg == entry_parts[1]
+          }
+          return rg == rg_entry
+        })
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_azure_snapshots_region_filtered
+    }
+EOS
+end
+
 datasource "ds_azure_old_snapshots" do
-  run_script $js_azure_old_snapshots, $ds_azure_snapshots_region_filtered, $param_snapshot_age
+  run_script $js_azure_old_snapshots, $ds_azure_snapshots_rg_filtered, $param_snapshot_age
 end
 
 script "js_azure_old_snapshots", type: "javascript" do
-  parameters "ds_azure_snapshots_region_filtered", "param_snapshot_age"
+  parameters "ds_azure_snapshots_rg_filtered", "param_snapshot_age"
   result "result"
   code <<-'EOS'
   result = []
 
-  _.each(ds_azure_snapshots_region_filtered, function(snapshot) {
+  _.each(ds_azure_snapshots_rg_filtered, function(snapshot) {
     tags = []
 
     if (typeof(snapshot['tags']) == 'object') {
@@ -662,11 +708,11 @@ EOS
 end
 
 datasource "ds_azure_snapshots_incident" do
-  run_script $js_azure_snapshots_incident, $ds_azure_old_snapshots, $ds_azure_snapshots_region_filtered, $ds_azure_snapshot_costs_grouped, $ds_applied_policy, $ds_currency, $param_min_savings, $param_snapshot_age, $param_incident_csv
+  run_script $js_azure_snapshots_incident, $ds_azure_old_snapshots, $ds_azure_snapshots_rg_filtered, $ds_azure_snapshot_costs_grouped, $ds_applied_policy, $ds_currency, $param_min_savings, $param_snapshot_age, $param_incident_csv
 end
 
 script "js_azure_snapshots_incident", type:"javascript" do
-  parameters "ds_azure_old_snapshots", "ds_azure_snapshots_region_filtered", "ds_azure_snapshot_costs_grouped", "ds_applied_policy", "ds_currency", "param_min_savings", "param_snapshot_age", "param_incident_csv"
+  parameters "ds_azure_old_snapshots", "ds_azure_snapshots_rg_filtered", "ds_azure_snapshot_costs_grouped", "ds_applied_policy", "ds_currency", "param_min_savings", "param_snapshot_age", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -741,7 +787,7 @@ script "js_azure_snapshots_incident", type:"javascript" do
   })
 
   // Message for incident output
-  total_snapshots = ds_azure_snapshots_region_filtered.length.toString()
+  total_snapshots = ds_azure_snapshots_rg_filtered.length.toString()
   total_old_snapshots = result.length.toString()
   old_snapshots_percentage = (total_old_snapshots / total_snapshots * 100).toFixed(2).toString() + '%'
 

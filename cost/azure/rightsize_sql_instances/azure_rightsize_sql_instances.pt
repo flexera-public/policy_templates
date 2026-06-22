@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "6.2.0",
+  version: "6.3.1",
   provider: "Azure",
   service: "SQL",
   policy_set: "Rightsize Database Instances",
@@ -69,6 +69,23 @@ parameter "param_subscriptions_list" do
   category "Filters"
   label "Allow/Deny Subscriptions List"
   description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names to filter the results by. Optionally, entries can use the format SUBSCRIPTION_ID/RESOURCE_GROUP_NAME to limit filtering to a specific subscription. See the README for more details."
   default []
 end
 
@@ -642,8 +659,7 @@ script "js_azure_sql_databases_tag_filtered", type: "javascript" do
         }
 
         if (comparison == '!~') {
-          if (resource_tag == undefined) { found_tags.push(string) }
-          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+          if (resource_tag == undefined || !value.test(resource_tag)) { found_tags.push(string) }
         }
       })
 
@@ -682,9 +698,39 @@ script "js_azure_sql_databases_region_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_sql_databases_rg_filtered" do
+  run_script $js_azure_sql_databases_rg_filtered, $ds_azure_sql_databases_region_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_azure_sql_databases_rg_filtered", type: "javascript" do
+  parameters "ds_azure_sql_databases_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_azure_sql_databases_region_filtered, function(resource) {
+        rg = resource['resourceGroup']
+        sub = resource['subscriptionId'] || resource['subscriptionID']
+        include_resource = _.any(param_resource_groups_list, function(rg_entry) {
+          if (rg_entry.indexOf('/') != -1) {
+            entry_parts = rg_entry.split('/')
+            return sub == entry_parts[0] && rg == entry_parts[1]
+          }
+          return rg == rg_entry
+        })
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_azure_sql_databases_region_filtered
+    }
+EOS
+end
+
 datasource "ds_azure_sql_database_metrics" do
   batch true
-  iterate $ds_azure_sql_databases_region_filtered
+  iterate $ds_azure_sql_databases_rg_filtered
   request do
     run_script $js_azure_sql_database_metrics, val(iter_item, "id"), val(iter_item, "tier"), $ds_stats_interval, $param_azure_endpoint, $param_stats_lookback
   end
@@ -1074,11 +1120,11 @@ EOS
 end
 
 datasource "ds_downsize_sql_incident" do
-  run_script $js_downsize_sql_incident, $ds_merged_metrics, $ds_azure_sql_databases_region_filtered, $ds_sql_costs_grouped, $ds_currency, $ds_stats_interval, $param_min_savings, $param_stats_lookback, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_dtu_value, $param_unused_or_underutilized, $param_minimum_age, $param_stats_threshold, $param_incident_csv
+  run_script $js_downsize_sql_incident, $ds_merged_metrics, $ds_azure_sql_databases_rg_filtered, $ds_sql_costs_grouped, $ds_currency, $ds_stats_interval, $param_min_savings, $param_stats_lookback, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_dtu_value, $param_unused_or_underutilized, $param_minimum_age, $param_stats_threshold, $param_incident_csv
 end
 
 script "js_downsize_sql_incident", type: "javascript" do
-  parameters "ds_merged_metrics", "ds_azure_sql_databases_region_filtered", "ds_sql_costs_grouped", "ds_currency", "ds_stats_interval", "param_min_savings", "param_stats_lookback", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_dtu_value", "param_unused_or_underutilized", "param_minimum_age", "param_stats_threshold", "param_incident_csv"
+  parameters "ds_merged_metrics", "ds_azure_sql_databases_rg_filtered", "ds_sql_costs_grouped", "ds_currency", "ds_stats_interval", "param_min_savings", "param_stats_lookback", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_dtu_value", "param_unused_or_underutilized", "param_minimum_age", "param_stats_threshold", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -1177,7 +1223,7 @@ script "js_downsize_sql_incident", type: "javascript" do
   result = _.sortBy(result, function(item) { return item['savings'] * -1 })
 
   // Message for incident output
-  total_dbs = ds_azure_sql_databases_region_filtered.length.toString()
+  total_dbs = ds_azure_sql_databases_rg_filtered.length.toString()
   total_underutilized_dbs = result.length.toString()
   underutilized_dbs_percentage = (total_underutilized_dbs / total_dbs * 100).toFixed(2).toString() + '%'
 
@@ -1284,11 +1330,11 @@ EOS
 end
 
 datasource "ds_unused_sql_incident" do
-  run_script $js_unused_sql_incident, $ds_merged_metrics, $ds_azure_sql_databases_region_filtered, $ds_sql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback, $param_minimum_age, $param_incident_csv
+  run_script $js_unused_sql_incident, $ds_merged_metrics, $ds_azure_sql_databases_rg_filtered, $ds_sql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback, $param_minimum_age, $param_incident_csv
 end
 
 script "js_unused_sql_incident", type: "javascript" do
-  parameters "ds_merged_metrics", "ds_azure_sql_databases_region_filtered", "ds_sql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback", "param_minimum_age", "param_incident_csv"
+  parameters "ds_merged_metrics", "ds_azure_sql_databases_rg_filtered", "ds_sql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback", "param_minimum_age", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -1373,7 +1419,7 @@ script "js_unused_sql_incident", type: "javascript" do
   result = _.sortBy(result, function(item) { return item['savings'] * -1 })
 
   // Message for incident output
-  total_dbs = ds_azure_sql_databases_region_filtered.length.toString()
+  total_dbs = ds_azure_sql_databases_rg_filtered.length.toString()
   total_unused_dbs = result.length.toString()
   unused_dbs_percentage = (total_unused_dbs / total_dbs * 100).toFixed(2).toString() + '%'
 

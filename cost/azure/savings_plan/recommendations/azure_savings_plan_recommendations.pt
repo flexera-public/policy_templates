@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.5.0",
+  version: "3.7.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Savings Plans",
@@ -63,6 +63,23 @@ parameter "param_subscriptions_list" do
   default []
 end
 
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names to filter the results by. Optionally, entries can use the format SUBSCRIPTION_ID/RESOURCE_GROUP_NAME to limit filtering to a specific subscription. See the README for more details."
+  default []
+end
+
 parameter "param_days" do
   type "string"
   category "Savings Plan Settings"
@@ -76,8 +93,8 @@ parameter "param_term" do
   type "string"
   category "Savings Plan Settings"
   label "Savings Plan Term"
-  description "Length of savings plan term to provide recommendations for."
-  allowed_values "1 Year", "3 Year"
+  description "Length of savings plan term to provide recommendations for. Select 'Any' to return combined results for both term lengths."
+  allowed_values "1 Year", "3 Year", "Any"
   default "1 Year"
 end
 
@@ -112,8 +129,8 @@ parameter "param_payment_option" do
   type "string"
   category "Savings Plan Settings"
   label "Payment Option"
-  description "Whether or not to report recommendations as 'No Upfront' or 'All Upfront'. Default value of 'No Upfront' recommended in most cases. Has no impact on the recommendations themselves; Azure does not offer discounts or differing options if you paying up front."
-  allowed_values "No Upfront", "All Upfront"
+  description "Payment option label to apply to recommendations. Has no impact on the recommendations themselves; Azure does not offer discounts or differing options based on payment timing. Select 'Everything' to return combined results for all payment options."
+  allowed_values "No Upfront", "All Upfront", "Everything"
   default "No Upfront"
 end
 
@@ -347,32 +364,57 @@ end
 
 # Ensure that we're only doing the required API requests for the scope that has been selected
 datasource "ds_sp_recommendation_requests" do
-  run_script $js_sp_recommendation_requests, $ds_azure_subscriptions_filtered, $ds_azure_resource_groups, $param_scope
+  run_script $js_sp_recommendation_requests, $ds_azure_subscriptions_filtered, $ds_azure_resource_groups, $param_scope, $param_term
 end
 
 script "js_sp_recommendation_requests", type: "javascript" do
-  parameters "ds_azure_subscriptions_filtered", "ds_azure_resource_groups", "param_scope"
+  parameters "ds_azure_subscriptions_filtered", "ds_azure_resource_groups", "param_scope", "param_term"
   result "result"
   code <<-'EOS'
+  var term_table = { "1 Year": "P1Y", "3 Year": "P3Y" }
+  var terms = []
+
+  if (param_term == "Any") {
+    terms = [{ label: "1 Year", value: "P1Y" }, { label: "3 Year", value: "P3Y" }]
+  } else {
+    terms = [{ label: param_term, value: term_table[param_term] }]
+  }
+
+  result = []
+
   if (param_scope == "Shared") {
     // Remove subscriptions that don't contain actual resources
     good_subs = _.filter(ds_azure_subscriptions_filtered, function(sub) {
       return sub['name'].toLowerCase().indexOf("visual studio") == -1 && sub['name'].indexOf("365") == -1
     })
 
-    result = good_subs.slice(0, 1)
+    _.each(terms, function(term) {
+      result.push({ id: good_subs[0]['id'], name: good_subs[0]['name'], term_label: term.label, term_value: term.value })
+    })
   }
 
-  if (param_scope == "Subscription") { result = ds_azure_subscriptions_filtered }
+  if (param_scope == "Subscription") {
+    _.each(ds_azure_subscriptions_filtered, function(sub) {
+      _.each(terms, function(term) {
+        result.push({ id: sub['id'], name: sub['name'], term_label: term.label, term_value: term.value })
+      })
+    })
+  }
 
-  if (param_scope == "Resource Group") { result = ds_azure_resource_groups }
+  if (param_scope == "Resource Group") {
+    _.each(ds_azure_resource_groups, function(rg) {
+      _.each(terms, function(term) {
+        result.push({ id: rg['id'], name: rg['name'], resourceGroup: rg['resourceGroup'], term_label: term.label, term_value: term.value })
+      })
+    })
+  }
 EOS
 end
 
 datasource "ds_sp_recommendations" do
   iterate $ds_sp_recommendation_requests
   request do
-    run_script $js_sp_recommendations, iter_item, $param_days, $param_scope, $param_term, $param_azure_endpoint
+    run_script $js_sp_recommendations, iter_item, $param_days, $param_scope, $param_azure_endpoint
   end
   result do
     encoding "json"
@@ -384,6 +426,7 @@ datasource "ds_sp_recommendations" do
       field "lookbackPeriod", jmes_path(col_item, "properties.lookBackPeriod")
       field "armSkuName", jmes_path(col_item, "properties.armSkuName")
       field "term", jmes_path(col_item, "properties.term")
+      field "term_label", val(iter_item, "term_label")
       field "scope", jmes_path(col_item, "properties.scope")
       field "currency", jmes_path(col_item, "properties.currencyCode")
       field "commitmentGranularity", jmes_path(col_item, "properties.commitmentGranularity")
@@ -404,18 +447,46 @@ datasource "ds_sp_recommendations" do
   end
 end
 
+datasource "ds_sp_recommendations_rg_filtered" do
+  run_script $js_sp_recommendations_rg_filtered, $ds_sp_recommendations, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_sp_recommendations_rg_filtered", type: "javascript" do
+  parameters "ds_sp_recommendations", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+    if (param_resource_groups_list.length > 0) {
+      result = _.filter(ds_sp_recommendations, function(resource) {
+        rg = resource['resourceGroup']
+        sub = resource['subscriptionId'] || resource['subscriptionID']
+        include_resource = _.any(param_resource_groups_list, function(rg_entry) {
+          if (rg_entry.indexOf('/') != -1) {
+            entry_parts = rg_entry.split('/')
+            return sub == entry_parts[0] && rg == entry_parts[1]
+          }
+          return rg == rg_entry
+        })
+        if (param_resource_groups_allow_or_deny == "Deny") {
+          include_resource = !include_resource
+        }
+        return include_resource
+      })
+    } else {
+      result = ds_sp_recommendations
+    }
+EOS
+end
+
 script "js_sp_recommendations", type: "javascript" do
-  parameters "account", "param_days", "param_scope", "param_term", "param_azure_endpoint"
+  parameters "account", "param_days", "param_scope", "param_azure_endpoint"
   result "request"
   code <<-'EOS'
   scope = param_scope
   if (scope != "Shared") { scope = "Single" }
 
-  term_table = { "1 Year": "P1Y", "3 Year": "P3Y" }
-
   filter = [
     "properties/scope eq '", scope, "' ",
-    "and properties/term eq '", term_table[param_term], "' ",
+    "and properties/term eq '", account['term_value'], "' ",
     "and properties/lookBackPeriod eq '", param_days.replace(' ', '').replace(' ', ''), "'"
   ].join('')
 
@@ -508,11 +579,11 @@ EOS
 end
 
 datasource "ds_sp_incident" do
-  run_script $js_sp_incident, $ds_sp_recommendations, $ds_currency, $ds_currency_conversion, $ds_conditional_currency_conversion, $ds_applied_policy, $param_term, $param_days, $param_scope, $param_min_savings, $param_incident_csv, $param_payment_option
+  run_script $js_sp_incident, $ds_sp_recommendations_rg_filtered, $ds_currency, $ds_currency_conversion, $ds_conditional_currency_conversion, $ds_applied_policy, $param_term, $param_days, $param_scope, $param_min_savings, $param_incident_csv, $param_payment_option
 end
 
 script "js_sp_incident", type: "javascript" do
-  parameters "ds_sp_recommendations", "ds_currency", "ds_currency_conversion", "ds_conditional_currency_conversion", "ds_applied_policy", "param_term", "param_days", "param_scope", "param_min_savings", "param_incident_csv", "param_payment_option"
+  parameters "ds_sp_recommendations_rg_filtered", "ds_currency", "ds_currency_conversion", "ds_conditional_currency_conversion", "ds_applied_policy", "param_term", "param_days", "param_scope", "param_min_savings", "param_incident_csv", "param_payment_option"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -547,7 +618,7 @@ script "js_sp_incident", type: "javascript" do
 
   exchange_rate = ds_currency['exchange_rate']
 
-  _.each(ds_sp_recommendations, function(recommendation) {
+  _.each(ds_sp_recommendations_rg_filtered, function(recommendation) {
     if (recommendation["savingsAmount"] * exchange_rate >= param_min_savings) {
       total_savings += recommendation["savingsAmount"] * exchange_rate
 
@@ -571,35 +642,39 @@ script "js_sp_incident", type: "javascript" do
         resourceGroup = ""
       }
 
-      result.push({
-        name: recommendation['name'],
-        kind: recommendation['kind'],
-        resourceType: recommendation['armSkuName'].replace('_', ' ').replace('_', ' '),
-        totalHours: recommendation['totalHours'],
-        commitmentGranularity: recommendation['commitmentGranularity'],
-        averageUtilizationPercentage: recommendation['averageUtilizationPercentage'],
-        coveragePercentage: recommendation['coveragePercentage'],
-        recommendedQuantity: recommendation['commitmentAmount'],
-        savingsPercentage: recommendation['savingsPercentage'],
-        accountID: accountID,
-        accountName: accountName,
-        resourceGroup: resourceGroup,
-        id: id,
-        lookbackPeriod: param_days,
-        term: param_term,
-        scope: param_scope,
-        costWithoutBenefit: costWithoutBenefit,
-        overageCost: overageCost,
-        benefitCost: benefitCost,
-        totalCost: totalCost,
-        wastageCost: wastageCost,
-        savings: savingsAmount,
-        savingsCurrency: ds_currency['symbol'],
-        paymentOption: param_payment_option,
-        policy_name: ds_applied_policy['name'],
-        total_savings: "",
-        message: "",
-        service: "Microsoft.Compute"
+      payment_options_to_use = param_payment_option == "Everything" ? ["No Upfront", "All Upfront"] : [param_payment_option]
+
+      _.each(payment_options_to_use, function(po) {
+        result.push({
+          name: recommendation['name'],
+          kind: recommendation['kind'],
+          resourceType: recommendation['armSkuName'].replace('_', ' ').replace('_', ' '),
+          totalHours: recommendation['totalHours'],
+          commitmentGranularity: recommendation['commitmentGranularity'],
+          averageUtilizationPercentage: recommendation['averageUtilizationPercentage'],
+          coveragePercentage: recommendation['coveragePercentage'],
+          recommendedQuantity: recommendation['commitmentAmount'],
+          savingsPercentage: recommendation['savingsPercentage'],
+          accountID: accountID,
+          accountName: accountName,
+          resourceGroup: resourceGroup,
+          id: id,
+          lookbackPeriod: param_days,
+          term: recommendation["term_label"],
+          scope: param_scope,
+          costWithoutBenefit: costWithoutBenefit,
+          overageCost: overageCost,
+          benefitCost: benefitCost,
+          totalCost: totalCost,
+          wastageCost: wastageCost,
+          savings: savingsAmount,
+          savingsCurrency: ds_currency['symbol'],
+          paymentOption: po,
+          policy_name: ds_applied_policy['name'],
+          total_savings: "",
+          message: "",
+          service: "Microsoft.Compute"
+        })
       })
     }
   })

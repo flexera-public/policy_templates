@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.4.6",
+  version: "4.0.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Savings Plans",
@@ -67,26 +67,26 @@ parameter "param_term" do
   type "string"
   category "Savings Plan Settings"
   label "Savings Plan Term"
-  description "Length of savings plan term to provide recommendations for."
-  allowed_values "1 Year", "3 Year"
+  description "Length of savings plan term to provide recommendations for. Select 'Any' to return combined results for both term lengths."
+  allowed_values "1 Year", "3 Year", "Any"
   default "1 Year"
 end
 
 parameter "param_savings_plan_type" do
-  type "string"
+  type "list"
   category "Savings Plan Settings"
   label "Savings Plan Type"
-  description "Type of Savings Plan to provide recommendations for."
+  description "Type(s) of Savings Plan to provide recommendations for."
   allowed_values "Compute Savings Plan", "EC2 Instance Savings Plan", "SageMaker Savings Plan", "Database Savings Plan"
-  default "Compute Savings Plan"
+  default ["Compute Savings Plan"]
 end
 
 parameter "param_payment_option" do
   type "string"
   category "Savings Plan Settings"
   label "Payment Option"
-  description "Savings Plan purchase option to provide recommendations for."
-  allowed_values "No Upfront", "Partial Upfront", "All Upfront"
+  description "Savings Plan purchase option to provide recommendations for. Select 'Everything' to return combined results for all payment options."
+  allowed_values "No Upfront", "Partial Upfront", "All Upfront", "Everything"
   default "No Upfront"
 end
 
@@ -362,9 +362,88 @@ script "js_vendor_account_table", type:"javascript" do
 EOS
 end
 
+datasource "ds_sp_types" do
+  run_script $js_sp_types, $param_savings_plan_type, $param_payment_option, $param_term
+end
+
+script "js_sp_types", type: "javascript" do
+  parameters "param_savings_plan_type", "param_payment_option", "param_term"
+  result "result"
+  code <<-'EOS'
+  var plan_table = {
+    "Compute Savings Plan": "COMPUTE_SP",
+    "EC2 Instance Savings Plan": "EC2_INSTANCE_SP",
+    "SageMaker Savings Plan": "SAGEMAKER_SP",
+    "Database Savings Plan": "DATABASE_SP"
+  }
+
+  var plans = []
+
+  _.each(param_savings_plan_type, function(plan) {
+    plans.push({ label: plan, value: plan_table[plan] })
+  })
+
+  var payment_option_table = {
+    "No Upfront": "NO_UPFRONT",
+    "Partial Upfront": "PARTIAL_UPFRONT",
+    "All Upfront": "ALL_UPFRONT"
+  }
+
+  var payment_option_label_table = {
+    "NO_UPFRONT": "No Upfront",
+    "PARTIAL_UPFRONT": "Partial Upfront",
+    "ALL_UPFRONT": "All Upfront"
+  }
+
+  var payment_options = []
+
+  if (param_payment_option == "Everything") {
+    payment_options = ["NO_UPFRONT", "PARTIAL_UPFRONT", "ALL_UPFRONT"]
+  } else {
+    payment_options = [payment_option_table[param_payment_option]]
+  }
+
+  var term_table = {
+    "1 Year": "ONE_YEAR",
+    "3 Year": "THREE_YEARS"
+  }
+
+  var term_label_table = {
+    "ONE_YEAR": "1 Year",
+    "THREE_YEARS": "3 Year"
+  }
+
+  var terms = []
+
+  if (param_term == "Any") {
+    terms = ["ONE_YEAR", "THREE_YEARS"]
+  } else {
+    terms = [term_table[param_term]]
+  }
+
+  result = []
+
+  _.each(plans, function(plan) {
+    _.each(payment_options, function(payment_option) {
+      _.each(terms, function(term) {
+        result.push({
+          plan_label: plan.label,
+          plan_value: plan.value,
+          payment_option: payment_option,
+          payment_option_label: payment_option_label_table[payment_option],
+          term: term,
+          term_label: term_label_table[term]
+        })
+      })
+    })
+  })
+EOS
+end
+
 datasource "ds_sp_recommendations" do
+  iterate $ds_sp_types
   request do
-    run_script $js_sp_recommendations, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_scope
+    run_script $js_sp_recommendations, val(iter_item, 'plan_value'), val(iter_item, 'payment_option'), val(iter_item, 'term'), $param_days, $param_scope
   end
   result do
     encoding "json"
@@ -386,40 +465,32 @@ datasource "ds_sp_recommendations" do
       field "offeringId", jmes_path(col_item, "SavingsPlansDetails.OfferingId")
       field "region", jmes_path(col_item, "SavingsPlansDetails.Region")
       field "upfrontCost", jmes_path(col_item, "UpfrontCost")
+      field "plan_label", val(iter_item, "plan_label")
+      field "payment_option_label", val(iter_item, "payment_option_label")
+      field "term_label", val(iter_item, "term_label")
     end
   end
 end
 
 script "js_sp_recommendations", type: "javascript" do
-  parameters "param_days", "param_payment_option", "param_term", "param_savings_plan_type", "param_scope"
+  parameters "plan_value", "payment_option", "term", "param_days", "param_scope"
   result "request"
   code <<-'EOS'
-  // Tables to convert human-readable parameter values to their API equivalents
+  // Table to convert human-readable parameter values to their API equivalents
   period_table = {
     "Last 7 Days": "SEVEN_DAYS",
     "Last 30 Days": "THIRTY_DAYS",
     "Last 60 Days": "SIXTY_DAYS"
   }
 
-  term_table = {
-    "1 Year": "ONE_YEAR",
-    "3 Year": "THREE_YEARS"
-  }
-
-  plan_table = {
-    "Compute Savings Plan": "COMPUTE_SP",
-    "EC2 Instance Savings Plan": "EC2_INSTANCE_SP",
-    "SageMaker Savings Plan": "SAGEMAKER_SP",
-    "Database Savings Plan": "DATABASE_SP"
-  }
-
-  // Build out the body of the request based on parameters
-  body_fields = {
+  // Build out the body of the request based on parameters.
+  // plan_value, payment_option, and term are pre-converted to API format by js_sp_types.
+  var body_fields = {
     AccountScope: param_scope.toUpperCase(),
     LookbackPeriodInDays: period_table[param_days],
-    PaymentOption: param_payment_option.replace(' ', '_').toUpperCase()
-    SavingsPlansType: plan_table[param_savings_plan_type],
-    TermInYears: term_table[param_term]
+    PaymentOption: payment_option,
+    SavingsPlansType: plan_value,
+    TermInYears: term
   }
 
   var request = {
@@ -432,7 +503,7 @@ script "js_sp_recommendations", type: "javascript" do
     headers: {
       "User-Agent": "RS Policies",
       "X-Amz-Target": "AWSInsightsIndexService.GetSavingsPlansPurchaseRecommendation",
-      "Content-Type": "application/x-amz-json-1.1",
+      "Content-Type": "application/x-amz-json-1.1"
     }
   }
 EOS
@@ -563,7 +634,7 @@ script "js_sp_normalization", type: "javascript" do
     resourceType = recommendation["instanceFamily"]
 
     if (resourceType == "" || resourceType == null) {
-      resourceType = param_savings_plan_type
+      resourceType = recommendation["plan_label"]
     }
 
     currentAverageHourlyOnDemandSpend = recommendation["currentAverageHourlyOnDemandSpend"] * exchange_rate
@@ -628,11 +699,12 @@ script "js_sp_normalization", type: "javascript" do
         offeringId: recommendation["offeringId"],
         region: recommendation["region"],
         upfrontCost: upfrontCost,
-        term: param_term,
-        paymentOption: param_payment_option,
+        term: recommendation["term_label"],
+        paymentOption: recommendation["payment_option_label"],
         resourceType: resourceType,
         lookbackPeriod: param_days,
-        service: service_table[param_savings_plan_type],
+        service: service_table[recommendation["plan_label"]],
+        savingsPlanType: recommendation["plan_label"],
         policy_name: ds_applied_policy['name'],
         total_savings: "",
         message: ""
@@ -657,12 +729,14 @@ script "js_sp_normalization", type: "javascript" do
   }
 
   if (ds_currency['code'] != currency && ds_currency_conversion.length == 0) {
-    conversion_message = "Savings values are in ", currency, " due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
+    conversion_message = ["Savings values are in ", currency, " due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."].join('')
   }
+
+  var plan_type_msg = param_savings_plan_type.join(', ')
 
   message = [
     "The following settings were used when generating recommendations:\n",
-    "- Savings Plan Type: ", param_savings_plan_type, "\n",
+    "- Savings Plan Type: ", plan_type_msg, "\n",
     "- Account Scope: ", param_scope, "\n",
     "- Term: ", param_term, "\n",
     "- Look Back Period: ", param_days, "\n",
@@ -702,6 +776,7 @@ policy "pol_aws_sp_recommendations" do
     EOS
     check lt(val(item, "savings"), 0)
     escalate $esc_email
+    hash_exclude "savings", "savingsCurrency"
     export do
       resource_level false
       field "accountID" do
@@ -715,6 +790,9 @@ policy "pol_aws_sp_recommendations" do
       end
       field "service" do
         label "Service"
+      end
+      field "savingsPlanType" do
+        label "Savings Plan Type"
       end
       field "savingsCurrency" do
         label "Currency"

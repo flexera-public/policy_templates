@@ -1,5 +1,14 @@
 # Changelog
 
+## v4.8.0
+
+- Added `Any` option to `Reservation Term` parameter to return combined results for both 1 Year and 3 Year term lengths
+- Added `Everything` option to `Payment Option` parameter
+
+## v4.7.0
+
+- Added `Allow/Deny Resource Groups` and `Allow/Deny Resource Groups List` filter parameters to allow filtering resources by resource group
+
 ## v4.6.0
 
 - Added error incident when no Azure Subscriptions are found, indicating a potential credential or permissions issue.

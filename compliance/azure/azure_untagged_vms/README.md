@@ -20,6 +20,8 @@ This policy template has the following input parameters required when launching 
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
 - *Allow/Deny Subscriptions* - Determines whether the Allow/Deny Subscriptions List parameter functions as an allow list (only providing results for the listed subscriptions) or a deny list (providing results for all subscriptions except for the listed subscriptions).
 - *Allow/Deny Subscriptions List* - A list of allowed or denied Subscription IDs/names. If empty, no filtering will occur and recommendations will be produced for all subscriptions.
+- *Allow/Deny Resource Groups* - Whether to allow or deny the resource groups in the **Allow/Deny Resource Groups List** parameter. Has no effect if the list is empty.
+- *Allow/Deny Resource Groups List* - A list of allowed or denied Resource Group names to filter the results by. Entries can be in the format `resource_group_name` to filter all resource groups with that name regardless of subscription, or `subscription_id/resource_group_name` to filter a resource group within a specific subscription. Leave blank to consider all resource groups.
 - *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
 - *Tags* - The policy will report resources missing the specified tags. The following formats are supported:
@@ -29,6 +31,7 @@ This policy template has the following input parameters required when launching 
   - `Key=~/Regex/` - Find all resources where the value for the specified key does not match the specified regex string and all resources missing the specified tag key.
   - `Key!~/Regex/` - Find all resources where the value for the specified key matches the specified regex string.
 - *Any / All* - Whether to report on instances missing any of the specified tags or all of them. Only applicable if more than one value is entered in the `Tags` field.
+- *Consider Tag Dimensions* - Exclude results when a resource is tagged with a tag key that is normalized by a Tag Dimension. The `Tags` parameter value must match a Tag Dimension Name or Tag Dimension ID configured in Flexera One for the lookup to occur. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_vms) for more details.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 - *Power Off Type* - Whether to perform a graceful shutdown or a forced shutdown when powering off instances.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
@@ -65,6 +68,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
   - `policy_viewer`
   - `policy_manager`*
 

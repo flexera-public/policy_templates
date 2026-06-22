@@ -8,7 +8,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "3.4.0",
+  version: "4.0.1",
   provider: "Google",
   service: "Compute",
   policy_set: "Untagged Resources",
@@ -86,6 +86,15 @@ parameter "param_resource_types" do
   description "The types of resources to check labels for. Any options not selected will not be reported on."
   allowed_values ["Projects", "Persistent Disks", "VPN Gateways (Internal)", "VPN Gateways (External)", "Images", "Virtual Machines", "Snapshots", "Storage Buckets"]
   default ["Persistent Disks", "VPN Gateways (Internal)", "VPN Gateways (External)", "Images", "Virtual Machines", "Snapshots", "Storage Buckets"]
+end
+
+parameter "param_consider_tag_dimensions" do
+  type "string"
+  category "Filters"
+  label "Consider Tag Dimensions"
+  description "Exclude results when a label has a value for a label key normalized by a Tag Dimension. Please see README for more details."
+  allowed_values "Consider Tag Dimensions", "Do Not Consider Tag Dimensions"
+  default "Consider Tag Dimensions"
 end
 
 parameter "param_incident_csv" do
@@ -297,6 +306,25 @@ datasource "ds_applied_policy" do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+end
+
+# Get Tag Dimensions
+# Used for excluding resources that already have a value for one of the enabled tag dimensions
+datasource "ds_tag_dimensions" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/tag-dimensions"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
   end
 end
 
@@ -797,11 +825,11 @@ EOS
 end
 
 datasource "ds_google_resources_missing_labels" do
-  run_script $js_google_resources_missing_labels, $ds_google_resources, $ds_applied_policy, $param_labels, $param_labels_boolean
+  run_script $js_google_resources_missing_labels, $ds_google_resources, $ds_applied_policy, $ds_tag_dimensions, $param_labels, $param_labels_boolean, $param_consider_tag_dimensions
 end
 
 script "js_google_resources_missing_labels", type: "javascript" do
-  parameters "ds_google_resources", "ds_applied_policy", "param_labels", "param_labels_boolean"
+  parameters "ds_google_resources", "ds_applied_policy", "ds_tag_dimensions", "param_labels", "param_labels_boolean", "param_consider_tag_dimensions"
   result "result"
   code <<-'EOS'
   result = []
@@ -865,9 +893,28 @@ script "js_google_resources_missing_labels", type: "javascript" do
         }
       })
 
-      if (missing_labels.length == comparators.length || (missing_labels.length > 0 && param_labels_boolean == 'Any')) {
+      missing_labels_result = missing_labels
+
+      if (param_consider_tag_dimensions == "Consider Tag Dimensions") {
+        _.each(missing_labels, function(missing_label) {
+          tag_dimension = _.find(ds_tag_dimensions, function(td) {
+            return td['id'] == missing_label || td['name'] == missing_label
+          })
+          if (tag_dimension != undefined) {
+            tag_dimension_tag_keys = _.pluck(tag_dimension['tags'], 'key')
+            if (typeof tag_dimension_tag_keys != "undefined") {
+              resource_label_keys = _.keys(resource_labels)
+              if (_.intersection(tag_dimension_tag_keys, resource_label_keys).length > 0) {
+                missing_labels_result = _.without(missing_labels_result, missing_label)
+              }
+            }
+          }
+        })
+      }
+
+      if (missing_labels_result.length == comparators.length || (missing_labels_result.length > 0 && param_labels_boolean == 'Any')) {
         new_resource = resource
-        new_resource['missing_labels'] = missing_labels
+        new_resource['missing_labels'] = missing_labels_result
         result.push(new_resource)
       }
     })
