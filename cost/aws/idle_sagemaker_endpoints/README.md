@@ -9,7 +9,7 @@ Endpoints configured for [SageMaker Serverless Inference](https://docs.aws.amazo
 ## How It Works
 
 - The policy uses the AWS SageMaker `ListEndpoints` API to enumerate all `InService` endpoints in each enabled region.
-- For each endpoint, `DescribeEndpoint` is called to retrieve production variant details including instance type and instance count. Endpoints where all production variants use [Serverless Inference](https://docs.aws.amazon.com/sagemaker/latest/dg/serverless-endpoints.html) (i.e. have no dedicated instance type) are excluded from evaluation.
+- For each endpoint, `DescribeEndpoint` is called to retrieve production variant details including instance type and instance count. Endpoints where all production variants use [Serverless Inference](https://docs.aws.amazon.com/sagemaker/latest/dg/serverless-endpoints.html) (i.e. have no dedicated instance type) are excluded from evaluation. For idle endpoints where `DescribeEndpoint` does not return a `CurrentInstanceType` for a production variant, `DescribeEndpointConfig` is called as a fallback to retrieve the instance type from the endpoint's configuration.
 - The AWS CloudWatch `GetMetricData` API is used to retrieve the `Invocations` metric (Sum statistic) from the `AWS/SageMaker` namespace for each endpoint over the configured lookback window. Endpoints whose total invocation count is at or below the **Minimum Invocations Threshold** parameter are flagged as idle and recommended for deletion.
 
 ### Policy Savings Details
@@ -54,6 +54,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `sts:GetCallerIdentity`
   - `sagemaker:ListEndpoints`
   - `sagemaker:DescribeEndpoint`
+  - `sagemaker:DescribeEndpointConfig`
   - `sagemaker:ListTags`
   - `cloudwatch:GetMetricData`
   - `sagemaker:DeleteEndpoint`*
@@ -72,6 +73,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `sts:GetCallerIdentity`
   - `sagemaker:ListEndpoints`
   - `sagemaker:DescribeEndpoint`
+  - `sagemaker:DescribeEndpointConfig`
   - `sagemaker:ListTags`
   - `cloudwatch:GetMetricData`
   - `sagemaker:DeleteEndpoint`*
@@ -91,6 +93,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
                   "sts:GetCallerIdentity",
                   "sagemaker:ListEndpoints",
                   "sagemaker:DescribeEndpoint",
+                  "sagemaker:DescribeEndpointConfig",
                   "sagemaker:ListTags",
                   "cloudwatch:GetMetricData",
                   "sagemaker:DeleteEndpoint"

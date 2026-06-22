@@ -428,8 +428,7 @@ end
 datasource "ds_aws_sagemaker_pricing" do
   request do
     host "raw.githubusercontent.com"
-    #path "/flexera-public/policy_templates/master/data/aws/aws_sagemaker_pricing.json"
-    path "/flexera-public/policy_templates/refs/heads/POL-1765-sagemaker/data/aws/aws_sagemaker_pricing.json"
+    path "/flexera-public/policy_templates/master/data/aws/aws_sagemaker_pricing.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -894,13 +893,87 @@ script "js_cloudwatch_data_sorted", type: "javascript" do
 EOS
 end
 
+# Identify idle endpoints (minimal list) to scope DescribeEndpointConfig calls only to idle endpoints
+datasource "ds_idle_sagemaker_endpoints_list" do
+  run_script $js_idle_sagemaker_endpoints_list, $ds_sagemaker_endpoints_tag_filtered, $ds_cloudwatch_data_sorted, $param_min_invocations
+end
+
+script "js_idle_sagemaker_endpoints_list", type: "javascript" do
+  parameters "ds_sagemaker_endpoints_tag_filtered", "ds_cloudwatch_data_sorted", "param_min_invocations"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(ds_sagemaker_endpoints_tag_filtered, function(resource) {
+    var region = resource['region']
+    var cw_id = resource['endpointName'].replace(/[^a-zA-Z0-9]/g, '_')
+    if (/^[0-9]/.test(cw_id)) { cw_id = 'e' + cw_id }
+
+    var invocations = 0
+    if (ds_cloudwatch_data_sorted[region] != undefined) {
+      if (ds_cloudwatch_data_sorted[region][cw_id] != undefined) {
+        invocations = ds_cloudwatch_data_sorted[region][cw_id]
+      }
+    }
+
+    if (invocations > param_min_invocations) { return }
+
+    if (resource['productionVariants'] && resource['productionVariants'].length > 0) {
+      var all_serverless = _.every(resource['productionVariants'], function(v) {
+        return !!(v['CurrentServerlessConfig'] || v['ServerlessConfig'])
+      })
+      if (all_serverless) { return }
+    }
+
+    result.push({
+      endpointName: resource['endpointName'],
+      endpointConfigName: resource['endpointConfigName'],
+      region: region
+    })
+  })
+EOS
+end
+
+# Fetch endpoint config for each idle endpoint; provides instance type as fallback when DescribeEndpoint omits it
+datasource "ds_sagemaker_endpoint_configs" do
+  iterate $ds_idle_sagemaker_endpoints_list
+  request do
+    run_script $js_sagemaker_endpoint_configs, val(iter_item, "region"), val(iter_item, "endpointConfigName")
+  end
+  result do
+    encoding "json"
+    field "endpointName", val(iter_item, "endpointName")
+    field "configVariants", jmes_path(response, "ProductionVariants")
+  end
+end
+
+script "js_sagemaker_endpoint_configs", type: "javascript" do
+  parameters "region", "endpoint_config_name"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_aws",
+    host: "api.sagemaker." + region + ".amazonaws.com",
+    verb: "POST",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/x-amz-json-1.1",
+      "x-amz-target": "SageMaker.DescribeEndpointConfig"
+    },
+    body: JSON.stringify({ "EndpointConfigName": endpoint_config_name }),
+    ignore_status: [400, 403, 404]
+  }
+EOS
+end
+
 # Final transform: identify idle SageMaker endpoints
 datasource "ds_idle_sagemaker_endpoints" do
-  run_script $js_idle_sagemaker_endpoints, $ds_sagemaker_endpoints_tag_filtered, $ds_cloudwatch_data_sorted, $ds_aws_sagemaker_pricing, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_stats_lookback, $param_min_invocations, $param_min_savings, $param_incident_csv
+  run_script $js_idle_sagemaker_endpoints, $ds_sagemaker_endpoints_tag_filtered, $ds_cloudwatch_data_sorted, $ds_sagemaker_endpoint_configs, $ds_aws_sagemaker_pricing, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_stats_lookback, $param_min_invocations, $param_min_savings, $param_incident_csv
 end
 
 script "js_idle_sagemaker_endpoints", type: "javascript" do
-  parameters "ds_sagemaker_endpoints_tag_filtered", "ds_cloudwatch_data_sorted", "ds_aws_sagemaker_pricing", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_stats_lookback", "param_min_invocations", "param_min_savings", "param_incident_csv"
+  parameters "ds_sagemaker_endpoints_tag_filtered", "ds_cloudwatch_data_sorted", "ds_sagemaker_endpoint_configs", "ds_aws_sagemaker_pricing", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_stats_lookback", "param_min_invocations", "param_min_savings", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -935,6 +1008,20 @@ script "js_idle_sagemaker_endpoints", type: "javascript" do
 
   // Average hours per calendar month
   hours_per_month = 730.5
+
+  // Build a lookup from endpointName -> VariantName -> InstanceType using EndpointConfig data.
+  // Used as a fallback when DescribeEndpoint does not return CurrentInstanceType.
+  config_instance_types = {}
+  _.each(ds_sagemaker_endpoint_configs, function(cfg) {
+    if (cfg['endpointName'] && cfg['configVariants']) {
+      config_instance_types[cfg['endpointName']] = {}
+      _.each(cfg['configVariants'], function(v) {
+        if (v['VariantName'] && v['InstanceType']) {
+          config_instance_types[cfg['endpointName']][v['VariantName']] = v['InstanceType']
+        }
+      })
+    }
+  })
 
   _.each(ds_sagemaker_endpoints_tag_filtered, function(resource) {
     region = resource['region']
@@ -975,7 +1062,11 @@ script "js_idle_sagemaker_endpoints", type: "javascript" do
       _.each(resource['productionVariants'], function(variant, idx) {
         // Detect serverless variants — they have CurrentServerlessConfig instead of CurrentInstanceType
         var serverless_config = variant['CurrentServerlessConfig'] || variant['ServerlessConfig']
-        var vtype = variant['CurrentInstanceType'] || ""
+        var vtype = variant['CurrentInstanceType'] || variant['DesiredInstanceType'] || ""
+        // Fall back to the instance type from DescribeEndpointConfig if DescribeEndpoint omits it
+        if (!vtype && config_instance_types[resource['endpointName']] != undefined) {
+          vtype = config_instance_types[resource['endpointName']][variant['VariantName']] || ""
+        }
         var vcount = variant['CurrentInstanceCount'] || 0
         var variant_label
 
