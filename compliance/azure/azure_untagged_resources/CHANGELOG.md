@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.0.1
+
+- Fixed bug where resources whose missing tags were fully covered by Tag Dimension equivalents were still included in the incident with a blank `Missing Tags` field instead of being correctly excluded.
+
+## v4.0.0
+
+- Added `Consider Tag Dimensions` parameter to allow Flexera Tag Dimensions to be considered when reporting on untagged resources.
+
 ## v3.6.0
 
 - Added `Allow/Deny Resource Groups` and `Allow/Deny Resource Groups List` filter parameters to allow filtering resources by resource group

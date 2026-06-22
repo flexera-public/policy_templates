@@ -718,13 +718,26 @@ class PolicyTemplateParser:
                 join_content = path_match.group(1)
 
                 # Parse the join array to maintain proper order of strings and val() calls
-                # Split by comma but be careful with nested function calls
+                # Split by comma but be careful with nested function calls and string literals.
+                # String-literal awareness is required because some paths contain parentheses
+                # inside quoted strings (e.g. "SecurityInsights(" in OperationsManagement paths),
+                # which would otherwise corrupt the depth counter and cause parts to merge.
                 parts = []
                 current_part = ''
                 depth = 0
+                in_string = False
+                string_char = None
 
                 for char in join_content + ',':
-                    if char in '([':
+                    if in_string:
+                        current_part += char
+                        if char == string_char:
+                            in_string = False
+                    elif char in ('"', "'"):
+                        in_string = True
+                        string_char = char
+                        current_part += char
+                    elif char in '([':
                         depth += 1
                         current_part += char
                     elif char in ')]':
@@ -2151,7 +2164,11 @@ class PolicyTemplateParser:
             return 'Microsoft.Insights/eventtypes/management/values/read'
 
         # ARM management.azure.com calls
-        m = re.search(r'/providers/([^/?]+)/([^/?/]+)', path, re.IGNORECASE)
+        # Use the LAST /providers/ segment — Azure extension resources are always governed by the
+        # innermost (child) provider namespace, not the parent. Requiring a dot in the namespace
+        # prevents plain path words (e.g. the literal "providers") from matching as a namespace.
+        _provider_matches = list(re.finditer(r'/providers/([A-Za-z][^/?]*\.[^/?]+)/([^/?]+)', path, re.IGNORECASE))
+        m = _provider_matches[-1] if _provider_matches else None
         if m:
             # Normalize provider namespace to PascalCase — ARM RBAC permissions require it
             # e.g. "microsoft.operationalinsights" → "Microsoft.Operationalinsights"
@@ -2245,11 +2262,21 @@ class PolicyTemplateParser:
         # Resource Manager
         if service == 'resourcemanager':
             if re.search(r'/projects:search', path):
-                return 'resourcemanager.projects.get'
+                return 'resourcemanager.projects.search'
             if re.search(r'/projects/[^/]+$', path):
                 return 'resourcemanager.projects.get'
             if re.search(r'/projects/?$', path) or re.search(r'/projects$', path):
                 return 'resourcemanager.projects.list'
+            return None
+
+        # Cloud Billing
+        if service == 'cloudbilling':
+            if re.search(r'/billingAccounts/[^/]+/projects', path):
+                return 'billing.resourceAssociations.list'
+            if re.search(r'/billingAccounts/?$', path):
+                return 'billing.accounts.list'
+            if re.search(r'/billingAccounts/[^/]+$', path):
+                return 'billing.accounts.get'
             return None
 
         # Logging
@@ -2292,10 +2319,13 @@ class PolicyTemplateParser:
         # Compute
         if service == 'compute':
             # Aggregated list: /compute/v1/projects/{id}/aggregated/{resource}
+            # GCP IAM does not have a separate 'aggregatedList' permission; the IAM
+            # permission for both the per-zone 'list' and cross-zone 'aggregatedList'
+            # API calls is simply compute.{resource}.list.
             agg_match = re.search(r'/aggregated/([^/?]+)', path)
             if agg_match:
                 resource = agg_match.group(1).rstrip('/')
-                return f'compute.{resource}.aggregatedList'
+                return f'compute.{resource}.list'
 
             # /compute/v1/projects/{id}/regions
             if re.search(r'/projects/[^/]+/regions/?$', path):
@@ -2602,7 +2632,7 @@ class PolicyTemplateParser:
 
     # ===== GCP CWF PERMISSION HELPERS =====
 
-    def _gcp_cwf_permission(self, resource_var, method, action_suffix, is_cloudsql=False):
+    def _gcp_cwf_permission(self, resource_var, method, action_suffix, is_cloudsql=False, define_name=""):
         """Return the GCP IAM permission for a CWF http_* call.
 
         Args:
@@ -2637,6 +2667,18 @@ class PolicyTemplateParser:
         # Generic fallback: build a permission from the resource variable name.
         # Skip variable names so generic they don't identify a real GCP resource type.
         if hint_orig in self.GCP_GENERIC_VAR_NAMES or hint_stripped in self.GCP_GENERIC_VAR_NAMES:
+            # When the resource variable is too generic, try to infer the resource type
+            # from the define name (e.g. "label_bucket" → "bucket", "label_project" → "project").
+            if define_name:
+                for part in reversed(define_name.lower().split('_')):
+                    if part in self.GCP_GENERIC_VAR_NAMES:
+                        continue
+                    perm = self.GCP_COMPUTE_CWF_PERMISSIONS.get(part, {}).get(method, {}).get(action)
+                    if perm:
+                        return perm
+                    if part == 'project' and method in ('PATCH', 'PUT'):
+                        return 'resourcemanager.projects.update'
+                    break
             return None
         hint = hint_orig
         resource_plural = hint if hint.endswith('s') else hint + 's'
@@ -2873,7 +2915,69 @@ class PolicyTemplateParser:
             # Strip any protocol/host prefix if present
             parsed = urllib.parse.urlparse(uri_val)
             return parsed.path if parsed.scheme else uri_val
+
+        # Fallback: handle URI values built by concatenation where a path suffix
+        # comes from a script parameter (e.g. uri: '/prefix/' + var + endpoint).
+        # This pattern occurs when a single shared URI-generation script is called
+        # multiple times with different endpoint arguments (one per resource type).
+        uri_concat_m = re.search(r'\buri\s*:\s*([^\n,]+)', script_body)
+        if uri_concat_m:
+            expr = uri_concat_m.group(1).strip()
+            # Find all lowercase identifier tokens in the expression
+            id_tokens = re.findall(r'\b([a-z_]\w*)\b', expr)
+            params_decl_m = re.search(r'parameters\s+((?:["\'][^"\']+["\']\s*,?\s*)+)', script_body)
+            if params_decl_m and id_tokens:
+                param_names = re.findall(r'["\']([^"\']+)["\']', params_decl_m.group(1))
+                # Find the last identifier in the expression that is a declared parameter;
+                # in a URI like '/prefix/' + variable + endpoint, the path suffix
+                # parameter is typically the last variable in the concatenation.
+                path_param = next(
+                    (tok for tok in reversed(id_tokens) if tok in param_names),
+                    None
+                )
+                if path_param:
+                    param_idx = param_names.index(path_param)
+                    # Extract the arguments passed to run_script in the iterate datasource,
+                    # skipping the leading script reference ($script_name,).
+                    rs_args_m = re.search(r'run_script\s+\$\w+\s*,\s*(.+)', iter_ds_body)
+                    if rs_args_m:
+                        args = [a.strip() for a in rs_args_m.group(1).split(',')]
+                        if param_idx < len(args):
+                            literal_m = re.match(r'''['"](/[^'"]+)['"]''', args[param_idx])
+                            if literal_m:
+                                return literal_m.group(1)
         return None
+
+    def _scan_compute_selflink_resource_types(self):
+        """Scan template datasource result blocks for compute.googleapis.com datasources
+        that expose a selfLink field. Returns a set of resource type keys
+        (e.g. {'disk', 'instance', 'snapshot'}) for CWF action permission inference
+        when the resource variable name is too generic to identify the type directly.
+        """
+        resource_types = set()
+        ds_pattern = re.compile(r'datasource\s+"(?:\w+)"\s+do\b(.+?)\nend\b', re.DOTALL)
+        for ds_match in ds_pattern.finditer(self.content):
+            ds_body = ds_match.group(1)
+            if 'compute.googleapis.com' not in ds_body:
+                continue
+            if 'selfLink' not in ds_body:
+                continue
+            # Get the path for this datasource
+            if 'path val(iter_item' in ds_body:
+                path = self._resolve_uri_field_from_iterate(ds_body)
+            else:
+                path_m = re.search(r'path\s+["\']([^"\']+)["\']', ds_body)
+                path = path_m.group(1) if path_m else None
+            if not path:
+                continue
+            # Extract resource type from last meaningful path segment
+            seg_m = re.search(r'/(?:aggregated|global|zones/[^/]+|regions/[^/]+)/([^/?]+)/?$', path)
+            if seg_m:
+                resource_plural = seg_m.group(1)
+                # Strip one trailing 's' to get singular form matching gcp_cwf_permissions.json keys
+                resource = resource_plural[:-1] if resource_plural.endswith('s') else resource_plural
+                resource_types.add(resource)
+        return resource_types
 
     def _resolve_cwf_host(self, host_expr, define_body):
         """Resolve a CWF host expression to an actual hostname or placeholder.
@@ -3136,6 +3240,55 @@ class PolicyTemplateParser:
                                 })
                             continue
 
+                    # Pattern: join([$var["selfLink"], "/action"]) — GCP CWF action via join()
+                    # This is used when the action suffix must be appended to the selfLink URL,
+                    # e.g. join([$resource["selfLink"], "/setLabels"]).
+                    join_selflink_m = re.match(
+                        r'join\s*\(\s*\[\s*\$(\w+)\s*\[\s*[\'"]selfLink[\'"]\s*\]\s*'
+                        r',\s*[\'"]([^\'"]*)[\'"]',
+                        url_expr
+                    )
+                    if join_selflink_m:
+                        resource_var = join_selflink_m.group(1)
+                        action_suffix = join_selflink_m.group(2)
+                        is_cloudsql = bool(re.search(r'sqladmin\.googleapis\.com', self.content))
+                        permission = self._gcp_cwf_permission(
+                            resource_var, method, action_suffix, is_cloudsql, define_name
+                        )
+                        if permission:
+                            ep_host = 'sqladmin.googleapis.com' if is_cloudsql else 'compute.googleapis.com'
+                            ep_path = f'/compute/v1/projects/{{id}}/setLabels/{action_suffix.lstrip("/")}' if not is_cloudsql else f'/sql/v1beta4/projects/{{id}}/instances/{{id}}{action_suffix}'
+                            endpoint = f'https://{ep_host}{ep_path}'
+                            api_calls.append({
+                                'policy_name': self.policy_name,
+                                'datasource_name': 'define_' + define_name,
+                                'method': method,
+                                'endpoint': endpoint,
+                                'operation': action_suffix.lstrip('/'),
+                                'field': '{entire response}',
+                                'api_service': 'GCP',
+                                'permission': permission,
+                            })
+                        elif resource_var.lower() in self.GCP_GENERIC_VAR_NAMES:
+                            # Generic resource variable with action suffix: scan template
+                            # datasources for compute resources with selfLink to enumerate types.
+                            action = action_suffix.lstrip('/')
+                            for rt in self._scan_compute_selflink_resource_types():
+                                perm = self.GCP_COMPUTE_CWF_PERMISSIONS.get(rt, {}).get(method, {}).get(action)
+                                if perm:
+                                    endpoint = f'https://compute.googleapis.com/compute/v1/projects/{{id}}/{rt}s/{{id}}/{action}'
+                                    api_calls.append({
+                                        'policy_name': self.policy_name,
+                                        'datasource_name': 'define_' + define_name,
+                                        'method': method,
+                                        'endpoint': endpoint,
+                                        'operation': action,
+                                        'field': '{entire response}',
+                                        'api_service': 'GCP',
+                                        'permission': perm,
+                                    })
+                        continue
+
                     # Pattern: $var['selfLink'] or $var['selfLink'] + '/action'
                     self_link_match = re.match(
                         r"\$(\w+)\[[\'\"]selfLink[\'\"]\](?:\s*\+\s*['\"]([^'\"]*)['\"])?",
@@ -3150,7 +3303,7 @@ class PolicyTemplateParser:
                         is_cloudsql = bool(re.search(r'sqladmin\.googleapis\.com', self.content))
 
                         permission = self._gcp_cwf_permission(
-                            resource_var, method, action_suffix, is_cloudsql
+                            resource_var, method, action_suffix, is_cloudsql, define_name
                         )
                         if permission:
                             if is_cloudsql:
@@ -3532,7 +3685,7 @@ class PolicyTemplateParser:
 
         # Expand placeholder GCP permissions where resource type is a runtime variable.
         # Scans the template source for literal 'types = [...]' JS arrays and replaces
-        # e.g. compute.{type}.aggregatedList with compute.addresses.aggregatedList, etc.
+        # e.g. compute.{type}.list with compute.addresses.list, compute.disks.list, etc.
         api_calls = self._expand_dynamic_gcp_type_permissions(api_calls)
 
         # Add implicit companion GCP permissions that are always required alongside
@@ -3633,16 +3786,19 @@ class PolicyTemplateParser:
     def _expand_dynamic_gcp_type_permissions(self, api_calls):
         """
         Replace placeholder GCP compute permissions that contain a variable resource type
-        (e.g. compute.{type}.aggregatedList or compute.{type}.list) with one entry per
-        literal type found in the template source.
+        (e.g. compute.{type}.list) with one entry per literal type found in the template source.
+
+        GCP IAM uses compute.{resource}.list for both the per-zone 'list' API endpoint and
+        the cross-zone 'aggregatedList' API endpoint, so both /aggregated/ and /global/ paths
+        map to the same 'list' permission suffix.
 
         When multiple 'types = [...]' JS arrays exist (e.g. separate arrays for /global/
         and /aggregated/ paths), this method traces the chain:
           JS script (types) → generator datasource (run_script) → consumer datasource (iterate, path)
-        to associate each type list with the correct suffix (aggregatedList vs list).
-        Falls back to using all types for all placeholders when the chain cannot be traced.
+        to collect all relevant types into a single pool for expansion.
+        Falls back to using all types when the chain cannot be traced.
         """
-        placeholder_re = re.compile(r'^compute\.\{[^}]+\}\.(aggregatedList|list)$')
+        placeholder_re = re.compile(r'^compute\.\{[^}]+\}\.list$')
         if not any(placeholder_re.match(c.get('permission') or '') for c in api_calls):
             return api_calls
 
@@ -3680,8 +3836,10 @@ class PolicyTemplateParser:
             if sname_m:
                 gen_ds_map[ds_name] = sname_m.group(1)
 
-        # --- Step 3: Map suffix → types by tracing iterate → path ---
-        suffix_types = {'aggregatedList': [], 'list': []}
+        # --- Step 3: Map types by tracing iterate → path ---
+        # Both /aggregated/ and /global/ paths require compute.{resource}.list in GCP IAM,
+        # so all types go into a single 'list' bucket regardless of the path pattern.
+        suffix_types = {'list': []}
         for m in re.finditer(
             r'\bdatasource\s+"[^"]*".*?^end\b',
             self.content, re.MULTILINE | re.DOTALL
@@ -3692,15 +3850,13 @@ class PolicyTemplateParser:
                 continue
             sname = gen_ds_map[iter_m.group(1)]
             types = js_types[sname]
-            # Identify suffix from path string inside this datasource
+            # Identify whether this datasource uses an /aggregated/ or /global/ compute path
             path_src = ' '.join(re.findall(r'"(/compute/v1[^"]+)"', body))
             path_src += ' '.join(re.findall(r"'(/compute/v1[^']+)'", body))
             for join_args in re.findall(r'join\(\s*\[([^\]]+)\]', body):
                 path_src += ''.join(re.findall(r'"([^"]+)"', join_args))
                 path_src += ''.join(re.findall(r"'([^']+)'", join_args))
-            if '/aggregated/' in path_src:
-                suffix_types['aggregatedList'].extend(types)
-            elif '/global/' in path_src:
+            if '/aggregated/' in path_src or '/global/' in path_src:
                 suffix_types['list'].extend(types)
 
         for k in suffix_types:
@@ -3716,14 +3872,13 @@ class PolicyTemplateParser:
             perm = call.get('permission') or ''
             m = placeholder_re.match(perm)
             if m:
-                suffix = m.group(1)
-                types = suffix_types.get(suffix) or all_types
+                types = suffix_types.get('list') or all_types
                 if not types:
                     expanded.append(call)
                     continue
                 for resource_type in types:
                     expanded_call = dict(call)
-                    expanded_call['permission'] = f'compute.{resource_type}.{suffix}'
+                    expanded_call['permission'] = f'compute.{resource_type}.list'
                     expanded.append(expanded_call)
             else:
                 expanded.append(call)

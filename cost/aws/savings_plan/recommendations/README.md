@@ -25,9 +25,9 @@ This policy template has the following input parameters:
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Look Back Period* - Number of days of prior usage to analyze
 - *Account Scope* - The account scope that you want your recommendations for. Select Payer to produce results for the Master Payer account and all linked accounts, or Linked to produce results for an individual linked member account.
-- *Savings Plan Term* - Length of savings plan term to provide recommendations for.
-- *Savings Plan Type* - Type of Savings Plan to provide recommendations for.
-- *Payment Option* - Savings Plan purchase option to provide recommendations for.
+- *Savings Plan Term* - Length of savings plan term to provide recommendations for. Select `Any` to return results for both term lengths; the policy will make a separate API request for each term and combine the results.
+- *Savings Plan Type* - Type(s) of Savings Plan to provide recommendations for. Multiple selections are allowed.
+- *Payment Option* - Savings Plan purchase option to provide recommendations for. Select `Everything` to return results for all payment options; the policy will make a separate API request for each option and combine the results. Selecting both `Any` for Savings Plan Term and `Everything` for Payment Option will result in up to 6 API requests per selected Savings Plan type.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 

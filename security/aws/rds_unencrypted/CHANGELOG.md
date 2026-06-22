@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2.1
+
+- Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match
+
 ## v4.2.0
 
 - Added support for attaching CSV files to incident emails.

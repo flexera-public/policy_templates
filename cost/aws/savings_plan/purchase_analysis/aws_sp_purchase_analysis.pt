@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.1.1",
+  version: "0.2.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Savings Plans",
@@ -39,9 +39,28 @@ parameter "param_scope" do
   type "string"
   category "Savings Plan Settings"
   label "Account Scope"
-  description "The account scope that you want your recommendations for. Select Payer to produce results only for a Master Payer account, or Linked to produce results for all linked accounts as well."
-  allowed_values "Payer", "Linked"
-  default "Payer"
+  description "The account scope for the analysis. 'Payer' analyzes all linked accounts in the organization and requires credentials from the management/payer account. 'Linked' analyzes a single linked account and requires credentials from the management/payer account. 'Automatic (Linked Account Credentials)' omits the scope field entirely and lets AWS infer it from the caller identity - use this when the configured credentials belong to a member/linked account rather than the management account."
+  allowed_values "Payer", "Linked", "Automatic (Linked Account Credentials)"
+  default "Automatic (Linked Account Credentials)"
+end
+
+parameter "param_analysis_type" do
+  type "string"
+  category "Savings Plan Settings"
+  label "Analysis Type"
+  description "The type of analysis to perform. 'Custom Commitment' analyzes a specific hourly commitment amount. 'Target Average Coverage' determines what commitment would be needed to reach a target coverage level (the Hourly Purchase Commitment parameter is not used for this analysis type; use the Target Coverage Percentage parameter instead)."
+  allowed_values "Custom Commitment", "Target Average Coverage"
+  default "Custom Commitment"
+end
+
+parameter "param_target_coverage" do
+  type "number"
+  category "Savings Plan Settings"
+  label "Target Coverage Percentage"
+  description "The target Savings Plan coverage percentage to use when Analysis Type is set to 'Target Average Coverage'. Must be a value between 0 and 100. This parameter is not used when Analysis Type is set to 'Custom Commitment'."
+  min_value 0
+  max_value 100
+  default 80
 end
 
 parameter "param_days" do
@@ -85,7 +104,7 @@ parameter "param_hourly_commitment" do
   type "number"
   category "Savings Plan Settings"
   label "Hourly Purchase Commitment"
-  description "The amount of currency to commit to spending per hour on Savings Plans. Must be in whatever currency the AWS account is configured to use."
+  description "The amount of currency to commit to spending per hour on Savings Plans. Must be in whatever currency the AWS account is configured to use. Only applicable when Analysis Type is set to 'Custom Commitment'."
   min_value 1
   max_value 5000
   default 5
@@ -311,7 +330,7 @@ end
 
 datasource "ds_start_analysis" do
   request do
-    run_script $js_start_analysis, $ds_aws_account, $param_scope, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_hourly_commitment, $param_region, $param_instance_family, $param_offering_id
+    run_script $js_start_analysis, $ds_aws_account, $param_scope, $param_analysis_type, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_hourly_commitment, $param_target_coverage, $param_region, $param_instance_family, $param_offering_id
   end
   result do
     encoding "json"
@@ -322,7 +341,7 @@ datasource "ds_start_analysis" do
 end
 
 script "js_start_analysis", type: "javascript" do
-  parameters "ds_aws_account", "param_scope", "param_days", "param_payment_option", "param_term", "param_savings_plan_type", "param_hourly_commitment", "param_region", "param_instance_family", "param_offering_id"
+  parameters "ds_aws_account", "param_scope", "param_analysis_type", "param_days", "param_payment_option", "param_term", "param_savings_plan_type", "param_hourly_commitment", "param_target_coverage", "param_region", "param_instance_family", "param_offering_id"
   result "request"
   code <<-'EOS'
   option_table = {
@@ -342,44 +361,59 @@ script "js_start_analysis", type: "javascript" do
     "SageMaker Savings Plans": "SAGEMAKER_SP"
   }
 
+  analysis_type_table = {
+    "Custom Commitment": "CUSTOM_COMMITMENT",
+    "Target Average Coverage": "TARGET_AVERAGE_COVERAGE"
+  }
+
   end_time = new Date().toISOString().substring(0, 10)
   start_time = new Date(end_time)
   start_time.setDate(start_time.getDate() - param_days)
   start_time = start_time.toISOString().substring(0, 10)
 
+  sp_to_add = {
+    "PaymentOption": option_table[param_payment_option],
+    "SavingsPlansType": type_table[param_savings_plan_type],
+    "TermInYears": years_table[param_term]
+  }
+
+  // SavingsPlansCommitment only applies to the Custom Commitment analysis type
+  if (param_analysis_type == "Custom Commitment") {
+    sp_to_add["SavingsPlansCommitment"] = param_hourly_commitment
+  }
+
+  sp_config = {
+    "AnalysisType": analysis_type_table[param_analysis_type],
+    "LookBackTimePeriod": {
+      "Start": start_time,
+      "End": end_time
+    },
+    "SavingsPlansToAdd": [sp_to_add]
+  }
+
+  // AccountScope and AccountId are omitted when using linked account credentials;
+  // AWS infers the scope from the caller identity in that case.
+  if (param_scope != "Automatic (Linked Account Credentials)") {
+    sp_config["AccountScope"] = param_scope.toUpperCase()
+    sp_config["AccountId"] = ds_aws_account["id"].toString()
+  }
+
   body_fields = {
     "CommitmentPurchaseAnalysisConfiguration": {
-      "SavingsPlansPurchaseAnalysisConfiguration": {
-        "AccountId": ds_aws_account["id"].toString(),
-        "AccountScope": param_scope.toUpperCase(),
-        "AnalysisType": "CUSTOM_COMMITMENT",
-        "LookBackTimePeriod": {
-          "Start": start_time,
-          "End": end_time
-        },
-        "SavingsPlansToAdd": [
-          {
-            "PaymentOption": option_table[param_payment_option],
-            "SavingsPlansCommitment": param_hourly_commitment,
-            "SavingsPlansType": type_table[param_savings_plan_type],
-            "TermInYears": years_table[param_term]
-          }
-        ]
-      }
+      "SavingsPlansPurchaseAnalysisConfiguration": sp_config
     }
   }
 
-  if (param_region) {
-    body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansToAdd"][0]["Region"] = param_region
+  // SavingsPlansTargetCoverage only applies to the Target Average Coverage analysis type.
+  // Note: despite the AWS docs showing this as {"CoveragePercentage": number}, the live
+  // API expects the coverage percentage as a bare number, not a wrapped structure.
+  if (param_analysis_type == "Target Average Coverage") {
+    body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansTargetCoverage"] = param_target_coverage
   }
 
-  if (param_instance_family) {
-    body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansToAdd"][0]["InstanceFamily"] = param_instance_family
-  }
-
-  if (param_offering_id) {
-    body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansToAdd"][0]["OfferingId"] = param_offering_id
-  }
+  if (param_region) { body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansToAdd"][0]["Region"] = param_region }
+  if (param_instance_family) { body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansToAdd"][0]["InstanceFamily"] = param_instance_family }
+  if (param_offering_id) { body_fields["CommitmentPurchaseAnalysisConfiguration"]["SavingsPlansPurchaseAnalysisConfiguration"]["SavingsPlansToAdd"][0]["OfferingId"] = param_offering_id }
 
   var request = {
     auth: "auth_aws",
@@ -553,11 +587,11 @@ EOS
 end
 
 datasource "ds_analysis_incident" do
-  run_script $js_analysis_incident, $ds_collect_analysis, $ds_currency, $ds_conditional_currency_conversion, $ds_aws_account, $ds_applied_policy, $param_scope, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_hourly_commitment, $param_region, $param_instance_family, $param_offering_id, $param_incident_csv
+  run_script $js_analysis_incident, $ds_collect_analysis, $ds_currency, $ds_conditional_currency_conversion, $ds_aws_account, $ds_applied_policy, $param_scope, $param_analysis_type, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_hourly_commitment, $param_target_coverage, $param_region, $param_instance_family, $param_offering_id, $param_incident_csv
 end
 
 script "js_analysis_incident", type: "javascript" do
-  parameters "ds_collect_analysis", "ds_currency", "ds_conditional_currency_conversion", "ds_aws_account", "ds_applied_policy", "param_scope", "param_days", "param_payment_option", "param_term", "param_savings_plan_type", "param_hourly_commitment", "param_region", "param_instance_family", "param_offering_id", "param_incident_csv"
+  parameters "ds_collect_analysis", "ds_currency", "ds_conditional_currency_conversion", "ds_aws_account", "ds_applied_policy", "param_scope", "param_analysis_type", "param_days", "param_payment_option", "param_term", "param_savings_plan_type", "param_hourly_commitment", "param_target_coverage", "param_region", "param_instance_family", "param_offering_id", "param_incident_csv"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -585,9 +619,23 @@ script "js_analysis_incident", type: "javascript" do
     return formatted_number
   }
 
-  // Used for rounding and currency conversion
-  function convertCurrency(number) {
-    return number ? Math.round(number * ds_currency['exchange_rate'] * 1000) / 1000 : ""
+  // Safely parse a value that may be a string number from the API, undefined, or null
+  function safeFloat(val) {
+    if (val === undefined || val === null || val === "") { return null }
+    var n = parseFloat(val)
+    return isNaN(n) ? null : n
+  }
+
+  // Round to 2 decimal places; return null if value is missing or non-numeric
+  function safeRound(val) {
+    var n = safeFloat(val)
+    return n === null ? null : Math.round(n * 100) / 100
+  }
+
+  // Currency conversion with rounding to 3 decimal places; return null if value is missing
+  function convertCurrency(val) {
+    var n = safeFloat(val)
+    return n === null ? null : Math.round(n * ds_currency['exchange_rate'] * 1000) / 1000
   }
 
   // Messaging for currency conversion
@@ -610,17 +658,21 @@ script "js_analysis_incident", type: "javascript" do
     conversion_message = "Currency values are in ", currency, " due to a malfunction with Flexera's internal currency conversion API. Please contact Flexera support to report this issue."
   }
 
+  scope_display = param_scope == "Automatic (Linked Account Credentials)" ? "Automatic (Linked Account Credentials - Inferred by AWS)" : param_scope
+
   message = [
     conversion_message,
     "The following settings were used for the commitment purchase analysis:\n",
+    "- Analysis Type: ", param_analysis_type, "\n",
     "- Savings Plan Type: ", param_savings_plan_type, "\n",
-    "- Account Scope: ", param_scope, "\n",
+    "- Account Scope: ", scope_display, "\n",
     "- Term: ", param_term, "\n",
     "- Look Back Period: ", param_days, "\n",
-    "- Payment Option: ", param_payment_option, "\n",
-    "- Hourly Commitment: ", param_hourly_commitment, "\n"
+    "- Payment Option: ", param_payment_option, "\n"
   ]
 
+  if (param_analysis_type == "Custom Commitment") { message.push("- Hourly Commitment: ", param_hourly_commitment, "\n") }
+  if (param_analysis_type == "Target Average Coverage") { message.push("- Target Coverage Percentage: ", param_target_coverage, "%\n") }
   if (param_region) { message.push("- Region: ", param_region, "\n") }
   if (param_instance_family) { message.push("- Instance Family: ", param_instance_family, "\n") }
   if (param_offering_id) { message.push("- Offering ID: ", param_offering_id, "\n") }
@@ -634,29 +686,33 @@ script "js_analysis_incident", type: "javascript" do
     "SageMaker Savings Plans": "SageMaker"
   }
 
+  details = ds_collect_analysis[0]["analysisDetails"] || {}
+
   result = [{
-    additionalMetadata: ds_collect_analysis[0]["analysisDetails"]["AdditionalMetadata"],
-    currentAverageCoverage: Math.round(ds_collect_analysis[0]["analysisDetails"]["CurrentAverageCoverage"] * 100) / 100,
-    currentAverageHourlyOnDemandSpend: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["CurrentAverageHourlyOnDemandSpend"]) * 100) / 100,
-    currentMaximumHourlyOnDemandSpend: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["CurrentMaximumHourlyOnDemandSpend"]) * 100) / 100,
-    currentMinimumHourlyOnDemandSpend: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["CurrentMinimumHourlyOnDemandSpend"]) * 100) / 100,
-    currentOnDemandSpend: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["CurrentOnDemandSpend"]) * 100) / 100,
-    estimatedAverageCoverage: Math.round(ds_collect_analysis[0]["analysisDetails"]["EstimatedAverageCoverage"] * 100) / 100,
-    estimatedAverageUtilization: Math.round(ds_collect_analysis[0]["analysisDetails"]["EstimatedAverageUtilization"] * 100) / 100,
-    estimatedCommitmentCost: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["EstimatedCommitmentCost"]) * 100) / 100,
-    estimatedOnDemandCost: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["EstimatedOnDemandCost"]) * 100) / 100,
-    estimatedOnDemandCostWithCurrentCommitment: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["EstimatedOnDemandCostWithCurrentCommitment"]) * 100) / 100,
-    estimatedROI: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["EstimatedROI"]) * 100) / 100,
-    estimatedSavingsAmount: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["EstimatedSavingsAmount"]) * 100) / 100,
-    estimatedSavingsPercentage: Math.round(ds_collect_analysis[0]["analysisDetails"]["EstimatedSavingsPercentage"] * 100) / 100,
-    existingHourlyCommitment: Math.round(ds_collect_analysis[0]["analysisDetails"]["ExistingHourlyCommitment"] * 100) / 100,
-    hourlyCommitmentToPurchase: Math.round(ds_collect_analysis[0]["analysisDetails"]["HourlyCommitmentToPurchase"] * 100) / 100,
-    latestUsageTimestamp: ds_collect_analysis[0]["analysisDetails"]["LatestUsageTimestamp"],
-    lookbackPeriodInHours: Math.round(ds_collect_analysis[0]["analysisDetails"]["LookbackPeriodInHours"] * 100) / 100,
-    upfrontCost: Math.round(convertCurrency(ds_collect_analysis[0]["analysisDetails"]["UpfrontCost"]) * 100) / 100,
+    additionalMetadata: details["AdditionalMetadata"],
+    currentAverageCoverage: safeRound(details["CurrentAverageCoverage"]),
+    currentAverageHourlyOnDemandSpend: safeRound(convertCurrency(details["CurrentAverageHourlyOnDemandSpend"])),
+    currentMaximumHourlyOnDemandSpend: safeRound(convertCurrency(details["CurrentMaximumHourlyOnDemandSpend"])),
+    currentMinimumHourlyOnDemandSpend: safeRound(convertCurrency(details["CurrentMinimumHourlyOnDemandSpend"])),
+    currentOnDemandSpend: safeRound(convertCurrency(details["CurrentOnDemandSpend"])),
+    estimatedAverageCoverage: safeRound(details["EstimatedAverageCoverage"]),
+    estimatedAverageUtilization: safeRound(details["EstimatedAverageUtilization"]),
+    estimatedCommitmentCost: safeRound(convertCurrency(details["EstimatedCommitmentCost"])),
+    estimatedOnDemandCost: safeRound(convertCurrency(details["EstimatedOnDemandCost"])),
+    estimatedOnDemandCostWithCurrentCommitment: safeRound(convertCurrency(details["EstimatedOnDemandCostWithCurrentCommitment"])),
+    estimatedROI: safeRound(convertCurrency(details["EstimatedROI"])),
+    estimatedSavingsAmount: safeRound(convertCurrency(details["EstimatedSavingsAmount"])),
+    estimatedSavingsPercentage: safeRound(details["EstimatedSavingsPercentage"]),
+    existingHourlyCommitment: safeRound(details["ExistingHourlyCommitment"]),
+    hourlyCommitmentToPurchase: safeRound(details["HourlyCommitmentToPurchase"]),
+    latestUsageTimestamp: details["LatestUsageTimestamp"],
+    lookbackPeriodInHours: safeRound(details["LookbackPeriodInHours"]),
+    upfrontCost: safeRound(convertCurrency(details["UpfrontCost"])),
     currency: ds_currency['symbol'],
     accountID: ds_aws_account["id"],
     accountName: ds_aws_account["name"],
+    analysisType: param_analysis_type,
+    targetCoverage: param_analysis_type == "Target Average Coverage" ? param_target_coverage : "",
     term: param_term,
     paymentOption: param_payment_option,
     lookbackPeriod: param_days,
@@ -759,6 +815,12 @@ policy "pol_aws_sp_recommendations" do
       end
       field "paymentOption" do
         label "Payment Option"
+      end
+      field "analysisType" do
+        label "Analysis Type"
+      end
+      field "targetCoverage" do
+        label "Target Coverage Percentage"
       end
       field "service" do
         label "Service"

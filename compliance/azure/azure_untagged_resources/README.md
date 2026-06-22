@@ -34,6 +34,7 @@ This policy template has the following input parameters required when launching 
   - `Key=~/Regex/` - Find all resources where the value for the specified key does not match the specified regex string and all resources missing the specified tag key.
   - `Key!~/Regex/` - Find all resources where the value for the specified key matches the specified regex string.
 - *Any / All* - Whether to report on instances missing any of the specified tags or all of them. Only applicable if more than one value is entered in the `Tags` field.
+- *Consider Tag Dimensions* - Exclude results when a resource is tagged with a tag key that is normalized by a Tag Dimension. The `Tags` parameter value must match a Tag Dimension Name or Tag Dimension ID configured in Flexera One for the lookup to occur. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/azure/azure_untagged_resources) for more details.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
@@ -67,6 +68,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   \* Only required for taking action; the policy will still function in a read-only capacity without these permissions.
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
   - `policy_viewer`
   - `policy_manager`*
 
