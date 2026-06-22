@@ -1,5 +1,13 @@
 # Changelog
 
+## v5.6.3
+
+- Fixed bug where resources whose missing tags were fully covered by Tag Dimension equivalents were still included in the incident with a blank `Missing Tags` field instead of being correctly excluded.
+
+## v5.6.2
+
+- Fixed bug with `Consider Tag Dimensions` feature that would sometimes cause it to not work correctly.
+
 ## v5.6.1
 
 - Fixed issue with incident table that cause policy execution to fail

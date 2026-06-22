@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "4.7.0",
+  version: "4.8.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Reserved Instances",
@@ -128,8 +128,8 @@ parameter "param_term" do
   type "string"
   category "Reservation Settings"
   label "Reservation Term"
-  description "Length of reservation term to provide recommendations for."
-  allowed_values "1 Year", "3 Year"
+  description "Length of reservation term to provide recommendations for. Select 'Any' to return combined results for both term lengths."
+  allowed_values "Any", "1 Year", "3 Year"
   default "1 Year"
 end
 
@@ -164,8 +164,8 @@ parameter "param_payment_option" do
   type "string"
   category "Reservation Settings"
   label "Payment Option"
-  description "Whether or not to report recommendations as 'No Upfront' or 'All Upfront'. Default value of 'No Upfront' recommended in most cases. Has no impact on the recommendations themselves; Azure does not offer discounts or differing options if you paying up front."
-  allowed_values "No Upfront", "All Upfront"
+  description "Payment option label to apply to recommendations. Has no impact on the recommendations themselves; Azure does not offer discounts or differing options based on payment timing. Select 'Everything' to return combined results for all payment options."
+  allowed_values "No Upfront", "All Upfront", "Everything"
   default "No Upfront"
 end
 
@@ -690,6 +690,7 @@ EOS
 end
 
 datasource "ds_ri_recommendations_rg_filtered" do
+  batch true
   run_script $js_ri_recommendations_rg_filtered, $ds_ri_recommendations_region_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
 end
 
@@ -698,7 +699,7 @@ script "js_ri_recommendations_rg_filtered", type: "javascript" do
   result "result"
   code <<-'EOS'
     if (param_resource_groups_list.length > 0) {
-      result = _.filter(ds_ri_recommendations_region_filtered, function(resource) {
+      getIterator(ds_ri_recommendations_region_filtered).Each(function(resource, idx) {
         rg = resource['resourceGroup']
         sub = resource['subscriptionId'] || resource['subscriptionID']
         include_resource = _.any(param_resource_groups_list, function(rg_entry) {
@@ -711,10 +712,10 @@ script "js_ri_recommendations_rg_filtered", type: "javascript" do
         if (param_resource_groups_allow_or_deny == "Deny") {
           include_resource = !include_resource
         }
-        return include_resource
+        if (include_resource) { appendToResult(resource) }
       })
     } else {
-      result = ds_ri_recommendations_region_filtered
+      getIterator(ds_ri_recommendations_region_filtered).Each(appendToResult)
     }
 EOS
 end
@@ -760,20 +761,25 @@ script "js_ri_incident", type: "javascript" do
   exchange_rate = ds_currency['exchange_rate']
 
   term_table = { "1 Year": "P1Y", "3 Year": "P3Y" }
-  term_filter = term_table[param_term]
+  term_reverse_table = { "P1Y": "1 Year", "P3Y": "3 Year" }
+  term_filter = param_term == "Any" ? null : term_table[param_term]
 
   getIterator(ds_ri_recommendations_rg_filtered).Each(function(recommendation, idx) {
+    if (!recommendation || !recommendation['term']) { return }
+
     if (recommendation['kind'] == 'legacy') {
       costWithNoRI = recommendation["costWithNoRI"]
       totalCostWithRI = recommendation["totalCostWithRI"]
       netSavings = recommendation["netSavings"]
     } else {
-      costWithNoRI = recommendation["costWithNoRI"]["value"]
-      totalCostWithRI = recommendation["totalCostWithRI"]["value"]
-      netSavings = recommendation["netSavings"]["value"]
+      costWithNoRI = recommendation["costWithNoRI"] != null ? recommendation["costWithNoRI"]["value"] : 0
+      totalCostWithRI = recommendation["totalCostWithRI"] != null ? recommendation["totalCostWithRI"]["value"] : 0
+      netSavings = recommendation["netSavings"] != null ? recommendation["netSavings"]["value"] : 0
     }
 
-    if (netSavings * exchange_rate >= param_min_savings && term_filter == recommendation['term']) {
+    term_matches = (term_filter == null) || (term_filter == recommendation['term'])
+
+    if (netSavings * exchange_rate >= param_min_savings && term_matches) {
       total_savings += netSavings * exchange_rate
 
       costWithNoRI = Math.round(costWithNoRI * exchange_rate * 100) / 100
@@ -791,35 +797,40 @@ script "js_ri_incident", type: "javascript" do
         resourceGroup = ""
       }
 
-      termMonths = Number(param_term.substring(0, 1)) * 12
+      term_label = term_reverse_table[recommendation['term']] || recommendation['term']
+      termMonths = Number(term_label.substring(0, 1)) * 12
       estimatedBreakEvenInMonths = (1 - ((costWithNoRI - totalCostWithRI) / costWithNoRI)) * termMonths
 
-      result.push({
-        accountID: accountID,
-        accountName: accountName,
-        resourceGroup: resourceGroup,
-        service: recommendation["service"],
-        resourceType: recommendation["skuName"],
-        region: recommendation["region"],
-        scope: recommendation["scope"],
-        recommendedQuantity: recommendation["recommendedQuantity"],
-        firstUsageDate: recommendation["firstUsageDate"],
-        resourceID: recommendation["meterId"],
-        instanceFlexibilityGroup: recommendation["instanceFlexibilityGroup"],
-        instanceFlexibilityRatio: recommendation["instanceFlexibilityRatio"],
-        normalizedSize: recommendation["normalizedSize"],
-        recommendedQuantityNormalized: recommendation["recommendedQuantityNormalized"],
-        estimatedBreakEvenInMonths: Math.round(estimatedBreakEvenInMonths * 10) / 10,
-        lookbackPeriod: param_days,
-        term: param_term,
-        costWithNoRI: costWithNoRI,
-        totalCostWithRI: totalCostWithRI,
-        savings: netSavings,
-        savingsCurrency: ds_currency['symbol'],
-        policy_name: ds_applied_policy['name'],
-        paymentOption: param_payment_option,
-        total_savings: "",
-        message: ""
+      payment_options_to_use = param_payment_option == "Everything" ? ["No Upfront", "All Upfront"] : [param_payment_option]
+
+      _.each(payment_options_to_use, function(po) {
+        result.push({
+          accountID: accountID,
+          accountName: accountName,
+          resourceGroup: resourceGroup,
+          service: recommendation["service"],
+          resourceType: recommendation["skuName"],
+          region: recommendation["region"],
+          scope: recommendation["scope"],
+          recommendedQuantity: recommendation["recommendedQuantity"],
+          firstUsageDate: recommendation["firstUsageDate"],
+          resourceID: recommendation["meterId"],
+          instanceFlexibilityGroup: recommendation["instanceFlexibilityGroup"],
+          instanceFlexibilityRatio: recommendation["instanceFlexibilityRatio"],
+          normalizedSize: recommendation["normalizedSize"],
+          recommendedQuantityNormalized: recommendation["recommendedQuantityNormalized"],
+          estimatedBreakEvenInMonths: Math.round(estimatedBreakEvenInMonths * 10) / 10,
+          lookbackPeriod: param_days,
+          term: term_label,
+          costWithNoRI: costWithNoRI,
+          totalCostWithRI: totalCostWithRI,
+          savings: netSavings,
+          savingsCurrency: ds_currency['symbol'],
+          policy_name: ds_applied_policy['name'],
+          paymentOption: po,
+          total_savings: "",
+          message: ""
+        })
       })
     }
   })

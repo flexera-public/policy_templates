@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.5
+
+- Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match
+
 ## v3.1.4
 
 - Updated instance type data source from `data/aws/instance_types.json` to `data/aws/aws_ec2_instance_types.json`. RDS instance type vCPU lookups continue to work correctly since RDS types share the same underlying hardware as their EC2 counterparts.
