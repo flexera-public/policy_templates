@@ -382,16 +382,62 @@ script "js_no_projects_error", type: "javascript" do
 EOS
 end
 
-# List all Vertex AI online prediction endpoints across all locations for each project
-datasource "ds_vertex_ai_endpoints" do
+# List all available Vertex AI locations for each project
+datasource "ds_vertex_ai_locations" do
   iterate $ds_google_projects_filtered
   request do
     auth $auth_google
     pagination $pagination_google
     host "aiplatform.googleapis.com"
-    path join(["/v1/projects/", val(iter_item, "id"), "/locations/-/endpoints"])
+    path join(["/v1/projects/", val(iter_item, "id"), "/locations"])
     header "User-Agent", "RS Policies"
     ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "locations[*]") do
+      field "locationId", jmes_path(col_item, "locationId")
+      field "projectId", val(iter_item, "id")
+      field "projectName", val(iter_item, "name")
+    end
+  end
+end
+
+# Add 'global' to the location list for each project. The Vertex AI locations API does not
+# include 'global', but globally-deployed endpoints must be queried via aiplatform.googleapis.com
+# with 'global' as the location ID rather than any regional API host.
+datasource "ds_vertex_ai_locations_with_global" do
+  run_script $js_vertex_ai_locations_with_global, $ds_vertex_ai_locations
+end
+
+script "js_vertex_ai_locations_with_global", type: "javascript" do
+  parameters "ds_vertex_ai_locations"
+  result "result"
+  code <<-'EOS'
+  var projects_seen = {}
+  _.each(ds_vertex_ai_locations, function(loc) {
+    projects_seen[loc['projectId']] = loc['projectName']
+  })
+
+  result = ds_vertex_ai_locations.slice()
+
+  _.each(_.keys(projects_seen), function(projectId) {
+    result.push({
+      locationId: 'global',
+      projectId: projectId,
+      projectName: projects_seen[projectId]
+    })
+  })
+EOS
+end
+
+# List all Vertex AI online prediction endpoints across all locations for each project.
+# Regional locations use a location-specific API host ({location}-aiplatform.googleapis.com)
+# while the 'global' location uses the global host (aiplatform.googleapis.com).
+datasource "ds_vertex_ai_endpoints" do
+  iterate $ds_vertex_ai_locations_with_global
+  request do
+    run_script $js_vertex_ai_endpoints_request, val(iter_item, "locationId"), val(iter_item, "projectId")
   end
   result do
     encoding "json"
@@ -402,10 +448,26 @@ datasource "ds_vertex_ai_endpoints" do
       field "labels", jmes_path(col_item, "labels")
       field "createTime", jmes_path(col_item, "createTime")
       field "updateTime", jmes_path(col_item, "updateTime")
-      field "projectId", val(iter_item, "id")
-      field "projectName", val(iter_item, "name")
+      field "projectId", val(iter_item, "projectId")
+      field "projectName", val(iter_item, "projectName")
     end
   end
+end
+
+script "js_vertex_ai_endpoints_request", type: "javascript" do
+  parameters "locationId", "projectId"
+  result "request"
+  code <<-'EOS'
+  var host = locationId == "global" ? "aiplatform.googleapis.com" : locationId + "-aiplatform.googleapis.com"
+  request = {
+    auth: "auth_google",
+    pagination: "pagination_google",
+    host: host,
+    path: "/v1/projects/" + projectId + "/locations/" + locationId + "/endpoints",
+    headers: { "User-Agent": "RS Policies" },
+    ignore_status: [400, 403, 404]
+  }
+EOS
 end
 
 # Parse region and endpointId from resource name; flatten dedicated-resource deployed model details
@@ -798,8 +860,8 @@ script "js_idle_vertex_ai_endpoints", type: "javascript" do
   settings = [
     "Only endpoints using dedicatedResources (dedicated compute nodes) are evaluated; ",
     "endpoints using automaticResources scale to zero and incur no continuous compute cost. ",
-    "Savings estimates are computed as pricePerHour × nodeCount × 730 using pre-fetched ",
-    "Vertex AI online prediction pricing from data/google/google_vertex_ai_pricing.json.\n\n"
+    "Savings estimates are computed as pricePerHour x nodeCount x 730 using pre-fetched ",
+    "Vertex AI online prediction pricing.\n\n"
   ].join('')
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
