@@ -5,6 +5,7 @@
 - New `Dimension List` parameter allows filtering recommendations by Rule-Based Dimensions and Tag Dimensions.
 - `Billing Center List` parameter now supports all Billing Centers instead of just top-level ones.
 - Incident table now shows both top-level and bottom-level Billing Center for each recommendation.
+- Added support for additional recommendation types.
 
 ## v0.8.2
 
