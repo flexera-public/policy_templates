@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.9.0
+
+- Improved support for Billing Center filtering; bottom level Billing Centers are now supported.
+
 ## v0.8.2
 
 - Updated documentation link in policy description. Functionality unchanged.

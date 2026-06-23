@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.8.2",
+  version: "0.9.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -66,7 +66,7 @@ parameter "param_bc_list" do
   type "list"
   category "Filters"
   label "Billing Center List"
-  description "A list of Billing Center names to email recommendations for. Leave blank to include recommendations for all Billing Centers."
+  description "A list of Billing Center names to email recommendations for. Leave blank to include recommendations for all Billing Centers. Note: This will only match Billing Centers at the top level or the bottom of your Billing Center hierarchy. See the README for more details."
   default []
 end
 
@@ -250,6 +250,41 @@ script "js_currency", type:"javascript" do
 EOS
 end
 
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+      field "ancestor_ids", jmes_path(col_item, "ancestor_ids")
+      field "allocation_table", jmes_path(col_item, "allocation_table")
+    end
+  end
+end
+
+datasource "ds_billing_centers_table" do
+  run_script $js_billing_centers_table, $ds_billing_centers
+end
+
+script "js_billing_centers_table", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  _.each(ds_billing_centers, function(bc) { result[bc['id']] = bc['name'] })
+EOS
+end
+
 datasource "ds_recommendations" do
   request do
     auth $auth_flexera
@@ -258,14 +293,43 @@ datasource "ds_recommendations" do
     query "view", "extended"
     header "Api-Version", "1.0"
   end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "recommendation", jmes_path(col_item, "recommendation")
+      field "type", jmes_path(col_item, "type")
+      field "createdAt", jmes_path(col_item, "createdAt")
+      field "updatedAt", jmes_path(col_item, "updatedAt")
+      field "vendor", jmes_path(col_item, "vendor")
+      field "policySet", jmes_path(col_item, "policySet")
+      field "accountID", jmes_path(col_item, "accountID")
+      field "accountName", jmes_path(col_item, "accountName")
+      field "tags", jmes_path(col_item, "tags")
+      field "resourceID", jmes_path(col_item, "resourceID")
+      field "resourceType", jmes_path(col_item, "resourceType")
+      field "region", jmes_path(col_item, "region")
+      field "service", jmes_path(col_item, "service")
+      field "databaseEngine", jmes_path(col_item, "databaseEngine")
+      field "billingCenterName", jmes_path(col_item, "billingCenterName")
+      field "billingCenterID", jmes_path(col_item, "billingCenterID")
+      field "savings", jmes_path(col_item, "savings")
+      field "quantityToPurchase", jmes_path(col_item, "quantityToPurchase")
+      field "detailsExtended", jmes_path(col_item, "detailsExtended")
+      field "ruleBasedDimensions", jmes_path(col_item, "ruleBasedDimensions")
+      field "customTagDimensions", jmes_path(col_item, "customTagDimensions")
+      field "incidentID", jmes_path(col_item, "incidentID")
+      field "status", jmes_path(col_item, "status")
+    end
+  end
 end
 
 datasource "ds_recommendations_filtered" do
-  run_script $js_recommendations_filtered, $ds_recommendations, $ds_recommendation_types, $param_vendor_list, $param_accounts_allow_or_deny, $param_accounts_list, $param_bc_list, $param_recommendation_list, $param_policy_list
+  run_script $js_recommendations_filtered, $ds_recommendations, $ds_recommendation_types, $ds_billing_centers_table, $param_vendor_list, $param_accounts_allow_or_deny, $param_accounts_list, $param_bc_list, $param_recommendation_list, $param_policy_list
 end
 
 script "js_recommendations_filtered", type: "javascript" do
-  parameters "ds_recommendations", "ds_recommendation_types", "param_vendor_list", "param_accounts_allow_or_deny", "param_accounts_list", "param_bc_list", "param_recommendation_list", "param_policy_list"
+  parameters "ds_recommendations", "ds_recommendation_types", "ds_billing_centers_table", "param_vendor_list", "param_accounts_allow_or_deny", "param_accounts_list", "param_bc_list", "param_recommendation_list", "param_policy_list"
   result "result"
   code <<-'EOS'
   result = _.filter(ds_recommendations, function(recommendation) {
@@ -285,13 +349,14 @@ script "js_recommendations_filtered", type: "javascript" do
     }
 
     if (param_bc_list.length > 0) {
-      if (_.contains(param_bc_list, recommendation['billingCenterName']) == false && _.contains(param_bc_list, recommendation['billingCenterName'].toLowerCase()) == false) {
-        include_recommendation = false
-      }
-    }
+      top_bc = recommendation['billingCenterName']
+      child_bc = ""
 
-    if (param_bc_list.length > 0) {
-      if (_.contains(param_bc_list, recommendation['billingCenterName']) == false && _.contains(param_bc_list, recommendation['billingCenterName'].toLowerCase()) == false) {
+      if (recommendation['ruleBasedDimensions'] && recommendation['ruleBasedDimensions']['rbd_bc']) {
+        child_bc = ds_billing_centers_table[recommendation['ruleBasedDimensions']['rbd_bc']]
+      }
+
+      if (_.contains(param_bc_list, top_bc) == false && _.contains(param_bc_list, top_bc.toLowerCase()) == false && _.contains(param_bc_list, child_bc) == false && _.contains(param_bc_list, child_bc.toLowerCase()) == false) {
         include_recommendation = false
       }
     }

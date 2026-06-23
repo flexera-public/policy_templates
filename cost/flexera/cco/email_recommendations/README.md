@@ -18,6 +18,8 @@ This policy template has the following input parameters:
 - *Allow/Deny Cloud Accounts* - Whether to treat `Allow/Deny Cloud Accounts List` parameter as allow or deny list. Has no effect if `Allow/Deny Cloud Accounts List` is left empty.
 - *Allow/Deny Cloud Account List* - A list of allowed or denied cloud account IDs/names, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all cloud accounts.
 - *Billing Center List* - A list of Billing Center names to email recommendations for. Leave blank to include recommendations for all Billing Centers.
+  - Note: This will only match Billing Centers at the top level or the bottom of your Billing Center hierarchy.
+  - For example, suppose a hierarchy of: *EMEA* -> *Engineering* -> *Division A* -> *Team Alpha*; this filter will only match *EMEA* or *Team Alpha*. Billing Centers between the top and bottom level will be ignored.
 - *Recommendation List* - The types of recommendations to include in the email.
 - *Policy List* - A list of catalog policy names to include recommendations for. Leave blank to include recommendations for all policies.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
