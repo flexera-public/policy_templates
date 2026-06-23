@@ -462,17 +462,12 @@ script "js_recommendations_filtered_bc", type: "javascript" do
       billing_centers = [ recommendation['billingCenterName'], recommendation['billingCenterName'].toLowerCase() ]
 
       if (recommendation['ruleBasedDimensions'] && recommendation['ruleBasedDimensions']['rbd_bc']) {
-        // Add known bottom-level BC from recommendation
         bc = ds_billing_centers_table[recommendation['ruleBasedDimensions']['rbd_bc']]
 
-        billing_centers.push(bc['name'])
-        billing_centers.push(bc['name'].toLowerCase())
-
-        // Add all BCs between top and bottom level via loop
-        while (bc['parent_id']) {
-          bc = ds_billing_centers_table[bc['parent_id']]
+        while (bc) {
           billing_centers.push(bc['name'])
           billing_centers.push(bc['name'].toLowerCase())
+          bc = bc['parent_id'] ? ds_billing_centers_table[bc['parent_id']] : null
         }
       }
 
@@ -533,11 +528,11 @@ EOS
 end
 
 datasource "ds_recommendations_organized" do
-  run_script $js_recommendations_organized, $ds_recommendations_filtered_pollist, $ds_currency, $param_always_send_incident, "param_incident_csv"
+  run_script $js_recommendations_organized, $ds_recommendations_filtered_pollist, $ds_currency, $ds_billing_centers_table, $param_always_send_incident, "param_incident_csv"
 end
 
 script "js_recommendations_organized", type: "javascript" do
-  parameters "ds_recommendations_filtered_pollist", "ds_currency", "param_always_send_incident", "param_incident_csv"
+  parameters "ds_recommendations_filtered_pollist", "ds_currency", "ds_billing_centers_table", "param_always_send_incident", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -545,6 +540,14 @@ script "js_recommendations_organized", type: "javascript" do
   result = []
 
   _.each(ds_recommendations_filtered_pollist, function(recommendation) {
+    billingCenterTopLevel = recommendation['billingCenterName']
+    billingCenterBottomLevel = ""
+
+    if (recommendation['ruleBasedDimensions'] && recommendation['ruleBasedDimensions']['rbd_bc']) {
+      bc = ds_billing_centers_table[recommendation['ruleBasedDimensions']['rbd_bc']]
+      if (bc) { billingCenterBottomLevel = bc['name'] }
+    }
+
     accountID = recommendation['accountID']
 
     if (accountID == '' || typeof(accountID) != 'string') {
@@ -665,7 +668,8 @@ script "js_recommendations_organized", type: "javascript" do
 
     result.push({
       recommendationID: recommendation['id'],
-      billingCenter: recommendation['billingCenterName'],
+      billingCenter: billingCenterTopLevel,
+      billingCenterBottom: billingCenterBottomLevel,
       vendor: recommendation['vendor'],
       policyName: recommendation['recommendation'],
       savings: recommendation['savings'],
@@ -710,7 +714,10 @@ policy "pol_recommendations" do
     export do
       resource_level true
       field "billingCenter" do
-        label "Billing Center"
+        label "Billing Center (Top)"
+      end
+      field "billingCenterBottom" do
+        label "Billing Center (Bottom)"
       end
       field "vendor" do
         label "Vendor"
