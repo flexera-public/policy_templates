@@ -368,54 +368,95 @@ datasource "ds_recommendations" do
   end
 end
 
-datasource "ds_recommendations_filtered" do
-  run_script $js_recommendations_filtered, $ds_recommendations, $ds_recommendation_types, $ds_billing_centers_table, $ds_dimensions_table, $param_vendor_list, $param_accounts_allow_or_deny, $param_accounts_list, $param_bc_list, $param_recommendation_list, $param_policy_list, $param_dimension_list
+datasource "ds_recommendations_filtered_vendor" do
+  run_script $js_recommendations_filtered_vendor, $ds_recommendations, $param_vendor_list
 end
 
-script "js_recommendations_filtered", type: "javascript" do
-  parameters "ds_recommendations", "ds_recommendation_types", "ds_billing_centers_table", "ds_dimensions_table", "param_vendor_list", "param_accounts_allow_or_deny", "param_accounts_list", "param_bc_list", "param_recommendation_list", "param_policy_list", "param_dimension_list"
+script "js_recommendations_filtered_vendor", type: "javascript" do
+  parameters "ds_recommendations", "param_vendor_list"
   result "result"
   code <<-'EOS'
   result = _.filter(ds_recommendations, function(recommendation) {
     include_recommendation = true
 
     if (param_vendor_list.length > 0) {
-      if (_.contains(param_vendor_list, recommendation['vendor']) == false) {
-        include_recommendation = false
-      }
+      include_recommendation = _.contains(param_vendor_list, recommendation['vendor'])
     }
+
+    return include_recommendation
+  })
+EOS
+end
+
+datasource "ds_recommendations_filtered_account" do
+  run_script $js_recommendations_filtered_account, $ds_recommendations_filtered_vendor, $param_accounts_allow_or_deny, $param_accounts_list
+end
+
+script "js_recommendations_filtered_account", type: "javascript" do
+  parameters "ds_recommendations_filtered_vendor", "param_accounts_allow_or_deny", "param_accounts_list"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_recommendations_filtered_vendor, function(recommendation) {
+    include_recommendation = true
 
     if (param_accounts_list.length > 0) {
-      include_account = _.contains(param_accounts_list, recommendation['accountID']) || _.contains(param_accounts_list, recommendation['accountName']) || _.contains(param_accounts_list, recommendation['accountName'].toLowerCase())
-      if (param_accounts_allow_or_deny == 'Deny') { include_account = !include_account }
-
-      if (include_account == false) { include_recommendation = false }
+      include_recommendation = _.contains(param_accounts_list, recommendation['accountID']) || _.contains(param_accounts_list, recommendation['accountName']) || _.contains(param_accounts_list, recommendation['accountName'].toLowerCase())
+      if (param_accounts_allow_or_deny == 'Deny') { include_recommendation = !include_recommendation }
     }
 
+    return include_recommendation
+  })
+EOS
+end
+
+datasource "ds_recommendations_filtered_dimension" do
+  run_script $js_recommendations_filtered_dimension, $ds_recommendations_filtered_account, $ds_dimensions_table, $param_dimension_list
+end
+
+script "js_recommendations_filtered_dimension", type: "javascript" do
+  parameters "ds_recommendations_filtered_account", "ds_dimensions_table", "param_dimension_list"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_recommendations_filtered_account, function(recommendation) {
+    include_recommendation = true
+
     if (param_dimension_list.length > 0) {
-      dimension_match = false
+      include_recommendation = false
 
       _.each(param_dimension_list, function(dimension) {
         if (dimension.split('=')[0] && dimension.split('=')[1]) {
-          key = ds_dimensions_table[dimension.split('=')[0]].trim()
+          key = ds_dimensions_table[dimension.split('=')[0].trim()]
           value = dimension.split('=')[1].trim()
 
           if (recommendation['ruleBasedDimensions'] && recommendation['ruleBasedDimensions'][key] == value) {
-            dimension_match = true
+            include_recommendation = true
           }
 
           if (recommendation['customTagDimensions'] && recommendation['customTagDimensions'][key] == value) {
-            dimension_match = true
+            include_recommendation = true
           }
         }
       })
-
-      // If nothing matched, don't include recommendation
-      if (dimension_match == false) { include_recommendation = false }
     }
 
+    return include_recommendation
+  })
+EOS
+end
+
+datasource "ds_recommendations_filtered_bc" do
+  run_script $js_recommendations_filtered_bc, $ds_recommendations_filtered_dimension, $ds_billing_centers_table, $param_bc_list
+end
+
+script "js_recommendations_filtered_bc", type: "javascript" do
+  parameters "ds_recommendations_filtered_dimension", "ds_billing_centers_table", "param_bc_list"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_recommendations_filtered_dimension, function(recommendation) {
+    include_recommendation = true
+
     if (param_bc_list.length > 0) {
-      bc_match = false
+      include_recommendation = false
 
       // Add known top-level BC from recommendation
       billing_centers = [ recommendation['billingCenterName'], recommendation['billingCenterName'].toLowerCase() ]
@@ -440,23 +481,48 @@ script "js_recommendations_filtered", type: "javascript" do
 
       // If any of the billing centers match something in the list, track that
       _.each(param_bc_list, function(bc_name) {
-        if (_.contains(billing_centers, bc_name)) { bc_match = true }
+        if (_.contains(billing_centers, bc_name)) { include_recommendation = true }
       })
-
-      // If nothing matched, don't include recommendation
-      if (bc_match == false) { include_recommendation = false }
     }
+
+    return include_recommendation
+  })
+EOS
+end
+
+datasource "ds_recommendations_filtered_reclist" do
+  run_script $js_recommendations_filtered_reclist, $ds_recommendations_filtered_bc, $param_recommendation_list
+end
+
+script "js_recommendations_filtered_reclist", type: "javascript" do
+  parameters "ds_recommendations_filtered_bc", "param_recommendation_list"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_recommendations_filtered_bc, function(recommendation) {
+    include_recommendation = true
 
     if (param_recommendation_list.length > 0) {
-      if (_.contains(param_recommendation_list, ds_recommendation_types[recommendation['recommendation']]) == false) {
-        include_recommendation = false
-      }
+      include_recommendation = _.contains(param_recommendation_list, ds_recommendation_types[recommendation['recommendation']])
     }
 
+    return include_recommendation
+  })
+EOS
+end
+
+datasource "ds_recommendations_filtered_pollist" do
+  run_script $js_recommendations_filtered_pollist, $ds_recommendations_filtered_reclist, $param_policy_list
+end
+
+script "js_recommendations_filtered_pollist", type: "javascript" do
+  parameters "ds_recommendations_filtered_reclist", "param_policy_list"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_recommendations_filtered_reclist, function(recommendation) {
+    include_recommendation = true
+
     if (param_policy_list.length > 0) {
-      if (_.contains(param_policy_list, recommendation['recommendation']) == false && _.contains(param_bc_list, recommendation['recommendation'].toLowerCase()) == false) {
-        include_recommendation = false
-      }
+      include_recommendation = _.contains(param_policy_list, recommendation['recommendation']) || _.contains(param_bc_list, recommendation['recommendation'].toLowerCase())
     }
 
     return include_recommendation
@@ -465,7 +531,7 @@ EOS
 end
 
 datasource "ds_recommendations_organized" do
-  run_script $js_recommendations_organized, $ds_recommendations_filtered, $ds_currency, $param_always_send_incident, "param_incident_csv"
+  run_script $js_recommendations_organized, $ds_recommendations_filtered_pollist, $ds_currency, $param_always_send_incident, "param_incident_csv"
 end
 
 script "js_recommendations_organized", type: "javascript" do
@@ -476,7 +542,7 @@ script "js_recommendations_organized", type: "javascript" do
 
   result = []
 
-  _.each(ds_recommendations_filtered, function(recommendation) {
+  _.each(ds_recommendations_filtered_pollist, function(recommendation) {
     accountID = recommendation['accountID']
 
     if (accountID == '' || typeof(accountID) != 'string') {
