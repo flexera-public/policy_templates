@@ -2,7 +2,8 @@
 
 ## v0.9.0
 
-- Improved support for Billing Center filtering; bottom level Billing Centers are now supported.
+- `Billing Center List` parameter now supports all Billing Centers instead of just top-level ones.
+- New `Dimension List` parameter allows filtering recommendations by Rule-Based Dimensions and Tag Dimensions.
 
 ## v0.8.2
 

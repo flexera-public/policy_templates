@@ -66,7 +66,16 @@ parameter "param_bc_list" do
   type "list"
   category "Filters"
   label "Billing Center List"
-  description "A list of Billing Center names to email recommendations for. Leave blank to include recommendations for all Billing Centers. Note: This will only match Billing Centers at the top level or the bottom of your Billing Center hierarchy. See the README for more details."
+  description "A list of Billing Center names to email recommendations for. Leave blank to include recommendations for all Billing Centers."
+  default []
+end
+
+parameter "param_dimension_list" do
+  type "list"
+  category "Filters"
+  label "Dimension List"
+  description "A list of Rule-Based and Tag Dimension values to email recommendations for in Key=Value format. Recommendations that match any of the specified Key=Value pairs will be included in the results. Leave blank to not filter by dimension. Only Rule-Based Dimensions and Tag Dimensions are supported. Example: Cost Center=Engineering"
+  allowed_pattern /\S[^=]*=[^=]*\S/
   default []
 end
 
@@ -267,7 +276,6 @@ datasource "ds_billing_centers" do
       field "name", jmes_path(col_item, "name")
       field "parent_id", jmes_path(col_item, "parent_id")
       field "ancestor_ids", jmes_path(col_item, "ancestor_ids")
-      field "allocation_table", jmes_path(col_item, "allocation_table")
     end
   end
 end
@@ -281,7 +289,43 @@ script "js_billing_centers_table", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = {}
-  _.each(ds_billing_centers, function(bc) { result[bc['id']] = bc['name'] })
+  _.each(ds_billing_centers, function(bc) { result[bc['id']] = bc })
+EOS
+end
+
+datasource "ds_dimensions" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "dimensions[].{id: id, name: name, type:type}") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+    end
+  end
+end
+
+datasource "ds_dimensions_table" do
+  run_script $js_dimensions_table, $ds_dimensions
+end
+
+script "js_dimensions_table", type: "javascript" do
+  parameters "ds_dimensions"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  _.each(ds_dimensions, function(dimension) {
+    if (dimension['id'].indexOf("rbd_") == 0 || dimension['id'].indexOf("tag_") == 0) {
+      result[dimension['id']] = dimension['id']
+      result[dimension['name']] = dimension['id']
+    }
+  })
 EOS
 end
 
@@ -325,11 +369,11 @@ datasource "ds_recommendations" do
 end
 
 datasource "ds_recommendations_filtered" do
-  run_script $js_recommendations_filtered, $ds_recommendations, $ds_recommendation_types, $ds_billing_centers_table, $param_vendor_list, $param_accounts_allow_or_deny, $param_accounts_list, $param_bc_list, $param_recommendation_list, $param_policy_list
+  run_script $js_recommendations_filtered, $ds_recommendations, $ds_recommendation_types, $ds_billing_centers_table, $ds_dimensions_table, $param_vendor_list, $param_accounts_allow_or_deny, $param_accounts_list, $param_bc_list, $param_recommendation_list, $param_policy_list, $param_dimension_list
 end
 
 script "js_recommendations_filtered", type: "javascript" do
-  parameters "ds_recommendations", "ds_recommendation_types", "ds_billing_centers_table", "param_vendor_list", "param_accounts_allow_or_deny", "param_accounts_list", "param_bc_list", "param_recommendation_list", "param_policy_list"
+  parameters "ds_recommendations", "ds_recommendation_types", "ds_billing_centers_table", "ds_dimensions_table", "param_vendor_list", "param_accounts_allow_or_deny", "param_accounts_list", "param_bc_list", "param_recommendation_list", "param_policy_list", "param_dimension_list"
   result "result"
   code <<-'EOS'
   result = _.filter(ds_recommendations, function(recommendation) {
@@ -348,17 +392,59 @@ script "js_recommendations_filtered", type: "javascript" do
       if (include_account == false) { include_recommendation = false }
     }
 
+    if (param_dimension_list.length > 0) {
+      dimension_match = false
+
+      _.each(param_dimension_list, function(dimension) {
+        if (dimension.split('=')[0] && dimension.split('=')[1]) {
+          key = ds_dimensions_table[dimension.split('=')[0]].trim()
+          value = dimension.split('=')[1].trim()
+
+          if (recommendation['ruleBasedDimensions'] && recommendation['ruleBasedDimensions'][key] == value) {
+            dimension_match = true
+          }
+
+          if (recommendation['customTagDimensions'] && recommendation['customTagDimensions'][key] == value) {
+            dimension_match = true
+          }
+        }
+      })
+
+      // If nothing matched, don't include recommendation
+      if (dimension_match == false) { include_recommendation = false }
+    }
+
     if (param_bc_list.length > 0) {
-      top_bc = recommendation['billingCenterName']
-      child_bc = ""
+      bc_match = false
+
+      // Add known top-level BC from recommendation
+      billing_centers = [ recommendation['billingCenterName'], recommendation['billingCenterName'].toLowerCase() ]
 
       if (recommendation['ruleBasedDimensions'] && recommendation['ruleBasedDimensions']['rbd_bc']) {
-        child_bc = ds_billing_centers_table[recommendation['ruleBasedDimensions']['rbd_bc']]
+        // Add known bottom-level BC from recommendation
+        bc = ds_billing_centers_table[recommendation['ruleBasedDimensions']['rbd_bc']]
+
+        billing_centers.push(bc['name'])
+        billing_centers.push(bc['name'].toLowerCase())
+
+        // Add all BCs between top and bottom level via loop
+        while (bc['parent_id']) {
+          bc = ds_billing_centers_table[bc['parent_id']]
+          billing_centers.push(bc['name'])
+          billing_centers.push(bc['name'].toLowerCase())
+        }
       }
 
-      if (_.contains(param_bc_list, top_bc) == false && _.contains(param_bc_list, top_bc.toLowerCase()) == false && _.contains(param_bc_list, child_bc) == false && _.contains(param_bc_list, child_bc.toLowerCase()) == false) {
-        include_recommendation = false
-      }
+      // Remove duplicates and invalid values
+      billing_centers = _.compact(_.uniq(billing_centers))
+
+      // If any of the billing centers match something in the list, track that
+      _.each(param_bc_list, function(bc_name) {
+        if (_.contains(billing_centers, bc_name)) { bc_match = true }
+      })
+
+      // If nothing matched, don't include recommendation
+      if (bc_match == false) { include_recommendation = false }
     }
 
     if (param_recommendation_list.length > 0) {
