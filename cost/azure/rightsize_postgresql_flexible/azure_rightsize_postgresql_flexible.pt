@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.0",
+  version: "0.2.0",
   provider: "Azure",
   service: "PostgreSQL",
   policy_set: "Rightsize Database Instances",
@@ -159,6 +159,15 @@ parameter "param_stats_lookback" do
   min_value 1
   max_value 90
   default 30
+end
+
+parameter "param_stats_connection_threshold" do
+  type "number"
+  category "Statistics"
+  label "Unused Server Connection Threshold"
+  description "The maximum number of active connections a server can have and still be considered 'unused'. Azure PostgreSQL Flexible Servers typically maintain 1 internal connection at all times; the default value of 1 ensures servers with only this internal connection are correctly identified as unused rather than underutilized."
+  min_value 0
+  default 1
 end
 
 parameter "param_downsize_multiple" do
@@ -713,17 +722,18 @@ end
 datasource "ds_azure_postgresql_resize_map" do
   request do
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/azure/postgresql_flexible_tier_types.json"
+    #path "/flexera-public/policy_templates/master/data/azure/postgresql_flexible_tier_types.json"
+    path "/flexera-public/policy_templates/e1fae37469d57c2f31190adc6c559332fa3410b7/data/azure/postgresql_flexible_tier_types.json"
     header "User-Agent", "RS Policies"
   end
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_azure_postgresql_metrics, $ds_azure_postgresql_resize_map, $ds_applied_policy, $param_stats_underutil_threshold_cpu_value, $param_stats_lookback, $param_unused_or_underutilized, $param_stats_threshold, $param_downsize_multiple
+  run_script $js_merged_metrics, $ds_azure_postgresql_metrics, $ds_azure_postgresql_resize_map, $ds_applied_policy, $param_stats_underutil_threshold_cpu_value, $param_stats_lookback, $param_unused_or_underutilized, $param_stats_threshold, $param_downsize_multiple, $param_stats_connection_threshold
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_azure_postgresql_metrics", "ds_azure_postgresql_resize_map", "ds_applied_policy", "param_stats_underutil_threshold_cpu_value", "param_stats_lookback", "param_unused_or_underutilized", "param_stats_threshold", "param_downsize_multiple"
+  parameters "ds_azure_postgresql_metrics", "ds_azure_postgresql_resize_map", "ds_applied_policy", "param_stats_underutil_threshold_cpu_value", "param_stats_lookback", "param_unused_or_underutilized", "param_stats_threshold", "param_downsize_multiple", "param_stats_connection_threshold"
   result "result"
   code <<-'EOS'
   // Function to calculate percentiles from metrics
@@ -799,7 +809,7 @@ script "js_merged_metrics", type: "javascript" do
         }
       })
 
-      if (max_connections == 0) {
+      if (max_connections <= param_stats_connection_threshold) {
         instance['recommendationType'] = 'Delete'
         instance['newResourceType'] = 'Delete'
 
@@ -1013,11 +1023,11 @@ EOS
 end
 
 datasource "ds_downsize_postgresql_incident" do
-  run_script $js_downsize_postgresql_incident, $ds_merged_metrics, $ds_azure_postgresql_rg_filtered, $ds_postgresql_costs_grouped, $ds_currency, $ds_stats_interval, $param_min_savings, $param_stats_lookback, $param_stats_underutil_threshold_cpu_value, $param_unused_or_underutilized, $param_stats_threshold, $param_incident_csv
+  run_script $js_downsize_postgresql_incident, $ds_merged_metrics, $ds_azure_postgresql_rg_filtered, $ds_postgresql_costs_grouped, $ds_currency, $ds_stats_interval, $param_min_savings, $param_stats_lookback, $param_stats_underutil_threshold_cpu_value, $param_unused_or_underutilized, $param_stats_threshold, $param_stats_connection_threshold, $param_incident_csv
 end
 
 script "js_downsize_postgresql_incident", type: "javascript" do
-  parameters "ds_merged_metrics", "ds_azure_postgresql_rg_filtered", "ds_postgresql_costs_grouped", "ds_currency", "ds_stats_interval", "param_min_savings", "param_stats_lookback", "param_stats_underutil_threshold_cpu_value", "param_unused_or_underutilized", "param_stats_threshold", "param_incident_csv"
+  parameters "ds_merged_metrics", "ds_azure_postgresql_rg_filtered", "ds_postgresql_costs_grouped", "ds_currency", "ds_stats_interval", "param_min_savings", "param_stats_lookback", "param_stats_underutil_threshold_cpu_value", "param_unused_or_underutilized", "param_stats_threshold", "param_stats_connection_threshold", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -1137,8 +1147,9 @@ script "js_downsize_postgresql_incident", type: "javascript" do
     ].join('')
   } else {
     context_message = [
-      "An Azure PostgreSQL Flexible Server is considered underutilized if it has had at least one connection to it ",
-      "in the last ", param_stats_lookback, " ", day_message, " but has an average CPU usage below ",
+      "An Azure PostgreSQL Flexible Server is considered underutilized if it has had more than ",
+      param_stats_connection_threshold, " active connection(s) in the last ", param_stats_lookback, " ", day_message,
+      " but has an average CPU usage below ",
       param_stats_underutil_threshold_cpu_value, "% for that same time period. ",
       "These metrics were gathered at a granularity of '", ds_stats_interval['pretty'], "'.\n\n"
     ].join('')
@@ -1192,11 +1203,11 @@ EOS
 end
 
 datasource "ds_unused_postgresql_incident" do
-  run_script $js_unused_postgresql_incident, $ds_merged_metrics, $ds_azure_postgresql_rg_filtered, $ds_postgresql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback, $param_incident_csv
+  run_script $js_unused_postgresql_incident, $ds_merged_metrics, $ds_azure_postgresql_rg_filtered, $ds_postgresql_costs_grouped, $ds_currency, $param_min_savings, $param_stats_lookback, $param_stats_connection_threshold, $param_incident_csv
 end
 
 script "js_unused_postgresql_incident", type: "javascript" do
-  parameters "ds_merged_metrics", "ds_azure_postgresql_rg_filtered", "ds_postgresql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback", "param_incident_csv"
+  parameters "ds_merged_metrics", "ds_azure_postgresql_rg_filtered", "ds_postgresql_costs_grouped", "ds_currency", "param_min_savings", "param_stats_lookback", "param_stats_connection_threshold", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
@@ -1300,8 +1311,10 @@ script "js_unused_postgresql_incident", type: "javascript" do
   if (param_stats_lookback > 1) { day_message += "s" }
 
   context_message = [
-    "An Azure PostgreSQL Flexible Server is considered unused if it has not had any connections ",
-    "for at least ", param_stats_lookback, " ", day_message, ". "
+    "An Azure PostgreSQL Flexible Server is considered unused if it has had ", param_stats_connection_threshold,
+    " or fewer active connections for at least ", param_stats_lookback, " ", day_message,
+    ". Azure PostgreSQL Flexible Servers typically maintain 1 internal connection at all times; ",
+    "adjust the 'Unused Server Connection Threshold' parameter if needed to account for this. "
   ].join('')
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
