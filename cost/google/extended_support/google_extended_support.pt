@@ -278,7 +278,8 @@ end
 datasource "ds_google_extended_support_dates" do
   request do
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/data/google/google_extended_support_dates.json"
+    #path "/flexera-public/policy_templates/master/data/google/google_extended_support_dates.json"
+    path "/flexera-public/policy_templates/63fb7718dd69914b5b118c8e72929c1da152c12c/data/google/google_extended_support_dates.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -448,11 +449,11 @@ datasource "ds_gke_clusters" do
 end
 
 datasource "ds_gke_clusters_filtered" do
-  run_script $js_gke_clusters_filtered, $ds_gke_clusters, $ds_google_extended_support_dates, $param_upcoming_days
+  run_script $js_gke_clusters_filtered, $ds_gke_clusters, $ds_google_extended_support_dates, $param_upcoming_days, $param_regions_allow_or_deny, $param_regions_list
 end
 
 script "js_gke_clusters_filtered", type: "javascript" do
-  parameters "ds_gke_clusters", "ds_google_extended_support_dates", "param_upcoming_days"
+  parameters "ds_gke_clusters", "ds_google_extended_support_dates", "param_upcoming_days", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
   var today = new Date()
@@ -467,6 +468,16 @@ script "js_gke_clusters_filtered", type: "javascript" do
     cutoff_ms = cutoff.getTime()
   }
 
+  var allow_deny_test = { "Allow": true, "Deny": false }
+
+  // Normalize a GKE location (zone or region) to a region name.
+  // Zonal: "us-central1-a" -> "us-central1". Regional: "us-central1" unchanged.
+  function locationToRegion(loc) {
+    if (!loc) { return '' }
+    var parts = loc.split('-')
+    return parts.length > 2 ? parts[0] + '-' + parts[1] : loc
+  }
+
   function parseGKEVersion(v) {
     if (!v) { return null }
     var base = v.split('-')[0]
@@ -476,6 +487,11 @@ script "js_gke_clusters_filtered", type: "javascript" do
   }
 
   result = _.filter(ds_gke_clusters, function(cluster) {
+    if (param_regions_list.length > 0) {
+      var region = locationToRegion(cluster['location'])
+      var in_list = _.contains(param_regions_list, region) || _.contains(param_regions_list, cluster['location'])
+      if (in_list != allow_deny_test[param_regions_allow_or_deny]) { return false }
+    }
     if (cluster['channel'] != 'EXTENDED') { return false }
     if (cluster['clusterTier'] == 'ENTERPRISE') { return false }
     var version = parseGKEVersion(cluster['currentMasterVersion'])
@@ -520,11 +536,11 @@ datasource "ds_cloudsql_instances" do
 end
 
 datasource "ds_cloudsql_instances_filtered" do
-  run_script $js_cloudsql_instances_filtered, $ds_cloudsql_instances, $ds_google_extended_support_dates, $param_upcoming_days
+  run_script $js_cloudsql_instances_filtered, $ds_cloudsql_instances, $ds_google_extended_support_dates, $param_upcoming_days, $param_regions_allow_or_deny, $param_regions_list
 end
 
 script "js_cloudsql_instances_filtered", type: "javascript" do
-  parameters "ds_cloudsql_instances", "ds_google_extended_support_dates", "param_upcoming_days"
+  parameters "ds_cloudsql_instances", "ds_google_extended_support_dates", "param_upcoming_days", "param_regions_allow_or_deny", "param_regions_list"
   result "result"
   code <<-'EOS'
   var today = new Date()
@@ -538,6 +554,8 @@ script "js_cloudsql_instances_filtered", type: "javascript" do
     cutoff.setHours(23, 59, 59, 999)
     cutoff_ms = cutoff.getTime()
   }
+
+  var allow_deny_test = { "Allow": true, "Deny": false }
 
   function parseSQLVersion(dv) {
     if (!dv) { return { engine: null, version: null } }
@@ -559,6 +577,10 @@ script "js_cloudsql_instances_filtered", type: "javascript" do
   }
 
   result = _.filter(ds_cloudsql_instances, function(instance) {
+    if (param_regions_list.length > 0) {
+      var in_list = _.contains(param_regions_list, instance['region'])
+      if (in_list != allow_deny_test[param_regions_allow_or_deny]) { return false }
+    }
     if (instance['instanceType'] == 'READ_REPLICA_INSTANCE') { return false }
     var parsed = parseSQLVersion(instance['databaseVersion'])
     if (!parsed.engine || !parsed.version) { return false }
