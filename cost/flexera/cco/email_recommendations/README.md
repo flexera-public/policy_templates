@@ -19,6 +19,7 @@ This policy template has the following input parameters:
 - *Allow/Deny Cloud Account List* - A list of allowed or denied cloud account IDs/names, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all cloud accounts.
 - *Billing Center List* - A list of Billing Center names to email recommendations for. Leave blank to include recommendations for all Billing Centers.
 - *Dimension List* - A list of Rule-Based and Tag Dimension values to email recommendations for in Key=Value format. Recommendations that match any of the specified Key=Value pairs will be included in the results. Leave blank to not filter by dimensions. Only Rule-Based Dimensions and Tag Dimensions are supported. Example: Cost Center=Engineering
+- *Recommendation Status* - Whether to include all existing recommendations or only active recommendations.
 - *Recommendation List* - The types of recommendations to include in the email.
 - *Policy List* - A list of catalog policy names to include recommendations for. Leave blank to include recommendations for all policies.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.

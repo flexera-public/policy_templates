@@ -88,6 +88,15 @@ parameter "param_recommendation_list" do
   default ["AI/ML", "Compute", "Snapshot", "Database", "IP Address", "Storage", "Network", "PaaS", "Reservation", "Savings Plan"]
 end
 
+parameter "param_status" do
+  type "string"
+  category "Filters"
+  label "Recommendation Status"
+  description "Whether to include all existing recommendations or only active recommendations."
+  allowed_values "All Recommendations", "Active Recommendations"
+  default "All Recommendations"
+end
+
 parameter "param_policy_list" do
   type "list"
   category "Filters"
@@ -410,15 +419,29 @@ datasource "ds_recommendations" do
   end
 end
 
-datasource "ds_recommendations_filtered_vendor" do
-  run_script $js_recommendations_filtered_vendor, $ds_recommendations, $param_vendor_list
+datasource "ds_recommendations_filtered_status" do
+  run_script $js_recommendations_filtered_status, $ds_recommendations, $param_status
 end
 
-script "js_recommendations_filtered_vendor", type: "javascript" do
-  parameters "ds_recommendations", "param_vendor_list"
+script "js_recommendations_filtered_status", type: "javascript" do
+  parameters "ds_recommendations", "param_status"
   result "result"
   code <<-'EOS'
   result = _.filter(ds_recommendations, function(recommendation) {
+    return param_status == "All Recommendations" || recommendation["status"] == "active"
+  })
+EOS
+end
+
+datasource "ds_recommendations_filtered_vendor" do
+  run_script $js_recommendations_filtered_vendor, $ds_recommendations_filtered_status, $param_vendor_list
+end
+
+script "js_recommendations_filtered_vendor", type: "javascript" do
+  parameters "ds_recommendations_filtered_status", "param_vendor_list"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_recommendations_filtered_status, function(recommendation) {
     include_recommendation = true
 
     vendor_list = _.map(param_vendor_list, function(vendor) { return vendor.toLowerCase() })
