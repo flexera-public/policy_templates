@@ -13,7 +13,7 @@ The policy includes an estimated monthly extended-support surcharge for each res
 - For **GKE** clusters, the `Estimated Monthly Savings` is calculated as `flat_per_cluster_hour_rate × 730.44` (the average number of hours in a month), using the rate stored in the reference data file.
 - For **Cloud SQL** dedicated-core instances, the `Estimated Monthly Savings` is calculated as `per_vCPU_hour_rate × vCPU_count × 730.44`. The vCPU count is derived from the instance tier string (e.g. `db-custom-4-15360` → 4 vCPUs; `db-n1-standard-8` → 8 vCPUs).
 - For **Cloud SQL** shared-core instances (`db-f1-micro`, `db-g1-small`), the `Estimated Monthly Savings` is calculated as `per_instance_hour_rate × 730.44`, using the `shared_core_hourly_rate` from the reference data.
-- Rates are maintained in `data/google/gcp_extended_support_dates.json` and approximate Google's published extended support pricing. Region-level rate variation is not modeled; a single representative rate is used per engine version.
+- Rates are maintained in `data/google/google_extended_support_dates.json` and approximate Google's published extended support pricing. Region-level rate variation is not modeled; a single representative rate is used per engine version.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Estimated Monthly Extended-Support Surcharge`.
 - All amounts are reported in the currency of the Flexera organization the policy is applied in.
 
@@ -25,7 +25,7 @@ The policy includes an estimated monthly extended-support surcharge for each res
 - *Allow/Deny Projects* - Whether to allow or deny the projects listed in the *Allow/Deny Projects List* parameter.
 - *Allow/Deny Projects List* - A list of allowed or denied Google Cloud project IDs/names. Leave blank to check all projects.
 - *Allow/Deny Regions* - Whether to allow or deny the regions listed in the *Allow/Deny Regions List* parameter.
-- *Allow/Deny Regions List* - A list of allowed or denied GCP region names (e.g. `us-central1`). Leave blank to check all regions.
+- *Allow/Deny Regions List* - A list of allowed or denied Google region names (e.g. `us-central1`). Leave blank to check all regions.
 - *Exclusion Labels* - Cloud native labels to ignore resources. Enter the Key name to filter resources with a specific Key regardless of Value, or `Key==Value` to filter a specific pair. Regex operators `=~` and `!~` are also supported.
 - *Exclusion Labels: Any / All* - Whether to filter resources containing any of the specified labels or only those that contain all of them.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
