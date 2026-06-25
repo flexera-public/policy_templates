@@ -136,6 +136,35 @@ Some fields are currently sourced from the legacy `instance_types.json` file unt
 }
 ```
 
+### aws_sagemaker_pricing.json
+
+**Script:** [`tools/cloud_data/aws/aws_sagemaker_pricing.py`](https://github.com/flexera-public/policy_templates/blob/master/tools/cloud_data/aws/aws_sagemaker_pricing.py)
+
+**Workflow:** [Generate AWS SageMaker Pricing JSON](https://github.com/flexera-public/policy_templates/blob/master/.github/workflows/generate-aws-sagemaker-pricing-json.yaml)
+
+**Description:** On-demand SageMaker real-time inference endpoint hosting prices by region and instance type. Sourced from the AWS Price List API (`pricing:GetProducts`, ServiceCode: `AmazonSageMaker`). Only real-time inference hosting entries are included (usagetype containing `Hosting`, operation `SageMaker:Hosting`); training, batch transform, processing, notebook, and Studio entries are excluded. Used by policy templates that estimate costs or calculate savings for idle SageMaker endpoint recommendations.
+
+**Structure:** Object keyed by AWS region code → SageMaker instance type → on-demand hourly price in USD.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| (price value) | number | On-demand hourly price in USD for the given region and instance type |
+
+**Example:**
+
+```json
+{
+  "us-east-1": {
+    "ml.m5.2xlarge": 0.538,
+    "ml.m5.xlarge": 0.269
+  },
+  "us-west-2": {
+    "ml.m5.2xlarge": 0.538,
+    "ml.m5.xlarge": 0.269
+  }
+}
+```
+
 ### regions.json
 
 **Script:** [`tools/cloud_data/aws/aws_cheaper_regions.py`](https://github.com/flexera-public/policy_templates/blob/master/tools/cloud_data/aws/aws_cheaper_regions.py)
