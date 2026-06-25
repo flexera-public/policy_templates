@@ -8,7 +8,7 @@ category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "3.3.1",
+  version: "3.4.0",
   provider: "Azure",
   service: "Storage",
   policy_set: "CIS",
@@ -115,6 +115,15 @@ parameter "param_exclusion_tags_boolean" do
   description "Whether to filter storage accounts containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
   allowed_values "Any", "All"
   default "Any"
+end
+
+parameter "param_public_network_access_compliant" do
+  type "string"
+  category "Filters"
+  label "Treat Disabled Public Network Access as Compliant"
+  description "If set to 'true', Azure Storage Accounts with public network access disabled are treated as compliant and not reported, even if their default network access rule is set to 'Allow'. When disabled, the storage firewall has no effect because the account is only reachable via private endpoints. Default is 'false', which preserves strict CIS 3.6 behavior of reporting any account whose default network action is 'Allow'."
+  allowed_values "true", "false"
+  default "false"
 end
 
 parameter "param_incident_csv" do
@@ -316,6 +325,7 @@ datasource "ds_azure_storage_accounts" do
       field "networkAcls", jmes_path(col_item, "properties.networkAcls")
       field "primaryEndpoints", jmes_path(col_item, "properties.primaryEndpoints")
       field "networkDefaultAction", jmes_path(col_item, "properties.networkAcls.defaultAction")
+      field "publicNetworkAccess", jmes_path(col_item, "properties.publicNetworkAccess")
       field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
       field "subscriptionID", val(iter_item, "id")
       field "subscriptionName", val(iter_item, "name")
@@ -468,16 +478,21 @@ EOS
 end
 
 datasource "ds_bad_storage_accounts" do
-  run_script $js_bad_storage_accounts, $ds_azure_storage_accounts_rg_filtered, $ds_applied_policy, $param_incident_csv
+  run_script $js_bad_storage_accounts, $ds_azure_storage_accounts_rg_filtered, $ds_applied_policy, $param_incident_csv, $param_public_network_access_compliant
 end
 
 script "js_bad_storage_accounts", type: "javascript" do
-  parameters "ds_azure_storage_accounts_rg_filtered", "ds_applied_policy", "param_incident_csv"
+  parameters "ds_azure_storage_accounts_rg_filtered", "ds_applied_policy", "param_incident_csv", "param_public_network_access_compliant"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   bad_accounts = _.filter(ds_azure_storage_accounts_rg_filtered, function(resource) {
+    // Opt-in: when public network access is disabled, the account is only
+    // reachable via private endpoints, so treat it as compliant.
+    if (param_public_network_access_compliant == "true" && resource['publicNetworkAccess'] == "Disabled") {
+      return false
+    }
     return resource['networkDefaultAction'] == "Allow"
   })
 
@@ -507,6 +522,7 @@ script "js_bad_storage_accounts", type: "javascript" do
       networkAcls: resource['networkAcls'],
       primaryEndpoints: resource['primaryEndpoints'],
       networkDefaultAction: resource['networkDefaultAction'],
+      publicNetworkAccess: resource['publicNetworkAccess'],
       tags: tags.join(', '),
       policy_name: ds_applied_policy['name']
     }
@@ -532,6 +548,7 @@ script "js_bad_storage_accounts", type: "javascript" do
     networkAcls: '',
     primaryEndpoints: '',
     networkDefaultAction: '',
+    publicNetworkAccess: '',
     tags: '',
     policy_name: ''
   })
@@ -581,6 +598,9 @@ policy "pol_bad_storage_accounts" do
       end
       field "networkDefaultAction" do
         label "Network Default Action"
+      end
+      field "publicNetworkAccess" do
+        label "Public Network Access"
       end
       field "id" do
         label "ID"
