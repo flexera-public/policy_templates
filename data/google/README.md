@@ -70,6 +70,53 @@ The following files are produced by scripts in [`tools/cloud_data/google/`](http
 
 ## Manually Maintained Files
 
+### gcp_extended_support_dates.json
+
+**Description:** Static reference data for GCP extended support dates for GKE Kubernetes minor versions and Cloud SQL major database versions. Used by the [Google Cloud Resources Under or Approaching Extended Support](https://github.com/flexera-public/policy_templates/tree/master/cost/google/extended_support) policy template to determine which resource versions are currently under or approaching extended support and to estimate monthly extended support charges.
+
+**Structure:** Array of objects, one per service/version combination.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `service` | string | Service name: `"GKE"` or `"CloudSQL"` |
+| `engine` | string | Engine type: `"kubernetes"`, `"mysql"`, `"postgres"`, or `"sqlserver"` |
+| `version` | string | Major version string matched against API data, e.g. `"1.28"`, `"5.7"`, `"14"` |
+| `standard_support_end` | string | ISO 8601 date when standard/upstream support ended |
+| `extended_support_start` | string | ISO 8601 date when Google Cloud extended support charges begin |
+| `extended_support_end` | string | ISO 8601 date when Google Cloud extended support ends |
+| `hourly_rate` | number | Published Google Cloud extended support hourly rate in USD |
+| `rate_unit` | string | Unit for the hourly rate: `"cluster-hour"` (GKE) or `"vCPU-hour"` (Cloud SQL) |
+| `notes` | string | Additional context about this version's support lifecycle |
+
+**Example:**
+
+```json
+[
+  {
+    "service": "GKE",
+    "engine": "kubernetes",
+    "version": "1.28",
+    "standard_support_end": "2024-10-31",
+    "extended_support_start": "2024-10-31",
+    "extended_support_end": "2025-08-31",
+    "hourly_rate": 0.50,
+    "rate_unit": "cluster-hour",
+    "notes": "GKE EXTENDED channel only; Enterprise tier excluded"
+  },
+  {
+    "service": "CloudSQL",
+    "engine": "mysql",
+    "version": "5.7",
+    "standard_support_end": "2023-10-31",
+    "extended_support_start": "2023-10-31",
+    "extended_support_end": "2026-10-31",
+    "hourly_rate": 0.02,
+    "rate_unit": "vCPU-hour",
+    "notes": "MySQL 5.7 community EOL October 2023"
+  }
+]
+```
+
 ### instance_types.json
 
 **Description:** Legacy reference data for GCE machine types. This file is older and manually maintained. It should not be used in new policy templates. It exists to ensure that older policy templates continue to function as intended.
