@@ -70,7 +70,7 @@ The following files are produced by scripts in [`tools/cloud_data/google/`](http
 
 ## Manually Maintained Files
 
-### gcp_extended_support_dates.json
+### google_extended_support_dates.json
 
 **Description:** Static reference data for GCP extended support dates for GKE Kubernetes minor versions and Cloud SQL major database versions. Used by the [Google Cloud Resources Under or Approaching Extended Support](https://github.com/flexera-public/policy_templates/tree/master/cost/google/extended_support) policy template to determine which resource versions are currently under or approaching extended support and to estimate monthly extended support charges.
 

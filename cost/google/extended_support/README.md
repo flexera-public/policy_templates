@@ -20,7 +20,6 @@ The policy includes an estimated monthly extended-support surcharge for each res
 ## Input Parameters
 
 - *Email Addresses* - A list of email addresses to notify.
-- *Project ID* - Leave blank; this is for automated use with Meta Policies. See the [README for Meta Policies](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) for more details.
 - *Minimum Savings Threshold* - Minimum estimated monthly surcharge required to include a resource in the report. Only applies to resources currently under extended support; resources approaching extended support always appear.
 - *Days Until Extended Support* - Report resources that will enter extended support within this many days. Set to 0 to only report resources currently under extended support.
 - *Allow/Deny Projects* - Whether to allow or deny the projects listed in the *Allow/Deny Projects List* parameter.
