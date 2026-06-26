@@ -191,6 +191,10 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Google Idle Vertex AI Online Prediction Endpoints](./cost/google/idle_vertex_ai_endpoints)
 
+* All
+
+  * [Google Cloud Resources Under or Approaching Extended Support](./cost/google/extended_support)
+
 * Compute
 
   * [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
