@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4.0
+
+- Added "Treat Disabled Public Network Access as Compliant" parameter to optionally exclude storage accounts with public network access disabled from results. Default value preserves existing behavior.
+
 ## v3.3.1
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

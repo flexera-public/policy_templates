@@ -22,6 +22,7 @@ This policy template reports any Azure Storage Accounts that do not have their d
   - `Key=~/Regex/` - Filter all resources where the value for the specified key matches the specified regex string.
   - `Key!~/Regex/` - Filter all resources where the value for the specified key does not match the specified regex string. This will also filter all resources missing the specified tag key.
 - *Exclusion Tags: Any / All* - Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the `Exclusion Tags` field.
+- *Treat Disabled Public Network Access as Compliant* - If set to `true`, storage accounts with public network access explicitly disabled are treated as compliant and excluded from results, even if their default network access rule is `Allow`. When public network access is disabled, the storage firewall has no effect because the account is only reachable via private endpoints. Default is `false`, which preserves strict CIS 3.6 behavior of reporting any account whose default network action is `Allow`.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
 
