@@ -47,17 +47,17 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:
   - `resourcemanager.projects.search`
   - `resourcemanager.projects.update`*
-  - `compute.disks.aggregatedList`
+  - `compute.disks.list`
   - `compute.disks.setLabels`*
   - `compute.externalVpnGateways.list`
   - `compute.externalVpnGateways.setLabels`*
   - `compute.images.list`
   - `compute.images.setLabels`*
-  - `compute.instances.aggregatedList`
+  - `compute.instances.list`
   - `compute.instances.setLabels`*
   - `compute.snapshots.list`
   - `compute.snapshots.setLabels`*
-  - `compute.vpnGateways.aggregatedList`
+  - `compute.vpnGateways.list`
   - `compute.vpnGateways.setLabels`*
   - `storage.buckets.list`
   - `storage.buckets.update`*

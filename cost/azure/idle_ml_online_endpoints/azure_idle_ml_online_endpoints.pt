@@ -1,0 +1,1314 @@
+name "Azure Idle ML Online Endpoints"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for Azure Machine Learning managed online endpoints that have received little or no inference traffic for a user-specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/idle_ml_online_endpoints/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/azure/idle_ml_online_endpoints/"
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Idle ML Online Endpoints",
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to query Azure Monitor metrics for inference traffic. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 90
+  default 30
+end
+
+parameter "param_min_requests" do
+  type "number"
+  category "Statistics"
+  label "Requests Threshold"
+  description "Endpoints with total RequestsPerMinute metric values at or below this threshold over the lookback period are flagged as idle. Set to 0 to flag only endpoints with absolutely zero traffic. Higher values can be used to catch near-idle endpoints."
+  min_value 0
+  default 0
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_resource_groups_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Resource Groups"
+  description "Allow or Deny entered Resource Groups. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_resource_groups_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Resource Groups List"
+  description "A list of allowed or denied Resource Group names to filter the results by. Optionally, entries can use the format SUBSCRIPTION_ID/RESOURCE_GROUP_NAME to limit filtering to a specific subscription. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags"
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Tags: Any / All"
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_exclusion_endpoints" do
+  type "list"
+  category "Filters"
+  label "Exclusion Endpoint Names"
+  description "A list of Azure ML online endpoint names to exclude from the results. Enter exact endpoint names."
+  default []
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Delete Idle ML Online Endpoints"]
+  default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type: "javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_azure_vm_pricing" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/azure_vm_pricing.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_azure_regions" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/azure/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_region_table" do
+  run_script $js_region_table, $ds_azure_regions
+end
+
+script "js_region_table", type: "javascript" do
+  parameters "ds_azure_regions"
+  result "result"
+  code <<-'EOS'
+  result = {}
+
+  // Maps regions.json "name" values to azure_vm_pricing.json region keys
+  var name_to_pricing_key = {
+    "UAE Central": "AE Central",
+    "UAE North": "AE North",
+    "East Asia": "AP East",
+    "Southeast Asia": "AP Southeast",
+    "Australia Central": "AU Central",
+    "Australia Central 2": "AU Central 2",
+    "Australia East": "AU East",
+    "Australia Southeast": "AU Southeast",
+    "Brazil South": "BR South",
+    "Brazil Southeast": "BR Southeast",
+    "Canada Central": "CA Central",
+    "Canada East": "CA East",
+    "Switzerland North": "CH North",
+    "Switzerland West": "CH West",
+    "Germany North": "DE North",
+    "Germany West Central": "DE West Central",
+    "Spain Central": "ES Central",
+    "North Europe": "EU North",
+    "West Europe": "EU West",
+    "France Central": "FR Central",
+    "France South": "FR South",
+    "Israel Central": "IL Central",
+    "Central India": "IN Central",
+    "Jio India Central": "IN Central Jio",
+    "South India": "IN South",
+    "West India": "IN West",
+    "Jio India West": "IN West Jio",
+    "Italy North": "IT North",
+    "Japan East": "JA East",
+    "Japan West": "JA West",
+    "Korea Central": "KR Central",
+    "Korea South": "KR South",
+    "Mexico Central": "MX Central",
+    "New Zealand North": "NZ North",
+    "Norway East": "NO East",
+    "Norway West": "NO West",
+    "Poland Central": "PL Central",
+    "Qatar Central": "QA Central",
+    "Sweden Central": "SE Central",
+    "South Africa North": "ZA North",
+    "South Africa West": "ZA West",
+    "UK South": "UK South",
+    "UK West": "UK West",
+    "Central US": "US Central",
+    "East US": "US East",
+    "East US 2": "US East 2",
+    "North Central US": "US North Central",
+    "South Central US": "US South Central",
+    "West US": "US West",
+    "West US 2": "US West 2",
+    "West US 3": "US West 3",
+    "West Central US": "US West Central",
+    "Austria East": "AT East",
+    "Belgium Central": "BE Central",
+    "Chile Central": "CL Central",
+    "Denmark East": "DK East",
+    "Indonesia Central": "ID Central",
+    "Malaysia West": "MY West",
+    "Sweden South": "SE South",
+    "US Gov Arizona": "US Gov AZ",
+    "US Gov Iowa": "US Gov Iowa",
+    "US Gov Texas": "US Gov TX",
+    "US Gov Virginia": "US Gov Virginia"
+  }
+
+  _.each(ds_azure_regions, function(item) {
+    var pricing_key = name_to_pricing_key[item["name"]]
+    if (pricing_key) { result[item["region"]] = pricing_key }
+  })
+EOS
+end
+
+datasource "ds_azure_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+    # Header Meta-Flexera has no effect on datasource query, but is required for Meta Policies
+    # Forces ds_is_deleted datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
+end
+
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
+  code <<-'EOS'
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
+end
+
+datasource "ds_no_subscriptions_error" do
+  run_script $js_no_subscriptions_error, $ds_azure_subscriptions, $ds_applied_policy
+end
+
+script "js_no_subscriptions_error", type: "javascript" do
+  parameters "ds_azure_subscriptions", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  if (ds_azure_subscriptions.length == 0) {
+    result = [{
+      policy_name: ds_applied_policy['name'],
+      error: "No Azure Subscriptions found. This is usually caused by a lack of permissions or an expired/invalid credential."
+    }]
+  }
+EOS
+end
+
+# List all AML workspaces across all filtered subscriptions
+datasource "ds_azure_ml_workspaces" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.MachineLearningServices/workspaces"])
+    query "api-version", "2024-04-01"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "tags", jmes_path(col_item, "tags")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), "/"))
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_azure_ml_workspaces_region_filtered" do
+  run_script $js_azure_ml_workspaces_region_filtered, $ds_azure_ml_workspaces, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_azure_ml_workspaces_region_filtered", type: "javascript" do
+  parameters "ds_azure_ml_workspaces", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-'EOS'
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_azure_ml_workspaces, function(workspace) {
+      include_workspace = _.contains(param_regions_list, workspace['region'])
+      if (param_regions_allow_or_deny == "Deny") { include_workspace = !include_workspace }
+
+      return include_workspace
+    })
+  } else {
+    result = ds_azure_ml_workspaces
+  }
+EOS
+end
+
+datasource "ds_azure_ml_workspaces_rg_filtered" do
+  run_script $js_azure_ml_workspaces_rg_filtered, $ds_azure_ml_workspaces_region_filtered, $param_resource_groups_allow_or_deny, $param_resource_groups_list
+end
+
+script "js_azure_ml_workspaces_rg_filtered", type: "javascript" do
+  parameters "ds_azure_ml_workspaces_region_filtered", "param_resource_groups_allow_or_deny", "param_resource_groups_list"
+  result "result"
+  code <<-'EOS'
+  if (param_resource_groups_list.length > 0) {
+    result = _.filter(ds_azure_ml_workspaces_region_filtered, function(resource) {
+      var rg = resource['resourceGroup']
+      var sub = resource['subscriptionId']
+
+      var include_resource = _.any(param_resource_groups_list, function(rg_entry) {
+        if (rg_entry.indexOf('/') != -1) {
+          var entry_parts = rg_entry.split('/')
+          return sub == entry_parts[0] && rg == entry_parts[1]
+        }
+
+        return rg == rg_entry
+      })
+
+      if (param_resource_groups_allow_or_deny == "Deny") {
+        include_resource = !include_resource
+      }
+
+      return include_resource
+    })
+  } else {
+    result = ds_azure_ml_workspaces_region_filtered
+  }
+EOS
+end
+
+# List all managed online endpoints for each workspace
+datasource "ds_azure_ml_online_endpoints" do
+  iterate $ds_azure_ml_workspaces_rg_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/resourceGroups/", val(iter_item, "resourceGroup"), "/providers/Microsoft.MachineLearningServices/workspaces/", val(iter_item, "name"), "/onlineEndpoints"])
+    query "api-version", "2024-04-01"
+    query "computeType", "Managed"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "kind", jmes_path(col_item, "kind")
+      field "tags", jmes_path(col_item, "tags")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+      field "traffic", jmes_path(col_item, "properties.traffic")
+      field "createdOn", jmes_path(col_item, "systemData.createdAt")
+      field "workspaceName", val(iter_item, "name")
+      field "resourceGroup", val(iter_item, "resourceGroup")
+      field "subscriptionId", val(iter_item, "subscriptionId")
+      field "subscriptionName", val(iter_item, "subscriptionName")
+    end
+  end
+end
+
+# Filter to Succeeded managed endpoints, apply tag and name exclusions
+datasource "ds_azure_ml_online_endpoints_filtered" do
+  run_script $js_azure_ml_online_endpoints_filtered, $ds_azure_ml_online_endpoints, $param_exclusion_tags, $param_exclusion_tags_boolean, $param_exclusion_endpoints
+end
+
+script "js_azure_ml_online_endpoints_filtered", type: "javascript" do
+  parameters "ds_azure_ml_online_endpoints", "param_exclusion_tags", "param_exclusion_tags_boolean", "param_exclusion_endpoints"
+  result "result"
+  code <<-'EOS'
+  // Keep only Succeeded managed endpoints
+  var provisioned = _.filter(ds_azure_ml_online_endpoints, function(ep) {
+    return ep['provisioningState'] == 'Succeeded' && ep['kind'] == 'Managed'
+  })
+
+  // Apply endpoint name exclusions
+  if (param_exclusion_endpoints.length > 0) {
+    provisioned = _.reject(provisioned, function(ep) {
+      return _.contains(param_exclusion_endpoints, ep['name'])
+    })
+  }
+
+  // Build tag comparators
+  var comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+
+    if (item.indexOf('=~') != -1) {
+      value = item.split('=~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '=~', key: item.split('=~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('!~') != -1) {
+      value = item.split('!~')[1]
+      regex = new RegExp(value.slice(1, value.length - 1))
+      return { comparison: '!~', key: item.split('!~')[0], value: regex, string: item }
+    }
+
+    if (item.indexOf('=') != -1) {
+      return { comparison: '==', key: item.split('=')[0], value: item.split('=')[1], string: item }
+    }
+
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(provisioned, function(ep) {
+      var resource_tags = {}
+      if (typeof(ep['tags']) == 'object') { resource_tags = ep['tags'] }
+
+      var found_tags = []
+
+      _.each(comparators, function(comparator) {
+        var comparison = comparator['comparison']
+        var value = comparator['value']
+        var string = comparator['string']
+        var resource_tag = resource_tags[comparator['key']]
+
+        if (comparison == 'key' && resource_tag != undefined) { found_tags.push(string) }
+        if (comparison == '==' && resource_tag == value) { found_tags.push(string) }
+        if (comparison == '!=' && resource_tag != value) { found_tags.push(string) }
+
+        if (comparison == '=~') {
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+
+        if (comparison == '!~') {
+          if (resource_tag == undefined) { found_tags.push(string) }
+          if (resource_tag != undefined && value.test(resource_tag)) { found_tags.push(string) }
+        }
+      })
+
+      var all_tags_found = found_tags.length == comparators.length
+      var any_tags_found = found_tags.length > 0 && param_exclusion_tags_boolean == 'Any'
+
+      return all_tags_found || any_tags_found
+    })
+  } else {
+    result = provisioned
+  }
+EOS
+end
+
+# List all deployments for each filtered endpoint
+datasource "ds_azure_ml_online_deployments" do
+  iterate $ds_azure_ml_online_endpoints_filtered
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path join([val(iter_item, "id"), "/deployments"])
+    query "api-version", "2024-04-01"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "endpointId", val(iter_item, "id")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+      field "instanceType", jmes_path(col_item, "sku.name")
+      field "instanceCount", jmes_path(col_item, "sku.capacity")
+    end
+  end
+end
+
+# Join endpoints with their running deployments; drop endpoints with no running deployments
+datasource "ds_azure_ml_endpoints_with_running_deployments" do
+  run_script $js_azure_ml_endpoints_with_running_deployments, $ds_azure_ml_online_endpoints_filtered, $ds_azure_ml_online_deployments
+end
+
+script "js_azure_ml_endpoints_with_running_deployments", type: "javascript" do
+  parameters "ds_azure_ml_online_endpoints_filtered", "ds_azure_ml_online_deployments"
+  result "result"
+  code <<-'EOS'
+  // Group deployments by endpoint ID
+  var deployments_by_endpoint = {}
+
+  _.each(ds_azure_ml_online_deployments, function(dep) {
+    if (deployments_by_endpoint[dep['endpointId']] == undefined) {
+      deployments_by_endpoint[dep['endpointId']] = []
+    }
+
+    deployments_by_endpoint[dep['endpointId']].push(dep)
+  })
+
+  var result = []
+
+  _.each(ds_azure_ml_online_endpoints_filtered, function(ep) {
+    var ep_deployments = deployments_by_endpoint[ep['id']] || []
+
+    // Only deployments in Succeeded state count as running
+    var running_deployments = _.filter(ep_deployments, function(dep) {
+      return dep['provisioningState'] == 'Succeeded'
+    })
+
+    if (running_deployments.length == 0) { return }
+
+    var instance_types = _.uniq(_.compact(_.pluck(running_deployments, 'instanceType')))
+    var total_instances = 0
+
+    _.each(running_deployments, function(dep) {
+      if (dep['instanceCount'] != null && dep['instanceCount'] != undefined) {
+        total_instances += dep['instanceCount']
+      }
+    })
+
+    result.push({
+      id: ep['id'],
+      name: ep['name'],
+      region: ep['region'],
+      kind: ep['kind'],
+      tags: ep['tags'],
+      provisioningState: ep['provisioningState'],
+      traffic: ep['traffic'],
+      createdOn: ep['createdOn'],
+      workspaceName: ep['workspaceName'],
+      resourceGroup: ep['resourceGroup'],
+      subscriptionId: ep['subscriptionId'],
+      subscriptionName: ep['subscriptionName'],
+      deploymentNames: _.pluck(running_deployments, 'name').join(', '),
+      instanceTypes: instance_types.join(', '),
+      instanceCount: total_instances,
+      deployments: _.map(running_deployments, function(dep) {
+        return {
+          name: dep['name'],
+          instanceType: dep['instanceType'],
+          instanceCount: dep['instanceCount'] || 0
+        }
+      }),
+      deploymentCount: running_deployments.length
+    })
+  })
+EOS
+end
+
+# Fetch RequestsPerMinute metrics from Azure Monitor for each endpoint
+datasource "ds_azure_ml_endpoint_metrics" do
+  iterate $ds_azure_ml_endpoints_with_running_deployments
+  request do
+    run_script $js_azure_ml_endpoint_metrics, val(iter_item, "id"), $param_azure_endpoint, $param_stats_lookback
+  end
+  result do
+    encoding "json"
+    field "endpointId", val(iter_item, "id")
+    field "statistics", val(response, "value")
+  end
+end
+
+script "js_azure_ml_endpoint_metrics", type: "javascript" do
+  parameters "resourceID", "param_azure_endpoint", "param_stats_lookback"
+  result "request"
+  code <<-'EOS'
+  var end_date = new Date()
+  end_date.setMilliseconds(999)
+  end_date.setSeconds(59)
+  end_date.setMinutes(59)
+  end_date.setHours(23)
+
+  var start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_stats_lookback)
+  start_date.setMilliseconds(0)
+  start_date.setSeconds(0)
+  start_date.setMinutes(0)
+
+  var timespan = start_date.toISOString() + "/" + end_date.toISOString()
+
+  var request = {
+    auth: "auth_azure",
+    pagination: "pagination_azure",
+    host: param_azure_endpoint,
+    path: resourceID + "/providers/microsoft.insights/metrics",
+    query_params: {
+      "api-version": "2023-10-01",
+      "timespan": timespan,
+      "interval": "P1D",
+      "metricnames": "RequestsPerMinute",
+      "aggregation": "total"
+    },
+    headers: {
+      "User-Agent": "RS Policies"
+    },
+    ignore_status: [400, 403, 404]
+  }
+EOS
+end
+
+# Compute total requests per endpoint and join with endpoint metadata
+datasource "ds_azure_ml_endpoint_metrics_organized" do
+  run_script $js_azure_ml_endpoint_metrics_organized, $ds_azure_ml_endpoints_with_running_deployments, $ds_azure_ml_endpoint_metrics, $param_stats_lookback
+end
+
+script "js_azure_ml_endpoint_metrics_organized", type: "javascript" do
+  parameters "ds_azure_ml_endpoints_with_running_deployments", "ds_azure_ml_endpoint_metrics", "param_stats_lookback"
+  result "result"
+  code <<-'EOS'
+  var endpoints_by_id = {}
+
+  _.each(ds_azure_ml_endpoints_with_running_deployments, function(ep) {
+    endpoints_by_id[ep['id']] = ep
+  })
+
+  result = _.compact(_.map(ds_azure_ml_endpoint_metrics, function(metric_item) {
+    var ep = endpoints_by_id[metric_item['endpointId']]
+    if (ep == undefined) { return null }
+
+    var total_requests = 0
+    var stats = metric_item['statistics'] || []
+
+    _.each(stats, function(stat) {
+      if (stat['timeseries'] == undefined || stat['timeseries'][0] == undefined) { return }
+
+      _.each(stat['timeseries'][0]['data'], function(entry) {
+        if (entry['total'] != undefined && entry['total'] != null) {
+          total_requests += entry['total']
+        }
+      })
+    })
+
+    return {
+      id: ep['id'],
+      name: ep['name'],
+      region: ep['region'],
+      kind: ep['kind'],
+      tags: ep['tags'],
+      provisioningState: ep['provisioningState'],
+      createdOn: ep['createdOn'],
+      workspaceName: ep['workspaceName'],
+      resourceGroup: ep['resourceGroup'],
+      subscriptionId: ep['subscriptionId'],
+      subscriptionName: ep['subscriptionName'],
+      deploymentNames: ep['deploymentNames'],
+      instanceTypes: ep['instanceTypes'],
+      instanceCount: ep['instanceCount'],
+      deployments: ep['deployments'],
+      deploymentCount: ep['deploymentCount'],
+      totalRequests: total_requests,
+      lookbackPeriod: param_stats_lookback
+    }
+  }))
+EOS
+end
+
+# Filter to only endpoints at or below the request threshold
+datasource "ds_azure_ml_idle_endpoints" do
+  run_script $js_azure_ml_idle_endpoints, $ds_azure_ml_endpoint_metrics_organized, $param_min_requests
+end
+
+script "js_azure_ml_idle_endpoints", type: "javascript" do
+  parameters "ds_azure_ml_endpoint_metrics_organized", "param_min_requests"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_azure_ml_endpoint_metrics_organized, function(ep) {
+    return ep['totalRequests'] <= param_min_requests
+  })
+EOS
+end
+
+datasource "ds_azure_idle_ml_endpoints_incident" do
+  run_script $js_azure_idle_ml_endpoints_incident, $ds_azure_ml_endpoints_with_running_deployments, $ds_azure_ml_idle_endpoints, $ds_azure_vm_pricing, $ds_region_table, $ds_applied_policy, $ds_currency, $param_min_savings, $param_stats_lookback, $param_min_requests, $param_incident_csv
+end
+
+script "js_azure_idle_ml_endpoints_incident", type: "javascript" do
+  parameters "ds_azure_ml_endpoints_with_running_deployments", "ds_azure_ml_idle_endpoints", "ds_azure_vm_pricing", "ds_region_table", "ds_applied_policy", "ds_currency", "param_min_savings", "param_stats_lookback", "param_min_requests", "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  var csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        var withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      var decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  var result = []
+  var total_savings = 0.0
+
+  _.each(ds_azure_ml_idle_endpoints, function(ep) {
+    var savings = 0.0
+    var pricing_key = ds_region_table[ep['region']]
+
+    if (pricing_key && ep['deployments']) {
+      _.each(ep['deployments'], function(dep) {
+        var instance_type = dep['instanceType']
+        var instance_count = dep['instanceCount'] || 0
+
+        if (instance_type && instance_count > 0) {
+          var region_pricing = ds_azure_vm_pricing[pricing_key]
+
+          if (region_pricing && region_pricing[instance_type] && region_pricing[instance_type]['Linux']) {
+            var hourly_price = region_pricing[instance_type]['Linux']['pricePerUnit']
+
+            if (typeof(hourly_price) == 'number') {
+              savings += hourly_price * instance_count * 730
+            }
+          }
+        }
+      })
+    }
+
+    if (savings >= param_min_savings) {
+      total_savings += savings
+
+      var tags = []
+
+      if (typeof(ep['tags']) == 'object') {
+        _.each(Object.keys(ep['tags']), function(key) {
+          tags.push(key + "=" + ep['tags'][key])
+        })
+      }
+
+      var recommendationDetails = [
+        "Delete Azure ML Managed Online Endpoint ", ep["name"],
+        " in workspace ", ep["workspaceName"],
+        " in Azure Subscription ", ep["subscriptionName"], " (", ep["subscriptionId"], ").",
+        " Consider migrating low-frequency inference workloads to batch endpoints or on-demand invocation patterns."
+      ].join('')
+
+      result.push({
+        accountID: ep['subscriptionId'],
+        accountName: ep['subscriptionName'],
+        resourceGroup: ep['resourceGroup'],
+        resourceID: ep['id'],
+        resourceName: ep['name'],
+        workspaceName: ep['workspaceName'],
+        tags: tags.join(', '),
+        recommendationDetails: recommendationDetails,
+        region: ep['region'],
+        provisioningState: ep['provisioningState'],
+        instanceTypes: ep['instanceTypes'],
+        instanceCount: ep['instanceCount'],
+        deploymentNames: ep['deploymentNames'],
+        deploymentCount: ep['deploymentCount'],
+        createdOn: ep['createdOn'],
+        totalRequests: ep['totalRequests'],
+        lookbackPeriod: param_stats_lookback,
+        savings: Math.round(savings * 1000) / 1000,
+        savingsCurrency: ds_currency['symbol'],
+        service: "Microsoft.MachineLearningServices",
+        policy_name: ds_applied_policy['name'],
+        total_savings: "",
+        message: ""
+      })
+    }
+  })
+
+  var total_endpoints = ds_azure_ml_endpoints_with_running_deployments.length
+  var total_idle = result.length
+  var idle_pct = total_endpoints > 0 ? (total_idle / total_endpoints * 100).toFixed(2) + "%" : "0.00%"
+  var days_noun = param_stats_lookback == 1 ? "day" : "days"
+
+  var request_clause = param_min_requests == 0
+    ? "no inference traffic"
+    : "no more than " + param_min_requests + " total request metric data points"
+
+  var findings = [
+    "Out of ", total_endpoints.toString(), " Azure ML managed online endpoints analyzed, ",
+    total_idle.toString(), " (", idle_pct, ") have had ", request_clause,
+    " in the past ", param_stats_lookback.toString(), " ", days_noun,
+    " and are recommended for deletion.\n\n"
+  ].join('')
+
+  var disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+
+  var savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+  ].join('')
+
+  // Sort by descending savings
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+
+  // Dummy item ensures the check statement evaluates at least once
+  result.push({
+    accountID: "",
+    accountName: "",
+    resourceGroup: "",
+    resourceID: "",
+    resourceName: "",
+    workspaceName: "",
+    tags: "",
+    recommendationDetails: "",
+    region: "",
+    provisioningState: "",
+    instanceTypes: "",
+    instanceCount: "",
+    deploymentNames: "",
+    deploymentCount: "",
+    createdOn: "",
+    totalRequests: "",
+    lookbackPeriod: "",
+    savings: "",
+    savingsCurrency: "",
+    service: "",
+    policy_name: "",
+    total_savings: "",
+    message: ""
+  })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + disclaimer + csv_message
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_azure_idle_ml_endpoints" do
+  validate_each $ds_azure_idle_ml_endpoints_incident do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Idle ML Online Endpoints Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    escalate $esc_delete_endpoints
+    hash_exclude "tags", "savings", "savingsCurrency", "totalRequests"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Endpoint Name"
+      end
+      field "workspaceName" do
+        label "Workspace Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "provisioningState" do
+        label "Provisioning State"
+      end
+      field "instanceTypes" do
+        label "Instance Type(s)"
+      end
+      field "instanceCount" do
+        label "Instance Count"
+      end
+      field "deploymentNames" do
+        label "Deployment Name(s)"
+      end
+      field "deploymentCount" do
+        label "Deployment Count"
+      end
+      field "createdOn" do
+        label "Created On"
+      end
+      field "totalRequests" do
+        label "Total Requests (Lookback Period)"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+  validate $ds_no_subscriptions_error do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+    The policy was unable to access any Azure Subscriptions.
+
+    **Error Details:**
+    {{ range data -}}
+      - {{ .error }}
+    {{ end -}}
+
+    **Recommended Actions:**
+    1. Verify that the Azure credential has the required permissions to list subscriptions.
+    2. Ensure the credential has not expired or been revoked.
+    EOS
+    check eq(size(data), 0)
+    escalate $esc_email_errors_identified
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email_errors_identified" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
+end
+
+escalation "esc_delete_endpoints" do
+  automatic contains($param_automatic_action, "Delete Idle ML Online Endpoints")
+  label "Delete Idle ML Online Endpoints"
+  description "Approval to delete all selected Azure ML managed online endpoints"
+  run "delete_endpoints", data, $param_azure_endpoint
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_endpoints($data, $param_azure_endpoint) return $all_responses do
+  $$all_responses = []
+
+  foreach $instance in $data do
+    sub on_error: handle_error() do
+      call delete_endpoint($instance, $param_azure_endpoint) retrieve $delete_response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_endpoint($instance, $param_azure_endpoint) return $response do
+  $host = $param_azure_endpoint
+  $href = $instance["resourceID"]
+  $url = $host + $href + "?api-version=2024-04-01"
+  task_label("DELETE " + $url)
+
+  $response = http_request(
+    auth: $$auth_azure,
+    https: true,
+    verb: "delete",
+    host: $host,
+    href: $href,
+    query_strings: { "api-version": "2024-04-01" }
+  )
+
+  task_label("Delete Azure ML Online Endpoint response: " + $instance["resourceID"] + " " + to_json($response))
+
+  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+
+  if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 200
+    raise "Unexpected response deleting Azure ML Online Endpoint: " + $instance["resourceID"] + " " + to_json($response)
+  else
+    task_label("Delete Azure ML Online Endpoint successful: " + $instance["resourceID"])
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  $_error_behavior = "skip"
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_parent_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
+  result "result"
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
+  end
+end
+
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
+  result "result"
+  code 'result = { path: "/"}'
+end

@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "1.0.1",
+  version: "1.1.0",
   provider: "AWS",
   service: "All",
   policy_set: "Deprecated Resources",
@@ -879,11 +879,11 @@ EOS
 end
 
 datasource "ds_all_extended_support_resources" do
-  run_script $js_all_extended_support_resources, $ds_rds_instances_filtered, $ds_rds_tags, $ds_eks_clusters, $ds_elasticache_clusters_filtered, $ds_elasticache_tags, $ds_aws_extended_support_dates, $ds_flexera_cco_data_filtered, $ds_cloud_vendor_accounts, $ds_currency, $param_upcoming_days, $param_exclusion_tags, $param_exclusion_tags_boolean
+  run_script $js_all_extended_support_resources, $ds_rds_instances_filtered, $ds_rds_tags, $ds_eks_clusters, $ds_elasticache_clusters_filtered, $ds_elasticache_tags, $ds_aws_extended_support_dates, $ds_flexera_cco_data_filtered, $ds_cloud_vendor_accounts, $ds_currency, $ds_regions_table, $param_upcoming_days, $param_exclusion_tags, $param_exclusion_tags_boolean
 end
 
 script "js_all_extended_support_resources", type: "javascript" do
-  parameters "ds_rds_instances", "ds_rds_tags", "ds_eks_clusters", "ds_elasticache_clusters", "ds_elasticache_tags", "ds_aws_extended_support_dates", "ds_flexera_cco_data_filtered", "ds_cloud_vendor_accounts", "ds_currency", "param_upcoming_days", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  parameters "ds_rds_instances", "ds_rds_tags", "ds_eks_clusters", "ds_elasticache_clusters", "ds_elasticache_tags", "ds_aws_extended_support_dates", "ds_flexera_cco_data_filtered", "ds_cloud_vendor_accounts", "ds_currency", "ds_regions_table", "param_upcoming_days", "param_exclusion_tags", "param_exclusion_tags_boolean"
   result "result"
   code <<-'EOS'
   result = []
@@ -925,6 +925,11 @@ script "js_all_extended_support_resources", type: "javascript" do
   function getResourceName(tag_map, fallback) {
     if (tag_map && tag_map['Name']) { return tag_map['Name'] }
     return fallback
+  }
+
+  function normalizeRegion(region) {
+    if (!region) { return '' }
+    return ds_regions_table[region] || region
   }
 
   var rds_tag_lookup = buildTagLookup(ds_rds_tags)
@@ -1098,7 +1103,7 @@ script "js_all_extended_support_resources", type: "javascript" do
       resourceName: resourceName,
       tags: tagsString,
       service: 'RDS',
-      region: instance['region'],
+      region: normalizeRegion(instance['region']),
       resourceType: instance['instanceClass'] || 'N/A',
       engineVersion: instance['engine'] + ' ' + instance['engineVersion'],
       extendedSupportStart: entry['extended_support_start'],
@@ -1140,7 +1145,7 @@ script "js_all_extended_support_resources", type: "javascript" do
       resourceName: resourceName,
       tags: tagsString,
       service: 'EKS',
-      region: cluster['region'],
+      region: normalizeRegion(cluster['region']),
       resourceType: 'EKS Cluster',
       engineVersion: 'Kubernetes ' + cluster['version'],
       extendedSupportStart: entry['extended_support_start'],
@@ -1182,7 +1187,7 @@ script "js_all_extended_support_resources", type: "javascript" do
       resourceName: resourceName,
       tags: tagsString,
       service: 'ElastiCache',
-      region: cluster['region'],
+      region: normalizeRegion(cluster['region']),
       resourceType: cluster['cacheNodeType'] || 'N/A',
       engineVersion: cluster['engine'] + ' ' + cluster['engineVersion'],
       extendedSupportStart: entry['extended_support_start'],
@@ -1312,7 +1317,7 @@ policy "pol_extended_support_resources" do
         label "Service"
       end
       field "region" do
-        label "Region"
+        label "Region ID"
       end
       field "resourceType" do
         label "Resource Type"

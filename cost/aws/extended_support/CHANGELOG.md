@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.1.0
+
+- Updated incident/export region reporting to use AWS API region identifiers (for example, `us-east-1`) for consistency with other AWS optimization policy sets.
+
 ## v1.0.1
 
 - Fixed issue with incident table that cause policy execution to fail
