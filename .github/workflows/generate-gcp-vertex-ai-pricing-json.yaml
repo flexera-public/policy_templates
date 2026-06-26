@@ -1,0 +1,78 @@
+name: Generate GCP Vertex AI Pricing JSON
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  schedule:
+    #        ┌───────────── minute (0 - 59)
+    #        │  ┌───────────── hour (0 - 23)
+    #        │  │ ┌───────────── day of the month (1 - 31)
+    #        │  │ │ ┌───────────── month (1 - 12 or JAN-DEC)
+    #        │  │ │ │ ┌───────────── day of the week (0 - 6 or SUN-SAT)
+    #        │  │ │ │ │
+    #        │  │ │ │ │
+    #        │  │ │ │ │
+    #        *  * * * *
+    # At 03:00 UTC on Sundays
+    - cron: "0 3 * * 0"
+
+  # Workflow dispatch trigger allows manually running workflow
+  workflow_dispatch: {}
+
+jobs:
+  gcp_vertex_ai_pricing:
+    name: "Generate GCP Vertex AI Pricing"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set Up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: '.python-version'
+          cache: 'pip' # caching pip dependencies
+          cache-dependency-path: 'requirements.txt'
+
+      - name: Install Python libraries
+        run: pip install -r requirements.txt
+
+      - name: Make local JSON file containing Google auth information
+        shell: bash -l {0} # https://github.com/actions/virtual-environments/issues/4
+        run: |
+          mkdir -p tmp
+          python3 tools/cloud_data/google/google_make_credential_json.py
+        env:
+          GOOGLE_AUTH_JSON: ${{ secrets.GOOGLE_AUTH_JSON }}
+          GOOGLE_APPLICATION_CREDENTIALS: "tmp/gcp_credential.json"
+
+      - name: Generate GCP Vertex AI Pricing Data
+        shell: bash -l {0} # https://github.com/actions/virtual-environments/issues/4
+        run: python3 tools/cloud_data/google/gcp_vertex_ai_pricing.py
+        env:
+          GOOGLE_AUTH_JSON: ${{ secrets.GOOGLE_AUTH_JSON }}
+          GOOGLE_APPLICATION_CREDENTIALS: "tmp/gcp_credential.json"
+
+      - name: Delete local JSON file containing Google auth information
+        if: always()
+        shell: bash -l {0} # https://github.com/actions/virtual-environments/issues/4
+        run: rm -f tmp/gcp_credential.json
+
+      - name: Create Pull Request
+        id: cpr
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "Update GCP Vertex AI Pricing Data"
+          title: "Update GCP Vertex AI Pricing Data"
+          body: "Updated GCP Vertex AI Pricing from GitHub Actions Workflow [${{ github.workflow }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          branch: "task/update-gcp-vertex-ai-pricing"
+          delete-branch: true
+          labels: "automation, data, gcp"
+
+      - name: Check outputs
+        if: ${{ steps.cpr.outputs.pull-request-number }}
+        run: |
+          echo "Pull Request Number - ${{ steps.cpr.outputs.pull-request-number }}"
+          echo "Pull Request URL - ${{ steps.cpr.outputs.pull-request-url }}"
