@@ -1,0 +1,1089 @@
+name "Google Cloud Resources Under or Approaching Extended Support"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports any Google Cloud resources that are under or approaching extended support. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/extended_support) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/cost/google/extended_support"
+category "Cost"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Google",
+  service: "All",
+  policy_set: "Deprecated Resources",
+  recommendation_type: "Usage Reduction",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation. Only applies to resources currently under extended support."
+  min_value 0
+  default 0
+end
+
+parameter "param_upcoming_days" do
+  type "number"
+  category "Policy Settings"
+  label "Days Until Extended Support"
+  description "Report resources that will enter extended support within this many days. Set to 0 to only report resources currently under extended support. Uses static reference data for GKE and Cloud SQL extended support schedules."
+  min_value 0
+  default 0
+end
+
+parameter "param_projects_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Projects"
+  description "Allow or Deny entered Projects. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_projects_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Projects List"
+  description "A list of allowed or denied project IDs/names. Leave blank to check all Google Cloud Projects."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Labels"
+  description "Cloud native labels to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags_boolean" do
+  type "string"
+  category "Filters"
+  label "Exclusion Labels: Any / All"
+  description "Whether to filter resources containing any of the specified labels or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Labels' field."
+  allowed_values "Any", "All"
+  default "Any"
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_google" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+      api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", policy_id])
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "name", jmes_path(response, "name")
+  end
+end
+
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "gcp.projectId")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/currency/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type: "javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-'EOS'
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_google_extended_support_dates" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/data/google/google_extended_support_dates.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_google_projects" do
+  request do
+    run_script $js_google_projects, $ds_is_deleted
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "id", jmes_path(col_item, "projectId")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+script "js_google_projects", type: "javascript" do
+  parameters "ds_is_deleted"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_google",
+    pagination: "pagination_google",
+    host: "cloudresourcemanager.googleapis.com",
+    path: "/v3/projects:search",
+    query_params: { "query": "state:ACTIVE" },
+    headers: { "Meta-Flexera": ds_is_deleted["path"] }
+  }
+EOS
+end
+
+datasource "ds_google_projects_filtered" do
+  run_script $js_google_projects_filtered, $ds_google_projects, $param_projects_allow_or_deny, $param_projects_list
+end
+
+script "js_google_projects_filtered", type: "javascript" do
+  parameters "ds_google_projects", "param_projects_allow_or_deny", "param_projects_list"
+  result "result"
+  code <<-'EOS'
+  if (param_projects_list.length > 0) {
+    result = _.filter(ds_google_projects, function(project) {
+      var include_project = _.contains(param_projects_list, project['id']) || _.contains(param_projects_list, project['name'])
+      if (param_projects_allow_or_deny == "Deny") { include_project = !include_project }
+      return include_project
+    })
+  } else {
+    result = ds_google_projects
+  }
+EOS
+end
+
+datasource "ds_project_check" do
+  iterate $ds_google_projects_filtered
+  request do
+    auth $auth_google
+    host "sqladmin.googleapis.com"
+    path join(["/v1/projects/", val(iter_item, "id"), "/instances"])
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404, 429]
+  end
+  result do
+    encoding "json"
+    field "projectId", val(iter_item, "id")
+    field "projectName", val(iter_item, "name")
+    field "status", "OK"
+  end
+end
+
+datasource "ds_identify_errors" do
+  run_script $js_identify_errors, $ds_google_projects_filtered, $ds_project_check, $ds_applied_policy, $param_projects_allow_or_deny, $param_projects_list
+end
+
+script "js_identify_errors", type: "javascript" do
+  parameters "ds_google_projects_filtered", "ds_project_check", "ds_applied_policy", "param_projects_allow_or_deny", "param_projects_list"
+  result "errors"
+  code <<-'EOS'
+  var errors = []
+
+  if (ds_google_projects_filtered.length > 0) {
+    var ok_projects = {}
+    _.each(ds_project_check, function(item) {
+      if (item.projectId) { ok_projects[item.projectId] = true }
+    })
+
+    var failed = []
+    _.each(ds_google_projects_filtered, function(p) {
+      if (!ok_projects[p['id']]) { failed.push(p['id']) }
+    })
+
+    if (failed.length > 0) {
+      var filter_guidance = ""
+
+      if (param_projects_list.length > 0) {
+        filter_guidance = " You are currently using the 'Allow/Deny Projects List' parameter. "
+        filter_guidance += "You can update this list to exclude the inaccessible projects if appropriate."
+      } else {
+        filter_guidance = " You can use the 'Allow/Deny Projects List' parameter to exclude these projects."
+      }
+
+      errors.push(
+        "HTTP error received when attempting to query resource information in some Google project(s).\n" +
+        "\n - Failed Projects: " + failed.sort().join(", ") +
+        "\n - Successful Projects: " + _.keys(ok_projects).sort().join(", ") +
+        "\n\nThis typically indicates that the Google credential is missing one or more required permissions " +
+        "('cloudsql.instances.list', 'container.clusters.list') for these projects, or the Cloud SQL Admin API " +
+        "/ Kubernetes Engine API may not be enabled in these projects." +
+        " To resolve: (1) Verify the credential has all required permissions, " +
+        "(2) Ensure the Cloud SQL Admin API and Kubernetes Engine API are enabled in these projects, or " +
+        "(3) Exclude these projects using the project filter parameters." +
+        filter_guidance
+      )
+    }
+  }
+
+  errors = _.uniq(errors)
+  errors = _.map(errors, function(err) { return { "error": err } })
+
+  if (errors.length > 0) {
+    var policy_name = "Google Cloud Resources Under or Approaching Extended Support"
+    if (ds_applied_policy && ds_applied_policy.name) { policy_name = ds_applied_policy.name }
+    errors[0].policy_name = policy_name
+  }
+EOS
+end
+
+datasource "ds_projects_passing" do
+  run_script $js_projects_passing, $ds_google_projects_filtered, $ds_project_check
+end
+
+script "js_projects_passing", type: "javascript" do
+  parameters "ds_google_projects_filtered", "ds_project_check"
+  result "result"
+  code <<-'EOS'
+  var passing = {}
+  _.each(ds_project_check, function(item) {
+    if (item['projectId']) { passing[item['projectId']] = true }
+  })
+
+  result = _.filter(ds_google_projects_filtered, function(p) { return passing[p['id']] })
+EOS
+end
+
+datasource "ds_gke_clusters" do
+  iterate $ds_projects_passing
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "container.googleapis.com"
+    path join(["/v1/projects/", val(iter_item, "id"), "/locations/-/clusters"])
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "clusters[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "location", jmes_path(col_item, "location")
+      field "currentMasterVersion", jmes_path(col_item, "currentMasterVersion")
+      field "channel", jmes_path(col_item, "releaseChannel.channel")
+      field "clusterTier", jmes_path(col_item, "enterpriseConfig.clusterTier")
+      field "labels", jmes_path(col_item, "resourceLabels")
+      field "projectId", val(iter_item, "id")
+      field "projectName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_gke_clusters_filtered" do
+  run_script $js_gke_clusters_filtered, $ds_gke_clusters, $ds_google_extended_support_dates, $param_upcoming_days, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_gke_clusters_filtered", type: "javascript" do
+  parameters "ds_gke_clusters", "ds_google_extended_support_dates", "param_upcoming_days", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-'EOS'
+  var today = new Date()
+  today.setHours(0, 0, 0, 0)
+  var today_ms = today.getTime()
+
+  var cutoff_ms = today_ms
+  if (param_upcoming_days > 0) {
+    var cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() + param_upcoming_days)
+    cutoff.setHours(23, 59, 59, 999)
+    cutoff_ms = cutoff.getTime()
+  }
+
+  var allow_deny_test = { "Allow": true, "Deny": false }
+
+  // Normalize a GKE location (zone or region) to a region name.
+  // Zonal: "us-central1-a" -> "us-central1". Regional: "us-central1" unchanged.
+  function locationToRegion(loc) {
+    if (!loc) { return '' }
+    var parts = loc.split('-')
+    return parts.length > 2 ? parts[0] + '-' + parts[1] : loc
+  }
+
+  function parseGKEVersion(v) {
+    if (!v) { return null }
+    var base = v.split('-')[0]
+    var parts = base.split('.')
+    if (parts.length >= 2) { return parts[0] + '.' + parts[1] }
+    return null
+  }
+
+  result = _.filter(ds_gke_clusters, function(cluster) {
+    if (param_regions_list.length > 0) {
+      var region = locationToRegion(cluster['location'])
+      var in_list = _.contains(param_regions_list, region) || _.contains(param_regions_list, cluster['location'])
+      if (in_list != allow_deny_test[param_regions_allow_or_deny]) { return false }
+    }
+    if (cluster['channel'] != 'EXTENDED') { return false }
+    if (cluster['clusterTier'] == 'ENTERPRISE') { return false }
+    var version = parseGKEVersion(cluster['currentMasterVersion'])
+    if (!version) { return false }
+    var match = false
+    _.each(ds_google_extended_support_dates, function(entry) {
+      if (match || entry['service'] != 'GKE') { return }
+      if (entry['version'] != version) { return }
+      var start_ms = new Date(entry['extended_support_start']).setHours(0, 0, 0, 0)
+      if (start_ms <= cutoff_ms) { match = true }
+    })
+    return match
+  })
+EOS
+end
+
+datasource "ds_cloudsql_instances" do
+  iterate $ds_projects_passing
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "sqladmin.googleapis.com"
+    path join(["/v1/projects/", val(iter_item, "id"), "/instances"])
+    header "User-Agent", "RS Policies"
+    ignore_status [403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "region")
+      field "databaseVersion", jmes_path(col_item, "databaseVersion")
+      field "tier", jmes_path(col_item, "settings.tier")
+      field "dataDiskSizeGb", jmes_path(col_item, "settings.dataDiskSizeGb")
+      field "labels", jmes_path(col_item, "settings.userLabels")
+      field "instanceType", jmes_path(col_item, "instanceType")
+      field "state", jmes_path(col_item, "state")
+      field "projectId", val(iter_item, "id")
+      field "projectName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_cloudsql_instances_filtered" do
+  run_script $js_cloudsql_instances_filtered, $ds_cloudsql_instances, $ds_google_extended_support_dates, $param_upcoming_days, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_cloudsql_instances_filtered", type: "javascript" do
+  parameters "ds_cloudsql_instances", "ds_google_extended_support_dates", "param_upcoming_days", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-'EOS'
+  var today = new Date()
+  today.setHours(0, 0, 0, 0)
+  var today_ms = today.getTime()
+
+  var cutoff_ms = today_ms
+  if (param_upcoming_days > 0) {
+    var cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() + param_upcoming_days)
+    cutoff.setHours(23, 59, 59, 999)
+    cutoff_ms = cutoff.getTime()
+  }
+
+  var allow_deny_test = { "Allow": true, "Deny": false }
+
+  function parseSQLVersion(dv) {
+    if (!dv) { return { engine: null, version: null } }
+    var s = dv.toLowerCase()
+    if (s.indexOf('mysql_') === 0) {
+      var rest = s.slice(6)
+      var parts = rest.split('_')
+      var ver = parts.length >= 2 ? parts[0] + '.' + parts[1] : parts[0]
+      return { engine: 'mysql', version: ver }
+    }
+    if (s.indexOf('postgres_') === 0) {
+      return { engine: 'postgres', version: s.slice(9) }
+    }
+    if (s.indexOf('sqlserver_') === 0) {
+      var rest = s.slice(10)
+      return { engine: 'sqlserver', version: rest.split('_')[0] }
+    }
+    return { engine: null, version: null }
+  }
+
+  result = _.filter(ds_cloudsql_instances, function(instance) {
+    if (param_regions_list.length > 0) {
+      var in_list = _.contains(param_regions_list, instance['region'])
+      if (in_list != allow_deny_test[param_regions_allow_or_deny]) { return false }
+    }
+    if (instance['instanceType'] == 'READ_REPLICA_INSTANCE') { return false }
+    var parsed = parseSQLVersion(instance['databaseVersion'])
+    if (!parsed.engine || !parsed.version) { return false }
+    var match = false
+    _.each(ds_google_extended_support_dates, function(entry) {
+      if (match || entry['service'] != 'CloudSQL') { return }
+      if (entry['engine'] != parsed.engine) { return }
+      if (entry['version'] != parsed.version) { return }
+      var start_ms = new Date(entry['extended_support_start']).setHours(0, 0, 0, 0)
+      if (start_ms <= cutoff_ms) { match = true }
+    })
+    return match
+  })
+EOS
+end
+
+datasource "ds_all_extended_support_resources" do
+  run_script $js_all_extended_support_resources, $ds_gke_clusters_filtered, $ds_cloudsql_instances_filtered, $ds_google_extended_support_dates, $ds_cloud_vendor_accounts, $ds_currency, $param_upcoming_days, $param_exclusion_tags, $param_exclusion_tags_boolean
+end
+
+script "js_all_extended_support_resources", type: "javascript" do
+  parameters "ds_gke_clusters_filtered", "ds_cloudsql_instances_filtered", "ds_google_extended_support_dates", "ds_cloud_vendor_accounts", "ds_currency", "param_upcoming_days", "param_exclusion_tags", "param_exclusion_tags_boolean"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  var today = new Date()
+  today.setHours(0, 0, 0, 0)
+  var today_ms = today.getTime()
+
+  var cutoff_ms = today_ms
+  if (param_upcoming_days > 0) {
+    var cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() + param_upcoming_days)
+    cutoff.setHours(23, 59, 59, 999)
+    cutoff_ms = cutoff.getTime()
+  }
+
+  var hours_per_month = 24 * 30.44
+
+  var account_name_map = {}
+  _.each(ds_cloud_vendor_accounts, function(acct) {
+    if (acct['id']) { account_name_map[acct['id']] = acct['name'] }
+  })
+
+  var comparators = _.map(param_exclusion_tags, function(item) {
+    if (item.indexOf('==') != -1) {
+      return { comparison: '==', key: item.split('==')[0], value: item.split('==')[1], string: item }
+    }
+    if (item.indexOf('!=') != -1) {
+      return { comparison: '!=', key: item.split('!=')[0], value: item.split('!=')[1], string: item }
+    }
+    if (item.indexOf('=~') != -1) {
+      var val = item.split('=~')[1]
+      return { comparison: '=~', key: item.split('=~')[0], value: new RegExp(val.slice(1, val.length - 1)), string: item }
+    }
+    if (item.indexOf('!~') != -1) {
+      var val = item.split('!~')[1]
+      return { comparison: '!~', key: item.split('!~')[0], value: new RegExp(val.slice(1, val.length - 1)), string: item }
+    }
+    return { comparison: 'key', key: item, value: null, string: item }
+  })
+
+  function isExcluded(label_map) {
+    if (param_exclusion_tags.length == 0) { return false }
+    var label_obj = label_map || {}
+    var found_tags = []
+    _.each(comparators, function(c) {
+      var resource_tag = label_obj[c['key']]
+      if (c['comparison'] == 'key' && resource_tag != undefined) { found_tags.push(c['string']) }
+      if (c['comparison'] == '==' && resource_tag == c['value']) { found_tags.push(c['string']) }
+      if (c['comparison'] == '!=' && resource_tag != c['value']) { found_tags.push(c['string']) }
+      if (c['comparison'] == '=~' && resource_tag != undefined && c['value'].test(resource_tag)) { found_tags.push(c['string']) }
+      if (c['comparison'] == '!~' && (resource_tag == undefined || !c['value'].test(resource_tag))) { found_tags.push(c['string']) }
+    })
+    if (param_exclusion_tags_boolean == 'Any') { return found_tags.length > 0 }
+    return found_tags.length == comparators.length
+  }
+
+  function formatLabels(label_map) {
+    if (!label_map || typeof label_map !== 'object') { return '' }
+    return _.map(_.keys(label_map), function(k) { return k + '=' + label_map[k] }).join(', ')
+  }
+
+  function isSharedCore(tier) {
+    if (!tier) { return false }
+    var t = tier.toLowerCase()
+    return t.indexOf('f1-micro') !== -1 || t.indexOf('g1-small') !== -1
+  }
+
+  function classifyResource(start_date_string) {
+    var start_ms = new Date(start_date_string).setHours(0, 0, 0, 0)
+    if (start_ms <= today_ms) { return 'Currently Under Extended Support' }
+    if (start_ms <= cutoff_ms) { return 'Upcoming Extended Support' }
+    return null
+  }
+
+  function daysUntil(date_string) {
+    var date = new Date(date_string)
+    date.setHours(0, 0, 0, 0)
+    return Math.ceil((date.getTime() - today_ms) / (1000 * 60 * 60 * 24))
+  }
+
+  function parseGKEVersion(v) {
+    if (!v) { return null }
+    var base = v.split('-')[0]
+    var parts = base.split('.')
+    if (parts.length >= 2) { return parts[0] + '.' + parts[1] }
+    return null
+  }
+
+  function parseSQLVersion(dv) {
+    if (!dv) { return { engine: null, version: null } }
+    var s = dv.toLowerCase()
+    if (s.indexOf('mysql_') === 0) {
+      var rest = s.slice(6)
+      var parts = rest.split('_')
+      var ver = parts.length >= 2 ? parts[0] + '.' + parts[1] : parts[0]
+      return { engine: 'mysql', version: ver }
+    }
+    if (s.indexOf('postgres_') === 0) {
+      return { engine: 'postgres', version: s.slice(9) }
+    }
+    if (s.indexOf('sqlserver_') === 0) {
+      var rest = s.slice(10)
+      return { engine: 'sqlserver', version: rest.split('_')[0] }
+    }
+    return { engine: null, version: null }
+  }
+
+  function getVcpuCount(tier) {
+    if (!tier) { return 2 }
+    var t = tier.toLowerCase()
+    if (t.indexOf('f1-micro') !== -1 || t.indexOf('g1-small') !== -1) { return 1 }
+    var parts = t.split('-')
+    if (parts.length >= 4 && parts[1] == 'custom') {
+      var vcpus = parseInt(parts[2], 10)
+      if (!isNaN(vcpus)) { return vcpus }
+    }
+    for (var i = parts.length - 1; i >= 0; i--) {
+      var n = parseInt(parts[i], 10)
+      if (!isNaN(n) && n > 0 && n <= 256) { return n }
+    }
+    return 2
+  }
+
+  function findEntry(service, engine, version) {
+    var found = null
+    _.each(ds_google_extended_support_dates, function(entry) {
+      if (found) { return }
+      if (entry['service'] != service) { return }
+      if (entry['engine'] != engine) { return }
+      if (entry['version'] != version) { return }
+      found = entry
+    })
+    return found
+  }
+
+  // Process GKE clusters
+  _.each(ds_gke_clusters_filtered, function(cluster) {
+    var version = parseGKEVersion(cluster['currentMasterVersion'])
+    if (!version) { return }
+    var entry = findEntry('GKE', 'kubernetes', version)
+    if (!entry) { return }
+    var status = classifyResource(entry['extended_support_start'])
+    if (!status) { return }
+    if (status == 'Upcoming Extended Support' && param_upcoming_days == 0) { return }
+
+    var labels = cluster['labels'] || {}
+    if (isExcluded(labels)) { return }
+
+    var savings = Math.round(entry['hourly_rate'] * hours_per_month * 1000) / 1000
+
+    result.push({
+      accountID: cluster['projectId'],
+      accountName: account_name_map[cluster['projectId']] || cluster['projectName'] || cluster['projectId'],
+      resourceID: cluster['name'],
+      resourceName: cluster['name'],
+      tags: formatLabels(labels),
+      service: 'GKE',
+      region: cluster['location'],
+      resourceType: 'GKE Cluster',
+      engineVersion: 'Kubernetes ' + version,
+      extendedSupportStart: entry['extended_support_start'],
+      extendedSupportEnd: entry['extended_support_end'],
+      daysUntilExtendedSupport: status == 'Currently Under Extended Support' ? 0 : daysUntil(entry['extended_support_start']),
+      status: status,
+      savings: savings,
+      savingsCurrency: ds_currency['symbol'],
+      recommendationDetails: status == 'Currently Under Extended Support'
+        ? 'Upgrade GKE cluster ' + cluster['name'] + ' from Kubernetes ' + version + ' to a newer supported version to stop incurring extended support charges.'
+        : 'Upgrade GKE cluster ' + cluster['name'] + ' from Kubernetes ' + version + ' to a newer supported version before ' + entry['extended_support_start'] + ' to avoid extended support charges.'
+    })
+  })
+
+  // Process Cloud SQL instances
+  _.each(ds_cloudsql_instances_filtered, function(instance) {
+    var parsed = parseSQLVersion(instance['databaseVersion'])
+    if (!parsed.engine || !parsed.version) { return }
+    var entry = findEntry('CloudSQL', parsed.engine, parsed.version)
+    if (!entry) { return }
+    var status = classifyResource(entry['extended_support_start'])
+    if (!status) { return }
+    if (status == 'Upcoming Extended Support' && param_upcoming_days == 0) { return }
+
+    var labels = instance['labels'] || {}
+    if (isExcluded(labels)) { return }
+
+    var tier = instance['tier'] || ''
+    var savings
+    if (isSharedCore(tier)) {
+      var shared_rate
+      if (tier.toLowerCase().indexOf('g1-small') !== -1) {
+        shared_rate = entry['g1_small_hourly_rate'] || entry['f1_micro_hourly_rate'] || entry['hourly_rate']
+      } else {
+        shared_rate = entry['f1_micro_hourly_rate'] || entry['hourly_rate']
+      }
+      savings = Math.round(shared_rate * hours_per_month * 1000) / 1000
+    } else {
+      var vcpus = getVcpuCount(tier)
+      savings = Math.round(entry['hourly_rate'] * vcpus * hours_per_month * 1000) / 1000
+    }
+
+    result.push({
+      accountID: instance['projectId'],
+      accountName: account_name_map[instance['projectId']] || instance['projectName'] || instance['projectId'],
+      resourceID: instance['name'],
+      resourceName: instance['name'],
+      tags: formatLabels(labels),
+      service: 'CloudSQL',
+      region: instance['region'],
+      resourceType: tier || 'N/A',
+      engineVersion: instance['databaseVersion'],
+      extendedSupportStart: entry['extended_support_start'],
+      extendedSupportEnd: entry['extended_support_end'],
+      daysUntilExtendedSupport: status == 'Currently Under Extended Support' ? 0 : daysUntil(entry['extended_support_start']),
+      status: status,
+      savings: savings,
+      savingsCurrency: ds_currency['symbol'],
+      recommendationDetails: status == 'Currently Under Extended Support'
+        ? 'Upgrade Cloud SQL instance ' + instance['name'] + ' from ' + instance['databaseVersion'] + ' to a newer supported version to stop incurring extended support charges.'
+        : 'Upgrade Cloud SQL instance ' + instance['name'] + ' from ' + instance['databaseVersion'] + ' to a newer supported version before ' + entry['extended_support_start'] + ' to avoid extended support charges.'
+    })
+  })
+EOS
+end
+
+datasource "ds_extended_support_resources" do
+  run_script $js_extended_support_resources, $ds_all_extended_support_resources, $ds_applied_policy, $ds_currency, $param_min_savings, $param_incident_csv
+end
+
+script "js_extended_support_resources", type: "javascript" do
+  parameters "ds_all_extended_support_resources", "ds_applied_policy", "ds_currency", "param_min_savings", "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
+
+  function formatNumber(number, separator) {
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        withSeparator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { withSeparator += separator }
+          withSeparator += formatted_number[i]
+        }
+
+        formatted_number = withSeparator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  result = []
+  var total_savings = 0
+
+  _.each(ds_all_extended_support_resources, function(resource) {
+    // Apply min_savings only to resources currently under extended support (already incurring the fee).
+    // Resources approaching extended support always pass — they are a heads-up notification.
+    if (resource['status'] == 'Currently Under Extended Support' && resource['savings'] < param_min_savings) { return }
+
+    total_savings += resource['savings'] || 0
+
+    result.push({
+      accountID: resource['accountID'],
+      accountName: resource['accountName'],
+      resourceID: resource['resourceID'],
+      resourceName: resource['resourceName'],
+      tags: resource['tags'],
+      service: resource['service'],
+      region: resource['region'],
+      resourceType: resource['resourceType'],
+      engineVersion: resource['engineVersion'],
+      extendedSupportStart: resource['extendedSupportStart'],
+      extendedSupportEnd: resource['extendedSupportEnd'],
+      daysUntilExtendedSupport: resource['daysUntilExtendedSupport'],
+      status: resource['status'],
+      recommendationDetails: resource['recommendationDetails'],
+      savings: resource['savings'],
+      savingsCurrency: resource['savingsCurrency'],
+      policy_name: ds_applied_policy['name'],
+      total_savings: 0,
+      csv_message: csv_message
+    })
+  })
+
+  if (result.length > 0) {
+    result[0]['total_savings'] = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_extended_support_resources" do
+  validate_each $ds_extended_support_resources do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Google Resources Under or Approaching Extended Support Found"
+    detail_template <<-'EOS'
+**Estimated Monthly Extended-Support Surcharge:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+{{ with index data 0 }}{{ .csv_message }}{{ end }}
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    escalate $esc_email
+    hash_exclude "tags", "savings", "savingsCurrency", "daysUntilExtendedSupport"
+    export do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Labels"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "engineVersion" do
+        label "Engine Version"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "extendedSupportStart" do
+        label "Extended Support Start Date"
+      end
+      field "extendedSupportEnd" do
+        label "Extended Support End Date"
+      end
+      field "daysUntilExtendedSupport" do
+        label "Days Until Extended Support"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+    end
+  end
+
+  validate $ds_identify_errors do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Errors Identified"
+    detail_template <<-'EOS'
+The policy was unable to access one or more Google Cloud projects.
+
+**Error Details:**
+{{ range data -}}
+  - {{ .error }}
+{{ end -}}
+
+**Recommended Actions:**
+
+1. Verify the Google Cloud credential has the permissions listed in the Prerequisites section of the README for all projects where the policy should execute.
+1. Ensure the Kubernetes Engine API and Cloud SQL Admin API are enabled in the relevant projects.
+1. Use the Allow/Deny Projects List parameter to exclude inaccessible projects.
+    EOS
+    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
+    escalate $esc_email_errors_identified
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
+end
+
+escalation "esc_email_errors_identified" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_parent_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies/", switch(ne(meta_parent_policy_id, ""), meta_parent_policy_id, policy_id) ])
+	  ignore_status [404]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+datasource "ds_parent_policy_terminated" do
+  run_script $js_parent_policy_terminated, $ds_get_parent_policy, meta_parent_policy_id
+end
+
+script "js_parent_policy_terminated", type: "javascript" do
+  parameters "ds_get_parent_policy", "meta_parent_policy_id"
+  result "result"
+  code <<-'EOS'
+  result = meta_parent_policy_id != "" && ds_get_parent_policy["id"] == undefined
+EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, $ds_flexera_api_hosts, policy_id, rs_org_id, rs_project_id
+  end
+end
+
+script "js_make_terminate_request", type: "javascript" do
+  parameters "ds_parent_policy_terminated", "ds_flexera_api_hosts", "policy_id", "rs_org_id", "rs_project_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    host: ds_flexera_api_hosts["flexera"],
+    path: [ "/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", policy_id ? "/"+policy_id : "" ].join(''),
+    verb: ds_parent_policy_terminated ? "DELETE" : "GET"
+  }
+EOS
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+datasource "ds_is_deleted" do
+  run_script $js_is_deleted, $ds_terminate_self
+end
+
+script "js_is_deleted", type: "javascript" do
+  parameters "ds_terminate_self"
+  result "result"
+  code 'result = { path: "/"}'
+end

@@ -80,6 +80,12 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
+Additionally, this policy template requires that the following APIs be enabled in your Google Cloud environment:
+
+- [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
+- [Compute Engine API](https://console.cloud.google.com/flows/enableapi?apiid=compute.googleapis.com)
+- [Cloud Monitoring API](https://console.cloud.google.com/flows/enableapi?apiid=monitoring.googleapis.com)
+
 ## Supported Clouds
 
 - Google Cloud
