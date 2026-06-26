@@ -1914,6 +1914,20 @@ end
 
 See [STYLE_GUIDE.md](https://github.com/flexera-public/policy_templates/blob/master/STYLE_GUIDE.md) for complete details.
 
+### No Em Dashes and Non-ASCII Punctuation
+
+**Never use em dashes (`—`) anywhere in a policy template `.pt` file** - including in string values, comments, `short_description`, `long_description`, `label`, `description`, `summary_template`, `detail_template`, or any other field. The Flexera UI does not render em dashes correctly. Use a hyphen (`-`) or reword the text instead.
+
+More broadly, avoid all non-ASCII punctuation and special Unicode characters in `.pt` files. Common offenders include:
+
+- Em dash `—` (U+2014) - use `-` instead
+- Multiplication sign `×` (U+00D7) - use `x` instead
+- Curly/smart quotes `"` `"` `'` `'` - use straight quotes `"` and `'` instead
+- Ellipsis `…` (U+2026) - use `...` instead
+- En dash `–` (U+2013) - use `-` instead
+
+This rule also applies to all other output you produce: READMEs, CHANGELOGs, and any other files in this repository should not contain em dashes or other non-ASCII punctuation.
+
 ### No Alignment Padding
 
 Do **not** pad field names or object keys with extra spaces to visually align values into columns. Use a single space after the field name / colon only.

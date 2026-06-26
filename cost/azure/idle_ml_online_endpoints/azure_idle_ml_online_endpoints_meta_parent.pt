@@ -1,7 +1,7 @@
-name "Meta Parent (Resource Group): Azure Storage Accounts Allowing Default Network Access"
+name "Meta Parent: Azure Idle ML Online Endpoints"
 rs_pt_ver 20180301
 type "policy"
-short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Storage Accounts Allowing Default Network Access](https://github.com/flexera-public/policy_templates/tree/master/security/azure/storage_network_deny) Policies."
+short_description "**NOTE: Meta policies are an alpha feature. Please consult the [README](https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md) before use.** Applies and manages \"child\" [Azure Idle ML Online Endpoints](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/idle_ml_online_endpoints) Policies."
 long_description ""
 doc_link "https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md"
 severity "low"
@@ -9,8 +9,8 @@ category "Meta"
 default_frequency "hourly"
 info(
   provider: "Azure",
-  version: "3.4.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
-  publish: "false",
+  version: "0.1.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  publish: "true",
   deprecated: "false",
   hide_skip_approvals: "true"
 )
@@ -32,10 +32,10 @@ parameter "param_dimension_filter_includes" do
   type "list"
   label "Dimension Include Filters"
   description <<-EOS
-  Filters [`dimension_name=dimension_value` and `dimension_name=~dimension_value` pairs] to determine which Azure Subscription/Resource Group combinations returned by the Flexera Bill Analysis API to **INCLUDE** and be applied to.
+  Filters [`dimension_name=dimension_value` and `dimension_name=~dimension_value` pairs] to determine which Azure Subscriptions returned by the Flexera Bill Analysis API to **INCLUDE** and be applied to.
   Use = to match the entire value and =~ to match a substring contained in the value.
-  During each run this policy will select Azure Subscription/Resource Group combinations who match **all** the filters defined and apply a child policy for each.
-  If no include filters are provided, then all Azure Subscription/Resource Group combinations are included by default.
+  During each run this policy will select Azure Subscriptions who match **all** the filters defined and apply a child policy for each.
+  If no include filters are provided, then all Azure Subscriptions are included by default.
   Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
   EOS
   default []
@@ -45,10 +45,10 @@ parameter "param_dimension_filter_excludes" do
   type "list"
   label "Dimension Exclude Filters"
   description <<-EOS
-  Filters [`dimension_name=dimension_value` and `dimension_name=~dimension_value` pairs] to determine which Azure Subscription/Resource Group combinations returned by  the Flexera Bill Analysis API to **EXCLUDE** and *not* have policy applied to.
+  Filters [`dimension_name=dimension_value` and `dimension_name=~dimension_value` pairs] to determine which Azure Subscriptions returned by  the Flexera Bill Analysis API to **EXCLUDE** and *not* have policy applied to.
   Use = to match the entire value and =~ to match a substring contained in the value.
-  During each run this policy will select Azure Subscription/Resource Group combinations who match **all** the filters defined here and excludes them from results.
-  Can be used to exclude specific Azure Subscription/Resource Group combinations [`vendor_account=123456789012` and `resource_group=my-rg`]
+  During each run this policy will select Azure Subscriptions who match **all** the filters defined here and excludes them from results.
+  Can be used to exclude specific Azure Subscriptions [`vendor_account=123456789012`]
   Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
   EOS
   default []
@@ -65,7 +65,7 @@ end
 parameter "param_template_source" do
   type "string"
   label "Child Policy Template Source"
-  description "By default, will use the \"Azure Storage Accounts Allowing Default Network Access\" Policy Template from Catalog.  Optionally, you can use the \"Azure Storage Accounts Allowing Default Network Access\" Policy Template uploaded in the current Flexera Project."
+  description "By default, will use the \"Azure Idle ML Online Endpoints\" Policy Template from Catalog.  Optionally, you can use the \"Azure Idle ML Online Endpoints\" Policy Template uploaded in the current Flexera Project."
   default "Published Catalog Template"
   allowed_values "Published Catalog Template", "Uploaded Template"
 end
@@ -88,6 +88,15 @@ parameter "param_combined_incident_table_size" do
   default 100000
 end
 
+parameter "param_skip_consolidated_incident" do
+  type "string"
+  category "Incident Settings"
+  label "Skip Consolidated Incident"
+  description "Whether or not to skip generating the consolidated incident that combines violations from all child policy incidents. When set to 'Yes', only the status incident showing child policy management activity will be generated. Default value of 'No' preserves the standard behavior of generating a consolidated incident."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
 ## Child Policy Parameters
 parameter "param_azure_endpoint" do
   type "string"
@@ -98,12 +107,32 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_storage_account_ignore_list" do
-  type "list"
-  category "Filters"
-  label "Storage Account Ignore List"
-  description "A list of Azure Storage Accounts to never include in the results."
-  default []
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to query Azure Monitor metrics for inference traffic. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
+  min_value 1
+  max_value 90
+  default 30
+end
+
+parameter "param_min_requests" do
+  type "number"
+  category "Statistics"
+  label "Requests Threshold"
+  description "Endpoints with total RequestsPerMinute metric values at or below this threshold over the lookback period are flagged as idle. Set to 0 to flag only endpoints with absolutely zero traffic. Higher values can be used to catch near-idle endpoints."
+  min_value 0
+  default 0
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -127,7 +156,7 @@ parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
   label "Exclusion Tags"
-  description "Cloud native tags to ignore storage accounts that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
+  description "Cloud native tags to ignore resources that you don't want to produce recommendations for. Enter the Key name to filter resources with a specific Key, regardless of Value, and enter Key==Value to filter resources with a specific Key:Value pair. Other operators and regex are supported; please see the README for more details."
   default []
 end
 
@@ -135,18 +164,26 @@ parameter "param_exclusion_tags_boolean" do
   type "string"
   category "Filters"
   label "Exclusion Tags: Any / All"
-  description "Whether to filter storage accounts containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
+  description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
   allowed_values "Any", "All"
   default "Any"
 end
 
-parameter "param_public_network_access_compliant" do
-  type "string"
+parameter "param_exclusion_endpoints" do
+  type "list"
   category "Filters"
-  label "Treat Disabled Public Network Access as Compliant"
-  description "If set to 'true', Azure Storage Accounts with public network access disabled are treated as compliant and not reported, even if their default network access rule is set to 'Allow'. When disabled, the storage firewall has no effect because the account is only reachable via private endpoints. Default is 'false', which preserves strict CIS 3.6 behavior of reporting any account whose default network action is 'Allow'."
-  allowed_values "true", "false"
-  default "false"
+  label "Exclusion Endpoint Names"
+  description "A list of Azure ML online endpoint names to exclude from the results. Enter exact endpoint names."
+  default []
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Delete Idle ML Online Endpoints"]
+  default []
 end
 
 ###############################################################################
@@ -247,7 +284,7 @@ script "js_child_policy_options", type: "javascript" do
   // Filter Options that are not appropriate for Child Policy
   var options = _.map(ds_self_policy_information.options, function(option){
     // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes", param_policy_schedule are exclusion to Meta Parent Policy Parameters
-    if (!_.contains(["param_combined_incident_email", "param_combined_incident_csv", "param_combined_incident_table_size", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
+    if (!_.contains(["param_combined_incident_email", "param_combined_incident_csv", "param_combined_incident_table_size", "param_skip_consolidated_incident", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
       return { "name": option.name, "value": option.value };
     }
   });
@@ -324,7 +361,7 @@ script "js_published_child_policy_information", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = _.filter(ds_get_published_child_policy_information, function(item) {
-    return item['name'] == "Azure Storage Accounts Allowing Default Network Access" && item['created_by'] == "support@flexera.com"
+    return item['name'] == "Azure Idle ML Online Endpoints" && item['created_by'] == "support@flexera.com"
   })
 EOS
 end
@@ -357,7 +394,7 @@ script "js_project_child_policy_information", type: "javascript" do
   result "result"
   code <<-'EOS'
   result = _.filter(ds_get_project_child_policy_information, function(item) {
-    return item['name'] == "Azure Storage Accounts Allowing Default Network Access"
+    return item['name'] == "Azure Idle ML Online Endpoints"
   })
 EOS
 end
@@ -384,8 +421,8 @@ datasource "ds_get_billing_centers" do
   end
 end
 
-# Get the Azure subscription/resource group combinations
-datasource "ds_get_azure_resource_groups" do
+# Get the Azure subscriptions
+datasource "ds_get_azure_subscriptions" do
   request do
     run_script $js_make_billing_center_request, rs_org_id, rs_optima_host, $ds_get_billing_centers, $param_dimension_filter_includes, $param_dimension_filter_excludes
   end
@@ -394,7 +431,6 @@ datasource "ds_get_azure_resource_groups" do
     collect jmes_path(response,"rows[*]") do
       field "subscriptionID", jmes_path(col_item, "dimensions.vendor_account")
       field "subscriptionName", jmes_path(col_item, "dimensions.vendor_account_name")
-      field "resourceGroup", jmes_path(col_item, "dimensions.resource_group")
     end
   end
 end
@@ -417,7 +453,7 @@ script "js_make_billing_center_request", type: "javascript" do
   startFormatted = start.toJSON().split("T")[0]
 
   // Default dimensions and filter expressions required for meta parent policy
-  var dimensions = ["vendor_account", "vendor_account_name", "resource_group"];
+  var dimensions = ["vendor_account", "vendor_account_name"];
   var filter_expressions = [
     { dimension: "vendor", type: "substring", substring: "Azure" } // Use a substring type to include both "Azure" (Azure EA) and "AzureMCA-Enterprise" (Azure MCA) subscriptions
   ]
@@ -591,15 +627,13 @@ script "js_format_existing_policies", type: "javascript" do
   result = {}
   formatted = {}
   duplicates = []
-  // tracking holds all existing policies and later can be used to determine if existing policies should be deleted [i.e. if cloud subscription/RG was removed]
+  // tracking holds all existing policies and later can be used to determine if existing policies should be deleted [i.e. if cloud subscription was removed]
   tracking = {}
 
   for (x=0; x<ds_get_existing_policies.length; x++) {
     options = format_options_keyvalue(ds_get_existing_policies[x].options);
 
-    // The composite key is the first entry in param_resource_groups_list: "subscriptionID/resourceGroup"
-    rgKey=options["param_resource_groups_list"] ? options["param_resource_groups_list"][0] : null
-    if (!rgKey) { continue }
+    subscriptionID=options["param_subscriptions_list"][0]
 
     incident = null
     incident2 = null
@@ -612,9 +646,9 @@ script "js_format_existing_policies", type: "javascript" do
       incident3 = ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]][2]
     }
 
-    if (formatted[rgKey] == undefined) {
-      formatted[rgKey] = {
-        "accountID": rgKey,
+    if (formatted[subscriptionID] == undefined) {
+      formatted[subscriptionID] = {
+        "accountID": subscriptionID,
         "applied_policy_id": ds_get_existing_policies[x]["applied_policy_id"],
         "applied_policy_name": ds_get_existing_policies[x]["name"],
         "status": ds_get_existing_policies[x]["status"],
@@ -624,16 +658,16 @@ script "js_format_existing_policies", type: "javascript" do
         "incident3": incident3,
         "options": options
       }
-      tracking[rgKey] = false
+      tracking[subscriptionID] = false
     } else {
-      current = formatted[rgKey]
+      current = formatted[subscriptionID]
 
       currDate = new Date(current.updated_at)
       newDate = new Date(ds_get_existing_policies[x].updated_at)
 
       if (currDate > newDate) {
         duplicates.push({
-          "accountID": rgKey,
+          "accountID": subscriptionID,
           "applied_policy_id": ds_get_existing_policies[x]["applied_policy_id"],
           "applied_policy_name": ds_get_existing_policies[x]["name"],
           "status": ds_get_existing_policies[x]["status"],
@@ -644,7 +678,7 @@ script "js_format_existing_policies", type: "javascript" do
         })
       } else {
         duplicates.push({
-          "accountID": rgKey,
+          "accountID": subscriptionID,
           "applied_policy_id": current["applied_policy_id"],
           "applied_policy_name": current["applied_policy_name"],
           "status": current["status"],
@@ -653,8 +687,8 @@ script "js_format_existing_policies", type: "javascript" do
           "incident2": current["incident2"],
           "incident3": current["incident3"]
         })
-        formatted[rgKey] = {
-          "accountID": rgKey,
+        formatted[subscriptionID] = {
+          "accountID": subscriptionID,
           "applied_policy_id": ds_get_existing_policies[x]["applied_policy_id"],
           "applied_policy_name": ds_get_existing_policies[x]["name"],
           "status": ds_get_existing_policies[x]["status"],
@@ -676,7 +710,7 @@ script "js_format_existing_policies", type: "javascript" do
 end
 
 datasource "ds_take_in_parameters" do
-  run_script $js_take_in_parameters, $ds_get_azure_resource_groups, $ds_format_self, first($ds_published_child_policy_information), first($ds_project_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $ds_flexera_api_hosts, $param_template_source, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
+  run_script $js_take_in_parameters, $ds_get_azure_subscriptions, $ds_format_self, first($ds_published_child_policy_information), first($ds_project_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $ds_flexera_api_hosts, $param_template_source, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
 end
 
 # hardcode template href with id from catalog
@@ -689,7 +723,7 @@ end
 # param_exclude_tags and param_allowed_regions are arrays. I'm doing an update on the order changing but the values remaining the same.
 # If we only want to do an update on the values changing we could sort before doing the equality check.
 script "js_take_in_parameters", type: "javascript" do
-  parameters "ds_get_azure_resource_groups", "ds_format_self", "ds_published_child_policy_information", "ds_project_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "ds_flexera_api_hosts", "param_template_source", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
+  parameters "ds_get_azure_subscriptions", "ds_format_self", "ds_published_child_policy_information", "ds_project_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "ds_flexera_api_hosts", "param_template_source", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
   result "grid_and_cwf"
   code <<-'EOS'
   // Convert schedule label to iCal RRULE frequency string
@@ -721,9 +755,9 @@ script "js_take_in_parameters", type: "javascript" do
     parent_policy: ds_format_self
   }
 
-  // Copy tracking map from existing policies. Each key is a "subscriptionID/resourceGroup" combo;
-  // value starts as false (meaning "candidate for deletion") and is set to true when the combo is
-  // still present in the current billing data.
+  // Copy tracking map from existing policies. Each key is an Azure subscription ID; value starts
+  // as false (meaning "candidate for deletion") and is set to true when the subscription is
+  // still present in the current Azure subscription list.
   var should_keep = ds_format_existing_policies.tracking
 
   // Build UI URL prefixes used for deep-linking to policies and incidents in Flexera One
@@ -760,7 +794,7 @@ script "js_take_in_parameters", type: "javascript" do
     grid_and_cwf.grid.push(policy_status)
   }
 
-  // Schedule duplicate child policies (same subscription/RG applied more than once) for deletion.
+  // Schedule duplicate child policies (same subscription applied more than once) for deletion.
   // ds_format_existing_policies retains only the newest copy in 'formatted'; the rest are duplicates.
   _.each(ds_format_existing_policies.duplicates, function(duplicate) {
     if (grid_and_cwf.to_delete.length < max_actions) {
@@ -776,37 +810,26 @@ script "js_take_in_parameters", type: "javascript" do
     }
   })
 
-  // For each Azure subscription/resource group combo, decide whether to create a new child policy,
-  // update the existing one, or leave it running unchanged.
-  _.each(ds_get_azure_resource_groups, function(item) {
-    var subscriptionID = item.subscriptionID
-    var resourceGroup = item.resourceGroup
-    // Composite key uniquely identifies this subscription + resource group combination
-    var cur_rg_key = subscriptionID + "/" + resourceGroup
+  // For each Azure subscription, decide whether to create a new child policy, update the existing
+  // one, or leave it running unchanged.
+  _.each(ds_get_azure_subscriptions, function(subscription) {
+    var cur_account_id = subscription.subscriptionID
 
     // Name and description are the same for both create and update operations
-    // Flexera limits policy names to 128 characters; truncate the middle part if needed
-    var name_prefix = child_policy_information.name + ": "
-    var name_suffix = " (" + subscriptionID + ") (child policy)"
-    var name_middle = item.subscriptionName + "/" + resourceGroup
-    var max_middle = 128 - name_prefix.length - name_suffix.length
-    if (name_middle.length > max_middle) { name_middle = name_middle.substring(0, max_middle - 3) + "..." }
-    var name = name_prefix + name_middle + name_suffix
-    var description = child_policy_information.name + " policy applied by [" + ds_format_self.name + "](" + applied_policy_url_prefix + meta_parent_policy_id + ") to Azure Resource Group **" + resourceGroup + "** in Subscription **" + item.subscriptionName + "** (`" + subscriptionID + "`).  " + child_policy_information.short_description
+    var name = child_policy_information.name + ": " + subscription.subscriptionName + " (" + cur_account_id + ") (child policy)"
+    var description = child_policy_information.name + " policy applied by [" + ds_format_self.name + "](" + applied_policy_url_prefix + meta_parent_policy_id + ") to Azure Subscription **" + subscription.subscriptionName + "** (`" + cur_account_id + "`).  " + child_policy_information.short_description
 
-    // Build the child policy options list: parent options plus the subscription-specific and RG-specific values
+    // Build the child policy options list: parent options plus the subscription-specific subscription ID
     var options = _.toArray(ds_child_policy_options)
-    options.push({ "name": "param_subscriptions_list", "value": [subscriptionID] })
-    options.push({ "name": "param_resource_groups_allow_or_deny", "value": "Allow" })
-    options.push({ "name": "param_resource_groups_list", "value": [cur_rg_key] })
+    options.push({ "name": "param_subscriptions_list", "value": [cur_account_id] })
 
-    if (!_.contains(_.keys(ds_format_existing_policies.formatted), cur_rg_key)) {
-      // No existing child policy for this subscription/RG — schedule creation
-      console.log("Child policy for " + cur_rg_key + " does not exist and should be created")
+    if (!_.contains(_.keys(ds_format_existing_policies.formatted), cur_account_id)) {
+      // No existing child policy for this subscription — schedule creation
+      console.log("Child policy for subscription " + cur_account_id + " does not exist and should be created")
 
       if (grid_and_cwf.to_create.length < max_actions) {
         grid_and_cwf.to_create.push({
-          "accountID": cur_rg_key,
+          "accountID": cur_account_id,
           "name": name,
           "description": description,
           "credentials": ds_format_self.credentials,
@@ -818,7 +841,7 @@ script "js_take_in_parameters", type: "javascript" do
           "flexera_host": flexera_host
         })
         grid_and_cwf.grid.push({
-          "accountID": cur_rg_key,
+          "accountID": cur_account_id,
           "policy_name": name,
           "meta_policy_status": "creating policy",
           "policy_status": "",
@@ -826,7 +849,7 @@ script "js_take_in_parameters", type: "javascript" do
         })
       } else {
         grid_and_cwf.grid.push({
-          "accountID": cur_rg_key,
+          "accountID": cur_account_id,
           "policy_name": name,
           "meta_policy_status": "policy to be created",
           "policy_status": "",
@@ -835,27 +858,27 @@ script "js_take_in_parameters", type: "javascript" do
       }
     } else {
       // Existing child policy found — mark it as to-keep and check whether an update is needed
-      console.log("Child policy for " + cur_rg_key + " exists and may need to be updated or kept")
-      should_keep[cur_rg_key] = true
+      console.log("Child policy for subscription " + cur_account_id + " exists and may need to be updated or kept")
+      should_keep[cur_account_id] = true
 
       // Compare each parent param value against the child's current value to detect drift
       var should_update = false
       _.each(ds_format_self.options, function(value, key) {
-        if (!_.isEqual(value, ds_format_existing_policies["formatted"][cur_rg_key]["options"][key])) {
-          console.log("Param mismatch for " + key + ": " + value + " != " + ds_format_existing_policies["formatted"][cur_rg_key]["options"][key])
+        if (!_.isEqual(value, ds_format_existing_policies["formatted"][cur_account_id]["options"][key])) {
+          console.log("Param mismatch for " + key + ": " + value + " != " + ds_format_existing_policies["formatted"][cur_account_id]["options"][key])
           should_update = true
         }
       })
 
       if (should_update) {
-        console.log("Child policy needs to be updated: " + JSON.stringify(ds_format_existing_policies.formatted[cur_rg_key]))
+        console.log("Child policy needs to be updated: " + JSON.stringify(ds_format_existing_policies.formatted[cur_account_id]))
         if (grid_and_cwf.to_update.length < max_actions) {
           // Within the action limit — schedule the update and add to the grid
-          add_to_grid(ds_format_existing_policies.formatted[cur_rg_key], "updating")
+          add_to_grid(ds_format_existing_policies.formatted[cur_account_id], "updating")
           grid_and_cwf.to_update.push({
-            "accountID": cur_rg_key,
-            "applied_policy_id": ds_format_existing_policies.formatted[cur_rg_key].applied_policy_id,
-            "name": ds_format_existing_policies.formatted[cur_rg_key].applied_policy_name,
+            "accountID": cur_account_id,
+            "applied_policy_id": ds_format_existing_policies.formatted[cur_account_id].applied_policy_id,
+            "name": ds_format_existing_policies.formatted[cur_account_id].applied_policy_name,
             "description": description,
             "credentials": ds_format_self.credentials,
             "options": options,
@@ -864,28 +887,28 @@ script "js_take_in_parameters", type: "javascript" do
           })
         } else {
           // Exceeded the action limit — note in the grid but defer the update to a future run
-          add_to_grid(ds_format_existing_policies.formatted[cur_rg_key], "to be updated")
+          add_to_grid(ds_format_existing_policies.formatted[cur_account_id], "to be updated")
         }
       } else {
         // No param drift detected — child policy is running normally
-        add_to_grid(ds_format_existing_policies.formatted[cur_rg_key], "running")
+        add_to_grid(ds_format_existing_policies.formatted[cur_account_id], "running")
       }
     }
   })
 
-  // Delete child policies whose subscription/RG combos are no longer in the current billing data
-  _.each(should_keep, function(keep, rg_key) {
+  // Delete child policies whose Azure subscriptions are no longer in the current subscription list
+  _.each(should_keep, function(keep, account_id) {
     if (!keep) {
       if (grid_and_cwf.to_delete.length < max_actions) {
         grid_and_cwf.to_delete.push({
-          "accountID": rg_key,
-          "id": ds_format_existing_policies.formatted[rg_key].applied_policy_id,
-          "name": ds_format_existing_policies.formatted[rg_key].applied_policy_name,
+          "accountID": account_id,
+          "id": ds_format_existing_policies.formatted[account_id].applied_policy_id,
+          "name": ds_format_existing_policies.formatted[account_id].applied_policy_name,
           "flexera_host": flexera_host
         })
-        add_to_grid(ds_format_existing_policies.formatted[rg_key], "terminating")
+        add_to_grid(ds_format_existing_policies.formatted[account_id], "terminating")
       } else {
-        add_to_grid(ds_format_existing_policies.formatted[rg_key], "to be terminated")
+        add_to_grid(ds_format_existing_policies.formatted[account_id], "to be terminated")
       }
     }
   })
@@ -1039,19 +1062,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_bad_storage_accounts_combined_incidents" do
-  run_script $js_ds_bad_storage_accounts_combined_incidents, $ds_child_incident_details
+datasource "ds_azure_idle_ml_endpoints_incident_combined_incidents" do
+  run_script $js_ds_azure_idle_ml_endpoints_incident_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_bad_storage_accounts_combined_incidents", type: "javascript" do
+script "js_ds_azure_idle_ml_endpoints_incident_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-'EOS'
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Azure Storage Accounts Allowing Default Network Access Found" then include it in the filter result
-    if (s.indexOf("Azure Storage Accounts Allowing Default Network Access Found") > -1) {
+    // If the incident summary contains "Azure Idle ML Online Endpoints Found" then include it in the filter result
+    if (s.indexOf("Azure Idle ML Online Endpoints Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         violation["incident_id"] = incident["id"];
         result.push(violation);
@@ -1072,11 +1095,11 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Azure Storage Accounts Allowing Default Network Access Found
-  validate $ds_bad_storage_accounts_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Azure Storage Accounts Allowing Default Network Access Found"
+    # Consolidated incident for Azure Idle ML Online Endpoints Found
+  validate $ds_azure_idle_ml_endpoints_incident_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Azure Idle ML Online Endpoints Found"
     escalate $esc_email
-    
+    escalate $esc_delete_endpoints
     check logic_or(eq($param_skip_consolidated_incident, "Yes"), eq(size(data), 0))
     export do
       resource_level true
@@ -1089,29 +1112,56 @@ policy "policy_scheduled_report" do
       field "resourceGroup" do
         label "Resource Group"
       end
-      field "resourceID" do
-        label "Storage Account ID"
-      end
       field "resourceName" do
-        label "Storage Account Name"
+        label "Endpoint Name"
       end
-      field "resourceType" do
-        label "Resource Type"
+      field "workspaceName" do
+        label "Workspace Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
       end
       field "region" do
         label "Region"
       end
-      field "tags" do
-        label "Tags"
+      field "provisioningState" do
+        label "Provisioning State"
       end
-      field "creationTime" do
-        label "Created At"
+      field "instanceTypes" do
+        label "Instance Type(s)"
       end
-      field "networkDefaultAction" do
-        label "Network Default Action"
+      field "instanceCount" do
+        label "Instance Count"
       end
-      field "publicNetworkAccess" do
-        label "Public Network Access"
+      field "deploymentNames" do
+        label "Deployment Name(s)"
+      end
+      field "deploymentCount" do
+        label "Deployment Count"
+      end
+      field "createdOn" do
+        label "Created On"
+      end
+      field "totalRequests" do
+        label "Total Requests (Lookback Period)"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "resourceID" do
+        label "Resource ID"
       end
       field "id" do
         label "ID"
@@ -1134,7 +1184,7 @@ EOS
     export "grid" do
       resource_level true
       field "accountID" do
-        label "Azure Subscription ID / Resource Group"
+        label "Azure Subscription ID"
       end
       field "id" do
         label "Applied Policy ID"
@@ -1203,7 +1253,7 @@ EOS
     export do
       resource_level false
       field "accountID" do
-        label "Azure Subscription ID / Resource Group"
+        label "Azure Subscription ID"
       end
       field "name" do
         label "Name"
@@ -1244,7 +1294,7 @@ EOS
     export do
       resource_level false
       field "accountID" do
-        label "Azure Subscription ID / Resource Group"
+        label "Azure Subscription ID"
       end
       field "name" do
         label "Name"
@@ -1270,7 +1320,7 @@ EOS
     export do
       resource_level false
       field "accountID" do
-        label "Azure Subscription ID / Resource Group"
+        label "Azure Subscription ID"
       end
       field "name" do
         label "Name"
@@ -1297,7 +1347,7 @@ EOS
     export "grid" do
       resource_level true
       field "accountID" do
-        label "Azure Subscription ID / Resource Group"
+        label "Azure Subscription ID"
       end
       field "id" do
         label "Applied Policy ID"
@@ -1332,6 +1382,19 @@ end
 # Escalations
 ###############################################################################
 
+# Escalation for Delete Idle ML Online Endpoints
+escalation "esc_delete_endpoints" do
+  automatic false # Do not automatically action from meta parent. the child will handle automatic escalations if param is set
+  label "Delete Idle ML Online Endpoints"
+  description "Approval to delete all selected Azure ML managed online endpoints"
+
+  # Run declaration should go at end, after any parameters that may exist
+  run "esc_delete_endpoints", data, rs_governance_host, rs_project_id
+end
+define esc_delete_endpoints($data, $governance_host, $rs_project_id) do
+  $action_options = []
+  call child_run_action($data, $governance_host, $rs_project_id, "Delete Idle ML Online Endpoints", $action_options)
+end
 
 # Used only for emailing the combined child incident if so desired
 escalation "esc_email" do
