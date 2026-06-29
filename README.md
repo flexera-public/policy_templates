@@ -146,6 +146,11 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Azure Unused App Service Plans](./cost/azure/unused_app_service_plans)
 
+* PostgreSQL
+
+  * [Azure Rightsize PostgreSQL Flexible Servers](./cost/azure/rightsize_postgresql_flexible)
+  * [Azure Rightsize PostgreSQL Single Servers](./cost/azure/rightsize_postgresql_single)
+
 * SQL
 
   * [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
