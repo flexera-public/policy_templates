@@ -109,6 +109,7 @@ These templates can generate savings estimates for your environment. The inciden
 
   * [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
   * [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
+  * [Azure Idle ML Online Endpoints](./cost/azure/idle_ml_online_endpoints)
   * [Azure Long Stopped Compute Instances](./cost/azure/long_stopped_instances)
   * [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
   * [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
@@ -185,6 +186,14 @@ These templates can generate savings estimates for your environment. The inciden
   * [Spot Security - Compliance Report](./security/flexera/spot/security_report)
 
 #### Google
+
+* AI and Machine Learning
+
+  * [Google Idle Vertex AI Online Prediction Endpoints](./cost/google/idle_vertex_ai_endpoints)
+
+* All
+
+  * [Google Cloud Resources Under or Approaching Extended Support](./cost/google/extended_support)
 
 * Compute
 

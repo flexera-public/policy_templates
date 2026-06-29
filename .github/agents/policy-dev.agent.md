@@ -2400,6 +2400,32 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automat
    - The JSON example must list **all** permissions from the credential block (including action-only ones — those should still appear in the JSON so the administrator can apply full permissions as needed).
    - The `Resource: "*"` is standard for all AWS service actions in this catalog.
 
+9. **Google Cloud API enablement paragraph** — For any template that uses a Google Cloud Credential (`provider=gce`) and calls Google Cloud APIs, add the following paragraph **immediately after the `The [Provider-Specific Credentials]...` closing footnote** (before `## Supported Clouds`). List every `*.googleapis.com` service the template calls, using the `https://console.cloud.google.com/flows/enableapi?apiid=` link format. Use "the following API" (singular) when only one API is listed; use "the following APIs" (plural) when there are two or more. Templates that call only Flexera APIs (no Google Cloud APIs) do not need this paragraph.
+
+   ```markdown
+   Additionally, this policy template requires that the following APIs be enabled in your Google Cloud environment:
+
+   - [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
+   - [Compute Engine API](https://console.cloud.google.com/flows/enableapi?apiid=compute.googleapis.com)
+   - [Recommender API](https://console.cloud.google.com/flows/enableapi?apiid=recommender.googleapis.com)
+   ```
+
+   Common API names and their `apiid` values:
+
+   | API name | apiid |
+   |---|---|
+   | Cloud Resource Manager API | `cloudresourcemanager.googleapis.com` |
+   | Compute Engine API | `compute.googleapis.com` |
+   | Cloud Monitoring API | `monitoring.googleapis.com` |
+   | Cloud SQL Admin API | `sqladmin.googleapis.com` |
+   | Kubernetes Engine API | `container.googleapis.com` |
+   | Cloud Run Admin API | `run.googleapis.com` |
+   | Recommender API | `recommender.googleapis.com` |
+   | Cloud Storage API | `storage.googleapis.com` |
+   | Cloud Billing API | `cloudbilling.googleapis.com` |
+
+   Add any other API not listed here using the same link pattern.
+
 The remaining two required README sections (continuing the main list above):
 
 1. `## Supported Clouds` — list of supported providers, or "All" for cloud-agnostic
