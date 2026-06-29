@@ -7,9 +7,9 @@ This policy template checks all the Azure MySQL Single Servers in Azure Subscrip
 ## How It Works
 
 - The policy leverages the Azure API to check all Azure MySQL Single Servers and then checks the number of connections and average CPU utilization over a user-specified number of days.
-- The policy identifies all servers that either have had no connections over a user-specified number of days and provides the relevant recommendation.
+- The policy identifies all servers that have had no connections over a user-specified number of days and flags them as unused.
 - The recommendation provided for unused servers is a deletion action. These servers can be deleted in an automated manner or after approval.
-- The policy identifies all servers that have had connections but have average CPU usage below the user-specified threshold over a user-specified number of days and provides the relevant recommendation.
+- The policy identifies all servers that have had connections but have average CPU usage below the user-specified threshold over a user-specified number of days and flags them as underutilized.
 - The recommendation provided for underutilized servers is a downsize action. These servers can be downsized in an automated manner or after approval.
 
 ### Policy Savings Details

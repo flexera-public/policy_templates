@@ -7,10 +7,9 @@ This policy template checks all the Azure PostgreSQL Single Servers in Azure Sub
 ## How It Works
 
 - The policy leverages the Azure API to check all Azure PostgreSQL Single Servers and then checks the number of connections and average CPU utilization over a user-specified number of days.
-- The policy identifies all servers that either have had no connections over a user-specified number of days and provides the relevant recommendation.
 - An Azure PostgreSQL Single Server is considered **unused** if the average number of active connections observed during the lookback period does not exceed the *Unused Server Connection Threshold* parameter (default: 10). The average is used rather than the maximum to avoid false positives from brief connection spikes during provisioning or maintenance. Azure PostgreSQL Single Servers maintain several internal connections at all times; the default of 10 is set above the typical idle baseline. Run the policy once and inspect the `Average Active Connections` column to calibrate the threshold for your environment.
 - The recommendation provided for unused servers is a deletion action. These servers can be deleted in an automated manner or after approval.
-- The policy identifies all servers that have had connections but have average CPU usage below the user-specified threshold over a user-specified number of days and provides the relevant recommendation.
+- The policy identifies all servers that have had connections but have average CPU usage below the user-specified threshold over a user-specified number of days and flags them as underutilized.
 - The recommendation provided for underutilized servers is a downsize action. These servers can be downsized in an automated manner or after approval.
 
 ### Policy Savings Details
