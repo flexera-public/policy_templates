@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.9.0
+
+- New `Dimension List` parameter allows filtering recommendations by Rule-Based Dimensions and Tag Dimensions.
+- `Billing Center List` parameter now supports all Billing Centers instead of just top-level ones.
+- Incident table now shows both top-level and bottom-level Billing Center for each recommendation.
+- Added option to filter for only active recommendations.
+- Added support for additional recommendation types.
+
 ## v0.8.2
 
 - Updated documentation link in policy description. Functionality unchanged.

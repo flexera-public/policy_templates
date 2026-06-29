@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "0.8.2",
+  version: "0.9.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -70,13 +70,31 @@ parameter "param_bc_list" do
   default []
 end
 
+parameter "param_dimension_list" do
+  type "list"
+  category "Filters"
+  label "Dimension List"
+  description "A list of Rule-Based and Tag Dimension values to email recommendations for in Key=Value format. Recommendations that match any of the specified Key=Value pairs will be included in the results. Leave blank to not filter by dimension. Only Rule-Based Dimensions and Tag Dimensions are supported. Example: Cost Center=Engineering"
+  allowed_pattern /\S[^=]*=[^=]*\S/
+  default []
+end
+
 parameter "param_recommendation_list" do
   type "list"
   category "Filters"
   label "Recommendation List"
   description "The types of recommendations to include in the email."
-  allowed_values ["Compute", "Snapshot", "Database", "IP Address", "Storage", "Network", "PaaS", "Reservation", "Savings Plan"]
-  default ["Compute", "Snapshot", "Database", "IP Address", "Storage", "Network", "PaaS", "Reservation", "Savings Plan"]
+  allowed_values ["AI/ML", "Compute", "Snapshot", "Database", "IP Address", "Storage", "Network", "PaaS", "Reservation", "Savings Plan"]
+  default ["AI/ML", "Compute", "Snapshot", "Database", "IP Address", "Storage", "Network", "PaaS", "Reservation", "Savings Plan"]
+end
+
+parameter "param_status" do
+  type "string"
+  category "Filters"
+  label "Recommendation Status"
+  description "Whether to include all existing recommendations or only active recommendations."
+  allowed_values "All Recommendations", "Active Recommendations"
+  default "All Recommendations"
 end
 
 parameter "param_policy_list" do
@@ -128,11 +146,16 @@ script "js_recommendation_types", type:"javascript" do
   result "result"
   code <<-'EOS'
   result = {
+    // Policy templates
     "AWS Resources Under Extended Support": "Compute",
     "AWS EC2 Compute Optimizer Recommendations": "Compute",
     "AWS Idle Compute Instances": "Compute",
+    "AWS Idle FSx File Systems": "Storage",
+    "AWS Idle Lambda Functions": "PaaS",
     "AWS Idle NAT Gateways": "Network",
+    "AWS Idle SageMaker Endpoints": "AI/ML",
     "AWS Old Snapshots": "Snapshot",
+    "AWS Resources Under or Approaching Extended Support": "Compute",
     "AWS Rightsize EBS Volumes": "Storage",
     "AWS Rightsize EC2 Instances": "Compute",
     "AWS Rightsize RDS Instances": "Database",
@@ -146,14 +169,17 @@ script "js_recommendation_types", type:"javascript" do
     "AWS Unused Volumes": "Storage",
     "AWS Superseded EBS Volumes": "Storage",
     "AWS Superseded EC2 Instances": "Compute",
+    "AWS Superseded RDS Instances": "Database",
     "AWS Reserved Instances Recommendations": "Reservation",
     "AWS Savings Plan Recommendations": "Savings Plan",
+    "Azure Advisor Compute Instances Recommendations": "Compute",
     "Azure Databricks Rightsize Compute Instances": "Compute",
     "Azure Data Lake Optimization": "Storage",
     "Azure Hybrid Use Benefit for Windows Server": "Compute",
     "Azure Hybrid Use Benefit for Linux Server": "Compute",
     "Azure Hybrid Use Benefit for SQL": "Compute",
     "Azure Idle Compute Instances": "Compute",
+    "Azure Idle ML Online Endpoints": "AI/ML",
     "Azure Long Stopped Compute Instances": "Compute",
     "Azure Old Snapshots": "Snapshot",
     "Azure Rightsize Compute Instances": "Compute",
@@ -162,11 +188,14 @@ script "js_recommendation_types", type:"javascript" do
     "Azure Rightsize MySQL Flexible Servers": "Database",
     "Azure Rightsize NetApp Files": "Storage",
     "Azure Rightsize NetApp Resources": "Storage",
+    "Azure Rightsize PostgreSQL Flexible Servers": "Database",
+    "Azure Rightsize PostgreSQL Single Servers": "Database",
     "Azure Rightsize SQL Databases": "Database",
     "Azure Rightsize SQL Database Storage": "Database",
     "Azure Rightsize SQL Managed Instances": "Database",
     "Azure Rightsize SQL Managed Instance Storage": "Database",
     "Azure Rightsize Synapse SQL Pools": "Database",
+    "Azure Sentinel Commitment Tier Recommendations": "Reservation",
     "Azure Superseded Compute Instances": "Compute",
     "Azure Unused App Service Plans": "PaaS",
     "Azure Unused Firewalls": "Network",
@@ -179,10 +208,12 @@ script "js_recommendation_types", type:"javascript" do
     "Google Idle Cloud SQL Instance Recommender": "Database",
     "Google Idle IP Address Recommender": "IP Address",
     "Google Idle Persistent Disk Recommender": "Storage",
+    "Google Idle Vertex AI Online Prediction Endpoints": "AI/ML",
     "Google Idle VM Recommender": "Compute",
     "Google Old Snapshots": "Snapshot",
     "Google Rightsize Cloud SQL Recommender": "Database",
     "Google Rightsize Cloud SQL Instances": "Database",
+    "Google Rightsize Persistent Disks": "Storage",
     "Google Rightsize VM Recommender": "Compute",
     "Google Rightsize VM Instances": "Compute",
     "Google Unused Disks": "Storage",
@@ -191,7 +222,36 @@ script "js_recommendation_types", type:"javascript" do
     "Oracle Cloud Advisor: Rightsize Autonomous Database Service": "Database",
     "Oracle Cloud Advisor: Rightsize Base Database Service": "Database",
     "Oracle Cloud Advisor: Rightsize Load Balancers": "Network",
-    "Oracle Cloud Advisor: Unattached Volumes": "Storage"
+    "Oracle Cloud Advisor: Unattached Volumes": "Storage",
+    // Rules engine
+    "AWS Idle EBS Volume": "Storage",
+    "AWS Idle EBS Volumes": "Storage",
+    "AWS Idle EC2 Instance": "Compute",
+    "AWS Idle EC2 Instances": "Compute",
+    "AWS Idle NAT Gateway": "Network",
+    "AWS Idle NAT Gateways": "Network",
+    "AWS Idle RDS Instance": "Database",
+    "AWS Idle RDS Instances": "Database",
+    "AWS Old RDS Cluster Snapshot": "Snapshot",
+    "AWS Old RDS Cluster Snapshots": "Snapshot",
+    "AWS Old RDS Snapshot": "Snapshot",
+    "AWS Old RDS Snapshots": "Snapshot",
+    "AWS Superseded EC2 Instance": "Compute",
+    "AWS Superseded EC2 Instances": "Compute",
+    "AWS Underutilized EBS Volume": "Storage",
+    "AWS Underutilized EBS Volumes": "Storage",
+    "AWS Underutilized EC2 Instance": "Compute",
+    "AWS Underutilized EC2 Instances": "Compute",
+    "AWS Underutilized RDS Instance": "Database",
+    "AWS Underutilized RDS Instances": "Database",
+    "AWS Unused Application Load Balancer": "Network",
+    "AWS Unused Application Load Balancers": "Network",
+    "AWS Unused Classic Load Balancer": "Network",
+    "AWS Unused Classic Load Balancers": "Network",
+    "AWS Unused IP Address": "IP Address",
+    "AWS Unused IP Addresses": "IP Address",
+    "AWS Unused Network Load Balancer": "Network",
+    "AWS Unused Network Load Balancers": "Network"
   }
 EOS
 end
@@ -250,6 +310,76 @@ script "js_currency", type:"javascript" do
 EOS
 end
 
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+      field "ancestor_ids", jmes_path(col_item, "ancestor_ids")
+    end
+  end
+end
+
+datasource "ds_billing_centers_table" do
+  run_script $js_billing_centers_table, $ds_billing_centers
+end
+
+script "js_billing_centers_table", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  _.each(ds_billing_centers, function(bc) { result[bc['id']] = bc })
+EOS
+end
+
+datasource "ds_dimensions" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/dimensions"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "dimensions[].{id: id, name: name, type:type}") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+    end
+  end
+end
+
+datasource "ds_dimensions_table" do
+  run_script $js_dimensions_table, $ds_dimensions
+end
+
+script "js_dimensions_table", type: "javascript" do
+  parameters "ds_dimensions"
+  result "result"
+  code <<-'EOS'
+  result = {}
+  _.each(ds_dimensions, function(dimension) {
+    if (dimension['id'].indexOf("rbd_") == 0 || dimension['id'].indexOf("tag_") == 0) {
+      result[dimension['id']] = dimension['id']
+      result[dimension['name']] = dimension['id']
+    }
+  })
+EOS
+end
+
 datasource "ds_recommendations" do
   request do
     auth $auth_flexera
@@ -258,54 +388,206 @@ datasource "ds_recommendations" do
     query "view", "extended"
     header "Api-Version", "1.0"
   end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "recommendation", jmes_path(col_item, "recommendation")
+      field "type", jmes_path(col_item, "type")
+      field "createdAt", jmes_path(col_item, "createdAt")
+      field "updatedAt", jmes_path(col_item, "updatedAt")
+      field "vendor", jmes_path(col_item, "vendor")
+      field "policySet", jmes_path(col_item, "policySet")
+      field "accountID", jmes_path(col_item, "accountID")
+      field "accountName", jmes_path(col_item, "accountName")
+      field "tags", jmes_path(col_item, "tags")
+      field "resourceID", jmes_path(col_item, "resourceID")
+      field "resourceType", jmes_path(col_item, "resourceType")
+      field "region", jmes_path(col_item, "region")
+      field "service", jmes_path(col_item, "service")
+      field "databaseEngine", jmes_path(col_item, "databaseEngine")
+      field "billingCenterName", jmes_path(col_item, "billingCenterName")
+      field "billingCenterID", jmes_path(col_item, "billingCenterID")
+      field "savings", jmes_path(col_item, "savings")
+      field "quantityToPurchase", jmes_path(col_item, "quantityToPurchase")
+      field "detailsExtended", jmes_path(col_item, "detailsExtended")
+      field "ruleBasedDimensions", jmes_path(col_item, "ruleBasedDimensions")
+      field "customTagDimensions", jmes_path(col_item, "customTagDimensions")
+      field "incidentID", jmes_path(col_item, "incidentID")
+      field "status", jmes_path(col_item, "status")
+    end
+  end
 end
 
-datasource "ds_recommendations_filtered" do
-  run_script $js_recommendations_filtered, $ds_recommendations, $ds_recommendation_types, $param_vendor_list, $param_accounts_allow_or_deny, $param_accounts_list, $param_bc_list, $param_recommendation_list, $param_policy_list
+datasource "ds_recommendations_filtered_status" do
+  run_script $js_recommendations_filtered_status, $ds_recommendations, $param_status
 end
 
-script "js_recommendations_filtered", type: "javascript" do
-  parameters "ds_recommendations", "ds_recommendation_types", "param_vendor_list", "param_accounts_allow_or_deny", "param_accounts_list", "param_bc_list", "param_recommendation_list", "param_policy_list"
+script "js_recommendations_filtered_status", type: "javascript" do
+  parameters "ds_recommendations", "param_status"
   result "result"
   code <<-'EOS'
   result = _.filter(ds_recommendations, function(recommendation) {
+    return param_status == "All Recommendations" || recommendation["status"] == "active"
+  })
+EOS
+end
+
+datasource "ds_recommendations_filtered_vendor" do
+  run_script $js_recommendations_filtered_vendor, $ds_recommendations_filtered_status, $param_vendor_list
+end
+
+script "js_recommendations_filtered_vendor", type: "javascript" do
+  parameters "ds_recommendations_filtered_status", "param_vendor_list"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_recommendations_filtered_status, function(recommendation) {
     include_recommendation = true
 
-    if (param_vendor_list.length > 0) {
-      if (_.contains(param_vendor_list, recommendation['vendor']) == false) {
-        include_recommendation = false
-      }
+    vendor_list = _.map(param_vendor_list, function(vendor) { return vendor.toLowerCase() })
+
+    if (param_vendor_list.length > 0 && recommendation['vendor']) {
+      include_recommendation = _.contains(vendor_list, recommendation['vendor'].toLowerCase())
     }
+
+    return include_recommendation
+  })
+EOS
+end
+
+datasource "ds_recommendations_filtered_account" do
+  run_script $js_recommendations_filtered_account, $ds_recommendations_filtered_vendor, $param_accounts_allow_or_deny, $param_accounts_list
+end
+
+script "js_recommendations_filtered_account", type: "javascript" do
+  parameters "ds_recommendations_filtered_vendor", "param_accounts_allow_or_deny", "param_accounts_list"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_recommendations_filtered_vendor, function(recommendation) {
+    include_recommendation = true
 
     if (param_accounts_list.length > 0) {
-      include_account = _.contains(param_accounts_list, recommendation['accountID']) || _.contains(param_accounts_list, recommendation['accountName']) || _.contains(param_accounts_list, recommendation['accountName'].toLowerCase())
-      if (param_accounts_allow_or_deny == 'Deny') { include_account = !include_account }
-
-      if (include_account == false) { include_recommendation = false }
+      include_recommendation = _.contains(param_accounts_list, recommendation['accountID']) || _.contains(param_accounts_list, recommendation['accountName']) || _.contains(param_accounts_list, recommendation['accountName'].toLowerCase())
+      if (param_accounts_allow_or_deny == 'Deny') { include_recommendation = !include_recommendation }
     }
+
+    return include_recommendation
+  })
+EOS
+end
+
+datasource "ds_recommendations_filtered_dimension" do
+  run_script $js_recommendations_filtered_dimension, $ds_recommendations_filtered_account, $ds_dimensions_table, $param_dimension_list
+end
+
+script "js_recommendations_filtered_dimension", type: "javascript" do
+  parameters "ds_recommendations_filtered_account", "ds_dimensions_table", "param_dimension_list"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_recommendations_filtered_account, function(recommendation) {
+    include_recommendation = true
+
+    if (param_dimension_list.length > 0) {
+      include_recommendation = false
+
+      _.each(param_dimension_list, function(dimension) {
+        if (dimension.split('=')[0] && dimension.split('=')[1]) {
+          key = ds_dimensions_table[dimension.split('=')[0].trim()]
+          value = dimension.split('=')[1].trim()
+
+          if (recommendation['ruleBasedDimensions'] && recommendation['ruleBasedDimensions'][key] == value) {
+            include_recommendation = true
+          }
+
+          if (recommendation['customTagDimensions'] && recommendation['customTagDimensions'][key] == value) {
+            include_recommendation = true
+          }
+        }
+      })
+    }
+
+    return include_recommendation
+  })
+EOS
+end
+
+datasource "ds_recommendations_filtered_bc" do
+  run_script $js_recommendations_filtered_bc, $ds_recommendations_filtered_dimension, $ds_billing_centers_table, $param_bc_list
+end
+
+script "js_recommendations_filtered_bc", type: "javascript" do
+  parameters "ds_recommendations_filtered_dimension", "ds_billing_centers_table", "param_bc_list"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_recommendations_filtered_dimension, function(recommendation) {
+    include_recommendation = true
 
     if (param_bc_list.length > 0) {
-      if (_.contains(param_bc_list, recommendation['billingCenterName']) == false && _.contains(param_bc_list, recommendation['billingCenterName'].toLowerCase()) == false) {
-        include_recommendation = false
+      include_recommendation = false
+
+      // Add known top-level BC from recommendation
+      billing_centers = [ recommendation['billingCenterName'], recommendation['billingCenterName'].toLowerCase() ]
+
+      if (recommendation['ruleBasedDimensions'] && recommendation['ruleBasedDimensions']['rbd_bc']) {
+        bc = ds_billing_centers_table[recommendation['ruleBasedDimensions']['rbd_bc']]
+
+        while (bc) {
+          billing_centers.push(bc['name'])
+          billing_centers.push(bc['name'].toLowerCase())
+          bc = bc['parent_id'] ? ds_billing_centers_table[bc['parent_id']] : null
+        }
       }
+
+      // Remove duplicates and invalid values
+      billing_centers = _.compact(_.uniq(billing_centers))
+
+      // If any of the billing centers match something in the list, track that
+      _.each(param_bc_list, function(bc_name) {
+        if (_.contains(billing_centers, bc_name)) { include_recommendation = true }
+      })
     }
 
-    if (param_bc_list.length > 0) {
-      if (_.contains(param_bc_list, recommendation['billingCenterName']) == false && _.contains(param_bc_list, recommendation['billingCenterName'].toLowerCase()) == false) {
-        include_recommendation = false
-      }
-    }
+    return include_recommendation
+  })
+EOS
+end
+
+datasource "ds_recommendations_filtered_reclist" do
+  run_script $js_recommendations_filtered_reclist, $ds_recommendations_filtered_bc, $ds_recommendation_types, $param_recommendation_list
+end
+
+script "js_recommendations_filtered_reclist", type: "javascript" do
+  parameters "ds_recommendations_filtered_bc", "ds_recommendation_types", "param_recommendation_list"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_recommendations_filtered_bc, function(recommendation) {
+    include_recommendation = true
 
     if (param_recommendation_list.length > 0) {
-      if (_.contains(param_recommendation_list, ds_recommendation_types[recommendation['recommendation']]) == false) {
-        include_recommendation = false
-      }
+      // Filter out [Demo] at the end of names for compatibility with demo environment
+      // Also only grab the portion before the : in case of child policy naming schema
+      rec_name = recommendation['recommendation'].replace(/\s*\[.*?\]\s*$/, '').split(':')[0]
+      include_recommendation = _.contains(param_recommendation_list, ds_recommendation_types[rec_name])
     }
 
+    return include_recommendation
+  })
+EOS
+end
+
+datasource "ds_recommendations_filtered_pollist" do
+  run_script $js_recommendations_filtered_pollist, $ds_recommendations_filtered_reclist, $param_policy_list
+end
+
+script "js_recommendations_filtered_pollist", type: "javascript" do
+  parameters "ds_recommendations_filtered_reclist", "param_policy_list"
+  result "result"
+  code <<-'EOS'
+  result = _.filter(ds_recommendations_filtered_reclist, function(recommendation) {
+    include_recommendation = true
+
     if (param_policy_list.length > 0) {
-      if (_.contains(param_policy_list, recommendation['recommendation']) == false && _.contains(param_bc_list, recommendation['recommendation'].toLowerCase()) == false) {
-        include_recommendation = false
-      }
+      include_recommendation = _.contains(param_policy_list, recommendation['recommendation']) || _.contains(param_policy_list, recommendation['recommendation'].toLowerCase())
     }
 
     return include_recommendation
@@ -314,18 +596,26 @@ EOS
 end
 
 datasource "ds_recommendations_organized" do
-  run_script $js_recommendations_organized, $ds_recommendations_filtered, $ds_currency, $param_always_send_incident, "param_incident_csv"
+  run_script $js_recommendations_organized, $ds_recommendations_filtered_pollist, $ds_currency, $ds_billing_centers_table, $param_always_send_incident, "param_incident_csv"
 end
 
 script "js_recommendations_organized", type: "javascript" do
-  parameters "ds_recommendations_filtered", "ds_currency", "param_always_send_incident", "param_incident_csv"
+  parameters "ds_recommendations_filtered_pollist", "ds_currency", "ds_billing_centers_table", "param_always_send_incident", "param_incident_csv"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : "Incident table CSV file has been attached to emails for this incident."
 
   result = []
 
-  _.each(ds_recommendations_filtered, function(recommendation) {
+  _.each(ds_recommendations_filtered_pollist, function(recommendation) {
+    billingCenterTopLevel = recommendation['billingCenterName']
+    billingCenterBottomLevel = ""
+
+    if (recommendation['ruleBasedDimensions'] && recommendation['ruleBasedDimensions']['rbd_bc']) {
+      bc = ds_billing_centers_table[recommendation['ruleBasedDimensions']['rbd_bc']]
+      if (bc) { billingCenterBottomLevel = bc['name'] }
+    }
+
     accountID = recommendation['accountID']
 
     if (accountID == '' || typeof(accountID) != 'string') {
@@ -444,10 +734,17 @@ script "js_recommendations_organized", type: "javascript" do
     send_incident = ""
     if (param_always_send_incident == "Yes") { send_incident = new Date().toISOString() }
 
+    vendor = recommendation['vendor']
+    if (vendor == "aws") { vendor = "AWS" }
+    if (vendor == "azure") { vendor = "Azure" }
+    if (vendor == "google") { vendor = "Google" }
+    if (vendor == "oracle") { vendor = "Oracle" }
+
     result.push({
       recommendationID: recommendation['id'],
-      billingCenter: recommendation['billingCenterName'],
-      vendor: recommendation['vendor'],
+      billingCenter: billingCenterTopLevel,
+      billingCenterBottom: billingCenterBottomLevel,
+      vendor: vendor,
       policyName: recommendation['recommendation'],
       savings: recommendation['savings'],
       service: recommendation['service'],
@@ -491,7 +788,10 @@ policy "pol_recommendations" do
     export do
       resource_level true
       field "billingCenter" do
-        label "Billing Center"
+        label "Billing Center (Top)"
+      end
+      field "billingCenterBottom" do
+        label "Billing Center (Bottom)"
       end
       field "vendor" do
         label "Vendor"
