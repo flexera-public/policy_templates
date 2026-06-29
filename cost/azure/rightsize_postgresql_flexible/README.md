@@ -1,13 +1,13 @@
-# Azure Rightsize MySQL Flexible Servers
+# Azure Rightsize PostgreSQL Flexible Servers
 
 ## What It Does
 
-This policy template checks all the Azure MySQL Flexible Servers in Azure Subscriptions for the average CPU usage and number of connections over a user-specified number of days. If there were no connections to the server, the server is recommended for deletion. If there were connections but the average CPU usage was below a user-specified threshold, the server is recommended for downsizing. Both sets of servers returned from this policy are emailed to the user.
+This policy template checks all the Azure PostgreSQL Flexible Servers in Azure Subscriptions for the average CPU usage and number of connections over a user-specified number of days. If the average number of active connections does not exceed a user-specified threshold (default: 1), the server is recommended for deletion. If connections exceed the threshold but average CPU usage is below a user-specified percentage, the server is recommended for downsizing. Both sets of servers returned from this policy are emailed to the user.
 
 ## How It Works
 
-- The policy leverages the Azure API to check all Azure MySQL Flexible Servers and then checks the number of connections and average CPU utilization over a user-specified number of days.
-- The policy identifies all servers that have had no connections over a user-specified number of days and flags them as unused.
+- The policy leverages the Azure API to check all Azure PostgreSQL Flexible Servers and then checks the number of connections and average CPU utilization over a user-specified number of days.
+- An Azure PostgreSQL Flexible Server is considered **unused** if the average number of active connections observed during the lookback period does not exceed the *Unused Server Connection Threshold* parameter (default: 10). The average is used rather than the maximum to avoid false positives from brief connection spikes during provisioning or maintenance. Azure PostgreSQL Flexible Servers maintain several internal connections at all times; the default of 10 is set above the typical idle baseline. Run the policy once and inspect the `Average Active Connections` column to calibrate the threshold for your environment.
 - The recommendation provided for unused servers is a deletion action. These servers can be deleted in an automated manner or after approval.
 - The policy identifies all servers that have had connections but have average CPU usage below the user-specified threshold over a user-specified number of days and flags them as underutilized.
 - The recommendation provided for underutilized servers is a downsize action. These servers can be downsized in an automated manner or after approval.
@@ -47,6 +47,7 @@ The policy includes the estimated monthly savings. The estimated monthly savings
 - *Statistic Lookback Period* - How many days back to look at connection and CPU utilization data for servers. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days.
 - *Report Unused or Underutilized* - Whether to report on unused servers, underutilized servers, or both. If both are selected, unused servers will not appear in the list of underutilized servers regardless of CPU usage.
 - *Underutilized Server CPU Threshold (%)* - The CPU threshold at which to consider an server to be underutilized and therefore be flagged for downsizing.
+- *Unused Server Connection Threshold* - The maximum average number of active connections a server can have over the lookback period and still be considered unused. Uses the average rather than the maximum to avoid false positives from brief connection spikes during provisioning or maintenance. Azure PostgreSQL Flexible Servers maintain several internal connections at all times (connection pooling, monitoring, HA processes, etc.); the default of 10 is chosen to be above the typical idle baseline. Run the policy once and inspect the `Average Active Connections` column to determine the appropriate threshold for your environment.
 - *Skip Instance Sizes* - Whether to recommend downsizing multiple sizes. When set to 'No', only the next smaller size will ever be recommended for downsizing. When set to 'Yes', more aggressive downsizing recommendations will be made when appropriate.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
@@ -58,8 +59,8 @@ For example if a user selects the "Delete Unused Servers" action while applying 
 ## Policy Actions
 
 - Sends an email notification
-- Downsize Azure MySQL Flexible Server (if underutilized) after approval
-- Delete Azure MySQL Flexible Server (if unused) after approval
+- Downsize Azure PostgreSQL Flexible Server (if underutilized) after approval
+- Delete Azure PostgreSQL Flexible Server (if unused) after approval
 
 ## Prerequisites
 
@@ -67,9 +68,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 - [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure-resource-manager) (*provider=azure_rm*) which has the following permissions:
   - `Microsoft.Resources/subscriptions/read`
-  - `Microsoft.DBforMySQL/flexibleServers/read`
-  - `Microsoft.DBforMySQL/flexibleServers/write`*
-  - `Microsoft.DBforMySQL/flexibleServers/delete`*
+  - `Microsoft.DBforPostgreSQL/flexibleServers/read`
+  - `Microsoft.DBforPostgreSQL/flexibleServers/write`*
+  - `Microsoft.DBforPostgreSQL/flexibleServers/delete`*
   - `Microsoft.Insights/metrics/read`
 
   \* Only required for taking action (deleting or downsizing); the policy will still function in a read-only capacity without these permissions.
