@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "daily"
 info(
-  version: "0.1.1",
+  version: "0.1.2",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Rule-Based Dimensions",
@@ -467,7 +467,6 @@ script "js_csv_validated", type: "javascript" do
   result "result"
   code <<-'EOS'
   var findings = []
-  var hasErrors = false
 
   // V1: Missing ||DIVIDER|| column
   if (ds_csv_parsed.dividerIndex === -1) {
@@ -479,7 +478,6 @@ script "js_csv_validated", type: "javascript" do
       message: "CSV is missing the required ||DIVIDER|| column. Cannot determine which columns are rule dimensions and which are RBD outputs.",
       suggestion: "Add a ||DIVIDER|| column between rule-dimension columns and RBD-output columns."
     })
-    hasErrors = true
   }
 
   // V2: No rule-dimension columns
@@ -492,7 +490,6 @@ script "js_csv_validated", type: "javascript" do
       message: "No rule-dimension columns found to the left of the ||DIVIDER|| column. Rules cannot be constructed.",
       suggestion: "Add at least one rule-dimension column to the left of ||DIVIDER||."
     })
-    hasErrors = true
   }
 
   // V3: No RBD-output columns
@@ -505,7 +502,6 @@ script "js_csv_validated", type: "javascript" do
       message: "No RBD-output columns found to the right of the ||DIVIDER|| column. No dimensions to create.",
       suggestion: "Add at least one RBD-output column to the right of ||DIVIDER||."
     })
-    hasErrors = true
   }
 
   // V4: Empty CSV (no data rows)
@@ -518,7 +514,6 @@ script "js_csv_validated", type: "javascript" do
       message: "CSV has a header row but no data rows.",
       suggestion: "Add data rows to the CSV file."
     })
-    hasErrors = true
   }
 
   // V5: Unresolved dimension names
@@ -732,7 +727,7 @@ script "js_rbds", type: "javascript" do
     var rbdHeaderIndexMap = {}
     _.each(ds_csv_parsed.rbdHeaders, function(h, idx) { rbdHeaderIndexMap[h] = idx })
 
-    _.each(rbdHeaders, function(rbdHeader, rbdIdx) {
+    _.each(rbdHeaders, function(rbdHeader) {
       var rbdId = rbdHeader.trim()
       var rbdColIdx = ds_csv_parsed.dividerIndex + 1 + rbdHeaderIndexMap[rbdHeader]
 
@@ -830,10 +825,11 @@ script "js_existing_rbds_that_match", type: "javascript" do
   parameters "ds_existing_rbds", "ds_rbds"
   result "result"
   code <<-'EOS'
-  var newIds = _.pluck(ds_rbds, "id")
+  var newIdSet = {}
+  _.each(ds_rbds, function(newRbd) { newIdSet[newRbd.id] = true })
 
   result = _.filter(ds_existing_rbds, function(rbd) {
-    return _.contains(newIds, rbd.id)
+    return newIdSet[rbd.id] === true
   })
 EOS
 end
@@ -865,7 +861,8 @@ script "js_merged_rbds", type: "javascript" do
   parameters "ds_rbds", "ds_existing_rbds", "ds_existing_rbds_with_rules", "ds_applied_policy"
   result "result"
   code <<-'EOS'
-  var existingRbdIds = _.pluck(ds_existing_rbds, "id")
+  var existingRbdIdSet = {}
+  _.each(ds_existing_rbds, function(existingRbd) { existingRbdIdSet[existingRbd.id] = true })
 
   // Build sentinel rules using the applied policy name
   var startBlockValue = "Start: " + ds_applied_policy["name"]
@@ -926,10 +923,7 @@ script "js_merged_rbds", type: "javascript" do
     }
 
     // Determine whether to create or update the RBD entity
-    var verb = "POST"
-    if (_.contains(existingRbdIds, rbd.id)) {
-      verb = "PATCH"
-    }
+    var verb = existingRbdIdSet[rbd.id] ? "PATCH" : "POST"
 
     result.push({
       id: rbd.id,
