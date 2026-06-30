@@ -52,7 +52,6 @@ Cloud Vendor Account,Cloud Vendor,tag_app_code,||DIVIDER||,rbd_business_unit,rbd
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/) for authenticating to datasources -- in order to apply this policy template you must have a Credential registered in the system that is compatible with this policy template. If there are no Credentials listed when you apply the policy template, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy template. The information below should be consulted when creating the credential(s).
 
 - [**Azure Storage Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure) (*provider=azure_storage*) which has the following permissions:
-  - `Microsoft.Storage/storageAccounts/blobServices/containers/read`*
   - `Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read`*
 
   \* Provided by `Storage Blob Data Reader` role on the storage account or container
