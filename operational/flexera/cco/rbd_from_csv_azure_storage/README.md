@@ -53,7 +53,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 - [**Azure Storage Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#azure) (*provider=azure_storage*) which has the following permissions:
   - `Microsoft.Storage/storageAccounts/blobServices/containers/read`*
-  - `Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey/action`*
   - `Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read`*
 
   \* Provided by `Storage Blob Data Reader` role on the storage account or container
