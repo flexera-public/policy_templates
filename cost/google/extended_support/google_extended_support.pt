@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.0",
+  version: "0.2.0",
   provider: "Google",
   service: "All",
   policy_set: "Deprecated Resources",
@@ -61,6 +61,24 @@ parameter "param_projects_list" do
   label "Allow/Deny Projects List"
   description "A list of allowed or denied project IDs/names. Leave blank to check all Google Cloud Projects."
   default []
+end
+
+parameter "param_projects_ignore_sys" do
+  type "string"
+  category "Filters"
+  label "Ignore System Projects"
+  description "Whether or not to automatically ignore system projects e.g. projects whose id begins with 'sys-'"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_projects_ignore_app" do
+  type "string"
+  category "Filters"
+  label "Ignore Google Apps Script Projects"
+  description "Whether or not to automatically ignore Google Apps Script projects e.g. projects whose id begins with 'app-'"
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -285,7 +303,7 @@ end
 
 datasource "ds_google_projects" do
   request do
-    run_script $js_google_projects, $ds_is_deleted
+    run_script $js_google_projects, $ds_is_deleted, $param_projects_ignore_sys, $param_projects_ignore_app
   end
   result do
     encoding "json"
@@ -297,15 +315,19 @@ datasource "ds_google_projects" do
 end
 
 script "js_google_projects", type: "javascript" do
-  parameters "ds_is_deleted"
+  parameters "ds_is_deleted", "param_projects_ignore_sys", "param_projects_ignore_app"
   result "request"
   code <<-'EOS'
+  var query = ["state:ACTIVE"]
+  if (param_projects_ignore_sys == "Yes") { query.push("-projectId:sys-") }
+  if (param_projects_ignore_app == "Yes") { query.push("-projectId:app-") }
+
   var request = {
     auth: "auth_google",
     pagination: "pagination_google",
     host: "cloudresourcemanager.googleapis.com",
     path: "/v3/projects:search",
-    query_params: { "query": "state:ACTIVE" },
+    query_params: { "query": query.join(" ") },
     headers: { "Meta-Flexera": ds_is_deleted["path"] }
   }
 EOS
