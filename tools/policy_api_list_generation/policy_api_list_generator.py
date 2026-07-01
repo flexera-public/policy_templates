@@ -2295,6 +2295,8 @@ class PolicyTemplateParser:
         if service == 'storage':
             if re.search(r'/b/[^/]+/iam', path):
                 return 'storage.buckets.getIamPolicy'
+            if re.search(r'/b/[^/]+/o/[^/]+', path):
+                return 'storage.objects.get'
             if re.search(r'/b/[^/]+/o', path):
                 return 'storage.objects.list'
             if re.search(r'/b/?$', path) or re.search(r'/b\?', endpoint):
