@@ -2360,7 +2360,37 @@ class PolicyTemplateParser:
 
             return None
 
-        return None
+        # Kubernetes Engine (GKE) — container.googleapis.com
+        # Path structure (v1 and v1beta1):
+        #   /v1/projects/{id}/locations/{loc}/{resource}          → list
+        #   /v1/projects/{id}/locations/{loc}/{resource}/{name}   → get/update/delete
+        #   /v1/projects/{id}/zones/{zone}/{resource}             → list (legacy)
+        #   /v1/projects/{id}/zones/{zone}/{resource}/{name}      → get (legacy)
+        if service == 'container':
+            method_upper = method.upper()
+            path_parts = [p for p in path.rstrip('/').split('/') if p]
+            if not path_parts:
+                return None
+            last = path_parts[-1]
+            if last.startswith('{'):
+                # Last segment is a resource ID — find the preceding resource type
+                non_placeholder = [p for p in path_parts if not p.startswith('{')]
+                if not non_placeholder:
+                    return None
+                resource = non_placeholder[-1]
+                if method_upper == 'DELETE':
+                    return f'container.{resource}.delete'
+                if method_upper in ('PUT', 'PATCH', 'POST'):
+                    return f'container.{resource}.update'
+                return f'container.{resource}.get'
+            else:
+                # Last segment is the resource type name — it's a list or create
+                resource = last
+                if method_upper == 'POST':
+                    return f'container.{resource}.create'
+                return f'container.{resource}.list'
+
+
 
     def _format_operation_from_method(self, method, resource):
         """Format an operation name from HTTP method and resource type.
