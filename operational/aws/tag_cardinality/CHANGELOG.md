@@ -2,7 +2,7 @@
 
 ## v3.3.1
 
-- Updated AWS Organizations account status field from deprecated `Status` to `State`, with fallback to `Status` during the dual-availability window, to accommodate the AWS Organizations API deprecation on September 9, 2026. Internal field renamed from `account_status` to `account_state`.
+- Updated AWS Organizations API calls to ensure compatibility with upcoming changes to AWS APIs. Functionality unchanged.
 
 ## v3.3.0
 
