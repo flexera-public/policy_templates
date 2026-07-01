@@ -43,7 +43,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:
   - `container.clusters.list`
-  - `resourcemanager.projects.get`
+  - `resourcemanager.projects.search`
   - `cloudsql.instances.list`
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
