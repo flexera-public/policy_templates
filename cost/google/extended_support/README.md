@@ -24,6 +24,8 @@ The policy includes an estimated monthly extended-support surcharge for each res
 - *Days Until Extended Support* - Report resources that will enter extended support within this many days. Set to 0 to only report resources currently under extended support.
 - *Allow/Deny Projects* - Whether to allow or deny the projects listed in the *Allow/Deny Projects List* parameter.
 - *Allow/Deny Projects List* - A list of allowed or denied Google Cloud project IDs/names. Leave blank to check all projects.
+- *Ignore System Projects* - Whether or not to automatically ignore system projects (projects whose ID begins with `sys-`).
+- *Ignore Google Apps Script Projects* - Whether or not to automatically ignore Google Apps Script projects (projects whose ID begins with `app-`).
 - *Allow/Deny Regions* - Whether to allow or deny the regions listed in the *Allow/Deny Regions List* parameter.
 - *Allow/Deny Regions List* - A list of allowed or denied Google region names (e.g. `us-central1`). Leave blank to check all regions.
 - *Exclusion Labels* - Cloud native labels to ignore resources. Enter the Key name to filter resources with a specific Key regardless of Value, or `Key==Value` to filter a specific pair. Regex operators `=~` and `!~` are also supported.
@@ -41,7 +43,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
 
 - [**Google Cloud Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#google) (*provider=gce*) which has the following:
   - `container.clusters.list`
-  - `resourcemanager.projects.get`
+  - `resourcemanager.projects.search`
   - `cloudsql.instances.list`
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials#flexera) (*provider=flexera*) which has the following roles:
