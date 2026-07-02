@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.1
+
+- Updated AWS Organizations API calls to ensure compatibility with upcoming changes to AWS APIs. Functionality unchanged.
+
 ## v3.3.0
 
 - Added graceful error handling for inaccessible AWS regions
