@@ -8,7 +8,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.0.1",
+  version: "5.0.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Untagged Resources",
@@ -121,13 +121,13 @@ parameter "param_resource_groups_list" do
   default []
 end
 
-parameter "param_include_account" do
-  type "string"
+parameter "param_report_types" do
+  type "list"
   category "Filters"
-  label "Include Subscription/Resource Group Tags"
-  description "Whether or not to include Azure Subscriptions and Resource Groups as resources whose tags are checked and reported on."
-  allowed_values "Include Subscription/Resource Group", "Do Not Include Subscription/Resource Group"
-  default "Do Not Include Subscription/Resource Group"
+  label "Report Types"
+  description "The types of resources to include in the report. Select 'Subscriptions' to include Azure Subscriptions, 'Resource Groups' to include Resource Groups, and 'Resources' to include individual taggable resources."
+  allowed_values "Subscriptions", "Resource Groups", "Resources"
+  default ["Subscriptions", "Resource Groups", "Resources"]
 end
 
 parameter "param_consider_tag_dimensions" do
@@ -491,11 +491,11 @@ EOS
 end
 
 datasource "ds_azure_resources_missing_tags" do
-  run_script $js_azure_resources_missing_tags, $ds_azure_subscriptions_with_tags, $ds_azure_resource_groups, $ds_azure_resources_rg_filtered, $ds_tag_dimensions, $param_tags, $param_tags_boolean, $param_include_account, $param_consider_tag_dimensions
+  run_script $js_azure_resources_missing_tags, $ds_azure_subscriptions_with_tags, $ds_azure_resource_groups, $ds_azure_resources_rg_filtered, $ds_tag_dimensions, $param_tags, $param_tags_boolean, $param_report_types, $param_consider_tag_dimensions
 end
 
 script "js_azure_resources_missing_tags", type: "javascript" do
-  parameters "ds_azure_subscriptions_with_tags", "ds_azure_resource_groups", "ds_azure_resources_rg_filtered", "ds_tag_dimensions", "param_tags", "param_tags_boolean", "param_include_account", "param_consider_tag_dimensions"
+  parameters "ds_azure_subscriptions_with_tags", "ds_azure_resource_groups", "ds_azure_resources_rg_filtered", "ds_tag_dimensions", "param_tags", "param_tags_boolean", "param_report_types", "param_consider_tag_dimensions"
   result "result"
   code <<-'EOS'
   result = []
@@ -531,11 +531,10 @@ script "js_azure_resources_missing_tags", type: "javascript" do
   })
 
   if (comparators.length > 0) {
-    if (param_include_account == "Include Subscription/Resource Group") {
-      resources = ds_azure_resources_rg_filtered.concat(ds_azure_subscriptions_with_tags, ds_azure_resource_groups)
-    } else {
-      resources = [].concat(ds_azure_resources_rg_filtered)
-    }
+    resources = []
+    if (_.contains(param_report_types, "Resources")) { resources = resources.concat(ds_azure_resources_rg_filtered) }
+    if (_.contains(param_report_types, "Subscriptions")) { resources = resources.concat(ds_azure_subscriptions_with_tags) }
+    if (_.contains(param_report_types, "Resource Groups")) { resources = resources.concat(ds_azure_resource_groups) }
 
     // Check each VM for missing tags
     _.each(resources, function(resource) {

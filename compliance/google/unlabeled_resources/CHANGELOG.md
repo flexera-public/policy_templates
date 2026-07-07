@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.0.0
+
+- Added new `Report Types` list parameter that allows selecting `Projects` and/or `Resources` individually
+- Removed `Projects` as an option from the `Resource Types` parameter; project inclusion is now controlled via the `Report Types` parameter
+- Default behavior now includes both Projects and Resources in the report (previously the default excluded Projects)
+
 ## v4.0.1
 
 - Fixed bug where resources whose missing labels were fully covered by Tag Dimension equivalents were still included in the incident with a blank `Missing Labels` field instead of being correctly excluded.

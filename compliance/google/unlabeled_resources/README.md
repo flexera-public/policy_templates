@@ -17,7 +17,8 @@ This policy template checks for Google Cloud resources missing the user-specifie
 - *Allow/Deny Projects List* - Filter results by project ID/name, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all projects.
 - *Ignore System Projects* - Whether or not to automatically ignore system projects e.g. projects whose id begins with `sys-`
 - *Ignore Google Apps Script Projects* - Whether or not to automatically ignore Google Apps Script projects e.g. projects whose id begins with `app-`
-- *Resource Types* - The types of resources to check labels for. Any options not selected will not be reported on.
+- *Report Types* - The types of resources to include in the report. Select 'Projects' to include Google Projects themselves, and 'Resources' to include individual labelable resources.
+- *Resource Types* - The specific resource types to check labels for when 'Resources' is selected in the 'Report Types' parameter. Any options not selected will not be reported on.
 - *Labels* - The policy will report resources missing the specified labels. The following formats are supported:
   - `Key` - Find all resources missing the specified label key.
   - `Key==Value` - Find all resources missing the specified label key:value pair and all resources missing the specified label key.
