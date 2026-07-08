@@ -24,10 +24,10 @@ def policy_missing_github_labels?(github, file, file_parsed, file_metadata, is_n
     current_major_version = file_metadata["version"].split('.')[0]
     current_minor_version = file_metadata["version"].split('.')[0] + "." + file_metadata["version"].split('.')[1]
 
-    if major_version != current_major_version && !github.pr_labels.include?("MAJOR UPDATE")
-      fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md#4-make-a-pull-request)] Policy Template has changed major versions but Pull Request is missing `MAJOR UPDATE` label. Please add this label to the Pull Request.\n\n"
-    elsif minor_version != current_minor_version && !github.pr_labels.include?("MINOR UPDATE")
-      fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md#4-make-a-pull-request)] Policy Template has changed minor versions but Pull Request is missing `MINOR UPDATE` label. Please add this label to the Pull Request.\n\n"
+    if major_version != current_major_version
+      fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md#4-make-a-pull-request)] Policy Template has changed major versions but Pull Request is missing `MAJOR UPDATE` label. Please add this label to the Pull Request.\n\n" if !github.pr_labels.include?("MAJOR UPDATE")
+    elsif minor_version != current_minor_version
+      fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md#4-make-a-pull-request)] Policy Template has changed minor versions but Pull Request is missing `MINOR UPDATE` label. Please add this label to the Pull Request.\n\n" if !github.pr_labels.include?("MINOR UPDATE")
     end
   end
 

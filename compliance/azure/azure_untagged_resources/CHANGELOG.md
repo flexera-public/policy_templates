@@ -1,5 +1,10 @@
 # Changelog
 
+## v5.0.0
+
+- Replaced `Include Subscription/Resource Group Tags` parameter with new `Report Types` list parameter that allows selecting `Subscriptions`, `Resource Groups`, and/or `Resources` individually
+- Default behavior now includes Subscriptions, Resource Groups, and Resources in the report (previously the default excluded Subscriptions and Resource Groups)
+
 ## v4.0.1
 
 - Fixed bug where resources whose missing tags were fully covered by Tag Dimension equivalents were still included in the incident with a blank `Missing Tags` field instead of being correctly excluded.
