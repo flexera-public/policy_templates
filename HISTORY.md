@@ -6,6 +6,46 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#4678](https://github.com/flexera-public/policy_templates/pull/4678): POL-1796 Untagged Resources: Improved Filtering
+
+*Major Update*
+
+#### Description
+
+> Updates the 3 Untagged Resources policy templates to allow the user to select various resource types (Account, Resource, Subscription, etc.) from a list. This allows the user to report only Subscriptions, only Resources, etc. as desired.
+>
+> Also fixes a Dangerfile issue where a change to a policy template's MAJOR version would trigger an error if the MINOR UPDATE label wasn't applied to the PR, and adds "labelable" to the .spellignore since [this is a valid English word](https://en.wiktionary.org/wiki/labelable).
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4678) for these details.
+- **Merged At**: 2026-07-08 13:16:57 UTC
+
+---
+
+### PR [#4675](https://github.com/flexera-public/policy_templates/pull/4675): POL-1795 New Policy Template: Flexera Create Service Account
+
+*Unpublished, New Policy Template*
+
+#### Description
+
+> `Flexera Create Service Account`
+>
+> This policy template creates a Flexera service account via the IAM API, assigns the specified org-level roles to it, generates a client secret, and then registers an OAuth2 credential in Flexera Automation using that client ID and secret. If all steps succeed, an incident is raised containing the credential details and confirmation of role assignments.
+>
+> Template is unpublished because it is more intended for internal Flexera use. A Flexeran can add their own token to a new org as a credential, run this to quickly create a service account, and then delete their credential from the Flexera Org, leaving behind a functioning service account that does not require that the client maintain a token associated with someone at their organization to execute policy templates.
+>
+> (Ignore the dangerfile warning. This is a special case where readability requires something off-spec)
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4675) for details about unpublished policies.
+- **Merged At**: 2026-07-07 13:53:00 UTC
+
+---
+
 ### PR [#4659](https://github.com/flexera-public/policy_templates/pull/4659): POL-1788 AWS Tag Cardinality: API Update
 
 *Minor Update*
@@ -1857,78 +1897,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3944) for these details.
 - **Merged At**: 2026-01-05 16:45:54 UTC
-
----
-
-### PR [#3943](https://github.com/flexera-public/policy_templates/pull/3943): POL-1648 Update AWS Policies to support Account Name for MSP Child Orgs - Security Policies 4 (IAM 1)
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This PR adds a fallback mechanism for retrieving AWS account information in multiple AWS policy templates, addressing issues where the Flexera List Cloud Accounts API may not return relevant account details (common in MSP environments). When the primary API fails, policies now fall back to querying aggregated cost data from the Flexera Bill Analysis API to populate account names.
->
-> Changes Made:
-> - **New Datasources & Scripts**: Added `ds_billing_centers_aws_acc`, `ds_top_level_bcs_aws_acc`, and `ds_cloud_vendor_accounts_fallback` datasources, along with corresponding JS scripts (`js_top_level_bcs_aws_acc`, `js_cloud_vendor_accounts_fallback`) to handle fallback account retrieval.
-> - **Updated Logic**: Modified existing scripts (e.g., `js_vendor_account_table`, `js_aws_account`) to check for empty results from the primary API and use the fallback data.
->
-> ### Affected Policies
->
-> - AWS IAM Account Missing Support Role
-> - AWS IAM Attached Admin Policies
-> - AWS IAM Expired SSL/TLS Certificates
-> - AWS IAM Insufficient Required Password Length
-> - AWS IAM Password Policy Not Restricting Password Reuse
-> - AWS IAM Root Account Access Keys
-> - AWS IAM Root User Account Without Hardware MFA
-> - AWS IAM Root User Account Without MFA
->
-> ### Other Notes
-> - Includes Cheng's fix in [FOPTS-18276](https://github.com/flexera-public/policy_templates/pull/3898) - cc @jc1203
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3943) for these details.
-- **Merged At**: 2026-01-05 16:27:19 UTC
-
----
-
-### PR [#3938](https://github.com/flexera-public/policy_templates/pull/3938): POL-1647 Update AWS Policies to support Account Name for MSP Child Orgs - Security Policies 3
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This PR adds a fallback mechanism for retrieving AWS account information in multiple AWS policy templates, addressing issues where the Flexera List Cloud Accounts API may not return relevant account details (common in MSP environments). When the primary API fails, policies now fall back to querying aggregated cost data from the Flexera Bill Analysis API to populate account names.
->
-> Changes Made:
-> - **New Datasources & Scripts**: Added `ds_billing_centers_aws_acc`, `ds_top_level_bcs_aws_acc`, and `ds_cloud_vendor_accounts_fallback` datasources, along with corresponding JS scripts (`js_top_level_bcs_aws_acc`, `js_cloud_vendor_accounts_fallback`) to handle fallback account retrieval.
-> - **Updated Logic**: Modified existing scripts (e.g., `js_vendor_account_table`, `js_aws_account`) to check for empty results from the primary API and use the fallback data.
->
-> ### Affected Policies
->
-> - AWS Open S3 Buckets
-> - AWS S3 Buckets Accepting HTTP Requests
-> - AWS S3 Buckets Without Default Encryption Configuration
-> - AWS S3 Buckets Without MFA Delete Enabled
-> - AWS S3 Buckets Without Public Access Blocked
-> - AWS S3 Buckets Without Server Access Logging
->
-> ### Other Notes
-> - Includes Cheng's fix in [FOPTS-18276](https://github.com/flexera-public/policy_templates/pull/3898) - cc @jc1203
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3938) for these details.
-- **Merged At**: 2026-01-05 13:28:07 UTC
 
 ---
 
