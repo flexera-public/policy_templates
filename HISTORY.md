@@ -6,6 +6,22 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#4692](https://github.com/flexera-public/policy_templates/pull/4692): POL-1778 Container Cost Visibility Setup: Syntax Error Fix
+
+*Minor Update*
+
+#### Description
+
+> Fixes a syntax error in the Container Cost Visibility Setup policy template.
+>
+
+#### Metadata
+
+- **Policies**: [Container Cost Visibility Setup](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/spot/container_cost_visibility/README.md)
+- **Merged At**: 2026-07-14 17:57:24 UTC
+
+---
+
 ### PR [#4678](https://github.com/flexera-public/policy_templates/pull/4678): POL-1796 Untagged Resources: Improved Filtering
 
 *Major Update*
@@ -1861,42 +1877,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Flexera Onboarding](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/onboarding/README.md)
 - **Merged At**: 2026-01-09 14:49:50 UTC
-
----
-
-### PR [#3944](https://github.com/flexera-public/policy_templates/pull/3944): POL-1649 Update AWS Policies to support Account Name for MSP Child Orgs - Security Policies 5 (IAM 2)
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This PR adds a fallback mechanism for retrieving AWS account information in multiple AWS policy templates, addressing issues where the Flexera List Cloud Accounts API may not return relevant account details (common in MSP environments). When the primary API fails, policies now fall back to querying aggregated cost data from the Flexera Bill Analysis API to populate account names.
->
-> Changes Made:
-> - **New Datasources & Scripts**: Added `ds_billing_centers_aws_acc`, `ds_top_level_bcs_aws_acc`, and `ds_cloud_vendor_accounts_fallback` datasources, along with corresponding JS scripts (`js_top_level_bcs_aws_acc`, `js_cloud_vendor_accounts_fallback`) to handle fallback account retrieval.
-> - **Updated Logic**: Modified existing scripts (e.g., `js_vendor_account_table`, `js_aws_account`) to check for empty results from the primary API and use the fallback data.
->
-> ### Affected Policies
->
-> - AWS IAM Root User Doing Everyday Tasks
-> - AWS IAM User Accounts Without MFA
-> - AWS IAM Users With Directly-Attached Policies
-> - AWS IAM Users With Multiple Active Access Keys
-> - AWS IAM Users With Old Access Keys
-> - AWS Regions Without Access Analyzer Enabled
-> - AWS Unused IAM Credentials
->
-> ### Other Notes
-> - Includes Cheng's fix in [FOPTS-18276](https://github.com/flexera-public/policy_templates/pull/3898) - cc @jc1203
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3944) for these details.
-- **Merged At**: 2026-01-05 16:45:54 UTC
 
 ---
 
