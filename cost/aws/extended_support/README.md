@@ -14,6 +14,22 @@ This policy template uses the AWS APIs (RDS, EKS, and ElastiCache) to identify a
 - RDS Multi-AZ instances are billed for extended support on both the primary and standby instance, so this policy doubles the estimated vCPU count for Multi-AZ instances when calculating estimated savings.
 - The policy also pulls resource-level billing data from the Flexera CCO platform from 3 days ago, filtered to resources with a `Usage Type` that contains `ExtendedSupport`. This data is used only for obtaining actual costs for resources already incurring extended support charges. Data from 3 days ago is used to ensure that we have available, processed billing data to search through.
 
+### Data Sources
+
+Extended support dates and pricing in the `data/aws/aws_extended_support_dates.json` reference data file are sourced from official AWS documentation:
+
+- [Amazon RDS for MySQL major version release calendar](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/MySQL.Concepts.VersionMgmt.html)
+- [Amazon RDS for PostgreSQL release calendar](https://docs.aws.amazon.com/AmazonRDS/latest/PostgreSQLReleaseNotes/postgresql-release-calendar.html)
+- [Amazon RDS Extended Support overview](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/extended-support.html)
+- [Versions with Amazon RDS Extended Support](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/extended-support-versions.html)
+- [Amazon RDS for MySQL pricing (Extended Support rates)](https://aws.amazon.com/rds/mysql/pricing/)
+- [Amazon RDS for PostgreSQL pricing (Extended Support rates)](https://aws.amazon.com/rds/postgresql/pricing/)
+- [Amazon EKS Kubernetes version lifecycle and release calendar](https://docs.aws.amazon.com/eks/latest/userguide/kubernetes-versions.html)
+- [Amazon EKS pricing](https://aws.amazon.com/eks/pricing/)
+- [Amazon ElastiCache Extended Support](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/extended-support.html)
+- [Versions with ElastiCache Extended Support](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/extended-support-versions.html)
+- [Amazon ElastiCache pricing](https://aws.amazon.com/elasticache/pricing/)
+
 ### Policy Savings Details
 
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is migrated to a newer supported version, avoiding the extended support fee.
@@ -29,22 +45,6 @@ The `Estimated Monthly Savings` is calculated differently depending on whether t
 - The `Rate Tier` field in the incident export indicates which pricing tier (years 1-2 or year 3) applies to each resource, or the flat EKS cluster-hour rate.
 - The incident message detail includes the sum of each resource `Estimated Monthly Savings` as `Potential Monthly Savings`.
 - Both `Estimated Monthly Savings` and `Potential Monthly Savings` will be reported in the currency of the Flexera organization the policy is applied in.
-
-## Data Sources
-
-Extended support dates and pricing in the `data/aws/aws_extended_support_dates.json` reference data file are sourced from official AWS documentation:
-
-- [Amazon RDS for MySQL major version release calendar](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/MySQL.Concepts.VersionMgmt.html)
-- [Amazon RDS for PostgreSQL release calendar](https://docs.aws.amazon.com/AmazonRDS/latest/PostgreSQLReleaseNotes/postgresql-release-calendar.html)
-- [Amazon RDS Extended Support overview](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/extended-support.html)
-- [Versions with Amazon RDS Extended Support](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/extended-support-versions.html)
-- [Amazon RDS for MySQL pricing (Extended Support rates)](https://aws.amazon.com/rds/mysql/pricing/)
-- [Amazon RDS for PostgreSQL pricing (Extended Support rates)](https://aws.amazon.com/rds/postgresql/pricing/)
-- [Amazon EKS Kubernetes version lifecycle and release calendar](https://docs.aws.amazon.com/eks/latest/userguide/kubernetes-versions.html)
-- [Amazon EKS pricing](https://aws.amazon.com/eks/pricing/)
-- [Amazon ElastiCache Extended Support](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/extended-support.html)
-- [Versions with ElastiCache Extended Support](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/extended-support-versions.html)
-- [Amazon ElastiCache pricing](https://aws.amazon.com/elasticache/pricing/)
 
 ## Input Parameters
 
