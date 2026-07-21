@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.0
+
+- Added option to use current month/year as the effective date for generated rules instead of a static effective date.
+
 ## v0.1.5
 
 - Updated documentation link in policy description. Functionality unchanged.
