@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.1.2",
+  version: "2.2.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Automation",
@@ -39,8 +39,17 @@ parameter "param_effective_date" do
   type "string"
   category "Policy Settings"
   label "Effective Date"
-  description "Year/month you want rules to start applying in YYYY-MM format"
+  description "Year/month you want rules to start applying in YYYY-MM format. Only used when 'Effective Date Mode' is set to 'Static'."
   default "2010-01"
+end
+
+parameter "param_effective_date_mode" do
+  type "string"
+  category "Policy Settings"
+  label "Effective Date Mode"
+  description "Whether to use the static value in the 'Effective Date' parameter for all rule updates, or to automatically use the current month (in YYYY-MM format) as the effective date each time the policy runs."
+  allowed_values "Static", "Current Month"
+  default "Static"
 end
 
 parameter "param_normalize_case" do
@@ -127,6 +136,27 @@ script "js_flexera_api_hosts", type: "javascript" do
 EOS
 end
 
+# Determine the effective date to use for the generated rules: either the static value from the
+# 'Effective Date' parameter, or the current month (YYYY-MM) when 'Effective Date Mode' is 'Current Month'
+datasource "ds_effective_date" do
+  run_script $js_effective_date, $param_effective_date, $param_effective_date_mode
+end
+
+script "js_effective_date", type: "javascript" do
+  parameters "param_effective_date", "param_effective_date_mode"
+  result "result"
+  code <<-'EOS'
+  if (param_effective_date_mode == "Current Month") {
+    now = new Date()
+    year = now.getUTCFullYear()
+    month = ("0" + (now.getUTCMonth() + 1)).slice(-2)
+    result = year + "-" + month
+  } else {
+    result = param_effective_date
+  }
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
@@ -205,11 +235,11 @@ EOS
 end
 
 datasource "ds_new_rules" do
-  run_script $js_new_rules, $ds_azure_subscriptions_normalized, $param_name_list, $param_tag_list, $param_effective_date, $param_normalize_case
+  run_script $js_new_rules, $ds_azure_subscriptions_normalized, $ds_effective_date, $param_name_list, $param_tag_list, $param_normalize_case
 end
 
 script "js_new_rules", type: "javascript" do
-  parameters "accounts", "param_name_list", "param_tag_list", "param_effective_date", "param_normalize_case"
+  parameters "accounts", "effective_date", "param_name_list", "param_tag_list", "param_normalize_case"
   result "result"
   code <<-'EOS'
   rule_lists = []
@@ -252,7 +282,7 @@ script "js_new_rules", type: "javascript" do
       rule_lists.push({
         id: rbd_id,
         name: rbd_name,
-        effective_at: param_effective_date,
+        effective_at: effective_date,
         rules: rules
       })
     }
@@ -283,15 +313,16 @@ datasource "ds_existing_rbds" do
 end
 
 datasource "ds_existing_rbds_that_match" do
-  run_script $js_existing_rbds_that_match, $ds_existing_rbds, $ds_new_rules
+  run_script $js_existing_rbds_that_match, $ds_existing_rbds, $ds_new_rules, $ds_effective_date
 end
 
 script "js_existing_rbds_that_match", type: "javascript" do
-  parameters "ds_existing_rbds", "ds_new_rules"
+  parameters "ds_existing_rbds", "ds_new_rules", "effective_date"
   result "result"
   code <<-'EOS'
   new_ids = _.pluck(ds_new_rules["rule_lists"], "id")
   result = _.filter(ds_existing_rbds, function(rbd) { return _.contains(new_ids, rbd["id"]) })
+  result = _.map(result, function(rbd) { return _.extend({}, rbd, { effective_date: effective_date }) })
 EOS
 end
 
@@ -300,7 +331,7 @@ datasource "ds_existing_rbds_with_rules" do
   request do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, "flexera")
-    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", $param_effective_date])
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", val(iter_item, "effective_date")])
     # We simply skip RBDs that don't have a ruleset with a conflicting date
     ignore_status [ 400, 401, 403, 404, 429 ]
   end

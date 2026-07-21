@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.1.5",
+  version: "0.2.0",
   provider: "Flexera",
   service: "Spot Eco",
   policy_set: "Spot Eco",
@@ -48,8 +48,17 @@ parameter "param_effective_date" do
   type "string"
   category "Policy Settings"
   label "Effective Date"
-  description "Year/month you want rules to start applying in YYYY-MM format"
+  description "Year/month you want rules to start applying in YYYY-MM format. Only used when 'Effective Date Mode' is set to 'Static'."
   default "2010-01"
+end
+
+parameter "param_effective_date_mode" do
+  type "string"
+  category "Policy Settings"
+  label "Effective Date Mode"
+  description "Whether to use the static value in the 'Effective Date' parameter for all rule updates, or to automatically use the current month (in YYYY-MM format) as the effective date each time the policy runs."
+  allowed_values "Static", "Current Month"
+  default "Static"
 end
 
 ###############################################################################
@@ -127,6 +136,27 @@ script "js_flexera_api_hosts", type: "javascript" do
 EOS
 end
 
+# Determine the effective date to use for the generated rules: either the static value from the
+# 'Effective Date' parameter, or the current month (YYYY-MM) when 'Effective Date Mode' is 'Current Month'
+datasource "ds_effective_date" do
+  run_script $js_effective_date, $param_effective_date, $param_effective_date_mode
+end
+
+script "js_effective_date", type: "javascript" do
+  parameters "param_effective_date", "param_effective_date_mode"
+  result "result"
+  code <<-'EOS'
+  if (param_effective_date_mode == "Current Month") {
+    now = new Date()
+    year = now.getUTCFullYear()
+    month = ("0" + (now.getUTCMonth() + 1)).slice(-2)
+    result = year + "-" + month
+  } else {
+    result = param_effective_date
+  }
+EOS
+end
+
 # Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
@@ -198,11 +228,11 @@ datasource "ds_existing_rbds" do
 end
 
 datasource "ds_rbds" do
-  run_script $js_rbds, $ds_eco_commitments, $ds_existing_rbds, $ds_applied_policy, $param_rbd_name, $param_rbd_id, $param_effective_date
+  run_script $js_rbds, $ds_eco_commitments, $ds_existing_rbds, $ds_applied_policy, $ds_effective_date, $param_rbd_name, $param_rbd_id
 end
 
 script "js_rbds", type: "javascript" do
-  parameters "ds_eco_commitments", "ds_existing_rbds", "ds_applied_policy", "param_rbd_name", "param_rbd_id", "param_effective_date"
+  parameters "ds_eco_commitments", "ds_existing_rbds", "ds_applied_policy", "effective_date", "param_rbd_name", "param_rbd_id"
   result "result"
   code <<-'EOS'
   eco_rbd = _.find(ds_existing_rbds, function(rbd) { return rbd['id'] == param_rbd_id })
@@ -250,7 +280,7 @@ script "js_rbds", type: "javascript" do
       id: param_rbd_id,
       name: param_rbd_name,
       verb: eco_rbd ? "PATCH" : "POST",
-      effective_at: param_effective_date,
+      effective_at: effective_date,
       rules: rules
     }
   ]
