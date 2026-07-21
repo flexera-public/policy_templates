@@ -14,7 +14,7 @@ This policy template has the following input parameters:
 
 - *Email Addresses* - The email addresses to send recommendations to.
 - *Always Email Incident* - Whether or not to always email the incident even if no new items were added to the recommendations since the policy's last execution.
-- *Cloud Vendor List* - A list of cloud vendors to email recommendations for.
+- *Cloud Vendor List* - A list of cloud vendors/services to email recommendations for.
 - *Allow/Deny Cloud Accounts* - Whether to treat `Allow/Deny Cloud Accounts List` parameter as allow or deny list. Has no effect if `Allow/Deny Cloud Accounts List` is left empty.
 - *Allow/Deny Cloud Account List* - A list of allowed or denied cloud account IDs/names, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all cloud accounts.
 - *Billing Center List* - A list of Billing Center names to email recommendations for. Leave blank to include recommendations for all Billing Centers.
@@ -44,6 +44,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automat
 - Azure
 - Google
 - Oracle
+- Kubernetes
 
 ## Cost
 

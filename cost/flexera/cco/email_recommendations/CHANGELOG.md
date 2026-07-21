@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.10.0
+
+- Added support for AWS and Azure cross-family compute recommendations.
+- Added support for Kubernetes recommendations.
+
 ## v0.9.0
 
 - New `Dimension List` parameter allows filtering recommendations by Rule-Based Dimensions and Tag Dimensions.
