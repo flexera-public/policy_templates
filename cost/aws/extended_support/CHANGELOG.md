@@ -5,8 +5,8 @@
 - Updated cost estimation to reflect AWS's tiered Extended Support pricing: a lower rate for years 1-2 and a higher rate starting in year 3, selected automatically based on the current date.
 - Estimated savings for Multi-AZ RDS instances now account for both the primary and standby instance vCPUs, since AWS bills extended support for both.
 - Added a `Rate Tier` field to the incident export showing which pricing tier applies to each resource.
-- ElastiCache Extended Support is now correctly modeled as a percentage premium on the node's on-demand rate rather than a flat node-hour fee. Since the node's base rate is not available to this policy, ElastiCache resources without matching Flexera CCO cost data are now reported with an `Estimated Monthly Savings` of 0 and a note that the estimate is unavailable, rather than an inaccurate flat-rate estimate.
-- Removed `mariadb` from the RDS reference data, since MariaDB is not eligible for AWS RDS Extended Support. MariaDB instances are no longer reported by this policy.
+- ElastiCache Extended Support is now correctly modeled as a percentage premium on the node's on-demand rate rather than a flat node-hour fee.
+- MariaDB instances are no longer reported by this policy; they are not eligible for AWS RDS Extended Support.
 
 ## v1.1.0
 
