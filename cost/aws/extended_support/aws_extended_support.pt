@@ -8,7 +8,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "1.1.0",
+  version: "1.2.0",
   provider: "AWS",
   service: "All",
   policy_set: "Deprecated Resources",
@@ -632,6 +632,7 @@ datasource "ds_rds_instances" do
       field "instanceClass", xpath(col_item, "DBInstanceClass")
       field "engine", xpath(col_item, "Engine")
       field "engineVersion", xpath(col_item, "EngineVersion")
+      field "multiAZ", xpath(col_item, "MultiAZ")
       field "region", val(iter_item, "region")
     end
   end
@@ -1067,15 +1068,48 @@ script "js_all_extended_support_resources", type: "javascript" do
     return 2
   }
 
-  function estimateMonthlyCost(entry, resource) {
-    var hourly_rate = entry['hourly_rate'] || 0
+  // Returns true when the year-3 (higher) rate is currently in effect for an entry.
+  // Upcoming (not-yet-started) resources are never considered to be in year 3.
+  function isYear3Rate(entry, status) {
+    if (status == 'Upcoming Extended Support') { return false }
+    if (!entry['extended_support_year3_start']) { return false }
+    var year3_start_ms = new Date(entry['extended_support_year3_start']).setHours(0, 0, 0, 0)
+    return today_ms >= year3_start_ms
+  }
+
+  // RDS and ElastiCache are billed at a lower rate for the first 2 years of extended support,
+  // then a higher rate in year 3 onward. EKS has a single flat cluster-hour rate.
+  function estimateMonthlyCost(entry, resource, status) {
     if (entry['service'] == 'RDS') {
-      return Math.round(hourly_rate * getVcpuCount(resource['instanceClass']) * hours_per_month * 1000) / 1000
+      var rate = isYear3Rate(entry, status) ? entry['hourly_rate_year_3'] : entry['hourly_rate_year_1_2']
+      var vcpu_count = getVcpuCount(resource['instanceClass'])
+      if (resource['multiAZ'] == 'true') { vcpu_count = vcpu_count * 2 }
+      return Math.round(rate * vcpu_count * hours_per_month * 1000) / 1000
+    }
+    if (entry['service'] == 'EKS') {
+      return Math.round(entry['hourly_rate'] * hours_per_month * 1000) / 1000
+    }
+    // ElastiCache Extended Support is priced as a percentage premium on the node's on-demand
+    // rate, which is not available to this policy. No dollar estimate can be produced.
+    return null
+  }
+
+  // Builds a human-readable label describing which Extended Support pricing tier applies.
+  function determineRateTier(entry, status) {
+    if (entry['service'] == 'RDS') {
+      return isYear3Rate(entry, status)
+        ? 'Year 3 ($' + entry['hourly_rate_year_3'] + '/vCPU-hr)'
+        : 'Year 1-2 ($' + entry['hourly_rate_year_1_2'] + '/vCPU-hr)'
     }
     if (entry['service'] == 'ElastiCache') {
-      return Math.round(hourly_rate * (parseInt(resource['numCacheNodes'], 10) || 1) * hours_per_month * 1000) / 1000
+      return isYear3Rate(entry, status)
+        ? 'Year 3 (' + entry['premium_percent_year_3'] + '% premium)'
+        : 'Year 1-2 (' + entry['premium_percent_year_1_2'] + '% premium)'
     }
-    return Math.round(hourly_rate * hours_per_month * 1000) / 1000
+    if (entry['service'] == 'EKS') {
+      return '$' + entry['hourly_rate'] + '/cluster-hr'
+    }
+    return ''
   }
 
   _.each(ds_rds_instances, function(instance) {
@@ -1089,7 +1123,7 @@ script "js_all_extended_support_resources", type: "javascript" do
     var actual_cost = getCCOCost(instance['arn'], instance['identifier'])
     var savings = actual_cost !== null
       ? Math.round(actual_cost * 1000) / 1000
-      : estimateMonthlyCost(entry, instance)
+      : estimateMonthlyCost(entry, instance, status)
 
     var rds_tags = rds_tag_lookup[instance['arn'].toLowerCase()] || {}
     if (isExcluded(rds_tags)) { return }
@@ -1110,6 +1144,7 @@ script "js_all_extended_support_resources", type: "javascript" do
       extendedSupportEnd: entry['extended_support_end'],
       daysUntilExtendedSupport: status == 'Currently Under Extended Support' ? 0 : daysUntil(entry['extended_support_start']),
       status: status,
+      rateTier: determineRateTier(entry, status),
       savings: savings,
       hasCCOCost: actual_cost !== null,
       savingsCurrency: ds_currency['symbol'],
@@ -1131,7 +1166,7 @@ script "js_all_extended_support_resources", type: "javascript" do
     var actual_cost = getCCOCost(cluster['arn'], cluster['name'])
     var savings = actual_cost !== null
       ? Math.round(actual_cost * 1000) / 1000
-      : estimateMonthlyCost(entry, cluster)
+      : estimateMonthlyCost(entry, cluster, status)
 
     var eks_tags = cluster['tags'] || {}
     if (isExcluded(eks_tags)) { return }
@@ -1152,6 +1187,7 @@ script "js_all_extended_support_resources", type: "javascript" do
       extendedSupportEnd: entry['extended_support_end'],
       daysUntilExtendedSupport: status == 'Currently Under Extended Support' ? 0 : daysUntil(entry['extended_support_start']),
       status: status,
+      rateTier: determineRateTier(entry, status),
       savings: savings,
       hasCCOCost: actual_cost !== null,
       savingsCurrency: ds_currency['symbol'],
@@ -1171,14 +1207,27 @@ script "js_all_extended_support_resources", type: "javascript" do
 
     var account_id = extractAccountId(cluster['arn'])
     var actual_cost = getCCOCost(cluster['arn'], cluster['id'])
-    var savings = actual_cost !== null
-      ? Math.round(actual_cost * 1000) / 1000
-      : estimateMonthlyCost(entry, cluster)
+    var estimated_cost = estimateMonthlyCost(entry, cluster, status)
+    var savings = actual_cost !== null ? Math.round(actual_cost * 1000) / 1000 : estimated_cost
+    var hasCCOCost = actual_cost !== null
 
     var ec_tags = elasticache_tag_lookup[cluster['arn'].toLowerCase()] || {}
     if (isExcluded(ec_tags)) { return }
     var resourceName = getResourceName(ec_tags, cluster['id'])
     var tagsString = formatTags(ec_tags)
+
+    var recommendationDetails = status == 'Currently Under Extended Support'
+      ? "Upgrade ElastiCache cluster " + cluster['id'] + " from " + cluster['engine'] + " " + cluster['engineVersion'] + " to a newer supported version to stop incurring extended support charges."
+      : "Upgrade ElastiCache cluster " + cluster['id'] + " from " + cluster['engine'] + " " + cluster['engineVersion'] + " to a newer supported version before " + entry['extended_support_start'] + " to avoid extended support charges."
+
+    // ElastiCache Extended Support pricing is a percentage premium on the node's on-demand
+    // rate, which this policy does not have access to, so no dollar estimate can be produced
+    // when there is no actual Flexera CCO cost to report.
+    if (savings === null) {
+      savings = 0
+      hasCCOCost = false
+      recommendationDetails += " (Savings estimate unavailable; actual extended support charges will appear in billing data.)"
+    }
 
     result.push({
       accountID: account_id,
@@ -1194,12 +1243,11 @@ script "js_all_extended_support_resources", type: "javascript" do
       extendedSupportEnd: entry['extended_support_end'],
       daysUntilExtendedSupport: status == 'Currently Under Extended Support' ? 0 : daysUntil(entry['extended_support_start']),
       status: status,
+      rateTier: determineRateTier(entry, status),
       savings: savings,
-      hasCCOCost: actual_cost !== null,
+      hasCCOCost: hasCCOCost,
       savingsCurrency: ds_currency['symbol'],
-      recommendationDetails: status == 'Currently Under Extended Support'
-        ? "Upgrade ElastiCache cluster " + cluster['id'] + " from " + cluster['engine'] + " " + cluster['engineVersion'] + " to a newer supported version to stop incurring extended support charges."
-        : "Upgrade ElastiCache cluster " + cluster['id'] + " from " + cluster['engine'] + " " + cluster['engineVersion'] + " to a newer supported version before " + entry['extended_support_start'] + " to avoid extended support charges."
+      recommendationDetails: recommendationDetails
     })
   })
 EOS
@@ -1263,6 +1311,7 @@ script "js_extended_support_resources", type: "javascript" do
       extendedSupportEnd: resource['extendedSupportEnd'],
       daysUntilExtendedSupport: resource['daysUntilExtendedSupport'],
       status: resource['status'],
+      rateTier: resource['rateTier'],
       recommendationDetails: resource['recommendationDetails'],
       savings: resource['savings'],
       savingsCurrency: resource['savingsCurrency'],
@@ -1327,6 +1376,9 @@ policy "pol_extended_support_resources" do
       end
       field "status" do
         label "Status"
+      end
+      field "rateTier" do
+        label "Rate Tier"
       end
       field "extendedSupportStart" do
         label "Extended Support Start Date"
