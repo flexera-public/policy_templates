@@ -1,0 +1,379 @@
+name "Flexera Billing Center Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports on all Billing Centers within the Flexera organization. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/bc_report) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/bc_report"
+category "Operational"
+severity "low"
+default_frequency "weekly"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: "Cloud Cost Optimization",
+  hide_skip_approvals: "true"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  category "Policy Settings"
+  label "Email Addresses"
+  description "A list of email addresses to notify."
+  default []
+end
+
+parameter "param_incident_csv" do
+  type "string"
+  category "Incident Settings"
+  label "Attach CSV To Incident Email"
+  description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_table_size" do
+  type "number"
+  category "Incident Settings"
+  label "Incident Table Rows for Email Body (#)"
+  description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
+  allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
+  default 100000
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+end
+
+# Retrieve the full Billing Center hierarchy for the org. The default "view" (no "view" query
+# parameter) returns id, name, description, parent_id, ancestor_ids, created_at and updated_at
+# for every Billing Center, which is required in order to resolve parent/child relationships.
+# NOTE: per the Flexera Billing Center API schema, "created_at"/"updated_at" are timestamps only;
+# the API does not expose a "created_by"/"updated_by" user attribution field.
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "parent_id", jmes_path(col_item, "parent_id")
+      field "created_at", jmes_path(col_item, "created_at")
+      field "updated_at", jmes_path(col_item, "updated_at")
+    end
+  end
+end
+
+datasource "ds_report" do
+  run_script $js_report, $ds_billing_centers, $ds_applied_policy, $param_incident_csv
+end
+
+script "js_report", type: "javascript" do
+  parameters "ds_billing_centers", "ds_applied_policy", "param_incident_csv"
+  result "result"
+  code <<-'EOS'
+  csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+
+  // Build a lookup table of all Billing Centers (including "unallocated" ones) so parent
+  // names can be resolved even though "unallocated" Billing Centers are excluded from the report.
+  bc_by_id = {}
+  _.each(ds_billing_centers, function(bc) { bc_by_id[bc['id']] = bc })
+
+  // Exclude any Billing Center whose id contains "unallocated"
+  filtered = _.reject(ds_billing_centers, function(bc) {
+    return bc['id'].indexOf('unallocated') !== -1
+  })
+
+  result = _.map(filtered, function(bc) {
+    parent = bc['parent_id'] ? bc_by_id[bc['parent_id']] : undefined
+
+    return {
+      id: bc['id'],
+      name: bc['name'],
+      description: bc['description'],
+      createdAt: bc['created_at'],
+      updatedAt: bc['updated_at'],
+      parentId: bc['parent_id'] ? bc['parent_id'] : null,
+      parentName: parent ? parent['name'] : null
+    }
+  })
+
+  result = _.sortBy(result, 'name')
+
+  if (result.length > 0) {
+    result[0]['policy_name'] = ds_applied_policy['name']
+    result[0]['message'] = "Total Billing Centers Found: " + result.length + csv_message
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_bc_report" do
+  validate_each $ds_report do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Billing Centers Found"
+    detail_template <<-'EOS'
+    **Details:** {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check eq(val(item, "id"), "")
+    escalate $esc_email
+    escalate $esc_rename_billing_center
+    escalate $esc_update_billing_center_description
+    escalate $esc_delete_billing_center
+    export do
+      resource_level true
+      field "id" do
+        label "Billing Center ID"
+      end
+      field "name" do
+        label "Billing Center Name"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "createdAt" do
+        label "Created At"
+      end
+      field "updatedAt" do
+        label "Updated At"
+      end
+      field "parentId" do
+        label "Parent Billing Center ID"
+      end
+      field "parentName" do
+        label "Parent Billing Center Name"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email do
+    attach_export_table $param_incident_csv
+    body_table_max_rows $param_incident_table_size
+  end
+end
+
+escalation "esc_rename_billing_center" do
+  automatic false
+  label "Rename Billing Center"
+  description "Approval to change the name of the selected Billing Center(s)"
+  parameter "param_new_name" do
+    type "string"
+    category "Policy Settings"
+    label "New Name"
+    description "The new name to assign to the selected Billing Center(s)."
+    # No default value, user input required
+  end
+  run "rename_billing_centers", data, $param_new_name, rs_org_id, rs_optima_host
+end
+
+escalation "esc_update_billing_center_description" do
+  automatic false
+  label "Update Billing Center Description"
+  description "Approval to change the description of the selected Billing Center(s)"
+  parameter "param_new_description" do
+    type "string"
+    category "Policy Settings"
+    label "New Description"
+    description "The new description to assign to the selected Billing Center(s)."
+    default ""
+  end
+  run "update_billing_center_descriptions", data, $param_new_description, rs_org_id, rs_optima_host
+end
+
+escalation "esc_delete_billing_center" do
+  automatic false
+  label "Delete Billing Center"
+  description "Approval to delete the selected Billing Center(s)"
+  run "delete_billing_centers", data, rs_org_id, rs_optima_host
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define rename_billing_centers($data, $param_new_name, $rs_org_id, $rs_optima_host) return $all_responses do
+  $$all_responses = []
+
+  foreach $item in $data do
+    sub on_error: handle_error() do
+      call update_billing_center($item, $param_new_name, $item["description"], $rs_org_id, $rs_optima_host) retrieve $response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define update_billing_center_descriptions($data, $param_new_description, $rs_org_id, $rs_optima_host) return $all_responses do
+  $$all_responses = []
+
+  foreach $item in $data do
+    sub on_error: handle_error() do
+      call update_billing_center($item, $item["name"], $param_new_description, $rs_org_id, $rs_optima_host) retrieve $response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define update_billing_center($item, $name, $description, $rs_org_id, $rs_optima_host) return $response do
+  $bc_label = $item["name"] + " (" + $item["id"] + ")"
+  $href = "/analytics/orgs/" + $rs_org_id + "/billing_centers/" + $item["id"]
+  task_label("PUT " + $href)
+
+  $response = http_request(
+    auth: $$auth_flexera,
+    https: true,
+    verb: "put",
+    host: $rs_optima_host,
+    href: $href,
+    headers: {
+      "Api-Version": "1.0",
+      "User-Agent": "RS Policies"
+    },
+    body: { "name": $name, "description": $description }
+  )
+
+  task_label("PUT " + $href + " response: " + $bc_label + " " + to_json($response))
+  $$all_responses << to_json({"req": "PUT " + $href, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response updating Billing Center: " + $bc_label + " " + to_json($response)
+  else
+    task_label("Update Billing Center successful: " + $bc_label)
+  end
+end
+
+define delete_billing_centers($data, $rs_org_id, $rs_optima_host) return $all_responses do
+  $$all_responses = []
+
+  foreach $item in $data do
+    sub on_error: handle_error() do
+      call delete_billing_center($item, $rs_org_id, $rs_optima_host) retrieve $response
+    end
+  end
+
+  if inspect($$errors) != "null"
+    raise join($$errors, "\n")
+  end
+end
+
+define delete_billing_center($item, $rs_org_id, $rs_optima_host) return $response do
+  $bc_label = $item["name"] + " (" + $item["id"] + ")"
+  $href = "/analytics/orgs/" + $rs_org_id + "/billing_centers/" + $item["id"]
+  task_label("DELETE " + $href)
+
+  $response = http_request(
+    auth: $$auth_flexera,
+    https: true,
+    verb: "delete",
+    host: $rs_optima_host,
+    href: $href,
+    headers: {
+      "Api-Version": "1.0",
+      "User-Agent": "RS Policies"
+    }
+  )
+
+  task_label("DELETE " + $href + " response: " + $bc_label + " " + to_json($response))
+  $$all_responses << to_json({"req": "DELETE " + $href, "resp": $response})
+
+  if $response["code"] != 200 && $response["code"] != 202 && $response["code"] != 204
+    raise "Unexpected response deleting Billing Center: " + $bc_label + " " + to_json($response)
+  else
+    task_label("Delete Billing Center successful: " + $bc_label)
+  end
+end
+
+define handle_error() do
+  if !$$errors
+    $$errors = []
+  end
+  $$errors << $_error["type"] + ": " + $_error["message"]
+  $_error_behavior = "skip"
+end
