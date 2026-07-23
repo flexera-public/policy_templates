@@ -4,6 +4,10 @@
 
 This policy template uses the AWS APIs (RDS, EKS, and ElastiCache) to identify all resources running versions covered by AWS Extended Support. Extended support start and end dates are determined using the static reference data file at `data/aws/aws_extended_support_dates.json`. Resource-level billing data from the Flexera CCO platform is used to obtain actual extended support costs for resources already incurring those charges. These resources are outdated and AWS charges an extended support fee for continued use. A report is produced containing a list of these resources, and optionally, an email is sent with this report.
 
+**NOTE: This policy template is scoped to extended support *costs*, not maintenance or security posture. It should not be used to determine when a resource stops receiving security updates and bug fixes. Extended support includes critical CVE patches, but individual minor and patch versions reach end of support on their own schedules (often earlier than the major version) so a resource may stop receiving patches well before the dates listed here. For RDS, Aurora, and ElastiCache the template keys on major versions, because AWS offers extended support only at the major version level and bills accordingly. EKS is keyed on Kubernetes minor versions (e.g. 1.31), which is the granularity at which AWS defines the EKS support lifecycle.**
+
+**NOTE: AWS does not maintain a single authoritative source for extended support dates. They are published across per-service release calendars, pricing pages, and What's New announcements, and these sources can disagree; an announcement may change a date weeks before the corresponding calendar is updated. AWS also revises published dates, sometimes extending them by years. The dates in this template are a best-effort consolidation of first-party AWS sources as of the last update and may lag changes on AWS's side.**
+
 ## How It Works
 
 - The policy queries the AWS APIs (RDS, EKS, and ElastiCache) across all opted-in regions to enumerate all running resources.
