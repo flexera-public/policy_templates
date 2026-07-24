@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.0
+
+- Added `Include Data Table In Incident` parameter to optionally include a formatted table of the moving average cost data in the body of the incident.
+
 ## v4.0.6
 
 - Updated documentation link in policy description. Functionality unchanged.

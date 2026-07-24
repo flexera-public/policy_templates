@@ -15,6 +15,7 @@ This policy generates an email report comparing actual spending to budgeted valu
 - _Filter Group By Dimensions_: Filter by dimension=value pairs (e.g., 'Cloud Vendor=AWS'). Multiple values for the same dimension can be supplied as coma-separated list.
 - _Unbudgeted Spend_: Parameter to include or exclude unbudgeted funds in the calculation.
 - _Email Addresses_: A list of email addresses to notify.
+- _Include Data Table In Incident_: Whether to also include a formatted table of the underlying budget vs actual spend data within the body of the incident, in addition to the chart and summary details above.
 
 ## Policy Actions
 

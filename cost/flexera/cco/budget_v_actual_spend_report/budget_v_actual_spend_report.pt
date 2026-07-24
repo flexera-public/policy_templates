@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.6.0",
+  version: "2.7.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -61,6 +61,15 @@ parameter "param_email" do
   label "Email Addresses"
   description "A list of email addresses to notify"
   default []
+end
+
+parameter "param_incident_data_table" do
+  type "string"
+  category "Incident Settings"
+  label "Include Data Table In Incident"
+  description "Whether to also include a formatted table of the underlying budget vs actual spend data within the body of the incident, in addition to the chart and summary details above."
+  allowed_values "true", "false"
+  default "false"
 end
 
 ###############################################################################
@@ -323,11 +332,11 @@ EOS
 end
 
 datasource "ds_aggregated_report" do
-  run_script $js_aggregated_report, $ds_reports, $ds_currency_code, $ds_currency_reference, $ds_dimensions, $ds_filters, $ds_billing_center_table, $param_budget_name_id, $param_report_type, f1_app_host
+  run_script $js_aggregated_report, $ds_reports, $ds_currency_code, $ds_currency_reference, $ds_dimensions, $ds_filters, $ds_billing_center_table, $param_budget_name_id, $param_report_type, $param_incident_data_table, f1_app_host
 end
 
 script "js_aggregated_report", type: "javascript" do
-  parameters "reports", "currency_code", "currency_reference", "ds_dimensions", "filters", "ds_billing_center_table", "budget_name_id", "report_type", "f1_app_host"
+  parameters "reports", "currency_code", "currency_reference", "ds_dimensions", "filters", "ds_billing_center_table", "budget_name_id", "report_type", "param_incident_data_table", "f1_app_host"
   result "results"
   code <<-'EOS'
   function convert_bc_name(id) {
@@ -343,8 +352,49 @@ script "js_aggregated_report", type: "javascript" do
   }
   var currency = currency_code.value || '';
   var ref = currency ? currency_reference[currency] : undefined;
+  var separator = ",";
   if (ref) {
     currency = ref.symbol || "";
+    separator = ref.t_separator !== undefined ? ref.t_separator : "";
+  }
+
+  function format_number(number) {
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        with_separator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { with_separator += separator }
+          with_separator += formatted_number[i]
+        }
+
+        formatted_number = with_separator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  function build_data_table(items) {
+    header = "| MonthYear | Group | Budget | Actual Spend | Over Budget |"
+    divider = "| --- | --- | ---: | ---: | ---: |"
+
+    rows = _.map(items, function(item) {
+      return "| " + item.monthYear +
+        " | " + item.group +
+        " | " + currency + format_number(item.budget) +
+        " | " + currency + format_number(item.spend) +
+        " | " + currency + format_number(item.overBudget) + " |"
+    })
+
+    return [header, divider].concat(rows).join("\n")
   }
 
   function get_group(dimensions, dimensionsIDs) {
@@ -503,6 +553,10 @@ script "js_aggregated_report", type: "javascript" do
     chartAxis: encodeURI('chxl=0:|' + formatChartDates(yearMonthsArr)),
   }
 
+  if (param_incident_data_table == "true" && reportData.length > 0) {
+    results.dataTable = build_data_table(reportData)
+  }
+
 EOS
 end
 
@@ -551,6 +605,12 @@ EOS
   [Link to budget report in Flexera One](https://{{with index data.reportData 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data.reportData 0}}{{ .b_id }}{{end}})
 
   *Please note: The chart in the incident reflects the selected filters. However, the budget dashboard via hyperlink displays the overall budget without filters applied.*
+
+  {{ if eq parameters.param_incident_data_table "true" }}
+  ## Data Table
+
+  {{ data.dataTable }}
+  {{ end }}
 EOS
     check eq(size(val(data, "reportData")), 0)
     escalate $esc_budget_alert

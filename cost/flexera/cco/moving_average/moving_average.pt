@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "4.0.6",
+  version: "4.1.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "",
@@ -70,6 +70,15 @@ parameter "param_average_months" do
   min_value 2
   max_value 6
   default 3
+end
+
+parameter "param_incident_data_table" do
+  type "string"
+  category "Incident Settings"
+  label "Include Data Table In Incident"
+  description "Whether to also include a formatted table of the underlying moving average cost data within the body of the incident, in addition to the chart above."
+  allowed_values "true", "false"
+  default "false"
 end
 
 ###############################################################################
@@ -374,13 +383,51 @@ EOS
 end
 
 datasource "ds_moving_average_chart" do
-  run_script $js_moving_average_chart, $ds_costs_calculated, $ds_billing_centers_filtered, $ds_applied_policy, $param_bc_list, $param_average_months, rs_org_name
+  run_script $js_moving_average_chart, $ds_costs_calculated, $ds_billing_centers_filtered, $ds_applied_policy, $ds_currency, $param_bc_list, $param_average_months, $param_incident_data_table, rs_org_name
 end
 
 script "js_moving_average_chart", type: "javascript" do
-  parameters "ds_costs_calculated", "ds_billing_centers_filtered", "ds_applied_policy", "param_bc_list", "param_average_months", "rs_org_name"
+  parameters "ds_costs_calculated", "ds_billing_centers_filtered", "ds_applied_policy", "ds_currency", "param_bc_list", "param_average_months", "param_incident_data_table", "rs_org_name"
   result "result"
   code <<-'EOS'
+  function format_number(number) {
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (ds_currency['separator']) {
+        with_separator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { with_separator += ds_currency['separator'] }
+          with_separator += formatted_number[i]
+        }
+
+        formatted_number = with_separator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  function build_data_table(items) {
+    header = "| Month | Cloud Cost | Moving Average | Currency |"
+    divider = "| --- | ---: | ---: | --- |"
+
+    rows = _.map(items, function(item) {
+      return "| " + item.month +
+        " | " + format_number(item.cost) +
+        " | " + format_number(item.average) +
+        " | " + item.currency + " |"
+    })
+
+    return [header, divider].concat(rows).join("\n")
+  }
+
   billingCenters = "All"
   if (param_bc_list.length > 0) { billingCenters = _.pluck(ds_billing_centers_filtered, 'name').join(', ') }
 
@@ -404,6 +451,10 @@ script "js_moving_average_chart", type: "javascript" do
     policy_name: ds_applied_policy['name'],
     param_average_months: param_average_months
   }
+
+  if (param_incident_data_table == "true") {
+    result.data_table = build_data_table(ds_costs_calculated)
+  }
 EOS
 end
 
@@ -419,6 +470,12 @@ policy "pol_moving_average_chart" do
 ### Billing Centers: {{ data.billingCenters }}
 #### Average calculated from previous {{ data.param_average_months }} months
 ![Moving Average](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ data.chartType }}&{{ data.chartLabel }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartColors }}&{{ data.chartExtension }} "Moving Average Spend Chart")
+
+{{ if eq parameters.param_incident_data_table "true" }}
+## Data Table
+
+{{ data.data_table }}
+{{ end }}
 EOS
     check eq(1, 0)
     escalate $esc_email

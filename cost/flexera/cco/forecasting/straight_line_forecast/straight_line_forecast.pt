@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "4.0.7",
+  version: "4.1.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Forecasting",
@@ -86,6 +86,15 @@ parameter "param_dimension" do
   label "Dimension"
   description "The name or ID of the Flexera dimension you want to split costs by in the chart. Enter 'Billing Center' to split costs by Billing Center. Leave blank to not split costs by any dimension."
   default ""
+end
+
+parameter "param_incident_data_table" do
+  type "string"
+  category "Incident Settings"
+  label "Include Data Table In Incident"
+  description "Whether to also include a formatted table of the underlying forecasted cost data within the body of the incident, in addition to the chart above."
+  allowed_values "true", "false"
+  default "false"
 end
 
 ###############################################################################
@@ -594,13 +603,51 @@ EOS
 end
 
 datasource "ds_chart_creation" do
-  run_script $js_chart_creation, $ds_forecasted_costs, $ds_dimension, $ds_applied_policy, $param_formula
+  run_script $js_chart_creation, $ds_forecasted_costs, $ds_dimension, $ds_applied_policy, $ds_currency, $param_formula, $param_incident_data_table
 end
 
 script "js_chart_creation", type: "javascript" do
-  parameters "ds_forecasted_costs", "ds_dimension", "ds_applied_policy", "param_formula"
+  parameters "ds_forecasted_costs", "ds_dimension", "ds_applied_policy", "ds_currency", "param_formula", "param_incident_data_table"
   result "result"
   code <<-'EOS'
+  function format_number(number, separator) {
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        with_separator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { with_separator += separator }
+          with_separator += formatted_number[i]
+        }
+
+        formatted_number = with_separator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  function build_data_table(items) {
+    header = "| Month | Dimension | Dimension Value | Forecasted Cost |"
+    divider = "| --- | --- | --- | ---: |"
+
+    rows = _.map(items, function(item) {
+      return "| " + item.month +
+        " | " + item.dimension +
+        " | " + item.value +
+        " | " + ds_currency['symbol'] + format_number(item.cost, ds_currency['separator']) + " |"
+    })
+
+    return [header, divider].concat(rows).join("\n")
+  }
+
   chart_axis_label = 'chxl=0:|' + _.uniq(_.pluck(ds_forecasted_costs, "month")).join('|')
 
   group_by_value = _.groupBy(ds_forecasted_costs, "value")
@@ -646,6 +693,10 @@ script "js_chart_creation", type: "javascript" do
     report_data: ds_forecasted_costs,
     model: param_formula
   }
+
+  if (param_incident_data_table == "true") {
+    result.data_table = build_data_table(ds_forecasted_costs)
+  }
 EOS
 end
 
@@ -660,6 +711,12 @@ policy "pol_straight_line_forecast" do
 # Forecast Report for {{ rs_org_name }} - {{ data.current_month_name }}
 ### Model: {{ data.model }}
 ![Forecast Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ data.chart_options }})
+
+{{ if eq parameters.param_incident_data_table "true" }}
+## Data Table
+
+{{ data.data_table }}
+{{ end }}
 EOS
     check eq(1, 0)
     escalate $esc_email

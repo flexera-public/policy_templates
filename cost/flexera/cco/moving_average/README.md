@@ -25,6 +25,7 @@ This policy template pulls cost data from Flexera Cloud Cost Optimization (CCO) 
 - *Allow/Deny Billing Center List* - A list of allowed or denied Billing Center names/IDs. Leave blank to produce forecast for entire Flexera organization.
 - *Look Back Months (#)* - Number of months into the past to use for generating forecast.
 - *Moving Average Months* - Number of prior months to use to calculate moving average.
+- *Include Data Table In Incident* - Whether to also include a formatted table of the underlying moving average cost data within the body of the incident, in addition to the chart above.
 
 ## Policy Actions
 

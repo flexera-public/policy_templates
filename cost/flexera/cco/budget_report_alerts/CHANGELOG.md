@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.7.0
+
+- Added `Include Data Table In Incident` parameter to optionally include a formatted table of the budget data in the body of the incident.
+
 ## v3.6.0
 
 - Added `Incident Table Size` and `Attach Incident CSV` parameters to control email incident table row count and CSV attachment behavior.

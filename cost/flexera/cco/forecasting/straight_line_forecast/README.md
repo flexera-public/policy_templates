@@ -18,6 +18,7 @@ This policy template produces a forecast for monthly cloud spend based on cost d
 - *Forecast Months (#)* - Number of months in the future to forecast.
 - *Forecast Formula* - Formula to use when projecting costs.
 - *Dimension* - The name or ID of the Flexera dimension you want to split costs by in the chart. Enter `Billing Center` to split costs by Billing Center. Leave blank to not split costs by any dimension.
+- *Include Data Table In Incident* - Whether to also include a formatted table of the underlying forecasted cost data within the body of the incident, in addition to the chart above.
 
 ## Policy Actions
 
