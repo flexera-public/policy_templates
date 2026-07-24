@@ -8,7 +8,7 @@ category "Operational"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "0.1.0",
+  version: "0.2.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -43,6 +43,15 @@ parameter "param_incident_table_size" do
   description "The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
   allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
   default 100000
+end
+
+parameter "param_incident_data_table" do
+  type "string"
+  category "Incident Settings"
+  label "Include Data Table In Incident"
+  description "Whether to also include a formatted table of the underlying Billing Center data within the body of the incident, in addition to the summary details. If you enable this option, consider also enabling the 'Attach CSV To Incident Email' option to avoid rendering redundant tables in the incident email."
+  allowed_values "true", "false"
+  default "false"
 end
 
 ###############################################################################
@@ -136,14 +145,31 @@ datasource "ds_billing_centers" do
 end
 
 datasource "ds_report" do
-  run_script $js_report, $ds_billing_centers, $ds_applied_policy, $param_incident_csv
+  run_script $js_report, $ds_billing_centers, $ds_applied_policy, $param_incident_csv, $param_incident_data_table
 end
 
 script "js_report", type: "javascript" do
-  parameters "ds_billing_centers", "ds_applied_policy", "param_incident_csv"
+  parameters "ds_billing_centers", "ds_applied_policy", "param_incident_csv", "param_incident_data_table"
   result "result"
   code <<-'EOS'
   csv_message = param_incident_csv == "false" ? "" : " Incident table CSV file has been attached to emails for this incident."
+
+  function build_data_table(items) {
+    header = "| Billing Center ID | Billing Center Name | Description | Created At | Updated At | Parent Billing Center ID | Parent Billing Center Name |"
+    divider = "| --- | --- | --- | --- | --- | --- | --- |"
+
+    rows = _.map(items, function(item) {
+      return "| " + item['id'] +
+        " | " + item['name'] +
+        " | " + (item['description'] || "") +
+        " | " + (item['createdAt'] || "") +
+        " | " + (item['updatedAt'] || "") +
+        " | " + (item['parentId'] || "") +
+        " | " + (item['parentName'] || "") + " |"
+    })
+
+    return [header, divider].concat(rows).join("\n")
+  }
 
   // Build a lookup table of all Billing Centers (including "unallocated" ones) so parent
   // names can be resolved even though "unallocated" Billing Centers are excluded from the report.
@@ -174,6 +200,10 @@ script "js_report", type: "javascript" do
   if (result.length > 0) {
     result[0]['policy_name'] = ds_applied_policy['name']
     result[0]['message'] = "Total Billing Centers Found: " + result.length + csv_message
+
+    if (param_incident_data_table == "true") {
+      result[0]['data_table'] = build_data_table(result)
+    }
   }
 EOS
 end
@@ -187,6 +217,12 @@ policy "pol_bc_report" do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Billing Centers Found"
     detail_template <<-'EOS'
     **Details:** {{ with index data 0 }}{{ .message }}{{ end }}
+
+    {{ if eq parameters.param_incident_data_table "true" }}
+    ## Data Table
+
+    {{ with index data 0 }}{{ .data_table }}{{ end }}
+    {{ end }}
     EOS
     check eq(val(item, "id"), "")
     escalate $esc_email

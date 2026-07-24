@@ -8,7 +8,7 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "3.6.0",
+  version: "3.7.0",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Cloud Cost Optimization",
@@ -95,6 +95,15 @@ parameter "param_incident_csv" do
   category "Incident Settings"
   label "Attach CSV To Incident Email"
   description "Whether or not to attach the results as a CSV file to the incident email."
+  allowed_values "true", "false"
+  default "false"
+end
+
+parameter "param_incident_data_table" do
+  type "string"
+  category "Incident Settings"
+  label "Include Data Table In Incident"
+  description "Whether to also include a formatted table of the underlying budget data within the body of the incident, in addition to the summary details. If you enable this option, consider also enabling the 'Attach CSV To Incident Email' option to avoid rendering redundant tables in the incident email."
   allowed_values "true", "false"
   default "false"
 end
@@ -366,15 +375,56 @@ EOS
 end
 
 datasource "ds_aggregated" do
-  run_script $js_aggregated, $ds_filtered_reports, $ds_currency, $ds_dimensions, $ds_billing_center_table, $param_threshold_percentage, $param_type, $param_budget_name_id, $param_filter, $param_incident_csv, f1_app_host
+  run_script $js_aggregated, $ds_filtered_reports, $ds_currency, $ds_dimensions, $ds_billing_center_table, $param_threshold_percentage, $param_type, $param_budget_name_id, $param_filter, $param_incident_csv, $param_incident_data_table, f1_app_host
 end
 
 script "js_aggregated", type: "javascript" do
-  parameters "ds_filtered_reports", "ds_currency", "ds_dimensions", "ds_billing_center_table", "param_threshold_percentage", "param_type", "param_budget_name_id", "param_filter", "param_incident_csv", "f1_app_host"
+  parameters "ds_filtered_reports", "ds_currency", "ds_dimensions", "ds_billing_center_table", "param_threshold_percentage", "param_type", "param_budget_name_id", "param_filter", "param_incident_csv", "param_incident_data_table", "f1_app_host"
   result "result"
   code <<-'EOS'
   function convert_bc_name(id) {
     return ds_billing_center_table[id] ? ds_billing_center_table[id] : id
+  }
+
+  function format_number(number, separator) {
+    formatted_number = "0"
+
+    if (number) {
+      formatted_number = (Math.round(number * 100) / 100).toString().split(".")[0]
+
+      if (separator) {
+        with_separator = ""
+
+        for (var i = 0; i < formatted_number.length; i++) {
+          if (i > 0 && (formatted_number.length - i) % 3 == 0) { with_separator += separator }
+          with_separator += formatted_number[i]
+        }
+
+        formatted_number = with_separator
+      }
+
+      decimal = (Math.round(number * 100) / 100).toString().split(".")[1]
+      if (decimal) { formatted_number += "." + decimal }
+    }
+
+    return formatted_number
+  }
+
+  function build_data_table(items) {
+    header = "| Group | Budget | Actual Spend | Projected (prorated) Spend | Remaining Amount | % of Budget Spent | Details |"
+    divider = "| --- | ---: | ---: | ---: | ---: | ---: | --- |"
+
+    rows = _.map(items, function(item) {
+      return "| " + item['group'] +
+        " | " + ds_currency['symbol'] + format_number(item['budgetAmount'], ds_currency['separator']) +
+        " | " + ds_currency['symbol'] + format_number(item['spendAmount'], ds_currency['separator']) +
+        " | " + ds_currency['symbol'] + format_number(item['forecastedAmount'], ds_currency['separator']) +
+        " | " + ds_currency['symbol'] + format_number(item['remaining'], ds_currency['separator']) +
+        " | " + (item['spentPercent'] || "") +
+        " | " + item['details'] + " |"
+    })
+
+    return [header, divider].concat(rows).join("\n")
   }
 
   function forecasted(curr) {
@@ -517,6 +567,11 @@ script "js_aggregated", type: "javascript" do
 
   if (result['exceeded'].length > 0) { result['exceeded'][0]['message'] = csv_message }
   if (result['forecasted'].length > 0) { result['forecasted'][0]['message'] = csv_message }
+
+  if (param_incident_data_table == "true") {
+    if (result['exceeded'].length > 0) { result['exceeded'][0]['data_table'] = build_data_table(result['exceeded']) }
+    if (result['forecasted'].length > 0) { result['forecasted'][0]['data_table'] = build_data_table(result['forecasted']) }
+  }
 EOS
 end
 
@@ -575,6 +630,12 @@ Target Groups: \n
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 
 {{ with index data 0 }}{{ .message }}{{ end }}
+
+{{ if eq parameters.param_incident_data_table "true" }}
+## Data Table
+
+{{ with index data 0 }}{{ .data_table }}{{ end }}
+{{ end }}
 EOS
     check eq(size(data), 0)
     escalate $esc_email
@@ -627,6 +688,12 @@ Target Groups: \n
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 
 {{ with index data 0 }}{{ .message }}{{ end }}
+
+{{ if eq parameters.param_incident_data_table "true" }}
+## Data Table
+
+{{ with index data 0 }}{{ .data_table }}{{ end }}
+{{ end }}
 EOS
     check eq(size(data), 0)
     escalate $esc_email
