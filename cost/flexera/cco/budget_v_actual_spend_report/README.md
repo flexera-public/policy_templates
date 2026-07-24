@@ -15,7 +15,9 @@ This policy generates an email report comparing actual spending to budgeted valu
 - _Filter Group By Dimensions_: Filter by dimension=value pairs (e.g., 'Cloud Vendor=AWS'). Multiple values for the same dimension can be supplied as coma-separated list.
 - _Unbudgeted Spend_: Parameter to include or exclude unbudgeted funds in the calculation.
 - _Email Addresses_: A list of email addresses to notify.
-- _Include Data Table In Incident_: Whether to also include a formatted table of the underlying budget vs actual spend data within the body of the incident, in addition to the chart and summary details above.
+- _Attach CSV To Incident Email_: Whether or not to attach the results as a CSV file to the incident email.
+- _Incident Table Rows for Email Body (#)_: The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
+- _Include Data Table In Incident_: Whether to also include a formatted table of the underlying budget vs actual spend data within the body of the incident, in addition to the chart and summary details above. If you enable this option, consider also enabling the 'Attach CSV To Incident Email' option to avoid rendering redundant tables in the incident email.
 
 ## Policy Actions
 

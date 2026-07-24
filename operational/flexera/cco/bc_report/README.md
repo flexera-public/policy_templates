@@ -9,7 +9,7 @@ This policy template reports on all Billing Centers within the Flexera organizat
 - *Email Addresses* - A list of email addresses to notify.
 - *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
 - *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
-- *Include Data Table In Incident* - Whether to also include a formatted table of the underlying Billing Center data within the body of the incident, in addition to the summary details. If you enable this option, consider also setting the `Attach CSV To Incident Email` parameter to `true` to avoid rendering redundant tables in the incident email.
+- *Include Data Table In Incident* - Whether to also include a formatted table of the underlying Billing Center data within the body of the incident, in addition to the summary details. If you enable this option, consider also enabling the `Attach CSV To Incident Email` option to avoid rendering redundant tables in the incident email.
 
 ## Policy Actions
 

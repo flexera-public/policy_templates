@@ -25,7 +25,9 @@ This policy template pulls cost data from Flexera Cloud Cost Optimization (CCO) 
 - *Allow/Deny Billing Center List* - A list of allowed or denied Billing Center names/IDs. Leave blank to produce forecast for entire Flexera organization.
 - *Look Back Months (#)* - Number of months into the past to use for generating forecast.
 - *Moving Average Months* - Number of prior months to use to calculate moving average.
-- *Include Data Table In Incident* - Whether to also include a formatted table of the underlying moving average cost data within the body of the incident, in addition to the chart above.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
+- *Include Data Table In Incident* - Whether to also include a formatted table of the underlying moving average cost data within the body of the incident, in addition to the chart above. If you enable this option, consider also enabling the 'Attach CSV To Incident Email' option to avoid rendering redundant tables in the incident email.
 
 ## Policy Actions
 
