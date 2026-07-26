@@ -6,6 +6,97 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#4724](https://github.com/flexera-public/policy_templates/pull/4724): POL-1806 Markdown Table Option
+
+*Minor Update*
+
+#### Description
+
+> Adds an option to render the data table as a nicely formatted markdown table in a handful of policy templates. This is primarily useful for making the table look nice in emails compared to a traditional export table.
+>
+> Also adds CSV support to some of these policy templates so that the email won't contain redundant tables if desired by the end user.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4724) for these details.
+- **Merged At**: 2026-07-24 14:17:08 UTC
+
+---
+
+### PR [#4706](https://github.com/flexera-public/policy_templates/pull/4706): POL-1801 Email Cost Optimization Recommendations: K8s Support
+
+*Minor Update*
+
+#### Description
+
+> `Email Cost Optimization Recommendations`
+> - Added support for AWS and Azure cross-family compute recommendations.
+> - Added support for Kubernetes recommendations.
+>
+
+#### Metadata
+
+- **Policies**: [Email Cost Optimization Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/email_recommendations/README.md)
+- **Merged At**: 2026-07-23 15:15:49 UTC
+
+---
+
+### PR [#4714](https://github.com/flexera-public/policy_templates/pull/4714): POL-1804 New Policy Template: Flexera Billing Center Report
+
+*New Policy Template*
+
+#### Description
+
+> New policy template that simply lists the details for all Billing Centers in the org and allows actions to be taken against them.
+>
+
+#### Metadata
+
+- **Policies**: [Flexera Billing Center Report](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/bc_report/README.md)
+- **Merged At**: 2026-07-22 19:40:34 UTC
+
+---
+
+### PR [#4710](https://github.com/flexera-public/policy_templates/pull/4710): POL-1802 RBD Effective Date Feature
+
+*Unpublished, Minor Update*
+
+#### Description
+
+> Updates the various RBD generating policy templates to include an option to use the current month as the effective date instead of using a static value.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4710) for these details.
+- **Merged At**: 2026-07-21 18:56:52 UTC
+
+---
+
+### PR [#4703](https://github.com/flexera-public/policy_templates/pull/4703): POL-1800 AWS Resources Under or Approaching Extended Support Fixes
+
+*Minor Update*
+
+#### Description
+
+> `AWS Resources Under or Approaching Extended Support`
+> - Updated cost estimation to reflect AWS's tiered Extended Support pricing: a lower rate for years 1-2 and a higher rate starting in year 3, selected automatically based on the current date.
+> - Estimated savings for Multi-AZ RDS instances now account for both the primary and standby instance vCPUs, since AWS bills extended support for both.
+> - Added a `Rate Tier` field to the incident export showing which pricing tier applies to each resource.
+> - ElastiCache Extended Support is now correctly modeled as a percentage premium on the node's on-demand rate rather than a flat node-hour fee.
+> - MariaDB instances are no longer reported by this policy; they are not eligible for AWS RDS Extended Support.
+>
+> README also now documents the sources of truth for the information used in determining the extended support status of various resource types.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Resources Under or Approaching Extended Support](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/extended_support/README.md), [Meta Parent: AWS Resources Under or Approaching Extended Support](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/extended_support/README.md)
+- **Merged At**: 2026-07-21 13:59:36 UTC
+
+---
+
 ### PR [#4692](https://github.com/flexera-public/policy_templates/pull/4692): POL-1778 Container Cost Visibility Setup: Syntax Error Fix
 
 *Minor Update*
@@ -1774,109 +1865,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Azure Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/recommendations/README.md)
 - **Merged At**: 2026-01-15 15:53:54 UTC
-
----
-
-### PR [#3971](https://github.com/flexera-public/policy_templates/pull/3971): POL-1717 Update AWS Rightsize Redshift - no Policy Incidents fix
-
-*Bug Fix*
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This change adds a small fix to the AWS Rightsize Redshift policy template to resolve order of magnitude error when evaluating the CPU Utilization vs the CPU Threshold.
->
-> This was previously causing the AWS Rightsize Redshift policy to produce no recommendations for valid Redshift instances/nodes.
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: [AWS Rightsize Redshift](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_redshift/README.md)
-- **Merged At**: 2026-01-13 16:32:14 UTC
-
----
-
-### PR [#3972](https://github.com/flexera-public/policy_templates/pull/3972): POL-1716 Google Project Pagination Update Pt 2
-
-*Minor Update*
-
-#### Description
-
-> This updates several Google policies to use a newer API endpoint for listing Google Projects. This has the benefit of filtering the projects based on parameters during the request itself; this is especially useful for filtering out app- and sys- projects, since it's possible to have so many of those that pagination actually hits Google API limits.
->
-> This also updates the meta policy generator script to still work for these policy templates even when "ds_is_deleted" is referenced inside of a JavaScript block.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3972) for these details.
-- **Merged At**: 2026-01-13 14:48:05 UTC
-
----
-
-### PR [#3967](https://github.com/flexera-public/policy_templates/pull/3967): POL-1716 Part 1: Google Project Pagination Update
-
-*Minor Update*
-
-#### Description
-
-> This updates several Google policies to use a newer API endpoint for listing Google Projects. This has the benefit of filtering the projects based on parameters during the request itself; this is especially useful for filtering out app- and sys- projects, since it's possible to have so many of those that pagination actually hits Google API limits.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3967) for these details.
-- **Merged At**: 2026-01-12 20:47:53 UTC
-
----
-
-### PR [#3958](https://github.com/flexera-public/policy_templates/pull/3958): POL-1713 Update AWS Rightsize ElastiCache - no Policy Incidents fix
-
-*Bug Fix*
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> It was observed in a customer org that for the AWS Rightsize ElastiCache policy that even when valid Elasticache instances exist, the policy does not produce an incident and therefore no recommendations.
->
-> This is a fix to the `ds_elasticache_clusters_resize_filtered` datasource to ensure datasources are being read and compared correctly when evaluating Elasticache instances.
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: [AWS Rightsize ElastiCache](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_elasticache/README.md)
-- **Merged At**: 2026-01-12 15:52:17 UTC
-
----
-
-### PR [#3948](https://github.com/flexera-public/policy_templates/pull/3948): POL-1709 Fixed Bug onboarding policy ignores google policies
-
-*Minor Update, Bug Fix*
-
-#### Description
-
-> Flexera Onboarding Policy fix issue where all gcp policies were skipped/ignored.
->
-> <!-- Describe what this change achieves below -->
->
-> ### Issues Resolved
->
-> Pol-1709 onboarding policy ignores google policies
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: [Flexera Onboarding](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/onboarding/README.md)
-- **Merged At**: 2026-01-09 14:49:50 UTC
 
 ---
 
