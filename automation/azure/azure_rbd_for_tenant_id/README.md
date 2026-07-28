@@ -7,7 +7,7 @@ This policy template creates and maintains a Rule-Based Dimension in Flexera Clo
 ## How It Works
 
 1. The policy retrieves all Bill Connections configured in the Flexera organization and filters them down to the Azure Bill Connections (Azure EA, Azure MCA, and Azure CSP).
-1. For each Azure Bill Connection, the policy extracts the associated Azure tenant ID.
+1. For each Azure Bill Connection, the policy extracts the associated Azure tenant ID. If the same tenant ID is associated with more than one Bill Connection (for example, an organization that migrated from Azure EA to Azure MCA/CSP but still has both Bill Connections configured), the MCA or CSP Bill Connection is preferred over the EA one, since EA Bill Connections are being phased out in favor of MCA/CSP. This ensures each tenant ID is only associated with a single Bill Connection.
 1. The policy queries Flexera CCO for the last 12 months of cost data, filtered to only the Azure Bill Connections identified above, in order to build a complete list of Azure vendor accounts (subscriptions) and the Bill Connection each one belongs to.
 1. The policy combines this data into a table of vendor accounts, their Bill Connection, and the associated tenant ID.
 1. The policy creates or updates a Rule-Based Dimension with one rule per vendor account, mapping the vendor account to its tenant ID.

@@ -161,6 +161,8 @@ end
 # Filter Bill Connections down to Azure ones and extract the tenant ID for each,
 # based on the Azure Bill Connect type embedded in the Bill Connection ID.
 # Note: the Bill Connection ID is identical to the 'bill_source' dimension in Flexera CCO.
+# If the same tenant ID appears in multiple Bill Connections, the MCA or CSP Bill Connection is
+# preferred over the EA one, since EA Bill Connections are being phased out in favor of MCA/CSP.
 datasource "ds_azure_bill_connections" do
   run_script $js_azure_bill_connections, $ds_bill_connections
 end
@@ -169,26 +171,47 @@ script "js_azure_bill_connections", type: "javascript" do
   parameters "ds_bill_connections"
   result "result"
   code <<-'EOS'
-  result = []
+  candidates = []
 
   _.each(ds_bill_connections, function(connection) {
     id = connection['id']
 
     if (typeof(id) == 'string' && id.toLowerCase().indexOf('azure') != -1) {
       tenant_id = null
+      // EA Bill Connections are given a lower priority than MCA/CSP ones so that, when the same
+      // tenant ID is found in more than one Bill Connection, the MCA/CSP entry is preferred.
+      priority = 0
 
       if (id.toLowerCase().indexOf('cbi-oi-azure-ea') != -1 && connection['azureEaManagement']) {
         tenant_id = connection['azureEaManagement']['tenantId']
+        priority = 0
       } else if (id.toLowerCase().indexOf('cbi-oi-azure-mca') != -1 && connection['cbiAzureMca']) {
         tenant_id = connection['cbiAzureMca']['tenantId']
+        priority = 1
       } else if (id.toLowerCase().indexOf('cbi-oi-azure-csp') != -1 && connection['azureCsp']) {
         tenant_id = connection['azureCsp']['tenantId']
+        priority = 1
       }
 
       if (typeof(tenant_id) == 'string' && tenant_id.trim() != '') {
-        result.push({ bill_source: id, tenant_id: tenant_id.trim() })
+        candidates.push({ bill_source: id, tenant_id: tenant_id.trim(), priority: priority })
       }
     }
+  })
+
+  // De-duplicate by tenant ID, keeping only the highest-priority Bill Connection for each one
+  tenant_table = {}
+
+  _.each(candidates, function(candidate) {
+    existing = tenant_table[candidate['tenant_id']]
+
+    if (!existing || candidate['priority'] > existing['priority']) {
+      tenant_table[candidate['tenant_id']] = candidate
+    }
+  })
+
+  result = _.map(_.values(tenant_table), function(entry) {
+    return { bill_source: entry['bill_source'], tenant_id: entry['tenant_id'] }
   })
 EOS
 end
@@ -250,13 +273,13 @@ script "js_aggregated_costs", type: "javascript" do
   parameters "ds_top_level_bcs", "ds_azure_bill_connections", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-'EOS'
+  // Granularity is 'month', so start_at/end_at must be in YYYY-MM format (no day component)
   end_date = new Date()
-  end_date.setDate(end_date.getDate() - 1)
-  end_date = end_date.toISOString().split('T')[0]
+  end_date = end_date.toISOString().slice(0, 7)
 
   start_date = new Date()
   start_date.setMonth(start_date.getMonth() - 12)
-  start_date = start_date.toISOString().split('T')[0]
+  start_date = start_date.toISOString().slice(0, 7)
 
   // Default filter that matches nothing, used when there are no Azure Bill Connections
   var filter = { "dimension": "bill_source", "type": "equal", "value": "__none__" }
