@@ -2,7 +2,7 @@
 
 ## What It Does
 
-This policy template creates and maintains a Rule-Based Dimension in Flexera Cloud Cost Optimization that shows the Azure tenant ID associated with each Azure vendor account (subscription). This allows costs to be sliced, filtered, or grouped by tenant ID, which is useful for organizations that manage multiple Azure tenants. Rules added to this rule-based dimension manually, or by other policy templates, will not be deleted.
+This policy template creates and maintains a Rule-Based Dimension in Flexera Cloud Cost Optimization that shows the Azure tenant ID associated with each Azure subscription. This allows costs to be sliced, filtered, or grouped by tenant ID, which is useful for organizations that manage multiple Azure tenants. Rules added to this rule-based dimension manually, or by other policy templates, will not be deleted.
 
 ## How It Works
 
