@@ -369,7 +369,7 @@ Every policy template must begin with the following header block. All fields are
 
 ```
 name "Provider Example Policy"
-rs_pt_ver 20180301
+rs_pt_ver 20260723
 type "policy"
 short_description "Does X and Y. See the [README](https://github.com/flexera-public/policy_templates/tree/master/CATEGORY/PROVIDER/POLICY_NAME) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
 long_description ""

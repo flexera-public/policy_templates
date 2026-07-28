@@ -357,7 +357,7 @@ The following guidelines should be used when specifying policy template metadata
 
 ```ruby
 name "AWS Rightsize EC2 Instances"
-rs_pt_ver 20180301
+rs_pt_ver 20260723
 type "policy"
 short_description "Check for EC2 instances that have inefficient utilization for a specified number of days and downsizes or terminates them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
 long_description ""
