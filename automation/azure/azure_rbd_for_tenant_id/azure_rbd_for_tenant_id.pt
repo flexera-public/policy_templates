@@ -1,0 +1,574 @@
+name "Azure Rule-Based Dimension For Tenant ID"
+rs_pt_ver 20180301
+type "policy"
+short_description "Creates and/or updates a Rule-Based Dimension that shows the Azure tenant ID associated with each Azure vendor account. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/azure/azure_rbd_for_tenant_id) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera-one/automation/) to learn more."
+long_description ""
+doc_link "https://github.com/flexera-public/policy_templates/tree/master/automation/azure/azure_rbd_for_tenant_id"
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "0.1.0",
+  provider: "Flexera",
+  service: "Cloud Cost Optimization",
+  policy_set: "Automation",
+  hide_skip_approvals: "true",
+  publish: "false"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_rbd_name" do
+  type "string"
+  category "Policy Settings"
+  label "Dimension Name"
+  description "The name to give the new dimension for the Azure tenant ID. This is how the dimension will appear in Flexera One."
+  default "Azure Tenant ID"
+end
+
+parameter "param_rbd_id" do
+  type "string"
+  category "Policy Settings"
+  label "Dimension ID"
+  description "The internal ID to give the new dimension for the Azure tenant ID. Default is recommended for most use cases."
+  default "rbd_azure_tenant_id"
+end
+
+parameter "param_effective_date" do
+  type "string"
+  category "Policy Settings"
+  label "Effective Date"
+  description "Year/month you want rules to start applying in YYYY-MM format. Only used when 'Effective Date Mode' is set to 'Static'."
+  default "2010-01"
+end
+
+parameter "param_effective_date_mode" do
+  type "string"
+  category "Policy Settings"
+  label "Effective Date Mode"
+  description "Whether to use the static value in the 'Effective Date' parameter for all rule updates, or to automatically use the current month (in YYYY-MM format) as the effective date each time the policy runs."
+  allowed_values "Static", "Current Month"
+  default "Static"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-'EOS'
+  host_table = {
+    "api.optima.flexeraeng.com": {
+	    api: "api.flexera.com",
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com",
+      grs: "grs-front.iam-us-east-1.flexeraeng.com",
+      ui: "app.flexera.com",
+      tld: "flexera.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+	    api: "api.flexera.eu",
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com",
+      grs: "grs-front.eu-central-1.iam-eu.flexeraeng.com",
+      ui: "app.flexera.eu",
+      tld: "flexera.eu"
+    },
+    "api.optima-apac.flexeraeng.com": {
+	    api: "api.flexera.au",
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-apac.flexeraeng.com",
+      grs: "grs-front.ap-southeast-2.iam-apac.flexeraeng.com",
+      ui: "app.flexera.au",
+      tld: "flexera.au"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Determine the effective date to use for the generated rules: either the static value from the
+# 'Effective Date' parameter, or the current month (YYYY-MM) when 'Effective Date Mode' is 'Current Month'
+datasource "ds_effective_date" do
+  run_script $js_effective_date, $param_effective_date, $param_effective_date_mode
+end
+
+script "js_effective_date", type: "javascript" do
+  parameters "param_effective_date", "param_effective_date_mode"
+  result "result"
+  code <<-'EOS'
+  if (param_effective_date_mode == "Current Month") {
+    now = new Date()
+    year = now.getUTCFullYear()
+    month = ("0" + (now.getUTCMonth() + 1)).slice(-2)
+    result = year + "-" + month
+  } else {
+    result = param_effective_date
+  }
+EOS
+end
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/policy/v1/orgs/", rs_org_id, "/projects/", rs_project_id, "/applied-policies", switch(policy_id, join(["/", policy_id]), "")])
+  end
+end
+
+# Get all Bill Connections so we can identify the Azure ones and their tenant IDs
+datasource "ds_bill_connections" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-onboarding/v1/orgs/", rs_org_id, "/bill-connects"])
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "azureEaManagement", jmes_path(col_item, "azureEaManagement")
+      field "cbiAzureMca", jmes_path(col_item, "cbiAzureMca")
+      field "azureCsp", jmes_path(col_item, "azureCsp")
+    end
+  end
+end
+
+# Filter Bill Connections down to Azure ones and extract the tenant ID for each,
+# based on the Azure Bill Connect type embedded in the Bill Connection ID.
+# Note: the Bill Connection ID is identical to the 'bill_source' dimension in Flexera CCO.
+# If the same tenant ID appears in multiple Bill Connections, the MCA or CSP Bill Connection is
+# preferred over the EA one, since EA Bill Connections are being phased out in favor of MCA/CSP.
+datasource "ds_azure_bill_connections" do
+  run_script $js_azure_bill_connections, $ds_bill_connections
+end
+
+script "js_azure_bill_connections", type: "javascript" do
+  parameters "ds_bill_connections"
+  result "result"
+  code <<-'EOS'
+  candidates = []
+
+  _.each(ds_bill_connections, function(connection) {
+    id = connection['id']
+
+    if (typeof(id) == 'string' && id.toLowerCase().indexOf('azure') != -1) {
+      tenant_id = null
+      // EA Bill Connections are given a lower priority than MCA/CSP ones so that, when the same
+      // tenant ID is found in more than one Bill Connection, the MCA/CSP entry is preferred.
+      priority = 0
+
+      if (id.toLowerCase().indexOf('cbi-oi-azure-ea') != -1 && connection['azureEaManagement']) {
+        tenant_id = connection['azureEaManagement']['tenantId']
+        priority = 0
+      } else if (id.toLowerCase().indexOf('cbi-oi-azure-mca') != -1 && connection['cbiAzureMca']) {
+        tenant_id = connection['cbiAzureMca']['tenantId']
+        priority = 1
+      } else if (id.toLowerCase().indexOf('cbi-oi-azure-csp') != -1 && connection['azureCsp']) {
+        tenant_id = connection['azureCsp']['tenantId']
+        priority = 1
+      }
+
+      if (typeof(tenant_id) == 'string' && tenant_id.trim() != '') {
+        candidates.push({ bill_source: id, tenant_id: tenant_id.trim(), priority: priority })
+      }
+    }
+  })
+
+  // De-duplicate by tenant ID, keeping only the highest-priority Bill Connection for each one
+  tenant_table = {}
+
+  _.each(candidates, function(candidate) {
+    existing = tenant_table[candidate['tenant_id']]
+
+    if (!existing || candidate['priority'] > existing['priority']) {
+      tenant_table[candidate['tenant_id']] = candidate
+    }
+  })
+
+  result = _.map(_.values(tenant_table), function(entry) {
+    return { bill_source: entry['bill_source'], tenant_id: entry['tenant_id'] }
+  })
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    query "view", "allocation_table"
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-'EOS'
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+# Get a list of vendor_account/bill_source pairs for the last 12 months of cost data,
+# restricted to only the Azure Bill Connections identified above.
+datasource "ds_aggregated_costs" do
+  request do
+    run_script $js_aggregated_costs, $ds_top_level_bcs, $ds_azure_bill_connections, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "vendor_account", jmes_path(col_item, "dimensions.vendor_account")
+      field "bill_source", jmes_path(col_item, "dimensions.bill_source")
+    end
+  end
+end
+
+script "js_aggregated_costs", type: "javascript" do
+  parameters "ds_top_level_bcs", "ds_azure_bill_connections", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-'EOS'
+  // Granularity is 'month', so start_at/end_at must be in YYYY-MM format (no day component)
+  end_date = new Date()
+  end_date = end_date.toISOString().slice(0, 7)
+
+  start_date = new Date()
+  start_date.setMonth(start_date.getMonth() - 12)
+  start_date = start_date.toISOString().slice(0, 7)
+
+  // Default filter that matches nothing, used when there are no Azure Bill Connections
+  var filter = { "dimension": "bill_source", "type": "equal", "value": "__none__" }
+
+  if (ds_azure_bill_connections.length > 0) {
+    filter = {
+      "type": "or",
+      "expressions": _.map(ds_azure_bill_connections, function(connection) {
+        return { "dimension": "bill_source", "type": "equal", "value": connection['bill_source'] }
+      })
+    }
+  }
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/aggregated",
+    body_fields: {
+      dimensions: ["vendor_account", "bill_source"],
+      granularity: "month",
+      start_at: start_date,
+      end_at: end_date,
+      metrics: ["cost_amortized_unblended_adj"],
+      billing_center_ids: ds_top_level_bcs,
+      limit: 100000,
+      filter: filter
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+# Combine the cost data and Bill Connection data into a single table of vendor_account,
+# bill_source, and tenant_id, with one row per unique vendor_account.
+datasource "ds_combined_data" do
+  run_script $js_combined_data, $ds_aggregated_costs, $ds_azure_bill_connections
+end
+
+script "js_combined_data", type: "javascript" do
+  parameters "ds_aggregated_costs", "ds_azure_bill_connections"
+  result "result"
+  code <<-'EOS'
+  tenant_by_source = {}
+  _.each(ds_azure_bill_connections, function(connection) { tenant_by_source[connection['bill_source']] = connection['tenant_id'] })
+
+  result = []
+  seen = {}
+
+  _.each(ds_aggregated_costs, function(row) {
+    vendor_account = row['vendor_account']
+    bill_source = row['bill_source']
+    tenant_id = tenant_by_source[bill_source]
+
+    if (typeof(vendor_account) == 'string' && vendor_account.trim() != '' && typeof(tenant_id) == 'string' && !seen[vendor_account]) {
+      seen[vendor_account] = true
+
+      result.push({
+        vendor_account: vendor_account.trim(),
+        bill_source: bill_source,
+        tenant_id: tenant_id
+      })
+    }
+  })
+
+  result = _.sortBy(result, 'vendor_account')
+EOS
+end
+
+datasource "ds_new_rules" do
+  run_script $js_new_rules, $ds_combined_data, $ds_effective_date, $param_rbd_id, $param_rbd_name
+end
+
+script "js_new_rules", type: "javascript" do
+  parameters "ds_combined_data", "ds_effective_date", "param_rbd_id", "param_rbd_name"
+  result "result"
+  code <<-'EOS'
+  rules = _.map(ds_combined_data, function(item) {
+    return {
+      condition: { type: "dimension_equals", dimension: "vendor_account", value: item['vendor_account'] },
+      value: { text: item['tenant_id'] }
+    }
+  })
+
+  result = {
+    rule_lists: [
+      {
+        id: param_rbd_id,
+        name: param_rbd_name,
+        effective_at: ds_effective_date,
+        rules: rules
+      }
+    ],
+    dummy: "dummy"
+  }
+EOS
+end
+
+datasource "ds_existing_rbds" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions"])
+    # This is just to ensure that the new rules are generated before we gather existing RBDs
+    header "dummy", val($ds_new_rules, "dummy")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_existing_rbds_that_match" do
+  run_script $js_existing_rbds_that_match, $ds_existing_rbds, $ds_new_rules, $ds_effective_date
+end
+
+script "js_existing_rbds_that_match", type: "javascript" do
+  parameters "ds_existing_rbds", "ds_new_rules", "ds_effective_date"
+  result "result"
+  code <<-'EOS'
+  new_ids = _.pluck(ds_new_rules["rule_lists"], "id")
+  result = _.filter(ds_existing_rbds, function(rbd) { return _.contains(new_ids, rbd["id"]) })
+  result = _.map(result, function(rbd) { return _.extend({}, rbd, { effective_date: ds_effective_date }) })
+EOS
+end
+
+datasource "ds_existing_rbds_with_rules" do
+  iterate $ds_existing_rbds_that_match
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, "flexera")
+    path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", val(iter_item, "id"), "/rules/", val(iter_item, "effective_date")])
+    # We simply skip RBDs that don't have a ruleset with a conflicting date
+    ignore_status [ 400, 401, 403, 404, 429 ]
+  end
+  result do
+    encoding "json"
+    field "rules", jmes_path(response, "rules")
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+  end
+end
+
+datasource "ds_rbds" do
+  run_script $js_rbds, $ds_new_rules, $ds_existing_rbds, $ds_existing_rbds_with_rules, $ds_applied_policy
+end
+
+script "js_rbds", type: "javascript" do
+  parameters "ds_new_rules", "ds_existing_rbds", "ds_existing_rbds_with_rules", "ds_applied_policy"
+  result "result"
+  code <<-'EOS'
+  existing_rbd_ids = _.pluck(ds_existing_rbds, "id")
+
+  // Create rules that mark the beginning and end of the generated Azure tenant ID rules.
+  start_block_value = "Start: " + ds_applied_policy["name"]
+  end_block_value = "End: " + ds_applied_policy["name"]
+
+  block_start_rule = {
+    condition: { dimension: "vendor_account", type: "dimension_equals", value: start_block_value },
+    value: { text: start_block_value }
+  }
+
+  block_end_rule = {
+    condition: { dimension: "vendor_account", type: "dimension_equals", value: end_block_value },
+    value: { text: end_block_value }
+  }
+
+  // Create tables to easily reference the existing rules and our generated rules by RBD ID
+  new_rules_table = {}
+  _.each(ds_new_rules["rule_lists"], function(rbd) { new_rules_table[rbd["id"]] = rbd })
+
+  existing_rules_table = {}
+  _.each(ds_existing_rbds_with_rules, function(rbd) { existing_rules_table[rbd["id"]] = rbd["rules"] })
+
+  result = []
+
+  // Build combined rule sets
+  _.each(_.keys(new_rules_table), function(rbd_id) {
+    rules = []
+
+    // Track whether we've found an existing block of generated rules or not.
+    // Also track whether we've replaced them with the newly generated rules
+    found_block = false
+    injected_rules = false
+
+    if (existing_rules_table[rbd_id]) {
+      _.each(existing_rules_table[rbd_id], function(rule) {
+        if (!found_block) {
+          // When we find the beginning of the existing block of generated rules,
+          // replace them with our new rules
+          if (rule["condition"]["value"] == start_block_value) {
+            found_block = true
+            injected_rules = true
+
+            rules.push(block_start_rule)
+            rules = rules.concat(new_rules_table[rbd_id]["rules"])
+            rules.push(block_end_rule)
+          } else {
+            rules.push(rule)
+          }
+        }
+
+        if (found_block && rule["condition"]["value"] == end_block_value) { found_block = false }
+      })
+    }
+
+    // If we never injected the rules because we never found an existing block of generated rules,
+    // add them now to the end of the rules instead.
+    if (!injected_rules) {
+      rules.push(block_start_rule)
+      rules = rules.concat(new_rules_table[rbd_id]["rules"])
+      rules.push(block_end_rule)
+    }
+
+    result.push({
+      id: rbd_id,
+      name: new_rules_table[rbd_id]["name"],
+      verb: _.contains(existing_rbd_ids, rbd_id) ? "PATCH" : "POST",
+      effective_at: new_rules_table[rbd_id]["effective_at"],
+      rules: rules
+    })
+  })
+EOS
+end
+
+datasource "ds_create_rbds" do
+  iterate $ds_rbds
+  request do
+    run_script $js_create_rbds, val(iter_item, "id"), val(iter_item, "verb"), val(iter_item, "name"), val($ds_flexera_api_hosts, "flexera"), rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_create_rbds", type: "javascript" do
+  parameters "rbd_id", "verb", "name", "api_host", "rs_org_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    verb: verb,
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id].join(''),
+    body_fields: { name: name }
+  }
+EOS
+end
+
+datasource "ds_apply_rbds" do
+  iterate $ds_rbds
+  request do
+    # ds_create_rbds is a parameter to ensure that it executes before ds_apply_rbds does
+    run_script $js_apply_rbds, val(iter_item, "id"), val(iter_item, "effective_at"), val(iter_item, "rules"), val($ds_flexera_api_hosts, "flexera"), $ds_create_rbds, rs_org_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+script "js_apply_rbds", type: "javascript" do
+  parameters "rbd_id", "effective_at", "rules", "api_host", "ds_create_rbds", "rs_org_id"
+  result "request"
+  code <<-'EOS'
+  var request = {
+    auth: "auth_flexera",
+    verb: "PUT",
+    host: api_host,
+    path: ["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions/", rbd_id, "/rules/", effective_at].join(''),
+    body_fields: { rules: rules }
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_rbds" do
+  validate $ds_apply_rbds do
+    summary_template "RBD Generated & Applied"
+    detail_template ""
+    check eq(0, 0)
+  end
+end
