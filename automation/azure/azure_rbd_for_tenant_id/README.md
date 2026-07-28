@@ -1,4 +1,4 @@
-# Azure Rule-Based Dimension From Tenant ID
+# Azure Rule-Based Dimension For Tenant ID
 
 ## What It Does
 
