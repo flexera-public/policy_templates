@@ -8,7 +8,7 @@ severity "low"
 category "Operational"
 default_frequency "daily"
 info(
-  version: "0.1.0",
+  version: "0.1.1",
   provider: "Flexera",
   service: "Cloud Cost Optimization",
   policy_set: "Rule-Based Dimensions",
@@ -235,7 +235,8 @@ script "js_csv_parsed", type: "javascript" do
   function parseCSV(text) {
     var rows = []
     var currentRow = []
-    var currentField = ""
+    var currentFieldChars = []
+    var fieldValue = ""
     var inQuotes = false
     var fieldIsQuoted = false
     var i = 0
@@ -247,7 +248,7 @@ script "js_csv_parsed", type: "javascript" do
         if (ch == '"') {
           if (i + 1 < text.length && text[i + 1] == '"') {
             // Escaped quote inside quoted field
-            currentField += '"'
+            currentFieldChars.push('"')
             i += 2
             continue
           } else {
@@ -258,7 +259,7 @@ script "js_csv_parsed", type: "javascript" do
           }
         } else {
           // Regular character inside quoted field
-          currentField += ch
+          currentFieldChars.push(ch)
           i += 1
           continue
         }
@@ -274,9 +275,10 @@ script "js_csv_parsed", type: "javascript" do
 
       if (ch == ',') {
         // End of field
-        if (!fieldIsQuoted) { currentField = currentField.trim() }
-        currentRow.push(currentField)
-        currentField = ""
+        fieldValue = currentFieldChars.join('')
+        if (!fieldIsQuoted) { fieldValue = fieldValue.trim() }
+        currentRow.push(fieldValue)
+        currentFieldChars = []
         fieldIsQuoted = false
         i += 1
         continue
@@ -287,9 +289,10 @@ script "js_csv_parsed", type: "javascript" do
           i += 1 // consume \r, \n handled below
         }
         // End of row
-        if (!fieldIsQuoted) { currentField = currentField.trim() }
-        currentRow.push(currentField)
-        currentField = ""
+        fieldValue = currentFieldChars.join('')
+        if (!fieldIsQuoted) { fieldValue = fieldValue.trim() }
+        currentRow.push(fieldValue)
+        currentFieldChars = []
         fieldIsQuoted = false
         rows.push(currentRow)
         currentRow = []
@@ -299,9 +302,10 @@ script "js_csv_parsed", type: "javascript" do
 
       if (ch == '\n') {
         // End of row
-        if (!fieldIsQuoted) { currentField = currentField.trim() }
-        currentRow.push(currentField)
-        currentField = ""
+        fieldValue = currentFieldChars.join('')
+        if (!fieldIsQuoted) { fieldValue = fieldValue.trim() }
+        currentRow.push(fieldValue)
+        currentFieldChars = []
         fieldIsQuoted = false
         rows.push(currentRow)
         currentRow = []
@@ -309,14 +313,15 @@ script "js_csv_parsed", type: "javascript" do
         continue
       }
 
-      currentField += ch
+      currentFieldChars.push(ch)
       i += 1
     }
 
     // Flush last field/row
-    if (currentField.length > 0 || currentRow.length > 0) {
-      if (!fieldIsQuoted) { currentField = currentField.trim() }
-      currentRow.push(currentField)
+    if (currentFieldChars.length > 0 || currentRow.length > 0) {
+      fieldValue = currentFieldChars.join('')
+      if (!fieldIsQuoted) { fieldValue = fieldValue.trim() }
+      currentRow.push(fieldValue)
       rows.push(currentRow)
     }
 
@@ -408,25 +413,26 @@ script "js_dimension_map", type: "javascript" do
   code <<-'EOS'
   var resolvedHeaders = []
 
+  // Build lookup tables for O(1) dimension resolution
+  var dimById = {}
+  var dimByName = {}
+  _.each(ds_flexera_dimensions, function(dim) {
+    dimById[dim.id] = dim
+    if (dim.name) { dimByName[dim.name.toLowerCase()] = dim }
+  })
+
   _.each(ds_csv_parsed.ruleDimensionHeaders, function(header) {
     var trimmedHeader = header.trim()
     var resolved = { original: trimmedHeader, resolvedId: trimmedHeader, matched: false }
 
     // First try: exact ID match
-    var idMatch = _.find(ds_flexera_dimensions, function(dim) {
-      return dim.id === trimmedHeader
-    })
-
+    var idMatch = dimById[trimmedHeader]
     if (idMatch) {
       resolved.resolvedId = idMatch.id
       resolved.matched = true
     } else {
       // Second try: case-insensitive name match
-      var lowerHeader = trimmedHeader.toLowerCase()
-      var nameMatch = _.find(ds_flexera_dimensions, function(dim) {
-        return dim.name && dim.name.toLowerCase() === lowerHeader
-      })
-
+      var nameMatch = dimByName[trimmedHeader.toLowerCase()]
       if (nameMatch) {
         resolved.resolvedId = nameMatch.id
         resolved.matched = true
@@ -450,7 +456,6 @@ script "js_csv_validated", type: "javascript" do
   result "result"
   code <<-'EOS'
   var findings = []
-  var hasErrors = false
 
   // V1: Missing ||DIVIDER|| column
   if (ds_csv_parsed.dividerIndex === -1) {
@@ -462,7 +467,6 @@ script "js_csv_validated", type: "javascript" do
       message: "CSV is missing the required ||DIVIDER|| column. Cannot determine which columns are rule dimensions and which are RBD outputs.",
       suggestion: "Add a ||DIVIDER|| column between rule-dimension columns and RBD-output columns."
     })
-    hasErrors = true
   }
 
   // V2: No rule-dimension columns
@@ -475,7 +479,6 @@ script "js_csv_validated", type: "javascript" do
       message: "No rule-dimension columns found to the left of the ||DIVIDER|| column. Rules cannot be constructed.",
       suggestion: "Add at least one rule-dimension column to the left of ||DIVIDER||."
     })
-    hasErrors = true
   }
 
   // V3: No RBD-output columns
@@ -488,7 +491,6 @@ script "js_csv_validated", type: "javascript" do
       message: "No RBD-output columns found to the right of the ||DIVIDER|| column. No dimensions to create.",
       suggestion: "Add at least one RBD-output column to the right of ||DIVIDER||."
     })
-    hasErrors = true
   }
 
   // V4: Empty CSV (no data rows)
@@ -501,7 +503,6 @@ script "js_csv_validated", type: "javascript" do
       message: "CSV has a header row but no data rows.",
       suggestion: "Add data rows to the CSV file."
     })
-    hasErrors = true
   }
 
   // V5: Unresolved dimension names
@@ -674,10 +675,7 @@ script "js_csv_validated", type: "javascript" do
     })
   }
 
-  result = {
-    findings: findings,
-    hasErrors: hasErrors
-  }
+  result = findings
 EOS
 end
 
@@ -693,7 +691,7 @@ script "js_rbds", type: "javascript" do
   result = []
 
   // If there are validation errors, output empty list to block RBD creation
-  if (!ds_csv_validated.hasErrors) {
+  if (!_.any(ds_csv_validated, function(f) { return f.severity === "Error" })) {
     // Parse the name map parameter into a lookup table
     var nameMap = {}
     _.each(param_rbd_name_map, function(entry) {
@@ -714,9 +712,13 @@ script "js_rbds", type: "javascript" do
       })
     }
 
-    _.each(rbdHeaders, function(rbdHeader, rbdIdx) {
+    // Build an index map for O(1) rbdHeader column index lookups
+    var rbdHeaderIndexMap = {}
+    _.each(ds_csv_parsed.rbdHeaders, function(h, idx) { rbdHeaderIndexMap[h] = idx })
+
+    _.each(rbdHeaders, function(rbdHeader) {
       var rbdId = rbdHeader.trim()
-      var rbdColIdx = ds_csv_parsed.dividerIndex + 1 + _.indexOf(ds_csv_parsed.rbdHeaders, rbdHeader)
+      var rbdColIdx = ds_csv_parsed.dividerIndex + 1 + rbdHeaderIndexMap[rbdHeader]
 
       // Derive display name
       var rbdName = ""
@@ -792,7 +794,7 @@ datasource "ds_existing_rbds" do
     host val($ds_flexera_api_hosts, "flexera")
     path join(["/finops-customizations/v1/orgs/", rs_org_id, "/rule-based-dimensions"])
     header "User-Agent", "RS Policies"
-    header "dummy", val($ds_csv_validated, "hasErrors")
+    header "dummy", to_s(size($ds_csv_validated))
   end
   result do
     encoding "json"
@@ -812,10 +814,11 @@ script "js_existing_rbds_that_match", type: "javascript" do
   parameters "ds_existing_rbds", "ds_rbds"
   result "result"
   code <<-'EOS'
-  var newIds = _.pluck(ds_rbds, "id")
+  var newIdSet = {}
+  _.each(ds_rbds, function(newRbd) { newIdSet[newRbd.id] = true })
 
   result = _.filter(ds_existing_rbds, function(rbd) {
-    return _.contains(newIds, rbd.id)
+    return newIdSet[rbd.id] === true
   })
 EOS
 end
@@ -847,7 +850,8 @@ script "js_merged_rbds", type: "javascript" do
   parameters "ds_rbds", "ds_existing_rbds", "ds_existing_rbds_with_rules", "ds_applied_policy"
   result "result"
   code <<-'EOS'
-  var existingRbdIds = _.pluck(ds_existing_rbds, "id")
+  var existingRbdIdSet = {}
+  _.each(ds_existing_rbds, function(existingRbd) { existingRbdIdSet[existingRbd.id] = true })
 
   // Build sentinel rules using the applied policy name
   var startBlockValue = "Start: " + ds_applied_policy["name"]
@@ -908,10 +912,7 @@ script "js_merged_rbds", type: "javascript" do
     }
 
     // Determine whether to create or update the RBD entity
-    var verb = "POST"
-    if (_.contains(existingRbdIds, rbd.id)) {
-      verb = "PATCH"
-    }
+    var verb = existingRbdIdSet[rbd.id] ? "PATCH" : "POST"
 
     result.push({
       id: rbd.id,
@@ -952,12 +953,23 @@ script "js_create_rbds", type: "javascript" do
 EOS
 end
 
+# Produce a lightweight sentinel once all RBD entity create/update calls complete
+datasource "ds_create_rbds_complete" do
+  run_script $js_create_rbds_complete, $ds_create_rbds
+end
+
+script "js_create_rbds_complete", type: "javascript" do
+  parameters "ds_create_rbds"
+  result "result"
+  code 'result = { done: true }'
+end
+
 # Apply merged rules via PUT for each RBD
-# $ds_create_rbds is passed as an unused parameter to enforce execution ordering
+# val($ds_create_rbds_complete, "done") ensures all entity creates/updates complete first
 datasource "ds_apply_rbds" do
   iterate $ds_merged_rbds
   request do
-    run_script $js_apply_rbds, val(iter_item, "id"), val(iter_item, "effective_at"), val(iter_item, "rules"), val($ds_flexera_api_hosts, "flexera"), $ds_create_rbds, rs_org_id
+    run_script $js_apply_rbds, val(iter_item, "id"), val(iter_item, "effective_at"), val(iter_item, "rules"), val($ds_flexera_api_hosts, "flexera"), val($ds_create_rbds_complete, "done"), rs_org_id
   end
   result do
     encoding "text"
@@ -965,7 +977,7 @@ datasource "ds_apply_rbds" do
 end
 
 script "js_apply_rbds", type: "javascript" do
-  parameters "rbd_id", "effective_at", "rules", "api_host", "ds_create_rbds", "rs_org_id"
+  parameters "rbd_id", "effective_at", "rules", "api_host", "create_complete", "rs_org_id"
   result "request"
   code <<-'EOS'
   var request = {
@@ -989,20 +1001,22 @@ script "js_incident_rbds", type: "javascript" do
   parameters "ds_merged_rbds", "ds_csv_validated", "ds_csv_parsed"
   result "result"
   code <<-'EOS'
+  function deriveRbdName(rbdId) {
+    var name = rbdId.replace(/^rbd_/, "").replace(/_/g, " ")
+    return name.split(" ").map(function(word) {
+      return word.charAt(0).toUpperCase() + word.slice(1)
+    }).join(" ")
+  }
+
   result = []
 
-  if (ds_csv_validated.hasErrors) {
-    // Report all expected RBDs as skipped
+  if (_.any(ds_csv_validated, function(f) { return f.severity === "Error" })) {
+    // Report all expected RBDs as skipped due to validation errors
     _.each(ds_csv_parsed.rbdHeaders, function(rbdHeader) {
       var rbdId = rbdHeader.trim()
-      var rbdName = rbdId.replace(/^rbd_/, "").replace(/_/g, " ")
-      rbdName = rbdName.split(" ").map(function(word) {
-        return word.charAt(0).toUpperCase() + word.slice(1)
-      }).join(" ")
-
       result.push({
         id: rbdId,
-        name: rbdName,
+        name: deriveRbdName(rbdId),
         ruleCount: 0,
         status: "skipped"
       })
@@ -1020,19 +1034,6 @@ script "js_incident_rbds", type: "javascript" do
 EOS
 end
 
-# Build findings list for policy block consumption
-datasource "ds_incident_findings" do
-  run_script $js_incident_findings, $ds_csv_validated
-end
-
-script "js_incident_findings", type: "javascript" do
-  parameters "ds_csv_validated"
-  result "result"
-  code <<-'EOS'
-  result = ds_csv_validated.findings
-EOS
-end
-
 ###############################################################################
 # Policy
 ###############################################################################
@@ -1043,7 +1044,7 @@ policy "pol_rbd_from_csv" do
     detail_template "{{ len data }} Applied"
     check eq(0, 0) # Never raise an incident, just using this to ensure ds_apply_rbds runs
   end
-  validate $ds_incident_findings do
+  validate $ds_csv_validated do
     summary_template "RBD from CSV: {{ len data }} Validation Finding(s)"
     detail_template <<-'EOS'
 {{ len data }} findings were identified during CSV validation. Please review and address these issues before re-running the policy. If the findings are warnings or informational, they may not need to be addressed but should be reviewed.

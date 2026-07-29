@@ -1,5 +1,10 @@
 # Changelog
 
+## v5.11.0
+
+- Changed Available Memory fields to report memory utilization as a percentage instead of available memory. This aligns the incident with the other usage recommendation policy templates.
+- Fixed issue where valid recommendations were sometimes filtered from the results.
+
 ## v5.10.7
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match

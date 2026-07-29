@@ -25,7 +25,7 @@ This policy template checks for AWS resources missing the user-specified tags. A
   - s3
   - rds:db
   - dynamodb:table
-- *Include Account Tags* - Whether or not to include the AWS account itself as a resource whose tags are checked and reported on.
+- *Report Types* - The types of resources to include in the report. Select 'Accounts' to include the AWS account itself, and 'Resources' to include individual taggable resources.
 - *Tags* - The policy will report resources missing the specified tags. The following formats are supported:
   - `Key` - Find all resources missing the specified tag key.
   - `Key==Value` - Find all resources missing the specified tag key:value pair and all resources missing the specified tag key.

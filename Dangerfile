@@ -551,7 +551,7 @@ changed_pt_files.each do |file|
     test = policy_missing_hash_excludes?(file, file_lines, file_parsed); warnings << test if test
 
     # Raise error if policy template has outdated links
-    test = policy_outdated_links?(file, file_lines, git.added_files); failures << test if test
+    test = policy_outdated_links?(file, file_lines, changed_files); failures << test if test
 
     # Raise warning if policy template has any datasources using http instead of https
     test = policy_http_connections?(file, file_lines); warnings << test if test

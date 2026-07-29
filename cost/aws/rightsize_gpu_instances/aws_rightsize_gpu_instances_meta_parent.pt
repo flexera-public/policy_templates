@@ -9,7 +9,7 @@ category "Meta"
 default_frequency "hourly"
 info(
   provider: "AWS",
-  version: "0.1.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "0.1.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "true",
   deprecated: "false",
   hide_skip_approvals: "true"
@@ -86,6 +86,15 @@ parameter "param_combined_incident_table_size" do
   description "The number of results to include in the consolidated incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One."
   allowed_values 0, 10, 50, 100, 200, 500, 1000, 10000, 100000
   default 100000
+end
+
+parameter "param_skip_consolidated_incident" do
+  type "string"
+  category "Incident Settings"
+  label "Skip Consolidated Incident"
+  description "Whether or not to skip generating the consolidated incident that combines violations from all child policy incidents. When set to 'Yes', only the status incident showing child policy management activity will be generated. Default value of 'No' preserves the standard behavior of generating a consolidated incident."
+  allowed_values "Yes", "No"
+  default "No"
 end
 
 ## Child Policy Parameters
@@ -190,7 +199,7 @@ parameter "param_min_age" do
   label "Minimum Instance Age (Days)"
   description "The minimum age in days that an instance must be before it is considered for rightsizing or termination recommendations. This helps avoid false positives for recently launched instances that may not yet have established typical utilization patterns. Set to 0 to evaluate instances of any age."
   min_value 0
-  default 7
+  default 0
 end
 
 parameter "param_exclusion_tags" do
@@ -208,6 +217,14 @@ parameter "param_exclusion_tags_boolean" do
   description "Whether to filter instances containing any of the specified tags or only those that contain all of them. Only applicable if more than one value is entered in the 'Exclusion Tags' field."
   allowed_values "Any", "All"
   default "Any"
+end
+
+parameter "param_gpu_count_lock_tag" do
+  type "string"
+  category "Filters"
+  label "GPU Count Lock Tag"
+  description "A tag key. Instances carrying this tag (any value) will have their GPU count preserved and will not receive a GPU-count reduction recommendation. Other rightsizing dimensions (vCPU, RAM, GPU memory) may still produce a recommendation. Leave blank to disable."
+  default ""
 end
 
 parameter "param_automatic_action" do
@@ -309,7 +326,7 @@ script "js_child_policy_options", type: "javascript" do
   // Filter Options that are not appropriate for Child Policy
   var options = _.map(ds_self_policy_information.options, function(option){
     // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes, param_policy_schedule are exclusion to Meta Parent Policy Parameters
-    if (!_.contains(["param_combined_incident_email", "param_combined_incident_csv", "param_combined_incident_table_size", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
+    if (!_.contains(["param_combined_incident_email", "param_combined_incident_csv", "param_combined_incident_table_size", "param_skip_consolidated_incident", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
       return { "name": option.name, "value": option.value };
     }
   });
@@ -1147,7 +1164,7 @@ policy "policy_scheduled_report" do
     summary_template "Consolidated Incident: {{ len data }} AWS Underutilized GPU EC2 Instances Found"
     escalate $esc_email
     escalate $esc_downsize_instances
-    check eq(size(data), 0)
+    check logic_or(eq($param_skip_consolidated_incident, "Yes"), eq(size(data), 0))
     export do
       resource_level true
       field "accountID" do
@@ -1180,8 +1197,11 @@ policy "policy_scheduled_report" do
       field "resourceType" do
         label "Instance Size"
       end
-      field "newResourceType" do
+      field "recommendedResourceType" do
         label "Recommended Instance Size"
+      end
+      field "newResourceType" do
+        label "Auto-Resize Target"
       end
       field "gpuCount" do
         label "GPU Count"
@@ -1310,7 +1330,7 @@ policy "policy_scheduled_report" do
     escalate $esc_email
     escalate $esc_stop_instances
     escalate $esc_terminate_instances
-    check eq(size(data), 0)
+    check logic_or(eq($param_skip_consolidated_incident, "Yes"), eq(size(data), 0))
     export do
       resource_level true
       field "accountID" do
@@ -1814,7 +1834,7 @@ define create_applied_policy($item, $rs_org_id, $rs_project_id) return $response
   )
 
   task_label("Create applied policy response: " + $item["name"] + " " + to_json($response))
-  $$all_responses << to_json({"req": "DELETE " + $url, "resp": $response})
+  $$all_responses << to_json({"req": "POST " + $url, "resp": $response})
 
   if $response["code"] != 204 && $response["code"] != 202 && $response["code"] != 201 && $response["code"] != 200
     raise "Unexpected response creating applied policy: "+ $item["name"] + " " + to_json($response)

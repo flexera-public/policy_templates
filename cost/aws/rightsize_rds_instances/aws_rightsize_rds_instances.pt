@@ -8,7 +8,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "5.10.7",
+  version: "5.11.0",
   provider: "AWS",
   service: "RDS",
   policy_set: "Rightsize Database Instances",
@@ -192,6 +192,15 @@ pagination "pagination_aws_getmetricdata" do
   end
   set_page_marker do
     body_field "NextToken"
+  end
+end
+
+pagination "pagination_aws_rds_options" do
+  get_page_marker do
+    body_path "//DescribeOrderableDBInstanceOptionsResponse/DescribeOrderableDBInstanceOptionsResult/Marker"
+  end
+  set_page_marker do
+    query "Marker"
   end
 end
 
@@ -1461,11 +1470,11 @@ EOS
 end
 
 datasource "ds_rds_nonidle_instances_with_metrics" do
-  run_script $js_rds_nonidle_instances_with_metrics, $ds_rds_nonidle_instances, $ds_cloudwatch_underutil_cpu_sorted, $ds_cloudwatch_underutil_mem_sorted, $ds_cloudwatch_underutil_netin_sorted, $ds_cloudwatch_underutil_netout_sorted
+  run_script $js_rds_nonidle_instances_with_metrics, $ds_rds_nonidle_instances, $ds_cloudwatch_underutil_cpu_sorted, $ds_cloudwatch_underutil_mem_sorted, $ds_cloudwatch_underutil_netin_sorted, $ds_cloudwatch_underutil_netout_sorted, $ds_aws_instance_type_map
 end
 
 script "js_rds_nonidle_instances_with_metrics", type: "javascript" do
-  parameters "ds_rds_nonidle_instances", "ds_cloudwatch_underutil_cpu_sorted", "ds_cloudwatch_underutil_mem_sorted", "ds_cloudwatch_underutil_netin_sorted", "ds_cloudwatch_underutil_netout_sorted"
+  parameters "ds_rds_nonidle_instances", "ds_cloudwatch_underutil_cpu_sorted", "ds_cloudwatch_underutil_mem_sorted", "ds_cloudwatch_underutil_netin_sorted", "ds_cloudwatch_underutil_netout_sorted", "ds_aws_instance_type_map"
   result "result"
   code <<-'EOS'
   // Merge original instance list with cloudwatch data into a single list
@@ -1503,15 +1512,32 @@ script "js_rds_nonidle_instances_with_metrics", type: "javascript" do
         }
       })
 
-      mem_stats_list = [ "Average", "Minimum", "Maximum" ]
+      // Compute memory utilization (%) from FreeableMemory (bytes) and total instance memory (MiB).
+      // FreeableMemory inverts relative to utilization, so the CloudWatch stat sources are swapped:
+      //   mem_maximum (peak utilization)   <- FreeableMemory Minimum (least free memory)
+      //   mem_minimum (lowest utilization) <- FreeableMemory Maximum (most free memory)
+      //   mem_average                      <- FreeableMemory Average
+      mem_lookup_type = instance['resourceType']
+      if (mem_lookup_type.substring(0, 3) == "db.") { mem_lookup_type = mem_lookup_type.substring(3) }
+      type_metadata = ds_aws_instance_type_map[mem_lookup_type]
+      total_mib = null
 
-      _.each(mem_stats_list, function(stat) {
-        incident_statname = "mem" + "_" + stat.toLowerCase()
+      if (instance['resourceType'] != 'db.serverless' && type_metadata && type_metadata['memory'] && type_metadata['memory']['sizeInMiB']) {
+        total_mib = type_metadata['memory']['sizeInMiB']
+      }
 
-        merged_instance[incident_statname] = null
+      mem_source_map = [
+        { field: 'mem_maximum', stat: 'Minimum' },
+        { field: 'mem_minimum', stat: 'Maximum' },
+        { field: 'mem_average', stat: 'Average' }
+      ]
 
-        if (typeof(instance_mem_metrics[stat]) == 'number') {
-          merged_instance[incident_statname] = Math.round(instance_mem_metrics[stat] / 1024 / 1024 * 100) / 100
+      _.each(mem_source_map, function(mapping) {
+        merged_instance[mapping['field']] = null
+
+        if (total_mib && instance_mem_metrics && typeof(instance_mem_metrics[mapping['stat']]) == 'number') {
+          freeable_mib = instance_mem_metrics[mapping['stat']] / 1024 / 1024
+          merged_instance[mapping['field']] = Math.round((1 - (freeable_mib / total_mib)) * 100 * 100) / 100
         }
       })
 
@@ -1682,6 +1708,7 @@ script "js_rds_underutil_instance_options", type: "javascript" do
   code <<-'EOS'
   var request = {
     auth: "auth_aws",
+    pagination: "pagination_aws_rds_options",
     host: "rds." + region + ".amazonaws.com",
     path: "/",
     headers: {
@@ -1691,7 +1718,8 @@ script "js_rds_underutil_instance_options", type: "javascript" do
     query_params: {
       "Action": "DescribeOrderableDBInstanceOptions",
       "Engine": databaseEngine,
-      "Version": "2014-10-31"
+      "Version": "2014-10-31",
+      "MaxRecords": "1000"
     }
   }
 EOS
@@ -2195,13 +2223,13 @@ policy "pol_rightsize_rds" do
         label "CPU p90"
       end
       field "memMaximum" do
-        label "Available Memory Maximum (GiB)"
+        label "Memory Maximum %"
       end
       field "memMinimum" do
-        label "Available Memory Minimum (GiB)"
+        label "Memory Minimum %"
       end
       field "memAverage" do
-        label "Available Memory Average (GiB)"
+        label "Memory Average %"
       end
       field "netinMaximum" do
         label "Network Inbound Throughput Maximum (Bytes/second)"

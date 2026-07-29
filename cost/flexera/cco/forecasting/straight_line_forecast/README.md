@@ -18,6 +18,9 @@ This policy template produces a forecast for monthly cloud spend based on cost d
 - *Forecast Months (#)* - Number of months in the future to forecast.
 - *Forecast Formula* - Formula to use when projecting costs.
 - *Dimension* - The name or ID of the Flexera dimension you want to split costs by in the chart. Enter `Billing Center` to split costs by Billing Center. Leave blank to not split costs by any dimension.
+- *Attach CSV To Incident Email* - Whether or not to attach the results as a CSV file to the incident email.
+- *Incident Table Rows for Email Body (#)* - The number of results to include in the incident table in the incident email. Set to '0' to not show an incident table at all, and '100000' to include all results. Does not impact attached CSV files or the incident as presented in Flexera One.
+- *Include Data Table In Incident* - Whether to also include a formatted table of the underlying forecasted cost data within the body of the incident, in addition to the chart above. If you enable this option, consider also enabling the 'Attach CSV To Incident Email' option to avoid rendering redundant tables in the incident email.
 
 ## Policy Actions
 

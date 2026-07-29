@@ -6,6 +6,354 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#4724](https://github.com/flexera-public/policy_templates/pull/4724): POL-1806 Markdown Table Option
+
+*Minor Update*
+
+#### Description
+
+> Adds an option to render the data table as a nicely formatted markdown table in a handful of policy templates. This is primarily useful for making the table look nice in emails compared to a traditional export table.
+>
+> Also adds CSV support to some of these policy templates so that the email won't contain redundant tables if desired by the end user.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4724) for these details.
+- **Merged At**: 2026-07-24 14:17:08 UTC
+
+---
+
+### PR [#4706](https://github.com/flexera-public/policy_templates/pull/4706): POL-1801 Email Cost Optimization Recommendations: K8s Support
+
+*Minor Update*
+
+#### Description
+
+> `Email Cost Optimization Recommendations`
+> - Added support for AWS and Azure cross-family compute recommendations.
+> - Added support for Kubernetes recommendations.
+>
+
+#### Metadata
+
+- **Policies**: [Email Cost Optimization Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/email_recommendations/README.md)
+- **Merged At**: 2026-07-23 15:15:49 UTC
+
+---
+
+### PR [#4714](https://github.com/flexera-public/policy_templates/pull/4714): POL-1804 New Policy Template: Flexera Billing Center Report
+
+*New Policy Template*
+
+#### Description
+
+> New policy template that simply lists the details for all Billing Centers in the org and allows actions to be taken against them.
+>
+
+#### Metadata
+
+- **Policies**: [Flexera Billing Center Report](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/bc_report/README.md)
+- **Merged At**: 2026-07-22 19:40:34 UTC
+
+---
+
+### PR [#4710](https://github.com/flexera-public/policy_templates/pull/4710): POL-1802 RBD Effective Date Feature
+
+*Unpublished, Minor Update*
+
+#### Description
+
+> Updates the various RBD generating policy templates to include an option to use the current month as the effective date instead of using a static value.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4710) for these details.
+- **Merged At**: 2026-07-21 18:56:52 UTC
+
+---
+
+### PR [#4703](https://github.com/flexera-public/policy_templates/pull/4703): POL-1800 AWS Resources Under or Approaching Extended Support Fixes
+
+*Minor Update*
+
+#### Description
+
+> `AWS Resources Under or Approaching Extended Support`
+> - Updated cost estimation to reflect AWS's tiered Extended Support pricing: a lower rate for years 1-2 and a higher rate starting in year 3, selected automatically based on the current date.
+> - Estimated savings for Multi-AZ RDS instances now account for both the primary and standby instance vCPUs, since AWS bills extended support for both.
+> - Added a `Rate Tier` field to the incident export showing which pricing tier applies to each resource.
+> - ElastiCache Extended Support is now correctly modeled as a percentage premium on the node's on-demand rate rather than a flat node-hour fee.
+> - MariaDB instances are no longer reported by this policy; they are not eligible for AWS RDS Extended Support.
+>
+> README also now documents the sources of truth for the information used in determining the extended support status of various resource types.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Resources Under or Approaching Extended Support](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/extended_support/README.md), [Meta Parent: AWS Resources Under or Approaching Extended Support](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/extended_support/README.md)
+- **Merged At**: 2026-07-21 13:59:36 UTC
+
+---
+
+### PR [#4692](https://github.com/flexera-public/policy_templates/pull/4692): POL-1778 Container Cost Visibility Setup: Syntax Error Fix
+
+*Minor Update*
+
+#### Description
+
+> Fixes a syntax error in the Container Cost Visibility Setup policy template.
+>
+
+#### Metadata
+
+- **Policies**: [Container Cost Visibility Setup](https://github.com/flexera-public/policy_templates/tree/master/automation/flexera/spot/container_cost_visibility/README.md)
+- **Merged At**: 2026-07-14 17:57:24 UTC
+
+---
+
+### PR [#4678](https://github.com/flexera-public/policy_templates/pull/4678): POL-1796 Untagged Resources: Improved Filtering
+
+*Major Update*
+
+#### Description
+
+> Updates the 3 Untagged Resources policy templates to allow the user to select various resource types (Account, Resource, Subscription, etc.) from a list. This allows the user to report only Subscriptions, only Resources, etc. as desired.
+>
+> Also fixes a Dangerfile issue where a change to a policy template's MAJOR version would trigger an error if the MINOR UPDATE label wasn't applied to the PR, and adds "labelable" to the .spellignore since [this is a valid English word](https://en.wiktionary.org/wiki/labelable).
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4678) for these details.
+- **Merged At**: 2026-07-08 13:16:57 UTC
+
+---
+
+### PR [#4675](https://github.com/flexera-public/policy_templates/pull/4675): POL-1795 New Policy Template: Flexera Create Service Account
+
+*Unpublished, New Policy Template*
+
+#### Description
+
+> `Flexera Create Service Account`
+>
+> This policy template creates a Flexera service account via the IAM API, assigns the specified org-level roles to it, generates a client secret, and then registers an OAuth2 credential in Flexera Automation using that client ID and secret. If all steps succeed, an incident is raised containing the credential details and confirmation of role assignments.
+>
+> Template is unpublished because it is more intended for internal Flexera use. A Flexeran can add their own token to a new org as a credential, run this to quickly create a service account, and then delete their credential from the Flexera Org, leaving behind a functioning service account that does not require that the client maintain a token associated with someone at their organization to execute policy templates.
+>
+> (Ignore the dangerfile warning. This is a special case where readability requires something off-spec)
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4675) for details about unpublished policies.
+- **Merged At**: 2026-07-07 13:53:00 UTC
+
+---
+
+### PR [#4659](https://github.com/flexera-public/policy_templates/pull/4659): POL-1788 AWS Tag Cardinality: API Update
+
+*Minor Update*
+
+#### Description
+
+> Removes the "status" field from the API call to list AWS accounts. This field is changing on the AWS side to "state" and is not actually used at all during policy execution.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Tag Cardinality Report](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/tag_cardinality/README.md)
+- **Merged At**: 2026-07-02 14:44:19 UTC
+
+---
+
+### PR [#4660](https://github.com/flexera-public/policy_templates/pull/4660): POL-1794 Google Cloud Resources Under or Approaching Extended Support: sys- and app- Project Filtering
+
+*Minor Update*
+
+#### Description
+
+> Adds the following parameters to the `Google Cloud Resources Under or Approaching Extended Support` policy template:
+>
+> - *Ignore System Projects* - Whether or not to automatically ignore system projects (projects whose ID begins with `sys-`).
+> - *Ignore Google Apps Script Projects* - Whether or not to automatically ignore Google Apps Script projects (projects whose ID begins with `app-`).
+>
+
+#### Metadata
+
+- **Policies**: [Google Cloud Resources Under or Approaching Extended Support](https://github.com/flexera-public/policy_templates/tree/master/cost/google/extended_support/README.md), [Meta Parent: Google Cloud Resources Under or Approaching Extended Support](https://github.com/flexera-public/policy_templates/tree/master/cost/google/extended_support/README.md)
+- **Merged At**: 2026-07-01 17:37:34 UTC
+
+---
+
+### PR [#4656](https://github.com/flexera-public/policy_templates/pull/4656): POL-1792 RBD from CSV Efficiency Improvements
+
+*Minor Update*
+
+#### Description
+
+> Updates the RBD from CSV policy templates to be more efficient, reducing the risk of timeouts or memory issues.
+>
+> Additionally, makes a small README correction and fixes a false positive produced by the Policy API script.
+>
+
+#### Metadata
+
+- **Policies**: [Rule-Based Dimensions from CSV - AWS S3](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/rbd_from_csv_aws_s3/README.md), [Rule-Based Dimensions from CSV - Azure Storage](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/rbd_from_csv_azure_storage/README.md), [Rule-Based Dimensions from CSV - Google Cloud Storage](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/rbd_from_csv_google_storage/README.md), [Rule-Based Dimensions from CSV - Microsoft Graph](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/rbd_from_csv_microsoft_graph/README.md)
+- **Merged At**: 2026-07-01 13:27:25 UTC
+
+---
+
+### PR [#4648](https://github.com/flexera-public/policy_templates/pull/4648): POL-1793 AWS Rightsize RDS Instances Updates
+
+*Minor Update*
+
+#### Description
+
+> `AWS Rightsize RDS Instances`
+> - Changed Available Memory fields to report memory utilization as a percentage instead of available memory. This aligns the incident with the other usage recommendation policy templates.
+> - Fixed issue where valid recommendations were sometimes filtered from the results.
+>
+
+#### Metadata
+
+- **Policies**: [AWS Rightsize RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_rds_instances/README.md)
+- **Merged At**: 2026-06-29 19:23:51 UTC
+
+---
+
+### PR [#4612](https://github.com/flexera-public/policy_templates/pull/4612): POL-1790 New Policy Templates: Azure PostgreSQL
+
+*New Policy Template*
+
+#### Description
+
+> Two new policy tempates, `Azure Rightsize PostgreSQL Flexible Servers` and `Azure Rightsize PostgreSQL Single Servers`
+>
+> Also corrects some issues in the README files for a handful of other Azure DB policy templates.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4612) for these details.
+- **Merged At**: 2026-06-29 14:45:55 UTC
+
+---
+
+### PR [#4611](https://github.com/flexera-public/policy_templates/pull/4611): POL-1789 Email Cost Optimization Recommendations: Improvements
+
+*Minor Update*
+
+#### Description
+
+> Email Cost Optimization Recommendations improvements:
+> - New `Dimension List` parameter allows filtering recommendations by Rule-Based Dimensions and Tag Dimensions.
+> - `Billing Center List` parameter now supports all Billing Centers instead of just top-level ones.
+> - Incident table now shows both top-level and bottom-level Billing Center for each recommendation.
+>
+> Also removes random py file added by mistake in a previous PR.
+>
+
+#### Metadata
+
+- **Policies**: [Email Cost Optimization Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/email_recommendations/README.md)
+- **Merged At**: 2026-06-29 12:07:15 UTC
+
+---
+
+### PR [#4614](https://github.com/flexera-public/policy_templates/pull/4614): POL-1791 New Policy: Google Cloud Resources Under or Approaching Extended Support
+
+*New Policy Template*
+
+#### Description
+
+> This policy template identifies Google Kubernetes Engine (GKE) clusters and Cloud SQL instances that are currently under extended support or will enter extended support within a configurable number of days. Extended support is a paid tier that allows customers to continue using a software version beyond its standard end-of-life date, incurring additional hourly charges. The policy reports affected resources alongside an estimated monthly extended-support surcharge for each resource.
+>
+> This also updates Google READMEs across the board to always include information on which APIs need to be enabled.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4614) for these details.
+- **Merged At**: 2026-06-26 13:28:28 UTC
+
+---
+
+### PR [#4490](https://github.com/flexera-public/policy_templates/pull/4490): POL-1769 New Policy: Google Idle Vertex AI Online Prediction Endpoints
+
+*New Policy Template*
+
+#### Description
+
+> `Google Idle Vertex AI Online Prediction Endpoints`
+>
+> This policy template identifies Google Cloud Vertex AI online prediction endpoints that have dedicated compute resources but have received little or no prediction traffic over a configurable lookback window. Only endpoints with at least one deployed model using `dedicatedResources` are evaluated; endpoints configured with `automaticResources` scale to zero and incur no continuous compute cost. Idle endpoints are reported to the user via an incident and can optionally be deleted automatically or after manual approval.
+>
+> `Policy Agent Fixes`
+>
+> Updates the agent to avoid using em dashes and similar exotic characters; they do not render correctly in the Flexera One UI.
+>
+
+#### Metadata
+
+- **Policies**: [Google Idle Vertex AI Online Prediction Endpoints](https://github.com/flexera-public/policy_templates/tree/master/cost/google/idle_vertex_ai_endpoints/README.md)
+- **Merged At**: 2026-06-26 12:07:31 UTC
+
+---
+
+### PR [#4480](https://github.com/flexera-public/policy_templates/pull/4480): POL-1767 New Policy: Azure Idle ML Online Endpoints
+
+*New Policy Template*
+
+#### Description
+
+> `Azure Idle ML Online Endpoints`
+> This policy template finds Azure Machine Learning managed online endpoints that are provisioned and running but receiving little or no inference traffic over a user-specified lookback window, then raises an incident with a list of those endpoints. Optionally, it deletes them. Idle managed online endpoints consume VM compute continuously regardless of actual usage, making them a significant source of avoidable cloud spend. For low-frequency or batch-oriented inference workloads, batch endpoints or on-demand invocation patterns are far more cost-effective alternatives.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Idle ML Online Endpoints](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/idle_ml_online_endpoints/README.md), [Meta Parent: Azure Idle ML Online Endpoints](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/idle_ml_online_endpoints/README.md)
+- **Merged At**: 2026-06-26 12:07:18 UTC
+
+---
+
+### PR [#4613](https://github.com/flexera-public/policy_templates/pull/4613): SQ-23518 Azure Storage Accounts Allowing Default Network Access Improvement
+
+*Minor Update*
+
+#### Description
+
+> `Azure Storage Accounts Allowing Default Network Access`
+> - Added "Treat Disabled Public Network Access as Compliant" parameter to optionally exclude storage accounts with public network access disabled from results. Default value preserves existing behavior.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Storage Accounts Allowing Default Network Access](https://github.com/flexera-public/policy_templates/tree/master/security/azure/storage_network_deny/README.md)
+- **Merged At**: 2026-06-25 19:01:27 UTC
+
+---
+
+### PR [#4478](https://github.com/flexera-public/policy_templates/pull/4478): POL-1765 New Policy: AWS Idle SageMaker Endpoints
+
+*New Policy Template*
+
+#### Description
+
+> - New policy template `AWS Idle SageMaker Endpoints`
+> - New script/Github workflow for retrieving and storing SageMaker pricing.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4478) for these details.
+- **Merged At**: 2026-06-22 17:16:20 UTC
+
+---
+
 ### PR [#4565](https://github.com/flexera-public/policy_templates/pull/4565): POL-1784 - Align region values to API identifier used in other AWS Policy Sets
 
 *Minor Update*
@@ -1517,531 +1865,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Azure Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/recommendations/README.md)
 - **Merged At**: 2026-01-15 15:53:54 UTC
-
----
-
-### PR [#3971](https://github.com/flexera-public/policy_templates/pull/3971): POL-1717 Update AWS Rightsize Redshift - no Policy Incidents fix
-
-*Bug Fix*
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This change adds a small fix to the AWS Rightsize Redshift policy template to resolve order of magnitude error when evaluating the CPU Utilization vs the CPU Threshold.
->
-> This was previously causing the AWS Rightsize Redshift policy to produce no recommendations for valid Redshift instances/nodes.
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: [AWS Rightsize Redshift](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_redshift/README.md)
-- **Merged At**: 2026-01-13 16:32:14 UTC
-
----
-
-### PR [#3972](https://github.com/flexera-public/policy_templates/pull/3972): POL-1716 Google Project Pagination Update Pt 2
-
-*Minor Update*
-
-#### Description
-
-> This updates several Google policies to use a newer API endpoint for listing Google Projects. This has the benefit of filtering the projects based on parameters during the request itself; this is especially useful for filtering out app- and sys- projects, since it's possible to have so many of those that pagination actually hits Google API limits.
->
-> This also updates the meta policy generator script to still work for these policy templates even when "ds_is_deleted" is referenced inside of a JavaScript block.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3972) for these details.
-- **Merged At**: 2026-01-13 14:48:05 UTC
-
----
-
-### PR [#3967](https://github.com/flexera-public/policy_templates/pull/3967): POL-1716 Part 1: Google Project Pagination Update
-
-*Minor Update*
-
-#### Description
-
-> This updates several Google policies to use a newer API endpoint for listing Google Projects. This has the benefit of filtering the projects based on parameters during the request itself; this is especially useful for filtering out app- and sys- projects, since it's possible to have so many of those that pagination actually hits Google API limits.
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3967) for these details.
-- **Merged At**: 2026-01-12 20:47:53 UTC
-
----
-
-### PR [#3958](https://github.com/flexera-public/policy_templates/pull/3958): POL-1713 Update AWS Rightsize ElastiCache - no Policy Incidents fix
-
-*Bug Fix*
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> It was observed in a customer org that for the AWS Rightsize ElastiCache policy that even when valid Elasticache instances exist, the policy does not produce an incident and therefore no recommendations.
->
-> This is a fix to the `ds_elasticache_clusters_resize_filtered` datasource to ensure datasources are being read and compared correctly when evaluating Elasticache instances.
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: [AWS Rightsize ElastiCache](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_elasticache/README.md)
-- **Merged At**: 2026-01-12 15:52:17 UTC
-
----
-
-### PR [#3948](https://github.com/flexera-public/policy_templates/pull/3948): POL-1709 Fixed Bug onboarding policy ignores google policies
-
-*Minor Update, Bug Fix*
-
-#### Description
-
-> Flexera Onboarding Policy fix issue where all gcp policies were skipped/ignored.
->
-> <!-- Describe what this change achieves below -->
->
-> ### Issues Resolved
->
-> Pol-1709 onboarding policy ignores google policies
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: [Flexera Onboarding](https://github.com/flexera-public/policy_templates/tree/master/operational/flexera/cco/onboarding/README.md)
-- **Merged At**: 2026-01-09 14:49:50 UTC
-
----
-
-### PR [#3944](https://github.com/flexera-public/policy_templates/pull/3944): POL-1649 Update AWS Policies to support Account Name for MSP Child Orgs - Security Policies 5 (IAM 2)
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This PR adds a fallback mechanism for retrieving AWS account information in multiple AWS policy templates, addressing issues where the Flexera List Cloud Accounts API may not return relevant account details (common in MSP environments). When the primary API fails, policies now fall back to querying aggregated cost data from the Flexera Bill Analysis API to populate account names.
->
-> Changes Made:
-> - **New Datasources & Scripts**: Added `ds_billing_centers_aws_acc`, `ds_top_level_bcs_aws_acc`, and `ds_cloud_vendor_accounts_fallback` datasources, along with corresponding JS scripts (`js_top_level_bcs_aws_acc`, `js_cloud_vendor_accounts_fallback`) to handle fallback account retrieval.
-> - **Updated Logic**: Modified existing scripts (e.g., `js_vendor_account_table`, `js_aws_account`) to check for empty results from the primary API and use the fallback data.
->
-> ### Affected Policies
->
-> - AWS IAM Root User Doing Everyday Tasks
-> - AWS IAM User Accounts Without MFA
-> - AWS IAM Users With Directly-Attached Policies
-> - AWS IAM Users With Multiple Active Access Keys
-> - AWS IAM Users With Old Access Keys
-> - AWS Regions Without Access Analyzer Enabled
-> - AWS Unused IAM Credentials
->
-> ### Other Notes
-> - Includes Cheng's fix in [FOPTS-18276](https://github.com/flexera-public/policy_templates/pull/3898) - cc @jc1203
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3944) for these details.
-- **Merged At**: 2026-01-05 16:45:54 UTC
-
----
-
-### PR [#3943](https://github.com/flexera-public/policy_templates/pull/3943): POL-1648 Update AWS Policies to support Account Name for MSP Child Orgs - Security Policies 4 (IAM 1)
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This PR adds a fallback mechanism for retrieving AWS account information in multiple AWS policy templates, addressing issues where the Flexera List Cloud Accounts API may not return relevant account details (common in MSP environments). When the primary API fails, policies now fall back to querying aggregated cost data from the Flexera Bill Analysis API to populate account names.
->
-> Changes Made:
-> - **New Datasources & Scripts**: Added `ds_billing_centers_aws_acc`, `ds_top_level_bcs_aws_acc`, and `ds_cloud_vendor_accounts_fallback` datasources, along with corresponding JS scripts (`js_top_level_bcs_aws_acc`, `js_cloud_vendor_accounts_fallback`) to handle fallback account retrieval.
-> - **Updated Logic**: Modified existing scripts (e.g., `js_vendor_account_table`, `js_aws_account`) to check for empty results from the primary API and use the fallback data.
->
-> ### Affected Policies
->
-> - AWS IAM Account Missing Support Role
-> - AWS IAM Attached Admin Policies
-> - AWS IAM Expired SSL/TLS Certificates
-> - AWS IAM Insufficient Required Password Length
-> - AWS IAM Password Policy Not Restricting Password Reuse
-> - AWS IAM Root Account Access Keys
-> - AWS IAM Root User Account Without Hardware MFA
-> - AWS IAM Root User Account Without MFA
->
-> ### Other Notes
-> - Includes Cheng's fix in [FOPTS-18276](https://github.com/flexera-public/policy_templates/pull/3898) - cc @jc1203
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3943) for these details.
-- **Merged At**: 2026-01-05 16:27:19 UTC
-
----
-
-### PR [#3938](https://github.com/flexera-public/policy_templates/pull/3938): POL-1647 Update AWS Policies to support Account Name for MSP Child Orgs - Security Policies 3
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This PR adds a fallback mechanism for retrieving AWS account information in multiple AWS policy templates, addressing issues where the Flexera List Cloud Accounts API may not return relevant account details (common in MSP environments). When the primary API fails, policies now fall back to querying aggregated cost data from the Flexera Bill Analysis API to populate account names.
->
-> Changes Made:
-> - **New Datasources & Scripts**: Added `ds_billing_centers_aws_acc`, `ds_top_level_bcs_aws_acc`, and `ds_cloud_vendor_accounts_fallback` datasources, along with corresponding JS scripts (`js_top_level_bcs_aws_acc`, `js_cloud_vendor_accounts_fallback`) to handle fallback account retrieval.
-> - **Updated Logic**: Modified existing scripts (e.g., `js_vendor_account_table`, `js_aws_account`) to check for empty results from the primary API and use the fallback data.
->
-> ### Affected Policies
->
-> - AWS Open S3 Buckets
-> - AWS S3 Buckets Accepting HTTP Requests
-> - AWS S3 Buckets Without Default Encryption Configuration
-> - AWS S3 Buckets Without MFA Delete Enabled
-> - AWS S3 Buckets Without Public Access Blocked
-> - AWS S3 Buckets Without Server Access Logging
->
-> ### Other Notes
-> - Includes Cheng's fix in [FOPTS-18276](https://github.com/flexera-public/policy_templates/pull/3898) - cc @jc1203
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3938) for these details.
-- **Merged At**: 2026-01-05 13:28:07 UTC
-
----
-
-### PR [#3927](https://github.com/flexera-public/policy_templates/pull/3927): POL-1646 Update AWS Policies to support Account Name for MSP Child Orgs - Security Policies 2
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This PR adds a fallback mechanism for retrieving AWS account information in multiple AWS policy templates, addressing issues where the Flexera List Cloud Accounts API may not return relevant account details (common in MSP environments). When the primary API fails, policies now fall back to querying aggregated cost data from the Flexera Bill Analysis API to populate account names.
->
-> Changes Made:
-> - **New Datasources & Scripts**: Added `ds_billing_centers_aws_acc`, `ds_top_level_bcs_aws_acc`, and `ds_cloud_vendor_accounts_fallback` datasources, along with corresponding JS scripts (`js_top_level_bcs_aws_acc`, `js_cloud_vendor_accounts_fallback`) to handle fallback account retrieval.
-> - **Updated Logic**: Modified existing scripts (e.g., `js_vendor_account_table`, `js_aws_account`) to check for empty results from the primary API and use the fallback data.
->
-> ### Affected Policies
->
-> - AWS Regions Without Config Fully Enabled
-> - AWS Regions Without Default EBS Encryption
-> - AWS Unencrypted EBS Volumes
-> - AWS Customer Managed Keys (CMKs) Without Rotation Enabled
-> - AWS Elastic Load Balancers With Unencrypted Listeners
-> - AWS Internet-Accessible Elastic Load Balancers
-> - AWS VPCs Without FlowLogs Enabled
-> - AWS Publicly Accessible RDS Instances
-> - AWS Unencrypted RDS Instances
->
-> ### Other Notes
-> - Includes Cheng's fix in [FOPTS-18276](https://github.com/flexera-public/policy_templates/pull/3898) - cc @jc1203
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3927) for these details.
-- **Merged At**: 2026-01-02 15:23:48 UTC
-
----
-
-### PR [#3921](https://github.com/flexera-public/policy_templates/pull/3921): POL-1645 Update AWS Policies to support Account Name for MSP Child Orgs - Security Policies 1
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This PR adds a fallback mechanism for retrieving AWS account information in multiple AWS policy templates, addressing issues where the Flexera List Cloud Accounts API may not return relevant account details (common in MSP environments). When the primary API fails, policies now fall back to querying aggregated cost data from the Flexera Bill Analysis API to populate account names.
->
-> Changes Made:
-> - **New Datasources & Scripts**: Added `ds_billing_centers_aws_acc`, `ds_top_level_bcs_aws_acc`, and `ds_cloud_vendor_accounts_fallback` datasources, along with corresponding JS scripts (`js_top_level_bcs_aws_acc`, `js_cloud_vendor_accounts_fallback`) to handle fallback account retrieval.
-> - **Updated Logic**: Modified existing scripts (e.g., `js_vendor_account_table`, `js_aws_account`) to check for empty results from the primary API and use the fallback data.
->
-> ### Affected Policies
->
-> - AWS CloudTrail Not Enabled In All Regions
-> - AWS CloudTrail S3 Buckets Without Access Logging
-> - AWS CloudTrails Not Integrated With CloudWatch
-> - AWS CloudTrails Without Encrypted Logs
-> - AWS CloudTrails Without Log File Validation Enabled
-> - AWS CloudTrails Without Object-level Events Logging Enabled
-> - AWS Publicly Accessible CloudTrail S3 Buckets
->
-> ### Other Notes
-> - Includes Cheng's fix in [FOPTS-18276](https://github.com/flexera-public/policy_templates/pull/3898) - cc @jc1203
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3921) for these details.
-- **Merged At**: 2026-01-02 13:21:19 UTC
-
----
-
-### PR [#3920](https://github.com/flexera-public/policy_templates/pull/3920): POL-1642 Update AWS Policies to support Account Name for MSP Child Orgs - Cost Policies 2
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This PR adds a fallback mechanism for retrieving AWS account information in multiple AWS policy templates, addressing issues where the Flexera List Cloud Accounts API may not return relevant account details (common in MSP environments). When the primary API fails, policies now fall back to querying aggregated cost data from the Flexera Bill Analysis API to populate account names.
->
-> Changes Made:
-> - **New Datasources & Scripts**: Added `ds_billing_centers_aws_acc`, `ds_top_level_bcs_aws_acc`, and `ds_cloud_vendor_accounts_fallback` datasources, along with corresponding JS scripts (`js_top_level_bcs_aws_acc`, `js_cloud_vendor_accounts_fallback`) to handle fallback account retrieval.
-> - **Updated Logic**: Modified existing scripts (e.g., `js_vendor_account_table`, `js_aws_account`) to check for empty results from the primary API and use the fallback data.
->
-> ### Affected Policies
->
-> - AWS Oversized S3 Buckets
-> - AWS S3 Buckets Without Intelligent Tiering
-> - AWS S3 Buckets Without Lifecycle Configuration
-> - AWS S3 Incomplete Multi-Part Uploads
-> - AWS Schedule Instance
->
-> ### Other Notes
-> - Includes Cheng's fix in [FOPTS-18276](https://github.com/flexera-public/policy_templates/pull/3898) - cc @jc1203
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3920) for these details.
-- **Merged At**: 2026-01-02 13:20:20 UTC
-
----
-
-### PR [#3919](https://github.com/flexera-public/policy_templates/pull/3919): POL-1641 Update AWS Policies to support Account Name for MSP Child Orgs - Cost Policies 1
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This PR adds a fallback mechanism for retrieving AWS account information in multiple AWS policy templates, addressing issues where the Flexera List Cloud Accounts API may not return relevant account details (common in MSP environments). When the primary API fails, policies now fall back to querying aggregated cost data from the Flexera Bill Analysis API to populate account names.
->
-> Changes Made:
-> - **New Datasources & Scripts**: Added `ds_billing_centers_aws_acc`, `ds_top_level_bcs_aws_acc`, and `ds_cloud_vendor_accounts_fallback` datasources, along with corresponding JS scripts (`js_top_level_bcs_aws_acc`, `js_cloud_vendor_accounts_fallback`) to handle fallback account retrieval.
-> - **Updated Logic**: Modified existing scripts (e.g., `js_vendor_account_table`, `js_aws_account`) to check for empty results from the primary API and use the fallback data.
->
-> ### Affected Policies
-> - AWS Burstable EC2 Instances
-> - AWS REC2 Instances Time Stopped Report
-> - AWS EKS Cluster Without Spot Instances
-> - AWS CloudTrails With Read Logging Enabled
-> - ~AWS Expiring Reserved Instances~ - Not applicable: Vendor Account Name appears for Reserved Instances list in Child Orgs
-> - ~AWS Expiring Savings Plans~ - Not applicable
->
-> ### Other Notes
-> - Includes Cheng's fix in [FOPTS-18276](https://github.com/flexera-public/policy_templates/pull/3898) - cc @jc1203
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3919) for these details.
-- **Merged At**: 2026-01-02 13:19:54 UTC
-
----
-
-### PR [#3897](https://github.com/flexera-public/policy_templates/pull/3897): FOPTS-18273 Fix possible 'undefined' error for AWS Rightsize EC2 Instances policy
-
-*Bug Fix*
-
-#### Description
-
-> Fix possible 'undefined' error for AWS Rightsize EC2 Instances policy.
-> This error only happens when `"Skip Instance Sizes"` is set to `"Yes"`, and only happens for certain AWS instance type (such as `"c5.24xlarge"` or `"c5a.24xlarge"`).
->
-> `ds_aws_instance_size_map[instance['newResourceType']]['down']` might error due to `ds_aws_instance_size_map[instance['newResourceType']]` being "null".
-> https://github.com/flexera-public/policy_templates/blob/14f8fe295d44df97e42db84aafd4eb8b1916a6a3/cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt#L1599
->
-> it could be caused by `instance['resourceType']` equal to `"c5.24xlarge"` or `"c5a.24xlarge"`, as there is no resource type "c18.18xlarge" nor "c18.16xlarge" in "instance_types.json" file.
-> https://github.com/flexera-public/policy_templates/blob/14f8fe295d44df97e42db84aafd4eb8b1916a6a3/data/aws/instance_types.json#L311-L320
-> https://github.com/flexera-public/policy_templates/blob/14f8fe295d44df97e42db84aafd4eb8b1916a6a3/data/aws/instance_types.json#L400-L409
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/SQ-20106
->
-
-#### Metadata
-
-- **Policies**: [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/README.md), [Meta Parent: AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances/README.md)
-- **Merged At**: 2026-01-02 13:10:14 UTC
-
----
-
-### PR [#3916](https://github.com/flexera-public/policy_templates/pull/3916): POL-1712 Google Meta Policy Fixes
-
-*Minor Update*
-
-#### Description
-
-> Fixes issue with two Google policy templates where meta policies were not being properly generated with version updates.
->
-
-#### Metadata
-
-- **Policies**: [Google Rightsize Cloud SQL Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_instances/README.md), [Meta Parent: Google Rightsize Cloud SQL Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_cloudsql_instances/README.md), [Google Unused Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/google/unused_disks/README.md), [Meta Parent: Google Unused Disks](https://github.com/flexera-public/policy_templates/tree/master/cost/google/unused_disks/README.md)
-- **Merged At**: 2025-12-31 16:48:36 UTC
-
----
-
-### PR [#3906](https://github.com/flexera-public/policy_templates/pull/3906): POL-1640 Update AWS Policies to support Account Name for MSP Child Orgs - Compliance Policies 2
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This PR adds a fallback mechanism for retrieving AWS account information in multiple AWS policy templates, addressing issues where the Flexera List Cloud Accounts API may not return relevant account details (common in MSP environments). When the primary API fails, policies now fall back to querying aggregated cost data from the Flexera Bill Analysis API to populate account names.
->
-> Changes Made:
-> - **New Datasources & Scripts**: Added `ds_billing_centers_aws_acc`, `ds_top_level_bcs_aws_acc`, and `ds_cloud_vendor_accounts_fallback` datasources, along with corresponding JS scripts (`js_top_level_bcs_aws_acc`, `js_cloud_vendor_accounts_fallback`) to handle fallback account retrieval.
-> - **Updated Logic**: Modified existing scripts (e.g., `js_vendor_account_table`, `js_aws_account`) to check for empty results from the primary API and use the fallback data.
->
-> ### Affected Policies
-> - AWS IAM Role Audit (and meta parent)
-> - AWS RDS Instances With Unapproved Backup Settings (and meta parent)
->
-> ### Other Notes
-> - Includes Cheng's fix in [FOPTS-18276](https://github.com/flexera-public/policy_templates/pull/3898) - cc @jc1203
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: [AWS IAM Role Audit](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/iam_role_audit/README.md), [Meta Parent: AWS IAM Role Audit](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/iam_role_audit/README.md), [AWS RDS Instances With Unapproved Backup Settings](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/rds_backup/README.md), [Meta Parent: AWS RDS Instances With Unapproved Backup Settings](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/rds_backup/README.md)
-- **Merged At**: 2025-12-30 19:06:53 UTC
-
----
-
-### PR [#3905](https://github.com/flexera-public/policy_templates/pull/3905): POL-1639 Update AWS Policies to support Account Name for MSP Child Orgs - Optimization Compliance Policies 1
-
-#### Description
-
-> <!-- Describe what this change achieves below -->
-> This PR adds a fallback mechanism for retrieving AWS account information in multiple AWS policy templates, addressing issues where the Flexera List Cloud Accounts API may not return relevant account details (common in MSP environments). When the primary API fails, policies now fall back to querying aggregated cost data from the Flexera Bill Analysis API to populate account names.
->
-> Changes Made:
-> - **New Datasources & Scripts**: Added `ds_billing_centers_aws_acc`, `ds_top_level_bcs_aws_acc`, and `ds_cloud_vendor_accounts_fallback` datasources, along with corresponding JS scripts (`js_top_level_bcs_aws_acc`, `js_cloud_vendor_accounts_fallback`) to handle fallback account retrieval.
-> - **Updated Logic**: Modified existing scripts (e.g., `js_vendor_account_table`, `js_aws_account`) to check for empty results from the primary API and use the fallback data.
->
-> ### Affected Policies
-> - AWS Long Stopped EC2 Instances (and meta parent)
-> - AWS Unused ECS Clusters(and meta parent)
-> - AWS Untagged Resources (and meta parent)
-> - AWS Disallowed Regions (and meta parent)
->
-> ### Other Notes
-> - Includes Cheng's fix in [FOPTS-18276](https://github.com/flexera-public/policy_templates/pull/3898) - cc @jc1203
->
-> ### Issues Resolved
->
-> <!-- List any existing issues this PR resolves below -->
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3905) for these details.
-- **Merged At**: 2025-12-30 19:06:47 UTC
-
----
-
-### PR [#3907](https://github.com/flexera-public/policy_templates/pull/3907): POL-1711 Google Rightsize VM Meta Issue
-
-*Minor Update*
-
-#### Description
-
-> The meta policy for "Google Rightsize VM Instances" was not being properly generated because it was not listed in the appropriate YAML file. The meta parent code in the child policy was also broken.
->
-> This fixes both things.
->
-
-#### Metadata
-
-- **Policies**: [Google Rightsize VM Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_instances/README.md), [Meta Parent: Google Rightsize VM Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/google/rightsize_vm_instances/README.md)
-- **Merged At**: 2025-12-30 18:20:16 UTC
-
----
-
-### PR [#3898](https://github.com/flexera-public/policy_templates/pull/3898): FOPTS-18276 Fixed 'undefined' error in POL-1636
-
-*Bug Fix*
-
-#### Description
-
-> Fixing an "undefined" error introduced in POL-1636.
->
-> E.g. `result["tags"] = {}` would fail due to `result` is `undefined`
-> https://github.com/flexera-public/policy_templates/pull/3884/files#diff-9e47704a4846c077cda93e9dcb2307747be5b1e38584b670213625def1b5248eR406-R412
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/FOPTS-18276
-> (no related SQ ticket)
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3898) for these details.
-- **Merged At**: 2025-12-30 13:31:24 UTC
-
----
-
-### PR [#3896](https://github.com/flexera-public/policy_templates/pull/3896): FOAA-810 - Fix JS `TypeError` from else [ ... ] typo
-
-*Unpublished, Bug Fix*
-
-#### Description
-
-> Fixes Javascript TypeError that can arise under certain conditions because of a typo/incorrect `else [ ... ]` statement.
->
-> Here is the fix:
-> https://github.com/flexera-public/policy_templates/pull/3896/changes#diff-16cc7427fb6b811a00954f15e673c86e82a0c2e723647ec131d11591ed941456L797-R801
->
-> ### Issues Resolved
->
-> https://flexera.atlassian.net/browse/FOAA-810
-> https://flexera.atlassian.net/browse/SQ-20600
->
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3896) for details about unpublished policies.
-- **Merged At**: 2025-12-30 13:31:14 UTC
 
 ---
 

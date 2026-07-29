@@ -1,5 +1,10 @@
 # Changelog
 
+## v6.0.0
+
+- Replaced `Include Account Tags` parameter with new `Report Types` list parameter that allows selecting `Accounts` and/or `Resources` individually
+- Default behavior now includes both Accounts and Resources in the report (previously the default excluded the account)
+
 ## v5.6.3
 
 - Fixed bug where resources whose missing tags were fully covered by Tag Dimension equivalents were still included in the incident with a blank `Missing Tags` field instead of being correctly excluded.

@@ -26,7 +26,7 @@ This policy template has the following input parameters required when launching 
 - *Allow/Deny Regions List* - Filter results by region, either only allowing this list or denying it depending on how the above parameter is set. Leave blank to consider all the regions.
 - *Allow/Deny Resource Groups* - Whether to treat Allow/Deny Resource Groups List parameter as allow or deny list. Has no effect if Allow/Deny Resource Groups List is left empty.
 - *Allow/Deny Resource Groups List* - A list of allowed or denied Resource Group names to filter the results by. Entries can be in the format `resource_group_name` to filter all resource groups with that name regardless of subscription, or `subscription_id/resource_group_name` to filter a resource group within a specific subscription. Leave blank to consider all resource groups.
-- *Include Subscription/Resource Group Tags* - Whether or not to include Azure Subscriptions and Resource Groups as resources whose tags are checked and reported on.
+- *Report Types* - The types of resources to include in the report. Select 'Subscriptions' to include Azure Subscriptions, 'Resource Groups' to include Resource Groups, and 'Resources' to include individual taggable resources.
 - *Tags* - The policy will report resources missing the specified tags. The following formats are supported:
   - `Key` - Find all resources missing the specified tag key.
   - `Key==Value` - Find all resources missing the specified tag key:value pair and all resources missing the specified tag key.

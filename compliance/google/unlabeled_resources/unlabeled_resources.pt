@@ -8,7 +8,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "4.0.1",
+  version: "5.0.0",
   provider: "Google",
   service: "Compute",
   policy_set: "Untagged Resources",
@@ -79,12 +79,21 @@ parameter "param_projects_ignore_app" do
   default "No"
 end
 
+parameter "param_report_types" do
+  type "list"
+  category "Filters"
+  label "Report Types"
+  description "The types of resources to include in the report. Select 'Projects' to include Google Projects themselves, and 'Resources' to include individual labelable resources."
+  allowed_values "Projects", "Resources"
+  default ["Projects", "Resources"]
+end
+
 parameter "param_resource_types" do
   type "list"
   category "Filters"
   label "Resource Types"
-  description "The types of resources to check labels for. Any options not selected will not be reported on."
-  allowed_values ["Projects", "Persistent Disks", "VPN Gateways (Internal)", "VPN Gateways (External)", "Images", "Virtual Machines", "Snapshots", "Storage Buckets"]
+  description "The specific resource types to check labels for when 'Resources' is selected in the 'Report Types' parameter. Any options not selected will not be reported on."
+  allowed_values ["Persistent Disks", "VPN Gateways (Internal)", "VPN Gateways (External)", "Images", "Virtual Machines", "Snapshots", "Storage Buckets"]
   default ["Persistent Disks", "VPN Gateways (Internal)", "VPN Gateways (External)", "Images", "Virtual Machines", "Snapshots", "Storage Buckets"]
 end
 
@@ -795,16 +804,16 @@ datasource "ds_storage_buckets" do
 end
 
 datasource "ds_google_resources" do
-  run_script $js_google_resources, $ds_google_projects_filtered, $ds_disks, $ds_vpn_gateways, $ds_external_vpn_gateways, $ds_images, $ds_instances, $ds_snapshots, $ds_storage_buckets, $param_resource_types
+  run_script $js_google_resources, $ds_google_projects_filtered, $ds_disks, $ds_vpn_gateways, $ds_external_vpn_gateways, $ds_images, $ds_instances, $ds_snapshots, $ds_storage_buckets, $param_resource_types, $param_report_types
 end
 
 script "js_google_resources", type: "javascript" do
-  parameters "ds_google_projects_filtered", "ds_disks", "ds_vpn_gateways", "ds_external_vpn_gateways", "ds_images", "ds_instances", "ds_snapshots", "ds_storage_buckets", "param_resource_types"
+  parameters "ds_google_projects_filtered", "ds_disks", "ds_vpn_gateways", "ds_external_vpn_gateways", "ds_images", "ds_instances", "ds_snapshots", "ds_storage_buckets", "param_resource_types", "param_report_types"
   result "result"
   code <<-'EOS'
   projects = []
 
-  if (_.contains(param_resource_types, "Projects")) {
+  if (_.contains(param_report_types, "Projects")) {
     projects = _.map(ds_google_projects_filtered, function(project) {
       return {
         id: project['id'],
@@ -820,7 +829,12 @@ script "js_google_resources", type: "javascript" do
     })
   }
 
-  result = projects.concat(ds_disks, ds_vpn_gateways, ds_external_vpn_gateways, ds_images, ds_instances, ds_snapshots, ds_storage_buckets)
+  resources = []
+  if (_.contains(param_report_types, "Resources")) {
+    resources = [].concat(ds_disks, ds_vpn_gateways, ds_external_vpn_gateways, ds_images, ds_instances, ds_snapshots, ds_storage_buckets)
+  }
+
+  result = projects.concat(resources)
 EOS
 end
 

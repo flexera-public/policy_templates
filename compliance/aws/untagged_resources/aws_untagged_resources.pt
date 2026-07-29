@@ -8,7 +8,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "5.6.3",
+  version: "6.0.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Untagged Resources",
@@ -96,13 +96,13 @@ parameter "param_consider_tag_dimensions" do
   default "Consider Tag Dimensions"
 end
 
-parameter "param_include_account" do
-  type "string"
+parameter "param_report_types" do
+  type "list"
   category "Filters"
-  label "Include Account Tags"
-  description "Whether or not to include the AWS account itself as a resource whose tags are checked and reported on."
-  allowed_values "Include Account", "Do Not Include Account"
-  default "Do Not Include Account"
+  label "Report Types"
+  description "The types of resources to include in the report. Select 'Accounts' to include the AWS account itself, and 'Resources' to include individual taggable resources."
+  allowed_values "Accounts", "Resources"
+  default ["Accounts", "Resources"]
 end
 
 parameter "param_incident_csv" do
@@ -655,11 +655,11 @@ EOS
 end
 
 datasource "ds_aws_resources_missing_tags" do
-  run_script $js_aws_resources_missing_tags, $ds_aws_resources, $ds_aws_account, $ds_tag_dimensions, $param_tags, $param_tags_boolean, $param_consider_tag_dimensions, $param_include_account
+  run_script $js_aws_resources_missing_tags, $ds_aws_resources, $ds_aws_account, $ds_tag_dimensions, $param_tags, $param_tags_boolean, $param_consider_tag_dimensions, $param_report_types
 end
 
 script "js_aws_resources_missing_tags", type:"javascript" do
-  parameters "ds_aws_resources", "ds_aws_account", "ds_tag_dimensions", "param_tags", "param_tags_boolean", "param_consider_tag_dimensions", "param_include_account"
+  parameters "ds_aws_resources", "ds_aws_account", "ds_tag_dimensions", "param_tags", "param_tags_boolean", "param_consider_tag_dimensions", "param_report_types"
   result "result"
   code <<-'EOS'
   result = []
@@ -695,9 +695,9 @@ script "js_aws_resources_missing_tags", type:"javascript" do
   })
 
   if (comparators.length > 0) {
-    // Check each resource for missing tags. Include account when appropriate.
-    resources = [].concat(ds_aws_resources)
-    if (param_include_account == "Include Account") { resources.push(ds_aws_account) }
+    // Check each resource for missing tags based on selected report types
+    resources = _.contains(param_report_types, "Resources") ? [].concat(ds_aws_resources) : []
+    if (_.contains(param_report_types, "Accounts")) { resources.push(ds_aws_account) }
 
     _.each(resources, function(resource) {
       resource_tags = {}

@@ -445,6 +445,32 @@ The following files do not have automated generation scripts that pull from live
 }
 ```
 
+### postgresql_flexible_tier_types.json
+
+**Description:** The ordered scale-up and scale-down chain for Azure Database for PostgreSQL Flexible Server SKUs, organized by compute tier. Shares the same Azure Standard VM SKU structure as `mysql_flexible_tier_types.json` since both MySQL and PostgreSQL Flexible Servers use the same underlying VM SKU families (Burstable, GeneralPurpose, MemoryOptimized). Used by policy templates that recommend rightsizing PostgreSQL Flexible Server instances.
+
+**Structure:** Object keyed by compute tier name → SKU name → resize relationship object.
+
+**Compute tiers:** `Burstable`, `GeneralPurpose`, `MemoryOptimized`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `up` | string or null | vCPU count of the next larger SKU in the tier; `null` if largest |
+| `down` | string or null | vCPU count of the next smaller SKU in the tier; `null` if smallest |
+| `up_sku` | string or null | Full SKU name of the next larger instance; `null` if largest |
+| `down_sku` | string or null | Full SKU name of the next smaller instance; `null` if smallest |
+
+**Example:**
+
+```json
+{
+  "Burstable": {
+    "Standard_B1s": { "up": "2", "down": null, "up_sku": "Standard_B2s", "down_sku": null },
+    "Standard_B2s": { "up": "4", "down": "1", "up_sku": "Standard_B4ms", "down_sku": "Standard_B1s" }
+  }
+}
+```
+
 ### resource_types.json
 
 **Description:** A catalog of Azure resource type strings with flags indicating whether each type appears in cost reports and supports resource tags. Used by policy templates that enumerate or filter Azure resources by type.
@@ -486,6 +512,31 @@ The following files do not have automated generation scripts that pull from live
     "Standard_10": { "up": "20", "down": null },
     "Standard_20": { "up": "50", "down": "10" },
     "Standard_50": { "up": "100", "down": "20" }
+  }
+}
+```
+
+### postgresql_single_tier_types.json
+
+**Description:** The ordered scale-up and scale-down chain for Azure Database for PostgreSQL Single Server SKUs, organized by service tier. Used by policy templates that recommend rightsizing Azure PostgreSQL Single Server deployments.
+
+**Structure:** Object keyed by service tier name → SKU identifier → resize relationship object.
+
+**Service tiers:** `Basic`, `GeneralPurpose`, `MemoryOptimized`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `up` | string or null | vCore count of the next larger option within this tier; `null` if largest |
+| `down` | string or null | vCore count of the next smaller option within this tier; `null` if smallest |
+
+**Example:**
+
+```json
+{
+  "GeneralPurpose": {
+    "GP_Gen5_2": { "up": "4", "down": null },
+    "GP_Gen5_4": { "up": "8", "down": "2" },
+    "GP_Gen5_8": { "up": "16", "down": "4" }
   }
 }
 ```

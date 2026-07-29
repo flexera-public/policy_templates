@@ -17,7 +17,8 @@ This policy template has the following input parameters:
 - *Tag Keys* - A list of Google resource manager tag key short names to create custom Rule-Based Dimensions for. Short names are the last path segment of the namespaced key (e.g., `environment` from `myorg.example.com/environment`). Multiple tag keys can be specified for a single dimension by placing a single entry with each tag key separated by a semicolon (;) character. For example, a value of `env;environment;environ` will create one Rule-Based Dimension that checks the short names "env", "environment", and "environ" for values.
 - *Dimension Names* - A list of names to give the Rule-Based Dimensions in the Flexera platform. Enter names in the same order as the tag keys in the *Tag Keys* field. Dimension names will be derived from tag keys directly if this list is left empty.
 - *Include Inherited Tags* - Whether to include tags inherited from parent folders and organizations (`Yes`, the default), or only tags directly attached to the Project (`No`). When set to `Yes`, Google's effective tag resolution applies automatically: a tag bound at a closer ancestor overrides the same key bound at a more distant ancestor. When set to `No`, only tags whose binding point is the project itself are considered.
-- *Effective Date* - The month and year in YYYY-MM format that you want the rules to apply. This should be left at its default value in most cases to ensure that the rules apply to all costs, including historical costs.
+- *Effective Date* - The month and year in YYYY-MM format that you want the rules to apply. This should be left at its default value in most cases to ensure that the rules apply to all costs, including historical costs. Only used when *Effective Date Mode* is set to "Static".
+- *Effective Date Mode* - Whether to use the static value in the *Effective Date* parameter for all rule updates ("Static"), or to automatically use the current month (in YYYY-MM format) as the effective date each time the policy runs ("Current Month").
 - *Lowercase Values* - Whether or not to normalize all values by converting them to lowercase. Note that, if the same value appears multiple times with different casing, and this option is disabled, the rule-based dimension will be rejected and this policy template will fail.
 
 ## Policy Actions
@@ -38,6 +39,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `policy_viewer`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera-one/automation/automation-administration/managing-credentials-for-policy-access-to-external-systems/provider-specific-credentials) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
+Additionally, this policy template requires that the following API be enabled in your Google Cloud environment:
+
+- [Cloud Resource Manager API](https://console.cloud.google.com/flows/enableapi?apiid=cloudresourcemanager.googleapis.com)
 
 ## Supported Clouds
 

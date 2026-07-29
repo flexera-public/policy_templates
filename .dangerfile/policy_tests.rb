@@ -24,10 +24,10 @@ def policy_missing_github_labels?(github, file, file_parsed, file_metadata, is_n
     current_major_version = file_metadata["version"].split('.')[0]
     current_minor_version = file_metadata["version"].split('.')[0] + "." + file_metadata["version"].split('.')[1]
 
-    if major_version != current_major_version && !github.pr_labels.include?("MAJOR UPDATE")
-      fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md#4-make-a-pull-request)] Policy Template has changed major versions but Pull Request is missing `MAJOR UPDATE` label. Please add this label to the Pull Request.\n\n"
-    elsif minor_version != current_minor_version && !github.pr_labels.include?("MINOR UPDATE")
-      fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md#4-make-a-pull-request)] Policy Template has changed minor versions but Pull Request is missing `MINOR UPDATE` label. Please add this label to the Pull Request.\n\n"
+    if major_version != current_major_version
+      fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md#4-make-a-pull-request)] Policy Template has changed major versions but Pull Request is missing `MAJOR UPDATE` label. Please add this label to the Pull Request.\n\n" if !github.pr_labels.include?("MAJOR UPDATE")
+    elsif minor_version != current_minor_version
+      fail_message += "[[Info](https://github.com/flexera-public/policy_templates/blob/master/CONTRIBUTING.md#4-make-a-pull-request)] Policy Template has changed minor versions but Pull Request is missing `MINOR UPDATE` label. Please add this label to the Pull Request.\n\n" if !github.pr_labels.include?("MINOR UPDATE")
     end
   end
 
@@ -1759,7 +1759,7 @@ end
 
 ### Outdated Links
 # Return false if no outdated links are found
-def policy_outdated_links?(file, file_lines, added_files = [])
+def policy_outdated_links?(file, file_lines, changed_files = [])
   puts Time.now.strftime("%H:%M:%S.%L") + " *** Testing whether Policy Template file has any outdated links..."
 
   fail_message = ""
@@ -1795,7 +1795,7 @@ def policy_outdated_links?(file, file_lines, added_files = [])
           else
             file_path = line.split("/master/")[1].split('"')[0]
 
-            if !File.exist?(file_path) && !added_files.include?(file_path)
+            if !File.exist?(file_path) && !changed_files.include?(file_path)
               fail_message += "Line #{datasource_line}: Datasource has invalid link to Github asset. The file `#{file_path}` does not appear to exist. Please make sure the `path` field points to a valid file.\n\n"
             end
           end
