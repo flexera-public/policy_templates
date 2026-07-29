@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.1
+
+- Fixed bug where sometimes commitment tiers were undetected and Pay-As-You-Go pricing was incorrectly used instead, resulting in oversized savings estimates.
+
 ## v0.4.0
 
 - Fixed bug where workspaces using Azure Sentinel Simplified pricing (unified SKU) received no recommendations or incorrect savings estimates. The policy now detects the pricing scheme per workspace via the OperationsManagement Solutions API and applies the correct rate model: Simplified workspaces use the all-inclusive Sentinel unified rate; Classic workspaces continue to use the sum of Log Analytics and Sentinel component rates.
