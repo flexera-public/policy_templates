@@ -6,6 +6,55 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#4744](https://github.com/flexera-public/policy_templates/pull/4744): FOPTS-27963 Fix overlapping X-axis date labels in scheduled report chart
+
+*Minor Update*
+
+#### Description
+
+> Fixes SQ-26519: X-axis date labels in the scheduled reports spending chart were rendering as an overlapping, unreadable block for customers over multi-month date ranges. The chxs axis style parameter only configured the Y-axis (currency formatting), the X-axis had no label-skipping or rotation, so every daily label was drawn with no thinning.
+>
+> Added opt_skip_labels (s) to the X-axis entry in chxs, so Image-Charts automatically thins out labels when there are too many for the available width, instead of rendering all of them.
+>
+
+#### Metadata
+
+- **Policies**: [Scheduled Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_reports/README.md)
+- **Merged At**: 2026-07-29 21:33:46 UTC
+
+---
+
+### PR [#4741](https://github.com/flexera-public/policy_templates/pull/4741): POL-1807 Meta Parent CWF Logging Fix
+
+#### Description
+
+> Fixes logging issue in meta parent policies where a POST request was incorrectly logged as DELETE. Actual functionality itself works correctly.
+>
+> (Also used Copilot to do a quick pass for similar logging issues in CWF for non-meta parents but nothing was found)
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4741) for these details.
+- **Merged At**: 2026-07-29 12:52:14 UTC
+
+---
+
+### PR [#4738](https://github.com/flexera-public/policy_templates/pull/4738): POL-1797 New Policy Template: Azure Rule-Based Dimension For Tenant ID
+
+*Unpublished, New Policy Template*
+
+#### Description
+
+> Azure Rule-Based Dimension For Tenant ID - This policy template creates and maintains a Rule-Based Dimension in Flexera Cloud Cost Optimization that shows the Azure tenant ID associated with each Azure subscription.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with no published policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4738) for details about unpublished policies.
+- **Merged At**: 2026-07-28 14:41:42 UTC
+
+---
+
 ### PR [#4724](https://github.com/flexera-public/policy_templates/pull/4724): POL-1806 Markdown Table Option
 
 *Minor Update*
@@ -1813,58 +1862,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3990) for these details.
 - **Merged At**: 2026-01-16 13:06:23 UTC
-
----
-
-### PR [#3989](https://github.com/flexera-public/policy_templates/pull/3989): POL-1718 Scheduled Report: CSV Support
-
-*Minor Update*
-
-#### Description
-
-> From Changelog:
-> - Added support for attaching CSV files to incident emails.
-> - Fixed issue where incident was missing line breaks.
->
-
-#### Metadata
-
-- **Policies**: [Scheduled Report](https://github.com/flexera-public/policy_templates/tree/master/cost/flexera/cco/scheduled_reports/README.md)
-- **Merged At**: 2026-01-16 13:06:13 UTC
-
----
-
-### PR [#3984](https://github.com/flexera-public/policy_templates/pull/3984): POL-1518 Azure Reserved Instances Recommendations Fix
-
-*Minor Update*
-
-#### Description
-
-> Fixes issue with break even calculation in Azure Reserved Instances Recommendations policy template.
->
-
-#### Metadata
-
-- **Policies**: [Azure Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/recommendations/README.md)
-- **Merged At**: 2026-01-15 16:44:19 UTC
-
----
-
-### PR [#3978](https://github.com/flexera-public/policy_templates/pull/3978): POL-1518 Azure Reserved Instances Recommendations: Add Break Even Point
-
-*Minor Update*
-
-#### Description
-
-> Adds the break even point in months to the incident for Azure Reserved Instances Recommendations. This is calculated via the following formula:
->
-> (1 - ((costWithNoRI - totalCostWithRI) / costWithNoRI)) * termMonths
->
-
-#### Metadata
-
-- **Policies**: [Azure Reserved Instances Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/reserved_instances/recommendations/README.md)
-- **Merged At**: 2026-01-15 15:53:54 UTC
 
 ---
 
