@@ -7,8 +7,9 @@ This policy template checks usage for all Azure SQL single database instances in
 ## How It Works
 
 - The policy template leverages the Azure API to check all Azure SQL single database instances and then checks the number of connections and utilization over a user-specified number of days.
-  - Utilization is based on CPU usage for vCore-model databases.
-  - Utilization is based on DTU usage for DTU-model databases.
+  - Utilization is based on CPU usage for vCore-model databases (General Purpose, Business Critical, and Hyperscale tiers).
+  - Utilization is based on DTU usage for DTU-model databases (Basic, Standard, and Premium tiers). DTU is a blended measure of CPU, memory, reads, and writes.
+  - The underutilized incident table reports CPU and DTU metrics in separate columns. Each database only populates the column set matching its purchasing model (shown in the `Purchase Model` column); the other set of columns will be blank for that row. See [Azure's documentation comparing the vCore-based and DTU-based purchasing models](https://learn.microsoft.com/en-us/azure/azure-sql/database/purchasing-models) for more information.
 - The policy template identifies all instances that have had no connections over a user-specified number of days and flags them as unused.
 - The recommendation provided for unused instances is a deletion action. These instances can be deleted in an automated manner or after approval.
 - The policy template identifies all instances that have had connections but have average usage below the user-specified threshold over a user-specified number of days and flags them as underutilized.

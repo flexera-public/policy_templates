@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.3.2
+
+- Expanded the incident disclaimer to explain the difference between CPU metrics (vCore-based databases) and DTU metrics (DTU-based databases) shown in the incident table
+
 ## v6.3.1
 
 - Fixed bug where the `!~` exclusion tag operator incorrectly excluded resources whose tag value matched the regex instead of those that did not match
