@@ -338,6 +338,25 @@ datasource "ds_get_azure_resource_groups" do
   end
 end
 
+# The Bill Analysis API can return rows with a blank resource_group dimension for costs that
+# are not attributable to any resource group (e.g. subscription/EA-level charges such as
+# Marketplace purchases, support charges, or reservation purchases). These do not correspond to
+# a real resource group and would otherwise cause a child policy to be created with an empty
+# resource group, which can never match any actual resource. Filter them out here.
+datasource "ds_azure_resource_groups_filtered" do
+  run_script $js_azure_resource_groups_filtered, $ds_get_azure_resource_groups
+end
+
+script "js_azure_resource_groups_filtered", type: "javascript" do
+  parameters "ds_get_azure_resource_groups"
+  result "result"
+  code <<-'EOS'
+    result = _.filter(ds_get_azure_resource_groups, function(item) {
+      return item.resourceGroup != null && item.resourceGroup.trim() != ""
+    })
+EOS
+end
+
 script "js_make_billing_center_request", type: "javascript" do
   parameters "rs_org_id", "rs_optima_host", "billing_centers_unformatted", "param_dimension_filter_includes", "param_dimension_filter_excludes"
   result "request"
@@ -615,7 +634,7 @@ script "js_format_existing_policies", type: "javascript" do
 end
 
 datasource "ds_take_in_parameters" do
-  run_script $js_take_in_parameters, $ds_get_azure_resource_groups, $ds_format_self, first($ds_published_child_policy_information), first($ds_project_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $ds_flexera_api_hosts, $param_template_source, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
+  run_script $js_take_in_parameters, $ds_azure_resource_groups_filtered, $ds_format_self, first($ds_published_child_policy_information), first($ds_project_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $ds_flexera_api_hosts, $param_template_source, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
 end
 
 # hardcode template href with id from catalog
@@ -628,7 +647,7 @@ end
 # param_exclude_tags and param_allowed_regions are arrays. I'm doing an update on the order changing but the values remaining the same.
 # If we only want to do an update on the values changing we could sort before doing the equality check.
 script "js_take_in_parameters", type: "javascript" do
-  parameters "ds_get_azure_resource_groups", "ds_format_self", "ds_published_child_policy_information", "ds_project_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "ds_flexera_api_hosts", "param_template_source", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
+  parameters "ds_azure_resource_groups_filtered", "ds_format_self", "ds_published_child_policy_information", "ds_project_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "ds_flexera_api_hosts", "param_template_source", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
   result "grid_and_cwf"
   code <<-'EOS'
   // Convert schedule label to iCal RRULE frequency string
@@ -717,7 +736,7 @@ script "js_take_in_parameters", type: "javascript" do
 
   // For each Azure subscription/resource group combo, decide whether to create a new child policy,
   // update the existing one, or leave it running unchanged.
-  _.each(ds_get_azure_resource_groups, function(item) {
+  _.each(ds_azure_resource_groups_filtered, function(item) {
     var subscriptionID = item.subscriptionID
     var resourceGroup = item.resourceGroup
     // Composite key uniquely identifies this subscription + resource group combination
