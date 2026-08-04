@@ -88,6 +88,15 @@ parameter "param_combined_incident_table_size" do
   default 100000
 end
 
+parameter "param_skip_consolidated_incident" do
+  type "string"
+  category "Incident Settings"
+  label "Skip Consolidated Incident"
+  description "Whether or not to skip generating the consolidated incident that combines violations from all child policy incidents. When set to 'Yes', only the status incident showing child policy management activity will be generated. Default value of 'No' preserves the standard behavior of generating a consolidated incident."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
 ## Child Policy Parameters
 parameter "param_azure_endpoint" do
   type "string"
@@ -258,7 +267,7 @@ script "js_child_policy_options", type: "javascript" do
   // Filter Options that are not appropriate for Child Policy
   var options = _.map(ds_self_policy_information.options, function(option){
     // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes", param_policy_schedule are exclusion to Meta Parent Policy Parameters
-    if (!_.contains(["param_combined_incident_email", "param_combined_incident_csv", "param_combined_incident_table_size", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
+    if (!_.contains(["param_combined_incident_email", "param_combined_incident_csv", "param_combined_incident_table_size", "param_skip_consolidated_incident", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule", "param_template_source"], option.name)) {
       return { "name": option.name, "value": option.value };
     }
   });
@@ -408,6 +417,25 @@ datasource "ds_get_azure_resource_groups" do
       field "resourceGroup", jmes_path(col_item, "dimensions.resource_group")
     end
   end
+end
+
+# The Bill Analysis API can return rows with a blank resource_group dimension for costs that
+# are not attributable to any resource group (e.g. subscription/EA-level charges such as
+# Marketplace purchases, support charges, or reservation purchases). These do not correspond to
+# a real resource group and would otherwise cause a child policy to be created with an empty
+# resource group, which can never match any actual resource. Filter them out here.
+datasource "ds_azure_resource_groups_filtered" do
+  run_script $js_azure_resource_groups_filtered, $ds_get_azure_resource_groups
+end
+
+script "js_azure_resource_groups_filtered", type: "javascript" do
+  parameters "ds_get_azure_resource_groups"
+  result "result"
+  code <<-'EOS'
+    result = _.filter(ds_get_azure_resource_groups, function(item) {
+      return item.resourceGroup != null && item.resourceGroup.trim() != ""
+    })
+EOS
 end
 
 script "js_make_billing_center_request", type: "javascript" do
@@ -687,7 +715,7 @@ script "js_format_existing_policies", type: "javascript" do
 end
 
 datasource "ds_take_in_parameters" do
-  run_script $js_take_in_parameters, $ds_get_azure_resource_groups, $ds_format_self, first($ds_published_child_policy_information), first($ds_project_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $ds_flexera_api_hosts, $param_template_source, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
+  run_script $js_take_in_parameters, $ds_azure_resource_groups_filtered, $ds_format_self, first($ds_published_child_policy_information), first($ds_project_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $ds_flexera_api_hosts, $param_template_source, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
 end
 
 # hardcode template href with id from catalog
@@ -700,7 +728,7 @@ end
 # param_exclude_tags and param_allowed_regions are arrays. I'm doing an update on the order changing but the values remaining the same.
 # If we only want to do an update on the values changing we could sort before doing the equality check.
 script "js_take_in_parameters", type: "javascript" do
-  parameters "ds_get_azure_resource_groups", "ds_format_self", "ds_published_child_policy_information", "ds_project_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "ds_flexera_api_hosts", "param_template_source", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
+  parameters "ds_azure_resource_groups_filtered", "ds_format_self", "ds_published_child_policy_information", "ds_project_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "ds_flexera_api_hosts", "param_template_source", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
   result "grid_and_cwf"
   code <<-'EOS'
   // Convert schedule label to iCal RRULE frequency string
@@ -789,7 +817,7 @@ script "js_take_in_parameters", type: "javascript" do
 
   // For each Azure subscription/resource group combo, decide whether to create a new child policy,
   // update the existing one, or leave it running unchanged.
-  _.each(ds_get_azure_resource_groups, function(item) {
+  _.each(ds_azure_resource_groups_filtered, function(item) {
     var subscriptionID = item.subscriptionID
     var resourceGroup = item.resourceGroup
     // Composite key uniquely identifies this subscription + resource group combination
