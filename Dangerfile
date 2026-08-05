@@ -441,8 +441,9 @@ changed_pt_files.each do |file|
     # Raise warning if policy template short_description is missing a link to docs.flexera.com
     test = policy_short_description_missing_docs_link?(file, file_parsed); warnings << test if test
 
-    # Raise message if policy template won't be published
-    test = policy_unpublished?(file, file_parsed); messages << test if test
+    # Raise message if policy template won't be published.
+    # Skipped when > 15 policy template files have changed in the PR (see skip_unmodified_readme_check above).
+    test = skip_unmodified_readme_check ? nil : policy_unpublished?(file, file_parsed); messages << test if test
 
     # Raise warning if policy template's name has changed
     test = policy_name_changed?(file, file_diff); warnings << test if test

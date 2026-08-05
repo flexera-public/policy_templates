@@ -1961,6 +1961,14 @@ class PolicyTemplateParser:
         if service == 's3':
             qs = urllib.parse.urlparse(endpoint).query
             qs_keys = set(urllib.parse.parse_qs(qs).keys()) | set(k.rstrip('=') for k in qs.split('&') if k)
+            # Virtual-hosted-style addressing (e.g. "{bucket}.s3.amazonaws.com") already
+            # encodes the bucket name in the host, unlike path-style addressing
+            # (e.g. "s3.amazonaws.com/{bucket}/{key}"). In virtual-hosted style, the path
+            # segment count can't be used to distinguish bucket-level vs. object-level
+            # operations -- any non-empty path is an object key, even a single segment
+            # (e.g. GET {bucket}.s3.amazonaws.com/report.csv is GetObject, not ListBucket).
+            _host = urllib.parse.urlparse(endpoint).netloc.lower()
+            is_virtual_hosted = '.s3.' in _host and not _host.startswith('s3.') and not _host.startswith('s3-')
             if 'location' in qs_keys or qs.startswith('location'):
                 return 's3:GetBucketLocation'
             if 'logging' in qs_keys:
@@ -1986,8 +1994,26 @@ class PolicyTemplateParser:
             if 'uploads' in qs_keys:
                 return 's3:ListBucketMultipartUploads'
             # Root list
-            if path in ('/', '') or not path.strip('/'):
+            if not is_virtual_hosted and (path in ('/', '') or not path.strip('/')):
                 return 's3:ListAllMyBuckets'
+            if is_virtual_hosted:
+                # Any non-root path is an object key under the bucket named in the host.
+                if path in ('/', '') or not path.strip('/'):
+                    # No object key -- this is a bucket-level request (e.g. GET / on
+                    # {bucket}.s3.amazonaws.com lists bucket contents).
+                    if method in ('GET', 'HEAD'):
+                        return 's3:ListBucket'
+                    if method == 'PUT':
+                        return 's3:CreateBucket'
+                    if method == 'DELETE':
+                        return 's3:DeleteBucket'
+                else:
+                    if method in ('GET', 'HEAD'):
+                        return 's3:GetObject'
+                    if method == 'PUT':
+                        return 's3:PutObject'
+                    if method == 'DELETE':
+                        return 's3:DeleteObject'
             # Distinguish bucket-level (1 segment) from object-level (2+ segments)
             all_segs = [p for p in path.strip('/').split('/') if p]
             if len(all_segs) <= 1:
@@ -2307,6 +2333,7 @@ class PolicyTemplateParser:
 
         # Storage
         if service == 'storage':
+            # JSON API style: /storage/v1/b/{bucket}[/o[/{object}]]
             if re.search(r'/b/[^/]+/iam', path):
                 return 'storage.buckets.getIamPolicy'
             if re.search(r'/b/[^/]+/o/[^/]+', path):
@@ -2315,6 +2342,20 @@ class PolicyTemplateParser:
                 return 'storage.objects.list'
             if re.search(r'/b/?$', path) or re.search(r'/b\?', endpoint):
                 return 'storage.buckets.list'
+            # XML/S3-compatible API style: storage.googleapis.com/{bucket}/{object}
+            # (no "/storage/v1/b/" prefix). Used by CBI ingestion templates that pull a
+            # single object directly by path rather than via the JSON API. A path with
+            # 2+ segments here is an object key under the named bucket; a single segment
+            # (or empty path) is a bucket-level request.
+            if not path.startswith('/storage/'):
+                segs = [p for p in path.strip('/').split('/') if p]
+                if len(segs) >= 2:
+                    m_upper = method.upper()
+                    if m_upper in ('PUT', 'POST'):
+                        return 'storage.objects.create'
+                    if m_upper == 'DELETE':
+                        return 'storage.objects.delete'
+                    return 'storage.objects.get'
             m_upper = method.upper()
             if m_upper in ('PUT', 'PATCH'):
                 return 'storage.buckets.update'
@@ -3098,9 +3139,14 @@ class PolicyTemplateParser:
                 # skip — the extracted key is not a hostname; let auth-fallback handle it.
                 elif re.search(r'\$\w+\[', rhs):
                     # When the variable holds a bucket's host field (e.g. $bucket["host"]),
-                    # it resolves to an S3 virtual-hosted URL at runtime.
+                    # it resolves to a path-style S3 host at runtime (e.g. "s3.amazonaws.com"
+                    # or "s3-{region}.amazonaws.com"), with the bucket name appearing in the
+                    # request path/href rather than the host. Do not synthesize a
+                    # virtual-hosted-style "{bucket}.s3.amazonaws.com" host here -- that
+                    # would misrepresent the actual host and break path-based S3 permission
+                    # inference (e.g. bucket-level vs. object-level operations).
                     if re.search(r'\$(?:\w*bucket\w*)\["host"\]', rhs, re.IGNORECASE):
-                        return '{bucket}.s3.amazonaws.com'
+                        return 's3.amazonaws.com'
                     # Otherwise: RHS is a dict field access with no string literals ---
                     # no host can be derived here; fall through to parameter resolution
                 else:
