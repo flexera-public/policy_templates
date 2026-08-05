@@ -1056,8 +1056,32 @@ class PolicyTemplateParser:
                                     local_assign = re.search(
                                         rf'\b{re.escape(var_name)}\s*=\s*["\']([^"\']+)["\']',
                                         js_code)
+                                    # Fix 1b: ternary assignment, e.g.
+                                    # var host = locationId == "global" ? "aiplatform.googleapis.com" : locationId + "-aiplatform.googleapis.com"
+                                    # Prefer the branch that is a pure string literal (no
+                                    # concatenation) since it represents the canonical/base
+                                    # hostname; both branches typically resolve to the same
+                                    # GCP service regardless of a regional prefix.
+                                    ternary_assign = re.search(
+                                        rf'\b{re.escape(var_name)}\s*=[^;\n]*\?\s*([^:]+):\s*([^;\n]+)',
+                                        js_code)
                                     if local_assign:
                                         request_info['host'] = local_assign.group(1)
+                                    elif ternary_assign:
+                                        branch_a = ternary_assign.group(1).strip()
+                                        branch_b = ternary_assign.group(2).strip()
+                                        literal_only = re.compile(r'^["\'][^"\']+["\']$')
+                                        for branch in (branch_a, branch_b):
+                                            if literal_only.match(branch):
+                                                request_info['host'] = branch.strip('"\'')
+                                                break
+                                        else:
+                                            # Neither branch is a pure literal; fall back to
+                                            # extracting string literals from either branch to
+                                            # build a best-effort host with placeholders.
+                                            strings = re.findall(r'["\']([^"\']+)["\']', branch_a + ' ' + branch_b)
+                                            if strings:
+                                                request_info['host'] = strings[0]
                                     else:
                                         # Fix 2: var_name might be declared in the script's
                                         # `parameters` clause (passed from run_script).
