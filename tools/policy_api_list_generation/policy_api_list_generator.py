@@ -3529,36 +3529,46 @@ class PolicyTemplateParser:
                                 else:
                                     path = lit_m.group(1) or '/'
                             else:
-                                # Check for join([...]) variable assignment:
-                                # $varname = join(["/prefix/", $var["field"], ...])
-                                # This pattern is used e.g. in Lambda CWF defines:
-                                # $href = join(["/2015-03-31/functions/", $function["resourceName"]])
-                                # Use a pattern that handles one level of nested brackets
-                                # (e.g. $var["key"] inside the join array).
-                                _join_m = re.search(
-                                    r'\$' + vname + r'\s*=\s*join\(\[([^\[\]]*(?:\[[^\]]*\][^\[\]]*)*)\]\)',
-                                    define_body
-                                )
-                                if _join_m:
-                                    _join_content = _join_m.group(1)
-                                    # Strip dict-key accessors so inner keys aren't captured as path segments
-                                    _join_clean = re.sub(r'\[["\'][^"\']*["\']\]', '', _join_content)
-                                    _join_strings = re.findall(r'"([^"]+)"', _join_clean)
-                                    if _join_strings:
-                                        path = '/{id}'.join(_join_strings)
-                                        # If the cleaned join content ends with a variable (not a
-                                        # quoted string), append a placeholder for it.
-                                        # e.g. join(["/functions/", $fn["name"]]) → "/functions/{id}"
-                                        _last_elem = _join_clean.rsplit(',', 1)[-1].strip()
-                                        if _last_elem and not (_last_elem.startswith('"') or _last_elem.startswith("'")):
-                                            path += '{id}' if path.endswith('/') else '/{id}'
-                                elif 'azure' in (host or '').lower() or host == 'management.azure.com':
-                                    # For Azure, try to resolve the href expression to a full ARM path
+                                # For Azure hosts, prefer the ARM-aware href resolver first — it
+                                # correctly synthesizes full provider-qualified ARM paths (with the
+                                # /subscriptions/{id}/resourceGroups/{id}/providers/ prefix) that the
+                                # generic join([...]) builder below cannot produce, since it has no
+                                # knowledge of ARM path structure. This matters for CWF defines that
+                                # build hrefs via join(["Microsoft.X", "/type/", ...]) (e.g. snapshot
+                                # creation), where the generic builder would otherwise emit a
+                                # malformed path lacking a /providers/ segment, causing
+                                # _azure_permission() to fail to resolve any permission at all.
+                                _is_azure_host = 'azure' in (host or '').lower() or host == 'management.azure.com'
+                                if _is_azure_host:
                                     resolved = self._resolve_azure_cwf_href(
                                         var_expr, define_body, define_name, cwf_context
                                     )
                                     if resolved:
                                         path = resolved
+                                if not path:
+                                    # Check for join([...]) variable assignment:
+                                    # $varname = join(["/prefix/", $var["field"], ...])
+                                    # This pattern is used e.g. in Lambda CWF defines:
+                                    # $href = join(["/2015-03-31/functions/", $function["resourceName"]])
+                                    # Use a pattern that handles one level of nested brackets
+                                    # (e.g. $var["key"] inside the join array).
+                                    _join_m = re.search(
+                                        r'\$' + vname + r'\s*=\s*join\(\[([^\[\]]*(?:\[[^\]]*\][^\[\]]*)*)\]\)',
+                                        define_body
+                                    )
+                                    if _join_m:
+                                        _join_content = _join_m.group(1)
+                                        # Strip dict-key accessors so inner keys aren't captured as path segments
+                                        _join_clean = re.sub(r'\[["\'][^"\']*["\']\]', '', _join_content)
+                                        _join_strings = re.findall(r'"([^"]+)"', _join_clean)
+                                        if _join_strings:
+                                            path = '/{id}'.join(_join_strings)
+                                            # If the cleaned join content ends with a variable (not a
+                                            # quoted string), append a placeholder for it.
+                                            # e.g. join(["/functions/", $fn["name"]]) → "/functions/{id}"
+                                            _last_elem = _join_clean.rsplit(',', 1)[-1].strip()
+                                            if _last_elem and not (_last_elem.startswith('"') or _last_elem.startswith("'")):
+                                                path += '{id}' if path.endswith('/') else '/{id}'
                             if not path:
                                 path = '/{id}'
 

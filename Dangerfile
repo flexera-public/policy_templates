@@ -61,6 +61,10 @@ changed_py_files = changed_files.select{ |file| file.end_with?(".py") }
 changed_pt_files = changed_files.select{ |file| file.end_with?(".pt") && !file.include?("_meta_parent") }
 # Changed Meta Policy Template files.
 changed_meta_pt_files = changed_files.select{ |file| file.end_with?(".pt") && file.include?("_meta_parent") }
+# When a large number of policy template files have changed in a single PR, skip the "readme not updated"
+# warning since it is likely a bulk/cross-cutting change (e.g. formatting, boilerplate updates) rather than
+# a change requiring individual README review.
+skip_unmodified_readme_check = changed_pt_files.length > 15
 # Changed README files.
 changed_readme_files = changed_files.select{ |file| file.end_with?("/README.md") && POLICY_CATEGORY_DIRS.any? { |dir| file.start_with?(dir) } }
 # Changed Changelog files.
@@ -411,8 +415,9 @@ changed_pt_files.each do |file|
     # Raise error if policy is not in a valid directory within the repo directory structure
     test = policy_bad_directory?(file); failures << test if test
 
-    # Raise warning if policy changed but readme has not been
-    rd_test = policy_unmodified_readme?(file, changed_readme_files); warnings << rd_test if rd_test
+    # Raise warning if policy changed but readme has not been.
+    # Skipped when > 15 policy template files have changed in the PR (see skip_unmodified_readme_check above).
+    rd_test = skip_unmodified_readme_check ? nil : policy_unmodified_readme?(file, changed_readme_files); warnings << rd_test if rd_test
 
     # Raise error if policy template name does not match name in README file
     test = policy_readme_correct_name?(file, file_parsed); failures << test if test
