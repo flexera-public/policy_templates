@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.8.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v3.8.0
 
 - When `Everything` is selected for the `Payment Option` parameter, the policy now makes a separate API call for each of the three payment options (No Upfront, Partial Upfront, All Upfront) and combines the results, ensuring all recommendations are captured.

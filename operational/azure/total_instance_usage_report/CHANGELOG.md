@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.12
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v1.0.11
 
 - Updated instance type data source from `data/azure/instance_types.json` to `data/azure/azure_compute_instance_types.json`. The `Normalized Instance Count` unit mode now uses real normalization factor values from the data file; previously all instances defaulted to a factor of 1.

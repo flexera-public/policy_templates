@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.3.0
 
 - Added error incident when no Azure Subscriptions are found, indicating a potential credential or permissions issue.

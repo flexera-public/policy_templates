@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.3.3
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v6.3.2
 
 - Expanded the incident disclaimer to explain the difference between CPU metrics (vCore-based databases) and DTU metrics (DTU-based databases) shown in the incident table

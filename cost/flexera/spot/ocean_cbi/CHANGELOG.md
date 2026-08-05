@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.8
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.2.7
 
 - Category of policy template updated to "Cost". Functionality unchanged.

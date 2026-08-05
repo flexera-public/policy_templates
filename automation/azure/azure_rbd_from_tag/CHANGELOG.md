@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v2.2.0
 
 - Added option to use current month/year as the effective date for generated rules instead of a static effective date.

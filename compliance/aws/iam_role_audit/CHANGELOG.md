@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0.13
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v3.0.12
 
 - Updated documentation link in policy description. Functionality unchanged.

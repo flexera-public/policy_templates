@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.7.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v3.7.0
 
 - Added `Any` option to `Savings Plan Term` parameter to return combined results for both 1 Year and 3 Year term lengths
