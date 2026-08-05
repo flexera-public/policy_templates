@@ -2299,6 +2299,29 @@ class PolicyTemplateParser:
                 return 'cloudsql.instances.list'
             return None
 
+        # Vertex AI (aiplatform)
+        if service == 'aiplatform':
+            # /v1/projects/{project}/locations/{location}/endpoints[/{id}]
+            if re.search(r'/locations/[^/]+/endpoints/[^/]+$', path):
+                if method.upper() == 'DELETE':
+                    return 'aiplatform.endpoints.delete'
+                return 'aiplatform.endpoints.get'
+            if re.search(r'/locations/[^/]+/endpoints/?$', path):
+                return 'aiplatform.endpoints.list'
+            # /v1/projects/{project}/locations
+            if re.search(r'/projects/[^/]+/locations/?$', path):
+                return 'aiplatform.locations.list'
+            # A synthesized bare-placeholder path (e.g. "/v1/{id}") occurs when the CWF
+            # href is built from a single field holding a full resource name (e.g.
+            # $endpoint["resourceID"] = "projects/{p}/locations/{l}/endpoints/{id}").
+            # The analyzer cannot expand this back into the full REST path, but the
+            # resource type can still be inferred from the operation name/method.
+            if re.search(r'^/v1/\{[^/}]+\}$', path):
+                if method.upper() == 'DELETE':
+                    return 'aiplatform.endpoints.delete'
+                return 'aiplatform.endpoints.get'
+            return None
+
         # Resource Manager
         if service == 'resourcemanager':
             if re.search(r'/projects:search', path):
