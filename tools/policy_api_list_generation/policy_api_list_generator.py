@@ -1862,9 +1862,11 @@ class PolicyTemplateParser:
         """Map an AWS hostname to its IAM service prefix.
 
         Inspects the first subdomain segment of the host to identify the AWS
-        service using AWS_HOST_TO_SERVICE.  Returns None for unknown services,
-        "s3" for S3 virtual-hosted / path-style URLs, None for API Gateway
-        execute-api endpoints, and the sentinel "__bare__" for the bare
+        service using AWS_HOST_TO_SERVICE. Falls back to the second subdomain
+        segment when the first is the generic "api" prefix (e.g. SageMaker's
+        "api.sagemaker.<region>.amazonaws.com" form). Returns None for unknown
+        services, "s3" for S3 virtual-hosted / path-style URLs, None for API
+        Gateway execute-api endpoints, and the sentinel "__bare__" for the bare
         amazonaws.com host (which needs Version= query-param inference).
 
         Args:
@@ -1889,7 +1891,19 @@ class PolicyTemplateParser:
 
         # Strip placeholder braces, then look up the first subdomain in the class table
         first_subdomain = host.split('.')[0].strip('{}')
-        return self.AWS_HOST_TO_SERVICE.get(first_subdomain)
+        mapped = self.AWS_HOST_TO_SERVICE.get(first_subdomain)
+        if mapped:
+            return mapped
+
+        # Some AWS services expose an "api.<service>.<region>.amazonaws.com" form
+        # (e.g. SageMaker inference/runtime endpoints: api.sagemaker.<region>.amazonaws.com).
+        # Fall back to the second label when the first is the generic "api" prefix.
+        if first_subdomain == 'api':
+            parts = host.split('.')
+            if len(parts) > 1:
+                return self.AWS_HOST_TO_SERVICE.get(parts[1].strip('{}'))
+
+        return None
 
     def _aws_infer_service_from_version(self, endpoint):
         """Infer the AWS service from the Version= query parameter.
