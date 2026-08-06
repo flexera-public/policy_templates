@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v3.3.1
 
 - Updated AWS Organizations API calls to ensure compatibility with upcoming changes to AWS APIs. Functionality unchanged.

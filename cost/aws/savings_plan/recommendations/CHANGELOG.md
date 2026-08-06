@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v4.0.0
 
 - The `Savings Plan Type` parameter now accepts multiple selections (list) instead of a single value. Leave it blank to return results for all Savings Plan types.

@@ -77,7 +77,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera-one/aut
   - `recommender.loggingProductSuggestionContainerRecommendations.list`*
   - `recommender.monitoringProductSuggestionComputeRecommendations.list`*
   - `recommender.resourcemanagerProjectUtilizationRecommendations.list`*
-  - `recommender.runServiceSecurityRecommendations.list`*
   - `recommender.usageCommitmentRecommendations.list`*
 
   \* Only required if the specific recommendation is desired.

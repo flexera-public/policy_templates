@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.3
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.1.2
 
 - Fixed syntax error that was preventing policy template from completing execution.

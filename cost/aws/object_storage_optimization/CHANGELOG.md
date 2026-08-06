@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0.13
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v4.0.12
 
 - Fixed issue with incident table that cause policy execution to fail

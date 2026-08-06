@@ -1056,8 +1056,32 @@ class PolicyTemplateParser:
                                     local_assign = re.search(
                                         rf'\b{re.escape(var_name)}\s*=\s*["\']([^"\']+)["\']',
                                         js_code)
+                                    # Fix 1b: ternary assignment, e.g.
+                                    # var host = locationId == "global" ? "aiplatform.googleapis.com" : locationId + "-aiplatform.googleapis.com"
+                                    # Prefer the branch that is a pure string literal (no
+                                    # concatenation) since it represents the canonical/base
+                                    # hostname; both branches typically resolve to the same
+                                    # GCP service regardless of a regional prefix.
+                                    ternary_assign = re.search(
+                                        rf'\b{re.escape(var_name)}\s*=[^;\n]*\?\s*([^:]+):\s*([^;\n]+)',
+                                        js_code)
                                     if local_assign:
                                         request_info['host'] = local_assign.group(1)
+                                    elif ternary_assign:
+                                        branch_a = ternary_assign.group(1).strip()
+                                        branch_b = ternary_assign.group(2).strip()
+                                        literal_only = re.compile(r'^["\'][^"\']+["\']$')
+                                        for branch in (branch_a, branch_b):
+                                            if literal_only.match(branch):
+                                                request_info['host'] = branch.strip('"\'')
+                                                break
+                                        else:
+                                            # Neither branch is a pure literal; fall back to
+                                            # extracting string literals from either branch to
+                                            # build a best-effort host with placeholders.
+                                            strings = re.findall(r'["\']([^"\']+)["\']', branch_a + ' ' + branch_b)
+                                            if strings:
+                                                request_info['host'] = strings[0]
                                     else:
                                         # Fix 2: var_name might be declared in the script's
                                         # `parameters` clause (passed from run_script).
@@ -1862,9 +1886,11 @@ class PolicyTemplateParser:
         """Map an AWS hostname to its IAM service prefix.
 
         Inspects the first subdomain segment of the host to identify the AWS
-        service using AWS_HOST_TO_SERVICE.  Returns None for unknown services,
-        "s3" for S3 virtual-hosted / path-style URLs, None for API Gateway
-        execute-api endpoints, and the sentinel "__bare__" for the bare
+        service using AWS_HOST_TO_SERVICE. Falls back to the second subdomain
+        segment when the first is the generic "api" prefix (e.g. SageMaker's
+        "api.sagemaker.<region>.amazonaws.com" form). Returns None for unknown
+        services, "s3" for S3 virtual-hosted / path-style URLs, None for API
+        Gateway execute-api endpoints, and the sentinel "__bare__" for the bare
         amazonaws.com host (which needs Version= query-param inference).
 
         Args:
@@ -1889,7 +1915,19 @@ class PolicyTemplateParser:
 
         # Strip placeholder braces, then look up the first subdomain in the class table
         first_subdomain = host.split('.')[0].strip('{}')
-        return self.AWS_HOST_TO_SERVICE.get(first_subdomain)
+        mapped = self.AWS_HOST_TO_SERVICE.get(first_subdomain)
+        if mapped:
+            return mapped
+
+        # Some AWS services expose an "api.<service>.<region>.amazonaws.com" form
+        # (e.g. SageMaker inference/runtime endpoints: api.sagemaker.<region>.amazonaws.com).
+        # Fall back to the second label when the first is the generic "api" prefix.
+        if first_subdomain == 'api':
+            parts = host.split('.')
+            if len(parts) > 1:
+                return self.AWS_HOST_TO_SERVICE.get(parts[1].strip('{}'))
+
+        return None
 
     def _aws_infer_service_from_version(self, endpoint):
         """Infer the AWS service from the Version= query parameter.
@@ -1947,6 +1985,14 @@ class PolicyTemplateParser:
         if service == 's3':
             qs = urllib.parse.urlparse(endpoint).query
             qs_keys = set(urllib.parse.parse_qs(qs).keys()) | set(k.rstrip('=') for k in qs.split('&') if k)
+            # Virtual-hosted-style addressing (e.g. "{bucket}.s3.amazonaws.com") already
+            # encodes the bucket name in the host, unlike path-style addressing
+            # (e.g. "s3.amazonaws.com/{bucket}/{key}"). In virtual-hosted style, the path
+            # segment count can't be used to distinguish bucket-level vs. object-level
+            # operations -- any non-empty path is an object key, even a single segment
+            # (e.g. GET {bucket}.s3.amazonaws.com/report.csv is GetObject, not ListBucket).
+            _host = urllib.parse.urlparse(endpoint).netloc.lower()
+            is_virtual_hosted = '.s3.' in _host and not _host.startswith('s3.') and not _host.startswith('s3-')
             if 'location' in qs_keys or qs.startswith('location'):
                 return 's3:GetBucketLocation'
             if 'logging' in qs_keys:
@@ -1972,8 +2018,26 @@ class PolicyTemplateParser:
             if 'uploads' in qs_keys:
                 return 's3:ListBucketMultipartUploads'
             # Root list
-            if path in ('/', '') or not path.strip('/'):
+            if not is_virtual_hosted and (path in ('/', '') or not path.strip('/')):
                 return 's3:ListAllMyBuckets'
+            if is_virtual_hosted:
+                # Any non-root path is an object key under the bucket named in the host.
+                if path in ('/', '') or not path.strip('/'):
+                    # No object key -- this is a bucket-level request (e.g. GET / on
+                    # {bucket}.s3.amazonaws.com lists bucket contents).
+                    if method in ('GET', 'HEAD'):
+                        return 's3:ListBucket'
+                    if method == 'PUT':
+                        return 's3:CreateBucket'
+                    if method == 'DELETE':
+                        return 's3:DeleteBucket'
+                else:
+                    if method in ('GET', 'HEAD'):
+                        return 's3:GetObject'
+                    if method == 'PUT':
+                        return 's3:PutObject'
+                    if method == 'DELETE':
+                        return 's3:DeleteObject'
             # Distinguish bucket-level (1 segment) from object-level (2+ segments)
             all_segs = [p for p in path.strip('/').split('/') if p]
             if len(all_segs) <= 1:
@@ -2259,6 +2323,29 @@ class PolicyTemplateParser:
                 return 'cloudsql.instances.list'
             return None
 
+        # Vertex AI (aiplatform)
+        if service == 'aiplatform':
+            # /v1/projects/{project}/locations/{location}/endpoints[/{id}]
+            if re.search(r'/locations/[^/]+/endpoints/[^/]+$', path):
+                if method.upper() == 'DELETE':
+                    return 'aiplatform.endpoints.delete'
+                return 'aiplatform.endpoints.get'
+            if re.search(r'/locations/[^/]+/endpoints/?$', path):
+                return 'aiplatform.endpoints.list'
+            # /v1/projects/{project}/locations
+            if re.search(r'/projects/[^/]+/locations/?$', path):
+                return 'aiplatform.locations.list'
+            # A synthesized bare-placeholder path (e.g. "/v1/{id}") occurs when the CWF
+            # href is built from a single field holding a full resource name (e.g.
+            # $endpoint["resourceID"] = "projects/{p}/locations/{l}/endpoints/{id}").
+            # The analyzer cannot expand this back into the full REST path, but the
+            # resource type can still be inferred from the operation name/method.
+            if re.search(r'^/v1/\{[^/}]+\}$', path):
+                if method.upper() == 'DELETE':
+                    return 'aiplatform.endpoints.delete'
+                return 'aiplatform.endpoints.get'
+            return None
+
         # Resource Manager
         if service == 'resourcemanager':
             if re.search(r'/projects:search', path):
@@ -2293,6 +2380,7 @@ class PolicyTemplateParser:
 
         # Storage
         if service == 'storage':
+            # JSON API style: /storage/v1/b/{bucket}[/o[/{object}]]
             if re.search(r'/b/[^/]+/iam', path):
                 return 'storage.buckets.getIamPolicy'
             if re.search(r'/b/[^/]+/o/[^/]+', path):
@@ -2301,6 +2389,20 @@ class PolicyTemplateParser:
                 return 'storage.objects.list'
             if re.search(r'/b/?$', path) or re.search(r'/b\?', endpoint):
                 return 'storage.buckets.list'
+            # XML/S3-compatible API style: storage.googleapis.com/{bucket}/{object}
+            # (no "/storage/v1/b/" prefix). Used by CBI ingestion templates that pull a
+            # single object directly by path rather than via the JSON API. A path with
+            # 2+ segments here is an object key under the named bucket; a single segment
+            # (or empty path) is a bucket-level request.
+            if not path.startswith('/storage/'):
+                segs = [p for p in path.strip('/').split('/') if p]
+                if len(segs) >= 2:
+                    m_upper = method.upper()
+                    if m_upper in ('PUT', 'POST'):
+                        return 'storage.objects.create'
+                    if m_upper == 'DELETE':
+                        return 'storage.objects.delete'
+                    return 'storage.objects.get'
             m_upper = method.upper()
             if m_upper in ('PUT', 'PATCH'):
                 return 'storage.buckets.update'
@@ -3084,9 +3186,14 @@ class PolicyTemplateParser:
                 # skip — the extracted key is not a hostname; let auth-fallback handle it.
                 elif re.search(r'\$\w+\[', rhs):
                     # When the variable holds a bucket's host field (e.g. $bucket["host"]),
-                    # it resolves to an S3 virtual-hosted URL at runtime.
+                    # it resolves to a path-style S3 host at runtime (e.g. "s3.amazonaws.com"
+                    # or "s3-{region}.amazonaws.com"), with the bucket name appearing in the
+                    # request path/href rather than the host. Do not synthesize a
+                    # virtual-hosted-style "{bucket}.s3.amazonaws.com" host here -- that
+                    # would misrepresent the actual host and break path-based S3 permission
+                    # inference (e.g. bucket-level vs. object-level operations).
                     if re.search(r'\$(?:\w*bucket\w*)\["host"\]', rhs, re.IGNORECASE):
-                        return '{bucket}.s3.amazonaws.com'
+                        return 's3.amazonaws.com'
                     # Otherwise: RHS is a dict field access with no string literals ---
                     # no host can be derived here; fall through to parameter resolution
                 else:
@@ -3515,36 +3622,46 @@ class PolicyTemplateParser:
                                 else:
                                     path = lit_m.group(1) or '/'
                             else:
-                                # Check for join([...]) variable assignment:
-                                # $varname = join(["/prefix/", $var["field"], ...])
-                                # This pattern is used e.g. in Lambda CWF defines:
-                                # $href = join(["/2015-03-31/functions/", $function["resourceName"]])
-                                # Use a pattern that handles one level of nested brackets
-                                # (e.g. $var["key"] inside the join array).
-                                _join_m = re.search(
-                                    r'\$' + vname + r'\s*=\s*join\(\[([^\[\]]*(?:\[[^\]]*\][^\[\]]*)*)\]\)',
-                                    define_body
-                                )
-                                if _join_m:
-                                    _join_content = _join_m.group(1)
-                                    # Strip dict-key accessors so inner keys aren't captured as path segments
-                                    _join_clean = re.sub(r'\[["\'][^"\']*["\']\]', '', _join_content)
-                                    _join_strings = re.findall(r'"([^"]+)"', _join_clean)
-                                    if _join_strings:
-                                        path = '/{id}'.join(_join_strings)
-                                        # If the cleaned join content ends with a variable (not a
-                                        # quoted string), append a placeholder for it.
-                                        # e.g. join(["/functions/", $fn["name"]]) → "/functions/{id}"
-                                        _last_elem = _join_clean.rsplit(',', 1)[-1].strip()
-                                        if _last_elem and not (_last_elem.startswith('"') or _last_elem.startswith("'")):
-                                            path += '{id}' if path.endswith('/') else '/{id}'
-                                elif 'azure' in (host or '').lower() or host == 'management.azure.com':
-                                    # For Azure, try to resolve the href expression to a full ARM path
+                                # For Azure hosts, prefer the ARM-aware href resolver first — it
+                                # correctly synthesizes full provider-qualified ARM paths (with the
+                                # /subscriptions/{id}/resourceGroups/{id}/providers/ prefix) that the
+                                # generic join([...]) builder below cannot produce, since it has no
+                                # knowledge of ARM path structure. This matters for CWF defines that
+                                # build hrefs via join(["Microsoft.X", "/type/", ...]) (e.g. snapshot
+                                # creation), where the generic builder would otherwise emit a
+                                # malformed path lacking a /providers/ segment, causing
+                                # _azure_permission() to fail to resolve any permission at all.
+                                _is_azure_host = 'azure' in (host or '').lower() or host == 'management.azure.com'
+                                if _is_azure_host:
                                     resolved = self._resolve_azure_cwf_href(
                                         var_expr, define_body, define_name, cwf_context
                                     )
                                     if resolved:
                                         path = resolved
+                                if not path:
+                                    # Check for join([...]) variable assignment:
+                                    # $varname = join(["/prefix/", $var["field"], ...])
+                                    # This pattern is used e.g. in Lambda CWF defines:
+                                    # $href = join(["/2015-03-31/functions/", $function["resourceName"]])
+                                    # Use a pattern that handles one level of nested brackets
+                                    # (e.g. $var["key"] inside the join array).
+                                    _join_m = re.search(
+                                        r'\$' + vname + r'\s*=\s*join\(\[([^\[\]]*(?:\[[^\]]*\][^\[\]]*)*)\]\)',
+                                        define_body
+                                    )
+                                    if _join_m:
+                                        _join_content = _join_m.group(1)
+                                        # Strip dict-key accessors so inner keys aren't captured as path segments
+                                        _join_clean = re.sub(r'\[["\'][^"\']*["\']\]', '', _join_content)
+                                        _join_strings = re.findall(r'"([^"]+)"', _join_clean)
+                                        if _join_strings:
+                                            path = '/{id}'.join(_join_strings)
+                                            # If the cleaned join content ends with a variable (not a
+                                            # quoted string), append a placeholder for it.
+                                            # e.g. join(["/functions/", $fn["name"]]) → "/functions/{id}"
+                                            _last_elem = _join_clean.rsplit(',', 1)[-1].strip()
+                                            if _last_elem and not (_last_elem.startswith('"') or _last_elem.startswith("'")):
+                                                path += '{id}' if path.endswith('/') else '/{id}'
                             if not path:
                                 path = '/{id}'
 

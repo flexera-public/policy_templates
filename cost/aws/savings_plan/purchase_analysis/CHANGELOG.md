@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.2.0
 
 - Added `Analysis Type` parameter to support both `Custom Commitment` and `Target Average Coverage` analysis types

@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v6.0.0
 
 - Replaced `Include Account Tags` parameter with new `Report Types` list parameter that allows selecting `Accounts` and/or `Resources` individually

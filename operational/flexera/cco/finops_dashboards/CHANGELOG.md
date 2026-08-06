@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.2.1
 
 - Removed "AI/ML Views" dashboard from default for "Dashboards (Built-In)" parameter.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v4.1.0
 
 - Added `Include Data Table In Incident` parameter to optionally include a formatted table of the moving average cost data in the body of the incident.

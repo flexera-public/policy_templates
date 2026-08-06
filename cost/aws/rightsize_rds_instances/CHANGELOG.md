@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.11.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v5.11.0
 
 - Changed Available Memory fields to report memory utilization as a percentage instead of available memory. This aligns the incident with the other usage recommendation policy templates.
