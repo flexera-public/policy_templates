@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v2.0.1
 
 - Fixed bug where resources whose missing tags were fully covered by Tag Dimension equivalents were still included in the incident with a blank `Missing Tags` field instead of being correctly excluded.

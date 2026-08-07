@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2.4
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v3.2.3
 
 - Limit the 'Days of Usage' parameter to a maximum of 31 days, matching the Flexera billing API's limitation.

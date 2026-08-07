@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.0.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v5.0.0
 
 - Replaced `Include Subscription/Resource Group Tags` parameter with new `Report Types` list parameter that allows selecting `Subscriptions`, `Resource Groups`, and/or `Resources` individually

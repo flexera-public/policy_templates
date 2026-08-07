@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v3.4.0
 
 - Added "Treat Disabled Public Network Access as Compliant" parameter to optionally exclude storage accounts with public network access disabled from results. Default value preserves existing behavior.

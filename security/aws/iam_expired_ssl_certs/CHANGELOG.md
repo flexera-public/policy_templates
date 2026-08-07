@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v3.1.0
 
 - Added support for attaching CSV files to incident emails.

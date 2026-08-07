@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.5.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v4.5.0
 
 - Added error incident if no Google projects are returned by the credential, to alert users to potential permission issues.

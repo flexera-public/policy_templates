@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.0.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v5.0.0
 
 - Added new `Report Types` list parameter that allows selecting `Projects` and/or `Resources` individually

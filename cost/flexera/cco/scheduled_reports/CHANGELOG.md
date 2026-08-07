@@ -1,5 +1,13 @@
 # Changelog
 
+## v4.1.3
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
+## v4.1.2
+
+- Fixed X-axis date labels overlapping in the report chart when `Billing Term` is set to `Day` over a multi-month date range.
+
 ## v4.1.1
 
 - Updated documentation link in policy description. Functionality unchanged.

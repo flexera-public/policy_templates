@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.8.1
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v4.8.0
 
 - Added `Any` option to `Term` parameter to return combined results for both 1-year and 3-year terms.

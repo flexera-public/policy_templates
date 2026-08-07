@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.2
+
+- Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.
+
 ## v0.2.1
 
 - Updated API requests to use newer Flexera API. Functionality unchanged.
