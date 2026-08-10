@@ -6,6 +6,58 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 ## History
 
+### PR [#4764](https://github.com/flexera-public/policy_templates/pull/4764): POL-1811 Flexera Test Support
+
+*Unpublished, Minor Update*
+
+#### Description
+
+> Adds support for flexeratest.com API endpoints and domains to all relevant policy templates.
+>
+> Also makes some very minor fixes to a handful of modified policies and their READMEs to fix Dangerfile issues, and makes some improvements to Dangerfile and the Policy API script to avoid false positives.
+>
+> All remaining Dangerfile errors/warnings are false positives that should be ignored.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4764) for these details.
+- **Merged At**: 2026-08-06 19:37:42 UTC
+
+---
+
+### PR [#4761](https://github.com/flexera-public/policy_templates/pull/4761): POL-1808 Azure Meta Parent Fix
+
+#### Description
+
+> Fixes a couple of issues with the unpublished Azure resource group-based meta parent policies that prevented them from working.
+> - The parameter for disabling consolidated incidents now exists and works properly.
+> - Blank resource group values returned by the Cost API are now ignored.
+>
+
+#### Metadata
+
+- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/4761) for these details.
+- **Merged At**: 2026-08-04 19:18:49 UTC
+
+---
+
+### PR [#4755](https://github.com/flexera-public/policy_templates/pull/4755): POL-1810 Azure Rightsize SQL Databases: vCore/DTU Disclaimer
+
+*Minor Update*
+
+#### Description
+
+> `Azure Rightsize SQL Databases`: Adds a more elaborate disclaimer about the distinction between vCore and DTU models to the incident.
+>
+
+#### Metadata
+
+- **Policies**: [Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md), [Meta Parent: Azure Rightsize SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/README.md)
+- **Merged At**: 2026-08-03 15:37:36 UTC
+
+---
+
 ### PR [#4744](https://github.com/flexera-public/policy_templates/pull/4744): FOPTS-27963 Fix overlapping X-axis date labels in scheduled report chart
 
 *Minor Update*
@@ -1813,55 +1865,6 @@ This document contains the last 100 policy template merges for the `flexera-publ
 
 - **Policies**: [Azure Long Stopped Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/long_stopped_instances/README.md)
 - **Merged At**: 2026-02-05 14:17:00 UTC
-
----
-
-### PR [#3670](https://github.com/flexera-public/policy_templates/pull/3670): POL-1666 New Policy: AWS Idle FSx File Systems
-
-*New Policy Template*
-
-#### Description
-
-> New policy template to detect and report on AWS FSx File Systems that are idle (no read/write operations).
->
-
-#### Metadata
-
-- **Policies**: [AWS Idle FSx File Systems](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/idle_fsx/README.md)
-- **Merged At**: 2026-02-04 21:42:54 UTC
-
----
-
-### PR [#4017](https://github.com/flexera-public/policy_templates/pull/4017): FOPTS-19145 Fixed Account Scope description for AWS savings plan recs policy
-
-#### Description
-
-> This PR updates the account_scope description in the AWS Savings Plan Recommendations Policy to align with AWS documentation.
->
-> Reference - [AWS GetSavingsPlansPurchaseRecommendation API Specification](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetSavingsPlansPurchaseRecommendation.html#API_GetSavingsPlansPurchaseRecommendation_RequestParameters)
->
-> ### Issues Resolved
->
-
-#### Metadata
-
-- **Policies**: [AWS Savings Plan Recommendations](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/savings_plan/recommendations/README.md)
-- **Merged At**: 2026-02-04 20:16:29 UTC
-
----
-
-### PR [#3990](https://github.com/flexera-public/policy_templates/pull/3990): Google Meta Parent sys- and app- Project Filtering
-
-*Minor Update*
-
-#### Description
-
-> This change enables the user to ensure that sys- and app- projects are filtered in the child policies by including the relevant parameters in the meta parents and defaulting them to "yes". These projects generally don't produce billable assets and including them in child policy executions can cause timeouts and scaling issues.
-
-#### Metadata
-
-- **Policies**: Not displayed due to PR with > 5 policies. Please see [Github Pull Request](https://github.com/flexera-public/policy_templates/pull/3990) for these details.
-- **Merged At**: 2026-01-16 13:06:23 UTC
 
 ---
 
