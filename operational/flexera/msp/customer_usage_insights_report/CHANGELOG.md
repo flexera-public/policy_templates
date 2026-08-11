@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.7
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
 ## v0.1.6
 
 - Minor code formatting cleanup. No functional or user-facing changes.

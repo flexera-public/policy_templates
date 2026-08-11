@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7.2
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
 ## v2.7.1
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.

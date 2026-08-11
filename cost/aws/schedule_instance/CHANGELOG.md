@@ -1,5 +1,9 @@
 # Changelog
 
+## v8.0.12
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
 ## v8.0.11
 
 - Updated the `ds_flexera_api_hosts` datasource to support an additional internal testing environment. No functional changes for existing users.

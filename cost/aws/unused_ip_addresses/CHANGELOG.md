@@ -1,5 +1,9 @@
 # Changelog
 
+## v9.5.5
+
+- Minor code formatting cleanup. No functional or user-facing changes.
+
 ## v9.5.4
 
 - Improved the policy's reliability when checking which AWS regions it can access, making it less likely to fail to run due to expected access restrictions in certain regions
